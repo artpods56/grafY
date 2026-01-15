@@ -5,22 +5,22 @@ at the engine level.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import final, override, cast
 
-from structlog import get_logger
 
 from notarius.application.use_cases.use_case import (
     BaseRequest,
     BaseResponse,
-    BaseUseCase,
+    AsyncBaseUseCase,
 )
 from notarius.infrastructure.ocr import OCREngine, OCRRequest, OCRMode
 from notarius.infrastructure.ocr.types import SimpleOCRResult
-from notarius.orchestration.resources.base import ImageStorageResource
+from notarius.infrastructure.persistence.storage import ImageRepository
 from notarius.schemas.data.pipeline import BaseDataset, BaseDataItem, BaseItemDataset
-from notarius.shared.logger import Logger
+from notarius.shared.logger import get_logger
 
-logger: Logger = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -41,7 +41,9 @@ class EnrichWithOCRResponse(BaseResponse):
 
 
 @final
-class EnrichDatasetWithOCR(BaseUseCase[EnrichWithOCRRequest, EnrichWithOCRResponse]):
+class EnrichDatasetWithOCR(
+    AsyncBaseUseCase[EnrichWithOCRRequest, EnrichWithOCRResponse]
+):
     """
     Simplified use case for enriching a dataset with OCR text predictions.
 
@@ -51,8 +53,8 @@ class EnrichDatasetWithOCR(BaseUseCase[EnrichWithOCRRequest, EnrichWithOCRRespon
 
     def __init__(
         self,
-        ocr_engine: OCREngine,  # This can now be a CachedEngine
-        image_storage: ImageStorageResource,
+        ocr_engine: OCREngine,
+        image_storage: ImageRepository,
     ):
         """
         Initialize the use case.
@@ -85,11 +87,9 @@ class EnrichDatasetWithOCR(BaseUseCase[EnrichWithOCRRequest, EnrichWithOCRRespon
             if item.text and not request.overwrite:
                 new_dataset_items.append(item)
                 continue
-
-            image = self.image_storage.load_image(item.image_path).convert("RGB")
+            image = self.image_storage.get(Path(item.image_path)).convert("RGB")
             logger.info(f"Processing {i + 1}/{dataset_len} sample with OCR.")
 
-            # Just call the engine - caching happens transparently
             ocr_request = OCRRequest(input=image, mode=request.mode)
             response = self.ocr_engine.process(ocr_request)
             processed_count += 1

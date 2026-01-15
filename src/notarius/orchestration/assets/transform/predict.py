@@ -48,11 +48,11 @@ from notarius.schemas.data.pipeline import (
     PredictionItemDataset,
     PredictionDataItem,
 )
-from notarius.application.use_cases.inference.add_ocr_to_dataset import (
+from notarius.application.use_cases.inference.enrich_dataset_with_ocr import (
     EnrichWithOCRRequest,
     EnrichDatasetWithOCR,
 )
-from notarius.application.use_cases.inference.add_lmv3_preds_to_dataset import (
+from notarius.application.use_cases.inference.enrich_dataset_with_lmv3_predictions import (
     EnrichDatasetWithLMv3,
     EnrichWithLMv3Request,
 )
@@ -61,12 +61,6 @@ from notarius.application.use_cases.inference.enrich_dataset_with_ocr_using_llm 
     EnrichWithLLMOCRRequest,
 )
 from notarius.domain.entities.schematism import SchematismPage
-
-
-class OcrConfig(dg.Config):
-    mode: OCRMode = "text"
-    language: str = "lat+pol+rus"
-    enable_cache: bool = True
 
 
 @dg.asset(
@@ -86,18 +80,17 @@ async def pred__ocr_enriched_dataset__pydantic(
     images_repository: dg.ResourceParam[ImageRepository],
     ocr_engine: dg.ResourceParam[OCREngine],
 ):
-    config = ocr_engine.config
-
+    # Refactored version - simpler use case instantiation
+    # Caching is now handled at the engine level
     use_case = EnrichDatasetWithOCR(
         ocr_engine=ocr_engine,
         image_storage=images_repository,
-        language=config.language,
-        enable_cache=config.enable_cache,
     )
 
     request = EnrichWithOCRRequest(
         dataset=dataset,
         mode="text",
+        overwrite=False,
     )
     response = await use_case.execute(request)
 
@@ -115,8 +108,7 @@ async def pred__ocr_enriched_dataset__pydantic(
             "items_with_text": MetadataValue.int(
                 len([item for item in response.dataset.items if item.text])
             ),
-            "ocr_executions": MetadataValue.int(response.ocr_executions),
-            "cache_hits": MetadataValue.int(response.cache_hits),
+            "processed_count": MetadataValue.int(response.processed_count),
         }
     )
 
@@ -145,25 +137,34 @@ async def pred__lmv3_enriched_dataset__pydantic(
     lmv3_engine: LMv3EngineResource,
     ocr_engine: dg.ResourceParam[OCREngine],
 ) -> PredictionItemDataset:
-    # Get the actual engine instance from the resource
-
     if config.skip:
         return PredictionItemDataset.from_base_dataset(dataset)
 
+    # Get the engine and handle cache wrapping at orchestration level
     lmv3_model = lmv3_engine.get_engine(ocr_engine)
 
-    # Use new CachedEngine pattern
+    # Wrap with cache if enabled
+    if config.enable_cache:
+        from notarius.application.ports.outbound.cached_engine import CachedEngine
+        from notarius.infrastructure.cache.backends.lmv3 import create_lmv3_cache_backend
+
+        backend, keygen = create_lmv3_cache_backend(config.checkpoint)
+        lmv3_model = CachedEngine(
+            engine=lmv3_model,
+            cache_backend=backend,
+            key_generator=keygen,
+            enabled=True,
+        )
+
+    # Refactored: simpler use case instantiation
     use_case = EnrichDatasetWithLMv3(
         lmv3_engine=lmv3_model,
         image_storage=images_repository,
-        checkpoint=config.checkpoint,
-        enable_cache=config.enable_cache,
     )
 
-    # Execute use case
     request = EnrichWithLMv3Request(
         dataset=dataset  # pyright: ignore[reportArgumentType]
-    )  # FIXME: Resolve generics mismatch between EnrichWithLMv3Request and BaseDataset types
+    )
     response = use_case.execute(request)
     random_sample = dataset.items[random.randint(0, len(dataset.items) - 1)]
 
@@ -180,8 +181,7 @@ async def pred__lmv3_enriched_dataset__pydantic(
             "random_sample": MetadataValue.json(
                 {k: v for k, v in random_sample.model_dump().items() if k != "image"}
             ),
-            "lmv3_executions": MetadataValue.int(response.lmv3_executions),
-            "cache_hits": MetadataValue.int(response.cache_hits),
+            "processed_count": MetadataValue.int(response.processed_count),
         }
     )
 
