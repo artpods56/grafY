@@ -12,19 +12,19 @@ The System Context diagram shows the overall system scope and how it interacts w
 C4Context
     title System Context Diagram - Notarius Historical Schematism Indexing
 
-    Person_Ext(Researchers, "Historical Researchers", "Researchers at the Centre for Medieval Studies who need to extract and index data from historical schematism documents.")
-    Person_Admin(Dagster, "Dagster Scheduler", "Automated scheduling system for batch processing pipelines.")
+    Person(Researchers, "Historical Researchers", "Researchers at the Centre for Medieval Studies who need to extract and index data from historical schematism documents.")
+    Person(Dagster, "Dagster Scheduler", "Automated scheduling system for batch processing pipelines.")
 
-    System_Notarius(Notarius, "Notarius Engine", "Historical Schematism Indexing & Extraction Engine. Extracts structured data (deanery, parish, dedication, building material) from historical church documents using OCR, LayoutLMv3, and LLMs.")
+    System(Notarius, "Notarius Engine", "Historical Schematism Indexing & Extraction Engine. Extracts structured data (deanery, parish, dedication, building material) from historical church documents using OCR, LayoutLMv3, and LLMs.")
 
-    System_Ext_LLM(LLM Providers, "LLM APIs", "External LLM services (OpenAI-compatible, local models) for structured extraction and entity recognition.")
-    System_Ext_Storage(Object Storage, "File Storage", "Persistent storage for PDFs, images, and extracted datasets.")
-    System_Ext_DB(PostgreSQL, "PostgreSQL", "Metadata storage for tracking processed documents, cache entries, and pipeline state.")
+    System_Ext(LLMProviders, "LLM APIs", "External LLM services (OpenAI-compatible, local models) for structured extraction and entity recognition.")
+    System_Ext(ObjectStorage, "File Storage", "Persistent storage for PDFs, images, and extracted datasets.")
+    System_Ext(PostgreSQL, "PostgreSQL", "Metadata storage for tracking processed documents, cache entries, and pipeline state.")
 
     Rel(Researchers, Notarius, "Uploads PDFs", "HTTPS/REST")
     Rel(Dagster, Notarius, "Triggers batch jobs", "gRPC/HTTP")
-    Rel(Notarius, LLM Providers, "Sends extraction prompts", "HTTPS")
-    Rel(Notarius, Object Storage, "Reads/writes files", "Local/S3")
+    Rel(Notarius, LLMProviders, "Sends extraction prompts", "HTTPS")
+    Rel(Notarius, ObjectStorage, "Reads/writes files", "Local/S3")
     Rel(Notarius, PostgreSQL, "Stores metadata", "SQL")
 ```
 
@@ -160,7 +160,11 @@ C4Component
     Rel(app_services, inbound_ports, "Implements")
     Rel(domain_entities, domain_protocols, "Uses")
     Rel(domain_services, domain_entities, "Operates on")
-    Rel(outbound_ports, infra_adapters, "Implemented by")
+    Rel(ocr_adapters, outbound_ports, "Implements")
+    Rel(llm_adapters, outbound_ports, "Implements")
+    Rel(lmv3_adapters, outbound_ports, "Implements")
+    Rel(storage_adapters, outbound_ports, "Implements")
+    Rel(cache_adapters, outbound_ports, "Implements")
     Rel(ocr_adapters, domain_protocols, "Depends on")
     Rel(llm_adapters, domain_protocols, "Depends on")
     Rel(storage_adapters, domain_protocols, "Depends on")
