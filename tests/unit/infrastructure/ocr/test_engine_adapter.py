@@ -547,3 +547,86 @@ class TestOcrEngine:
         assert isinstance(result, dict)
         assert "text" in result
         assert result == sample_ocr_dict
+
+
+class TestPredictDeprecationWarning:
+    """Test suite for OCREngine.predict() deprecation warning."""
+
+    @pytest.fixture
+    def engine(self, ocr_config: PytesseractOCRConfig) -> OCREngine:
+        """Create an engine instance for testing."""
+        return OCREngine(config=ocr_config)
+
+    def test_predict_emits_deprecation_warning(
+        self, engine: OCREngine, sample_image: PILImage
+    ) -> None:
+        """Test that predict() emits a DeprecationWarning."""
+        with pytest.warns(DeprecationWarning, match="predict.*deprecated.*process"):
+            engine.predict(sample_image, text_only=True)
+
+    def test_predict_emits_deprecation_warning_structured(
+        self, engine: OCREngine, sample_image: PILImage
+    ) -> None:
+        """Test that predict() with text_only=False emits a DeprecationWarning."""
+        with pytest.warns(DeprecationWarning, match="predict.*deprecated.*process"):
+            engine.predict(sample_image, text_only=False)
+
+    def test_predict_emits_deprecation_warning_default(
+        self, engine: OCREngine, sample_image: PILImage
+    ) -> None:
+        """Test that predict() with default args emits a DeprecationWarning."""
+        with pytest.warns(DeprecationWarning, match="predict.*deprecated.*process"):
+            engine.predict(sample_image)
+
+    def test_deprecation_warning_stacklevel(
+        self, engine: OCREngine, sample_image: PILImage
+    ) -> None:
+        """Test that DeprecationWarning points to calling code, not engine."""
+        with pytest.warns(DeprecationWarning) as record:
+            engine.predict(sample_image, text_only=True)
+
+        assert len(record) == 1
+        warning = record[0]
+        assert "predict() is deprecated, use process() instead" in str(warning.message)
+
+
+class TestPredictDeprecationWarning:
+    """Test suite for OCREngine.predict() deprecation warning."""
+
+    @pytest.fixture
+    def engine(self, ocr_config: PytesseractOCRConfig) -> OCREngine:
+        """Create an engine instance for testing."""
+        return OCREngine(config=ocr_config)
+
+    def test_predict_emits_deprecation_warning(
+        self, engine: OCREngine, sample_image: PILImage
+    ) -> None:
+        """Test that predict() emits a DeprecationWarning."""
+        with pytest.warns(DeprecationWarning, match="predict.*deprecated.*process"):
+            engine.predict(sample_image, text_only=True)
+
+    def test_predict_emits_deprecation_warning_structured(
+        self, engine: OCREngine, sample_image: PILImage
+    ) -> None:
+        """Test that predict() with text_only=False emits a DeprecationWarning."""
+        with pytest.warns(DeprecationWarning, match="predict.*deprecated.*process"):
+            engine.predict(sample_image, text_only=False)
+
+    def test_predict_emits_deprecation_warning_default(
+        self, engine: OCREngine, sample_image: PILImage
+    ) -> None:
+        """Test that predict() with default args emits a DeprecationWarning."""
+        with pytest.warns(DeprecationWarning, match="predict.*deprecated.*process"):
+            engine.predict(sample_image)
+
+    def test_deprecation_warning_stacklevel(
+        self, engine: OCREngine, sample_image: PILImage
+    ) -> None:
+        """Test that DeprecationWarning points to calling code, not engine."""
+        with pytest.warns(DeprecationWarning) as record:
+            engine.predict(sample_image, text_only=True)
+
+        assert len(record) == 1
+        warning = record[0]
+        assert "predict() is deprecated, use process() instead" in str(warning.message)
+
