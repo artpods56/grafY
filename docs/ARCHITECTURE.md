@@ -119,55 +119,49 @@ C4Container
 The Component diagram shows the internal structure of the Notarius application, organized by hexagonal architecture layers.
 
 ```mermaid
-C4Component
-    title Component Diagram - Notarius Hexagonal Architecture
+flowchart TB
+    subgraph orchestration["Orchestration Layer (Dagster)"]
+        assets["Dagster Assets<br/>Entry points for pipelines"]
+        jobs["Dagster Jobs<br/>Job definitions"]
+        resources["Resources<br/>OCREngine, LLMEngine, Storage"]
+    end
 
-    Container_Boundary(app, "Notarius Application", "Python") {
-        
-        Component(orchestration_assets, "Dagster Assets", "Python", "Entry points for pipelines. Wire dependencies via resource parameters.")
-        Component(orchestration_jobs, "Dagster Jobs", "Python", "Job definitions combining assets into executable pipelines.")
-        Component(orchestration_resources, "Resources", "Python", "Configurable resources (OCREngine, LLMEngine, Storage) injected into assets.")
-        
-        Component_Boundary(app_layer, "Application Layer") {
-            Component(use_cases, "Use Cases", "Python", "Business workflow orchestration: IngestPDFUseCase, EnrichDatasetWithOCR, EvaluationUseCase.")
-            Component(app_services, "Application Services", "Python", "Processors, Builders, Scorers implementing core business logic.")
-            
-            Component_Boundary(ports, "Ports (Interfaces)") {
-                Component(inbound_ports, "Inbound Ports", "Python", "Primary/Driver ports: ExtractionService, ParsingService, EvaluationService.")
-                Component(outbound_ports, "Outbound Ports", "Python", "Secondary/Driven ports: PDFIngestor, LLMProvider, ConfigurableEngine, BaseCache, FileStorage.")
-            }
-        }
-        
-        Component_Boundary(domain_layer, "Domain Layer") {
-            Component(domain_entities, "Entities", "Python", "Domain models: SchematismPage, SchematismEntry, ChatMessage, PageContext.")
-            Component(domain_protocols, "Protocols", "Python", "Interfaces: BaseRequest[T], BaseResponse[T], FileStreamProtocol.")
-            Component(domain_services, "Domain Services", "Python", "Domain logic: Parser for data normalization.")
-        }
-        
-        Component_Boundary(infra_layer, "Infrastructure Layer") {
-            Component(ocr_adapters, "OCR Adapters", "Python", "Implementations: OCREngine (Tesseract), PDFPlumberIngestor.")
-            Component(llm_adapters, "LLM Adapters", "Python", "Implementations: OpenAICompatibleProvider, LLMEngine, LLMCache.")
-            Component(lmv3_adapters, "LMv3 Adapters", "Python", "Implementations: LMv3Engine for layout-aware extraction.")
-            Component(storage_adapters, "Storage Adapters", "Python", "Implementations: LocalFileStorage, ImageRepository.")
-            Component(cache_adapters, "Cache Adapters", "Python", "Implementations: PickleCache[T], CachedEngine decorator.")
-        }
-    }
+    subgraph application["Application Layer"]
+        use_cases["Use Cases<br/>IngestPDF, EnrichDatasetWithOCR"]
+        app_services["Application Services<br/>Processors, Builders, Scorers"]
+        inbound["Inbound Ports<br/>ExtractionService, ParsingService"]
+        outbound["Outbound Ports<br/>PDFIngestor, LLMProvider, ConfigurableEngine"]
+    end
 
-    Rel(orchestration_assets, use_cases, "Creates and executes")
-    Rel(orchestration_resources, outbound_ports, "Implements")
-    Rel(use_cases, inbound_ports, "Implements")
-    Rel(use_cases, outbound_ports, "Uses (Dependency Injection)")
-    Rel(app_services, inbound_ports, "Implements")
-    Rel(domain_entities, domain_protocols, "Uses")
-    Rel(domain_services, domain_entities, "Operates on")
-    Rel(ocr_adapters, outbound_ports, "Implements")
-    Rel(llm_adapters, outbound_ports, "Implements")
-    Rel(lmv3_adapters, outbound_ports, "Implements")
-    Rel(storage_adapters, outbound_ports, "Implements")
-    Rel(cache_adapters, outbound_ports, "Implements")
-    Rel(ocr_adapters, domain_protocols, "Depends on")
-    Rel(llm_adapters, domain_protocols, "Depends on")
-    Rel(storage_adapters, domain_protocols, "Depends on")
+    subgraph domain["Domain Layer"]
+        entities["Entities<br/>SchematismPage, SchematismEntry"]
+        protocols["Protocols<br/>BaseRequest, BaseResponse"]
+        dom_services["Domain Services<br/>Parser"]
+    end
+
+    subgraph infrastructure["Infrastructure Layer"]
+        ocr["OCR Adapters<br/>OCREngine, PDFPlumberIngestor"]
+        llm["LLM Adapters<br/>OpenAICompatibleProvider, LLMEngine"]
+        lmv3["LMv3 Adapters<br/>LMv3Engine"]
+        storage["Storage Adapters<br/>LocalFileStorage, ImageRepository"]
+        cache["Cache Adapters<br/>PickleCache, CachedEngine"]
+    end
+
+    assets --> use_cases
+    resources --> outbound
+    use_cases --> inbound
+    use_cases --> outbound
+    app_services --> inbound
+    entities --> protocols
+    dom_services --> entities
+    ocr --> outbound
+    llm --> outbound
+    lmv3 --> outbound
+    storage --> outbound
+    cache --> outbound
+    ocr --> protocols
+    llm --> protocols
+    storage --> protocols
 ```
 
 ### C3 Layer Descriptions
