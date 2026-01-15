@@ -1,5 +1,6 @@
 """OCR _engine adapter using PyTesseract."""
 
+import warnings
 from dataclasses import dataclass
 from typing import final, override, Literal, overload, cast
 
@@ -226,8 +227,8 @@ class OCREngine(ConfigurableEngine[PytesseractOCRConfig, OCRRequest, OCRResponse
     ) -> str | PytesseractOCRResultDict:
         """Perform OCR on image (legacy interface for backward compatibility).
 
-        Note: This method is maintained for backward compatibility with existing
-        tests and code. New code should use the `process` method instead.
+        .. deprecated::
+            Use `process` method instead. This method will be removed in a future version.
 
         Args:
             image: Input image as PIL.Image
@@ -236,6 +237,11 @@ class OCREngine(ConfigurableEngine[PytesseractOCRConfig, OCRRequest, OCRResponse
         Returns:
             Either extracted text string or structured OCR dictionary
         """
+        warnings.warn(
+            "predict() is deprecated, use process() instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if text_only:
             return self._text_ocr(image)
         else:

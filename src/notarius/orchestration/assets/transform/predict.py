@@ -86,7 +86,6 @@ async def pred__ocr_enriched_dataset__pydantic(
     images_repository: dg.ResourceParam[ImageRepository],
     ocr_engine: dg.ResourceParam[OCREngine],
 ):
-
     config = ocr_engine.config
 
     use_case = EnrichDatasetWithOCR(
@@ -164,7 +163,7 @@ async def pred__lmv3_enriched_dataset__pydantic(
     # Execute use case
     request = EnrichWithLMv3Request(
         dataset=dataset  # pyright: ignore[reportArgumentType]
-    )  # this is about the generics missmatch [TODO] resolve this issue somehow
+    )  # FIXME: Resolve generics mismatch between EnrichWithLMv3Request and BaseDataset types
     response = use_case.execute(request)
     random_sample = dataset.items[random.randint(0, len(dataset.items) - 1)]
 

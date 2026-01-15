@@ -31,6 +31,7 @@ from notarius.orchestration.pipelines.source_generation import (
     source_generation_job,
 )
 # TODO: Re-enable when pdf_pipeline is implemented
+# https://github.com/anomalyco/KUL_IDUB_EcclesialSchematisms/issues/X
 # from notarius.orchestration.jobs.pdf_pipeline import (
 #     pdf_ingestion_assets,
 #     pdf_ingestion_job,
@@ -94,7 +95,9 @@ defs = dg.Definitions(
         "config_manager": get_config_manager(),
         "parser": Parser(),
         "io_manager": dill_io_manager(base_dir=str(TMP_DIR / "dagster_dill_storage")),
-        "hf_dataset_io_manager": hf_dataset_io_manager(base_dir=str(TMP_DIR / "dagster_hf_storage")),
+        "hf_dataset_io_manager": hf_dataset_io_manager(
+            base_dir=str(TMP_DIR / "dagster_hf_storage")
+        ),
         "excel_writer": ExcelWriterResource(writing_path=str(OUTPUTS_DIR)),
         "wandb_run": WandBRunResource(
             project_name="KUL_IDUB_EcclesiaSchematisms",

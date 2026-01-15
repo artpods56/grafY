@@ -82,7 +82,7 @@ class OpenAICompatibleProvider(LLMProvider[OpenAI]):
 
             if text_format:
                 try:
-                    response = self.client.responses.parse(  # [TODO] could probably switch to responses.create in the future because parse can throw on validation error inside the openai library
+                    response = self.client.responses.parse(
                         model=self.config.model,
                         input=openai_messages,
                         text_format=text_format,
