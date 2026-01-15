@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from PIL import Image
 
-from notarius.application.use_cases.inference.add_lmv3_preds_to_dataset import (
+from notarius.application.use_cases.inference.enrich_dataset_with_lmv3_predictions import (
     EnrichDatasetWithLMv3,
     EnrichWithLMv3Request,
     EnrichWithLMv3Response,
@@ -144,61 +144,30 @@ class TestEnrichWithLMv3Response:
         )
         response = EnrichWithLMv3Response(
             dataset=prediction_dataset,
-            lmv3_executions=5,
-            cache_hits=3,
+            processed_count=5,
         )
 
         assert response.dataset is prediction_dataset
-        assert response.lmv3_executions == 5
-        assert response.cache_hits == 3
+        assert response.processed_count == 5
 
 
 class TestEnrichDatasetWithLMv3:
     """Test suite for EnrichDatasetWithLMv3 use case."""
 
-    def test_init_with_cache_disabled(
+    def test_init(
         self,
         fake_lmv3_engine: FakeLMv3Engine,
         fake_image_storage: FakeImageStorage,
     ) -> None:
-        """Test initialization with caching disabled."""
+        """Test initialization."""
         use_case = EnrichDatasetWithLMv3(
             lmv3_engine=fake_lmv3_engine,
             image_storage=fake_image_storage,
-            checkpoint="test-checkpoint",
-            enable_cache=False,
         )
 
-        # When cache is disabled, the engine should be used directly
+        # Engine and storage should be stored directly
         assert use_case.lmv3_engine is fake_lmv3_engine
         assert use_case.image_storage is fake_image_storage
-
-    @patch(
-        "notarius.application.use_cases.inference.add_lmv3_preds_to_dataset.create_lmv3_cache_backend"
-    )
-    def test_init_with_cache_enabled(
-        self,
-        mock_create_cache: MagicMock,
-        fake_lmv3_engine: FakeLMv3Engine,
-        fake_image_storage: FakeImageStorage,
-    ) -> None:
-        """Test initialization with caching enabled."""
-        mock_backend = MagicMock()
-        mock_keygen = MagicMock()
-        mock_create_cache.return_value = (mock_backend, mock_keygen)
-
-        use_case = EnrichDatasetWithLMv3(
-            lmv3_engine=fake_lmv3_engine,
-            image_storage=fake_image_storage,
-            checkpoint="test-checkpoint",
-            enable_cache=True,
-        )
-
-        # When cache is enabled, the engine should be wrapped
-        from notarius.application.ports.outbound.cached_engine import CachedEngine
-
-        assert isinstance(use_case.lmv3_engine, CachedEngine)
-        mock_create_cache.assert_called_once_with("test-checkpoint")
 
     def test_execute_processes_all_items(
         self,
@@ -210,8 +179,6 @@ class TestEnrichDatasetWithLMv3:
         use_case = EnrichDatasetWithLMv3(
             lmv3_engine=fake_lmv3_engine,
             image_storage=fake_image_storage,
-            checkpoint="test-checkpoint",
-            enable_cache=False,
         )
 
         request = EnrichWithLMv3Request(dataset=sample_dataset)
@@ -232,8 +199,6 @@ class TestEnrichDatasetWithLMv3:
         use_case = EnrichDatasetWithLMv3(
             lmv3_engine=fake_lmv3_engine,
             image_storage=fake_image_storage,
-            checkpoint="test-checkpoint",
-            enable_cache=False,
         )
 
         request = EnrichWithLMv3Request(dataset=sample_dataset)
@@ -254,8 +219,6 @@ class TestEnrichDatasetWithLMv3:
         use_case = EnrichDatasetWithLMv3(
             lmv3_engine=fake_lmv3_engine,
             image_storage=fake_image_storage,
-            checkpoint="test-checkpoint",
-            enable_cache=False,
         )
 
         request = EnrichWithLMv3Request(dataset=sample_dataset)
@@ -282,8 +245,6 @@ class TestEnrichDatasetWithLMv3:
         use_case = EnrichDatasetWithLMv3(
             lmv3_engine=fake_lmv3_engine,
             image_storage=fake_image_storage,
-            checkpoint="test-checkpoint",
-            enable_cache=False,
         )
 
         request = EnrichWithLMv3Request(dataset=dataset_with_missing_paths)
@@ -303,38 +264,32 @@ class TestEnrichDatasetWithLMv3:
         use_case = EnrichDatasetWithLMv3(
             lmv3_engine=fake_lmv3_engine,
             image_storage=fake_image_storage,
-            checkpoint="test-checkpoint",
-            enable_cache=False,
         )
 
         request = EnrichWithLMv3Request(dataset=empty_dataset)
         response = use_case.execute(request)
 
         assert len(response.dataset.items) == 0
-        assert response.lmv3_executions == 0
-        assert response.cache_hits == 0
+        assert response.processed_count == 0
         assert len(fake_lmv3_engine.call_history) == 0
 
-    def test_execute_returns_correct_statistics_without_cache(
+    def test_execute_returns_correct_statistics(
         self,
         fake_lmv3_engine: FakeLMv3Engine,
         fake_image_storage: FakeImageStorage,
         sample_dataset: BaseItemDataset,
     ) -> None:
-        """Test that statistics are correct when cache is disabled."""
+        """Test that statistics are correct."""
         use_case = EnrichDatasetWithLMv3(
             lmv3_engine=fake_lmv3_engine,
             image_storage=fake_image_storage,
-            checkpoint="test-checkpoint",
-            enable_cache=False,
         )
 
         request = EnrichWithLMv3Request(dataset=sample_dataset)
         response = use_case.execute(request)
 
-        # Without cache, all executions should be counted as LMv3 executions
-        assert response.lmv3_executions == 2
-        assert response.cache_hits == 0
+        # All items should be processed
+        assert response.processed_count == 2
 
     def test_execute_converts_image_to_rgb(
         self,
@@ -352,8 +307,6 @@ class TestEnrichDatasetWithLMv3:
         use_case = EnrichDatasetWithLMv3(
             lmv3_engine=fake_lmv3_engine,
             image_storage=fake_image_storage,
-            checkpoint="test-checkpoint",
-            enable_cache=False,
         )
 
         request = EnrichWithLMv3Request(dataset=sample_dataset)
@@ -362,40 +315,6 @@ class TestEnrichDatasetWithLMv3:
         # Verify that the engine received RGB images
         for lmv3_request in fake_lmv3_engine.call_history:
             assert lmv3_request.input.mode == "RGB"
-
-    @patch(
-        "notarius.application.use_cases.inference.add_lmv3_preds_to_dataset.create_lmv3_cache_backend"
-    )
-    def test_execute_returns_correct_statistics_with_cache(
-        self,
-        mock_create_cache: MagicMock,
-        fake_lmv3_engine: FakeLMv3Engine,
-        fake_image_storage: FakeImageStorage,
-        sample_dataset: BaseItemDataset,
-    ) -> None:
-        """Test that statistics are correct when cache is enabled."""
-        mock_backend = MagicMock()
-        mock_keygen = MagicMock()
-        mock_create_cache.return_value = (mock_backend, mock_keygen)
-
-        # Mock cache to return None (cache miss) for all requests
-        mock_backend.get.return_value = None
-        mock_backend.set.return_value = True
-        mock_keygen.generate_key.return_value = "test_key"
-
-        use_case = EnrichDatasetWithLMv3(
-            lmv3_engine=fake_lmv3_engine,
-            image_storage=fake_image_storage,
-            checkpoint="test-checkpoint",
-            enable_cache=True,
-        )
-
-        request = EnrichWithLMv3Request(dataset=sample_dataset)
-        response = use_case.execute(request)
-
-        # Stats should come from CachedEngine - all cache misses
-        assert response.lmv3_executions == 2
-        assert response.cache_hits == 0
 
 
 class TestEnrichDatasetWithLMv3Integration:
@@ -412,8 +331,6 @@ class TestEnrichDatasetWithLMv3Integration:
         use_case = EnrichDatasetWithLMv3(
             lmv3_engine=fake_lmv3_engine,
             image_storage=fake_image_storage,
-            checkpoint="test-checkpoint",
-            enable_cache=False,
         )
 
         dataset = BaseItemDataset(
@@ -449,5 +366,4 @@ class TestEnrichDatasetWithLMv3Integration:
         assert response.dataset.items[0].text == "OCR text 1"
         assert response.dataset.items[1].text == "OCR text 2"
 
-        assert response.lmv3_executions == 2
-        assert response.cache_hits == 0
+        assert response.processed_count == 2

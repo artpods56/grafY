@@ -10,10 +10,10 @@ from tests.factories.base import BaseFactory
 from tests.factories.datasets import BaseDatasetFactory, PredictionDatasetFactory
 from tests.factories.entities import SchematismPageFactory
 from tests.factories.messages import ConversationFactory
-from notarius.application.use_cases.inference.add_ocr_to_dataset import (
+from notarius.application.use_cases.inference.enrich_dataset_with_ocr import (
     EnrichWithOCRResponse,
 )
-from notarius.application.use_cases.inference.add_lmv3_preds_to_dataset import (
+from notarius.application.use_cases.inference.enrich_dataset_with_lmv3_predictions import (
     EnrichWithLMv3Response,
 )
 from notarius.application.use_cases.ingestion.ingest_documents_from_pdf import (
@@ -295,16 +295,14 @@ class EnrichWithOCRResponseFactory(BaseFactory[EnrichWithOCRResponse]):
     def build(
         cls,
         dataset: BaseItemDataset | None = None,
-        ocr_executions: int | None = None,
-        cache_hits: int = 0,
+        processed_count: int | None = None,
         **kwargs,
     ) -> EnrichWithOCRResponse:
         """Build an EnrichWithOCRResponse instance.
 
         Args:
             dataset: The enriched dataset
-            ocr_executions: Number of OCR executions (defaults to dataset size)
-            cache_hits: Number of cache hits
+            processed_count: Number of items processed (defaults to dataset size)
             **kwargs: Additional fields
 
         Returns:
@@ -314,20 +312,18 @@ class EnrichWithOCRResponseFactory(BaseFactory[EnrichWithOCRResponse]):
             response = EnrichWithOCRResponseFactory.build()
             response = EnrichWithOCRResponseFactory.build(
                 dataset=BaseDatasetFactory.build(items=10),
-                ocr_executions=8,
-                cache_hits=2
+                processed_count=10
             )
         """
         if dataset is None:
             dataset = BaseDatasetFactory.build()
 
-        if ocr_executions is None:
-            ocr_executions = len(dataset.items)
+        if processed_count is None:
+            processed_count = len(dataset.items)
 
         return EnrichWithOCRResponse(
             dataset=dataset,
-            ocr_executions=ocr_executions,
-            cache_hits=cache_hits,
+            processed_count=processed_count,
             **kwargs,
         )
 
@@ -339,16 +335,14 @@ class EnrichWithLMv3ResponseFactory(BaseFactory[EnrichWithLMv3Response]):
     def build(
         cls,
         dataset: PredictionItemDataset | None = None,
-        lmv3_executions: int | None = None,
-        cache_hits: int = 0,
+        processed_count: int | None = None,
         **kwargs,
     ) -> EnrichWithLMv3Response:
         """Build an EnrichWithLMv3Response instance.
 
         Args:
             dataset: The enriched prediction dataset
-            lmv3_executions: Number of LMv3 executions (defaults to dataset size)
-            cache_hits: Number of cache hits
+            processed_count: Number of items processed (defaults to dataset size)
             **kwargs: Additional fields
 
         Returns:
@@ -358,20 +352,18 @@ class EnrichWithLMv3ResponseFactory(BaseFactory[EnrichWithLMv3Response]):
             response = EnrichWithLMv3ResponseFactory.build()
             response = EnrichWithLMv3ResponseFactory.build(
                 dataset=PredictionDatasetFactory.build(items=5),
-                lmv3_executions=4,
-                cache_hits=1
+                processed_count=5
             )
         """
         if dataset is None:
             dataset = PredictionDatasetFactory.build()
 
-        if lmv3_executions is None:
-            lmv3_executions = len(dataset.items)
+        if processed_count is None:
+            processed_count = len(dataset.items)
 
         return EnrichWithLMv3Response(
             dataset=dataset,
-            lmv3_executions=lmv3_executions,
-            cache_hits=cache_hits,
+            processed_count=processed_count,
             **kwargs,
         )
 

@@ -20,18 +20,24 @@ from tests.factories.responses import (
     EnrichWithOCRResponseFactory,
     EnrichWithLMv3ResponseFactory,
 )
-from notarius.application.use_cases.inference.add_ocr_to_dataset import (
+from notarius.application.use_cases.inference.enrich_dataset_with_ocr import (
     EnrichWithOCRRequest,
     EnrichWithOCRResponse,
 )
-from notarius.application.use_cases.inference.add_lmv3_preds_to_dataset import (
+from notarius.application.use_cases.inference.enrich_dataset_with_lmv3_predictions import (
     EnrichWithLMv3Request,
     EnrichWithLMv3Response,
 )
 from notarius.infrastructure.ocr.engine_adapter import OCRRequest, OCRResponse
 from notarius.infrastructure.ocr.types import SimpleOCRResult, StructuredOCRResult
-from notarius.infrastructure.ml_models.lmv3.engine_adapter import LMv3Request, LMv3Response
-from notarius.infrastructure.llm.engine_adapter import CompletionRequest, CompletionResult
+from notarius.infrastructure.ml_models.lmv3.engine_adapter import (
+    LMv3Request,
+    LMv3Response,
+)
+from notarius.infrastructure.llm.engine_adapter import (
+    CompletionRequest,
+    CompletionResult,
+)
 
 
 class TestEnrichWithOCRRequestFactory:
@@ -265,18 +271,13 @@ class TestEnrichWithOCRResponseFactory:
 
         assert isinstance(response, EnrichWithOCRResponse)
         assert response.dataset is not None
-        assert response.ocr_executions == len(response.dataset.items)
-        assert response.cache_hits == 0
+        assert response.processed_count == len(response.dataset.items)
 
     def test_build_with_custom_values(self):
         """Test that build() accepts custom values."""
-        response = EnrichWithOCRResponseFactory.build(
-            ocr_executions=8,
-            cache_hits=2
-        )
+        response = EnrichWithOCRResponseFactory.build(processed_count=8)
 
-        assert response.ocr_executions == 8
-        assert response.cache_hits == 2
+        assert response.processed_count == 8
 
 
 class TestEnrichWithLMv3ResponseFactory:
@@ -288,15 +289,10 @@ class TestEnrichWithLMv3ResponseFactory:
 
         assert isinstance(response, EnrichWithLMv3Response)
         assert response.dataset is not None
-        assert response.lmv3_executions == len(response.dataset.items)
-        assert response.cache_hits == 0
+        assert response.processed_count == len(response.dataset.items)
 
     def test_build_with_custom_values(self):
         """Test that build() accepts custom values."""
-        response = EnrichWithLMv3ResponseFactory.build(
-            lmv3_executions=5,
-            cache_hits=3
-        )
+        response = EnrichWithLMv3ResponseFactory.build(processed_count=5)
 
-        assert response.lmv3_executions == 5
-        assert response.cache_hits == 3
+        assert response.processed_count == 5

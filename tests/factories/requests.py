@@ -9,10 +9,10 @@ from pydantic import BaseModel
 from tests.factories.base import BaseFactory
 from tests.factories.datasets import BaseDatasetFactory, PredictionDatasetFactory
 from tests.factories.messages import ConversationFactory
-from notarius.application.use_cases.inference.add_ocr_to_dataset import (
+from notarius.application.use_cases.inference.enrich_dataset_with_ocr import (
     EnrichWithOCRRequest,
 )
-from notarius.application.use_cases.inference.add_lmv3_preds_to_dataset import (
+from notarius.application.use_cases.inference.enrich_dataset_with_lmv3_predictions import (
     EnrichWithLMv3Request,
 )
 from notarius.application.use_cases.ingestion.ingest_documents_from_pdf import (
@@ -30,10 +30,7 @@ class EnrichWithOCRRequestFactory(BaseFactory[EnrichWithOCRRequest]):
 
     @classmethod
     def build(
-        cls,
-        dataset: BaseItemDataset | None = None,
-        mode: OCRMode = "text",
-        **kwargs
+        cls, dataset: BaseItemDataset | None = None, mode: OCRMode = "text", **kwargs
     ) -> EnrichWithOCRRequest:
         """Build an EnrichWithOCRRequest instance.
 
@@ -55,11 +52,7 @@ class EnrichWithOCRRequestFactory(BaseFactory[EnrichWithOCRRequest]):
         if dataset is None:
             dataset = BaseDatasetFactory.build()
 
-        return EnrichWithOCRRequest(
-            dataset=dataset,
-            mode=mode,
-            **kwargs
-        )
+        return EnrichWithOCRRequest(dataset=dataset, mode=mode, **kwargs)
 
 
 class EnrichWithLMv3RequestFactory(BaseFactory[EnrichWithLMv3Request]):
@@ -67,9 +60,7 @@ class EnrichWithLMv3RequestFactory(BaseFactory[EnrichWithLMv3Request]):
 
     @classmethod
     def build(
-        cls,
-        dataset: BaseItemDataset | None = None,
-        **kwargs
+        cls, dataset: BaseItemDataset | None = None, **kwargs
     ) -> EnrichWithLMv3Request:
         """Build an EnrichWithLMv3Request instance.
 
@@ -97,10 +88,7 @@ class OCRRequestFactory(BaseFactory[OCRRequest]):
 
     @classmethod
     def build(
-        cls,
-        input: Image.Image | None = None,
-        mode: OCRMode = "text",
-        **kwargs
+        cls, input: Image.Image | None = None, mode: OCRMode = "text", **kwargs
     ) -> OCRRequest:
         """Build an OCRRequest instance.
 
@@ -129,11 +117,7 @@ class LMv3RequestFactory(BaseFactory[LMv3Request]):
     """Factory for creating LMv3Request instances (engine-level)."""
 
     @classmethod
-    def build(
-        cls,
-        input: Image.Image | None = None,
-        **kwargs
-    ) -> LMv3Request:
+    def build(cls, input: Image.Image | None = None, **kwargs) -> LMv3Request:
         """Build an LMv3Request instance.
 
         Args:
@@ -162,7 +146,7 @@ class CompletionRequestFactory(BaseFactory[CompletionRequest]):
         cls,
         input: Conversation | None = None,
         structured_output: type[BaseModel] | None = None,
-        **kwargs
+        **kwargs,
     ) -> CompletionRequest:
         """Build a CompletionRequest instance.
 
@@ -185,16 +169,12 @@ class CompletionRequestFactory(BaseFactory[CompletionRequest]):
             input = ConversationFactory.build()
 
         return CompletionRequest(
-            input=input,
-            structured_output=structured_output,
-            **kwargs
+            input=input, structured_output=structured_output, **kwargs
         )
 
     @classmethod
     def build_with_system_prompt(
-        cls,
-        system_prompt: str,
-        structured_output: type[BaseModel] | None = None
+        cls, system_prompt: str, structured_output: type[BaseModel] | None = None
     ) -> CompletionRequest:
         """Build a CompletionRequest with a system prompt.
 
@@ -266,7 +246,9 @@ class IngestPDFRequestFactory(BaseFactory[IngestPDFRequest]):
         )
 
     @classmethod
-    def build_with_source_dir(cls, source_dir: str, glob_pattern: str = "*.pdf") -> IngestPDFRequest:
+    def build_with_source_dir(
+        cls, source_dir: str, glob_pattern: str = "*.pdf"
+    ) -> IngestPDFRequest:
         """Build an IngestPDFRequest with a source directory.
 
         Args:
