@@ -1,11 +1,11 @@
 """Inference use cases for enriching datasets with model predictions."""
 
-from notarius.application.use_cases.inference.add_ocr_to_dataset import (
+from notarius.application.use_cases.inference.enrich_dataset_with_ocr import (
     EnrichDatasetWithOCR,
     EnrichWithOCRRequest,
     EnrichWithOCRResponse,
 )
-from notarius.application.use_cases.inference.add_lmv3_preds_to_dataset import (
+from notarius.application.use_cases.inference.enrich_dataset_with_lmv3_predictions import (
     EnrichDatasetWithLMv3,
     EnrichWithLMv3Request,
     EnrichWithLMv3Response,
