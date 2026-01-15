@@ -27,7 +27,7 @@ from notarius.orchestration.assets.transform.preprocess import (
     preprocessed__hf__dataset,
 )
 
-from notarius.orchestration.pipelines.evaluation import (
+from notarius.orchestration.jobs.evaluation import (
     ALL_EVALUATION_ASSETS_WITH_CONFIGS,
 )
 
