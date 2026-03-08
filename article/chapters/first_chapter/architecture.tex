@@ -1,0 +1,230 @@
+
+\section{Architektura hybrydowa: OCR, model dokumentowy i model wizyjny}\label{subsec:architektura}
+
+Ostatecznie przyjęta metoda opiera się na trzech komponentach działających sekwencyjnie dla każdej strony.
+
+Pierwszy stanowi optyczne rozpoznawanie znaków (OCR).
+Początkowo wykorzystywano w tym celu silnik Tesseract, skonfigurowany do obsługi trzech alfabetów (łacińskiego, polskiego i rosyjskiego), który dostarcza surowy tekst strony wraz ze współrzędnymi każdego rozpoznanego słowa na obrazie \parencite{smith2007tesseract}.
+Tesseract zwraca jednak jednorodny strumień tekstu, pozbawiony informacji o strukturze typograficznej oryginału: pogrubienia nagłówków dekanatów, tabelaryczne zestawienia danych parafialnych czy podziały na kolumny zostają utracone.
+Tymczasem cechy te okazały się istotne zarówno dla poprawnej interpretacji źródła, jak i dla skuteczności dalszych etapów ekstrakcji.
+Potrzeba ich zachowania skłoniła do zastosowania na etapie OCR również modelu wizyjnego (Vision LLM), który konwertuje skan strony na tekst w formacie Markdown wiernie odwzorowującym układ druku: nagłówki, pogrubienia, podziały na akapity, tabele i strukturę kolumnową.
+Rozwiązanie to jest znacząco bardziej wymagające obliczeniowo od klasycznego OCR, lecz dostarcza reprezentację tekstową bogatszą i bliższą oryginałowi.
+W ostatecznej wersji systemu Tesseract pozostaje w użyciu wyłącznie jako źródło współrzędnych słów niezbędnych dla modelu LayoutLMv3, natomiast tekst strony przekazywany do głównego modelu ekstrakcji pochodzi z OCR realizowanego przez model wizyjny.
+Żaden z wyników OCR nie jest traktowany jako autorytatywny. Oba pełnią rolę pomocniczą wobec obrazu strony, który pozostaje pierwotnym źródłem informacji.
+
+Drugim komponentem jest model LayoutLMv3 firmy Microsoft, wyspecjalizowany w rozumieniu układu dokumentów \parencite{huang2022layoutlmv3}.
+W ramach projektu podjęto próbę wytrenowania tego modelu jako samodzielnego narzędzia ekstrakcji.
+W tym celu postawiono instancję platformy Label Studio z dedykowanym backendem uczenia maszynowego, umożliwiającym wstępne adnotowanie stron za pomocą bieżącej wersji modelu i ich ręczną korektę przez anotatorów \parencite{labelstudio_ml_backend_2026}.
+Zbiór treningowy objął dziesięć schematyzmów o zróżnicowanym charakterze, a model trenowano z użyciem notacji BIO na siedmiu klasach encji: parafia, dekanat, wezwanie, materiał budowlany, numer strony, typ obiektu oraz klasyfikacja miejscowości, stosując funkcję straty Focal Loss w celu zrównoważenia silnie nierównomiernego rozkładu klas \parencite{lin2017focal}.
+Ostatnia z wymienionych klas nie została jednak wykorzystana w końcowym schemacie ekstrakcji przyjętym dla rozwiązania docelowego.
+Wyniki na schematyzmach o układzie zbliżonym do danych treningowych były obiecujące, jednak dołączenie schematyzmów o odmiennej strukturze typograficznej powodowało wyraźny spadek jakości, ponieważ model nie generalizował dostatecznie dobrze na różnorodność formatów obecnych w korpusie.
+Ponadto architektura LayoutLMv3 przetwarza każdą stronę niezależnie i nie oferuje mechanizmu propagacji kontekstu między stronami, co uniemożliwiało rozwiązanie problemu dziedziczenia przynależności dekanalnej opisanego w sekcji~\ref{sec:charakterystyka_zadania}.
+Z tych powodów model ten nie został przyjęty jako samodzielne narzędzie ekstrakcji, lecz pełni rolę opcjonalnego generatora podpowiedzi: na podstawie obrazu strony i danych z Tesseracta oznacza poszczególne słowa etykietami pól, a wynik ten przekazywany jest do głównego modelu wizyjnego jako zestaw niepewnych sugestii wymagających weryfikacji na podstawie obrazu.
+
+Trzeci i centralny komponent stanowi wielomodalny duży model językowy (\textit{Vision LLM}), zdolny do jednoczesnej analizy obrazu strony i towarzyszącego mu tekstu.
+Model ten otrzymuje: obraz bieżącej strony jako pierwotne źródło informacji, tekst OCR bieżącej strony jako wsparcie, opcjonalne podpowiedzi z modelu LayoutLMv3, kontekst z poprzedniej strony oraz tekst OCR strony następnej, który służy uzupełnieniu wpisów rozpoczynających się na bieżącej stronie, lecz urwanych u jej dołu.
+Na podstawie tych danych wejściowych model zwraca ustrukturyzowany obiekt JSON zawierający listę rekordów parafialnych i obiekt kontekstu do przekazania dalej.
+Na poziomie operacyjnym oznacza to architekturę, w której surowy obraz strony trafia równolegle do dwóch torów OCR: klasycznego Tesseracta oraz OCR realizowanego przez model wizyjny.
+Niezależnie od tego ten sam obraz wchodzi bezpośrednio do właściwego pakietu wejściowego modelu ekstrakcji, gdzie jest łączony z wynikami OCR, podpowiedziami LayoutLMv3 oraz dodatkowym kontekstem wielostronicowym.
+Schemat tej architektury przedstawiono na rys.~\ref{fig:system-architecture}.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    scale=0.9,
+    transform shape,
+    >=latex,
+    every node/.style={font=\footnotesize},
+    source/.style={
+        draw,
+        rounded corners,
+        fill=blue!8,
+        text width=2.8cm,
+        minimum height=1.35cm,
+        align=center
+    },
+    aux/.style={
+        draw,
+        rounded corners,
+        fill=gray!10,
+        text width=3.0cm,
+        minimum height=1.25cm,
+        align=center
+    },
+    input/.style={
+        draw,
+        rounded corners,
+        fill=yellow!15,
+        text width=3.3cm,
+        minimum height=1.35cm,
+        align=center
+    },
+    stage/.style={
+        draw,
+        rounded corners,
+        fill=orange!12,
+        text width=3.3cm,
+        minimum height=1.45cm,
+        align=center
+    },
+    output/.style={
+        draw,
+        rounded corners,
+        fill=green!10,
+        text width=3.3cm,
+        minimum height=1.45cm,
+        align=center
+    },
+    arrow/.style={->, thick}
+]
+
+% Main flow
+\node[source] (scan) at (4,0) {Obraz bieżącej\\strony};
+
+\node[aux] (tesseract) at (4,1.8) {Tesseract OCR\\tekst + współrzędne słów};
+\node[aux] (visionocr) at (4,-1.8) {Vision LLM OCR\\tekst strony w Markdown};
+
+\node[input] (context) at (8,2.3)  {Dodatkowy kontekst\\poprzednia strona + OCR strony następnej};
+
+\node[aux] (layoutlmv3) at (8,-2.3) {LayoutLMv3\\podpowiedzi pól};
+
+\node[stage] (packet) at (9,0) {Pakiet wejściowy XML\\obraz + OCR + podpowiedzi + kontekst};
+
+\node[stage] (llm) at (13,0) {Vision LLM\\właściwa ekstrakcja};
+
+\node[output] (out) at (17,0) {JSON strony\\+ nowy PageContext};
+
+% Arrows
+\draw[arrow] (scan) -- (tesseract);
+\draw[arrow] (scan) -- (visionocr);
+
+
+\draw[arrow] (scan) -- (packet);
+\draw[arrow] (tesseract) -- (packet);
+\draw[arrow] (visionocr) -- (packet);
+\draw[arrow] (context) -- (packet);
+\draw[arrow] (layoutlmv3) -- (packet);
+
+\draw[arrow] (packet) -- (llm);
+\draw[arrow] (llm) -- (out);
+
+\end{tikzpicture}
+\caption{Pipeline ekstrakcji danych z pojedynczej strony dokumentu.}
+\label{fig:system-architecture}
+\end{figure}
+
+Zachowanie modelu regulowane jest szczegółową instrukcją systemową o objętości ok.\ 350 wierszy, obejmującą: definicję roli, reguły ekstrakcji dla każdego pola, zasady odczytu układów jedno- i wielokolumnowych, reguły dziedziczenia kontekstu dekanalnego, dozwolone i zabronione korekty odczytu OCR oraz listę kontrolną jakości wynikowego obiektu JSON\@.
+Istotne jest przy tym, że prompty nie miały postaci swobodnego opisu w języku naturalnym, lecz były organizowane w formacie XML-podobnym, z osobnymi blokami dla roli modelu, wejściowego kontekstu wielostronicowego, reguł ekstrakcji oraz schematu odpowiedzi.
+Analogiczną strukturę miał prompt użytkownika, w którym osobnymi znacznikami przekazywano kontekst poprzedniej strony, podpowiedzi z LayoutLMv3 oraz tekst OCR strony bieżącej i następnej.
+Instrukcję uzupełniają cztery przykłady wzorcowe (\textit{few-shot examples}), ilustrujące typowe scenariusze: stronę z nagłówkiem dekanatu, nagłówek pojawiający się w środku strony, wiele parafii na jednej stronie oraz stronę niezawierającą rekordów parafialnych.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.93\textwidth}
+\begin{lstlisting}
+<SYSTEM_PROMPT>
+  <MULTI_PAGE_CONTEXT>
+    <SUMMARY_FIELD_IMPORTANCE>
+      The `summary` field serves as a compressed memory
+      of document progression.
+    </SUMMARY_FIELD_IMPORTANCE>
+  </MULTI_PAGE_CONTEXT>
+  <VALUE_EXTRACTION_RULES>
+    <DEANERY>
+      If context provides active_deanery but no new heading
+      appears: use inherited value
+    </DEANERY>
+  </VALUE_EXTRACTION_RULES>
+  <OUTPUT_SCHEMA>
+    ...
+  </OUTPUT_SCHEMA>
+</SYSTEM_PROMPT>
+\end{lstlisting}
+\end{minipage}
+\caption{Fragment rzeczywistego promptu systemowego w formacie XML-podobnym. Osobne znaczniki porządkują kontekst wielostronicowy, reguły ekstrakcji oraz oczekiwany schemat odpowiedzi JSON.}
+\label{fig:xml-prompt-fragment}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.93\textwidth}
+\begin{lstlisting}
+<USER_REQUEST>
+  <PREVIOUS_PAGE_CONTEXT>
+    <ACTIVE_DEANERY>Decanatus Wyszynensis</ACTIVE_DEANERY>
+    <PREVIOUS_SUMMARY>Page 14: 3 parishes...</PREVIOUS_SUMMARY>
+  </PREVIOUS_PAGE_CONTEXT>
+  <MODEL_HINTS source="layoutlmv3">
+    Suggestions from a smaller model...
+  </MODEL_HINTS>
+  <CURRENT_PAGE_TEXT>
+    OCR text from the current page...
+  </CURRENT_PAGE_TEXT>
+  <NEXT_PAGE_TEXT>
+    OCR text from the next page...
+  </NEXT_PAGE_TEXT>
+</USER_REQUEST>
+\end{lstlisting}
+\end{minipage}
+\caption{Fragment promptu użytkownika. Osobne znaczniki przekazują kontekst odziedziczony z poprzedniej strony, podpowiedzi modelu LayoutLMv3 oraz pomocniczy tekst OCR dla strony bieżącej i następnej.}
+\label{fig:xml-user-prompt-fragment}
+\end{figure}
+
+Rysunki~\ref{fig:sample-llm-input} i~\ref{fig:sample-llm-output} pokazują skrócony przykład rzeczywistego pakietu wejściowego oraz odpowiadającej mu odpowiedzi modelu dla strony otwierającej wykaz parafii w schematyzmie włocławskim z 1872 r.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.93\textwidth}
+\begin{lstlisting}
+{
+  "image_path": ".../e6857f7b020207a54378a0f014c1c470.jpeg",
+  "previous_page_context": {
+    "active_deanery": null,
+    "summary": "Previous pages covered administrative lists
+      and seminary details.",
+    "last_page_number": "9"
+  },
+  "current_page_text": "10 ... Decanatus Vladislaviensis ...
+    1. Włocławek ... Titul. Eccl. S. Joan. Bapt. murata ...",
+  "next_page_text": "... continuation of clergy and localities ...",
+  "model_hints": "parish: Włocławek; dedication: S. Joan. Bapt.;
+    building_material: murata"
+}
+\end{lstlisting}
+\end{minipage}
+\caption{Skrócony przykład pakietu wejściowego przekazywanego do modelu dla pojedynczej strony. Obejmuje on obraz strony, kontekst odziedziczony z poprzedniej karty, tekst OCR oraz opcjonalne podpowiedzi modelu dokumentowego.}
+\label{fig:sample-llm-input}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.93\textwidth}
+\begin{lstlisting}
+{
+  "page_number": "10",
+  "entries": [
+    {
+      "deanery": "Decanatus Vladislaviensis",
+      "parish": "Włocławek",
+      "dedication": "S. Joan. Bapt.",
+      "building_material": "murata"
+    }
+  ],
+  "context": {
+    "summary": "Page 10: First page of parish records.
+      Introduces Decanatus Vladislaviensis.",
+    "note": null,
+    "active_deanery": "Decanatus Vladislaviensis",
+    "last_page_number": "10"
+  }
+}
+\end{lstlisting}
+\end{minipage}
+\caption{Skrócony przykład odpowiedzi modelu dla tej samej strony. Oprócz właściwych rekordów zwracany jest także obiekt kontekstu wykorzystywany przy przetwarzaniu kolejnych stron.}
+\label{fig:sample-llm-output}
+\end{figure}
+
+W toku eksperymentów przetestowano kilkanaście modeli wizyjnych różnych producentów.
+Ostatecznie do systematycznej ewaluacji na pełnym korpusie wykorzystano model Gemini Flash firmy Google, który okazał się najbardziej obiecującym kompromisem jakości ekstrakcji, kosztu i szybkości przetwarzania \parencite{google_gemini_models_2026}.
+Generowanie odpowiedzi odbywa się przy niskiej wartości parametru losowości (\textit{temperature} = 0,1), co ogranicza niedeterminizm wyników.
+Jak pokazano w dalszych częściach artykułu, skuteczność tego rozwiązania pozostała jednak silnie zależna od rodzaju pola: najwyższa dla numeru strony i materiału budowlanego, a wyraźnie niższa dla dekanatu.

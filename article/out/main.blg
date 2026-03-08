@@ -1,0 +1,14 @@
+[0] Config.pm:308> INFO - This is Biber 2.20
+[0] Config.pm:311> INFO - Logfile is 'main.blg'
+[42] biber-darwin:340> INFO - === Sun Mar  8, 2026, 03:59:45
+[51] Biber.pm:420> INFO - Reading 'main.bcf'
+[100] Biber.pm:994> INFO - Found 12 citekeys in bib section 0
+[109] Biber.pm:4463> INFO - Processing section 0
+[114] Biber.pm:4654> INFO - Looking for bibtex file 'bibliography.bib' for section 0
+[116] bibtex.pm:1713> INFO - LaTeX decoding ...
+[132] bibtex.pm:1519> INFO - Found BibTeX data source '/Users/user/PycharmProjects/KUL_IDUB_EcclesialSchematisms/article/bibliography.bib'
+[199] UCollate.pm:68> INFO - Overriding locale 'pl-PL' defaults 'variable = shifted' with 'variable = non-ignorable'
+[199] UCollate.pm:68> INFO - Overriding locale 'pl-PL' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[199] Biber.pm:4283> INFO - Sorting list 'nty/global//global/global/global' of type 'entry' with template 'nty' and locale 'pl-PL'
+[208] bbl.pm:676> INFO - Writing 'main.bbl' with encoding 'UTF-8'
+[212] bbl.pm:779> INFO - Output to main.bbl

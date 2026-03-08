@@ -1,0 +1,24 @@
+[0] Config.pm:308> INFO - This is Biber 2.20 running in TOOL mode
+[0] Config.pm:311> INFO - Logfile is 'article/bibliography.bib.blg'
+[39] biber-darwin:340> INFO - === Sun Mar  8, 2026, 01:55:51
+[56] Biber.pm:4650> INFO - Looking for bibtex file 'article/bibliography.bib'
+[58] bibtex.pm:1713> INFO - LaTeX decoding ...
+[72] bibtex.pm:1519> INFO - Found BibTeX data source 'article/bibliography.bib'
+[307] Biber.pm:1692> INFO - Datamodel validation starting
+[309] Biber.pm:1742> INFO - Datamodel validation complete
+[314] UCollate.pm:68> INFO - Overriding locale 'en_US' defaults 'variable = shifted' with 'variable = non-ignorable'
+[314] UCollate.pm:68> INFO - Overriding locale 'en_US' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[314] Biber.pm:4283> INFO - Sorting list 'tool/global//global/global/global' of type 'entry' with template 'tool' and locale 'en_US'
+[314] Biber.pm:4289> INFO - No sort tailoring available for locale 'en_US'
+[323] bibtex.pm:440> INFO - Writing 'article/bibliography_bibertool.bib' with encoding 'UTF-8'
+[324] bibtex.pm:481> INFO - Output to article/bibliography_bibertool.bib
+[324] Biber.pm:131> WARN - Datamodel: book entry 'Jurafsky2009' (article/bibliography.bib): Field 'description' invalid in data model - ignoring
+[324] Biber.pm:131> WARN - Datamodel: book entry 'pinker2000language' (article/bibliography.bib): Field 'lccn' invalid in data model - ignoring
+[324] Biber.pm:131> WARN - Datamodel: misc entry 'HALEEM2022100089' (article/bibliography.bib): Invalid field 'issn' for entrytype 'misc'
+[324] Biber.pm:131> WARN - Datamodel: misc entry 'HALEEM2022100089' (article/bibliography.bib): Invalid field 'journaltitle' for entrytype 'misc'
+[324] Biber.pm:131> WARN - Datamodel: misc entry 'HALEEM2022100089' (article/bibliography.bib): Invalid field 'number' for entrytype 'misc'
+[324] Biber.pm:131> WARN - Datamodel: misc entry 'HALEEM2022100089' (article/bibliography.bib): Invalid field 'pages' for entrytype 'misc'
+[324] Biber.pm:131> WARN - Datamodel: misc entry 'HALEEM2022100089' (article/bibliography.bib): Invalid field 'volume' for entrytype 'misc'
+[324] Biber.pm:131> WARN - Datamodel: article entry 'hutchins1954first' (article/bibliography.bib): Missing mandatory field 'journaltitle'
+[324] Biber.pm:131> WARN - Datamodel: article entry 'turing1950computing' (article/bibliography.bib): Invalid field 'publisher' for entrytype 'article'
+[324] Biber.pm:133> INFO - WARNINGS: 9

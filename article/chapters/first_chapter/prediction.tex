@@ -1,0 +1,13 @@
+\section{Predykcja}\label{sec:predykcja}
+
+Wynik automatycznej ekstrakcji dla każdego schematyzmu przyjmuje postać sekwencji rekordów o identycznej strukturze pól co dane referencyjne.
+Ponieważ model ekstrakcji zwraca wartości w oryginalnej formie źródłowej (łacińskiej, rosyjskiej bądź niemieckiej), a baza referencyjna projektu głównego posługuje się polskimi odpowiednikami i skrótami, konieczny jest dodatkowy etap tłumaczenia, w dalszym ciągu określany jako \textit{parsowanie}.
+Etap ten opiera się na trzech słownikach mapujących formy źródłowe na znormalizowane wartości polskie: dla materiału budowlanego (np.\ \textit{mur.}~$\rightarrow$~\textit{mr}, \textit{lign.}~$\rightarrow$~\textit{dr}), dla wezwań kościelnych (np.\ \textit{Assumptionis B.M.V.}~$\rightarrow$~\textit{Wniebowzięcie NMP}) oraz dla nazw dekanatów (np.\ \textit{Decanatus Gedanensis}~$\rightarrow$~\textit{Gdańsk}).
+Aby uwzględnić warianty pisowni i drobne błędy w odczycie, dopasowanie w słownikach odbywa się z wykorzystaniem przybliżonego porównania łańcuchów z konfigurowalnym progiem tolerancji.
+W rezultacie ewaluacja prowadzona jest dwutorowo: raz na poziomie formy źródłowej (\textit{source}), a raz na poziomie formy przetłumaczonej (\textit{parsed}), co pozwala oddzielnie mierzyć jakość samej ekstrakcji od jakości tłumaczenia na język docelowy bazy.
+Porównanie obu sekwencji, referencyjnej i wygenerowanej, nie jest jednak trywialne: mogą się one różnić długością (model mógł pominąć pewne parafie lub wygenerować wpisy nieistniejące w źródle), a kolejność rekordów nie musi się pokrywać.
+Problem ten rozwiązano za pomocą algorytmu węgierskiego, który znajduje optymalne przyporządkowanie parami między rekordami referencyjnymi a przewidywanymi, minimalizując łączną niepodobność.
+Podobieństwo dwóch rekordów obliczane jest jako średnia ważona podobieństw poszczególnych pól, gdzie każde pole (dekanat, parafia, wezwanie, materiał budowlany) ma przypisaną wagę odzwierciedlającą jego znaczenie.
+Podobieństwo pojedynczego pola mierzone jest znormalizowaną odległością Levenshteina po uprzednim sprowadzeniu obu wartości do formy porównywalnej: usunięciu znaków diakrytycznych, ujednoliceniu wielkości liter i normalizacji białych znaków.
+Rekordy, których wzajemne podobieństwo nie przekracza ustalonego progu, nie są łączone w pary i trafiają odpowiednio do kategorii wpisów pominiętych (po stronie referencji) lub nadmiarowych (po stronie predykcji).
+

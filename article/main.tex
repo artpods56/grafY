@@ -1,0 +1,116 @@
+\documentclass{book}
+\usepackage{graphicx}
+\usepackage{fontspec}
+\usepackage[utf8]{inputenc}
+\usepackage[polish]{babel}
+\usepackage[OT4]{polski}
+\setmainfont{Latin Modern Roman}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{lscape}
+\usepackage{csquotes}
+\usepackage{graphicx}
+\usepackage{caption} 
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{array}
+\usepackage{tikz}
+\usetikzlibrary{shapes}
+\usetikzlibrary{positioning}
+\usetikzlibrary{calc}
+\usetikzlibrary{fit}
+\usetikzlibrary{arrows}
+\usetikzlibrary{backgrounds}
+\usepackage[backend=biber, bibencoding=utf8, style=numeric]{biblatex}
+\addbibresource{bibliography.bib}
+\graphicspath{{assets/images/}{../docs/architecture/diagrams/assets/}{../data/bak_dagster_storage/}}
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  frame=single
+}
+
+\DefineBibliographyStrings{polish}{pages = {strony}}
+
+
+
+\begin{document}
+
+\begin{titlepage}
+\begin{center}
+
+\vspace{72pt}
+
+\textbf{Wyszukiwanie informacji o kościołach parafialnych z wykorzystaniem dużych modeli wizyjnych (Vision LLMs)}
+
+\vspace{168pt}
+\end{center}
+
+\vspace{60pt}
+
+\end{titlepage}
+
+\tableofcontents
+
+%Struktura głównego atrykułu, my jesteśy odpowiedzialni za częśc "%Zastosowane narzędzia - podejmowane próby i metoda wybrana na koniec - A. Podsiadły
+%%Opis pakietu danych badawczych dokumentujących projekt - A. Podsiadły", przy czym nalezaloby sie skupic na razie na pierwszym punkcie
+
+%Dotychczasowe próby wykorzystania do podobnych prac - S. Kozyra z pomocą P. Kulickiego / P. Garbacza
+%Opis projektu “Podziały terytorialne” - M. Słoń
+%Schematyzmy jako źródło: formularz, zróżnicowanie, stan zachowania, wiarygodność - E. Chomentowska
+%Opis projektu IDUB AI - założenia, pytania badawcze - M. Słoń
+%Zastosowane narzędzia - podejmowane próby i metoda wybrana na koniec - A. Podsiadły
+%Opis pakietu danych badawczych dokumentujących projekt - A. Podsiadły
+%Identyfikacja numeru strony i dekanatu - M. Słoń
+%Identyfikacja parafii - R. Kozyrski
+%Identyfikacja wezwań - E. Chomentowska
+%Informacje o materiale budowlanym - J. Kumor-Mielnik
+%Próby z innymi polami bazy (strona, dekanat) - M. Słoń
+%Próby z innymi rodzajami źródeł (księga uposażeń, kontrybucji, wizytacja) - M. Słoń
+%Podsumowanie: użyteczność narzędzia pracy dokumentacyjnej - M. Słoń
+%Podsumowanie ogólne: AI w humanistyce - P. Kulicki / P. Garbacz
+%
+%
+%Ad. 2.
+%
+%Od 2022 r. na KUL jest realizowany projekt „Podziały terytorialne Kościoła łacińskiego w Rzeczypospolitej (X-XXI w.). Od
+%harmonizacji danych do syntezy”. Ich eksploracja zaczęła niejako od dołu, od najniższego szczebla – parafii, a chronologicznie wręcz przeciwnie, od góry, od XX w. I oczywiście fundamentem były źródła, z których należało pozyskać określone kategorie informacji i wprowadzić je do bazy danych.
+%
+%Ad. 3
+%Dla XX i XIX w. podstawowym materiałem są schematyzmy diecezjalne. Zawierają one listę parafii i zestaw wiadomości o nich. W tych najnowszych był to względnie szeroki obraz, obejmujący między innymi materiał budowlany kościoła i jego wezwanie. W tych starszych, np. z połowy XIX w., lista ograniczała się często do samej nazwy i przyporządkowywał do jednostki wyższego rzędu, czyli dekanatu.
+%Źródłami historycznymi, które autorzy projektu uznali za podstawowe dla okresów, stały się schematyzmy diecezjalne o ile zostały one sporządzone dla ustalonych przekrojów chronologicznych. One też znalazły się w zainteresowaniu autorów projektu do oceny użyteczności AI w opracowaniu tego rodzaju materiałów historycznych.
+%Schematyzmy zarówno diecezjalne, jak i zakonne porównać można do drukowanych informatorów instytucjonalnych popularnych głównie pod koniec XX i na początku XXI wieku. Mają one przede wszystkim pomóc czytelnikowi w zapoznaniu się ze strukturą organizacyjną oraz obsadą osobową stanowisk w danej jednostce administracji kościelnej – czyli w omawianym przypadku poszczególnych diecezji. Schematyzmy diecezjalne zawierają również podstawowe dane personalne duchowieństwa diecezjalnego, a z czasem też wykazy osobowe męskich i żeńskich zakonów oraz zgromadzeń zakonnych. Schematyzmy (znane też pod nazwami łacińskimi takimi jak: catalogus, consignatio, elenchus, schematismus, series), w przeciwieństwie do schematyzmów zakonnych wywodzić je można od dodatków informacyjnych, które zaczęły się pojawiać przy kalendarzach liturgicznych. Te ostatnie (określane po łacinie też jako directio, directorium, kalendarium, ordo czy rubricella), to w Kościele katolickim wydawnictwa, publikowane zazwyczaj jako rocznik, które zawierają szczegółowe wskazówki dotyczące odmawiania brewiarza oraz odprawiania Mszy św. w ciągu całego roku liturgicznego. Wraz z rozwojem druku, głównie od XVIII w. zaczęto poszerzać zakres ich treści o dodatkowe wiadomości, takie jak spisy kanoników kapituł metropolitalnych, wykazy zmarłych kapłanów (który pełnił obok roli informacyjnej również dewocyjno-liturgiczną wiążącą się z obowiązkiem odprawiania Mszy Św. w intencji zmarłych[1]). Taki układ zachował się zazwyczaj do początku XIX w. Z czasem, a zwłaszcza od drugiej połowy XIX w. poszerzano treść druków, a ich układ pozwala wyodrębnić kilka zasadniczych części, które są charakterystyczne dla znacznej części roczników bez względu przynależność diecezjalną.
+%W pierwszej części zamieszczano informacje o biskupach, wszystkich urzędach i stanowiskach w kurii biskupiej, organach sądowych, szkolnych itp. wraz z nazwiskami osób je piastujących. Druga istotna część elenchusów to spis parafii i duchownych pełniących w nich posługę. Tutaj również w zależności od okresu, dla którego powstawały. W połowie XIX w. mogła to być tylko nazwa miejscowości oraz nazwiska duchownych (ewentualnie z rokiem urodzenia i przyjęcia święceń kapłańskich), ale już od lat sześćdziesiątych – siedemdziesiątych XIX w. już rozszerzony wykaz informacji. Było to m.in.: wezwanie świątyni parafialnej, jej historia oraz historia parafii od daty erygowania po dość dokładne opisy historyczne zawierające najważniejsze wydarzenia z ich dziejów), patronat, liczba wiernych, terminy odpustów, wykaz miejscowości jej podległych wraz z określeniem budynku sakralnego (kościół filialny, kościół zakonny, kaplica itp.), jeśli istniał, funkcjonujących bractw, organizacji dobroczynnych czy prowadzonych dzieł, jak szkoły, przytułki czy szpitale. Poszerzeniu uległ też katalog danych dotyczących duchownych, co szczególnie istotne zdaje się w odniesieniu do proboszczów i wikariuszy. Podawany był już nie tylko rok, ale data urodzenia, święceń, objęcia placówki, zajmowane urzędy, w tym na szczeblu diecezjalnym, czy funkcje honorowe w Kościele. Osobny wykaz dotyczył duchowieństwa zakonnego: domów zakonnych zarówno męskich, jak i i żeńskich na terenie diecezji i ich mieszkańców. Zazwyczaj na końcu schematyzmu podawano nazwiska zmarłych duchownych i konsekrowanych oraz inne informacje dodatkowe. Istotnym elementem były wykazy duchownych, które ułatwiają korzystanie czytelnikowi z danego rocznika.
+%Jak wspomniano, zakres i szczegółowość zawartych w elenchusach wiadomości zależała od kilku czynników: czasu powstania, autora, przyjętych w dłuższym okresie czasu rozwiązaniach w danej diecezji. Istotny wpływ na ten rodzaj druków miała również sytuacja Kościoła katolickiego w Polsce na przestrzeni ponad dwóch stuleci. Pamiętać bowiem należy, że również i on został dotknięty represjami podczas zaborów, różny był stan diecezji po odzyskaniu przez Rzeczpospolitą niepodległości, a w czasie i po drugiej wojnie światowej reżim hitlerowski i komunistyczny też wywarły piętno na działalności Kościoła, w tym też publikacji schematyzmów. Pomimo starań, by wydawać je regularnie, nie zawsze było to możliwe. Na przykład dla zaboru rosyjskiego zakazy wprowadzone po stłumieniu powstania styczniowego objęły również druk katalogów diecezjalnych. Dopiero w latach siedemdziesiątych i osiemdziesiątych XIX w. zaczęto je rozluźniać pozwalając na ich wznowienie, ale często jedynie w języku rosyjskim. Rosnąca w Polsce popularność schematyzmów i rozwój badań nad nimi o charakterze przyczynkarskim pozwala stwierdzić, iż wiedza o ich zasobach jest coraz pełniejsza. Rzadko wszystkie druki konkretnej jednostki administracyjnej przechowywane są w jednej bibliotece czy archiwum, ale w wielu przypadkach można już zidentyfikować większość tytułów. Istniejące braki często nadal wymagają odpowiedzi, co jest ich powodem. Zważywszy, iż założeniem miało być wydawanie ich co roku odnośnie brakujących roczników rodzi się pytanie czy były one wydawane i żaden z egzemplarzy nie zachował się czy też w danym roku nie ukazał się.
+%Istniejące przerwy chronologiczne nie umniejszają jednak roli elenchusów w badaniach naukowych. Zawarte w nich dane o charakterze informacyjno-statystycznym bardzo często są istotną pomocą dla historii Kościoła w Polsce i jego poszczególnych diecezji, zwłaszcza w badaniach na skalę masową czy globalną dotyczącą interesującego badaczy zagadnienia. Zawdzięczają to swojej stosunkowo jednolitej formie oraz powszechności – obejmującej wszystkie diecezje polskie, chociaż w różnym stopniu i szczegółowości. W niektórych przypadkach stanowią one jedyne lub jedno z nielicznych zachowanych źródeł do poznania historii danej diecezji z określonego czasu (jak na przykład diecezja pińska[2]), jeżeli inne dokumenty uległy rozproszeniu, zaginęły lub zostały zniszczone w kolejnych pożogach wojennych.
+%Wydaje się, że powyższe argumenty pozwalają zrównoważyć dwa zasadnicze braki schematyzmów: przedstawionej powyżej ich niekompletność oraz braku rzetelności danych w niektórych przypadkach. Dotyczyć mogą one różnego stopnia dokładności ich sporządzania, a tym samym występowaniu literówek, błędów w zapisie nazw miejscowości czy nazwisk, ale błędnych danych (jak wezwanie, nieaktualne nazwisko proboszcza, różnice w faktografii w historii parafii) lub powtarzania ich przez kolejne lata. Ten ostatni przykład jest szczególnie widoczny przy liczbie wiernych, która mogła nie być zmieniana kilka lat pod rząd. Nie musiał on wynikać z niedokładności autora – równie dobrze powodem mógł być brak bieżących danych lub przekazanie tej samej liczby po raz kolejny przez proboszcza danej parafii. Pomimo, iż różna może być skala i liczba takich różnic, warto pamiętać, iż schematyzmy wykorzystywane przez badacza powinny zostać poddane krytyce jak każde inne źródło historyczne, co pozwala zminimalizować ewentualne omyłki, a następnie błędy w prowadzonych analizach.
+%[bibliografia wszystkich wykorzystanych roczników, bibliografia i przypisy]
+%Ad. 4
+%Wprowadzanie danych odbywało się w głównej mierze ręcznie, choć przy wsparciu aplikacji INDXR i z wykorzystaniem elementów oprogramowania GIS. Była to praca żmudna, angażująca kilka osób w pełnym wymiarze godzin przez kilka lat. Dla trzech przedziałów czasowych zostały wykorzystane po dwa schematyzmy dla każdej diecezji. Łącznie dało to ok. 35 000 rekordów w modelu źródłowym bazy danych.
+%Lata 2022-2025 były jednocześnie okresem szybkiego wzrostu efektywności wielu narzędzi cyfrowych z AI na czele. Rozwinęły się na tyle, że stanęło pytanie o ich użyteczność w tej pracy dokumentacyjnej. Tak narodził się pomysł małej inicjatywy o nazwie “Zastosowanie zaawansowanych narzędzi cyfrowych w pracach dokumentacyjnych z zakresu geografii historycznej Kościoła”. Jego budżet był ponad stukrotnie niższy niż główny projekt i stanowił w istocie niewielki dodatek do tamtego przedsięwzięcia. Proces ekstrakcji danych miał już dobrze ugruntowaną metodę i zmierzał do końca. Ponadto droga od ogólnego pomysłu do uzyskania finansowania i uruchomienia wszystkich procedur trwała kolejne miesiące.
+%Ta relacja czasowa między dwoma projektami odcisnęła swoje piętno na tym zdecydowanie mniejszym i późniejszym, który musiał być dostosowany do przedsięwzięcia w większej skali. Paradoksalnie doprowadziło to do tego, że nie tyle narzędzie wsparło prace dokumentacyjne, co te ostatnie, już wykonane, stały się podstawą dla wypracowania i przede wszystkim weryfikacji cyfrowego instrumentarium.
+%Pierwszym etapem było przedstawienie informatykowi zadania merytorycznego, jakie wykonał już zespół historyków. Jednocześnie on wskazywał na ograniczenia dostępnych narzędzi. Wynikiem tego dialogu było określenie zasobu informacji, jaki ma być przedmiotem testu. Objęciem nim wszystkich pól bazy, jakie zostały uwzględnione w projekcie, uznaliśmy za niewskazane. Większość z nich rzadko pojawia się w schematyzmach i nie przyniosłyby zasobu informacji potrzebnego do oceny efektywności metody. Wynikiem automatycznej ekstrakcji miało być wypełnienie pięciu pól: numer strony źródłowej, nazwa dekanatu, nazwa parafii, wezwanie kościoła i typ jego materiału budowlanego. Każde z nich niosło ze sobą inne wyzwania.
+%
+%Ad. 7
+%Numer strony wydawał się rzeczą najprostszą. Gdy jednak podejmowaliśmy pierwsze próby polegające na prostym prompcie, ogólnodostępnym czacie i pliku pdf o objętości kilkudziesięciu stron, właśnie tu było najwięcej błędów. Rzetelna dokumentacja wyników była jednym z fundamentów głównego projektu. To konieczne było uzyskanie poprawności bliskiej 100%. Zostało więc przyjęte takie rozwiązanie, że program analizuje oddzielnie zawartość każdej strony, a nie cały tekst źródła. Materiał pozyskany z niej był podsumowywany i jako kontekst udostępniany przy analizie kolejnej strony. Skomplikowało to bardzo treść promptu systemowego dla pola dekanat i nie okazało się w pełni skuteczne. W schematyzmie diecezji gnieźnieńskiej z 1870 r. w prawym dolnym rogu strony zapowiadano pierwszy wpis kolejnej podanie drobnym drukiem nazwy parafii. Algorytm uznał to za rozpoczęcie opisu i w automatycznym odczycie numer strony dla pierwszej parafii na danej karcie zawsze był przesunięty o jeden do tyłu. Taka forma schematyzmów jest jednak bardzo rzadka i sama pomyłka na tyle drobna, że ogólnie przyjętą metodę należy uznać z tej strony za pozytywną: odsetek błędów jest bardzo niski, przewidywalny, ograniczony do konkretnych skanów i najmniejszy z możliwych, a do tego łatwy do ręcznego skorygowania.
+%Ta ostatnia cecha dotyczy również kolejnego pola - przyporządkowania parafii do dekanatów. Według nich były ułożone listy. Każdy kolejny rozdział rozpoczynał się wyróżnioną graficznie nazwą dekanatu. Nie była ona jednak powtarzana ani w żywej paginie, ani w żaden inny sposób. Informacja o przynależności dekanalnej nie była więc nigdy widoczna w samej zapisce na temat danej parafii i rzadko na stronie, gdzie ów opis się znajdował. Wybór metody analizy za każdym razem osobnej strony oznaczał więc, że dane na ten temat musiałby być jednoznacznie zapisane w podsumowaniu strony i dalej konsekwentnie dziedziczone na kolejnych, aż po zmianę. Ten skomplikowany mechanizm często działał, jednak skala błędów we wszystkich uzyskanych wynikach jest tak duża, że na tym etapie prac wyklucza użyteczność narzędzia. Jednocześnie uzupełnienie tych danych ręcznie, przy zachowaniu kolejności wpisów, jest proste i szybkie. Ten wynik jest o tyle istotny, że pokazuje ograniczone zastosowanie narzędzi AI nie tyle do oznaczania przynależności dekanalnej w schematyzmach, co do ekstrakcji danych zapisanych w podobny sposób, czyli jako tytuł wydzielonej części źródła.
+%
+
+
+\include{chapters/first_chapter/task}
+\include{chapters/first_chapter/approach}
+\include{chapters/first_chapter/architecture}
+\include{chapters/first_chapter/data}
+\include{chapters/first_chapter/prediction}
+\include{chapters/first_chapter/evaluation}
+
+\printbibliography{}
+
+% \tableofcontents
+
+% Bibliografia
+
+\end{document}

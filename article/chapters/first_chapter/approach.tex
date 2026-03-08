@@ -1,0 +1,207 @@
+\section{Zastosowane narzędzia: podejmowane próby i wybrana metoda}\label{sec:narzedzia_metoda}
+
+Prace nad automatyczną ekstrakcją danych ze schematyzmów nie przebiegały liniowo.
+Kolejne podejścia wynikały z rozpoznania ograniczeń poprzednich metod: od prób deterministycznych, przez eksperymenty z gotowymi interfejsami modeli, po własny potok przetwarzania oparty na sekwencyjnym wywoływaniu modelu wielomodalnego.
+
+\subsection{Metody regułowe i heurystyczne}\label{subsec:metody_regulowe}
+
+Pierwsze eksperymenty miały charakter klasyczny: punktem wyjścia był tekst OCR, na którym próbowano budować ekstrakcję z użyciem wyrażeń regularnych, podziału na wiersze, prostych heurystyk interpunkcyjnych oraz reguł rozpoznających nagłówki i skróty.
+Podejście to było atrakcyjne z inżynierskiego punktu widzenia, ponieważ dawało pełną kontrolę nad każdym etapem przetwarzania i nie wymagało kosztownych wywołań modeli generatywnych.
+W praktyce okazało się jednak zbyt kruche.
+Schematyzmy różniły się nie tylko językiem i zasobem skrótów, ale również liczbą kolumn, szerokością łamu, sposobem zapisu nagłówków dekanalnych oraz długością pojedynczych wpisów parafialnych.
+Reguły działające poprawnie dla jednego typu układu bardzo szybko zawodziły po przejściu do innego rocznika lub diecezji, dlatego rozwiązanie to uznano za niewystarczające jako podstawa całego systemu.
+Schemat ideowy tego etapu pokazuje rys.~\ref{fig:regex-approach}.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    >=latex,
+    node distance=0.6cm and 0.6cm,
+    every node/.style={font=\footnotesize},
+    block/.style={draw, rounded corners, fill=gray!10, text width=2.5cm, minimum height=1.5cm, align=center},
+    issue/.style={draw, rounded corners, dashed, fill=red!8, text width=4.3cm, minimum height=1.2cm, align=center}
+]
+\node[block] (scan) {Skan strony};
+\node[block, right=of scan] (ocr) {OCR tekstowy};
+\node[block, right=of ocr] (rules) {Regex i heurystyki};
+\node[block, right=of rules] (output) {Rekordy pól};
+\node[issue, below=0.9cm of ocr, xshift=3.1cm] (issue) {Silna zależność od konkretnego układu strony i szybka utrata skuteczności przy zmianie formatu schematyzmu.};
+\draw[->, thick] (scan) -- (ocr);
+\draw[->, thick] (ocr) -- (rules);
+\draw[->, thick] (rules) -- (output);
+\draw[->, thick] (rules) -- (issue);
+\end{tikzpicture}
+\caption{Podejście regułowe: ekstrakcja oparta na OCR i zestawie ręcznie definiowanych heurystyk.}
+\label{fig:regex-approach}
+\end{figure}
+
+\subsection{Naiwne użycie gotowego interfejsu LLM}\label{subsec:proby_calodokumentowe}
+
+Kolejnym krokiem było sprawdzenie, czy zadanie da się rozwiązać szybciej przy użyciu gotowego interfejsu czatowego dużego modelu językowego lub wizyjnego.
+W tym wariancie do modelu przesyłano cały plik PDF schematyzmu albo pojedynczy obraz wraz z prostym poleceniem wyodrębnienia danych parafialnych.
+Takie rozwiązanie miało wartość rozpoznawczą: pozwalało szybko ocenić, czy współczesne modele w ogóle potrafią zidentyfikować interesujące nas pola.
+Wyniki okazały się jednak niestabilne jakościowo.
+Model traktował dokument jako jednolity strumień treści, słabo zachowywał odniesienie do fizycznych stron źródła i często błędnie przypisywał numer strony do wyodrębnionych parafii.
+Dodatkowym ograniczeniem był brak kontroli nad formatem odpowiedzi oraz limity długości plików i odpowiedzi narzucane przez gotowy interfejs.
+Ogólny schemat tego etapu przedstawia rys.~\ref{fig:naive-llm-approach}.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    >=latex,
+    node distance=0.6cm and 0.6cm,
+    every node/.style={font=\footnotesize},
+    block/.style={draw, rounded corners, fill=gray!10, text width=2.5cm, minimum height=1.5cm, align=center},
+    issue/.style={draw, rounded corners, dashed, fill=red!8, text width=4.3cm, minimum height=1.2cm, align=center}
+]
+\node[block] (pdf) {Pełny PDF lub obraz};
+\node[block, right=of pdf] (prompt) {Prosty prompt};
+\node[block, right=of prompt] (chat) {Gotowy interfejs LLM};
+\node[block, right=of chat] (answer) {Odpowiedź tekstowa};
+\node[issue, below=0.9cm of prompt, xshift=3.1cm] (issue) {Brak kontroli nad strukturą odpowiedzi, limity interfejsu i niestabilne przypisywanie numerów stron.};
+\draw[->, thick] (pdf) -- (prompt);
+\draw[->, thick] (prompt) -- (chat);
+\draw[->, thick] (chat) -- (answer);
+\draw[->, thick] (chat) -- (issue);
+\end{tikzpicture}
+\caption{Naiwne użycie modelu w gotowym interfejsie czatowym.}
+\label{fig:naive-llm-approach}
+\end{figure}
+
+\subsection{Próba z modelem dokumentowym LayoutLMv3}\label{subsec:layoutlmv3_attempt}
+
+Równolegle podjęto próbę budowy bardziej klasycznego rozwiązania uczenia maszynowego, opartego na modelu LayoutLMv3 firmy Microsoft, wyspecjalizowanym w rozumieniu układu dokumentów \parencite{huang2022layoutlmv3}.
+Model ten trenowano na ręcznie anotowanych stronach w notacji BIO (\textit{Beginning--Inside--Outside}), standardowo stosowanej w zadaniach rozpoznawania encji nazewniczych.
+W tym schemacie każdy token otrzymuje etykietę oznaczającą początek encji danego typu, kontynuację tej encji albo brak przynależności do jakiejkolwiek klasy.
+W badanym wariancie anotacje obejmowały siedem klas: numer strony, materiał budowlany, klasyfikację miejscowości, parafię, typ obiektu sakralnego, wezwanie oraz dekanat.
+Klasa klasyfikacji miejscowości została jednak ostatecznie pominięta w końcowym schemacie ekstrakcji, dlatego w późniejszym rozwiązaniu wykorzystywano już tylko numer strony oraz pięć klas właściwego rekordu.
+W obrębie schematyzmów podobnych do tych, które znalazły się w zbiorze treningowym, wyniki były obiecujące.
+Problem pojawiał się w momencie rozszerzania zestawu danych o źródła o odmiennej strukturze graficznej.
+Włączenie do treningu schematyzmów o innym kształcie łamu, innej organizacji kolumn lub odmiennym sposobie zapisu wpisów powodowało wyraźny spadek jakości predykcji.
+Oznaczało to, że model nie generalizował dostatecznie dobrze na heterogeniczny korpus, który był dla projektu kluczowy.
+Z tego względu LayoutLMv3 nie został przyjęty jako rozwiązanie finalne; w późniejszej architekturze pełnił jedynie rolę pomocniczego generatora podpowiedzi.
+Przykład wizualizacji predykcji tego modelu pokazano na rys.~\ref{fig:layoutlmv3-predictions}, natomiast ogólny schemat tego etapu przedstawia rys.~\ref{fig:layoutlmv3-approach}.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.72\textwidth]{layoutlmv3_predictions_ref.png}
+\caption{Wizualizacja przykładowych predykcji modelu LayoutLMv3 na stronie schematyzmu. Kolorowe ramki pokazują tokeny przypisane przez model do klas używanych na etapie treningu, w tym numeru strony, nazwy parafii, dekanatu, wezwania, typu obiektu, materiału budowlanego oraz klasyfikacji miejscowości.}
+\label{fig:layoutlmv3-predictions}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    >=latex,
+    node distance=0.6cm and 0.6cm,
+    every node/.style={font=\footnotesize},
+    block/.style={draw, rounded corners, fill=gray!10, text width=2.5cm, minimum height=1.5cm, align=center},
+    issue/.style={draw, rounded corners, dashed, fill=red!8, text width=4.6cm, minimum height=1.2cm, align=center}
+]
+\node[block] (scan) {Obraz strony};
+\node[block, right=of scan] (ocr) {OCR + boksy słów};
+\node[block, right=of ocr] (lmv3) {LayoutLMv3};
+\node[block, right=of lmv3] (entities) {Etykiety BIO / pola};
+\node[issue, below=0.9cm of ocr, xshift=3.2cm] (issue) {Dobre wyniki lokalne, ale słaba generalizacja po dodaniu schematyzmów o innym układzie typograficznym.};
+\draw[->, thick] (scan) -- (ocr);
+\draw[->, thick] (ocr) -- (lmv3);
+\draw[->, thick] (lmv3) -- (entities);
+\draw[->, thick] (lmv3) -- (issue);
+\end{tikzpicture}
+\caption{Próba oparcia ekstrakcji na wytrenowanym modelu LayoutLMv3.}
+\label{fig:layoutlmv3-approach}
+\end{figure}
+
+\subsection{Programistyczne przetwarzanie strona po stronie z własnymi promptami}\label{subsec:strona_bez_kontekstu}
+
+Po doświadczeniach z gotowym interfejsem oraz z modelem dokumentowym zdecydowano się na zbudowanie własnego potoku programistycznego.
+Dokument PDF dzielono na obrazy pojedynczych stron, a następnie dla każdej z nich wykonywano osobne wywołanie modelu wielomodalnego.
+Kluczowa różnica polegała na tym, że zapytanie nie było już swobodną wiadomością wpisywaną w interfejs, lecz kontrolowaną konstrukcją złożoną z własnego promptu systemowego, własnego promptu użytkownika oraz oczekiwanego formatu odpowiedzi.
+To podejście pozwoliło wymusić bardziej stabilny zwrot danych w postaci ustrukturyzowanej i znacząco poprawiło związek wyniku z konkretną stroną źródła.
+Jednocześnie odsłoniło ono główny problem merytoryczny całego zadania: jeśli dekanat nie był jawnie widoczny na analizowanej stronie, model wciąż nie miał podstaw, aby poprawnie go odziedziczyć.
+Schemat tego etapu pokazuje rys.~\ref{fig:custom-page-approach}.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    >=latex,
+    node distance=0.6cm and 0.6cm,
+    every node/.style={font=\footnotesize},
+    block/.style={draw, rounded corners, fill=gray!10, text width=2.5cm, minimum height=1.5cm, align=center},
+    issue/.style={draw, rounded corners, dashed, fill=red!8, text width=4.4cm, minimum height=1.2cm, align=center}
+]
+\node[block] (page) {Obraz jednej strony};
+\node[block, right=of page] (prompt) {Własny system prompt + user prompt};
+\node[block, right=of prompt] (llm) {Wywołanie Vision LLM};
+\node[block, right=of llm] (json) {JSON strony};
+\node[issue, below=0.9cm of prompt, xshift=3.1cm] (issue) {Lepsza kontrola formatu odpowiedzi, ale brak mechanizmu dziedziczenia dekanatu między stronami.};
+\draw[->, thick] (page) -- (prompt);
+\draw[->, thick] (prompt) -- (llm);
+\draw[->, thick] (llm) -- (json);
+\draw[->, thick] (llm) -- (issue);
+\end{tikzpicture}
+\caption{Programistyczne wywołanie modelu dla pojedynczej strony z użyciem własnych promptów.}
+\label{fig:custom-page-approach}
+\end{figure}
+
+\subsection{Przetwarzanie sekwencyjne z propagacją kontekstu}\label{subsec:sekwencyjne_z_kontekstem}
+
+Rozwiązanie przyjęte na ostatnim etapie eksperymentów zachowało zalety własnego potoku programistycznego, ale zostało uzupełnione o mechanizm propagacji stanu między kolejnymi stronami.
+Po przetworzeniu każdej strony model zwraca, obok właściwych rekordów parafialnych, obiekt kontekstu zawierający aktualnie obowiązujący dekanat, numer ostatnio przetworzonej strony, streszczenie dotychczasowej zawartości dokumentu oraz opcjonalną adnotację sygnalizującą niską pewność odczytu.
+Przy przetwarzaniu kolejnej strony obiekt ten jest włączany do treści następnego zapytania, dzięki czemu model otrzymuje informację pomocną przy dziedziczeniu przynależności dekanalnej nawet wówczas, gdy nagłówek dekanatu nie pojawia się na bieżącej stronie.
+Własne prompty systemowy i użytkownika zostały na tym etapie dopracowane tak, aby precyzyjnie definiowały rolę modelu, zasady dziedziczenia dekanatu, reguły odczytu układów wielokolumnowych oraz oczekiwany format JSON.
+Ważnym uzupełnieniem stało się także dołączanie tekstu OCR strony następnej, który pomaga domknąć wpisy urwane u dołu bieżącej karty.
+Schemat wybranego rozwiązania pokazano na rys.~\ref{fig:sequential-context-approach}.
+
+W praktyce system zarządza historią konwersacji na dwa sposoby.
+W wariancie akumulacyjnym przechowywana jest pełna historia wymiany z modelem, z której usuwane są jedynie obrazy i tekst OCR kolejnych stron, aby ograniczyć objętość przy zachowaniu ciągłości merytorycznej.
+W wariancie okna przesuwnego historia jest przycinana do ustalonej liczby ostatnich wymian, a długoterminowy kontekst przenoszony jest wyłącznie przez obiekt kontekstu.
+To właśnie ten etap został przyjęty jako architektura rozwiązania końcowego, choć dalsza część artykułu pokazuje, że uzyskana skuteczność pozostała wyraźnie zróżnicowana między polami.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    scale=0.9,
+    transform shape,
+    >=latex,
+    every node/.style={font=\footnotesize},
+    page/.style={draw, rounded corners, fill=blue!8, text width=2.8cm, minimum height=1.4cm, align=center},
+    process/.style={draw, rounded corners, fill=gray!10, text width=2.4cm, minimum height=1.2cm, align=center},
+    json/.style={draw, rounded corners, fill=green!8, text width=1.8cm, minimum height=1.1cm, align=center},
+    context/.style={draw, rounded corners, fill=yellow!15, text width=2.4cm, minimum height=1.1cm, align=center},
+    carry/.style={->, thick, rounded corners=6pt},
+    label/.style={font=\tiny, align=center, fill=white, inner sep=1.5pt}
+]
+\node[page] (pageN) at (0,0) {Strona $n$\\obraz + OCR};
+\node[process] (procN) at (0,-2.0) {Własne prompty\\+ Vision LLM};
+\node[json] (jsonN) at (-1.25,-4.0) {JSON\\strony $n$};
+\node[context] (ctxN) at (1.50,-4.0) {\texttt{PageContext}$_n$};
+
+\node[page] (pageN1) at (5.9,0) {Strona $n{+}1$\\obraz + OCR};
+\node[process] (procN1) at (5.9,-2.0) {Własne prompty\\+ Vision LLM};
+\node[json] (jsonN1) at (4.65,-4.0) {JSON\\strony $n{+}1$};
+\node[context] (ctxN1) at (7.40,-4.0) {\texttt{PageContext}$_{n+1}$};
+
+\node[page] (pageN2) at (11.8,0) {Strona $n{+}2$\\obraz + OCR};
+\node[process] (procN2) at (11.8,-2.0) {Własne prompty\\+ Vision LLM};
+\node[json] (jsonN2) at (10.55,-4.0) {JSON\\strony $n{+}2$};
+\node[context] (ctxN2) at (13.30,-4.0) {\texttt{PageContext}$_{n+2}$};
+
+\draw[->, thick] (pageN) -- (procN);
+\draw[->, thick] (procN) -- (jsonN);
+\draw[->, thick] (procN) -- (ctxN);
+
+\draw[->, thick] (pageN1) -- (procN1);
+\draw[->, thick] (procN1) -- (jsonN1);
+\draw[->, thick] (procN1) -- (ctxN1);
+
+\draw[->, thick] (pageN2) -- (procN2);
+\draw[->, thick] (procN2) -- (jsonN2);
+\draw[->, thick] (procN2) -- (ctxN2);
+
+\draw[carry] (ctxN.north) to[out=70,in=250] node[midway, above, label] {kontekst dziedziczony\\przez stronę $n{+}1$} (pageN1.west);
+\draw[carry] (ctxN1.north) to[out=70,in=250] node[midway, above, label] {kontekst dziedziczony\\przez stronę $n{+}2$} (pageN2.west);
+\end{tikzpicture}
+\caption{Rozwiązanie końcowe: sekwencyjne przetwarzanie stron $n$, $n{+}1$ i $n{+}2$, w którym każda odpowiedź generuje obiekt \texttt{PageContext} przekazywany do następnego kroku.}
+\label{fig:sequential-context-approach}
+\end{figure}

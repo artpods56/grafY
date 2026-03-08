@@ -1,0 +1,22 @@
+\section{Ewaluacja}\label{sec:ewaluacja}
+
+Porównanie sekwencji referencyjnej i wygenerowanej rozpoczyna się od dopasowania rekordów za pomocą algorytmu węgierskiego \parencite{kuhn1955hungarian}.
+Macierz podobieństwa budowana jest na podstawie ważonej zgodności pól rekordu, przy czym na etapie samego dopasowania implementacja korzysta ze znormalizowanych łańcuchów znaków i miary podobieństwa \texttt{SequenceMatcher} z biblioteki \texttt{difflib} \parencite{python_difflib_2026}.
+Takie rozwiązanie pozwala zestawiać ze sobą sekwencje różniące się długością i kolejnością wpisów, a jednocześnie zachować próg jakości wymagany do uznania dwóch rekordów za odpowiadające sobie.
+
+Po wykonaniu dopasowania obliczane są dwa typy ocen.
+W wariancie \textit{source} dla każdego pola raportowane są miary podobieństwa tekstowego: średnia, minimum i maksimum.
+W tym etapie wykorzystywany jest scorer oparty na znormalizowanym podobieństwie edycyjnym typu Levenshteina \parencite{wagner1974string}.
+W wariancie \textit{parsed} ten sam typ porównania służy do wyznaczenia poprawności klasyfikacyjnej po przyłożeniu ustalonego progu zgodności.
+Nie jest to jednak klasyczna macierz pomyłek budowana dla niezależnych obserwacji i zamkniętego zbioru etykiet.
+Kategorie \textit{true positive}, \textit{false positive}, \textit{false negative} i \textit{true negative} wyznaczane są tu po wcześniejszym dopasowaniu rekordów, a następnie przez sprawdzenie, czy dana wartość pola została odtworzona w stopniu wystarczająco zgodnym z referencją.
+
+Za trafienie (\textit{true positive}) uznaje się sytuację, w której zarówno wartość referencyjna, jak i przewidywana istnieją, a ich podobieństwo przekracza ustalony próg.
+Wpis wygenerowany przez model, któremu nie odpowiada żadna wartość referencyjna, lub którego wartość odbiega od referencji poniżej progu, liczony jest jako błąd nadmiarowy (\textit{false positive}).
+Analogicznie, wpis referencyjny bez odpowiadającej mu predykcji lub z predykcją poniżej progu stanowi pominięcie (\textit{false negative}).
+W szczególności przypadek, w którym model zwrócił wartość dla pola, ale nie spełnia ona progu zgodności względem referencji, traktowany jest jednocześnie jako błąd nadmiarowy i pominięcie, ponieważ system wygenerował odpowiedź, lecz nie odtworzył poprawnej wartości.
+Na tej podstawie wyznaczane są precyzja, czułość, dokładność oraz ich średnia harmoniczna (miara F1), oddzielnie dla każdego pola i dla każdego schematyzmu.
+
+Wyniki ewaluacji eksportowane są w postaci arkuszy kalkulacyjnych, zawierających dla każdego schematyzmu zestawienie metryk per pole wraz z wierszem podsumowującym.
+Nazwy plików wynikowych zawierają identyfikator użytego modelu oraz znacznik czasowy, co pozwala na systematyczne porównywanie kolejnych przebiegów eksperymentalnych.
+Interpretacja tych metryk wymaga jednak rozbicia na poszczególne pola, ponieważ dalsza analiza jakościowa pokazuje wyraźne różnice między relatywnie łatwiejszym numerem strony i materiałem budowlanym a znacznie trudniejszym zadaniem poprawnego odziedziczenia dekanatu.

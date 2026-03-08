@@ -1,0 +1,42 @@
+
+\chapter{Zastosowane narzędzia i metoda ekstrakcji danych}\label{ch3_metoda}
+\chaptermark{Metoda ekstrakcji danych}
+
+\section{Charakterystyka zadania}\label{sec:charakterystyka_zadania}
+
+Automatyczna ekstrakcja ustrukturyzowanych danych ze zdigitalizowanych schematyzmów diecezjalnych wpisuje się w klasę problemów określaną w informatyce jako \textit{visual document understanding} (VDU) - zagadnień, w których system komputerowy musi interpretować treść semantyczną obrazów dokumentów, uwzględniając zarówno układ typograficzny, jak i treść językową \parencite{mathew2021docvqa,jaume2019funsd}.
+W odróżnieniu od generycznego rozpoznawania pisma (OCR), którego celem jest wierne przepisanie ciągłego tekstu, opisywane tu zadanie wymaga od systemu identyfikacji i klasyfikacji konkretnych \textit{pól informacyjnych} osadzonych w hierarchicznej strukturze administracyjnej, a następnie zwrócenia ich w postaci rekordów nadających się bezpośrednio do zasilenia bazy danych.
+
+Zadanie wykazuje jednak własność, która wykracza poza standardowe problemy VDU i którą można określić mianem \textit{zależności od kontekstu międzystronicowego} (\textit{cross-page context dependency}): poprawna wartość pewnych pól na stronie~$p$ jest zdeterminowana przez informację widoczną wyłącznie na wcześniejszych stronach $1, \ldots, p-1$, nieobecną na aktualnie przetwarzanej stronie.
+Standardowe benchmarki VDU takie jak DocVQA czy FUNSD przyjmują w swoich założeniach, że cała informacja niezbędna do ekstrakcji danego pola jest widoczna na tej samej stronie \parencite{mathew2021docvqa,jaume2019funsd}.
+% tutaj napisac ze nasz problem wychodzi poza ramy i te benchmarki nie bylylby wystarczajace
+Strukturalnie opisywana własność polega na odnajdywaniu odniesień w poprzedzającym tekście: rekord parafialny na stronie~$p$ odsyła do nagłówka dekanatu pełniącego rolę znacznika, który mógł pojawić się wiele stron wcześniej.
+W odróżnieniu jednak od zagadnień \textit{long document understanding}, w których rozszerza się okno kontekstu modelu, aby objął cały dokument jednocześnie, opisywane tu rozwiązanie opiera się na selektywnej propagacji skondensowanego stanu między kolejno przetwarzanymi stronami, co czyni je bliższym sekwencyjnemu przetwarzaniu ze stanem (\textit{stateful sequential processing}) niż jednoprzebiegowemu odczytowi długiego dokumentu \parencite{beltagy2020longformer,liu2023lostmiddlelanguagemodels}.
+
+Na każdej stronie schematyzmu może znajdować się jeden lub kilka opisów parafii, zgrupowanych pod nagłówkami dekanatów, które odpowiadają trójpoziomowej hierarchii Diecezja $\rightarrow$ Dekanat $\rightarrow$ Parafia.
+Przedmiotem ekstrakcji jest pięć pól dla każdego rekordu parafialnego: (1) numer strony w druku źródłowym; (2) przynależność dekanalną; (3) nazwę parafii: (4) wezwanie kościoła; oraz (5) materiał budowlany obiektu.
+
+Dodatkowe wyzwania wynikają ze specyfiki materiału źródłowego.
+Dokumenty zostały sporządzone po łacinie z powszechnym użyciem skrótów, których dla pierwszego etapu ekstrakcji, historyczna forma musi zostać zachowana w danych wyjściowych bez jakichkolwiek zmian (np. \textit{S. Martini E.C.}, \textit{B.M.V.}, \textit{mur.}, \textit{ligna.}).
+
+Niezależnie od wierności wobec tekstu źródłowego, system musi radzić sobie także z dużym zróżnicowaniem jakości skanów.
+Mimo dobrze przeprowadzonemu procesowi digitalizacji, wiele wydań z dwudziestolecia międzywojennego współistniejących w korpusie danych z zniszczonymi woluminami z połowy XIX wieku, charakteryzuje się nieregularnym składem, plamami i wypłowiałym atramentem.
+Z kolei sam układ stron waha się od pojedynczej kolumny narracyjnych opisów po gęste, dwukolumnowe zestawienia tabelaryczne, a adnotacje marginalne muszą być niezawodnie odróżniane od treści głównej.
+Zestawienie dwóch reprezentatywnych przykładów takiego zróżnicowania pokazano na rys.~\ref{fig:digitalized-books-condition}.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\textwidth}
+\centering
+\includegraphics[width=\textwidth,height=0.34\textheight,keepaspectratio]{kielce_1874_0000c43.jpg}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.48\textwidth}
+\centering
+\includegraphics[width=\textwidth,height=0.34\textheight,keepaspectratio]{wloclawek_1872_0010.jpg}
+\end{minipage}
+\caption{Dwa przykładowe układy i stany zachowania stron schematyzmów wykorzystanych w badaniu. Po lewej widoczna jest karta o słabszej jakości i bardziej nieregularnym składzie, po prawej strona czytelniejsza, otwierająca nową sekcję dekanalną.}
+\label{fig:digitalized-books-condition}
+\end{figure}
+
+Wszystkie te cechy czynią z opisywanego zadania wymagający przypadek ekstrakcji informacji z dokumentów na poziomie całego dokumentu, stosowanej w specjalistycznej domenie historycznej.
