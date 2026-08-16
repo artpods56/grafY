@@ -24,13 +24,6 @@ _OIDC_ALLOWED_ALGORITHMS = frozenset(
 STAGED_UPLOAD_HARD_MAX_BYTES = 64 * 1024 * 1024
 
 _DEFAULT_WORKSPACE = Path(".grafy-artifacts/workbench")
-_LEGACY_WORKSPACE = Path(".notarius-artifacts/workbench")
-
-
-def _default_workspace() -> Path:
-    if _DEFAULT_WORKSPACE.exists() or not _LEGACY_WORKSPACE.exists():
-        return _DEFAULT_WORKSPACE
-    return _LEGACY_WORKSPACE
 
 
 class Settings(BaseSettings):
@@ -41,7 +34,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    workspace: Path = Field(default_factory=_default_workspace)
+    workspace: Path = _DEFAULT_WORKSPACE
     public_origin: str = "http://localhost:3000"
     oidc_issuer: str | None = None
     oidc_client_id: str | None = None
@@ -186,9 +179,6 @@ class Settings(BaseSettings):
         if self.database_url is not None:
             return self.database_url.get_secret_value()
         database_path = (self.workspace / "grafy.sqlite3").resolve()
-        legacy_database_path = (self.workspace / "notarius.sqlite3").resolve()
-        if not database_path.exists() and legacy_database_path.exists():
-            database_path = legacy_database_path
         return f"sqlite+aiosqlite:///{database_path}"
 
     @property
