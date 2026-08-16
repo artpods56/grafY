@@ -105,8 +105,10 @@ def test_node_registry_exposes_builtin_plugins_and_runtime_contracts(
         ("builtin.prompt", "Prompt"),
         ("builtin.table", "Table"),
         ("graph.module", "Workspace library"),
+        ("generated.agent", "Agent-authored nodes"),
     ]
     assert {plugin.origin for plugin in registry.plugins} == {
+        PluginOrigin.AGENT,
         PluginOrigin.BUILTIN,
         PluginOrigin.MODULE,
     }

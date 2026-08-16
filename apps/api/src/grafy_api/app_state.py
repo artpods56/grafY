@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from fastapi import FastAPI
 
 from grafy_core.application.collaboration import CollaborationService
+from grafy_core.application.agent_authoring import AgentAuthoringService
 from grafy_core.application.identity import IdentityService
 from grafy_core.application.modules import ModuleLibraryService
 from grafy_core.application.saved_graphs import SavedGraphService
@@ -15,6 +16,7 @@ from grafy_persistence.database import Database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 from grafy_api.settings import Settings
+from grafy_api.v1.routes.agent_authoring.services import BuildReviewService
 from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.v1.routes.auth.services import AuthService
 from grafy_api.v1.routes.catalog.services import GraphModuleCatalog
@@ -23,6 +25,9 @@ from grafy_api.v1.routes.executions.runtime.admission import (
     ExecutionAdmissionLimiter,
 )
 from grafy_api.v1.routes.executions.runtime.manager import RunExecutionManager
+from grafy_api.v1.routes.executions.runtime.generated_executor import (
+    GeneratedNodeExecutorClient,
+)
 from grafy_api.v1.routes.executions.runtime.run_graph import RunGraph
 from grafy_api.v1.routes.executions.services import (
     ExecutionHistoryService,
@@ -47,6 +52,8 @@ class AppResources:
     """Application resources constructed during API lifespan and torn down once."""
 
     database: Database
+    agent_authoring: AgentAuthoringService
+    build_review: BuildReviewService
     plugin_registry: PluginRegistry
     uploads: ImageUploadService
     graph_modules: GraphModuleCatalog
@@ -63,11 +70,14 @@ class AppResources:
     collaboration: CollaborationService
     node_secrets: NodeSecretService
     graph_room_hub: GraphRoomHub
+    generated_executor: GeneratedNodeExecutorClient | None
 
     async def cleanup(self) -> None:
         await self.graph_room_hub.shutdown()
         await self.execution_manager.shutdown()
         await self.artifacts.close()
+        if self.generated_executor is not None:
+            await self.generated_executor.close()
 
 
 def get_identity(app: FastAPI) -> AppIdentity:

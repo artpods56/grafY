@@ -1,5 +1,5 @@
 from collections import Counter, deque
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
 
 from grafy_core.artifacts import (
@@ -15,6 +15,12 @@ from grafy_core.conversions import (
     conversion_runtime_types_are_compatible,
 )
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
+from grafy_core.domain.agent_authoring import (
+    GeneratedNodeReference,
+    GeneratedNodeReferenceError,
+    NodeRelease,
+)
+from grafy_core.domain.errors import NotFoundError
 from grafy_core.domain.modules import (
     GraphModuleReference,
     GraphModuleReferenceError,
@@ -27,6 +33,10 @@ from grafy_core.nodes import (
     resolve_node_contracts,
 )
 from grafy_core.operators.modules import GraphModuleNode
+from grafy_core.operators.generated import (
+    GeneratedNode,
+    GeneratedNodeContractError,
+)
 from grafy_core.plugins import (
     NodeRegistration,
     PluginRegistry,
@@ -34,6 +44,7 @@ from grafy_core.plugins import (
     UnknownOperatorError,
 )
 from grafy_core.ports.modules import GraphModuleExecutorPort
+from grafy_core.ports.generated_execution import GeneratedReleaseExecutorPort
 from grafy_core.runtime.invocation import (
     InvocationError,
     InvocationMode,
@@ -63,6 +74,16 @@ from .models import (
 )
 
 
+class GeneratedReleaseCatalogPort(Protocol):
+    async def get_release(
+        self,
+        *,
+        workspace_id: UUID,
+        node_id: UUID,
+        revision: int,
+    ) -> NodeRelease: ...
+
+
 class GraphCompiler:
     def __init__(
         self,
@@ -70,12 +91,20 @@ class GraphCompiler:
         plugin_registry: PluginRegistry,
         plugin_context: PluginRuntimeContext,
         module_catalog: GraphModuleCatalog,
+        generated_releases: GeneratedReleaseCatalogPort | None = None,
+        generated_executor: GeneratedReleaseExecutorPort | None = None,
     ) -> None:
         self._plugin_registry = plugin_registry
         self._plugin_context = plugin_context
         self._module_catalog = module_catalog
+        self._generated_releases = generated_releases
+        self._generated_executor = generated_executor
         self._artifact_types = {
             artifact_type.key for artifact_type in plugin_registry.artifact_types
+        }
+        self._artifact_type_specs = {
+            artifact_type.key: artifact_type
+            for artifact_type in plugin_registry.artifact_types
         }
         self._projectable_artifact_types = {
             artifact_type.key: artifact_type
@@ -190,6 +219,37 @@ class GraphCompiler:
             except GraphModuleCatalogError as exc:
                 raise GraphExecutionError(str(exc)) from exc
             return GraphModuleNode(definition, module_executor), None
+
+        try:
+            generated_reference = GeneratedNodeReference.try_from_operator_identity(
+                request.operator_id,
+                request.operator_version,
+            )
+        except GeneratedNodeReferenceError as exc:
+            raise GraphExecutionError(str(exc)) from exc
+        if generated_reference is not None:
+            if self._generated_releases is None or self._generated_executor is None:
+                raise GraphExecutionError(
+                    f"Generated node {request.operator_id}@"
+                    f"{request.operator_version} execution is not configured"
+                )
+            try:
+                release = await self._generated_releases.get_release(
+                    workspace_id=workspace_id,
+                    node_id=generated_reference.node_id,
+                    revision=generated_reference.revision,
+                )
+                node = GeneratedNode(
+                    release,
+                    self._generated_executor,
+                    self._artifact_type_specs,
+                )
+            except (NotFoundError, GeneratedNodeContractError) as exc:
+                raise GraphExecutionError(
+                    f"Generated node {request.operator_id}@"
+                    f"{request.operator_version} cannot be executed: {exc}"
+                ) from exc
+            return node, None
 
         try:
             node = self._plugin_registry.build_node(

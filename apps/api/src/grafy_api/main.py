@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse, Response
 
 from grafy_api.health import HealthResponse, health, readiness
 from grafy_core.application.collaboration import CollaborationService
+from grafy_core.application.agent_authoring import AgentAuthoringService
 from grafy_core.application.modules import ModuleLibraryService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.application.templates import TemplateService
@@ -45,6 +46,8 @@ from grafy_api.v1.routes.auth.services import (
     AuthService,
 )
 from grafy_api.v1.routes.auth.views import router as auth_router
+from grafy_api.v1.routes.agent_authoring.services import BuildReviewService
+from grafy_api.v1.routes.agent_authoring.views import router as agent_authoring_router
 from grafy_api.v1.routes.artifacts.views import router as artifacts_router
 from grafy_api.v1.routes.catalog.views import router as catalog_router
 from grafy_api.v1.routes.modules.views import router as modules_router
@@ -283,6 +286,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 templates = TemplateService(
                     lambda: SqlAlchemyUnitOfWork(database.sessions)
                 )
+                agent_authoring = AgentAuthoringService(
+                    lambda: SqlAlchemyUnitOfWork(database.sessions)
+                )
+                build_review = BuildReviewService(
+                    storage,
+                    resolved_settings.storage_bucket,
+                )
                 collaboration = CollaborationService(
                     lambda: SqlAlchemyUnitOfWork(database.sessions),
                     registry,
@@ -315,9 +325,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     saved_graphs=saved_graphs,
                     module_library=module_library,
                     node_secrets=node_secrets,
+                    agent_authoring=agent_authoring,
+                    generated_executor_url=(
+                        resolved_settings.generated_executor_url
+                    ),
+                    generated_executor_hmac_key=(
+                        resolved_settings.resolved_generated_executor_hmac_key()
+                    ),
+                    generated_executor_timeout_seconds=(
+                        resolved_settings.generated_executor_timeout_seconds
+                    ),
                 )
                 resources = AppResources(
                     database=database,
+                    agent_authoring=agent_authoring,
+                    build_review=build_review,
                     plugin_registry=components.plugin_registry,
                     uploads=components.uploads,
                     graph_modules=components.modules,
@@ -334,6 +356,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     collaboration=collaboration,
                     node_secrets=node_secrets,
                     graph_room_hub=graph_room_hub,
+                    generated_executor=components.generated_executor,
                 )
                 try:
                     components.execution_manager.bind_room_publisher(
@@ -472,6 +495,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         include_in_schema=False,
     )
     application.include_router(auth_router, prefix="/v1")
+    application.include_router(agent_authoring_router, prefix="/v1")
     application.include_router(workspaces_router, prefix="/v1")
     application.include_router(graph_browser_router, prefix="/v1")
     application.include_router(graph_folders_router, prefix="/v1")

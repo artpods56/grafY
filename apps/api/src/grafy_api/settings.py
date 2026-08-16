@@ -62,6 +62,18 @@ class Settings(BaseSettings):
     database_url: SecretStr | None = None
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     execution_backend: Literal["prefect", "inline"] = "prefect"
+    agent_environment_provider: Literal[
+        "daytona",
+        "docker-trusted-development",
+    ] = "daytona"
+    generated_executor_url: str | None = None
+    generated_executor_hmac_key: SecretStr | None = None
+    generated_executor_allow_insecure_http: bool = False
+    generated_executor_timeout_seconds: float = Field(
+        default=120.0,
+        ge=1.0,
+        le=86_400.0,
+    )
     map_max_concurrency: int = Field(default=4, ge=1)
     max_active_executions: int = Field(default=2, ge=1, le=32)
     prefect_task_retries: int = Field(default=0, ge=0)
@@ -172,6 +184,41 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Auth session idle lifetime must be below absolute lifetime"
             )
+        executor_url = self.generated_executor_url
+        executor_key = self.generated_executor_hmac_key
+        if (executor_url is None) != (executor_key is None):
+            raise ValueError(
+                "generated_executor_url and generated_executor_hmac_key must be "
+                "configured together"
+            )
+        if executor_url is not None:
+            parsed_executor_url = urlsplit(executor_url)
+            if (
+                parsed_executor_url.scheme not in {"http", "https"}
+                or not parsed_executor_url.netloc
+                or parsed_executor_url.username is not None
+                or parsed_executor_url.password is not None
+                or parsed_executor_url.query
+                or parsed_executor_url.fragment
+            ):
+                raise ValueError(
+                    "generated_executor_url must be an absolute HTTP origin or base "
+                    "URL without credentials, query, or fragment"
+                )
+            if (
+                parsed_executor_url.scheme != "https"
+                and not self.generated_executor_allow_insecure_http
+            ):
+                raise ValueError(
+                    "generated_executor_url must use HTTPS unless insecure HTTP is "
+                    "explicitly enabled for trusted development"
+                )
+            if executor_key is None:
+                raise ValueError("generated_executor_hmac_key is required")
+            if len(executor_key.get_secret_value().encode("utf-8")) < 32:
+                raise ValueError(
+                    "generated_executor_hmac_key must contain at least 32 bytes"
+                )
         return self
 
     @property
@@ -194,6 +241,16 @@ class Settings(BaseSettings):
     @property
     def oidc_is_configured(self) -> bool:
         return self.oidc_issuer is not None
+
+    @property
+    def generated_executor_is_configured(self) -> bool:
+        return self.generated_executor_url is not None
+
+    def resolved_generated_executor_hmac_key(self) -> bytes | None:
+        configured = self.generated_executor_hmac_key
+        if configured is None:
+            return None
+        return configured.get_secret_value().encode("utf-8")
 
     def resolved_command_hmac_key(self) -> bytes:
         """Return the deployment HMAC key, failing closed when unset or empty."""

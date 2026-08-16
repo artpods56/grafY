@@ -57,6 +57,68 @@ def test_execution_backend_can_be_selected_from_the_environment(
     assert Settings().execution_backend == "inline"
 
 
+def test_agent_environment_provider_defaults_to_daytona(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GRAFY_AGENT_ENVIRONMENT_PROVIDER", raising=False)
+
+    settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+
+    assert settings.agent_environment_provider == "daytona"
+
+
+def test_trusted_development_agent_provider_requires_explicit_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "GRAFY_AGENT_ENVIRONMENT_PROVIDER",
+        "docker-trusted-development",
+    )
+
+    assert Settings().agent_environment_provider == "docker-trusted-development"
+
+
+def test_agent_environment_provider_rejects_unowned_aliases() -> None:
+    with pytest.raises(ValidationError):
+        Settings.model_validate({"agent_environment_provider": "docker"})
+
+
+def test_generated_executor_requires_paired_https_url_and_hmac_key() -> None:
+    key = SecretStr("k" * 32)
+    configured = Settings(
+        generated_executor_url="https://agent-worker.internal",
+        generated_executor_hmac_key=key,
+    )
+
+    assert configured.generated_executor_is_configured is True
+    assert configured.resolved_generated_executor_hmac_key() == b"k" * 32
+    with pytest.raises(ValidationError, match="configured together"):
+        Settings(generated_executor_url="https://agent-worker.internal")
+    with pytest.raises(ValidationError, match="configured together"):
+        Settings(generated_executor_hmac_key=key)
+    with pytest.raises(ValidationError, match="at least 32 bytes"):
+        Settings(
+            generated_executor_url="https://agent-worker.internal",
+            generated_executor_hmac_key=SecretStr("short"),
+        )
+
+
+def test_generated_executor_http_requires_explicit_trusted_development_opt_in() -> None:
+    with pytest.raises(ValidationError, match="must use HTTPS"):
+        Settings(
+            generated_executor_url="http://agent-worker:8090",
+            generated_executor_hmac_key=SecretStr("k" * 32),
+        )
+
+    configured = Settings(
+        generated_executor_url="http://agent-worker:8090",
+        generated_executor_hmac_key=SecretStr("k" * 32),
+        generated_executor_allow_insecure_http=True,
+    )
+
+    assert configured.generated_executor_url == "http://agent-worker:8090"
+
+
 @pytest.mark.parametrize(
     "environment_variable",
     ["PREFECT_API_URL", "GRAFY_PREFECT_API_URL"],

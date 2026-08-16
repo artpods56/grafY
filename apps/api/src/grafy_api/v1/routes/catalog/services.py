@@ -17,6 +17,7 @@ from grafy_core.domain.saved_graphs import SavedGraphDocument
 from grafy_core.plugins import PluginRegistry, UnknownOperatorError
 
 GRAPH_MODULE_PLUGIN_SLUG = "graph.module"
+AGENT_AUTHORED_PLUGIN_SLUG = "generated.agent"
 
 _MODULE_BOUNDARY_OPERATOR_IDS = frozenset(
     {
@@ -229,6 +230,7 @@ class GraphModuleCatalog:
 
 
 __all__ = [
+    "AGENT_AUTHORED_PLUGIN_SLUG",
     "GRAPH_MODULE_PLUGIN_SLUG",
     "GraphModuleCatalog",
     "GraphModuleCatalogEntry",

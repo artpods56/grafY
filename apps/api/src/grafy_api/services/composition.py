@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal, cast
 
 from grafy_core.artifacts import InMemoryUnitOfWork
+from grafy_core.application.agent_authoring import AgentAuthoringService
 from grafy_core.application.modules import ModuleLibraryService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.operators.arithmetic import (
@@ -33,6 +34,10 @@ from grafy_storage import LocalFileObjectStore
 from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.v1.routes.catalog.services import GraphModuleCatalog
 from grafy_api.v1.routes.executions.runtime.compiler import GraphCompiler
+from grafy_api.v1.routes.executions.runtime.generated_executor import (
+    GeneratedNodeExecutorClient,
+    UnavailableGeneratedReleaseExecutor,
+)
 from grafy_api.v1.routes.executions.runtime.coordinator import (
     GraphExecutionCoordinator,
 )
@@ -75,6 +80,7 @@ class WorkbenchComponents:
     materializations: MaterializationService
     presenter: RunResultPresenter
     artifacts: ArtifactService
+    generated_executor: GeneratedNodeExecutorClient | None
 
 
 def build_workbench_components(
@@ -94,6 +100,10 @@ def build_workbench_components(
     saved_graphs: SavedGraphService | None = None,
     module_library: ModuleLibraryService | None = None,
     node_secrets: NodeSecretResolverPort | None = None,
+    agent_authoring: AgentAuthoringService | None = None,
+    generated_executor_url: str | None = None,
+    generated_executor_hmac_key: bytes | None = None,
+    generated_executor_timeout_seconds: float = 120.0,
 ) -> WorkbenchComponents:
     resolved_workspace = (
         (
@@ -160,10 +170,21 @@ def build_workbench_components(
         saved_graphs,
     )
     presenter = RunResultPresenter(artifacts)
+    generated_executor_client: GeneratedNodeExecutorClient | None = None
+    generated_executor = UnavailableGeneratedReleaseExecutor()
+    if generated_executor_url is not None and generated_executor_hmac_key is not None:
+        generated_executor_client = GeneratedNodeExecutorClient(
+            base_url=generated_executor_url,
+            hmac_key=generated_executor_hmac_key,
+            timeout_seconds=generated_executor_timeout_seconds,
+        )
+        generated_executor = generated_executor_client
     compiler = GraphCompiler(
         plugin_registry=plugin_registry,
         plugin_context=plugin_context,
         module_catalog=modules,
+        generated_releases=agent_authoring,
+        generated_executor=generated_executor,
     )
     edge_values = EdgeValueResolver(
         resolvers=resolver_registry,
@@ -224,6 +245,7 @@ def build_workbench_components(
         materializations=materializations,
         presenter=presenter,
         artifacts=artifacts,
+        generated_executor=generated_executor_client,
     )
 
 

@@ -11,11 +11,23 @@ from grafy_core.artifacts import (
 )
 from grafy_core.conversions import ArtifactConversion, ArtifactConversionKey
 from grafy_core.domain.module_library import ModulePublicationState
+from grafy_core.domain.agent_authoring import (
+    DraftNode,
+    DraftNodeStatus,
+    GeneratedNodeManifest,
+    GeneratedNodePort,
+    NodeBuildAttempt,
+    NodeRelease,
+)
 from grafy_core.nodes import (
     ArtifactTypeVariable,
     InputPortSpec,
     OutputPortSpec,
     PortShape,
+)
+from grafy_core.operators.generated import (
+    GeneratedNodeContractError,
+    validate_generated_release_contract,
 )
 from grafy_core.operators.modules import GraphModuleNode
 from grafy_core.plugins import (
@@ -34,6 +46,7 @@ from grafy_api.v1.models import (
 )
 
 from .services import (
+    AGENT_AUTHORED_PLUGIN_SLUG,
     GRAPH_MODULE_PLUGIN_SLUG,
     GraphModuleCatalogEntry,
     GraphModuleCatalogListing,
@@ -228,6 +241,24 @@ class PortResponse(ApiResponse):
             required=port.required,
         )
 
+    @classmethod
+    def from_generated_port(cls, port: GeneratedNodePort) -> Self:
+        accepted_shapes = list(port.accepted_shapes)
+        if not accepted_shapes:
+            accepted_shapes = [port.shape]
+        return cls(
+            name=port.name,
+            title=port.name.replace("_", " ").title(),
+            direction=port.direction.value,
+            artifact_type=ArtifactTypeKeyResponse(
+                id=port.artifact_type.id,
+                schema_version=port.artifact_type.schema_version,
+            ),
+            shape=port.shape,
+            accepted_shapes=accepted_shapes,
+            required=port.required,
+        )
+
 
 class NodeSecretInputResponse(ApiResponse):
     name: str
@@ -243,6 +274,31 @@ class NodeSecretInputResponse(ApiResponse):
             title=spec.title,
             description=spec.description,
         )
+
+
+class AgentNodeAuthoringResponse(ApiResponse):
+    draft_node_id: UUID
+    status: DraftNodeStatus
+    runnable: bool
+    release_revision: int | None = Field(default=None, ge=1)
+
+
+def agent_release_is_runnable(
+    release: NodeRelease,
+    registry: PluginRegistry,
+    *,
+    generated_execution_available: bool,
+) -> bool:
+    if not generated_execution_available:
+        return False
+    artifact_types = {
+        artifact_type.key: artifact_type for artifact_type in registry.artifact_types
+    }
+    try:
+        validate_generated_release_contract(release, artifact_types)
+    except GeneratedNodeContractError:
+        return False
+    return True
 
 
 class NodeSpecResponse(ApiResponse):
@@ -263,6 +319,7 @@ class NodeSpecResponse(ApiResponse):
     publication_state: ModulePublicationState | None = None
     is_current_library_release: bool | None = None
     catalog_visible: bool = True
+    agent_authoring: AgentNodeAuthoringResponse | None = None
 
     @model_validator(mode="after")
     def validate_module_identity(self) -> Self:
@@ -331,7 +388,103 @@ class NodeSpecResponse(ApiResponse):
             catalog_visible=entry.catalog_visible,
         )
 
+    @classmethod
+    def from_agent_draft(cls, draft: DraftNode) -> Self:
+        return cls.from_agent_manifest(
+            operator_id=draft.operator_id,
+            operator_version=draft.operator_version,
+            manifest=draft.provisional_manifest,
+            authoring=AgentNodeAuthoringResponse(
+                draft_node_id=draft.id,
+                status=draft.status,
+                runnable=False,
+                release_revision=None,
+            ),
+        )
 
+    @classmethod
+    def from_agent_build(
+        cls,
+        draft: DraftNode,
+        build: NodeBuildAttempt,
+    ) -> Self:
+        return cls.from_agent_manifest(
+            operator_id=draft.operator_id,
+            operator_version=draft.operator_version,
+            manifest=build.manifest or draft.provisional_manifest,
+            authoring=AgentNodeAuthoringResponse(
+                draft_node_id=draft.id,
+                status=draft.status,
+                runnable=False,
+                release_revision=None,
+            ),
+        )
+
+    @classmethod
+    def from_agent_release(cls, release: NodeRelease, *, runnable: bool) -> Self:
+        return cls.from_agent_manifest(
+            operator_id=release.operator_id,
+            operator_version=release.operator_version,
+            manifest=release.manifest,
+            authoring=AgentNodeAuthoringResponse(
+                draft_node_id=release.draft_node_id,
+                status=DraftNodeStatus.PUBLISHED,
+                runnable=runnable,
+                release_revision=release.revision,
+            ),
+        )
+
+    @classmethod
+    def from_agent_manifest(
+        cls,
+        *,
+        operator_id: str,
+        operator_version: int,
+        manifest: GeneratedNodeManifest,
+        authoring: AgentNodeAuthoringResponse,
+    ) -> Self:
+        input_properties = {
+            port.name: {"title": port.name.replace("_", " ").title()}
+            for port in manifest.inputs
+        }
+        output_properties = {
+            port.name: {"title": port.name.replace("_", " ").title()}
+            for port in manifest.outputs
+        }
+        return cls(
+            operator_id=operator_id,
+            operator_version=operator_version,
+            plugin_slug=AGENT_AUTHORED_PLUGIN_SLUG,
+            title=manifest.title,
+            description=manifest.description,
+            config_schema={
+                "title": "GeneratedNodeConfig",
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            input_schema={
+                "title": "GeneratedNodeInput",
+                "type": "object",
+                "properties": input_properties,
+                "required": [
+                    port.name for port in manifest.inputs if port.required
+                ],
+            },
+            output_schema={
+                "title": "GeneratedNodeOutput",
+                "type": "object",
+                "properties": output_properties,
+                "required": [
+                    port.name for port in manifest.outputs if port.required
+                ],
+            },
+            inputs=[PortResponse.from_generated_port(port) for port in manifest.inputs],
+            outputs=[
+                PortResponse.from_generated_port(port) for port in manifest.outputs
+            ],
+            agent_authoring=authoring,
+        )
 class UnavailableGraphModuleResponse(ApiResponse):
     graph_id: UUID
     revision: int = Field(ge=1, strict=True)
@@ -363,7 +516,36 @@ class NodeRegistryResponse(ApiResponse):
         registry: PluginRegistry,
         module_listing: GraphModuleCatalogListing,
         module_executor: GraphModuleExecutorPort,
+        *,
+        agent_drafts: list[DraftNode] | None = None,
+        agent_releases: list[NodeRelease] | None = None,
+        generated_execution_available: bool = False,
     ) -> Self:
+        drafts = agent_drafts or []
+        releases = agent_releases or []
+        released_identities = {
+            (release.operator_id, release.operator_version) for release in releases
+        }
+        agent_nodes = [
+            NodeSpecResponse.from_agent_draft(draft)
+            for draft in drafts
+            if draft.status is not DraftNodeStatus.PUBLISHED
+            and (draft.operator_id, draft.operator_version)
+            not in released_identities
+        ]
+        for release in releases:
+            agent_nodes.append(
+                NodeSpecResponse.from_agent_release(
+                    release,
+                    runnable=agent_release_is_runnable(
+                        release,
+                        registry,
+                        generated_execution_available=(
+                            generated_execution_available
+                        ),
+                    ),
+                )
+            )
         return cls(
             plugins=[
                 PluginSpecResponse.from_plugin(plugin) for plugin in registry.plugins
@@ -373,7 +555,12 @@ class NodeRegistryResponse(ApiResponse):
                     slug=GRAPH_MODULE_PLUGIN_SLUG,
                     title="Workspace library",
                     origin=PluginOrigin.MODULE,
-                )
+                ),
+                PluginSpecResponse(
+                    slug=AGENT_AUTHORED_PLUGIN_SLUG,
+                    title="Agent-authored nodes",
+                    origin=PluginOrigin.AGENT,
+                ),
             ],
             artifact_types=[
                 ArtifactTypeSpecResponse.from_spec(spec)
@@ -390,7 +577,8 @@ class NodeRegistryResponse(ApiResponse):
             + [
                 NodeSpecResponse.from_graph_module(entry, module_executor)
                 for entry in module_listing.entries
-            ],
+            ]
+            + agent_nodes,
             unavailable_modules=[
                 UnavailableGraphModuleResponse.from_module(module)
                 for module in module_listing.unavailable
@@ -399,6 +587,7 @@ class NodeRegistryResponse(ApiResponse):
 
 
 __all__ = [
+    "AgentNodeAuthoringResponse",
     "ArtifactConversionKeyResponse",
     "ArtifactConversionSpecResponse",
     "ArtifactExportFormatResponse",

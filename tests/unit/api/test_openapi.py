@@ -32,6 +32,16 @@ def test_openapi_contains_exact_public_routes() -> None:
         "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/raster/tilejson.json",
         "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/raster/{z}/{x}/{y}.png",
         "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/vector.pmtiles",
+        "/v1/workspaces/{workspace_id}/agent-authoring/builds/{build_attempt_id}/approval",
+        "/v1/workspaces/{workspace_id}/agent-authoring/builds/{build_attempt_id}/publish",
+        "/v1/workspaces/{workspace_id}/agent-authoring/builds/{build_attempt_id}/review",
+        "/v1/workspaces/{workspace_id}/agent-authoring/builds/{build_attempt_id}/review/files/{file_path}",
+        "/v1/workspaces/{workspace_id}/agent-authoring/drafts/{draft_node_id}",
+        "/v1/workspaces/{workspace_id}/agent-authoring/environments",
+        "/v1/workspaces/{workspace_id}/agent-authoring/graphs/{graph_id}/drafts",
+        "/v1/workspaces/{workspace_id}/agent-authoring/runs/{run_id}",
+        "/v1/workspaces/{workspace_id}/agent-authoring/runs/{run_id}/events",
+        "/v1/workspaces/{workspace_id}/agent-authoring/threads/{thread_id}/runs",
         "/v1/workspaces/{workspace_id}/executions",
         "/v1/workspaces/{workspace_id}/executions/{execution_id}",
         "/v1/workspaces/{workspace_id}/executions/{execution_id}/events",
@@ -88,6 +98,61 @@ def test_openapi_contains_exact_public_routes() -> None:
     assert set(
         schema["paths"]["/v1/workspaces/{workspace_id}/graphs/{graph_id}/checkpoint"]
     ) == {"post"}
+    assert set(
+        schema["paths"][
+            "/v1/workspaces/{workspace_id}/agent-authoring/environments"
+        ]
+    ) == {"get", "post"}
+    assert set(
+        schema["paths"][
+            "/v1/workspaces/{workspace_id}/agent-authoring/graphs/{graph_id}/drafts"
+        ]
+    ) == {"post"}
+    assert set(
+        schema["paths"][
+            "/v1/workspaces/{workspace_id}/agent-authoring/runs/{run_id}"
+        ]
+    ) == {"delete", "get"}
+    event_stream_response = schema["paths"][
+        "/v1/workspaces/{workspace_id}/agent-authoring/runs/{run_id}/events"
+    ]["get"]["responses"]["200"]
+    assert event_stream_response["content"] == {
+        "text/event-stream": {"schema": {"type": "string"}}
+    }
+    event_stream_parameters = schema["paths"][
+        "/v1/workspaces/{workspace_id}/agent-authoring/runs/{run_id}/events"
+    ]["get"]["parameters"]
+    assert any(
+        parameter["in"] == "query" and parameter["name"] == "after_sequence"
+        for parameter in event_stream_parameters
+    )
+    assert schema["paths"][
+        "/v1/workspaces/{workspace_id}/agent-authoring/drafts/{draft_node_id}"
+    ]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/AgentDraftDetailResponse"
+    }
+    assert schema["paths"][
+        "/v1/workspaces/{workspace_id}/agent-authoring/threads/{thread_id}/runs"
+    ]["post"]["responses"]["202"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/AgentFollowUpRunResponse"
+    }
+    assert schema["paths"][
+        "/v1/workspaces/{workspace_id}/agent-authoring/builds/{build_attempt_id}/review"
+    ]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/BuildReviewResponse"
+    }
+    assert schema["components"]["schemas"]["PublishBuildRequest"][
+        "required"
+    ] == ["capability_approval_id"]
+    assert schema["components"]["schemas"]["PublishBuildRequest"]["properties"][
+        "graph_promotion"
+    ]["anyOf"][0] == {"$ref": "#/components/schemas/PublishGraphPromotionRequest"}
+    assert {"head", "receipt"}.issubset(
+        schema["components"]["schemas"]["PublishBuildResponse"]["properties"]
+    )
+    assert "capability_approval_id" in schema["components"]["schemas"][
+        "NodeReleaseResponse"
+    ]["required"]
     assert set(schema["paths"]["/v1/workspaces/{workspace_id}/executions"]) == {"post"}
     synchronous_run_responses = schema["paths"][
         "/v1/workspaces/{workspace_id}/runs"
@@ -236,7 +301,7 @@ def test_openapi_contains_exact_public_routes() -> None:
     }
     assert set(plugin_schema["required"]) == {"slug", "title", "origin"}
     assert schema["components"]["schemas"]["PluginOrigin"] == {
-        "enum": ["builtin", "external", "module"],
+        "enum": ["agent", "builtin", "external", "module"],
         "title": "PluginOrigin",
         "type": "string",
     }
@@ -312,14 +377,13 @@ def test_openapi_contains_exact_public_routes() -> None:
         {"type": "null"},
     ]
 
-    for schema_name in ("SavedGraphNodeModel-Input", "SavedGraphNodeModel-Output"):
-        saved_node_schema = schema["components"]["schemas"][schema_name]
-        assert saved_node_schema["properties"]["input_plugs"]["items"] == {
-            "$ref": "#/components/schemas/SavedGraphInputPlugModel"
-        }
-        assert saved_node_schema["properties"]["artifact_type_bindings"]["items"] == {
-            "$ref": "#/components/schemas/ArtifactTypeBindingModel"
-        }
+    saved_node_schema = schema["components"]["schemas"]["SavedGraphNodeModel"]
+    assert saved_node_schema["properties"]["input_plugs"]["items"] == {
+        "$ref": "#/components/schemas/SavedGraphInputPlugModel"
+    }
+    assert saved_node_schema["properties"]["artifact_type_bindings"]["items"] == {
+        "$ref": "#/components/schemas/ArtifactTypeBindingModel"
+    }
     saved_edge_schema = schema["components"]["schemas"]["SavedGraphEdgeModel"]
     assert "to_plug" in saved_edge_schema["properties"]
     assert saved_edge_schema["properties"]["enabled"]["default"] is True

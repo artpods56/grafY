@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
+from grafy_core.application.agent_authoring import AgentAuthoringService
 from grafy_core.plugins import PluginRegistry
 from grafy_core.ports.modules import GraphModuleExecutorPort
 
@@ -40,11 +41,35 @@ GraphModuleExecutorDependency = Annotated[
 ]
 
 
+def agent_authoring_catalog(request: Request) -> AgentAuthoringService:
+    return get_resources(request.app).agent_authoring
+
+
+AgentAuthoringCatalogDependency = Annotated[
+    AgentAuthoringService,
+    Depends(agent_authoring_catalog),
+]
+
+
+def generated_execution_available(request: Request) -> bool:
+    return get_resources(request.app).generated_executor is not None
+
+
+GeneratedExecutionAvailabilityDependency = Annotated[
+    bool,
+    Depends(generated_execution_available),
+]
+
+
 __all__ = [
+    "AgentAuthoringCatalogDependency",
     "GraphModuleCatalogDependency",
     "GraphModuleExecutorDependency",
+    "GeneratedExecutionAvailabilityDependency",
     "PluginRegistryDependency",
+    "agent_authoring_catalog",
     "graph_module_catalog",
     "graph_module_executor",
+    "generated_execution_available",
     "plugin_registry",
 ]

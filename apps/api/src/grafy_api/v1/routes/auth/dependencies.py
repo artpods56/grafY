@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from typing import Annotated
 from uuid import UUID
 
@@ -57,7 +58,9 @@ async def browser_actor(
         raise
 
 
-def require_workspace_capability(capability: WorkspaceCapability):
+def workspace_capability_dependency(
+    capability: WorkspaceCapability,
+) -> Callable[[Request, UUID, ActorContext], Awaitable[WorkspaceAccess]]:
     async def dependency(
         request: Request,
         workspace_id: UUID,
@@ -69,4 +72,11 @@ def require_workspace_capability(capability: WorkspaceCapability):
             capability=capability,
         )
 
-    return Annotated[WorkspaceAccess, Depends(dependency)]
+    return dependency
+
+
+def require_workspace_capability(capability: WorkspaceCapability):
+    return Annotated[
+        WorkspaceAccess,
+        Depends(workspace_capability_dependency(capability)),
+    ]
