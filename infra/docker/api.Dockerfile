@@ -8,6 +8,7 @@ ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 
 COPY pyproject.toml uv.lock alembic.ini ./
+COPY libs/agent ./libs/agent
 COPY libs/core ./libs/core
 COPY libs/persistence ./libs/persistence
 COPY libs/storage ./libs/storage
@@ -16,6 +17,7 @@ COPY plugins/ocr ./plugins/ocr
 COPY plugins/gis ./plugins/gis
 COPY plugins/sql ./plugins/sql
 COPY apps/api ./apps/api
+COPY apps/agent-worker ./apps/agent-worker
 COPY apps/mcp ./apps/mcp
 COPY infra/db ./infra/db
 
@@ -42,3 +44,11 @@ RUN uv sync --locked --no-dev --extra gis --extra llm --extra ocr
 FROM source AS api
 
 RUN uv sync --locked --no-dev --package grafy-api
+
+FROM source AS agent-worker
+
+RUN uv sync --locked --no-dev --package grafy-agent-worker
+
+EXPOSE 8091
+
+CMD [".venv/bin/grafy-agent-worker"]

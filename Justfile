@@ -62,6 +62,10 @@ api-sql: db-upgrade
 api-all: db-upgrade
     uv run --exact --no-dev --extra llm --extra gis --extra ocr --extra sql uvicorn grafy_api.main:app --reload --host 0.0.0.0 --port 8000
 
+# Start the durable coding-agent worker and private generated-node executor.
+agent-worker: db-upgrade
+    uv run --no-dev --package grafy-agent-worker grafy-agent-worker
+
 # Explain how to connect an MCP client to the API.
 mcp:
     @echo "MCP is mounted on the API at /mcp (stateless Streamable HTTP)."
@@ -84,7 +88,7 @@ test:
 
 # Run Python and web linters.
 lint:
-    uv run ruff check apps/api/src apps/mcp/src libs/core/src libs/persistence/src libs/storage/src plugins/gis/src plugins/llm/src plugins/ocr/src plugins/sql/src infra/db/migrations scripts tests
+    uv run ruff check apps/agent-worker/src apps/api/src apps/mcp/src libs/agent/src libs/core/src libs/persistence/src libs/storage/src plugins/gis/src plugins/llm/src plugins/ocr/src plugins/sql/src infra/db/migrations scripts tests
     npm --prefix apps/web run lint
 
 # Run Python and TypeScript type checks.
@@ -106,6 +110,10 @@ check: test lint typecheck contract build
 # Exercise the workbench runtime without the browser.
 smoke:
     uv run --extra ocr python scripts/smoke_workbench.py
+
+# Exercise the trusted-development Docker sandbox and generated-node runtime.
+test-agent-worker-docker:
+    GRAFY_RUN_DOCKER_AGENT_TESTS=true uv run --package grafy-agent-worker pytest -q tests/unit/agent_worker/test_docker_runtime_integration.py
 
 # Upgrade the database to the latest migration.
 db-upgrade:
