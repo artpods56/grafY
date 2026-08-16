@@ -1,11 +1,13 @@
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.domain.collaboration import (
     AddEdgeCommand,
     AddNodeCommand,
+    ApplyGraphCommandBatch,
     ClearNodeArtifactTypeBindingCommand,
     CollaborativeGraphHead,
     DuplicateNodeCommand,
@@ -26,6 +28,7 @@ from grafy_core.domain.collaboration import (
     UpdateNodeConfigurationAndInputPlugsCommand,
     UpdateNodeConfigurationCommand,
     UpdateNodeLayoutCommand,
+    UpdateNodeOperatorCommand,
     apply_graph_command,
     command_hmac_digest,
     command_requires_exact_sequence,
@@ -80,6 +83,154 @@ def test_apply_rename_and_add_node() -> None:
     )
     assert name == "Named"
     assert document.nodes[0].id == "n1"
+
+
+def test_apply_batch_adds_dependent_node_and_edge_atomically() -> None:
+    source = _node("source")
+    original = SavedGraphDocument(nodes=(source,))
+    generated = _node("generated", x=200)
+    edge = SavedGraphEdge(
+        id="source-to-generated",
+        from_node="source",
+        from_port="result",
+        to_node="generated",
+        to_port="value",
+    )
+
+    name, updated = apply_graph_command(
+        name="Graph",
+        document=original,
+        command=ApplyGraphCommandBatch(
+            commands=(
+                AddNodeCommand(node=generated),
+                AddEdgeCommand(edge=edge),
+            )
+        ),
+    )
+
+    assert name == "Graph"
+    assert [node.id for node in updated.nodes] == ["source", "generated"]
+    assert [candidate.id for candidate in updated.edges] == ["source-to-generated"]
+    assert [node.id for node in original.nodes] == ["source"]
+    assert original.edges == ()
+
+
+def test_apply_batch_failure_does_not_mutate_original_document() -> None:
+    source = _node("source")
+    original = SavedGraphDocument(nodes=(source,))
+    command = ApplyGraphCommandBatch(
+        commands=(
+            AddNodeCommand(node=_node("generated")),
+            AddNodeCommand(node=source),
+        )
+    )
+
+    with pytest.raises(CollaborationCommandRejectedError) as exc:
+        apply_graph_command(name="Graph", document=original, command=command)
+
+    assert exc.value.error_code == "duplicate_node"
+    assert [node.id for node in original.nodes] == ["source"]
+
+
+def test_update_node_operator_preserves_node_and_edge_state() -> None:
+    source = _node("source")
+    generated = SavedGraphNode(
+        id="generated",
+        operator_id="generated.node.11111111-1111-1111-1111-111111111111",
+        operator_version=1,
+        config={"mode": "strict"},
+        position=GraphPoint(x=240, y=120),
+        layout=SavedGraphNodeLayout(width=420),
+        input_plugs=(SavedGraphInputPlug(id="extra-1", port="extra"),),
+        artifact_type_bindings=(
+            SavedGraphArtifactTypeBinding(
+                variable="T",
+                artifact_type={"id": "scalar.text", "schema_version": 1},
+            ),
+        ),
+    )
+    edge = SavedGraphEdge(
+        id="source-generated",
+        from_node=source.id,
+        from_port="result",
+        to_node=generated.id,
+        to_port="texts",
+    )
+    original = SavedGraphDocument(nodes=(source, generated), edges=(edge,))
+
+    _, updated = apply_graph_command(
+        name="Graph",
+        document=original,
+        command=UpdateNodeOperatorCommand(
+            node_id=generated.id,
+            operator_id=generated.operator_id,
+            operator_version=2,
+            expected_operator_id=generated.operator_id,
+            expected_operator_version=1,
+        ),
+    )
+
+    promoted = next(node for node in updated.nodes if node.id == generated.id)
+    assert promoted.operator_version == 2
+    assert promoted.operator_id == generated.operator_id
+    assert promoted.id == generated.id
+    assert promoted.config == generated.config
+    assert promoted.position == generated.position
+    assert promoted.layout == generated.layout
+    assert promoted.input_plugs == generated.input_plugs
+    assert promoted.artifact_type_bindings == generated.artifact_type_bindings
+    assert updated.edges == original.edges
+    assert original.nodes[1].operator_version == 1
+
+
+def test_update_node_operator_is_conflict_aware_and_batch_compatible() -> None:
+    generated = SavedGraphNode(
+        id="generated",
+        operator_id="generated.node.11111111-1111-1111-1111-111111111111",
+        operator_version=1,
+        position=GraphPoint(x=0, y=0),
+    )
+    original = SavedGraphDocument(nodes=(generated,))
+    update = UpdateNodeOperatorCommand(
+        node_id=generated.id,
+        operator_id=generated.operator_id,
+        operator_version=2,
+        expected_operator_id=generated.operator_id,
+        expected_operator_version=1,
+    )
+
+    _, updated = apply_graph_command(
+        name="Graph",
+        document=original,
+        command=ApplyGraphCommandBatch(commands=(update,)),
+    )
+    assert updated.nodes[0].operator_version == 2
+
+    with pytest.raises(CollaborationCommandRejectedError) as exc:
+        apply_graph_command(
+            name="Graph",
+            document=updated,
+            command=update,
+        )
+    assert exc.value.error_code == "field_conflict"
+
+
+def test_apply_batch_rejects_nested_batches_and_requires_exact_sequence() -> None:
+    primitive = AddNodeCommand(node=_node("generated"))
+    batch = ApplyGraphCommandBatch(commands=(primitive,))
+
+    assert command_requires_exact_sequence(batch)
+    with pytest.raises(ValidationError):
+        ApplyGraphCommandBatch.model_validate(
+            {
+                "commands": [
+                    {
+                        "kind": "apply_batch",
+                        "commands": [primitive.model_dump(mode="json")],
+                    }
+                ]
+            }
+        )
 
 
 def test_apply_rejects_duplicate_node() -> None:

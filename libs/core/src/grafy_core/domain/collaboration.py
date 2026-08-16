@@ -6,7 +6,7 @@ from enum import StrEnum
 from hashlib import sha256
 import hmac
 import json
-from typing import Annotated, ClassVar, Literal, Self
+from typing import Annotated, ClassVar, Literal, Self, TypeAlias, cast
 from uuid import UUID, uuid4
 
 from pydantic import (
@@ -20,6 +20,7 @@ from pydantic import (
 from grafy_core.domain.errors import CollaborationCommandRejectedError
 from grafy_core.domain.modules import GRAPH_MODULE_OPERATOR_PREFIX
 from grafy_core.domain.saved_graphs import (
+    GraphIdentifier,
     GraphPoint,
     GraphPresentationAnnotation,
     GraphPresentationDocument,
@@ -53,6 +54,7 @@ class GraphCommandKind(StrEnum):
     DUPLICATE_NODE = "duplicate_node"
     REMOVE_NODES = "remove_nodes"
     MOVE_NODES = "move_nodes"
+    UPDATE_NODE_OPERATOR = "update_node_operator"
     UPDATE_NODE_CONFIGURATION = "update_node_configuration"
     UPDATE_NODE_LAYOUT = "update_node_layout"
     SET_NODE_INPUT_PLUGS = "set_node_input_plugs"
@@ -71,6 +73,7 @@ class GraphCommandKind(StrEnum):
     REPLACE_PRESENTATION = "replace_presentation"
     MOVE_ARTIFACT_VIEWERS = "move_artifact_viewers"
     MOVE_ANNOTATIONS = "move_annotations"
+    APPLY_BATCH = "apply_batch"
 
 
 class CollaborationValue(BaseModel):
@@ -126,6 +129,19 @@ class MoveNodePosition(CollaborationValue):
 class MoveNodesCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.MOVE_NODES] = GraphCommandKind.MOVE_NODES
     positions: tuple[MoveNodePosition, ...] = Field(min_length=1)
+
+
+class UpdateNodeOperatorCommand(CollaborationValue):
+    """Compare-and-swap one node's immutable operator release identity."""
+
+    kind: Literal[GraphCommandKind.UPDATE_NODE_OPERATOR] = (
+        GraphCommandKind.UPDATE_NODE_OPERATOR
+    )
+    node_id: GraphIdentifier
+    operator_id: GraphIdentifier
+    operator_version: int = Field(ge=1)
+    expected_operator_id: GraphIdentifier
+    expected_operator_version: int = Field(ge=1)
 
 
 class UpdateNodeConfigurationCommand(CollaborationValue):
@@ -247,12 +263,13 @@ class MoveAnnotationsCommand(CollaborationValue):
     positions: tuple[MoveAnnotationPosition, ...] = Field(min_length=1)
 
 
-GraphCommand = Annotated[
+PrimitiveGraphCommand: TypeAlias = (
     RenameGraphCommand
     | AddNodeCommand
     | DuplicateNodeCommand
     | RemoveNodesCommand
     | MoveNodesCommand
+    | UpdateNodeOperatorCommand
     | UpdateNodeConfigurationCommand
     | UpdateNodeLayoutCommand
     | SetNodeInputPlugsCommand
@@ -265,7 +282,24 @@ GraphCommand = Annotated[
     | ReplaceDocumentCommand
     | ReplacePresentationCommand
     | MoveArtifactViewersCommand
-    | MoveAnnotationsCommand,
+    | MoveAnnotationsCommand
+)
+
+PrimitiveGraphCommandPayload: TypeAlias = Annotated[
+    PrimitiveGraphCommand,
+    Field(discriminator="kind"),
+]
+
+
+class ApplyGraphCommandBatch(CollaborationValue):
+    """Primitive graph commands accepted as one collaborative transaction."""
+
+    kind: Literal[GraphCommandKind.APPLY_BATCH] = GraphCommandKind.APPLY_BATCH
+    commands: tuple[PrimitiveGraphCommandPayload, ...] = Field(min_length=1)
+
+
+GraphCommand: TypeAlias = Annotated[
+    PrimitiveGraphCommand | ApplyGraphCommandBatch,
     Field(discriminator="kind"),
 ]
 
@@ -308,7 +342,14 @@ def command_hmac_digest(
 
 
 def command_requires_exact_sequence(command: GraphCommand) -> bool:
-    return isinstance(command, (ReplaceDocumentCommand, ReplacePresentationCommand))
+    return isinstance(
+        command,
+        (
+            ApplyGraphCommandBatch,
+            ReplaceDocumentCommand,
+            ReplacePresentationCommand,
+        ),
+    )
 
 
 def _json_equal(left: object, right: object) -> bool:
@@ -361,8 +402,9 @@ def _binding_for_variable(
 
 def _sanitize_config_value(value: object) -> object:
     if isinstance(value, dict):
+        mapping = cast(dict[str, object], value)
         sanitized: dict[str, object] = {}
-        for key, item in value.items():
+        for key, item in mapping.items():
             if key in {"upload_key", "artifact_id"}:
                 continue
             if key == "uploads" and isinstance(item, list):
@@ -370,7 +412,8 @@ def _sanitize_config_value(value: object) -> object:
             sanitized[key] = _sanitize_config_value(item)
         return sanitized
     if isinstance(value, list):
-        return [_sanitize_config_value(item) for item in value]
+        items = cast(list[object], value)
+        return [_sanitize_config_value(item) for item in items]
     return value
 
 
@@ -442,6 +485,17 @@ def apply_graph_command(
     document: SavedGraphDocument,
     command: GraphCommand,
 ) -> tuple[str, SavedGraphDocument]:
+    if isinstance(command, ApplyGraphCommandBatch):
+        next_name = name
+        next_document = document
+        for primitive in command.commands:
+            next_name, next_document = apply_graph_command(
+                name=next_name,
+                document=next_document,
+                command=primitive,
+            )
+        return next_name, next_document
+
     if isinstance(command, RenameGraphCommand):
         if name != command.expected_name:
             raise _field_conflict(
@@ -496,6 +550,32 @@ def apply_graph_command(
                 if node.id in positions
                 else node
                 for node in document.nodes
+            ),
+        )
+
+    if isinstance(command, UpdateNodeOperatorCommand):
+        node = _node_or_raise(document, command.node_id)
+        if (
+            node.operator_id != command.expected_operator_id
+            or node.operator_version != command.expected_operator_version
+        ):
+            raise _field_conflict(
+                f"Operator on node {command.node_id} changed: expected "
+                f"{command.expected_operator_id}@"
+                f"{command.expected_operator_version}, actual "
+                f"{node.operator_id}@{node.operator_version}"
+            )
+        return name, document.with_topology(
+            nodes=tuple(
+                candidate.model_copy(
+                    update={
+                        "operator_id": command.operator_id,
+                        "operator_version": command.operator_version,
+                    }
+                )
+                if candidate.id == command.node_id
+                else candidate
+                for candidate in document.nodes
             ),
         )
 
@@ -699,34 +779,25 @@ def apply_graph_command(
             ),
         )
 
-    if isinstance(command, MoveAnnotationsCommand):
-        for position in command.positions:
-            _annotation_or_raise(document, position.annotation_id)
-        positions = {
-            position.annotation_id: GraphPoint(x=position.x, y=position.y)
-            for position in command.positions
-        }
-        return name, document.with_topology(
-            presentation=GraphPresentationDocument(
-                viewers=document.presentation.viewers,
-                links=document.presentation.links,
-                bindings=document.presentation.bindings,
-                annotations=tuple(
-                    annotation.model_copy(
-                        update={"position": positions[annotation.id]}
-                    )
-                    if annotation.id in positions
-                    else annotation
-                    for annotation in document.presentation.annotations
-                ),
+    for position in command.positions:
+        _annotation_or_raise(document, position.annotation_id)
+    positions = {
+        position.annotation_id: GraphPoint(x=position.x, y=position.y)
+        for position in command.positions
+    }
+    return name, document.with_topology(
+        presentation=GraphPresentationDocument(
+            viewers=document.presentation.viewers,
+            links=document.presentation.links,
+            bindings=document.presentation.bindings,
+            annotations=tuple(
+                annotation.model_copy(update={"position": positions[annotation.id]})
+                if annotation.id in positions
+                else annotation
+                for annotation in document.presentation.annotations
             ),
-        )
-
-    raise CollaborationCommandRejectedError(
-        code="unsupported_command",
-        message=f"Unsupported graph command kind {command.kind!r}",
+        ),
     )
-
 
 @dataclass
 class CollaborativeGraphHead:
@@ -920,6 +991,7 @@ class GraphActiveExecutionSlot(BaseModel):
 __all__ = [
     "AddEdgeCommand",
     "AddNodeCommand",
+    "ApplyGraphCommandBatch",
     "ClearNodeArtifactTypeBindingCommand",
     "CollaborationActorKind",
     "CollaborativeGraphHead",
@@ -939,6 +1011,7 @@ __all__ = [
     "MoveArtifactViewersCommand",
     "MoveNodePosition",
     "MoveNodesCommand",
+    "PrimitiveGraphCommand",
     "RemoveEdgesCommand",
     "RemoveNodesCommand",
     "RenameGraphCommand",
@@ -950,6 +1023,7 @@ __all__ = [
     "UpdateNodeConfigurationAndInputPlugsCommand",
     "UpdateNodeConfigurationCommand",
     "UpdateNodeLayoutCommand",
+    "UpdateNodeOperatorCommand",
     "apply_graph_command",
     "canonical_command_payload",
     "command_hmac_digest",

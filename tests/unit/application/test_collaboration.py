@@ -1,21 +1,26 @@
 from types import TracebackType
-from typing import Self
+from typing import Self, cast
 from uuid import UUID, uuid4
 
 import pytest
 
 from grafy_core.application.collaboration import CollaborationService
 from grafy_core.domain.collaboration import (
+    AddEdgeCommand,
+    AddNodeCommand,
+    ApplyGraphCommandBatch,
     CollaborativeGraphHead,
     CommandReceiptOutcome,
     GraphActiveExecutionSlot,
     GraphCheckpointMapping,
     GraphCommandJournalEntry,
+    GraphCommandKind,
     GraphCommandReceipt,
     MoveNodePosition,
     MoveNodesCommand,
     RenameGraphCommand,
     ReplaceDocumentCommand,
+    UpdateNodeOperatorCommand,
     UpdateNodeConfigurationAndInputPlugsCommand,
 )
 from grafy_core.domain.errors import (
@@ -40,6 +45,7 @@ from grafy_core.domain.saved_graphs import (
     GraphPoint,
     SavedGraph,
     SavedGraphDocument,
+    SavedGraphEdge,
     SavedGraphInputPlug,
     SavedGraphNode,
     SavedGraphRevision,
@@ -49,6 +55,7 @@ from grafy_core.domain.security_audit import (
     SecurityAuditOutcome,
 )
 from grafy_core.plugins import PluginRegistry
+from grafy_core.ports.collaboration import CollaborationUnitOfWorkPort
 
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000201")
@@ -570,6 +577,211 @@ async def test_accept_command_advances_sequence_without_checkpoint() -> None:
     assert updated_head.name == "Renamed"
     assert receipt.accepted_sequence == 2
     assert factory.graphs.graphs[graph_id].revision == 1
+
+
+@pytest.mark.asyncio
+async def test_accept_operator_promotion_is_journaled_as_one_cas_command() -> None:
+    factory = FakeFactory()
+    service = _service(factory)
+    graph_id = uuid4()
+    node = SavedGraphNode(
+        id="generated",
+        operator_id="generated.node.00000000-0000-0000-0000-000000000321",
+        operator_version=1,
+        position=GraphPoint(x=120, y=80),
+        config={"mode": "strict"},
+    )
+    _, head, _ = await service.bootstrap_graph(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        command_id=uuid4(),
+        command=ReplaceDocumentCommand(
+            name="Draft",
+            document=SavedGraphDocument(nodes=(node,)),
+        ),
+        graph_id=graph_id,
+    )
+    journal_before = len(factory.collaboration.journal)
+    observed_sequence = head.collaboration_sequence
+
+    updated, receipt = await service.accept_command(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        graph_id=graph_id,
+        command_id=uuid4(),
+        observed_sequence=observed_sequence,
+        observed_room_epoch=head.room_epoch,
+        command=UpdateNodeOperatorCommand(
+            node_id=node.id,
+            operator_id=node.operator_id,
+            operator_version=2,
+            expected_operator_id=node.operator_id,
+            expected_operator_version=1,
+        ),
+    )
+
+    promoted = updated.document.nodes[0]
+    assert promoted.operator_version == 2
+    assert promoted.id == node.id
+    assert promoted.config == node.config
+    assert promoted.position == node.position
+    assert receipt.accepted_sequence == observed_sequence + 1
+    assert len(factory.collaboration.journal) == journal_before + 1
+    assert factory.collaboration.journal[-1].command_kind is (
+        GraphCommandKind.UPDATE_NODE_OPERATOR
+    )
+
+
+@pytest.mark.asyncio
+async def test_accept_batch_advances_sequence_once_and_journals_one_command() -> None:
+    factory = FakeFactory()
+    service = _service(factory)
+    graph_id = uuid4()
+    source = SavedGraphNode(
+        id="source",
+        operator_id="example.source",
+        operator_version=1,
+        position=GraphPoint(x=0, y=0),
+    )
+    _, head, _ = await service.bootstrap_graph(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        command_id=uuid4(),
+        command=ReplaceDocumentCommand(
+            name="Draft",
+            document=SavedGraphDocument(nodes=(source,)),
+        ),
+        graph_id=graph_id,
+    )
+    observed_sequence = head.collaboration_sequence
+    generated = SavedGraphNode(
+        id="generated",
+        operator_id="agent.draft.test",
+        operator_version=1,
+        position=GraphPoint(x=240, y=0),
+    )
+
+    updated_head, receipt = await service.accept_command(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        graph_id=graph_id,
+        command_id=uuid4(),
+        observed_sequence=observed_sequence,
+        observed_room_epoch=head.room_epoch,
+        command=ApplyGraphCommandBatch(
+            commands=(
+                AddNodeCommand(node=generated),
+                AddEdgeCommand(
+                    edge=SavedGraphEdge(
+                        id="source-to-generated",
+                        from_node="source",
+                        from_port="result",
+                        to_node="generated",
+                        to_port="value",
+                    )
+                ),
+            )
+        ),
+    )
+
+    assert updated_head.collaboration_sequence == observed_sequence + 1
+    assert receipt.accepted_sequence == observed_sequence + 1
+    assert [node.id for node in updated_head.document.nodes] == [
+        "source",
+        "generated",
+    ]
+    assert [edge.id for edge in updated_head.document.edges] == ["source-to-generated"]
+    assert (
+        factory.collaboration.journal[-1].command_kind is GraphCommandKind.APPLY_BATCH
+    )
+    commands_payload = factory.collaboration.journal[-1].command_payload["commands"]
+    assert isinstance(commands_payload, list)
+    assert len(commands_payload) == 2
+    assert factory.created[-1].commit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_accept_batch_rejects_stale_observed_sequence() -> None:
+    factory = FakeFactory()
+    service = _service(factory)
+    graph_id = uuid4()
+    _, head, _ = await service.bootstrap_graph(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        command_id=uuid4(),
+        command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
+        graph_id=graph_id,
+    )
+    stale_sequence = head.collaboration_sequence
+    room_epoch = head.room_epoch
+    await service.accept_command(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        graph_id=graph_id,
+        command_id=uuid4(),
+        observed_sequence=stale_sequence,
+        observed_room_epoch=room_epoch,
+        command=RenameGraphCommand(name="Concurrent edit", expected_name="Draft"),
+    )
+
+    with pytest.raises(CollaborationHeadConflictError):
+        await service.accept_command(
+            actor=ActorContext(user_id=USER_ID),
+            workspace_id=WORKSPACE_ID,
+            graph_id=graph_id,
+            command_id=uuid4(),
+            observed_sequence=stale_sequence,
+            observed_room_epoch=room_epoch,
+            command=ApplyGraphCommandBatch(
+                commands=(
+                    AddNodeCommand(
+                        node=SavedGraphNode(
+                            id="generated",
+                            operator_id="agent.draft.test",
+                            operator_version=1,
+                            position=GraphPoint(x=0, y=0),
+                        )
+                    ),
+                )
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_accept_command_in_caller_unit_of_work_does_not_commit() -> None:
+    factory = FakeFactory()
+    service = _service(factory)
+    graph_id = uuid4()
+    _, head, _ = await service.bootstrap_graph(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        command_id=uuid4(),
+        command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
+        graph_id=graph_id,
+    )
+    unit_of_work = factory()
+
+    async with unit_of_work:
+        updated_head, receipt = await service.accept_command_in_unit_of_work(
+            cast(CollaborationUnitOfWorkPort, unit_of_work),
+            actor=ActorContext(user_id=USER_ID),
+            workspace_id=WORKSPACE_ID,
+            graph_id=graph_id,
+            command_id=uuid4(),
+            observed_sequence=head.collaboration_sequence,
+            observed_room_epoch=head.room_epoch,
+            command=RenameGraphCommand(name="Atomic caller", expected_name="Draft"),
+        )
+
+        assert updated_head.name == "Atomic caller"
+        assert receipt.outcome is CommandReceiptOutcome.ACCEPTED
+        assert unit_of_work.commit_count == 0
+        assert factory.collaboration.journal[-1].command_payload["name"] == (
+            "Atomic caller"
+        )
+        await unit_of_work.commit()
+
+    assert unit_of_work.commit_count == 1
 
 
 @pytest.mark.asyncio

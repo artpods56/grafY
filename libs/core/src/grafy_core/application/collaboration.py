@@ -318,140 +318,208 @@ class CollaborationService:
         graph_room_session_id: UUID | None = None,
     ) -> tuple[CollaborativeGraphHead, GraphCommandReceipt]:
         async with self._unit_of_work_factory() as unit_of_work:
-            access = await self._authorize(
+            try:
+                head, receipt = await self.accept_command_in_unit_of_work(
+                    unit_of_work,
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    graph_id=graph_id,
+                    command_id=command_id,
+                    observed_sequence=observed_sequence,
+                    observed_room_epoch=observed_room_epoch,
+                    command=command,
+                    graph_room_session_id=graph_room_session_id,
+                )
+            except (
+                CapabilityDeniedError,
+                CollaborationIdempotencyMismatchError,
+                NotFoundError,
+                UserDisabledError,
+            ):
+                await unit_of_work.commit()
+                raise
+            if receipt.outcome is CommandReceiptOutcome.ACCEPTED:
+                await unit_of_work.commit()
+        return head, receipt
+
+    async def accept_command_in_unit_of_work(
+        self,
+        unit_of_work: CollaborationUnitOfWorkPort,
+        *,
+        actor: ActorContext,
+        workspace_id: UUID,
+        graph_id: UUID,
+        command_id: UUID,
+        observed_sequence: int,
+        observed_room_epoch: UUID,
+        command: GraphCommand,
+        graph_room_session_id: UUID | None = None,
+    ) -> tuple[CollaborativeGraphHead, GraphCommandReceipt]:
+        """Stage one accepted command without committing the caller's transaction."""
+
+        try:
+            access = await self._require_capability(
                 unit_of_work,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.EDIT_GRAPH,
+            )
+        except UserDisabledError:
+            await self._stage_rejection_audit(
+                unit_of_work,
+                actor=actor,
+                workspace_id=workspace_id,
                 operation="collaboration.command.accept",
+                error_code="disabled_user",
                 resource_id=str(graph_id),
             )
-            digest = command_hmac_digest(
-                self._command_hmac_key,
-                key_version=self._command_hmac_key_version,
+            raise
+        except NotFoundError:
+            await self._stage_rejection_audit(
+                unit_of_work,
+                actor=actor,
                 workspace_id=workspace_id,
-                graph_id=graph_id,
-                actor_user_id=actor.user_id,
-                room_epoch=observed_room_epoch,
-                observed_sequence=observed_sequence,
-                command=command,
+                operation="collaboration.command.accept",
+                error_code="not_found",
+                resource_id=str(graph_id),
             )
-            existing_receipt = await unit_of_work.collaboration.get_receipt(
+            raise
+        except CapabilityDeniedError:
+            await self._stage_rejection_audit(
+                unit_of_work,
+                actor=actor,
+                workspace_id=workspace_id,
+                operation="collaboration.command.accept",
+                error_code="capability_denied",
+                resource_id=str(graph_id),
+            )
+            raise
+
+        digest = command_hmac_digest(
+            self._command_hmac_key,
+            key_version=self._command_hmac_key_version,
+            workspace_id=workspace_id,
+            graph_id=graph_id,
+            actor_user_id=actor.user_id,
+            room_epoch=observed_room_epoch,
+            observed_sequence=observed_sequence,
+            command=command,
+        )
+        existing_receipt = await unit_of_work.collaboration.get_receipt(
+            workspace_id,
+            graph_id,
+            command_id,
+        )
+        if existing_receipt is not None:
+            if not hmac.compare_digest(existing_receipt.command_hmac, digest):
+                await self._stage_rejection_audit(
+                    unit_of_work,
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    operation="collaboration.command.accept",
+                    error_code="idempotency_mismatch",
+                    resource_id=str(graph_id),
+                )
+                raise CollaborationIdempotencyMismatchError(
+                    workspace_id=workspace_id,
+                    graph_id=graph_id,
+                    command_id=command_id,
+                )
+            head = await unit_of_work.collaboration.get_head(
                 workspace_id,
                 graph_id,
-                command_id,
             )
-            if existing_receipt is not None:
-                if not hmac.compare_digest(existing_receipt.command_hmac, digest):
-                    await self._commit_rejection_audit(
-                        unit_of_work,
-                        actor=actor,
-                        workspace_id=workspace_id,
-                        operation="collaboration.command.accept",
-                        error_code="idempotency_mismatch",
-                        resource_id=str(graph_id),
-                    )
-                    raise CollaborationIdempotencyMismatchError(
-                        workspace_id=workspace_id,
-                        graph_id=graph_id,
-                        command_id=command_id,
-                    )
-                head = await unit_of_work.collaboration.get_head(
-                    workspace_id,
-                    graph_id,
-                )
-                if head is None:
-                    raise MissingCollaborativeHeadError(
-                        workspace_id=workspace_id,
-                        graph_id=graph_id,
-                    )
-                replay = existing_receipt.model_copy(
-                    update={"outcome": CommandReceiptOutcome.IDEMPOTENT_REPLAY}
-                )
-                return head, replay
-
-            head = await unit_of_work.collaboration.lock_head(workspace_id, graph_id)
             if head is None:
                 raise MissingCollaborativeHeadError(
                     workspace_id=workspace_id,
                     graph_id=graph_id,
                 )
-            if head.room_epoch != observed_room_epoch:
-                raise CollaborationHeadConflictError(
-                    workspace_id=workspace_id,
-                    graph_id=graph_id,
-                    expected_sequence=observed_sequence,
-                    actual_sequence=head.collaboration_sequence,
-                    room_epoch=head.room_epoch,
-                )
-            if head.collaboration_sequence < observed_sequence:
-                raise CollaborationHeadConflictError(
-                    workspace_id=workspace_id,
-                    graph_id=graph_id,
-                    expected_sequence=observed_sequence,
-                    actual_sequence=head.collaboration_sequence,
-                    room_epoch=head.room_epoch,
-                )
-            if head.collaboration_sequence > observed_sequence and (
-                command_requires_exact_sequence(command)
-            ):
-                raise CollaborationHeadConflictError(
-                    workspace_id=workspace_id,
-                    graph_id=graph_id,
-                    expected_sequence=observed_sequence,
-                    actual_sequence=head.collaboration_sequence,
-                    room_epoch=head.room_epoch,
-                )
-            next_name, next_document = apply_graph_command(
-                name=head.name,
-                document=head.document,
-                command=command,
+            replay = existing_receipt.model_copy(
+                update={"outcome": CommandReceiptOutcome.IDEMPOTENT_REPLAY}
             )
-            SavedGraphDocument.model_validate(next_document.model_dump(mode="json"))
-            head.apply_accepted_command(name=next_name, document=next_document)
-            receipt = GraphCommandReceipt(
+            return head, replay
+
+        head = await unit_of_work.collaboration.lock_head(workspace_id, graph_id)
+        if head is None:
+            raise MissingCollaborativeHeadError(
                 workspace_id=workspace_id,
                 graph_id=graph_id,
-                command_id=command_id,
-                command_hmac=digest,
-                hmac_key_version=self._command_hmac_key_version,
-                actor_kind=CollaborationActorKind.USER,
-                actor_user_id=actor.user_id,
-                room_epoch=head.room_epoch,
-                accepted_sequence=head.collaboration_sequence,
-                outcome=CommandReceiptOutcome.ACCEPTED,
             )
-            journal_entry = GraphCommandJournalEntry(
+        if head.room_epoch != observed_room_epoch:
+            raise CollaborationHeadConflictError(
                 workspace_id=workspace_id,
                 graph_id=graph_id,
+                expected_sequence=observed_sequence,
+                actual_sequence=head.collaboration_sequence,
                 room_epoch=head.room_epoch,
-                command_id=command_id,
-                command_hmac=digest,
-                hmac_key_version=self._command_hmac_key_version,
-                accepted_sequence=head.collaboration_sequence,
-                actor_kind=CollaborationActorKind.USER,
-                actor_user_id=actor.user_id,
-                graph_room_session_id=graph_room_session_id,
-                authorization_version=access.membership.authorization_version,
-                command_kind=GraphCommandKind(command.kind),
-                command_payload=command.model_dump(mode="json"),
             )
-            await unit_of_work.collaboration.save_head(head)
-            await unit_of_work.collaboration.add_journal_entry(journal_entry)
-            await unit_of_work.collaboration.add_receipt(receipt)
-            await unit_of_work.security_audit.add(
-                SecurityAuditEvent(
-                    actor_kind=SecurityAuditActorKind.AUTHENTICATED,
-                    user_id=actor.user_id,
-                    credential_reference=actor.credential_reference,
-                    operation="collaboration.command.accept",
-                    outcome=SecurityAuditOutcome.SUCCESS,
-                    workspace_id=workspace_id,
-                    resource_type="saved_graph",
-                    resource_id=str(graph_id),
-                )
+        if head.collaboration_sequence < observed_sequence:
+            raise CollaborationHeadConflictError(
+                workspace_id=workspace_id,
+                graph_id=graph_id,
+                expected_sequence=observed_sequence,
+                actual_sequence=head.collaboration_sequence,
+                room_epoch=head.room_epoch,
             )
-            await unit_of_work.commit()
+        if head.collaboration_sequence > observed_sequence and (
+            command_requires_exact_sequence(command)
+        ):
+            raise CollaborationHeadConflictError(
+                workspace_id=workspace_id,
+                graph_id=graph_id,
+                expected_sequence=observed_sequence,
+                actual_sequence=head.collaboration_sequence,
+                room_epoch=head.room_epoch,
+            )
+        next_name, next_document = apply_graph_command(
+            name=head.name,
+            document=head.document,
+            command=command,
+        )
+        SavedGraphDocument.model_validate(next_document.model_dump(mode="json"))
+        head.apply_accepted_command(name=next_name, document=next_document)
+        receipt = GraphCommandReceipt(
+            workspace_id=workspace_id,
+            graph_id=graph_id,
+            command_id=command_id,
+            command_hmac=digest,
+            hmac_key_version=self._command_hmac_key_version,
+            actor_kind=CollaborationActorKind.USER,
+            actor_user_id=actor.user_id,
+            room_epoch=head.room_epoch,
+            accepted_sequence=head.collaboration_sequence,
+            outcome=CommandReceiptOutcome.ACCEPTED,
+        )
+        journal_entry = GraphCommandJournalEntry(
+            workspace_id=workspace_id,
+            graph_id=graph_id,
+            room_epoch=head.room_epoch,
+            command_id=command_id,
+            command_hmac=digest,
+            hmac_key_version=self._command_hmac_key_version,
+            accepted_sequence=head.collaboration_sequence,
+            actor_kind=CollaborationActorKind.USER,
+            actor_user_id=actor.user_id,
+            graph_room_session_id=graph_room_session_id,
+            authorization_version=access.membership.authorization_version,
+            command_kind=GraphCommandKind(command.kind),
+            command_payload=command.model_dump(mode="json"),
+        )
+        await unit_of_work.collaboration.save_head(head)
+        await unit_of_work.collaboration.add_journal_entry(journal_entry)
+        await unit_of_work.collaboration.add_receipt(receipt)
+        await unit_of_work.security_audit.add(
+            SecurityAuditEvent(
+                actor_kind=SecurityAuditActorKind.AUTHENTICATED,
+                user_id=actor.user_id,
+                credential_reference=actor.credential_reference,
+                operation="collaboration.command.accept",
+                outcome=SecurityAuditOutcome.SUCCESS,
+                workspace_id=workspace_id,
+                resource_type="saved_graph",
+                resource_id=str(graph_id),
+            )
+        )
         return head, receipt
 
     async def checkpoint(
@@ -1033,6 +1101,26 @@ class CollaborationService:
         error_code: str,
         resource_id: str | None,
     ) -> None:
+        await self._stage_rejection_audit(
+            unit_of_work,
+            actor=actor,
+            workspace_id=workspace_id,
+            operation=operation,
+            error_code=error_code,
+            resource_id=resource_id,
+        )
+        await unit_of_work.commit()
+
+    async def _stage_rejection_audit(
+        self,
+        unit_of_work: CollaborationUnitOfWorkPort,
+        *,
+        actor: ActorContext,
+        workspace_id: UUID,
+        operation: str,
+        error_code: str,
+        resource_id: str | None,
+    ) -> None:
         # Metadata-only: never claim command/config payloads or secrets.
         await unit_of_work.security_audit.add(
             SecurityAuditEvent(
@@ -1047,4 +1135,3 @@ class CollaborationService:
                 error_code=error_code,
             )
         )
-        await unit_of_work.commit()

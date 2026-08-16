@@ -58,6 +58,7 @@ _MAX_FIELD_PROJECTIONS: Final = 1024
 
 
 class PluginOrigin(StrEnum):
+    AGENT = "agent"
     BUILTIN = "builtin"
     EXTERNAL = "external"
     MODULE = "module"
