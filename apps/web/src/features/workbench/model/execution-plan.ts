@@ -14,7 +14,7 @@ import {
   serializeWorkflowEdgeTransport,
   type WorkflowEdge,
   type WorkflowNodeData,
-  workflowNodeIsSupported,
+  workflowNodeIsRunnable,
 } from "../canvas/types";
 import type {
   PinnedOutputInput,
@@ -205,9 +205,18 @@ export function executionValidationIssue(
   }
 
   const incompatibleNode = executionNodes.find(
-    (node) => !workflowNodeIsSupported(node.data),
+    (node) => !workflowNodeIsRunnable(node.data),
   );
   if (incompatibleNode) {
+    if (
+      incompatibleNode.data.spec.agent_authoring?.runnable === false
+    ) {
+      return {
+        nodeId: incompatibleNode.id,
+        message:
+          `Cannot run ${incompatibleNode.data.spec.title}: publish the generated node first.`,
+      };
+    }
     const compatibility = incompatibleNode.data.compatibility;
     const issue = compatibility.status === "supported"
       ? "The node is unavailable."

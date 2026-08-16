@@ -5,6 +5,7 @@ import {
   WORKFLOW_NODE_TYPE,
   createWorkflowNodeData,
   type WorkflowEdge,
+  type GeneratedNodeDraftSummary,
   type WorkflowInputPlug,
   type WorkflowNodeData,
 } from "../canvas/types";
@@ -95,6 +96,7 @@ interface WorkflowNodeOptions {
   run?: RunNodeResult | null;
   config?: Record<string, unknown>;
   compatibility?: WorkflowNodeData["compatibility"];
+  generation?: GeneratedNodeDraftSummary;
 }
 
 function workflowNode(
@@ -110,6 +112,7 @@ function workflowNode(
   data.run = options.run ?? null;
   data.config = options.config ?? data.config;
   data.compatibility = options.compatibility ?? data.compatibility;
+  data.generation = options.generation ?? null;
   return {
     id,
     type: WORKFLOW_NODE_TYPE,
@@ -447,6 +450,53 @@ describe("execution validation", () => {
       message:
         "Cannot run legacy: Operator legacy@1 is unavailable.",
     });
+  });
+
+  it("keeps a typed draft connectable but blocks execution until publication", () => {
+    const draftSpec: NodeSpec = {
+      ...nodeSpec("generated.node.1"),
+      agent_authoring: {
+        draft_node_id: "draft-1",
+        status: "authoring",
+        runnable: false,
+        release_revision: null,
+      },
+    };
+    const draft = workflowNode("generated", draftSpec, {
+      generation: {
+        draftId: "draft-1",
+        runId: "run-1",
+        buildId: "build-1",
+        threadId: "thread-1",
+        environmentId: "environment-1",
+        state: "testing",
+        error: null,
+        capabilities: null,
+        capabilityDigest: null,
+        capabilityApprovalId: null,
+        releaseRevision: null,
+        targetOperatorVersion: 1,
+        lastEventSequence: 0,
+      },
+    });
+
+    expect(executionValidationIssue("all", [draft], [])).toEqual({
+      nodeId: "generated",
+      message:
+        "Cannot run generated.node.1: publish the generated node first.",
+    });
+
+    draft.data.generation = { ...draft.data.generation!, state: "published" };
+    draft.data.spec = {
+      ...draft.data.spec,
+      agent_authoring: {
+        ...draft.data.spec.agent_authoring!,
+        status: "published",
+        runnable: true,
+        release_revision: 1,
+      },
+    };
+    expect(executionValidationIssue("all", [draft], [])).toBeNull();
   });
 
   it("reports an empty image upload before required-input failures", () => {

@@ -39,6 +39,722 @@
         "title": "AddNodeCommand",
         "type": "object"
       },
+      "AgentDraftDetailResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "capability_approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapabilityApprovalResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "draft": {
+            "$ref": "#/components/schemas/AgentDraftResponse"
+          },
+          "environment": {
+            "$ref": "#/components/schemas/AgentEnvironmentResponse"
+          },
+          "latest_build": {
+            "$ref": "#/components/schemas/NodeBuildResponse"
+          },
+          "latest_run": {
+            "$ref": "#/components/schemas/AgentRunResponse"
+          },
+          "node_spec": {
+            "$ref": "#/components/schemas/NodeSpecResponse"
+          },
+          "release": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NodeReleaseResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread": {
+            "$ref": "#/components/schemas/AgentThreadResponse"
+          }
+        },
+        "required": [
+          "environment",
+          "thread",
+          "draft",
+          "latest_run",
+          "latest_build",
+          "node_spec",
+          "release",
+          "capability_approval"
+        ],
+        "title": "AgentDraftDetailResponse",
+        "type": "object"
+      },
+      "AgentDraftResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "$ref": "#/components/schemas/AnchoredPortResponse"
+          },
+          "build_attempt_number": {
+            "title": "Build Attempt Number",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "graph_id": {
+            "format": "uuid",
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "operator_id": {
+            "title": "Operator Id",
+            "type": "string"
+          },
+          "operator_version": {
+            "title": "Operator Version",
+            "type": "integer"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "published_revision": {
+            "title": "Published Revision",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DraftNodeStatus"
+          },
+          "thread_id": {
+            "format": "uuid",
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "graph_id",
+          "thread_id",
+          "operator_id",
+          "operator_version",
+          "title",
+          "description",
+          "prompt",
+          "status",
+          "anchor",
+          "build_attempt_number",
+          "published_revision",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentDraftResponse",
+        "type": "object"
+      },
+      "AgentEnvironmentListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "environments": {
+            "items": {
+              "$ref": "#/components/schemas/AgentEnvironmentResponse"
+            },
+            "title": "Environments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "environments"
+        ],
+        "title": "AgentEnvironmentListResponse",
+        "type": "object"
+      },
+      "AgentEnvironmentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Run Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "profile_slug": {
+            "title": "Profile Slug",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AgentEnvironmentStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "profile_slug",
+          "provider",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentEnvironmentResponse",
+        "type": "object"
+      },
+      "AgentEnvironmentStatus": {
+        "enum": [
+          "provisioning",
+          "creating",
+          "ready",
+          "suspended",
+          "failed",
+          "archived"
+        ],
+        "title": "AgentEnvironmentStatus",
+        "type": "string"
+      },
+      "AgentFollowUpRunResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "builds": {
+            "items": {
+              "$ref": "#/components/schemas/NodeBuildResponse"
+            },
+            "title": "Builds",
+            "type": "array"
+          },
+          "environment": {
+            "$ref": "#/components/schemas/AgentEnvironmentResponse"
+          },
+          "node_specs": {
+            "items": {
+              "$ref": "#/components/schemas/NodeSpecResponse"
+            },
+            "title": "Node Specs",
+            "type": "array"
+          },
+          "run": {
+            "$ref": "#/components/schemas/AgentRunResponse"
+          },
+          "thread": {
+            "$ref": "#/components/schemas/AgentThreadResponse"
+          }
+        },
+        "required": [
+          "environment",
+          "thread",
+          "run",
+          "builds",
+          "node_specs"
+        ],
+        "title": "AgentFollowUpRunResponse",
+        "type": "object"
+      },
+      "AgentNodeAuthoringResponse": {
+        "properties": {
+          "draft_node_id": {
+            "format": "uuid",
+            "title": "Draft Node Id",
+            "type": "string"
+          },
+          "release_revision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Revision"
+          },
+          "runnable": {
+            "title": "Runnable",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DraftNodeStatus"
+          }
+        },
+        "required": [
+          "draft_node_id",
+          "status",
+          "runnable"
+        ],
+        "title": "AgentNodeAuthoringResponse",
+        "type": "object"
+      },
+      "AgentPortDirection": {
+        "enum": [
+          "input",
+          "output"
+        ],
+        "title": "AgentPortDirection",
+        "type": "string"
+      },
+      "AgentRunDetailResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "builds": {
+            "items": {
+              "$ref": "#/components/schemas/NodeBuildResponse"
+            },
+            "title": "Builds",
+            "type": "array"
+          },
+          "run": {
+            "$ref": "#/components/schemas/AgentRunResponse"
+          }
+        },
+        "required": [
+          "run",
+          "builds"
+        ],
+        "title": "AgentRunDetailResponse",
+        "type": "object"
+      },
+      "AgentRunResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "cancellation_requested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancellation Requested At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "environment_id": {
+            "format": "uuid",
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AgentRunStatus"
+          },
+          "target_draft_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Target Draft Ids",
+            "type": "array"
+          },
+          "thread_id": {
+            "format": "uuid",
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "thread_id",
+          "environment_id",
+          "target_draft_ids",
+          "status",
+          "attempt",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentRunResponse",
+        "type": "object"
+      },
+      "AgentRunStatus": {
+        "enum": [
+          "queued",
+          "claimed",
+          "running",
+          "awaiting_approval",
+          "completed",
+          "failed",
+          "cancelling",
+          "cancelled",
+          "interrupting",
+          "interrupted"
+        ],
+        "title": "AgentRunStatus",
+        "type": "string"
+      },
+      "AgentThreadResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "environment_id": {
+            "format": "uuid",
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "event_sequence": {
+            "title": "Event Sequence",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "environment_id",
+          "title",
+          "event_sequence",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentThreadResponse",
+        "type": "object"
+      },
+      "AnchoredPortRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_type": {
+            "$ref": "#/components/schemas/ArtifactTypeKeyResponse"
+          },
+          "collection_mode": {
+            "default": "direct",
+            "enum": [
+              "direct",
+              "map"
+            ],
+            "title": "Collection Mode",
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "downstream",
+              "upstream"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "feed": {
+            "$ref": "#/components/schemas/PortFeedRequest"
+          },
+          "input_plug_id": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Plug Id"
+          },
+          "node_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "port_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Port Name",
+            "type": "string"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/PortShape"
+          }
+        },
+        "required": [
+          "node_id",
+          "port_name",
+          "direction",
+          "artifact_type",
+          "shape"
+        ],
+        "title": "AnchoredPortRequest",
+        "type": "object"
+      },
+      "AnchoredPortResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_type": {
+            "$ref": "#/components/schemas/ArtifactTypeKeyResponse"
+          },
+          "collection_mode": {
+            "enum": [
+              "direct",
+              "map"
+            ],
+            "title": "Collection Mode",
+            "type": "string"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/AgentPortDirection"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/PortShape"
+          }
+        },
+        "required": [
+          "direction",
+          "name",
+          "artifact_type",
+          "shape",
+          "collection_mode",
+          "required"
+        ],
+        "title": "AnchoredPortResponse",
+        "type": "object"
+      },
+      "ApplyGraphCommandBatch": {
+        "additionalProperties": false,
+        "description": "Primitive graph commands accepted as one collaborative transaction.",
+        "properties": {
+          "commands": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "add_edge": "#/components/schemas/AddEdgeCommand",
+                  "add_node": "#/components/schemas/AddNodeCommand",
+                  "clear_node_artifact_type_binding": "#/components/schemas/ClearNodeArtifactTypeBindingCommand",
+                  "duplicate_node": "#/components/schemas/DuplicateNodeCommand",
+                  "move_annotations": "#/components/schemas/MoveAnnotationsCommand",
+                  "move_artifact_viewers": "#/components/schemas/MoveArtifactViewersCommand",
+                  "move_nodes": "#/components/schemas/MoveNodesCommand",
+                  "remove_edges": "#/components/schemas/RemoveEdgesCommand",
+                  "remove_nodes": "#/components/schemas/RemoveNodesCommand",
+                  "rename_graph": "#/components/schemas/RenameGraphCommand",
+                  "replace_document": "#/components/schemas/ReplaceDocumentCommand",
+                  "replace_presentation": "#/components/schemas/ReplacePresentationCommand",
+                  "set_node_artifact_type_binding": "#/components/schemas/SetNodeArtifactTypeBindingCommand",
+                  "set_node_input_plugs": "#/components/schemas/SetNodeInputPlugsCommand",
+                  "update_edge": "#/components/schemas/UpdateEdgeCommand",
+                  "update_node_configuration": "#/components/schemas/UpdateNodeConfigurationCommand",
+                  "update_node_configuration_and_input_plugs": "#/components/schemas/UpdateNodeConfigurationAndInputPlugsCommand",
+                  "update_node_layout": "#/components/schemas/UpdateNodeLayoutCommand",
+                  "update_node_operator": "#/components/schemas/UpdateNodeOperatorCommand"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/RenameGraphCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/AddNodeCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/DuplicateNodeCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/RemoveNodesCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/MoveNodesCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/UpdateNodeOperatorCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/UpdateNodeConfigurationCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/UpdateNodeLayoutCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/SetNodeInputPlugsCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/UpdateNodeConfigurationAndInputPlugsCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/SetNodeArtifactTypeBindingCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/ClearNodeArtifactTypeBindingCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/AddEdgeCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/UpdateEdgeCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/RemoveEdgesCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/ReplaceDocumentCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/ReplacePresentationCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/MoveArtifactViewersCommand"
+                },
+                {
+                  "$ref": "#/components/schemas/MoveAnnotationsCommand"
+                }
+              ]
+            },
+            "minItems": 1,
+            "title": "Commands",
+            "type": "array"
+          },
+          "kind": {
+            "const": "apply_batch",
+            "default": "apply_batch",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "commands"
+        ],
+        "title": "ApplyGraphCommandBatch",
+        "type": "object"
+      },
+      "ApproveBuildRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "capability_digest": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]+$",
+            "title": "Capability Digest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability_digest"
+        ],
+        "title": "ApproveBuildRequest",
+        "type": "object"
+      },
       "ArtifactConversionKeyResponse": {
         "properties": {
           "id": {
@@ -460,6 +1176,421 @@
         "title": "Body_upload_file_v1_workspaces__workspace_id__uploads_post",
         "type": "object"
       },
+      "BuildArtifactSetResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "build_digest": {
+            "title": "Build Digest",
+            "type": "string"
+          },
+          "implementation_digest": {
+            "title": "Implementation Digest",
+            "type": "string"
+          },
+          "lock_digest": {
+            "title": "Lock Digest",
+            "type": "string"
+          },
+          "profile_digest": {
+            "title": "Profile Digest",
+            "type": "string"
+          },
+          "runtime_artifact": {
+            "$ref": "#/components/schemas/RuntimeArtifactReferenceResponse"
+          },
+          "runtime_image_digest": {
+            "title": "Runtime Image Digest",
+            "type": "string"
+          },
+          "source_digest": {
+            "title": "Source Digest",
+            "type": "string"
+          },
+          "tests_digest": {
+            "title": "Tests Digest",
+            "type": "string"
+          },
+          "tests_passed": {
+            "title": "Tests Passed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source_digest",
+          "lock_digest",
+          "tests_digest",
+          "build_digest",
+          "implementation_digest",
+          "runtime_image_digest",
+          "profile_digest",
+          "runtime_artifact",
+          "tests_passed"
+        ],
+        "title": "BuildArtifactSetResponse",
+        "type": "object"
+      },
+      "BuildLockSummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_count": {
+            "title": "Byte Count",
+            "type": "integer"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "path": {
+            "const": "uv.lock",
+            "default": "uv.lock",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "byte_count",
+          "digest"
+        ],
+        "title": "BuildLockSummaryResponse",
+        "type": "object"
+      },
+      "BuildReviewChangeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "change": {
+            "enum": [
+              "added",
+              "modified",
+              "removed"
+            ],
+            "title": "Change",
+            "type": "string"
+          },
+          "current_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Sha256"
+          },
+          "diff_truncated": {
+            "title": "Diff Truncated",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "project",
+              "lockfile",
+              "manifest",
+              "implementation",
+              "test"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "previous_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Sha256"
+          },
+          "unified_diff": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unified Diff"
+          }
+        },
+        "required": [
+          "path",
+          "kind",
+          "change",
+          "previous_sha256",
+          "current_sha256",
+          "unified_diff",
+          "diff_truncated"
+        ],
+        "title": "BuildReviewChangeResponse",
+        "type": "object"
+      },
+      "BuildReviewFileContentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_count": {
+            "title": "Byte Count",
+            "type": "integer"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "project",
+              "lockfile",
+              "manifest",
+              "implementation",
+              "test"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "kind",
+          "byte_count",
+          "sha256",
+          "content"
+        ],
+        "title": "BuildReviewFileContentResponse",
+        "type": "object"
+      },
+      "BuildReviewFileResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_count": {
+            "title": "Byte Count",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "project",
+              "lockfile",
+              "manifest",
+              "implementation",
+              "test"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "kind",
+          "byte_count",
+          "sha256"
+        ],
+        "title": "BuildReviewFileResponse",
+        "type": "object"
+      },
+      "BuildReviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_byte_count": {
+            "title": "Archive Byte Count",
+            "type": "integer"
+          },
+          "build": {
+            "$ref": "#/components/schemas/NodeBuildResponse"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/BuildReviewChangeResponse"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/BuildReviewFileResponse"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "implementation_digest": {
+            "title": "Implementation Digest",
+            "type": "string"
+          },
+          "lock": {
+            "$ref": "#/components/schemas/BuildLockSummaryResponse"
+          },
+          "node_spec": {
+            "$ref": "#/components/schemas/NodeSpecResponse"
+          },
+          "previous_release_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Release Revision"
+          },
+          "source_digest": {
+            "title": "Source Digest",
+            "type": "string"
+          },
+          "tests": {
+            "$ref": "#/components/schemas/BuildTestSummaryResponse"
+          },
+          "uncompressed_byte_count": {
+            "title": "Uncompressed Byte Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "build",
+          "node_spec",
+          "source_digest",
+          "archive_byte_count",
+          "uncompressed_byte_count",
+          "implementation_digest",
+          "previous_release_revision",
+          "lock",
+          "tests",
+          "files",
+          "changes"
+        ],
+        "title": "BuildReviewResponse",
+        "type": "object"
+      },
+      "BuildTestSummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "file_count": {
+            "title": "File Count",
+            "type": "integer"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "passed",
+          "file_count",
+          "digest"
+        ],
+        "title": "BuildTestSummaryResponse",
+        "type": "object"
+      },
+      "CapabilityApprovalResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "approved_at": {
+            "format": "date-time",
+            "title": "Approved At",
+            "type": "string"
+          },
+          "approved_by_user_id": {
+            "format": "uuid",
+            "title": "Approved By User Id",
+            "type": "string"
+          },
+          "build_attempt_id": {
+            "format": "uuid",
+            "title": "Build Attempt Id",
+            "type": "string"
+          },
+          "capability_digest": {
+            "title": "Capability Digest",
+            "type": "string"
+          },
+          "draft_node_id": {
+            "format": "uuid",
+            "title": "Draft Node Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "draft_node_id",
+          "build_attempt_id",
+          "capability_digest",
+          "approved_by_user_id",
+          "approved_at"
+        ],
+        "title": "CapabilityApprovalResponse",
+        "type": "object"
+      },
+      "CapabilityManifestResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "object_store": {
+            "items": {
+              "$ref": "#/components/schemas/ObjectStoreCapabilityResponse"
+            },
+            "title": "Object Store",
+            "type": "array"
+          },
+          "outbound_http_origins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Outbound Http Origins",
+            "type": "array"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/RuntimeLimitsResponse"
+          },
+          "secret_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Secret Refs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "outbound_http_origins",
+          "secret_refs",
+          "object_store",
+          "runtime",
+          "digest"
+        ],
+        "title": "CapabilityManifestResponse",
+        "type": "object"
+      },
       "CheckpointGraphRequest": {
         "additionalProperties": false,
         "properties": {
@@ -561,13 +1692,13 @@
           },
           "nodes": {
             "items": {
-              "$ref": "#/components/schemas/SavedGraphNodeModel-Output"
+              "$ref": "#/components/schemas/SavedGraphNodeModel"
             },
             "title": "Nodes",
             "type": "array"
           },
           "presentation": {
-            "$ref": "#/components/schemas/GraphPresentationDocumentModel-Output"
+            "$ref": "#/components/schemas/GraphPresentationDocumentModel"
           },
           "room_epoch": {
             "format": "uuid",
@@ -676,6 +1807,127 @@
         "title": "CopyExactHeadRequest",
         "type": "object"
       },
+      "CreateAgentDraftRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "$ref": "#/components/schemas/AnchoredPortRequest"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "idempotency_key": {
+            "format": "uuid",
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "placement": {
+            "$ref": "#/components/schemas/DraftGraphPlacementRequest"
+          },
+          "prompt": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          }
+        },
+        "required": [
+          "prompt",
+          "idempotency_key",
+          "anchor",
+          "placement"
+        ],
+        "title": "CreateAgentDraftRequest",
+        "type": "object"
+      },
+      "CreateAgentDraftResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor_port": {
+            "$ref": "#/components/schemas/PortResponse"
+          },
+          "build": {
+            "$ref": "#/components/schemas/NodeBuildResponse"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/AgentDraftResponse"
+          },
+          "environment": {
+            "$ref": "#/components/schemas/AgentEnvironmentResponse"
+          },
+          "head": {
+            "$ref": "#/components/schemas/CollaborativeHeadResponse"
+          },
+          "node_spec": {
+            "$ref": "#/components/schemas/NodeSpecResponse"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/GraphCommandReceiptResponse"
+          },
+          "run": {
+            "$ref": "#/components/schemas/AgentRunResponse"
+          },
+          "thread": {
+            "$ref": "#/components/schemas/AgentThreadResponse"
+          }
+        },
+        "required": [
+          "environment",
+          "thread",
+          "draft",
+          "run",
+          "build",
+          "node_spec",
+          "anchor_port",
+          "head",
+          "receipt"
+        ],
+        "title": "CreateAgentDraftResponse",
+        "type": "object"
+      },
+      "CreateAgentEnvironmentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "profile_slug": {
+            "const": "python-uv",
+            "default": "python-uv",
+            "title": "Profile Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CreateAgentEnvironmentRequest",
+        "type": "object"
+      },
       "CreateSavedGraphRequest": {
         "additionalProperties": false,
         "properties": {
@@ -694,13 +1946,13 @@
           },
           "nodes": {
             "items": {
-              "$ref": "#/components/schemas/SavedGraphNodeModel-Input"
+              "$ref": "#/components/schemas/SavedGraphNodeModel"
             },
             "title": "Nodes",
             "type": "array"
           },
           "presentation": {
-            "$ref": "#/components/schemas/GraphPresentationDocumentModel-Input"
+            "$ref": "#/components/schemas/GraphPresentationDocumentModel"
           }
         },
         "required": [
@@ -747,6 +1999,69 @@
         ],
         "title": "CreateTemplateRequest",
         "type": "object"
+      },
+      "DraftGraphPlacementRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "format": "uuid",
+            "title": "Command Id",
+            "type": "string"
+          },
+          "edge_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Edge Id",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "observed_sequence": {
+            "minimum": 0.0,
+            "title": "Observed Sequence",
+            "type": "integer"
+          },
+          "room_epoch": {
+            "format": "uuid",
+            "title": "Room Epoch",
+            "type": "string"
+          },
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "node_id",
+          "edge_id",
+          "x",
+          "y",
+          "command_id",
+          "room_epoch",
+          "observed_sequence"
+        ],
+        "title": "DraftGraphPlacementRequest",
+        "type": "object"
+      },
+      "DraftNodeStatus": {
+        "enum": [
+          "draft",
+          "authoring",
+          "awaiting_approval",
+          "published",
+          "failed",
+          "cancelled"
+        ],
+        "title": "DraftNodeStatus",
+        "type": "string"
       },
       "DuplicateNodeCommand": {
         "additionalProperties": false,
@@ -2732,42 +4047,7 @@
         "title": "GraphPresentationDocument",
         "type": "object"
       },
-      "GraphPresentationDocumentModel-Input": {
-        "additionalProperties": false,
-        "properties": {
-          "annotations": {
-            "items": {
-              "$ref": "#/components/schemas/GraphPresentationAnnotationModel"
-            },
-            "title": "Annotations",
-            "type": "array"
-          },
-          "bindings": {
-            "items": {
-              "$ref": "#/components/schemas/GraphPresentationBindingModel"
-            },
-            "title": "Bindings",
-            "type": "array"
-          },
-          "links": {
-            "items": {
-              "$ref": "#/components/schemas/GraphPresentationLinkModel"
-            },
-            "title": "Links",
-            "type": "array"
-          },
-          "viewers": {
-            "items": {
-              "$ref": "#/components/schemas/GraphPresentationViewerModel"
-            },
-            "title": "Viewers",
-            "type": "array"
-          }
-        },
-        "title": "GraphPresentationDocumentModel",
-        "type": "object"
-      },
-      "GraphPresentationDocumentModel-Output": {
+      "GraphPresentationDocumentModel": {
         "additionalProperties": false,
         "properties": {
           "annotations": {
@@ -3461,6 +4741,100 @@
         "title": "MoveNodesCommand",
         "type": "object"
       },
+      "NodeBuildResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "artifacts": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BuildArtifactSetResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attempt_number": {
+            "title": "Attempt Number",
+            "type": "integer"
+          },
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapabilityManifestResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "draft_node_id": {
+            "format": "uuid",
+            "title": "Draft Node Id",
+            "type": "string"
+          },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/NodeBuildStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "draft_node_id",
+          "run_id",
+          "attempt_number",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "NodeBuildResponse",
+        "type": "object"
+      },
+      "NodeBuildStatus": {
+        "enum": [
+          "queued",
+          "preparing",
+          "coding",
+          "testing",
+          "awaiting_approval",
+          "failed",
+          "cancelled",
+          "superseded",
+          "published"
+        ],
+        "title": "NodeBuildStatus",
+        "type": "string"
+      },
       "NodeRegistryResponse": {
         "properties": {
           "artifact_conversions": {
@@ -3506,6 +4880,86 @@
           "nodes"
         ],
         "title": "NodeRegistryResponse",
+        "type": "object"
+      },
+      "NodeReleaseResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "approved_by_user_id": {
+            "format": "uuid",
+            "title": "Approved By User Id",
+            "type": "string"
+          },
+          "artifacts": {
+            "$ref": "#/components/schemas/BuildArtifactSetResponse"
+          },
+          "build_attempt_id": {
+            "format": "uuid",
+            "title": "Build Attempt Id",
+            "type": "string"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/CapabilityManifestResponse"
+          },
+          "capability_approval_id": {
+            "format": "uuid",
+            "title": "Capability Approval Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "draft_node_id": {
+            "format": "uuid",
+            "title": "Draft Node Id",
+            "type": "string"
+          },
+          "environment_id": {
+            "format": "uuid",
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "node_id": {
+            "format": "uuid",
+            "title": "Node Id",
+            "type": "string"
+          },
+          "operator_id": {
+            "title": "Operator Id",
+            "type": "string"
+          },
+          "operator_version": {
+            "title": "Operator Version",
+            "type": "integer"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "thread_id": {
+            "format": "uuid",
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "revision",
+          "draft_node_id",
+          "build_attempt_id",
+          "thread_id",
+          "environment_id",
+          "operator_id",
+          "operator_version",
+          "capabilities",
+          "artifacts",
+          "capability_approval_id",
+          "approved_by_user_id",
+          "created_at"
+        ],
+        "title": "NodeReleaseResponse",
         "type": "object"
       },
       "NodeSecretInputResponse": {
@@ -3571,6 +5025,16 @@
       },
       "NodeSpecResponse": {
         "properties": {
+          "agent_authoring": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentNodeAuthoringResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "catalog_visible": {
             "default": true,
             "title": "Catalog Visible",
@@ -3703,6 +5167,33 @@
           "outputs"
         ],
         "title": "NodeSpecResponse",
+        "type": "object"
+      },
+      "ObjectStoreAccess": {
+        "enum": [
+          "read",
+          "write",
+          "read_write"
+        ],
+        "title": "ObjectStoreAccess",
+        "type": "string"
+      },
+      "ObjectStoreCapabilityResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "prefix": {
+            "title": "Prefix",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ObjectStoreAccess"
+          }
+        },
+        "required": [
+          "scope",
+          "prefix"
+        ],
+        "title": "ObjectStoreCapabilityResponse",
         "type": "object"
       },
       "PersonalAccessTokenCreateRequest": {
@@ -3946,6 +5437,7 @@
       },
       "PluginOrigin": {
         "enum": [
+          "agent",
           "builtin",
           "external",
           "module"
@@ -3973,6 +5465,51 @@
           "origin"
         ],
         "title": "PluginSpecResponse",
+        "type": "object"
+      },
+      "PortConversionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version"
+        ],
+        "title": "PortConversionRequest",
+        "type": "object"
+      },
+      "PortFeedRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "conversion_path": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PortConversionRequest"
+            },
+            "title": "Conversion Path",
+            "type": "array"
+          },
+          "projection_path": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Projection Path",
+            "type": "array"
+          }
+        },
+        "title": "PortFeedRequest",
         "type": "object"
       },
       "PortResponse": {
@@ -4077,6 +5614,108 @@
         "title": "PortShape",
         "type": "string"
       },
+      "PublishBuildRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "capability_approval_id": {
+            "format": "uuid",
+            "title": "Capability Approval Id",
+            "type": "string"
+          },
+          "graph_promotion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublishGraphPromotionRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "capability_approval_id"
+        ],
+        "title": "PublishBuildRequest",
+        "type": "object"
+      },
+      "PublishBuildResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "head": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CollaborativeHeadResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "node_spec": {
+            "$ref": "#/components/schemas/NodeSpecResponse"
+          },
+          "receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GraphCommandReceiptResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "release": {
+            "$ref": "#/components/schemas/NodeReleaseResponse"
+          }
+        },
+        "required": [
+          "release",
+          "node_spec"
+        ],
+        "title": "PublishBuildResponse",
+        "type": "object"
+      },
+      "PublishGraphPromotionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "format": "uuid",
+            "title": "Command Id",
+            "type": "string"
+          },
+          "graph_id": {
+            "format": "uuid",
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "observed_sequence": {
+            "minimum": 0.0,
+            "title": "Observed Sequence",
+            "type": "integer"
+          },
+          "room_epoch": {
+            "format": "uuid",
+            "title": "Room Epoch",
+            "type": "string"
+          }
+        },
+        "required": [
+          "graph_id",
+          "node_id",
+          "command_id",
+          "room_epoch",
+          "observed_sequence"
+        ],
+        "title": "PublishGraphPromotionRequest",
+        "type": "object"
+      },
       "PublishModuleReleaseRequest": {
         "properties": {
           "description": {
@@ -4126,6 +5765,39 @@
           "source_graph_id"
         ],
         "title": "PublishModuleReleaseRequest",
+        "type": "object"
+      },
+      "QueueAgentFollowUpRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "draft_node_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Draft Node Ids",
+            "type": "array"
+          },
+          "idempotency_key": {
+            "format": "uuid",
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt",
+          "idempotency_key",
+          "draft_node_ids"
+        ],
+        "title": "QueueAgentFollowUpRequest",
         "type": "object"
       },
       "RemoveEdgesCommand": {
@@ -4667,6 +6339,99 @@
           "node_runs"
         ],
         "title": "RunResponse",
+        "type": "object"
+      },
+      "RuntimeArtifactReferenceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "ref",
+          "digest"
+        ],
+        "title": "RuntimeArtifactReferenceResponse",
+        "type": "object"
+      },
+      "RuntimeLimitsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "cpu_millis": {
+            "title": "Cpu Millis",
+            "type": "integer"
+          },
+          "input_bytes": {
+            "title": "Input Bytes",
+            "type": "integer"
+          },
+          "memory_megabytes": {
+            "title": "Memory Megabytes",
+            "type": "integer"
+          },
+          "outbound_request_count": {
+            "title": "Outbound Request Count",
+            "type": "integer"
+          },
+          "outbound_response_bytes": {
+            "title": "Outbound Response Bytes",
+            "type": "integer"
+          },
+          "outbound_total_bytes": {
+            "title": "Outbound Total Bytes",
+            "type": "integer"
+          },
+          "output_bytes": {
+            "title": "Output Bytes",
+            "type": "integer"
+          },
+          "persistent_disk_bytes": {
+            "title": "Persistent Disk Bytes",
+            "type": "integer"
+          },
+          "process_count": {
+            "title": "Process Count",
+            "type": "integer"
+          },
+          "temporary_disk_bytes": {
+            "title": "Temporary Disk Bytes",
+            "type": "integer"
+          },
+          "thread_count": {
+            "title": "Thread Count",
+            "type": "integer"
+          },
+          "wall_time_seconds": {
+            "title": "Wall Time Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cpu_millis",
+          "memory_megabytes",
+          "wall_time_seconds",
+          "process_count",
+          "thread_count",
+          "persistent_disk_bytes",
+          "temporary_disk_bytes",
+          "input_bytes",
+          "output_bytes",
+          "outbound_request_count",
+          "outbound_response_bytes",
+          "outbound_total_bytes"
+        ],
+        "title": "RuntimeLimitsResponse",
         "type": "object"
       },
       "SampleRequest": {
@@ -5244,69 +7009,7 @@
         "title": "SavedGraphNodeLayoutModel",
         "type": "object"
       },
-      "SavedGraphNodeModel-Input": {
-        "additionalProperties": false,
-        "properties": {
-          "artifact_type_bindings": {
-            "items": {
-              "$ref": "#/components/schemas/ArtifactTypeBindingModel"
-            },
-            "title": "Artifact Type Bindings",
-            "type": "array"
-          },
-          "config": {
-            "additionalProperties": true,
-            "title": "Config",
-            "type": "object"
-          },
-          "id": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "input_plugs": {
-            "items": {
-              "$ref": "#/components/schemas/SavedGraphInputPlugModel"
-            },
-            "title": "Input Plugs",
-            "type": "array"
-          },
-          "layout": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SavedGraphNodeLayoutModel"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "operator_id": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Operator Id",
-            "type": "string"
-          },
-          "operator_version": {
-            "minimum": 1.0,
-            "title": "Operator Version",
-            "type": "integer"
-          },
-          "position": {
-            "$ref": "#/components/schemas/GraphPointModel"
-          }
-        },
-        "required": [
-          "id",
-          "operator_id",
-          "operator_version",
-          "position"
-        ],
-        "title": "SavedGraphNodeModel",
-        "type": "object"
-      },
-      "SavedGraphNodeModel-Output": {
+      "SavedGraphNodeModel": {
         "additionalProperties": false,
         "properties": {
           "artifact_type_bindings": {
@@ -5436,13 +7139,13 @@
           },
           "nodes": {
             "items": {
-              "$ref": "#/components/schemas/SavedGraphNodeModel-Output"
+              "$ref": "#/components/schemas/SavedGraphNodeModel"
             },
             "title": "Nodes",
             "type": "array"
           },
           "presentation": {
-            "$ref": "#/components/schemas/GraphPresentationDocumentModel-Output"
+            "$ref": "#/components/schemas/GraphPresentationDocumentModel"
           },
           "revision": {
             "title": "Revision",
@@ -5670,6 +7373,7 @@
               "mapping": {
                 "add_edge": "#/components/schemas/AddEdgeCommand",
                 "add_node": "#/components/schemas/AddNodeCommand",
+                "apply_batch": "#/components/schemas/ApplyGraphCommandBatch",
                 "clear_node_artifact_type_binding": "#/components/schemas/ClearNodeArtifactTypeBindingCommand",
                 "duplicate_node": "#/components/schemas/DuplicateNodeCommand",
                 "move_annotations": "#/components/schemas/MoveAnnotationsCommand",
@@ -5685,7 +7389,8 @@
                 "update_edge": "#/components/schemas/UpdateEdgeCommand",
                 "update_node_configuration": "#/components/schemas/UpdateNodeConfigurationCommand",
                 "update_node_configuration_and_input_plugs": "#/components/schemas/UpdateNodeConfigurationAndInputPlugsCommand",
-                "update_node_layout": "#/components/schemas/UpdateNodeLayoutCommand"
+                "update_node_layout": "#/components/schemas/UpdateNodeLayoutCommand",
+                "update_node_operator": "#/components/schemas/UpdateNodeOperatorCommand"
               },
               "propertyName": "kind"
             },
@@ -5704,6 +7409,9 @@
               },
               {
                 "$ref": "#/components/schemas/MoveNodesCommand"
+              },
+              {
+                "$ref": "#/components/schemas/UpdateNodeOperatorCommand"
               },
               {
                 "$ref": "#/components/schemas/UpdateNodeConfigurationCommand"
@@ -5743,6 +7451,9 @@
               },
               {
                 "$ref": "#/components/schemas/MoveAnnotationsCommand"
+              },
+              {
+                "$ref": "#/components/schemas/ApplyGraphCommandBatch"
               }
             ],
             "title": "Command"
@@ -6457,6 +8168,55 @@
         "title": "UpdateNodeLayoutCommand",
         "type": "object"
       },
+      "UpdateNodeOperatorCommand": {
+        "additionalProperties": false,
+        "description": "Compare-and-swap one node's immutable operator release identity.",
+        "properties": {
+          "expected_operator_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Expected Operator Id",
+            "type": "string"
+          },
+          "expected_operator_version": {
+            "minimum": 1.0,
+            "title": "Expected Operator Version",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "update_node_operator",
+            "default": "update_node_operator",
+            "title": "Kind",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "operator_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Operator Id",
+            "type": "string"
+          },
+          "operator_version": {
+            "minimum": 1.0,
+            "title": "Operator Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "node_id",
+          "operator_id",
+          "operator_version",
+          "expected_operator_id",
+          "expected_operator_version"
+        ],
+        "title": "UpdateNodeOperatorCommand",
+        "type": "object"
+      },
       "UpdateSavedGraphRequest": {
         "additionalProperties": false,
         "properties": {
@@ -6480,13 +8240,13 @@
           },
           "nodes": {
             "items": {
-              "$ref": "#/components/schemas/SavedGraphNodeModel-Input"
+              "$ref": "#/components/schemas/SavedGraphNodeModel"
             },
             "title": "Nodes",
             "type": "array"
           },
           "presentation": {
-            "$ref": "#/components/schemas/GraphPresentationDocumentModel-Input"
+            "$ref": "#/components/schemas/GraphPresentationDocumentModel"
           }
         },
         "required": [
@@ -7168,6 +8928,771 @@
         "summary": "Create Workspace",
         "tags": [
           "workspaces"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/agent-authoring/builds/{build_attempt_id}/approval": {
+      "post": {
+        "operationId": "approve_agent_build_v1_workspaces__workspace_id__agent_authoring_builds__build_attempt_id__approval_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "build_attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Build Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveBuildRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Approve Agent Build",
+        "tags": [
+          "agent authoring"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/agent-authoring/builds/{build_attempt_id}/publish": {
+      "post": {
+        "operationId": "publish_agent_build_v1_workspaces__workspace_id__agent_authoring_builds__build_attempt_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "build_attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Build Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishBuildRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishBuildResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Publish Agent Build",
+        "tags": [
+          "agent authoring"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/agent-authoring/builds/{build_attempt_id}/review": {
+      "get": {
+        "operationId": "get_agent_build_review_v1_workspaces__workspace_id__agent_authoring_builds__build_attempt_id__review_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "build_attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Build Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Agent Build Review",
+        "tags": [
+          "agent authoring"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/agent-authoring/builds/{build_attempt_id}/review/files/{file_path}": {
+      "get": {
+        "operationId": "get_agent_build_review_file_v1_workspaces__workspace_id__agent_authoring_builds__build_attempt_id__review_files__file_path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "build_attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Build Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_path",
+            "required": true,
+            "schema": {
+              "title": "File Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildReviewFileContentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Agent Build Review File",
+        "tags": [
+          "agent authoring"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/agent-authoring/drafts/{draft_node_id}": {
+      "get": {
+        "operationId": "get_agent_draft_v1_workspaces__workspace_id__agent_authoring_drafts__draft_node_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_node_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Draft Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDraftDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Agent Draft",
+        "tags": [
+          "agent authoring"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/agent-authoring/environments": {
+      "get": {
+        "operationId": "list_agent_environments_v1_workspaces__workspace_id__agent_authoring_environments_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentEnvironmentListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Agent Environments",
+        "tags": [
+          "agent authoring"
+        ]
+      },
+      "post": {
+        "operationId": "create_agent_environment_v1_workspaces__workspace_id__agent_authoring_environments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentEnvironmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentEnvironmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Create Agent Environment",
+        "tags": [
+          "agent authoring"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/agent-authoring/graphs/{graph_id}/drafts": {
+      "post": {
+        "operationId": "create_agent_draft_v1_workspaces__workspace_id__agent_authoring_graphs__graph_id__drafts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateAgentDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Create Agent Draft",
+        "tags": [
+          "agent authoring"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/agent-authoring/runs/{run_id}": {
+      "delete": {
+        "operationId": "cancel_agent_run_v1_workspaces__workspace_id__agent_authoring_runs__run_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Cancel Agent Run",
+        "tags": [
+          "agent authoring"
+        ]
+      },
+      "get": {
+        "operationId": "get_agent_run_v1_workspaces__workspace_id__agent_authoring_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Agent Run",
+        "tags": [
+          "agent authoring"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/agent-authoring/runs/{run_id}/events": {
+      "get": {
+        "operationId": "stream_agent_run_events_v1_workspaces__workspace_id__agent_authoring_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_sequence",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 9223372036854775807,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After Sequence"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Durable agent authoring events with replay"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Stream Agent Run Events",
+        "tags": [
+          "agent authoring"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/agent-authoring/threads/{thread_id}/runs": {
+      "post": {
+        "operationId": "queue_agent_follow_up_run_v1_workspaces__workspace_id__agent_authoring_threads__thread_id__runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueueAgentFollowUpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentFollowUpRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Queue Agent Follow Up Run",
+        "tags": [
+          "agent authoring"
         ]
       }
     },

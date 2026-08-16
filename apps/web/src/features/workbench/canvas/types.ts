@@ -1,6 +1,7 @@
 import type { Edge } from "@xyflow/react";
 
 import type {
+  AgentDraftProgress,
   ArtifactConversionInput,
   ArtifactConversionPathInput,
   ArtifactTypeKey,
@@ -186,6 +187,11 @@ export interface WorkflowNodeHistoryContext {
   isDirty: boolean;
 }
 
+/** Durable authoring state fetched separately from the saved graph document. */
+export type GeneratedNodeDraftSummary = AgentDraftProgress & {
+  pendingAction?: "approving" | "publishing" | null;
+};
+
 export interface WorkflowCompatibilityEndpoint {
   portName: string;
   plugId?: string;
@@ -230,6 +236,8 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   progress: WorkflowNodeProgress | null;
   /** Saved-graph identity and authoring state; never serialized with the graph. */
   historyContext: WorkflowNodeHistoryContext | null;
+  /** Agent-authored definition state; never serialized with the graph. */
+  generation?: GeneratedNodeDraftSummary | null;
   /** Ephemeral collaborator selection tint; never persisted. */
   remoteSelectionColor?: string | null;
   onImagesSelected?: (nodeId: string, files: File[]) => void;
@@ -274,6 +282,14 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   moduleUpgradeRelease?: number | null;
   onUpgradeModuleCall?: (nodeId: string) => void;
   onOpenExecutionHistory?: (nodeId: string, executionId?: string) => void;
+  onReviewGeneratedNode?: (
+    nodeId: string,
+    draft: GeneratedNodeDraftSummary,
+  ) => void;
+  onIterateGeneratedNode?: (
+    nodeId: string,
+    draft: GeneratedNodeDraftSummary,
+  ) => void;
 }
 
 export const WORKFLOW_NODE_TYPE = "grafyWorkflowNode";
@@ -287,6 +303,11 @@ export const GIS_VECTOR_LAYER_OPERATOR_ID = "gis.map.vector_layer";
 
 export function workflowNodeIsSupported(data: WorkflowNodeData): boolean {
   return data.compatibility.status === "supported";
+}
+
+export function workflowNodeIsRunnable(data: WorkflowNodeData): boolean {
+  return workflowNodeIsSupported(data) &&
+    data.spec.agent_authoring?.runnable !== false;
 }
 
 export function compatibilityHandleId(
@@ -389,6 +410,7 @@ export function createWorkflowNodeData(
     execution: { status: "idle" },
     progress: null,
     historyContext: null,
+    generation: null,
   };
 }
 
@@ -397,9 +419,9 @@ export function serializeRunNode(
   data: WorkflowNodeData,
   activeInputPlugIds?: ReadonlySet<string>,
 ): RunNodeInput {
-  if (!workflowNodeIsSupported(data)) {
+  if (!workflowNodeIsRunnable(data)) {
     throw new Error(
-      `Cannot serialize unsupported node ${id} (${data.spec.operator_id}@${data.spec.operator_version}) for execution`,
+      `Cannot serialize unavailable node ${id} (${data.spec.operator_id}@${data.spec.operator_version}) for execution`,
     );
   }
   const inputPlugs = serializeInputPlugs(data);

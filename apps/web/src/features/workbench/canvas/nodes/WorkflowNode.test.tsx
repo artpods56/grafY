@@ -1087,6 +1087,122 @@ describe("WorkflowNode header", () => {
 
     React.act(() => root.unmount());
   });
+
+  it("shows durable generation state while preserving the normal node card", () => {
+    const data = createWorkflowNodeData(chatCompletionSpec());
+    data.generation = {
+      draftId: "draft-1",
+      runId: "run-1",
+      buildId: "build-1",
+      threadId: "thread-1",
+      environmentId: "environment-1",
+      state: "coding",
+      error: null,
+      capabilities: null,
+      capabilityDigest: null,
+      capabilityApprovalId: null,
+      releaseRevision: null,
+      targetOperatorVersion: 1,
+      lastEventSequence: 0,
+    };
+    const { container, root } = renderNode("generated", data, true);
+
+    expect(container.querySelector('[aria-label="Draft coding"]')).not.toBeNull();
+    expect(container.textContent).toContain("Revision 1 · coding");
+    expect(container.textContent).toContain("OpenAI-compatible Chat Completion");
+
+    React.act(() => root.unmount());
+  });
+
+  it("opens verified review before exposing approval and publication", () => {
+    const data = createWorkflowNodeData(chatCompletionSpec());
+    const review = vi.fn();
+    data.generation = {
+      draftId: "draft-1",
+      runId: "run-1",
+      buildId: "build-1",
+      threadId: "thread-1",
+      environmentId: "environment-1",
+      state: "awaiting_approval",
+      error: null,
+      capabilities: null,
+      capabilityDigest: "a".repeat(64),
+      capabilityApprovalId: null,
+      releaseRevision: null,
+      targetOperatorVersion: 1,
+      lastEventSequence: 9,
+    };
+    data.onReviewGeneratedNode = review;
+    const node = renderNode("generated", data, true);
+    const reviewButton = node.container.querySelector<HTMLButtonElement>(
+      '[aria-label^="Review generated build"]',
+    );
+    React.act(() => reviewButton?.click());
+    expect(review).toHaveBeenCalledWith("generated", data.generation);
+    expect(node.container.textContent).not.toContain("Approve capabilities");
+
+    React.act(() => node.root.unmount());
+  });
+
+  it("keeps the published version runnable while showing the next revision", () => {
+    const spec = {
+      ...chatCompletionSpec(),
+      agent_authoring: {
+        draft_node_id: "draft-1",
+        status: "published" as const,
+        runnable: true,
+        release_revision: 1,
+      },
+    };
+    const data = createWorkflowNodeData(spec);
+    const iterate = vi.fn();
+    data.generation = {
+      draftId: "draft-1",
+      runId: "run-1",
+      buildId: "build-1",
+      threadId: "thread-1",
+      environmentId: "environment-1",
+      state: "published",
+      error: null,
+      capabilities: null,
+      capabilityDigest: null,
+      capabilityApprovalId: "approval-1",
+      releaseRevision: 1,
+      targetOperatorVersion: 1,
+      lastEventSequence: 12,
+    };
+    data.onIterateGeneratedNode = iterate;
+    const node = renderNode("generated", data, true);
+    const iterateButton = node.container.querySelector<HTMLButtonElement>(
+      '[aria-label^="Iterate on"]',
+    );
+    React.act(() => iterateButton?.click());
+    expect(iterate).toHaveBeenCalledWith("generated", data.generation);
+
+    data.generation = {
+      ...data.generation,
+      runId: "run-2",
+      buildId: "build-2",
+      state: "coding",
+      capabilityApprovalId: null,
+      targetOperatorVersion: 2,
+      lastEventSequence: 14,
+    };
+    React.act(() => {
+      node.root.render(
+        <WorkflowNodeCard
+          {...({ id: "generated", data, selected: true } as React.ComponentProps<
+            typeof WorkflowNodeCard
+          >)}
+        />,
+      );
+    });
+    expect(node.container.textContent).toContain("Revision 2 · coding");
+    expect(node.container.querySelector('[aria-label^="Iterate on"]')).toBeNull();
+    expect(data.spec.operator_version).toBe(1);
+
+    React.act(() => node.root.unmount());
+  });
 });
 
 describe("WorkflowNode multiline fields", () => {

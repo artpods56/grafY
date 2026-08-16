@@ -19,6 +19,7 @@ export {
 export {
   applyRoomCommandToHead,
   toLocalGraphCommand,
+  toLocalGraphCommands,
   toRoomGraphCommand,
 } from "./room-command-bridge";
 export { PresenceOverlay } from "./PresenceOverlay";

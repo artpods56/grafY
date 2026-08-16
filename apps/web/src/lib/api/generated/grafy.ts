@@ -125,6 +125,178 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/agent-authoring/builds/{build_attempt_id}/approval": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Approve Agent Build */
+        readonly post: operations["approve_agent_build_v1_workspaces__workspace_id__agent_authoring_builds__build_attempt_id__approval_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/agent-authoring/builds/{build_attempt_id}/publish": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Publish Agent Build */
+        readonly post: operations["publish_agent_build_v1_workspaces__workspace_id__agent_authoring_builds__build_attempt_id__publish_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/agent-authoring/builds/{build_attempt_id}/review": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Agent Build Review */
+        readonly get: operations["get_agent_build_review_v1_workspaces__workspace_id__agent_authoring_builds__build_attempt_id__review_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/agent-authoring/builds/{build_attempt_id}/review/files/{file_path}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Agent Build Review File */
+        readonly get: operations["get_agent_build_review_file_v1_workspaces__workspace_id__agent_authoring_builds__build_attempt_id__review_files__file_path__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/agent-authoring/drafts/{draft_node_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Agent Draft */
+        readonly get: operations["get_agent_draft_v1_workspaces__workspace_id__agent_authoring_drafts__draft_node_id__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/agent-authoring/environments": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Agent Environments */
+        readonly get: operations["list_agent_environments_v1_workspaces__workspace_id__agent_authoring_environments_get"];
+        readonly put?: never;
+        /** Create Agent Environment */
+        readonly post: operations["create_agent_environment_v1_workspaces__workspace_id__agent_authoring_environments_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/agent-authoring/graphs/{graph_id}/drafts": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Create Agent Draft */
+        readonly post: operations["create_agent_draft_v1_workspaces__workspace_id__agent_authoring_graphs__graph_id__drafts_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/agent-authoring/runs/{run_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Agent Run */
+        readonly get: operations["get_agent_run_v1_workspaces__workspace_id__agent_authoring_runs__run_id__get"];
+        readonly put?: never;
+        readonly post?: never;
+        /** Cancel Agent Run */
+        readonly delete: operations["cancel_agent_run_v1_workspaces__workspace_id__agent_authoring_runs__run_id__delete"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/agent-authoring/runs/{run_id}/events": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Stream Agent Run Events */
+        readonly get: operations["stream_agent_run_events_v1_workspaces__workspace_id__agent_authoring_runs__run_id__events_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/agent-authoring/threads/{thread_id}/runs": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Queue Agent Follow Up Run */
+        readonly post: operations["queue_agent_follow_up_run_v1_workspaces__workspace_id__agent_authoring_threads__thread_id__runs_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/content": {
         readonly parameters: {
             readonly query?: never;
@@ -1011,6 +1183,261 @@ export interface components {
             readonly kind: "add_node";
             readonly node: components["schemas"]["SavedGraphNode"];
         };
+        /** AgentDraftDetailResponse */
+        readonly AgentDraftDetailResponse: {
+            readonly capability_approval: components["schemas"]["CapabilityApprovalResponse"] | null;
+            readonly draft: components["schemas"]["AgentDraftResponse"];
+            readonly environment: components["schemas"]["AgentEnvironmentResponse"];
+            readonly latest_build: components["schemas"]["NodeBuildResponse"];
+            readonly latest_run: components["schemas"]["AgentRunResponse"];
+            readonly node_spec: components["schemas"]["NodeSpecResponse"];
+            readonly release: components["schemas"]["NodeReleaseResponse"] | null;
+            readonly thread: components["schemas"]["AgentThreadResponse"];
+        };
+        /** AgentDraftResponse */
+        readonly AgentDraftResponse: {
+            readonly anchor: components["schemas"]["AnchoredPortResponse"];
+            /** Build Attempt Number */
+            readonly build_attempt_number: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Description */
+            readonly description: string;
+            /**
+             * Graph Id
+             * Format: uuid
+             */
+            readonly graph_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            /** Operator Id */
+            readonly operator_id: string;
+            /** Operator Version */
+            readonly operator_version: number;
+            /** Prompt */
+            readonly prompt: string;
+            /** Published Revision */
+            readonly published_revision: number;
+            readonly status: components["schemas"]["DraftNodeStatus"];
+            /**
+             * Thread Id
+             * Format: uuid
+             */
+            readonly thread_id: string;
+            /** Title */
+            readonly title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /** AgentEnvironmentListResponse */
+        readonly AgentEnvironmentListResponse: {
+            /** Environments */
+            readonly environments: readonly components["schemas"]["AgentEnvironmentResponse"][];
+        };
+        /** AgentEnvironmentResponse */
+        readonly AgentEnvironmentResponse: {
+            /** Active Run Id */
+            readonly active_run_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Failure Message */
+            readonly failure_message?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            /** Last Used At */
+            readonly last_used_at?: string | null;
+            /** Name */
+            readonly name: string;
+            /** Profile Slug */
+            readonly profile_slug: string;
+            /** Provider */
+            readonly provider: string;
+            readonly status: components["schemas"]["AgentEnvironmentStatus"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /**
+         * AgentEnvironmentStatus
+         * @enum {string}
+         */
+        readonly AgentEnvironmentStatus: "provisioning" | "creating" | "ready" | "suspended" | "failed" | "archived";
+        /** AgentFollowUpRunResponse */
+        readonly AgentFollowUpRunResponse: {
+            /** Builds */
+            readonly builds: readonly components["schemas"]["NodeBuildResponse"][];
+            readonly environment: components["schemas"]["AgentEnvironmentResponse"];
+            /** Node Specs */
+            readonly node_specs: readonly components["schemas"]["NodeSpecResponse"][];
+            readonly run: components["schemas"]["AgentRunResponse"];
+            readonly thread: components["schemas"]["AgentThreadResponse"];
+        };
+        /** AgentNodeAuthoringResponse */
+        readonly AgentNodeAuthoringResponse: {
+            /**
+             * Draft Node Id
+             * Format: uuid
+             */
+            readonly draft_node_id: string;
+            /** Release Revision */
+            readonly release_revision?: number | null;
+            /** Runnable */
+            readonly runnable: boolean;
+            readonly status: components["schemas"]["DraftNodeStatus"];
+        };
+        /**
+         * AgentPortDirection
+         * @enum {string}
+         */
+        readonly AgentPortDirection: "input" | "output";
+        /** AgentRunDetailResponse */
+        readonly AgentRunDetailResponse: {
+            /** Builds */
+            readonly builds: readonly components["schemas"]["NodeBuildResponse"][];
+            readonly run: components["schemas"]["AgentRunResponse"];
+        };
+        /** AgentRunResponse */
+        readonly AgentRunResponse: {
+            /** Attempt */
+            readonly attempt: number;
+            /** Cancellation Requested At */
+            readonly cancellation_requested_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Environment Id
+             * Format: uuid
+             */
+            readonly environment_id: string;
+            /** Error */
+            readonly error?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            readonly status: components["schemas"]["AgentRunStatus"];
+            /** Target Draft Ids */
+            readonly target_draft_ids: readonly string[];
+            /**
+             * Thread Id
+             * Format: uuid
+             */
+            readonly thread_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /**
+         * AgentRunStatus
+         * @enum {string}
+         */
+        readonly AgentRunStatus: "queued" | "claimed" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelling" | "cancelled" | "interrupting" | "interrupted";
+        /** AgentThreadResponse */
+        readonly AgentThreadResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Environment Id
+             * Format: uuid
+             */
+            readonly environment_id: string;
+            /** Event Sequence */
+            readonly event_sequence: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            /** Title */
+            readonly title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /** AnchoredPortRequest */
+        readonly AnchoredPortRequest: {
+            readonly artifact_type: components["schemas"]["ArtifactTypeKeyResponse"];
+            /**
+             * Collection Mode
+             * @default direct
+             * @enum {string}
+             */
+            readonly collection_mode: "direct" | "map";
+            /**
+             * Direction
+             * @enum {string}
+             */
+            readonly direction: "downstream" | "upstream";
+            readonly feed?: components["schemas"]["PortFeedRequest"];
+            /** Input Plug Id */
+            readonly input_plug_id?: string | null;
+            /** Node Id */
+            readonly node_id: string;
+            /** Port Name */
+            readonly port_name: string;
+            readonly shape: components["schemas"]["PortShape"];
+        };
+        /** AnchoredPortResponse */
+        readonly AnchoredPortResponse: {
+            readonly artifact_type: components["schemas"]["ArtifactTypeKeyResponse"];
+            /**
+             * Collection Mode
+             * @enum {string}
+             */
+            readonly collection_mode: "direct" | "map";
+            readonly direction: components["schemas"]["AgentPortDirection"];
+            /** Name */
+            readonly name: string;
+            /** Required */
+            readonly required: boolean;
+            readonly shape: components["schemas"]["PortShape"];
+        };
+        /**
+         * ApplyGraphCommandBatch
+         * @description Primitive graph commands accepted as one collaborative transaction.
+         */
+        readonly ApplyGraphCommandBatch: {
+            /** Commands */
+            readonly commands: readonly (components["schemas"]["RenameGraphCommand"] | components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeOperatorCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"])[];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "apply_batch";
+        };
+        /** ApproveBuildRequest */
+        readonly ApproveBuildRequest: {
+            /** Capability Digest */
+            readonly capability_digest: string;
+        };
         /** ArtifactConversionKeyResponse */
         readonly ArtifactConversionKeyResponse: {
             /** Id */
@@ -1164,6 +1591,164 @@ export interface components {
             /** File */
             readonly file: string;
         };
+        /** BuildArtifactSetResponse */
+        readonly BuildArtifactSetResponse: {
+            /** Build Digest */
+            readonly build_digest: string;
+            /** Implementation Digest */
+            readonly implementation_digest: string;
+            /** Lock Digest */
+            readonly lock_digest: string;
+            /** Profile Digest */
+            readonly profile_digest: string;
+            readonly runtime_artifact: components["schemas"]["RuntimeArtifactReferenceResponse"];
+            /** Runtime Image Digest */
+            readonly runtime_image_digest: string;
+            /** Source Digest */
+            readonly source_digest: string;
+            /** Tests Digest */
+            readonly tests_digest: string;
+            /** Tests Passed */
+            readonly tests_passed: boolean;
+        };
+        /** BuildLockSummaryResponse */
+        readonly BuildLockSummaryResponse: {
+            /** Byte Count */
+            readonly byte_count: number;
+            /** Digest */
+            readonly digest: string;
+            /**
+             * Path
+             * @default uv.lock
+             * @constant
+             */
+            readonly path: "uv.lock";
+        };
+        /** BuildReviewChangeResponse */
+        readonly BuildReviewChangeResponse: {
+            /**
+             * Change
+             * @enum {string}
+             */
+            readonly change: "added" | "modified" | "removed";
+            /** Current Sha256 */
+            readonly current_sha256: string | null;
+            /** Diff Truncated */
+            readonly diff_truncated: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            readonly kind: "project" | "lockfile" | "manifest" | "implementation" | "test";
+            /** Path */
+            readonly path: string;
+            /** Previous Sha256 */
+            readonly previous_sha256: string | null;
+            /** Unified Diff */
+            readonly unified_diff: string | null;
+        };
+        /** BuildReviewFileContentResponse */
+        readonly BuildReviewFileContentResponse: {
+            /** Byte Count */
+            readonly byte_count: number;
+            /** Content */
+            readonly content: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            readonly kind: "project" | "lockfile" | "manifest" | "implementation" | "test";
+            /** Path */
+            readonly path: string;
+            /** Sha256 */
+            readonly sha256: string;
+        };
+        /** BuildReviewFileResponse */
+        readonly BuildReviewFileResponse: {
+            /** Byte Count */
+            readonly byte_count: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            readonly kind: "project" | "lockfile" | "manifest" | "implementation" | "test";
+            /** Path */
+            readonly path: string;
+            /** Sha256 */
+            readonly sha256: string;
+        };
+        /** BuildReviewResponse */
+        readonly BuildReviewResponse: {
+            /** Archive Byte Count */
+            readonly archive_byte_count: number;
+            readonly build: components["schemas"]["NodeBuildResponse"];
+            /** Changes */
+            readonly changes: readonly components["schemas"]["BuildReviewChangeResponse"][];
+            /** Files */
+            readonly files: readonly components["schemas"]["BuildReviewFileResponse"][];
+            /** Implementation Digest */
+            readonly implementation_digest: string;
+            readonly lock: components["schemas"]["BuildLockSummaryResponse"];
+            readonly node_spec: components["schemas"]["NodeSpecResponse"];
+            /** Previous Release Revision */
+            readonly previous_release_revision: number | null;
+            /** Source Digest */
+            readonly source_digest: string;
+            readonly tests: components["schemas"]["BuildTestSummaryResponse"];
+            /** Uncompressed Byte Count */
+            readonly uncompressed_byte_count: number;
+        };
+        /** BuildTestSummaryResponse */
+        readonly BuildTestSummaryResponse: {
+            /** Digest */
+            readonly digest: string;
+            /** File Count */
+            readonly file_count: number;
+            /** Passed */
+            readonly passed: boolean;
+        };
+        /** CapabilityApprovalResponse */
+        readonly CapabilityApprovalResponse: {
+            /**
+             * Approved At
+             * Format: date-time
+             */
+            readonly approved_at: string;
+            /**
+             * Approved By User Id
+             * Format: uuid
+             */
+            readonly approved_by_user_id: string;
+            /**
+             * Build Attempt Id
+             * Format: uuid
+             */
+            readonly build_attempt_id: string;
+            /** Capability Digest */
+            readonly capability_digest: string;
+            /**
+             * Draft Node Id
+             * Format: uuid
+             */
+            readonly draft_node_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+        };
+        /** CapabilityManifestResponse */
+        readonly CapabilityManifestResponse: {
+            /** Digest */
+            readonly digest: string;
+            /** Object Store */
+            readonly object_store: readonly components["schemas"]["ObjectStoreCapabilityResponse"][];
+            /** Outbound Http Origins */
+            readonly outbound_http_origins: readonly string[];
+            readonly runtime: components["schemas"]["RuntimeLimitsResponse"];
+            /** Secret Refs */
+            readonly secret_refs: readonly string[];
+        };
         /** CheckpointGraphRequest */
         readonly CheckpointGraphRequest: {
             /**
@@ -1211,8 +1796,8 @@ export interface components {
             /** Name */
             readonly name: string;
             /** Nodes */
-            readonly nodes: readonly components["schemas"]["SavedGraphNodeModel-Output"][];
-            readonly presentation?: components["schemas"]["GraphPresentationDocumentModel-Output"];
+            readonly nodes: readonly components["schemas"]["SavedGraphNodeModel"][];
+            readonly presentation?: components["schemas"]["GraphPresentationDocumentModel"];
             /**
              * Room Epoch
              * Format: uuid
@@ -1266,6 +1851,45 @@ export interface components {
              */
             readonly source_workspace_id: string;
         };
+        /** CreateAgentDraftRequest */
+        readonly CreateAgentDraftRequest: {
+            readonly anchor: components["schemas"]["AnchoredPortRequest"];
+            /** Environment Id */
+            readonly environment_id?: string | null;
+            /**
+             * Idempotency Key
+             * Format: uuid
+             */
+            readonly idempotency_key: string;
+            readonly placement: components["schemas"]["DraftGraphPlacementRequest"];
+            /** Prompt */
+            readonly prompt: string;
+            /** Thread Id */
+            readonly thread_id?: string | null;
+        };
+        /** CreateAgentDraftResponse */
+        readonly CreateAgentDraftResponse: {
+            readonly anchor_port: components["schemas"]["PortResponse"];
+            readonly build: components["schemas"]["NodeBuildResponse"];
+            readonly draft: components["schemas"]["AgentDraftResponse"];
+            readonly environment: components["schemas"]["AgentEnvironmentResponse"];
+            readonly head: components["schemas"]["CollaborativeHeadResponse"];
+            readonly node_spec: components["schemas"]["NodeSpecResponse"];
+            readonly receipt: components["schemas"]["GraphCommandReceiptResponse"];
+            readonly run: components["schemas"]["AgentRunResponse"];
+            readonly thread: components["schemas"]["AgentThreadResponse"];
+        };
+        /** CreateAgentEnvironmentRequest */
+        readonly CreateAgentEnvironmentRequest: {
+            /** Name */
+            readonly name: string;
+            /**
+             * Profile Slug
+             * @default python-uv
+             * @constant
+             */
+            readonly profile_slug: "python-uv";
+        };
         /** CreateSavedGraphRequest */
         readonly CreateSavedGraphRequest: {
             /** Edges */
@@ -1273,8 +1897,8 @@ export interface components {
             /** Name */
             readonly name: string;
             /** Nodes */
-            readonly nodes?: readonly components["schemas"]["SavedGraphNodeModel-Input"][];
-            readonly presentation?: components["schemas"]["GraphPresentationDocumentModel-Input"];
+            readonly nodes?: readonly components["schemas"]["SavedGraphNodeModel"][];
+            readonly presentation?: components["schemas"]["GraphPresentationDocumentModel"];
         };
         /** CreateTemplateRequest */
         readonly CreateTemplateRequest: {
@@ -1290,6 +1914,34 @@ export interface components {
             /** Source Revision */
             readonly source_revision: number;
         };
+        /** DraftGraphPlacementRequest */
+        readonly DraftGraphPlacementRequest: {
+            /**
+             * Command Id
+             * Format: uuid
+             */
+            readonly command_id: string;
+            /** Edge Id */
+            readonly edge_id: string;
+            /** Node Id */
+            readonly node_id: string;
+            /** Observed Sequence */
+            readonly observed_sequence: number;
+            /**
+             * Room Epoch
+             * Format: uuid
+             */
+            readonly room_epoch: string;
+            /** X */
+            readonly x: number;
+            /** Y */
+            readonly y: number;
+        };
+        /**
+         * DraftNodeStatus
+         * @enum {string}
+         */
+        readonly DraftNodeStatus: "draft" | "authoring" | "awaiting_approval" | "published" | "failed" | "cancelled";
         /** DuplicateNodeCommand */
         readonly DuplicateNodeCommand: {
             /**
@@ -1989,18 +2641,7 @@ export interface components {
             readonly viewers: readonly components["schemas"]["GraphPresentationViewer"][];
         };
         /** GraphPresentationDocumentModel */
-        readonly "GraphPresentationDocumentModel-Input": {
-            /** Annotations */
-            readonly annotations?: readonly components["schemas"]["GraphPresentationAnnotationModel"][];
-            /** Bindings */
-            readonly bindings?: readonly components["schemas"]["GraphPresentationBindingModel"][];
-            /** Links */
-            readonly links?: readonly components["schemas"]["GraphPresentationLinkModel"][];
-            /** Viewers */
-            readonly viewers?: readonly components["schemas"]["GraphPresentationViewerModel"][];
-        };
-        /** GraphPresentationDocumentModel */
-        readonly "GraphPresentationDocumentModel-Output": {
+        readonly GraphPresentationDocumentModel: {
             /** Annotations */
             readonly annotations?: readonly components["schemas"]["GraphPresentationAnnotationModel"][];
             /** Bindings */
@@ -2246,6 +2887,46 @@ export interface components {
             /** Positions */
             readonly positions: readonly components["schemas"]["MoveNodePosition"][];
         };
+        /** NodeBuildResponse */
+        readonly NodeBuildResponse: {
+            readonly artifacts?: components["schemas"]["BuildArtifactSetResponse"] | null;
+            /** Attempt Number */
+            readonly attempt_number: number;
+            readonly capabilities?: components["schemas"]["CapabilityManifestResponse"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Draft Node Id
+             * Format: uuid
+             */
+            readonly draft_node_id: string;
+            /** Failure Message */
+            readonly failure_message?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            readonly run_id: string;
+            readonly status: components["schemas"]["NodeBuildStatus"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /**
+         * NodeBuildStatus
+         * @enum {string}
+         */
+        readonly NodeBuildStatus: "queued" | "preparing" | "coding" | "testing" | "awaiting_approval" | "failed" | "cancelled" | "superseded" | "published";
         /** NodeRegistryResponse */
         readonly NodeRegistryResponse: {
             /** Artifact Conversions */
@@ -2258,6 +2939,57 @@ export interface components {
             readonly plugins: readonly components["schemas"]["PluginSpecResponse"][];
             /** Unavailable Modules */
             readonly unavailable_modules?: readonly components["schemas"]["UnavailableGraphModuleResponse"][];
+        };
+        /** NodeReleaseResponse */
+        readonly NodeReleaseResponse: {
+            /**
+             * Approved By User Id
+             * Format: uuid
+             */
+            readonly approved_by_user_id: string;
+            readonly artifacts: components["schemas"]["BuildArtifactSetResponse"];
+            /**
+             * Build Attempt Id
+             * Format: uuid
+             */
+            readonly build_attempt_id: string;
+            readonly capabilities: components["schemas"]["CapabilityManifestResponse"];
+            /**
+             * Capability Approval Id
+             * Format: uuid
+             */
+            readonly capability_approval_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Draft Node Id
+             * Format: uuid
+             */
+            readonly draft_node_id: string;
+            /**
+             * Environment Id
+             * Format: uuid
+             */
+            readonly environment_id: string;
+            /**
+             * Node Id
+             * Format: uuid
+             */
+            readonly node_id: string;
+            /** Operator Id */
+            readonly operator_id: string;
+            /** Operator Version */
+            readonly operator_version: number;
+            /** Revision */
+            readonly revision: number;
+            /**
+             * Thread Id
+             * Format: uuid
+             */
+            readonly thread_id: string;
         };
         /** NodeSecretInputResponse */
         readonly NodeSecretInputResponse: {
@@ -2281,6 +3013,7 @@ export interface components {
         };
         /** NodeSpecResponse */
         readonly NodeSpecResponse: {
+            readonly agent_authoring?: components["schemas"]["AgentNodeAuthoringResponse"] | null;
             /**
              * Catalog Visible
              * @default true
@@ -2323,6 +3056,17 @@ export interface components {
             readonly secret_inputs?: readonly components["schemas"]["NodeSecretInputResponse"][];
             /** Title */
             readonly title: string;
+        };
+        /**
+         * ObjectStoreAccess
+         * @enum {string}
+         */
+        readonly ObjectStoreAccess: "read" | "write" | "read_write";
+        /** ObjectStoreCapabilityResponse */
+        readonly ObjectStoreCapabilityResponse: {
+            /** Prefix */
+            readonly prefix: string;
+            readonly scope: components["schemas"]["ObjectStoreAccess"];
         };
         /** PersonalAccessTokenCreatedResponse */
         readonly PersonalAccessTokenCreatedResponse: {
@@ -2426,7 +3170,7 @@ export interface components {
          * PluginOrigin
          * @enum {string}
          */
-        readonly PluginOrigin: "builtin" | "external" | "module";
+        readonly PluginOrigin: "agent" | "builtin" | "external" | "module";
         /** PluginSpecResponse */
         readonly PluginSpecResponse: {
             readonly origin: components["schemas"]["PluginOrigin"];
@@ -2434,6 +3178,26 @@ export interface components {
             readonly slug: string;
             /** Title */
             readonly title: string;
+        };
+        /** PortConversionRequest */
+        readonly PortConversionRequest: {
+            /** Id */
+            readonly id: string;
+            /** Version */
+            readonly version: number;
+        };
+        /** PortFeedRequest */
+        readonly PortFeedRequest: {
+            /**
+             * Conversion Path
+             * @default []
+             */
+            readonly conversion_path: readonly components["schemas"]["PortConversionRequest"][];
+            /**
+             * Projection Path
+             * @default []
+             */
+            readonly projection_path: readonly string[];
         };
         /** PortResponse */
         readonly PortResponse: {
@@ -2475,6 +3239,44 @@ export interface components {
          * @enum {string}
          */
         readonly PortShape: "one" | "many";
+        /** PublishBuildRequest */
+        readonly PublishBuildRequest: {
+            /**
+             * Capability Approval Id
+             * Format: uuid
+             */
+            readonly capability_approval_id: string;
+            readonly graph_promotion?: components["schemas"]["PublishGraphPromotionRequest"] | null;
+        };
+        /** PublishBuildResponse */
+        readonly PublishBuildResponse: {
+            readonly head?: components["schemas"]["CollaborativeHeadResponse"] | null;
+            readonly node_spec: components["schemas"]["NodeSpecResponse"];
+            readonly receipt?: components["schemas"]["GraphCommandReceiptResponse"] | null;
+            readonly release: components["schemas"]["NodeReleaseResponse"];
+        };
+        /** PublishGraphPromotionRequest */
+        readonly PublishGraphPromotionRequest: {
+            /**
+             * Command Id
+             * Format: uuid
+             */
+            readonly command_id: string;
+            /**
+             * Graph Id
+             * Format: uuid
+             */
+            readonly graph_id: string;
+            /** Node Id */
+            readonly node_id: string;
+            /** Observed Sequence */
+            readonly observed_sequence: number;
+            /**
+             * Room Epoch
+             * Format: uuid
+             */
+            readonly room_epoch: string;
+        };
         /** PublishModuleReleaseRequest */
         readonly PublishModuleReleaseRequest: {
             /** Description */
@@ -2488,6 +3290,18 @@ export interface components {
              * Format: uuid
              */
             readonly source_graph_id: string;
+        };
+        /** QueueAgentFollowUpRequest */
+        readonly QueueAgentFollowUpRequest: {
+            /** Draft Node Ids */
+            readonly draft_node_ids: readonly string[];
+            /**
+             * Idempotency Key
+             * Format: uuid
+             */
+            readonly idempotency_key: string;
+            /** Prompt */
+            readonly prompt: string;
         };
         /** RemoveEdgesCommand */
         readonly RemoveEdgesCommand: {
@@ -2677,6 +3491,42 @@ export interface components {
              * @enum {string}
              */
             readonly status: "succeeded" | "failed";
+        };
+        /** RuntimeArtifactReferenceResponse */
+        readonly RuntimeArtifactReferenceResponse: {
+            /** Digest */
+            readonly digest: string;
+            /** Provider */
+            readonly provider: string;
+            /** Ref */
+            readonly ref: string;
+        };
+        /** RuntimeLimitsResponse */
+        readonly RuntimeLimitsResponse: {
+            /** Cpu Millis */
+            readonly cpu_millis: number;
+            /** Input Bytes */
+            readonly input_bytes: number;
+            /** Memory Megabytes */
+            readonly memory_megabytes: number;
+            /** Outbound Request Count */
+            readonly outbound_request_count: number;
+            /** Outbound Response Bytes */
+            readonly outbound_response_bytes: number;
+            /** Outbound Total Bytes */
+            readonly outbound_total_bytes: number;
+            /** Output Bytes */
+            readonly output_bytes: number;
+            /** Persistent Disk Bytes */
+            readonly persistent_disk_bytes: number;
+            /** Process Count */
+            readonly process_count: number;
+            /** Temporary Disk Bytes */
+            readonly temporary_disk_bytes: number;
+            /** Thread Count */
+            readonly thread_count: number;
+            /** Wall Time Seconds */
+            readonly wall_time_seconds: number;
         };
         /** SampleRequest */
         readonly SampleRequest: {
@@ -2872,26 +3722,7 @@ export interface components {
             readonly width?: number | null;
         };
         /** SavedGraphNodeModel */
-        readonly "SavedGraphNodeModel-Input": {
-            /** Artifact Type Bindings */
-            readonly artifact_type_bindings?: readonly components["schemas"]["ArtifactTypeBindingModel"][];
-            /** Config */
-            readonly config?: {
-                readonly [key: string]: unknown;
-            };
-            /** Id */
-            readonly id: string;
-            /** Input Plugs */
-            readonly input_plugs?: readonly components["schemas"]["SavedGraphInputPlugModel"][];
-            readonly layout?: components["schemas"]["SavedGraphNodeLayoutModel"] | null;
-            /** Operator Id */
-            readonly operator_id: string;
-            /** Operator Version */
-            readonly operator_version: number;
-            readonly position: components["schemas"]["GraphPointModel"];
-        };
-        /** SavedGraphNodeModel */
-        readonly "SavedGraphNodeModel-Output": {
+        readonly SavedGraphNodeModel: {
             /** Artifact Type Bindings */
             readonly artifact_type_bindings?: readonly components["schemas"]["ArtifactTypeBindingModel"][];
             /** Config */
@@ -2936,8 +3767,8 @@ export interface components {
             /** Name */
             readonly name: string;
             /** Nodes */
-            readonly nodes?: readonly components["schemas"]["SavedGraphNodeModel-Output"][];
-            readonly presentation?: components["schemas"]["GraphPresentationDocumentModel-Output"];
+            readonly nodes?: readonly components["schemas"]["SavedGraphNodeModel"][];
+            readonly presentation?: components["schemas"]["GraphPresentationDocumentModel"];
             /** Revision */
             readonly revision: number;
             /**
@@ -3029,7 +3860,7 @@ export interface components {
         /** SubmitGraphCommandRequest */
         readonly SubmitGraphCommandRequest: {
             /** Command */
-            readonly command: components["schemas"]["RenameGraphCommand"] | components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"];
+            readonly command: components["schemas"]["RenameGraphCommand"] | components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeOperatorCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"] | components["schemas"]["ApplyGraphCommandBatch"];
             /**
              * Command Id
              * Format: uuid
@@ -3313,6 +4144,27 @@ export interface components {
             /** Node Id */
             readonly node_id: string;
         };
+        /**
+         * UpdateNodeOperatorCommand
+         * @description Compare-and-swap one node's immutable operator release identity.
+         */
+        readonly UpdateNodeOperatorCommand: {
+            /** Expected Operator Id */
+            readonly expected_operator_id: string;
+            /** Expected Operator Version */
+            readonly expected_operator_version: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "update_node_operator";
+            /** Node Id */
+            readonly node_id: string;
+            /** Operator Id */
+            readonly operator_id: string;
+            /** Operator Version */
+            readonly operator_version: number;
+        };
         /** UpdateSavedGraphRequest */
         readonly UpdateSavedGraphRequest: {
             /** Edges */
@@ -3322,8 +4174,8 @@ export interface components {
             /** Name */
             readonly name: string;
             /** Nodes */
-            readonly nodes?: readonly components["schemas"]["SavedGraphNodeModel-Input"][];
-            readonly presentation?: components["schemas"]["GraphPresentationDocumentModel-Input"];
+            readonly nodes?: readonly components["schemas"]["SavedGraphNodeModel"][];
+            readonly presentation?: components["schemas"]["GraphPresentationDocumentModel"];
         };
         /** UpdateTemplateMetadataRequest */
         readonly UpdateTemplateMetadataRequest: {
@@ -3651,6 +4503,413 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly approve_agent_build_v1_workspaces__workspace_id__agent_authoring_builds__build_attempt_id__approval_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly build_attempt_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ApproveBuildRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CapabilityApprovalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly publish_agent_build_v1_workspaces__workspace_id__agent_authoring_builds__build_attempt_id__publish_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly build_attempt_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PublishBuildRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PublishBuildResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_agent_build_review_v1_workspaces__workspace_id__agent_authoring_builds__build_attempt_id__review_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly build_attempt_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["BuildReviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_agent_build_review_file_v1_workspaces__workspace_id__agent_authoring_builds__build_attempt_id__review_files__file_path__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly build_attempt_id: string;
+                readonly file_path: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["BuildReviewFileContentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_agent_draft_v1_workspaces__workspace_id__agent_authoring_drafts__draft_node_id__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly draft_node_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentDraftDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly list_agent_environments_v1_workspaces__workspace_id__agent_authoring_environments_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentEnvironmentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly create_agent_environment_v1_workspaces__workspace_id__agent_authoring_environments_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CreateAgentEnvironmentRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentEnvironmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly create_agent_draft_v1_workspaces__workspace_id__agent_authoring_graphs__graph_id__drafts_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly graph_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CreateAgentDraftRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 202: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CreateAgentDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_agent_run_v1_workspaces__workspace_id__agent_authoring_runs__run_id__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly run_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentRunDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly cancel_agent_run_v1_workspaces__workspace_id__agent_authoring_runs__run_id__delete: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly run_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 202: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly stream_agent_run_events_v1_workspaces__workspace_id__agent_authoring_runs__run_id__events_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly after_sequence?: number | null;
+            };
+            readonly header?: {
+                readonly "Last-Event-ID"?: string | null;
+            };
+            readonly path: {
+                readonly run_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Durable agent authoring events with replay */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "text/event-stream": string;
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly queue_agent_follow_up_run_v1_workspaces__workspace_id__agent_authoring_threads__thread_id__runs_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly thread_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["QueueAgentFollowUpRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 202: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentFollowUpRunResponse"];
                 };
             };
             /** @description Validation Error */

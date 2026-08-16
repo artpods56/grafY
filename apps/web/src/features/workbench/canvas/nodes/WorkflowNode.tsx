@@ -22,6 +22,7 @@ import {
   Plus,
   Power,
   RotateCcw,
+  Sparkles,
   TriangleAlert,
   Trash2,
   Upload,
@@ -308,6 +309,44 @@ const s = stylex.create({
     cursor: "pointer",
     fontSize: "10px",
     fontWeight: 600,
+  },
+  generationBadge: {
+    flexShrink: 0,
+    minHeight: "22px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    paddingInline: "7px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorderStrong,
+    borderRadius: "9999px",
+    backgroundColor: tokens.colorAccentSoft,
+    color: tokens.colorAccent,
+    fontSize: "10px",
+    fontWeight: 650,
+  },
+  generationAction: {
+    flexShrink: 0,
+    minHeight: "22px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    paddingInline: "7px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorderStrong,
+    borderRadius: "9999px",
+    backgroundColor: {
+      default: tokens.colorSurface,
+      ":hover": tokens.colorHover,
+      ":disabled": tokens.colorSurfaceSunken,
+    },
+    color: tokens.colorTextEmphasis,
+    cursor: { default: "pointer", ":disabled": "wait" },
+    fontFamily: "inherit",
+    fontSize: "10px",
+    fontWeight: 700,
   },
   tabs: {
     display: "grid",
@@ -3347,6 +3386,24 @@ function NodeHeader({
     data.execution.status === "uploading" ||
     data.execution.status === "running" ||
     data.execution.status === "cancelling";
+  const generation =
+    data.generation?.state === "published" ? null : data.generation;
+  const generationIsBusy = generation
+    ? ["queued", "claimed", "preparing", "coding", "testing", "cancelling", "interrupting"].includes(
+        generation.state,
+      )
+    : false;
+  const canReviewGeneration = Boolean(
+    generation?.state === "awaiting_approval" &&
+      generation.buildId &&
+      data.onReviewGeneratedNode,
+  );
+  const canIterateGeneration = Boolean(
+    data.spec.agent_authoring?.runnable &&
+      data.generation?.state === "published" &&
+      data.generation?.threadId &&
+      data.onIterateGeneratedNode,
+  );
 
   return (
     <CanvasNodeHeader
@@ -3384,7 +3441,25 @@ function NodeHeader({
       }
       onRemove={() => data.onRemoveNode?.(id)}
       status={
-        executionLabel ? (
+        generation ? (
+          generationIsBusy ? (
+            <LoaderCircle
+              size={11}
+              role="status"
+              aria-label={`Draft ${generation.state}`}
+              {...stylex.props(s.spinner, s.executionSpinner)}
+            />
+          ) : (
+            <Sparkles
+              size={11}
+              role="status"
+              aria-label={`Draft ${generation.state}`}
+              {...stylex.props(
+                generation.state === "failed" ? s.compatibilityIcon : null,
+              )}
+            />
+          )
+        ) : executionLabel ? (
           executionIsBusy ? (
             <LoaderCircle
               size={11}
@@ -3415,6 +3490,39 @@ function NodeHeader({
         ) : null
       }
     >
+      {generation ? (
+        <span
+          title={generation.error ?? `Generated node draft: ${generation.state}`}
+          {...stylex.props(s.generationBadge)}
+        >
+          <Sparkles size={10} />
+          Revision {generation.targetOperatorVersion} · {generation.state.replaceAll("_", " ")}
+        </span>
+      ) : null}
+      {canReviewGeneration && generation ? (
+        <button
+          type="button"
+          aria-label={`Review generated build for ${data.spec.title}`}
+          title="Inspect tested source and requested capabilities"
+          {...nodeInteractionProps(stylex.props(s.generationAction))}
+          onClick={() => data.onReviewGeneratedNode?.(id, generation)}
+        >
+          <Sparkles size={10} />
+          Review build
+        </button>
+      ) : null}
+      {canIterateGeneration && data.generation ? (
+        <button
+          type="button"
+          aria-label={`Iterate on ${data.spec.title}`}
+          title={`Keep version ${data.spec.operator_version} runnable while building the next revision`}
+          {...nodeInteractionProps(stylex.props(s.generationAction))}
+          onClick={() => data.onIterateGeneratedNode?.(id, data.generation!)}
+        >
+          <Sparkles size={10} />
+          Iterate
+        </button>
+      ) : null}
       {typeof data.moduleUpgradeRelease === "number" &&
       data.onUpgradeModuleCall ? (
         <button

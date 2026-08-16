@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { Search } from "lucide-react";
+import { LoaderCircle, Search, Sparkles } from "lucide-react";
 import { useStore, ViewportPortal } from "@xyflow/react";
 
-import type { NodeRegistry } from "@/lib/api";
+import type { ArtifactTypeKey, NodeRegistry, Port } from "@/lib/api";
 import {
   FINE_POINTER_QUERY,
   useMediaQuery,
@@ -42,10 +42,31 @@ export interface ContextualDiscoverySession {
   sourceNodeId: string;
   sourceHandle: string;
   sourcePortTitle: string;
+  sourceArtifactType: ArtifactTypeKey | null;
+  sourceShape: Port["shape"];
   direction: ContextualDiscoveryDirection;
   clientAnchor: { x: number; y: number };
   flowPosition: { x: number; y: number };
   candidates: readonly ContextualCandidate[];
+}
+
+export interface ContextualAgentEnvironment {
+  id: string;
+  name: string;
+  profile: string;
+}
+
+export interface ContextualAgentThread {
+  id: string;
+  environmentId: string;
+  environmentName: string;
+}
+
+export interface ContextualGenerationRequest {
+  prompt: string;
+  threadId: string | null;
+  environmentId: string | null;
+  createEnvironment: boolean;
 }
 
 export interface ContextualNodeDiscoveryProps {
@@ -58,6 +79,12 @@ export interface ContextualNodeDiscoveryProps {
     candidate: ContextualCandidate,
     choice: ContextualRouteChoice,
   ) => void;
+  environments?: readonly ContextualAgentEnvironment[];
+  activeThread?: ContextualAgentThread | null;
+  onGenerate?: (
+    request: ContextualGenerationRequest,
+    signal: AbortSignal,
+  ) => Promise<void>;
 }
 
 const POPUP_WIDTH = 340;
@@ -214,6 +241,86 @@ const s = stylex.create({
     WebkitBoxOrient: "vertical",
     WebkitLineClamp: 2,
   },
+  generateItem: {
+    gridTemplateColumns: "30px minmax(0, 1fr)",
+    alignItems: "center",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorderStrong,
+    backgroundColor: {
+      default: tokens.colorSurfaceRaised,
+      ":hover": tokens.colorHover,
+    },
+  },
+  generateIcon: {
+    display: "grid",
+    placeItems: "center",
+    width: "28px",
+    height: "28px",
+    borderRadius: tokens.radiusSm,
+    backgroundColor: tokens.colorAccentSoft,
+    color: tokens.colorAccent,
+  },
+  form: {
+    display: "grid",
+    gap: "12px",
+    padding: "14px",
+    overflowY: "auto",
+  },
+  field: {
+    display: "grid",
+    gap: "6px",
+  },
+  label: {
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 700,
+  },
+  textarea: {
+    width: "100%",
+    minHeight: "120px",
+    resize: "vertical",
+    padding: "10px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: {
+      default: tokens.colorBorder,
+      ":focus": tokens.colorBorderStrong,
+    },
+    borderRadius: tokens.radiusSm,
+    outline: "none",
+    backgroundColor: tokens.colorSurfaceSunken,
+    color: tokens.colorText,
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeSm,
+    lineHeight: 1.45,
+  },
+  select: {
+    width: "100%",
+    height: "38px",
+    paddingInline: "10px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: tokens.radiusSm,
+    backgroundColor: tokens.colorSurfaceSunken,
+    color: tokens.colorText,
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeSm,
+  },
+  contract: {
+    padding: "9px 10px",
+    borderRadius: tokens.radiusSm,
+    backgroundColor: tokens.colorSurfaceSunken,
+    color: tokens.colorMuted,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    fontSize: tokens.fontSizeXs,
+  },
+  error: {
+    color: tokens.colorDanger,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.4,
+  },
   empty: {
     padding: "28px 16px",
     color: tokens.colorSubtle,
@@ -247,6 +354,33 @@ const s = stylex.create({
     cursor: "pointer",
     fontSize: tokens.fontSizeXs,
     fontWeight: 680,
+  },
+  primaryButton: {
+    minHeight: {
+      default: "32px",
+      "@media (max-width: 620px)": "44px",
+    },
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    paddingInline: "12px",
+    borderWidth: 0,
+    borderRadius: tokens.radiusSm,
+    backgroundColor: {
+      default: tokens.colorAccent,
+      ":disabled": tokens.colorBorder,
+    },
+    color: tokens.colorOnAccent,
+    cursor: { default: "pointer", ":disabled": "not-allowed" },
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 730,
+  },
+  spinner: {
+    animationName: stylex.keyframes({ to: { transform: "rotate(360deg)" } }),
+    animationDuration: "700ms",
+    animationIterationCount: "infinite",
+    animationTimingFunction: "linear",
   },
   hint: {
     alignSelf: "center",
@@ -334,6 +468,9 @@ export function ContextualNodeDiscovery({
   insertDisabledReason = "You do not have permission to edit this graph.",
   onClose,
   onConfirm,
+  environments = [],
+  activeThread = null,
+  onGenerate,
 }: ContextualNodeDiscoveryProps) {
   const finePointer = useMediaQuery(FINE_POINTER_QUERY);
   const [query, setQuery] = React.useState("");
@@ -341,6 +478,18 @@ export function ContextualNodeDiscovery({
     React.useState<ContextualCandidate | null>(null);
   const [previewedKey, setPreviewedKey] = React.useState<string | null>(null);
   const [hoveredChoiceIndex, setHoveredChoiceIndex] = React.useState(0);
+  const [view, setView] = React.useState<"discovery" | "generation">(
+    "discovery",
+  );
+  const [generationPrompt, setGenerationPrompt] = React.useState("");
+  const [selectedEnvironmentId, setSelectedEnvironmentId] = React.useState(
+    environments[0]?.id ?? "__new__",
+  );
+  const [continueActiveThread, setContinueActiveThread] = React.useState(true);
+  const [generationPending, setGenerationPending] = React.useState(false);
+  const [generationError, setGenerationError] = React.useState<string | null>(
+    null,
+  );
   const [previewBox, setPreviewBox] = React.useState<DOMRect | null>(null);
   const [viewport, setViewport] = React.useState(readViewportGeometry);
   const rootRef = React.useRef<HTMLDivElement>(null);
@@ -348,6 +497,18 @@ export function ContextualNodeDiscovery({
   const previewRef = React.useRef<HTMLDivElement>(null);
   const resultRefs = React.useRef(new Map<string, HTMLButtonElement>());
   const autoFocusSessionKeyRef = React.useRef<string | null>(null);
+  const generationControllerRef = React.useRef<AbortController | null>(null);
+
+  const closeDiscovery = React.useCallback(() => {
+    generationControllerRef.current?.abort();
+    generationControllerRef.current = null;
+    onClose();
+  }, [onClose]);
+
+  React.useEffect(
+    () => () => generationControllerRef.current?.abort(),
+    [],
+  );
 
   const sourcePoint = useStore((state) => {
     if (!session) return null;
@@ -406,14 +567,20 @@ export function ContextualNodeDiscovery({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        if (pendingCandidate) {
+        if (generationPending) {
+          generationControllerRef.current?.abort();
+          closeDiscovery();
+        } else if (view === "generation") {
+          setView("discovery");
+          setGenerationError(null);
+        } else if (pendingCandidate) {
           setPendingCandidate(null);
           setHoveredChoiceIndex(0);
-        } else onClose();
+        } else closeDiscovery();
       }
     };
     const onPointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) onClose();
+      if (!rootRef.current?.contains(event.target as Node)) closeDiscovery();
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("mousedown", onPointerDown);
@@ -421,7 +588,7 @@ export function ContextualNodeDiscovery({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("mousedown", onPointerDown);
     };
-  }, [onClose, pendingCandidate, session]);
+  }, [closeDiscovery, generationPending, pendingCandidate, session, view]);
 
   React.useLayoutEffect(() => {
     const box = previewRef.current?.getBoundingClientRect() ?? null;
@@ -579,6 +746,54 @@ export function ContextualNodeDiscovery({
     onConfirm(pendingCandidate, choice);
   };
 
+  const submitGeneration = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const prompt = generationPrompt.trim();
+    if (
+      !onGenerate ||
+      !prompt ||
+      !session.sourceArtifactType ||
+      generationPending
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    generationControllerRef.current?.abort();
+    generationControllerRef.current = controller;
+    setGenerationPending(true);
+    setGenerationError(null);
+    const activeThreadId =
+      activeThread && continueActiveThread ? activeThread.id : null;
+    const activeEnvironmentId = activeThread?.environmentId ?? null;
+    try {
+      await onGenerate(
+        {
+          prompt,
+          threadId: activeThreadId,
+          environmentId: activeEnvironmentId
+            ? activeEnvironmentId
+            : selectedEnvironmentId === "__new__"
+              ? null
+              : selectedEnvironmentId,
+          createEnvironment:
+            !activeThread && selectedEnvironmentId === "__new__",
+        },
+        controller.signal,
+      );
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setGenerationError(
+          error instanceof Error ? error.message : "Could not create the draft node.",
+        );
+      }
+    } finally {
+      if (generationControllerRef.current === controller) {
+        generationControllerRef.current = null;
+        setGenerationPending(false);
+      }
+    }
+  };
+
   const focusCandidateAt = (index: number) => {
     const candidate = candidates[index];
     if (!candidate) return;
@@ -657,19 +872,23 @@ export function ContextualNodeDiscovery({
         <div {...stylex.props(s.header)}>
           <div>
             <div {...stylex.props(s.title)}>
-              {pendingCandidate
+              {view === "generation"
+                ? `Generate from ${session.sourcePortTitle}`
+                : pendingCandidate
                 ? `Connect ${pendingCandidate.spec.title}`
                 : `Continue from ${session.sourcePortTitle}`}
             </div>
             <div {...stylex.props(s.subtitle)}>
-              {pendingCandidate
+              {view === "generation"
+                ? "Create a durable draft and continue in an agent environment"
+                : pendingCandidate
                 ? session.direction === "upstream"
                   ? "Choose which output feeds this input"
                   : "Choose how this output arrives"
                 : `${candidates.length} compatible ${candidates.length === 1 ? "node" : "nodes"}`}
             </div>
           </div>
-          {!pendingCandidate ? (
+          {view === "discovery" && !pendingCandidate ? (
             <div {...stylex.props(s.searchWrap)}>
               <Search size={13} {...stylex.props(s.searchIcon)} />
               <input
@@ -687,7 +906,129 @@ export function ContextualNodeDiscovery({
           ) : null}
         </div>
 
+        {view === "generation" ? (
+          <form {...stylex.props(s.form)} onSubmit={(event) => void submitGeneration(event)}>
+            <div {...stylex.props(s.contract)}>
+              {session.direction === "upstream"
+                ? `Generated node → ${session.sourceShape === "many" ? "Sequence<" : ""}${session.sourceArtifactType?.id ?? "Unbound"}${session.sourceShape === "many" ? ">" : ""}`
+                : `${session.sourceShape === "many" ? "Sequence<" : ""}${session.sourceArtifactType?.id ?? "Unbound"}${session.sourceShape === "many" ? ">" : ""} → Generated node`}
+            </div>
+            <label {...stylex.props(s.field)}>
+              <span {...stylex.props(s.label)}>Describe the node</span>
+              <textarea
+                autoFocus
+                aria-label="Describe what this node should do"
+                value={generationPrompt}
+                placeholder="For example: call the enrichment API for every text value and append the returned category"
+                disabled={generationPending}
+                {...stylex.props(s.textarea)}
+                onChange={(event) => setGenerationPrompt(event.currentTarget.value)}
+              />
+            </label>
+            <label {...stylex.props(s.field)}>
+              <span {...stylex.props(s.label)}>Agent environment</span>
+              {activeThread ? (
+                <>
+                  <select
+                    aria-label="Agent thread"
+                    value={continueActiveThread ? "current" : "new"}
+                    disabled={generationPending}
+                    {...stylex.props(s.select)}
+                    onChange={(event) =>
+                      setContinueActiveThread(event.currentTarget.value === "current")
+                    }
+                  >
+                    <option value="current">Continue current thread</option>
+                    <option value="new">Start a new thread</option>
+                  </select>
+                  <div {...stylex.props(s.contract)}>
+                    {activeThread.environmentName} · {continueActiveThread
+                      ? "current thread"
+                      : "new thread"}
+                  </div>
+                </>
+              ) : (
+                <select
+                  aria-label="Agent environment"
+                  value={selectedEnvironmentId}
+                  disabled={generationPending}
+                  {...stylex.props(s.select)}
+                  onChange={(event) =>
+                    setSelectedEnvironmentId(event.currentTarget.value)
+                  }
+                >
+                  <option value="__new__">New Python environment</option>
+                  {environments.map((environment) => (
+                    <option key={environment.id} value={environment.id}>
+                      {environment.name} · {environment.profile}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </label>
+            {!session.sourceArtifactType ? (
+              <div role="alert" {...stylex.props(s.error)}>
+                Bind this generic port to a concrete artifact type before generating.
+              </div>
+            ) : null}
+            {generationError ? (
+              <div role="alert" {...stylex.props(s.error)}>{generationError}</div>
+            ) : null}
+            <div {...stylex.props(s.footer)}>
+              <button
+                type="button"
+                disabled={generationPending}
+                {...stylex.props(s.ghostButton)}
+                onClick={() => {
+                  setView("discovery");
+                  setGenerationError(null);
+                }}
+              >
+                Back
+              </button>
+              <button
+                type="submit"
+                disabled={
+                  generationPending ||
+                  !generationPrompt.trim() ||
+                  !session.sourceArtifactType ||
+                  !onGenerate
+                }
+                aria-busy={generationPending}
+                {...stylex.props(s.primaryButton)}
+              >
+                {generationPending ? (
+                  <LoaderCircle size={13} {...stylex.props(s.spinner)} />
+                ) : (
+                  <Sparkles size={13} />
+                )}
+                {generationPending ? "Creating draft…" : "Create draft"}
+              </button>
+            </div>
+          </form>
+        ) : (
         <div {...stylex.props(s.list)} role="listbox">
+          {!pendingCandidate ? (
+            <button
+              type="button"
+              role="option"
+              aria-selected={false}
+              disabled={!canInsert || !onGenerate}
+              {...stylex.props(overlay.item, s.item, s.generateItem)}
+              onClick={() => {
+                setView("generation");
+                setGenerationError(null);
+              }}
+            >
+              <span {...stylex.props(s.generateIcon)}><Sparkles size={15} /></span>
+              <span>
+                <span {...stylex.props(s.itemTitle)}>Generate a new node</span>
+                <span {...stylex.props(s.itemDescription)}>
+                  Ask the coding agent to implement and test a Python node.
+                </span>
+              </span>
+            </button>
+          ) : null}
           {pendingCandidate ? (
             pendingCandidate.choices.map((choice, index) => {
               const active = index === hoveredChoiceIndex;
@@ -769,8 +1110,9 @@ export function ContextualNodeDiscovery({
             </div>
           )}
         </div>
+        )}
 
-        <div {...stylex.props(s.footer)}>
+        {view === "discovery" ? <div {...stylex.props(s.footer)}>
           {pendingCandidate ? (
             <button
               type="button"
@@ -783,7 +1125,7 @@ export function ContextualNodeDiscovery({
               Back
             </button>
           ) : (
-            <button type="button" {...stylex.props(s.ghostButton)} onClick={onClose}>
+            <button type="button" {...stylex.props(s.ghostButton)} onClick={closeDiscovery}>
               Cancel
             </button>
           )}
@@ -794,7 +1136,7 @@ export function ContextualNodeDiscovery({
                 : "Tap to choose a node"
               : insertDisabledReason}
           </span>
-        </div>
+        </div> : null}
       </div>
     </>
   );

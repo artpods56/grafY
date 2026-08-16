@@ -291,6 +291,33 @@ export function toLocalGraphCommand(
   }
 }
 
+/** Translate an accepted room transaction without losing primitive ordering. */
+export function toLocalGraphCommands(
+  command: RoomGraphCommand,
+  document: AuthoredGraphDocument,
+): readonly GraphCommand[] | null {
+  if (command.kind !== "apply_batch") {
+    const local = toLocalGraphCommand(command, document);
+    return local ? [local] : null;
+  }
+
+  const localCommands: GraphCommand[] = [];
+  let current = document;
+  try {
+    for (const primitive of command.commands) {
+      const local = toLocalGraphCommand(primitive, current);
+      if (!local) return null;
+      localCommands.push(local);
+      current = applyGraphCommand(current, local);
+    }
+  } catch {
+    // The accepted room head is authoritative. If this local snapshot has
+    // diverged, let the caller rehydrate instead of throwing in its listener.
+    return null;
+  }
+  return localCommands;
+}
+
 function headPresentation(head: CollaborativeHead): GraphPresentation {
   return {
     viewers: [...(head.presentation?.viewers ?? [])],
@@ -318,6 +345,14 @@ export function applyRoomCommandToHead(
   command: RoomGraphCommand,
   sequence: number,
 ): CollaborativeHead {
+  if (command.kind === "apply_batch") {
+    return command.commands.reduce(
+      (current, primitive) =>
+        applyRoomCommandToHead(current, primitive, sequence),
+      head,
+    );
+  }
+
   if (command.kind === "replace_document") {
     return {
       ...head,

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyRoomCommandToHead,
   toLocalGraphCommand,
+  toLocalGraphCommands,
   toRoomGraphCommand,
 } from "./room-command-bridge";
 import type { AuthoredGraphDocument } from "../model/graph-document";
@@ -96,6 +97,73 @@ describe("room-command-bridge", () => {
       nodes: [],
       edges: [],
     });
+  });
+
+  it("applies an accepted batch in primitive order without waiting for rehydration", () => {
+    const command = {
+      kind: "apply_batch" as const,
+      commands: [
+        {
+          kind: "add_node" as const,
+          node: {
+            id: "b",
+            operator_id: "generated.node.b",
+            operator_version: 1,
+            position: { x: 80, y: 40 },
+            config: {},
+            layout: null,
+            input_plugs: [],
+            artifact_type_bindings: [],
+          },
+        },
+        {
+          kind: "add_edge" as const,
+          edge: {
+            id: "a-to-b",
+            from_node: "a",
+            from_port: "result",
+            to_node: "b",
+            to_port: "value",
+            to_plug: null,
+            enabled: true,
+            collection_mode: "direct" as const,
+            projection: null,
+            conversion_path: [],
+            route_offset: null,
+          },
+        },
+      ],
+    };
+
+    expect(toLocalGraphCommands(command, document)?.map(({ kind }) => kind))
+      .toEqual(["add_node", "add_edge"]);
+    const next = applyRoomCommandToHead(head, command, 4);
+    expect(next.collaboration_sequence).toBe(4);
+    expect(next.nodes.map((node) => node.id)).toEqual(["a", "b"]);
+    expect(next.edges.map((edge) => edge.id)).toEqual(["a-to-b"]);
+  });
+
+  it("requests authoritative rehydration when a batch diverges locally", () => {
+    const duplicate = {
+      kind: "apply_batch" as const,
+      commands: [
+        {
+          kind: "add_node" as const,
+          node: {
+            id: "a",
+            operator_id: "demo.op",
+            operator_version: 1,
+            position: { x: 40, y: 40 },
+            config: {},
+            layout: null,
+            input_plugs: [],
+            artifact_type_bindings: [],
+          },
+        },
+      ],
+    };
+
+    expect(toLocalGraphCommands(duplicate, document)).toBeNull();
   });
 
   it("applies replace_presentation and move_artifact_viewers onto the head", () => {

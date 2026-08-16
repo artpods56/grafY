@@ -9,6 +9,7 @@ import {
   type SavedGraphList,
   type Workspace,
   type WorkspaceMember,
+  type AgentEnvironmentList,
 } from "@/lib/api";
 import { request } from "@/lib/api/client";
 
@@ -18,6 +19,14 @@ export function useNodeRegistry(workspaceId?: string) {
   return useSWR<NodeRegistry>(
     workspaceId
       ? `/v1/workspaces/${encodeURIComponent(workspaceId)}/nodes`
+      : null,
+  );
+}
+
+export function useAgentEnvironments(workspaceId?: string) {
+  return useSWR<AgentEnvironmentList>(
+    workspaceId
+      ? `/v1/workspaces/${encodeURIComponent(workspaceId)}/agent-authoring/environments`
       : null,
   );
 }

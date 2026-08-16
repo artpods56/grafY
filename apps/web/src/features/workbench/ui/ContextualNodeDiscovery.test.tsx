@@ -16,6 +16,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 vi.mock("@stylexjs/stylex", () => ({
   create: <Styles,>(styles: Styles) => styles,
+  keyframes: () => "spin",
   props: () => ({}),
 }));
 
@@ -31,6 +32,7 @@ import {
   ContextualNodeDiscovery,
   popupPositionBesidePreview,
   type ContextualDiscoverySession,
+  type ContextualGenerationRequest,
 } from "./ContextualNodeDiscovery";
 
 const roots = new Map<Root, HTMLElement>();
@@ -117,6 +119,8 @@ function sessionFor(
     sourceNodeId: "source-1",
     sourceHandle,
     sourcePortTitle: "Text",
+    sourceArtifactType: { id: "scalar.text", schema_version: 1 },
+    sourceShape: "one",
     direction: "downstream",
     clientAnchor: { x: 120, y: 140 },
     flowPosition: { x: 400, y: 300 },
@@ -140,6 +144,8 @@ function upstreamSessionFor(
     sourceNodeId: "source-1",
     sourceHandle: targetHandle,
     sourcePortTitle: "Text",
+    sourceArtifactType: { id: "scalar.text", schema_version: 1 },
+    sourceShape: "one",
     direction: "upstream",
     clientAnchor: { x: 120, y: 140 },
     flowPosition: { x: 400, y: 300 },
@@ -170,6 +176,25 @@ async function renderDiscovery(
     await Promise.resolve();
   });
   return { container, root, registry: registryValue };
+}
+
+function enterControlValue(
+  control: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+  value: string,
+): void {
+  const prototype = control instanceof HTMLTextAreaElement
+    ? HTMLTextAreaElement.prototype
+    : control instanceof HTMLSelectElement
+      ? HTMLSelectElement.prototype
+      : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+  if (!setter) throw new Error("Form control value setter is unavailable");
+  setter.call(control, value);
+  control.dispatchEvent(
+    new Event(control instanceof HTMLSelectElement ? "change" : "input", {
+      bubbles: true,
+    }),
+  );
 }
 
 afterEach(async () => {
@@ -353,6 +378,193 @@ describe("ContextualNodeDiscovery", () => {
 
     expect(onConfirm).toHaveBeenCalledOnce();
     expect(onConfirm.mock.calls[0]?.[0].spec.operator_id).toBe("text.replace");
+  });
+
+  it("offers generation even when no installed node is compatible", async () => {
+    const registryValue = registry();
+    const emptySession = {
+      ...sessionFor(registryValue),
+      candidates: [],
+    };
+    await renderDiscovery({
+      session: emptySession,
+      onGenerate: vi.fn(async () => undefined),
+    });
+
+    expect(document.body.textContent).toContain("Generate a new node");
+    expect(document.body.textContent).toContain("No compatible nodes match");
+  });
+
+  it("keeps generation available while catalog search has no matches", async () => {
+    await renderDiscovery({ onGenerate: vi.fn(async () => undefined) });
+    const search = document.querySelector<HTMLInputElement>(
+      '[aria-label="Search compatible nodes"]',
+    );
+    expect(search).toBeTruthy();
+    await React.act(async () => {
+      if (!search) return;
+      enterControlValue(search, "nothing-installed-here");
+    });
+
+    expect(document.body.textContent).toContain("Generate a new node");
+    expect(document.body.textContent).not.toContain("Replace text description");
+  });
+
+  it("creates a durable draft in the selected environment", async () => {
+    const onGenerate = vi.fn(
+      async (request: ContextualGenerationRequest, signal: AbortSignal) => {
+        void request;
+        void signal;
+      },
+    );
+    await renderDiscovery({
+      onGenerate,
+      environments: [
+        { id: "env-python", name: "Python lab", profile: "Python 3.12" },
+      ],
+    });
+    const generate = [...document.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Generate a new node"),
+    );
+    await React.act(async () => generate?.click());
+
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      '[aria-label="Describe what this node should do"]',
+    );
+    const environment = document.querySelector<HTMLSelectElement>(
+      '[aria-label="Agent environment"]',
+    );
+    expect(document.body.textContent).toContain("scalar.text → Generated node");
+    await React.act(async () => {
+      if (!textarea || !environment) return;
+      enterControlValue(textarea, "Append the API category to every value");
+      enterControlValue(environment, "env-python");
+    });
+    const submit = [...document.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Create draft"),
+    );
+    await React.act(async () => submit?.click());
+
+    expect(onGenerate).toHaveBeenCalledOnce();
+    expect(onGenerate.mock.calls[0]?.[0]).toEqual({
+      prompt: "Append the API category to every value",
+      threadId: null,
+      environmentId: "env-python",
+      createEnvironment: false,
+    });
+    expect(onGenerate.mock.calls[0]?.[1]).toBeInstanceOf(AbortSignal);
+  });
+
+  it("inherits the active thread environment instead of asking again", async () => {
+    const onGenerate = vi.fn(
+      async (request: ContextualGenerationRequest, signal: AbortSignal) => {
+        void request;
+        void signal;
+      },
+    );
+    await renderDiscovery({
+      onGenerate,
+      activeThread: {
+        id: "thread-1",
+        environmentId: "env-shared",
+        environmentName: "Shared agent lab",
+      },
+    });
+    const generate = [...document.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Generate a new node"),
+    );
+    await React.act(async () => generate?.click());
+    expect(document.querySelector('[aria-label="Agent environment"]')).toBeNull();
+    expect(document.body.textContent).toContain("Shared agent lab · current thread");
+
+    const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
+    await React.act(async () => {
+      if (!textarea) return;
+      enterControlValue(textarea, "Build another node in this thread");
+    });
+    const submit = [...document.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Create draft"),
+    );
+    await React.act(async () => submit?.click());
+
+    expect(onGenerate.mock.calls[0]?.[0]).toMatchObject({
+      threadId: "thread-1",
+      environmentId: "env-shared",
+      createEnvironment: false,
+    });
+  });
+
+  it("requires an intentional choice to start a new thread in the same environment", async () => {
+    const onGenerate = vi.fn(
+      async (request: ContextualGenerationRequest, signal: AbortSignal) => {
+        void request;
+        void signal;
+      },
+    );
+    await renderDiscovery({
+      onGenerate,
+      activeThread: {
+        id: "thread-1",
+        environmentId: "env-shared",
+        environmentName: "Shared agent lab",
+      },
+    });
+    const generate = [...document.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Generate a new node"),
+    );
+    await React.act(async () => generate?.click());
+    const thread = document.querySelector<HTMLSelectElement>(
+      '[aria-label="Agent thread"]',
+    );
+    const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
+    await React.act(async () => {
+      if (!thread || !textarea) return;
+      enterControlValue(thread, "new");
+      enterControlValue(textarea, "Start clean for this node");
+    });
+    const submit = [...document.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Create draft"),
+    );
+    await React.act(async () => submit?.click());
+
+    expect(document.body.textContent).toContain("Shared agent lab · new thread");
+    expect(onGenerate.mock.calls[0]?.[0]).toEqual({
+      prompt: "Start clean for this node",
+      threadId: null,
+      environmentId: "env-shared",
+      createEnvironment: false,
+    });
+  });
+
+  it("retains the prompt and exposes a retryable generation error", async () => {
+    const onGenerate = vi.fn(async (
+      request: ContextualGenerationRequest,
+      signal: AbortSignal,
+    ) => {
+      void request;
+      void signal;
+      throw new Error("Environment capacity is temporarily exhausted");
+    });
+    await renderDiscovery({ onGenerate });
+    const generate = [...document.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Generate a new node"),
+    );
+    await React.act(async () => generate?.click());
+    const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
+    await React.act(async () => {
+      if (!textarea) return;
+      enterControlValue(textarea, "Try this again");
+    });
+    const submit = [...document.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Create draft"),
+    );
+    await React.act(async () => submit?.click());
+
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Environment capacity is temporarily exhausted",
+    );
+    expect(textarea?.value).toBe("Try this again");
+    expect(submit?.hasAttribute("disabled")).toBe(false);
   });
 
   it("requires a second step when multiple routes exist", async () => {

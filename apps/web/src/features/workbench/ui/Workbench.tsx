@@ -36,6 +36,8 @@ import {
 } from "lucide-react";
 
 import { ExecutionHistoryDrawer } from "./ExecutionHistoryDrawer";
+import { AgentBuildReviewDialog } from "./AgentBuildReviewDialog";
+import { AgentIterationDialog } from "./AgentIterationDialog";
 import {
   GlobalIssueToastList,
   type GlobalIssue,
@@ -53,7 +55,9 @@ import { workbenchStyles as s } from "./Workbench.styles";
 import { NodeSelector } from "./NodeSelector";
 import {
   ContextualNodeDiscovery,
+  type ContextualAgentThread,
   type ContextualDiscoverySession,
+  type ContextualGenerationRequest,
 } from "./ContextualNodeDiscovery";
 import type {
   ContextualCandidate,
@@ -92,7 +96,7 @@ import {
   PresenceOverlay,
   remoteSelectionColor,
   shouldReplaceCollaborativeHead,
-  toLocalGraphCommand,
+  toLocalGraphCommands,
   toRoomGraphCommand,
   useGraphRoomSession,
   useRemoteDragPreviews,
@@ -194,10 +198,12 @@ import {
   type WorkflowEdgeRouteOffset,
   type WorkflowEdgeRouteOption,
   type WorkflowEdgeUpdate,
+  type GeneratedNodeDraftSummary,
   type WorkflowArtifactTypeBindings,
   type WorkflowNodeData,
   type WorkflowInputPlug,
   portMetaForPort,
+  workflowNodeIsRunnable,
   workflowNodeIsSupported,
 } from "../canvas/types";
 import {
@@ -229,11 +235,27 @@ import {
   upstreamCandidatesFromInput,
 } from "../model/node-catalog";
 import { workbenchGraphPath } from "../routes";
-import { useNodeRegistry } from "@/hooks/use-api";
+import { useAgentEnvironments, useNodeRegistry } from "@/hooks/use-api";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import {
+  agentDraftProgressFromCreate,
+  agentDraftProgressFromDetail,
+  agentDraftProgressFromFollowUp,
+  agentDraftProgressFromNodeSpec,
+  approveAgentBuild,
+  createAgentDraft,
+  createAgentEnvironment,
+  getAgentBuildReview,
+  getAgentBuildReviewFile,
+  getAgentDraft,
+  publishAgentBuild,
+  queueAgentFollowUp,
+  upsertAgentNodeSpec,
   uploadFile,
+  watchAgentRun,
   type ArtifactTypeKey,
+  type AgentBuildReview,
+  type AgentBuildReviewFileContent,
   type NodeSpec,
   type RunEdgeCollectionMode,
 } from "@/lib/api";
@@ -243,6 +265,26 @@ interface WorkbenchProps {
   workspaceId: string;
   workspaceSlug: string;
   initialGraphId: string | null;
+}
+
+interface AgentBuildReviewSession {
+  nodeId: string;
+  nodeTitle: string;
+  draft: GeneratedNodeDraftSummary;
+  review: AgentBuildReview | null;
+  selectedFile: AgentBuildReviewFileContent | null;
+  selectedPath: string | null;
+  loading: boolean;
+  fileLoading: boolean;
+  error: string | null;
+}
+
+interface AgentIterationSession {
+  nodeId: string;
+  nodeTitle: string;
+  draft: GeneratedNodeDraftSummary;
+  pending: boolean;
+  error: string | null;
 }
 
 const MOBILE_WORKBENCH_QUERY = "(max-width: 720px)";
@@ -375,6 +417,10 @@ function WorkbenchBody({
     mutate: refreshNodeRegistry,
   } = useNodeRegistry(workspaceId);
   const {
+    data: agentEnvironmentList,
+    mutate: refreshAgentEnvironments,
+  } = useAgentEnvironments(workspaceId);
+  const {
     settings: canvasGridSettings,
     bypassSnap,
     panelOpen: gridPanelOpen,
@@ -396,6 +442,21 @@ function WorkbenchBody({
   );
   const authoredDocument = authoringState.document;
   const nodeOverlays = authoringState.nodeOverlays;
+  const [generatedDraftsByOperator, setGeneratedDraftsByOperator] =
+    React.useState<Readonly<Record<string, GeneratedNodeDraftSummary>>>({});
+  const agentRunWatchersRef = React.useRef(new Map<string, () => void>());
+  const hydratedAgentDraftsRef = React.useRef(new Set<string>());
+  const agentDraftHydrationControllersRef = React.useRef(
+    new Map<string, AbortController>(),
+  );
+  const agentBuildReviewRequestRef = React.useRef<AbortController | null>(null);
+  const [agentBuildReviewSession, setAgentBuildReviewSession] =
+    React.useState<AgentBuildReviewSession | null>(null);
+  const [agentIterationSession, setAgentIterationSession] =
+    React.useState<AgentIterationSession | null>(null);
+  const [activeAgentThread, setActiveAgentThread] = React.useState<
+    (ContextualAgentThread & { graphId: string }) | null
+  >(null);
   const authoredDocumentRef = React.useRef(authoredDocument);
   const nodeOverlaysRef = React.useRef(nodeOverlays);
   React.useLayoutEffect(() => {
@@ -403,6 +464,17 @@ function WorkbenchBody({
     bypassSnapRef.current = bypassSnap;
     nodeOverlaysRef.current = nodeOverlays;
   }, [bypassSnap, canvasGridSettings, nodeOverlays]);
+  React.useEffect(
+    () => () => {
+      for (const stop of agentRunWatchersRef.current.values()) stop();
+      agentRunWatchersRef.current.clear();
+      for (const controller of agentDraftHydrationControllersRef.current.values()) {
+        controller.abort();
+      }
+      agentDraftHydrationControllersRef.current.clear();
+      agentBuildReviewRequestRef.current?.abort();
+    },
+  );
   const [selectedNodeIdSet, setSelectedNodeIdSet] =
     React.useState<ReadonlySet<string>>(new Set());
   const [selectedEdgeIdSet, setSelectedEdgeIdSet] =
@@ -429,6 +501,12 @@ function WorkbenchBody({
   const nodes = React.useMemo<WorkflowNode[]>(
     () => hydratedDocument.nodes.map((node) => {
       const measured = nodeMeasurements[node.id];
+      const operatorKey =
+        `${node.data.spec.operator_id}@${node.data.spec.operator_version}`;
+      const generation = agentDraftProgressFromNodeSpec(
+        node.data.spec,
+        generatedDraftsByOperator[operatorKey] ?? node.data.generation,
+      );
       return {
         ...node,
         ...(measured ? { measured, width: measured.width, height: measured.height } : {}),
@@ -437,11 +515,13 @@ function WorkbenchBody({
         data: {
           ...node.data,
           ...(nodeOverlays[node.id] ?? {}),
+          generation,
         },
       };
     }),
     [
       hydratedDocument.nodes,
+      generatedDraftsByOperator,
       nodeMeasurements,
       nodeOverlays,
       positionOverrides,
@@ -1153,6 +1233,374 @@ function WorkbenchBody({
     setExecutionHistoryTarget({ nodeId, executionId: executionId ?? null });
   }, []);
 
+  const updateGeneratedDraft = React.useCallback((
+    draftId: string,
+    update: (draft: GeneratedNodeDraftSummary) => GeneratedNodeDraftSummary,
+  ) => {
+    setGeneratedDraftsByOperator((current) => Object.fromEntries(
+      Object.entries(current).map(([operatorKey, draft]) => [
+        operatorKey,
+        draft.draftId === draftId ? update(draft) : draft,
+      ]),
+    ));
+  }, []);
+
+  const startAgentRunWatcher = React.useCallback((
+    operatorKey: string,
+    progress: GeneratedNodeDraftSummary,
+  ) => {
+    if (
+      !progress.runId ||
+      progress.state === "published" ||
+      progress.state === "completed" ||
+      progress.state === "failed" ||
+      progress.state === "cancelled" ||
+      progress.state === "interrupted"
+    ) return;
+    agentRunWatchersRef.current.get(progress.draftId)?.();
+    agentRunWatchersRef.current.set(
+      progress.draftId,
+      watchAgentRun({
+        workspaceId,
+        initial: progress,
+        onProgress: (next) => {
+          setGeneratedDraftsByOperator((current) => ({
+            ...current,
+            [operatorKey]: {
+              ...next,
+              capabilityApprovalId:
+                current[operatorKey]?.capabilityApprovalId ??
+                next.capabilityApprovalId,
+              pendingAction: current[operatorKey]?.pendingAction ?? null,
+            },
+          }));
+        },
+        onError: (error) => {
+          setGeneratedDraftsByOperator((current) => ({
+            ...current,
+            [operatorKey]: {
+              ...(current[operatorKey] ?? progress),
+              error: error.message,
+            },
+          }));
+        },
+      }),
+    );
+  }, [workspaceId]);
+
+  const openGeneratedNodeReview = React.useCallback(async (
+    nodeId: string,
+    draft: GeneratedNodeDraftSummary,
+  ) => {
+    if (!draft.buildId) return;
+    const node = nodesRef.current.find((candidate) => candidate.id === nodeId);
+    agentBuildReviewRequestRef.current?.abort();
+    const controller = new AbortController();
+    agentBuildReviewRequestRef.current = controller;
+    setAgentBuildReviewSession({
+      nodeId,
+      nodeTitle: node?.data.spec.title ?? "generated node",
+      draft,
+      review: null,
+      selectedFile: null,
+      selectedPath: null,
+      loading: true,
+      fileLoading: false,
+      error: null,
+    });
+    try {
+      const review = await getAgentBuildReview(
+        workspaceId,
+        draft.buildId,
+        controller.signal,
+      );
+      const selectedPath = review.changes[0]?.path ?? review.files[0]?.path ?? null;
+      setAgentBuildReviewSession((current) => current?.draft.draftId === draft.draftId
+        ? { ...current, review, selectedPath, loading: false, fileLoading: selectedPath !== null }
+        : current);
+      if (!selectedPath) return;
+      const selectedChange = review.changes.find(
+        (change) => change.path === selectedPath,
+      );
+      if (selectedChange?.change === "removed" && selectedChange.unified_diff) {
+        setAgentBuildReviewSession((current) => current?.draft.draftId === draft.draftId
+          ? { ...current, fileLoading: false }
+          : current);
+        return;
+      }
+      const selectedFile = await getAgentBuildReviewFile(
+        workspaceId,
+        draft.buildId,
+        selectedPath,
+        controller.signal,
+      );
+      setAgentBuildReviewSession((current) => current?.draft.draftId === draft.draftId
+        ? { ...current, selectedFile, fileLoading: false }
+        : current);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setAgentBuildReviewSession((current) => current?.draft.draftId === draft.draftId
+        ? {
+            ...current,
+            loading: false,
+            fileLoading: false,
+            error: error instanceof Error
+              ? error.message
+              : "Could not load this verified build.",
+          }
+        : current);
+    }
+  }, [workspaceId]);
+
+  const openGeneratedNodeIteration = React.useCallback((
+    nodeId: string,
+    draft: GeneratedNodeDraftSummary,
+  ) => {
+    const node = nodesRef.current.find((candidate) => candidate.id === nodeId);
+    if (!node || !draft.threadId) return;
+    setAgentIterationSession({
+      nodeId,
+      nodeTitle: node.data.spec.title,
+      draft,
+      pending: false,
+      error: null,
+    });
+  }, []);
+
+  const queueGeneratedNodeIteration = React.useCallback(async (
+    prompt: string,
+  ) => {
+    const session = agentIterationSession;
+    if (!session?.draft.threadId) return;
+    const node = nodesRef.current.find(
+      (candidate) => candidate.id === session.nodeId,
+    );
+    if (!node) return;
+    setAgentIterationSession((current) => current
+      ? { ...current, pending: true, error: null }
+      : current);
+    try {
+      const response = await queueAgentFollowUp(
+        workspaceId,
+        session.draft.threadId,
+        {
+          prompt,
+          idempotency_key: crypto.randomUUID(),
+          draft_node_ids: [session.draft.draftId],
+        },
+      );
+      const progress = agentDraftProgressFromFollowUp(
+        response,
+        session.draft.draftId,
+        session.draft,
+      );
+      const operatorKey =
+        `${node.data.spec.operator_id}@${node.data.spec.operator_version}`;
+      setGeneratedDraftsByOperator((current) => ({
+        ...current,
+        [operatorKey]: progress,
+      }));
+      startAgentRunWatcher(operatorKey, progress);
+      setAgentIterationSession(null);
+    } catch (error) {
+      setAgentIterationSession((current) => current
+        ? {
+            ...current,
+            pending: false,
+            error: error instanceof Error
+              ? error.message
+              : "Could not start the next revision.",
+          }
+        : current);
+    }
+  }, [agentIterationSession, startAgentRunWatcher, workspaceId]);
+
+  const selectGeneratedBuildFile = React.useCallback(async (path: string) => {
+    const session = agentBuildReviewSession;
+    if (!session?.draft.buildId || session.selectedPath === path) return;
+    const change = session.review?.changes.find(
+      (candidate) => candidate.path === path,
+    );
+    if (change?.change === "removed" && change.unified_diff) {
+      setAgentBuildReviewSession((current) => current
+        ? {
+            ...current,
+            selectedPath: path,
+            selectedFile: null,
+            fileLoading: false,
+            error: null,
+          }
+        : current);
+      return;
+    }
+    agentBuildReviewRequestRef.current?.abort();
+    const controller = new AbortController();
+    agentBuildReviewRequestRef.current = controller;
+    setAgentBuildReviewSession((current) => current
+      ? { ...current, selectedPath: path, selectedFile: null, fileLoading: true, error: null }
+      : current);
+    try {
+      const selectedFile = await getAgentBuildReviewFile(
+        workspaceId,
+        session.draft.buildId,
+        path,
+        controller.signal,
+      );
+      setAgentBuildReviewSession((current) =>
+        current?.draft.draftId === session.draft.draftId &&
+          current.selectedPath === path
+          ? { ...current, selectedFile, fileLoading: false }
+          : current);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setAgentBuildReviewSession((current) => current
+        ? {
+            ...current,
+            fileLoading: false,
+            error: error instanceof Error
+              ? error.message
+              : "Could not load this source file.",
+          }
+        : current);
+    }
+  }, [agentBuildReviewSession, workspaceId]);
+
+  const approveGeneratedNode = React.useCallback(async () => {
+    const session = agentBuildReviewSession;
+    const capabilities = session?.review?.build.capabilities;
+    if (
+      !session ||
+      !session.review ||
+      !capabilities ||
+      session.draft.capabilityApprovalId
+    ) return;
+    const draft = session.draft;
+    updateGeneratedDraft(draft.draftId, (current) => ({
+      ...current,
+      pendingAction: "approving",
+      error: null,
+    }));
+    setAgentBuildReviewSession((current) => current
+      ? { ...current, draft: { ...current.draft, pendingAction: "approving" }, error: null }
+      : current);
+    try {
+      const approval = await approveAgentBuild(
+        workspaceId,
+        session.review.build.id,
+        capabilities.digest,
+      );
+      updateGeneratedDraft(draft.draftId, (current) => ({
+        ...current,
+        capabilityApprovalId: approval.id,
+        pendingAction: null,
+      }));
+      setAgentBuildReviewSession((current) => current
+        ? {
+            ...current,
+            draft: {
+              ...current.draft,
+              capabilityApprovalId: approval.id,
+              pendingAction: null,
+            },
+          }
+        : current);
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : "Could not approve this capability manifest.";
+      updateGeneratedDraft(draft.draftId, (current) => ({
+        ...current,
+        pendingAction: null,
+        error: message,
+      }));
+      setAgentBuildReviewSession((current) => current
+        ? { ...current, draft: { ...current.draft, pendingAction: null }, error: message }
+        : current);
+    }
+  }, [agentBuildReviewSession, updateGeneratedDraft, workspaceId]);
+
+  const publishGeneratedNode = React.useCallback(async () => {
+    const session = agentBuildReviewSession;
+    const draft = session?.draft;
+    if (!session || !draft) return;
+    if (!draft.buildId || !draft.capabilityApprovalId) return;
+    updateGeneratedDraft(draft.draftId, (current) => ({
+      ...current,
+      pendingAction: "publishing",
+      error: null,
+    }));
+    try {
+      let graphPromotion;
+      if ((draft.releaseRevision ?? 0) > 0) {
+        const graphId = activeGraphIdRef.current;
+        const head = graphRoomHeadRef.current;
+        if (!graphId || !head) {
+          throw new Error(
+            "Wait for the collaborative graph head before publishing this revision.",
+          );
+        }
+        graphPromotion = {
+          graph_id: graphId,
+          node_id: session.nodeId,
+          command_id: crypto.randomUUID(),
+          room_epoch: head.room_epoch,
+          observed_sequence: head.collaboration_sequence,
+        };
+      }
+      const publication = await publishAgentBuild(
+        workspaceId,
+        draft.buildId,
+        draft.capabilityApprovalId,
+        graphPromotion,
+      );
+      agentRunWatchersRef.current.get(draft.draftId)?.();
+      agentRunWatchersRef.current.delete(draft.draftId);
+      updateGeneratedDraft(draft.draftId, (current) => ({
+        ...current,
+        state: "published",
+        releaseRevision: publication.release.revision,
+        targetOperatorVersion: publication.node_spec.operator_version,
+        pendingAction: null,
+      }));
+      const publishedOperatorKey =
+        `${publication.node_spec.operator_id}@${publication.node_spec.operator_version}`;
+      setGeneratedDraftsByOperator((current) => ({
+        ...current,
+        [publishedOperatorKey]: {
+          ...draft,
+          state: "published",
+          releaseRevision: publication.release.revision,
+          targetOperatorVersion: publication.node_spec.operator_version,
+          pendingAction: null,
+        },
+      }));
+      await refreshNodeRegistry(
+        (current) => current
+          ? upsertAgentNodeSpec(current, publication.node_spec)
+          : current,
+        { revalidate: false },
+      );
+      if (publication.head) {
+        replaceHeadRef.current(publication.head);
+        syncFromCollaborativeHeadRef.current(publication.head);
+      }
+      void refreshNodeRegistry();
+      setAgentBuildReviewSession(null);
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : "Could not publish this generated node.";
+      updateGeneratedDraft(draft.draftId, (current) => ({
+        ...current,
+        pendingAction: null,
+        error: message,
+      }));
+      setAgentBuildReviewSession((current) => current
+        ? { ...current, draft: { ...current.draft, pendingAction: null }, error: message }
+        : current);
+    }
+  }, [agentBuildReviewSession, refreshNodeRegistry, updateGeneratedDraft, workspaceId]);
+
   const upgradeModuleCall = React.useCallback(
     (nodeId: string) => {
       if (!registry) return;
@@ -1210,6 +1658,8 @@ function WorkbenchBody({
           moduleUpgradeRelease: null,
           onUpgradeModuleCall: undefined,
           onOpenExecutionHistory: openNodeExecutionHistory,
+          onReviewGeneratedNode: openGeneratedNodeReview,
+          onIterateGeneratedNode: openGeneratedNodeIteration,
         };
       }
       return {
@@ -1235,6 +1685,8 @@ function WorkbenchBody({
         moduleUpgradeRelease: upgradeTarget?.module_graph_revision ?? null,
         onUpgradeModuleCall: upgradeTarget ? upgradeModuleCall : undefined,
         onOpenExecutionHistory: openNodeExecutionHistory,
+        onReviewGeneratedNode: openGeneratedNodeReview,
+        onIterateGeneratedNode: openGeneratedNodeIteration,
       };
     },
     [
@@ -1242,7 +1694,9 @@ function WorkbenchBody({
       handleImagesSelected,
       handleNodeHandlesMeasured,
       openGraphInNewTab,
+      openGeneratedNodeIteration,
       openNodeExecutionHistory,
+      openGeneratedNodeReview,
       registry,
       removeNode,
       removeNodeInputPlug,
@@ -1384,6 +1838,86 @@ function WorkbenchBody({
   React.useEffect(() => {
     activeGraphIdRef.current = activeGraph?.id ?? null;
   }, [activeGraph?.id]);
+  React.useEffect(() => {
+    if (!registry) return;
+    for (const spec of registry.nodes) {
+      const authoring = spec.agent_authoring;
+      if (!authoring || hydratedAgentDraftsRef.current.has(authoring.draft_node_id)) {
+        continue;
+      }
+      hydratedAgentDraftsRef.current.add(authoring.draft_node_id);
+      const controller = new AbortController();
+      agentDraftHydrationControllersRef.current.set(
+        authoring.draft_node_id,
+        controller,
+      );
+      void getAgentDraft(
+        workspaceId,
+        authoring.draft_node_id,
+        controller.signal,
+      ).then((detail) => {
+        agentDraftHydrationControllersRef.current.delete(authoring.draft_node_id);
+        const authoredNode = authoredDocumentRef.current.nodes.find((node) => {
+          const authoredSpec = registry.nodes.find(
+            (candidate) =>
+              candidate.operator_id === node.operator_id &&
+              candidate.operator_version === node.operator_version,
+          );
+          return authoredSpec?.agent_authoring?.draft_node_id === detail.draft.id;
+        });
+        const operatorKey = authoredNode
+          ? `${authoredNode.operator_id}@${authoredNode.operator_version}`
+          : `${spec.operator_id}@${spec.operator_version}`;
+        const progress = agentDraftProgressFromDetail(detail);
+        setGeneratedDraftsByOperator((current) => ({
+          ...current,
+          [operatorKey]: progress,
+        }));
+        if (
+          detail.node_spec.agent_authoring?.runnable ||
+          detail.node_spec.operator_version === spec.operator_version
+        ) {
+          void refreshNodeRegistry(
+            (current) => current
+              ? upsertAgentNodeSpec(current, detail.node_spec)
+              : current,
+            { revalidate: false },
+          );
+        }
+        if (
+          detail.latest_run.status !== "completed" &&
+          detail.latest_run.status !== "failed" &&
+          detail.latest_run.status !== "cancelled" &&
+          detail.latest_run.status !== "interrupted"
+        ) {
+          startAgentRunWatcher(operatorKey, progress);
+        }
+        if (activeGraphIdRef.current === detail.draft.graph_id) {
+          setActiveAgentThread({
+            graphId: detail.draft.graph_id,
+            id: detail.thread.id,
+            environmentId: detail.environment.id,
+            environmentName: detail.environment.name,
+          });
+        }
+      }).catch((error: unknown) => {
+        agentDraftHydrationControllersRef.current.delete(authoring.draft_node_id);
+        if (controller.signal.aborted) return;
+        const operatorKey = `${spec.operator_id}@${spec.operator_version}`;
+        const fallback = agentDraftProgressFromNodeSpec(spec);
+        if (!fallback) return;
+        setGeneratedDraftsByOperator((current) => ({
+          ...current,
+          [operatorKey]: {
+            ...fallback,
+            error: error instanceof Error
+              ? error.message
+              : "Could not restore this generated draft.",
+          },
+        }));
+      });
+    }
+  }, [refreshNodeRegistry, registry, startAgentRunWatcher, workspaceId]);
   const syncFromCollaborativeHeadRef = React.useRef(syncFromCollaborativeHead);
   const applyAuthoringCommandsRef = React.useRef(applyAuthoringCommands);
   React.useLayoutEffect(() => {
@@ -1514,14 +2048,18 @@ function WorkbenchBody({
         }));
         return;
       }
-      const localCommand = toLocalGraphCommand(
+      const localCommands = toLocalGraphCommands(
         message.command,
         authoredDocumentRef.current,
       );
-      if (localCommand) {
-        applyAuthoringCommandsRef.current([localCommand], { syncRoom: false });
-        if (localCommand.kind === "remove_nodes") {
-          const removed = new Set(localCommand.node_ids);
+      if (localCommands) {
+        applyAuthoringCommandsRef.current(localCommands, { syncRoom: false });
+        const removed = new Set(
+          localCommands.flatMap((command) =>
+            command.kind === "remove_nodes" ? [...command.node_ids] : [],
+          ),
+        );
+        if (removed.size > 0) {
           setArtifactViewers((current) => ({
             ...current,
             edges: current.edges.filter((edge) => !removed.has(edge.source)),
@@ -1858,7 +2396,7 @@ function WorkbenchBody({
   );
   const selectedNodeCount = selectedNodeIds.length;
   const selectedNodesAreRunnable = nodes.every(
-    (node) => !node.selected || workflowNodeIsSupported(node.data),
+    (node) => !node.selected || workflowNodeIsRunnable(node.data),
   );
   const nodeTitles = React.useMemo(
     () => Object.fromEntries(
@@ -1874,7 +2412,7 @@ function WorkbenchBody({
   const selectedWithDependenciesAreRunnable = nodes.every(
     (node) =>
       !selectedWithDependencyIds.has(node.id) ||
-      workflowNodeIsSupported(node.data),
+      workflowNodeIsRunnable(node.data),
   );
   const selectedWorkflowCount = nodes.filter((node) => node.selected).length;
   const selectedViewerCount = artifactViewers.nodes.filter(
@@ -2829,14 +3367,14 @@ function WorkbenchBody({
             registry,
             nodes: catalogNodes,
           });
-      if (!candidates.length) return;
-
       setLibraryOpen(false);
       setContextualDiscovery({
         graphId: activeGraph?.id ?? null,
         sourceNodeId: fromNode.id,
         sourceHandle: handleId,
         sourcePortTitle: port.title ?? port.name,
+        sourceArtifactType: decodedHandleArtifactType(decoded),
+        sourceShape: decoded.shape,
         direction: upstream ? "upstream" : "downstream",
         clientAnchor: clientPoint,
         flowPosition,
@@ -2985,11 +3523,156 @@ function WorkbenchBody({
     ],
   );
 
+  const generateContextualDraft = React.useCallback(
+    async (
+      request: ContextualGenerationRequest,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      if (
+        !contextualDiscovery ||
+        !contextualDiscovery.sourceArtifactType ||
+        !activeGraph ||
+        contextualDiscovery.graphId !== activeGraph.id ||
+        !registry ||
+        !localAuthoringEnabled
+      ) {
+        throw new Error(
+          "Save the graph and wait for collaboration sync before generating a node.",
+        );
+      }
+      const observedHead = graphRoomHeadRef.current;
+      if (!observedHead) {
+        throw new Error("The collaborative graph head is not ready.");
+      }
+      const decoded = decodeHandleId(contextualDiscovery.sourceHandle);
+      if (!decoded) {
+        throw new Error("The originating port contract is no longer available.");
+      }
+
+      let environmentId = request.environmentId;
+      if (request.createEnvironment) {
+        const createdEnvironment = await createAgentEnvironment(
+          workspaceId,
+          {
+            name: `${graphName} Python environment`,
+            profile_slug: "python-uv",
+          },
+          signal,
+        );
+        environmentId = createdEnvironment.id;
+        void refreshAgentEnvironments();
+      }
+      if (!request.threadId && !environmentId) {
+        throw new Error("Choose or create an agent environment.");
+      }
+
+      const nodeId = `node-${crypto.randomUUID()}`;
+      const operationId = crypto.randomUUID();
+      const response = await createAgentDraft(
+        workspaceId,
+        activeGraph.id,
+        {
+          prompt: request.prompt,
+          idempotency_key: operationId,
+          environment_id: request.threadId ? null : environmentId,
+          thread_id: request.threadId,
+          anchor: {
+            node_id: contextualDiscovery.sourceNodeId,
+            port_name: decoded.portName,
+            direction: contextualDiscovery.direction,
+            artifact_type: contextualDiscovery.sourceArtifactType,
+            shape: contextualDiscovery.sourceShape,
+            input_plug_id:
+              contextualDiscovery.direction === "upstream"
+                ? decoded.plugId ?? null
+                : null,
+            collection_mode: "direct",
+            feed: {
+              projection_path:
+                decoded.feed?.kind === "projection"
+                  ? decoded.feed.path
+                  : [],
+              conversion_path: [],
+            },
+          },
+          placement: {
+            node_id: nodeId,
+            edge_id: `edge-${crypto.randomUUID()}`,
+            x: contextualDiscovery.flowPosition.x,
+            y:
+              contextualDiscovery.flowPosition.y -
+              DEFAULT_NODE_PLACEMENT_HEIGHT / 2,
+            command_id: operationId,
+            room_epoch: observedHead.room_epoch,
+            observed_sequence: observedHead.collaboration_sequence,
+          },
+        },
+        signal,
+      );
+
+      if (signal.aborted || activeGraphIdRef.current !== activeGraph.id) return;
+
+      await refreshNodeRegistry(
+        (current) => {
+          const base = current ?? registry;
+          return upsertAgentNodeSpec(base, response.node_spec);
+        },
+        { revalidate: false },
+      );
+
+      const operatorKey =
+        `${response.node_spec.operator_id}@${response.node_spec.operator_version}`;
+      const progress = agentDraftProgressFromCreate(response);
+      setGeneratedDraftsByOperator((current) => ({
+        ...current,
+        [operatorKey]: progress,
+      }));
+      hydratedAgentDraftsRef.current.add(progress.draftId);
+      startAgentRunWatcher(operatorKey, progress);
+      setActiveAgentThread({
+        graphId: activeGraph.id,
+        id: response.thread.id,
+        environmentId: response.environment.id,
+        environmentName: response.environment.name,
+      });
+
+      const currentHead = graphRoomHeadRef.current;
+      const nextHead = shouldReplaceCollaborativeHead(
+        currentHead,
+        response.head,
+      )
+        ? response.head
+        : currentHead;
+      if (nextHead) {
+        replaceHeadRef.current(nextHead);
+        syncFromCollaborativeHeadRef.current(nextHead);
+      }
+      setSelectedNodeIdSet(new Set([nodeId]));
+      setSelectedEdgeIdSet(new Set());
+      setContextualDiscovery(null);
+    },
+    [
+      activeGraph,
+      contextualDiscovery,
+      graphName,
+      localAuthoringEnabled,
+      refreshAgentEnvironments,
+      refreshNodeRegistry,
+      registry,
+      startAgentRunWatcher,
+      workspaceId,
+    ],
+  );
+
   const activeContextualDiscovery =
     canEditGraph &&
     !running &&
     contextualDiscovery?.graphId === (activeGraph?.id ?? null)
       ? contextualDiscovery
+      : null;
+  const contextualAgentThread =
+    activeAgentThread?.graphId === (activeGraph?.id ?? null)
+      ? activeAgentThread
       : null;
 
   const addArtifactViewer = React.useCallback(() => {
@@ -3296,9 +3979,8 @@ function WorkbenchBody({
                 : [validMode],
             onUpdate: edge.data?.compatibilityIssues?.length
               ? undefined
-              : (edgeId: string, update: WorkflowEdgeUpdate) => {
+                : (edgeId: string, update: WorkflowEdgeUpdate) => {
                   // React Flow stores this callback and invokes it from edge UI events.
-                  // eslint-disable-next-line react-hooks/refs
                   updateEdge(edgeId, update);
                 },
             onRouteOffsetChange: (
@@ -3306,7 +3988,6 @@ function WorkbenchBody({
               routeOffset: WorkflowEdgeRouteOffset,
             ) => {
               // React Flow stores this callback and invokes it from edge UI events.
-              // eslint-disable-next-line react-hooks/refs
               updateEdgeRoute(edgeId, routeOffset);
             },
           },
@@ -3482,9 +4163,7 @@ function WorkbenchBody({
           projectionTitle: activeProjectionTitle,
           routeOptions,
           // React Flow stores these callbacks and invokes them from edge UI events.
-          // eslint-disable-next-line react-hooks/refs
           onUpdate: updateArtifactViewerEdge,
-          // eslint-disable-next-line react-hooks/refs
           onRouteOffsetChange: updateArtifactViewerEdgeRoute,
         },
         style: {
@@ -4006,8 +4685,17 @@ function WorkbenchBody({
               registry={registry}
               canInsert={localAuthoringEnabled}
               insertDisabledReason={localAuthoringBlockedMessage}
+              environments={(agentEnvironmentList?.environments ?? [])
+                .filter((environment) => environment.status !== "archived")
+                .map((environment) => ({
+                  id: environment.id,
+                  name: environment.name,
+                  profile: environment.profile_slug,
+                }))}
+              activeThread={contextualAgentThread}
               onClose={() => setContextualDiscovery(null)}
               onConfirm={confirmContextualDiscovery}
+              onGenerate={generateContextualDraft}
             />
           ) : null}
         </WorkflowCanvas>
@@ -4322,6 +5010,48 @@ function WorkbenchBody({
         onOpenSourceGraph={openGraphInNewTab}
         onPublished={() => refreshNodeRegistry()}
       />
+
+      {agentBuildReviewSession ? (
+        <AgentBuildReviewDialog
+          open
+          nodeTitle={agentBuildReviewSession.nodeTitle}
+          review={agentBuildReviewSession.review}
+          selectedFile={agentBuildReviewSession.selectedFile}
+          selectedPath={agentBuildReviewSession.selectedPath}
+          loading={agentBuildReviewSession.loading}
+          fileLoading={agentBuildReviewSession.fileLoading}
+          error={agentBuildReviewSession.error}
+          pendingAction={agentBuildReviewSession.draft.pendingAction ?? null}
+          capabilityApprovalId={
+            agentBuildReviewSession.draft.capabilityApprovalId
+          }
+          onOpenChange={(open) => {
+            if (open) return;
+            agentBuildReviewRequestRef.current?.abort();
+            setAgentBuildReviewSession(null);
+          }}
+          onSelectFile={(path) => void selectGeneratedBuildFile(path)}
+          onApprove={() => void approveGeneratedNode()}
+          onPublish={() => void publishGeneratedNode()}
+        />
+      ) : null}
+
+      {agentIterationSession ? (
+        <AgentIterationDialog
+          key={`${agentIterationSession.draft.draftId}:${agentIterationSession.draft.targetOperatorVersion}`}
+          open
+          nodeTitle={agentIterationSession.nodeTitle}
+          currentVersion={agentIterationSession.draft.targetOperatorVersion}
+          pending={agentIterationSession.pending}
+          error={agentIterationSession.error}
+          onOpenChange={(open) => {
+            if (!open && !agentIterationSession.pending) {
+              setAgentIterationSession(null);
+            }
+          }}
+          onSubmit={(prompt) => void queueGeneratedNodeIteration(prompt)}
+        />
+      ) : null}
 
       <ConnectionRouteDialog
         pendingRoute={pendingConnectionRoute}
