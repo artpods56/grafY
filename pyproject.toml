@@ -23,6 +23,7 @@ package = false
 
 [tool.uv.workspace]
 members = [
+    "libs/agent",
     "libs/core",
     "libs/persistence",
     "libs/storage",
@@ -31,10 +32,13 @@ members = [
     "plugins/gis",
     "plugins/sql",
     "apps/api",
+    "apps/agent-worker",
     "apps/mcp",
 ]
 
 [tool.uv.sources]
+grafy-agent = { workspace = true }
+grafy-agent-worker = { workspace = true }
 grafy-api = { workspace = true }
 grafy-core = { workspace = true }
 grafy-mcp = { workspace = true }
@@ -60,6 +64,7 @@ venvPath = "."
 venv = ".venv"
 typeCheckingMode = "strict"
 include = [
+    "libs/agent/*",
     "libs/core/*",
     "libs/persistence/*",
     "libs/storage/*",
@@ -68,6 +73,7 @@ include = [
     "plugins/gis/*",
     "plugins/sql/*",
     "apps/api/*",
+    "apps/agent-worker/*",
     "apps/mcp/*",
 ]
 exclude = [
@@ -78,6 +84,7 @@ exclude = [
 ]
 executionEnvironments = [
     { root = ".", extraPaths = [
+        "libs/agent/src",
         "libs/core/src",
         "libs/persistence/src",
         "libs/storage/src",
@@ -86,6 +93,7 @@ executionEnvironments = [
         "plugins/gis/src",
         "plugins/sql/src",
         "apps/api/src",
+        "apps/agent-worker/src",
         "apps/mcp/src",
     ] },
 ]

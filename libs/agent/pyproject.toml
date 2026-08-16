@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grafy-agent"
+version = "0.1.0"
+requires-python = "==3.12.9"
+dependencies = [
+    "grafy-core",
+    "pydantic",
+    "pydantic-ai-slim[openrouter]>=1.104,<2",
+    "pydantic-settings",
+]
+
+[tool.basedpyright]
+extends = "../../pyproject.toml"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

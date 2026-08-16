@@ -26,11 +26,22 @@ FORBIDDEN_OCR_PLUGIN_IMPORTS = (
 )
 FORBIDDEN_LLM_PLUGIN_IMPORTS = FORBIDDEN_OCR_PLUGIN_IMPORTS
 FORBIDDEN_API_PLUGIN_IMPORTS = (
+    "daytona",
     "mistralai",
+    "pydantic_ai",
     "grafy_plugin_gis",
     "grafy_plugin_llm",
     "grafy_plugin_ocr",
     "grafy_plugin_sql",
+)
+FORBIDDEN_AGENT_OUTER_IMPORTS = (
+    "daytona",
+    "fastapi",
+    "grafy_agent_worker",
+    "grafy_api",
+    "grafy_persistence",
+    "grafy_storage",
+    "uvicorn",
 )
 FORBIDDEN_MCP_IMPORTS = (
     "aiosqlite",
@@ -46,6 +57,7 @@ FORBIDDEN_MCP_IMPORTS = (
 )
 LEGACY_NAMESPACE = "proto" + "type"
 API_ROUTE_AREAS = (
+    "agent_authoring",
     "artifacts",
     "catalog",
     "executions",
@@ -75,11 +87,12 @@ def test_api_routes_are_organized_as_capability_slices() -> None:
     routes_root = REPO_ROOT / "apps/api/src/grafy_api/v1/routes"
 
     assert {path.name for path in routes_root.glob("*.py")} == {"__init__.py"}
-    for area in API_ROUTE_AREAS[:6]:
+    for area in API_ROUTE_AREAS[:7]:
         area_root = routes_root / area
         assert area_root.is_dir()
         for module in API_ROUTE_STANDARD_FILES:
             assert (area_root / module).is_file()
+    assert (routes_root / "agent_authoring" / "services.py").is_file()
     assert {path.name for path in (routes_root / "auth").glob("*.py")} == {
         "__init__.py",
         "abuse.py",
@@ -129,16 +142,13 @@ def test_mistral_sdk_dependency_is_owned_by_optional_plugins() -> None:
     llm_plugin_dependencies = cast(list[str], llm_plugin_project["dependencies"])
 
     assert not any(
-        requirement.startswith("grafy-plugin-ocr")
-        for requirement in root_dependencies
+        requirement.startswith("grafy-plugin-ocr") for requirement in root_dependencies
     )
     assert not any(
-        requirement.startswith("grafy-plugin-llm")
-        for requirement in root_dependencies
+        requirement.startswith("grafy-plugin-llm") for requirement in root_dependencies
     )
     assert not any(
-        requirement.startswith("grafy-plugin-sql")
-        for requirement in root_dependencies
+        requirement.startswith("grafy-plugin-sql") for requirement in root_dependencies
     )
     assert not any(
         requirement.startswith("mistralai") for requirement in root_dependencies
@@ -238,6 +248,19 @@ def test_api_host_does_not_import_optional_plugin_implementations() -> None:
     assert offenders == []
 
 
+def test_agent_library_owns_tools_but_not_provider_or_host_adapters() -> None:
+    agent_root = REPO_ROOT / "libs/agent/src/grafy_agent"
+    offenders: list[str] = []
+
+    for path in agent_root.rglob("*.py"):
+        text = path.read_text()
+        for forbidden in FORBIDDEN_AGENT_OUTER_IMPORTS:
+            if f"import {forbidden}" in text or f"from {forbidden}" in text:
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: {forbidden}")
+
+    assert offenders == []
+
+
 def test_mcp_depends_on_the_http_api_contract_not_internal_packages() -> None:
     mcp_root = REPO_ROOT / "apps/mcp/src/grafy_mcp"
     offenders: list[str] = []
@@ -292,11 +315,13 @@ def test_sql_plugin_depends_on_core_ports_not_outer_layers() -> None:
 
 def test_retained_python_sources_do_not_use_legacy_namespace() -> None:
     source_roots = (
+        REPO_ROOT / "libs/agent/src/grafy_agent",
         REPO_ROOT / "libs/core/src/grafy_core",
         REPO_ROOT / "plugins/llm/src/grafy_plugin_llm",
         REPO_ROOT / "plugins/ocr/src/grafy_plugin_ocr",
         REPO_ROOT / "plugins/sql/src/grafy_plugin_sql",
         REPO_ROOT / "apps/api/src/grafy_api",
+        REPO_ROOT / "apps/agent-worker/src/grafy_agent_worker",
     )
     offenders: list[str] = []
 

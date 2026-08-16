@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grafy-agent-worker"
+version = "0.1.0"
+requires-python = "==3.12.9"
+dependencies = [
+    "daytona>=0.200,<0.203",
+    "fastapi>=0.136.1",
+    "grafy-agent",
+    "grafy-core",
+    "grafy-persistence",
+    "grafy-storage",
+    "pydantic-settings",
+    "uvicorn>=0.41,<1",
+]
+
+[project.scripts]
+grafy-agent-worker = "grafy_agent_worker.__main__:main"
+
+[tool.basedpyright]
+extends = "../../pyproject.toml"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
