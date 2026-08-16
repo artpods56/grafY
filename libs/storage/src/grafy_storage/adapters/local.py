@@ -2,6 +2,7 @@ import os
 import shutil
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
+from tempfile import NamedTemporaryFile
 from typing import final, override
 
 from grafy_core.domain.errors import ObjectAlreadyExistsError
@@ -22,23 +23,45 @@ class LocalFileObjectStore(FileStoragePort):
     @override
     async def save(self, command: SaveFileCommand) -> StoredFile:
         path = self._path_for(command.bucket, command.path)
-        if path.exists() and not command.allow_overwrite:
-            raise ObjectAlreadyExistsError(f"File already exists: {command.bucket}/{command.path}")
-
         path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = path.with_name(f".{path.name}.tmp-{os.getpid()}")
         digest = sha256()
         byte_size = 0
+        temp_path: Path | None = None
 
-        with temp_path.open("wb") as target:
-            while chunk := command.stream.read(1024 * 1024):
-                digest.update(chunk)
-                byte_size += len(chunk)
-                _ = target.write(chunk)
-            target.flush()
-            os.fsync(target.fileno())
+        try:
+            with NamedTemporaryFile(
+                mode="wb",
+                dir=path.parent,
+                prefix=f".{path.name}.tmp-",
+                delete=False,
+            ) as target:
+                temp_path = Path(target.name)
+                while chunk := command.stream.read(1024 * 1024):
+                    digest.update(chunk)
+                    byte_size += len(chunk)
+                    _ = target.write(chunk)
+                target.flush()
+                os.fsync(target.fileno())
 
-        os.replace(temp_path, path)
+            if command.allow_overwrite:
+                os.replace(temp_path, path)
+                temp_path = None
+            else:
+                try:
+                    # Linking publishes the fully written inode only when the
+                    # destination is still absent, without a check-then-write race.
+                    os.link(temp_path, path)
+                except FileExistsError as exc:
+                    raise ObjectAlreadyExistsError(
+                        f"File already exists: {command.bucket}/{command.path}"
+                    ) from exc
+        finally:
+            if temp_path is not None:
+                try:
+                    temp_path.unlink()
+                except FileNotFoundError:
+                    pass
+
         return StoredFile(
             bucket=command.bucket,
             path=command.path,
