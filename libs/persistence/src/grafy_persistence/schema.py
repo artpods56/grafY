@@ -1,5 +1,9 @@
 from datetime import UTC, datetime
-from typing import cast
+from enum import StrEnum
+from typing import TypeVar, cast
+from uuid import UUID
+
+from pydantic import BaseModel
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -17,6 +21,7 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy import Uuid as SaUuid
 from sqlalchemy.engine import Dialect
@@ -26,6 +31,18 @@ from grafy_core.domain.artifact_outputs import (
     ArtifactOutputValue,
     artifact_outputs_from_storage,
     artifact_outputs_to_storage,
+)
+from grafy_core.domain.agent_authoring import (
+    AgentEnvironmentStatus,
+    AgentEventKind,
+    AgentEventPayload,
+    AgentRunStatus,
+    AnchoredPortContract,
+    BuildArtifactSet,
+    CapabilityManifest,
+    DraftNodeStatus,
+    GeneratedNodeManifest,
+    NodeBuildStatus,
 )
 from grafy_core.domain.saved_graphs import SavedGraphDocument
 from grafy_core.domain.identity import (
@@ -50,6 +67,99 @@ NAMING_CONVENTION = {
 }
 
 metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+
+PydanticModelT = TypeVar("PydanticModelT", bound=BaseModel)
+StrEnumT = TypeVar("StrEnumT", bound=StrEnum)
+
+
+class PydanticModelType(TypeDecorator[PydanticModelT]):
+    """Persist one domain-owned Pydantic value as canonical JSON."""
+
+    impl = JSON
+    cache_ok = True
+
+    def __init__(self, model_type: type[PydanticModelT]) -> None:
+        super().__init__()
+        self.model_type = model_type
+
+    def process_bind_param(
+        self,
+        value: PydanticModelT | None,
+        dialect: Dialect,
+    ) -> dict[str, object] | None:
+        del dialect
+        if value is None:
+            return None
+        return value.model_dump(mode="json")
+
+    def process_result_value(
+        self,
+        value: object | None,
+        dialect: Dialect,
+    ) -> PydanticModelT | None:
+        del dialect
+        if value is None:
+            return None
+        return self.model_type.model_validate(value)
+
+
+class DomainStrEnumType(TypeDecorator[StrEnumT]):
+    """Round-trip a domain StrEnum without leaking strings into aggregates."""
+
+    impl = String
+    cache_ok = True
+
+    def __init__(self, enum_type: type[StrEnumT], *, length: int) -> None:
+        super().__init__(length=length)
+        self.enum_type = enum_type
+        self.length = length
+
+    def process_bind_param(
+        self,
+        value: StrEnumT | None,
+        dialect: Dialect,
+    ) -> str | None:
+        del dialect
+        return None if value is None else self.enum_type(value).value
+
+    def process_result_value(
+        self,
+        value: str | None,
+        dialect: Dialect,
+    ) -> StrEnumT | None:
+        del dialect
+        return None if value is None else self.enum_type(value)
+
+
+class UUIDTupleType(TypeDecorator[tuple[UUID, ...]]):
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(
+        self,
+        value: tuple[UUID, ...] | None,
+        dialect: Dialect,
+    ) -> list[str] | None:
+        del dialect
+        return None if value is None else [str(item) for item in value]
+
+    def process_result_value(
+        self,
+        value: object | None,
+        dialect: Dialect,
+    ) -> tuple[UUID, ...] | None:
+        del dialect
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            raise ValueError("Stored UUID tuple is not a JSON string list")
+        items: list[str] = []
+        for item in cast(list[object], value):
+            if not isinstance(item, str):
+                raise ValueError("Stored UUID tuple is not a JSON string list")
+            items.append(item)
+        return tuple(UUID(item) for item in items)
 
 
 class SavedGraphDocumentType(TypeDecorator[SavedGraphDocument]):
@@ -1268,4 +1378,578 @@ templates = Table(
     ),
     Index("ix_templates_workspace_name", "workspace_id", "name"),
     Index("ix_templates_workspace_updated_at", "workspace_id", "updated_at"),
+)
+
+
+agent_environments = Table(
+    "agent_environments",
+    metadata,
+    Column("id", SaUuid(as_uuid=True), primary_key=True),
+    Column(
+        "workspace_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("name", String(160), nullable=False),
+    Column("profile_id", String(255), nullable=False),
+    Column("provider", String(255), nullable=False),
+    Column(
+        "status",
+        DomainStrEnumType(AgentEnvironmentStatus, length=32),
+        nullable=False,
+    ),
+    Column("provider_environment_id", String(1024), nullable=True),
+    Column("provisioning_owner", String(255), nullable=True),
+    Column("provisioning_token", SaUuid(as_uuid=True), nullable=True),
+    Column("provisioning_expires_at", UTCDateTime(), nullable=True),
+    Column("provisioning_fencing_token", BigInteger, nullable=False),
+    Column("active_run_id", SaUuid(as_uuid=True), nullable=True),
+    Column("failure_message", Text, nullable=True),
+    Column(
+        "created_by_user_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    Column("last_used_at", UTCDateTime(), nullable=True),
+    UniqueConstraint(
+        "workspace_id",
+        "id",
+        name="uq_agent_environments_workspace_id_id",
+    ),
+    UniqueConstraint(
+        "workspace_id",
+        "name",
+        name="uq_agent_environments_workspace_name",
+    ),
+    CheckConstraint(
+        "status IN ('provisioning', 'creating', 'ready', 'suspended', 'failed', "
+        "'archived')",
+        name="status",
+    ),
+    CheckConstraint(
+        "provisioning_fencing_token >= 0",
+        name="provisioning_fencing_token",
+    ),
+    Index(
+        "ix_agent_environments_provision_queue",
+        "status",
+        "provisioning_expires_at",
+        "created_at",
+        "id",
+    ),
+    Index(
+        "ix_agent_environments_workspace_updated",
+        "workspace_id",
+        "updated_at",
+    ),
+)
+
+
+agent_threads = Table(
+    "agent_threads",
+    metadata,
+    Column("id", SaUuid(as_uuid=True), primary_key=True),
+    Column(
+        "workspace_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("environment_id", SaUuid(as_uuid=True), nullable=False),
+    Column("title", String(160), nullable=False),
+    Column("event_sequence", BigInteger, nullable=False),
+    Column(
+        "created_by_user_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    ForeignKeyConstraint(
+        ("workspace_id", "environment_id"),
+        ("agent_environments.workspace_id", "agent_environments.id"),
+        name="fk_agent_threads_environment",
+        ondelete="RESTRICT",
+    ),
+    UniqueConstraint(
+        "workspace_id",
+        "id",
+        name="uq_agent_threads_workspace_id_id",
+    ),
+    UniqueConstraint(
+        "workspace_id",
+        "id",
+        "environment_id",
+        name="uq_agent_threads_workspace_id_environment",
+    ),
+    CheckConstraint("event_sequence >= 0", name="event_sequence"),
+    Index("ix_agent_threads_workspace_updated", "workspace_id", "updated_at"),
+)
+
+
+draft_nodes = Table(
+    "draft_nodes",
+    metadata,
+    Column("id", SaUuid(as_uuid=True), primary_key=True),
+    Column(
+        "workspace_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("thread_id", SaUuid(as_uuid=True), nullable=False),
+    Column("graph_id", SaUuid(as_uuid=True), nullable=False),
+    Column("title", String(160), nullable=False),
+    Column("description", String(1000), nullable=False),
+    Column("prompt", Text, nullable=False),
+    Column(
+        "status",
+        DomainStrEnumType(DraftNodeStatus, length=32),
+        nullable=False,
+    ),
+    Column(
+        "anchor",
+        PydanticModelType(AnchoredPortContract),
+        nullable=False,
+    ),
+    Column("build_attempt_number", Integer, nullable=False),
+    Column("published_revision", Integer, nullable=False),
+    Column(
+        "created_by_user_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    ForeignKeyConstraint(
+        ("workspace_id", "graph_id"),
+        ("saved_graphs.workspace_id", "saved_graphs.id"),
+        name="fk_draft_nodes_graph",
+        ondelete="CASCADE",
+    ),
+    ForeignKeyConstraint(
+        ("workspace_id", "thread_id"),
+        ("agent_threads.workspace_id", "agent_threads.id"),
+        name="fk_draft_nodes_thread",
+        ondelete="CASCADE",
+    ),
+    UniqueConstraint("workspace_id", "id", name="uq_draft_nodes_workspace_id_id"),
+    UniqueConstraint(
+        "workspace_id",
+        "id",
+        "thread_id",
+        name="uq_draft_nodes_workspace_id_thread",
+    ),
+    CheckConstraint("build_attempt_number >= 0", name="build_attempt_number"),
+    CheckConstraint("published_revision >= 0", name="published_revision"),
+    CheckConstraint(
+        "status IN ('draft', 'authoring', 'awaiting_approval', 'published', "
+        "'failed', 'cancelled')",
+        name="status",
+    ),
+    Index("ix_draft_nodes_workspace_graph", "workspace_id", "graph_id"),
+    Index(
+        "ix_draft_nodes_workspace_thread",
+        "workspace_id",
+        "thread_id",
+        "updated_at",
+    ),
+)
+
+
+agent_runs = Table(
+    "agent_runs",
+    metadata,
+    Column("id", SaUuid(as_uuid=True), primary_key=True),
+    Column(
+        "workspace_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("thread_id", SaUuid(as_uuid=True), nullable=False),
+    Column("environment_id", SaUuid(as_uuid=True), nullable=False),
+    Column("target_draft_ids", UUIDTupleType(), nullable=False),
+    Column("instructions", Text, nullable=False),
+    Column("idempotency_key", String(255), nullable=False),
+    Column("request_digest", String(64), nullable=False),
+    Column(
+        "created_by_user_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("continued_from_run_id", SaUuid(as_uuid=True), nullable=True),
+    Column(
+        "status",
+        DomainStrEnumType(AgentRunStatus, length=24),
+        nullable=False,
+    ),
+    Column("attempt", Integer, nullable=False),
+    Column("lease_owner", String(255), nullable=True),
+    Column("lease_token", SaUuid(as_uuid=True), nullable=True),
+    Column("lease_expires_at", UTCDateTime(), nullable=True),
+    Column("lease_heartbeat_at", UTCDateTime(), nullable=True),
+    Column("fencing_token", BigInteger, nullable=False),
+    Column("cancellation_requested_at", UTCDateTime(), nullable=True),
+    Column("terminal_error", Text, nullable=True),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    ForeignKeyConstraint(
+        ("workspace_id", "thread_id", "environment_id"),
+        (
+            "agent_threads.workspace_id",
+            "agent_threads.id",
+            "agent_threads.environment_id",
+        ),
+        name="fk_agent_runs_thread_environment",
+        ondelete="CASCADE",
+    ),
+    ForeignKeyConstraint(
+        ("workspace_id", "continued_from_run_id"),
+        ("agent_runs.workspace_id", "agent_runs.id"),
+        name="fk_agent_runs_continued_from_run",
+        ondelete="CASCADE",
+    ),
+    UniqueConstraint("workspace_id", "id", name="uq_agent_runs_workspace_id_id"),
+    UniqueConstraint(
+        "workspace_id",
+        "id",
+        "thread_id",
+        name="uq_agent_runs_workspace_id_thread",
+    ),
+    UniqueConstraint(
+        "workspace_id",
+        "idempotency_key",
+        name="uq_agent_runs_workspace_idempotency",
+    ),
+    CheckConstraint("attempt >= 0", name="attempt"),
+    CheckConstraint("fencing_token >= 0", name="fencing_token"),
+    CheckConstraint(
+        "status IN ('queued', 'claimed', 'running', 'awaiting_approval', "
+        "'completed', 'failed', 'cancelling', 'cancelled', 'interrupting', "
+        "'interrupted')",
+        name="status",
+    ),
+    Index(
+        "uq_agent_runs_active_environment",
+        "workspace_id",
+        "environment_id",
+        unique=True,
+        postgresql_where=text(
+            "status IN ('claimed', 'running', 'cancelling', 'interrupting')"
+        ),
+        sqlite_where=text(
+            "status IN ('claimed', 'running', 'cancelling', 'interrupting')"
+        ),
+    ),
+    Index("ix_agent_runs_claim_queue", "status", "created_at", "id"),
+    Index("ix_agent_runs_expiring_lease", "status", "lease_expires_at"),
+)
+
+
+node_build_attempts = Table(
+    "node_build_attempts",
+    metadata,
+    Column("id", SaUuid(as_uuid=True), primary_key=True),
+    Column(
+        "workspace_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("thread_id", SaUuid(as_uuid=True), nullable=False),
+    Column("draft_node_id", SaUuid(as_uuid=True), nullable=False),
+    Column("run_id", SaUuid(as_uuid=True), nullable=False),
+    Column("attempt_number", Integer, nullable=False),
+    Column("prompt", Text, nullable=False),
+    Column(
+        "status",
+        DomainStrEnumType(NodeBuildStatus, length=32),
+        nullable=False,
+    ),
+    Column(
+        "manifest",
+        PydanticModelType(GeneratedNodeManifest),
+        nullable=True,
+    ),
+    Column(
+        "capabilities",
+        PydanticModelType(CapabilityManifest),
+        nullable=True,
+    ),
+    Column("capability_digest", String(64), nullable=True),
+    Column("artifacts", PydanticModelType(BuildArtifactSet), nullable=True),
+    Column("failure_message", Text, nullable=True),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    ForeignKeyConstraint(
+        ("workspace_id", "draft_node_id", "thread_id"),
+        ("draft_nodes.workspace_id", "draft_nodes.id", "draft_nodes.thread_id"),
+        name="fk_node_build_attempts_draft_thread",
+        ondelete="CASCADE",
+    ),
+    ForeignKeyConstraint(
+        ("workspace_id", "run_id", "thread_id"),
+        ("agent_runs.workspace_id", "agent_runs.id", "agent_runs.thread_id"),
+        name="fk_node_build_attempts_run_thread",
+        ondelete="CASCADE",
+    ),
+    UniqueConstraint(
+        "workspace_id",
+        "id",
+        name="uq_node_build_attempts_workspace_id_id",
+    ),
+    UniqueConstraint(
+        "workspace_id",
+        "id",
+        "draft_node_id",
+        name="uq_node_build_attempts_identity_draft",
+    ),
+    UniqueConstraint(
+        "workspace_id",
+        "id",
+        "draft_node_id",
+        "thread_id",
+        name="uq_node_build_attempts_identity_context",
+    ),
+    UniqueConstraint(
+        "workspace_id",
+        "draft_node_id",
+        "attempt_number",
+        name="uq_node_build_attempts_draft_attempt",
+    ),
+    CheckConstraint("attempt_number >= 1", name="attempt_number"),
+    CheckConstraint(
+        "status IN ('queued', 'preparing', 'coding', 'testing', "
+        "'awaiting_approval', 'failed', 'cancelled', 'superseded', 'published')",
+        name="status",
+    ),
+    Index(
+        "uq_node_build_attempts_active_draft",
+        "workspace_id",
+        "draft_node_id",
+        unique=True,
+        postgresql_where=text(
+            "status IN ('queued', 'preparing', 'coding', 'testing', "
+            "'awaiting_approval')"
+        ),
+        sqlite_where=text(
+            "status IN ('queued', 'preparing', 'coding', 'testing', "
+            "'awaiting_approval')"
+        ),
+    ),
+    Index(
+        "ix_node_build_attempts_run",
+        "workspace_id",
+        "run_id",
+        "attempt_number",
+    ),
+)
+
+
+agent_events = Table(
+    "agent_events",
+    metadata,
+    Column("id", SaUuid(as_uuid=True), primary_key=True),
+    Column(
+        "workspace_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("thread_id", SaUuid(as_uuid=True), nullable=False),
+    Column("sequence", BigInteger, nullable=False),
+    Column(
+        "kind",
+        DomainStrEnumType(AgentEventKind, length=80),
+        nullable=False,
+    ),
+    Column("payload", PydanticModelType(AgentEventPayload), nullable=False),
+    Column("run_id", SaUuid(as_uuid=True), nullable=True),
+    Column("created_at", UTCDateTime(), nullable=False),
+    ForeignKeyConstraint(
+        ("workspace_id", "thread_id"),
+        ("agent_threads.workspace_id", "agent_threads.id"),
+        name="fk_agent_events_thread",
+        ondelete="CASCADE",
+    ),
+    ForeignKeyConstraint(
+        ("workspace_id", "run_id", "thread_id"),
+        (
+            "agent_runs.workspace_id",
+            "agent_runs.id",
+            "agent_runs.thread_id",
+        ),
+        name="fk_agent_events_run_thread",
+        ondelete="CASCADE",
+    ),
+    UniqueConstraint("workspace_id", "id", name="uq_agent_events_workspace_id_id"),
+    UniqueConstraint(
+        "workspace_id",
+        "thread_id",
+        "sequence",
+        name="uq_agent_events_thread_sequence",
+    ),
+    CheckConstraint("sequence >= 1", name="sequence"),
+    Index(
+        "ix_agent_events_workspace_run",
+        "workspace_id",
+        "run_id",
+        "sequence",
+    ),
+)
+
+
+capability_approvals = Table(
+    "capability_approvals",
+    metadata,
+    Column("id", SaUuid(as_uuid=True), primary_key=True),
+    Column(
+        "workspace_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("draft_node_id", SaUuid(as_uuid=True), nullable=False),
+    Column("build_attempt_id", SaUuid(as_uuid=True), nullable=False),
+    Column("capability_digest", String(64), nullable=False),
+    Column(
+        "approved_by_user_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("approved_at", UTCDateTime(), nullable=False),
+    ForeignKeyConstraint(
+        ("workspace_id", "build_attempt_id", "draft_node_id"),
+        (
+            "node_build_attempts.workspace_id",
+            "node_build_attempts.id",
+            "node_build_attempts.draft_node_id",
+        ),
+        name="fk_capability_approvals_build_draft",
+        ondelete="CASCADE",
+    ),
+    UniqueConstraint(
+        "workspace_id",
+        "id",
+        name="uq_capability_approvals_workspace_id_id",
+    ),
+    UniqueConstraint(
+        "workspace_id",
+        "id",
+        "build_attempt_id",
+        "draft_node_id",
+        "approved_by_user_id",
+        "capability_digest",
+        name="uq_capability_approvals_identity_context",
+    ),
+    UniqueConstraint(
+        "workspace_id",
+        "build_attempt_id",
+        name="uq_capability_approvals_build_attempt",
+    ),
+)
+
+
+node_releases = Table(
+    "node_releases",
+    metadata,
+    Column(
+        "workspace_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        primary_key=True,
+    ),
+    Column("node_id", SaUuid(as_uuid=True), primary_key=True),
+    Column("revision", Integer, primary_key=True),
+    Column("draft_node_id", SaUuid(as_uuid=True), nullable=False),
+    Column("build_attempt_id", SaUuid(as_uuid=True), nullable=False),
+    Column("capability_approval_id", SaUuid(as_uuid=True), nullable=False),
+    Column("thread_id", SaUuid(as_uuid=True), nullable=False),
+    Column("environment_id", SaUuid(as_uuid=True), nullable=False),
+    Column("manifest", PydanticModelType(GeneratedNodeManifest), nullable=False),
+    Column("capabilities", PydanticModelType(CapabilityManifest), nullable=False),
+    Column("capability_digest", String(64), nullable=False),
+    Column("artifacts", PydanticModelType(BuildArtifactSet), nullable=False),
+    Column(
+        "approved_by_user_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "created_by_user_id",
+        SaUuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("created_at", UTCDateTime(), nullable=False),
+    ForeignKeyConstraint(
+        ("workspace_id", "build_attempt_id", "draft_node_id", "thread_id"),
+        (
+            "node_build_attempts.workspace_id",
+            "node_build_attempts.id",
+            "node_build_attempts.draft_node_id",
+            "node_build_attempts.thread_id",
+        ),
+        name="fk_node_releases_build_context",
+        ondelete="RESTRICT",
+    ),
+    ForeignKeyConstraint(
+        (
+            "workspace_id",
+            "capability_approval_id",
+            "build_attempt_id",
+            "draft_node_id",
+            "approved_by_user_id",
+            "capability_digest",
+        ),
+        (
+            "capability_approvals.workspace_id",
+            "capability_approvals.id",
+            "capability_approvals.build_attempt_id",
+            "capability_approvals.draft_node_id",
+            "capability_approvals.approved_by_user_id",
+            "capability_approvals.capability_digest",
+        ),
+        name="fk_node_releases_capability_approval_context",
+        ondelete="RESTRICT",
+    ),
+    ForeignKeyConstraint(
+        ("workspace_id", "draft_node_id"),
+        ("draft_nodes.workspace_id", "draft_nodes.id"),
+        name="fk_node_releases_draft",
+        ondelete="RESTRICT",
+    ),
+    ForeignKeyConstraint(
+        ("workspace_id", "thread_id", "environment_id"),
+        (
+            "agent_threads.workspace_id",
+            "agent_threads.id",
+            "agent_threads.environment_id",
+        ),
+        name="fk_node_releases_thread_environment",
+        ondelete="RESTRICT",
+    ),
+    UniqueConstraint(
+        "workspace_id",
+        "build_attempt_id",
+        name="uq_node_releases_build_attempt",
+    ),
+    CheckConstraint("revision >= 1", name="revision"),
+    CheckConstraint("node_id = draft_node_id", name="node_is_draft"),
+    Index(
+        "ix_node_releases_workspace_node_revision",
+        "workspace_id",
+        "node_id",
+        "revision",
+    ),
 )

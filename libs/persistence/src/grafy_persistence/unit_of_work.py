@@ -7,6 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
 
 from grafy_core.artifacts import ArtifactRepositoryPort
+from grafy_core.ports.agent_authoring import (
+    AgentAuthoringRepositoryPort,
+    AgentAuthoringUnitOfWorkPort,
+)
 from grafy_core.domain.errors import ConcurrentWriteError
 from grafy_core.ports.collaboration import (
     CollaborationRepositoryPort,
@@ -46,6 +50,7 @@ from grafy_core.ports.templates import TemplateRepositoryPort, TemplateUnitOfWor
 
 from grafy_persistence.adapters.repositories import (
     SqlArtifactRepository,
+    SqlAgentAuthoringRepository,
     SqlCollaborationRepository,
     SqlGraphExecutionHistoryRepository,
     SqlIdentityRepository,
@@ -75,6 +80,7 @@ class _SqlAlchemyUnitOfWorkState:
     collaboration: CollaborationRepositoryPort
     modules: ModuleLibraryRepositoryPort
     templates: TemplateRepositoryPort
+    agent_authoring: AgentAuthoringRepositoryPort
 
 
 class SqlAlchemyUnitOfWork(
@@ -87,6 +93,7 @@ class SqlAlchemyUnitOfWork(
     CollaborationUnitOfWorkPort,
     ModuleLibraryUnitOfWorkPort,
     TemplateUnitOfWorkPort,
+    AgentAuthoringUnitOfWorkPort,
 ):
     """Reusable task-local SQLAlchemy transaction boundary.
 
@@ -165,6 +172,11 @@ class SqlAlchemyUnitOfWork(
     def templates(self) -> TemplateRepositoryPort:
         return self._entered_state().templates
 
+    @property
+    @override
+    def agent_authoring(self) -> AgentAuthoringRepositoryPort:
+        return self._entered_state().agent_authoring
+
     @override
     async def __aenter__(self) -> "SqlAlchemyUnitOfWork":
         if self._state.get() is not None:
@@ -185,6 +197,7 @@ class SqlAlchemyUnitOfWork(
                 collaboration=SqlCollaborationRepository(session),
                 modules=SqlModuleLibraryRepository(session),
                 templates=SqlTemplateRepository(session),
+                agent_authoring=SqlAgentAuthoringRepository(session),
             )
         )
         return self

@@ -264,9 +264,15 @@ def test_alembic_migration_upgrades_downgrades_and_has_no_schema_drift(
     assert database_path.exists()
     with create_engine(f"sqlite:///{database_path}").connect() as connection:
         assert set(inspect(connection).get_table_names()) == {
+            "agent_environments",
+            "agent_events",
+            "agent_runs",
+            "agent_threads",
             "alembic_version",
             "artifact_objects",
             "collaborative_graph_heads",
+            "capability_approvals",
+            "draft_nodes",
             "graph_active_execution_slots",
             "graph_checkpoint_mappings",
             "graph_command_journal",
@@ -282,6 +288,8 @@ def test_alembic_migration_upgrades_downgrades_and_has_no_schema_drift(
             "module_releases",
             "modules",
             "node_secrets",
+            "node_build_attempts",
+            "node_releases",
             "users",
             "oidc_identities",
             "oidc_login_transactions",
@@ -307,9 +315,15 @@ def test_alembic_migration_upgrades_downgrades_and_has_no_schema_drift(
     with create_engine(f"sqlite:///{database_path}").connect() as connection:
         connection.exec_driver_sql("PRAGMA foreign_keys=ON")
         assert set(inspect(connection).get_table_names()) == {
+            "agent_environments",
+            "agent_events",
+            "agent_runs",
+            "agent_threads",
             "alembic_version",
             "artifact_objects",
             "collaborative_graph_heads",
+            "capability_approvals",
+            "draft_nodes",
             "graph_active_execution_slots",
             "graph_checkpoint_mappings",
             "graph_command_journal",
@@ -325,6 +339,8 @@ def test_alembic_migration_upgrades_downgrades_and_has_no_schema_drift(
             "module_releases",
             "modules",
             "node_secrets",
+            "node_build_attempts",
+            "node_releases",
             "users",
             "oidc_identities",
             "oidc_login_transactions",
@@ -776,20 +792,14 @@ def test_tenant_migration_backfills_all_0006_resources_and_checks_composite_keys
 
     with create_engine(f"sqlite:///{database_path}").begin() as connection:
         connection.execute(
-            text(
-                "UPDATE node_secrets SET aad_version = 2 "
-                "WHERE graph_id = :graph_id"
-            ),
+            text("UPDATE node_secrets SET aad_version = 2 WHERE graph_id = :graph_id"),
             {"graph_id": graph_id.hex},
         )
     with pytest.raises(RuntimeError, match="AAD version 2"):
         command.downgrade(config, "0006_execution_history")
     with create_engine(f"sqlite:///{database_path}").begin() as connection:
         connection.execute(
-            text(
-                "UPDATE node_secrets SET aad_version = 1 "
-                "WHERE graph_id = :graph_id"
-            ),
+            text("UPDATE node_secrets SET aad_version = 1 WHERE graph_id = :graph_id"),
             {"graph_id": graph_id.hex},
         )
 

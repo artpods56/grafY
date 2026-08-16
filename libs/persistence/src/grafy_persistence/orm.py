@@ -5,6 +5,16 @@ from uuid import UUID
 from sqlalchemy.orm import registry
 
 from grafy_core.artifacts import ArtifactObject
+from grafy_core.domain.agent_authoring import (
+    AgentEnvironment,
+    AgentEvent,
+    AgentRun,
+    AgentThread,
+    CapabilityApproval,
+    DraftNode,
+    NodeBuildAttempt,
+    NodeRelease,
+)
 from grafy_core.domain.invocation_cache import InvocationCacheEntry
 from grafy_core.domain.identity import (
     AuthSession,
@@ -161,3 +171,17 @@ def start_mappers() -> None:
     mapper_registry.map_imperatively(Module, schema.modules)
     mapper_registry.map_imperatively(ModuleRelease, schema.module_releases)
     mapper_registry.map_imperatively(Template, schema.templates)
+    mapper_registry.map_imperatively(
+        AgentEnvironment,
+        schema.agent_environments,
+    )
+    mapper_registry.map_imperatively(AgentThread, schema.agent_threads)
+    mapper_registry.map_imperatively(DraftNode, schema.draft_nodes)
+    mapper_registry.map_imperatively(AgentRun, schema.agent_runs)
+    mapper_registry.map_imperatively(NodeBuildAttempt, schema.node_build_attempts)
+    mapper_registry.map_imperatively(AgentEvent, schema.agent_events)
+    mapper_registry.map_imperatively(
+        CapabilityApproval,
+        schema.capability_approvals,
+    )
+    mapper_registry.map_imperatively(NodeRelease, schema.node_releases)

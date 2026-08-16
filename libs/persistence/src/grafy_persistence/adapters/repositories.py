@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import cast, override
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, insert, or_, select, text, update
+from sqlalchemy import and_, delete, exists, func, insert, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import CursorResult
@@ -14,6 +14,18 @@ from grafy_core.artifacts import (
     ArtifactObject,
     ArtifactRepositoryPort,
     ArtifactTypeKey,
+)
+from grafy_core.domain.agent_authoring import (
+    AgentEnvironment,
+    AgentEnvironmentStatus,
+    AgentEvent,
+    AgentRun,
+    AgentRunStatus,
+    AgentThread,
+    CapabilityApproval,
+    DraftNode,
+    NodeBuildAttempt,
+    NodeRelease,
 )
 from grafy_core.domain.invocation_cache import InvocationCacheEntry
 from grafy_core.domain.identity import (
@@ -77,6 +89,7 @@ from grafy_core.ports.identity import (
     IdentityRepositoryPort,
     SecurityAuditRepositoryPort,
 )
+from grafy_core.ports.agent_authoring import AgentAuthoringRepositoryPort
 from grafy_core.ports.invocation_cache import InvocationCacheRepositoryPort
 from grafy_core.ports.execution_history import (
     GraphExecutionHistoryRepositoryPort,
@@ -754,7 +767,8 @@ class SqlSavedGraphRepository(SavedGraphRepositoryPort):
     @override
     async def list(self, workspace_id: UUID) -> list[SavedGraph]:
         result = await self._session.scalars(
-            select(SavedGraph).order_by(
+            select(SavedGraph)
+            .order_by(
                 schema.saved_graphs.c.updated_at.desc(),
                 schema.saved_graphs.c.id.asc(),
             )
@@ -1149,7 +1163,7 @@ class SqlGraphExecutionHistoryRepository(
         execution_exists = await self._session.scalar(
             select(schema.graph_executions.c.execution_id).where(
                 schema.graph_executions.c.workspace_id == result.workspace_id,
-                schema.graph_executions.c.execution_id == result.execution_id
+                schema.graph_executions.c.execution_id == result.execution_id,
             )
         )
         if execution_exists is None:
@@ -1647,14 +1661,18 @@ class SqlCollaborationRepository:
         command_id: UUID,
     ) -> GraphCommandReceipt | None:
         row = (
-            await self._session.execute(
-                select(schema.graph_command_receipts).where(
-                    schema.graph_command_receipts.c.workspace_id == workspace_id,
-                    schema.graph_command_receipts.c.graph_id == graph_id,
-                    schema.graph_command_receipts.c.command_id == command_id,
+            (
+                await self._session.execute(
+                    select(schema.graph_command_receipts).where(
+                        schema.graph_command_receipts.c.workspace_id == workspace_id,
+                        schema.graph_command_receipts.c.graph_id == graph_id,
+                        schema.graph_command_receipts.c.command_id == command_id,
+                    )
                 )
             )
-        ).mappings().one_or_none()
+            .mappings()
+            .one_or_none()
+        )
         if row is None:
             return None
         return GraphCommandReceipt.model_validate(dict(row))
@@ -1686,16 +1704,20 @@ class SqlCollaborationRepository:
         collaboration_sequence: int,
     ) -> GraphCheckpointMapping | None:
         row = (
-            await self._session.execute(
-                select(schema.graph_checkpoint_mappings).where(
-                    schema.graph_checkpoint_mappings.c.workspace_id == workspace_id,
-                    schema.graph_checkpoint_mappings.c.graph_id == graph_id,
-                    schema.graph_checkpoint_mappings.c.room_epoch == room_epoch,
-                    schema.graph_checkpoint_mappings.c.collaboration_sequence
-                    == collaboration_sequence,
+            (
+                await self._session.execute(
+                    select(schema.graph_checkpoint_mappings).where(
+                        schema.graph_checkpoint_mappings.c.workspace_id == workspace_id,
+                        schema.graph_checkpoint_mappings.c.graph_id == graph_id,
+                        schema.graph_checkpoint_mappings.c.room_epoch == room_epoch,
+                        schema.graph_checkpoint_mappings.c.collaboration_sequence
+                        == collaboration_sequence,
+                    )
                 )
             )
-        ).mappings().one_or_none()
+            .mappings()
+            .one_or_none()
+        )
         if row is None:
             return None
         return GraphCheckpointMapping.model_validate(dict(row))
@@ -1724,15 +1746,20 @@ class SqlCollaborationRepository:
         client_request_id: UUID,
     ) -> GraphExecutionIdempotencyRecord | None:
         row = (
-            await self._session.execute(
-                select(schema.graph_execution_idempotency).where(
-                    schema.graph_execution_idempotency.c.workspace_id == workspace_id,
-                    schema.graph_execution_idempotency.c.graph_id == graph_id,
-                    schema.graph_execution_idempotency.c.client_request_id
-                    == client_request_id,
+            (
+                await self._session.execute(
+                    select(schema.graph_execution_idempotency).where(
+                        schema.graph_execution_idempotency.c.workspace_id
+                        == workspace_id,
+                        schema.graph_execution_idempotency.c.graph_id == graph_id,
+                        schema.graph_execution_idempotency.c.client_request_id
+                        == client_request_id,
+                    )
                 )
             )
-        ).mappings().one_or_none()
+            .mappings()
+            .one_or_none()
+        )
         if row is None:
             return None
         return GraphExecutionIdempotencyRecord.model_validate(dict(row))
@@ -1762,13 +1789,18 @@ class SqlCollaborationRepository:
         graph_id: UUID,
     ) -> GraphActiveExecutionSlot | None:
         row = (
-            await self._session.execute(
-                select(schema.graph_active_execution_slots).where(
-                    schema.graph_active_execution_slots.c.workspace_id == workspace_id,
-                    schema.graph_active_execution_slots.c.graph_id == graph_id,
+            (
+                await self._session.execute(
+                    select(schema.graph_active_execution_slots).where(
+                        schema.graph_active_execution_slots.c.workspace_id
+                        == workspace_id,
+                        schema.graph_active_execution_slots.c.graph_id == graph_id,
+                    )
                 )
             )
-        ).mappings().one_or_none()
+            .mappings()
+            .one_or_none()
+        )
         if row is None:
             return None
         return GraphActiveExecutionSlot.model_validate(dict(row))
@@ -1783,7 +1815,9 @@ class SqlCollaborationRepository:
             "execution_id": slot.execution_id,
             "updated_at": slot.updated_at,
         }
-        dialect = self._session.bind.dialect.name if self._session.bind is not None else ""
+        dialect = (
+            self._session.bind.dialect.name if self._session.bind is not None else ""
+        )
         if dialect == "postgresql":
             statement = (
                 postgresql_insert(schema.graph_active_execution_slots)
@@ -1981,6 +2015,715 @@ class SqlTemplateRepository(TemplateRepositoryPort):
             statement.order_by(
                 schema.templates.c.name.asc(),
                 schema.templates.c.id.asc(),
+            )
+        )
+        return list(result)
+
+
+class SqlAgentAuthoringRepository(AgentAuthoringRepositoryPort):
+    """SQL adapter for durable authoring state and database-leased work.
+
+    Provisioning, run-claim, and expired-run fencing hold candidate rows until
+    the enclosing transaction commits. Claims and fencing always lock the run
+    before its environment, with ``SKIP LOCKED`` on both rows. SQLite
+    intentionally supports only the single-worker development runtime.
+    Provider termination happens after commit and is idempotently retried from
+    the interrupting/cancelling discovery queries.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    @override
+    async def add_environment(self, environment: AgentEnvironment) -> None:
+        self._session.add(environment)
+        await self._session.flush()
+
+    @override
+    async def get_environment(
+        self,
+        workspace_id: UUID,
+        environment_id: UUID,
+    ) -> AgentEnvironment | None:
+        return await self._session.scalar(
+            select(AgentEnvironment).where(
+                schema.agent_environments.c.workspace_id == workspace_id,
+                schema.agent_environments.c.id == environment_id,
+            )
+        )
+
+    @override
+    async def lock_environment(
+        self,
+        workspace_id: UUID,
+        environment_id: UUID,
+    ) -> AgentEnvironment | None:
+        return await self._session.scalar(
+            select(AgentEnvironment)
+            .where(
+                schema.agent_environments.c.workspace_id == workspace_id,
+                schema.agent_environments.c.id == environment_id,
+            )
+            .with_for_update()
+        )
+
+    @override
+    async def save_environment(self, environment: AgentEnvironment) -> None:
+        del environment
+        await self._session.flush()
+
+    @override
+    async def list_environments(
+        self,
+        workspace_id: UUID,
+    ) -> list[AgentEnvironment]:
+        result = await self._session.scalars(
+            select(AgentEnvironment)
+            .where(schema.agent_environments.c.workspace_id == workspace_id)
+            .order_by(
+                schema.agent_environments.c.updated_at.desc(),
+                schema.agent_environments.c.id.asc(),
+            )
+        )
+        return list(result)
+
+    @override
+    async def list_provisionable_environment_keys(
+        self,
+        *,
+        when: datetime,
+        limit: int,
+    ) -> list[tuple[UUID, UUID]]:
+        statement = (
+            select(
+                schema.agent_environments.c.workspace_id,
+                schema.agent_environments.c.id,
+            )
+            .where(
+                or_(
+                    schema.agent_environments.c.status
+                    == AgentEnvironmentStatus.PROVISIONING,
+                    and_(
+                        schema.agent_environments.c.status
+                        == AgentEnvironmentStatus.CREATING,
+                        schema.agent_environments.c.provisioning_expires_at <= when,
+                    ),
+                )
+            )
+            .order_by(
+                schema.agent_environments.c.created_at.asc(),
+                schema.agent_environments.c.id.asc(),
+            )
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        result = await self._session.execute(statement)
+        return [(row.workspace_id, row.id) for row in result]
+
+    @override
+    async def lock_provisionable_environment(
+        self,
+        workspace_id: UUID,
+        environment_id: UUID,
+        *,
+        when: datetime,
+    ) -> AgentEnvironment | None:
+        return await self._session.scalar(
+            select(AgentEnvironment)
+            .where(
+                schema.agent_environments.c.workspace_id == workspace_id,
+                schema.agent_environments.c.id == environment_id,
+                or_(
+                    schema.agent_environments.c.status
+                    == AgentEnvironmentStatus.PROVISIONING,
+                    and_(
+                        schema.agent_environments.c.status
+                        == AgentEnvironmentStatus.CREATING,
+                        schema.agent_environments.c.provisioning_expires_at <= when,
+                    ),
+                ),
+            )
+            .with_for_update(skip_locked=True)
+        )
+
+    @override
+    async def add_thread(self, thread: AgentThread) -> None:
+        self._session.add(thread)
+        await self._session.flush()
+
+    @override
+    async def get_thread(
+        self,
+        workspace_id: UUID,
+        thread_id: UUID,
+    ) -> AgentThread | None:
+        return await self._session.scalar(
+            select(AgentThread).where(
+                schema.agent_threads.c.workspace_id == workspace_id,
+                schema.agent_threads.c.id == thread_id,
+            )
+        )
+
+    @override
+    async def lock_thread(
+        self,
+        workspace_id: UUID,
+        thread_id: UUID,
+    ) -> AgentThread | None:
+        return await self._session.scalar(
+            select(AgentThread)
+            .where(
+                schema.agent_threads.c.workspace_id == workspace_id,
+                schema.agent_threads.c.id == thread_id,
+            )
+            .with_for_update()
+        )
+
+    @override
+    async def save_thread(self, thread: AgentThread) -> None:
+        del thread
+        await self._session.flush()
+
+    @override
+    async def add_draft(self, draft: DraftNode) -> None:
+        self._session.add(draft)
+        await self._session.flush()
+
+    @override
+    async def get_draft(
+        self,
+        workspace_id: UUID,
+        draft_node_id: UUID,
+    ) -> DraftNode | None:
+        return await self._session.scalar(
+            select(DraftNode).where(
+                schema.draft_nodes.c.workspace_id == workspace_id,
+                schema.draft_nodes.c.id == draft_node_id,
+            )
+        )
+
+    @override
+    async def lock_draft(
+        self,
+        workspace_id: UUID,
+        draft_node_id: UUID,
+    ) -> DraftNode | None:
+        return await self._session.scalar(
+            select(DraftNode)
+            .where(
+                schema.draft_nodes.c.workspace_id == workspace_id,
+                schema.draft_nodes.c.id == draft_node_id,
+            )
+            .with_for_update()
+        )
+
+    @override
+    async def save_draft(self, draft: DraftNode) -> None:
+        del draft
+        await self._session.flush()
+
+    @override
+    async def list_drafts(
+        self,
+        workspace_id: UUID,
+        *,
+        thread_id: UUID | None = None,
+    ) -> list[DraftNode]:
+        statement = select(DraftNode).where(
+            schema.draft_nodes.c.workspace_id == workspace_id
+        )
+        if thread_id is not None:
+            statement = statement.where(schema.draft_nodes.c.thread_id == thread_id)
+        result = await self._session.scalars(
+            statement.order_by(
+                schema.draft_nodes.c.updated_at.desc(),
+                schema.draft_nodes.c.id.asc(),
+            )
+        )
+        return list(result)
+
+    @override
+    async def add_run(self, run: AgentRun) -> None:
+        self._session.add(run)
+        await self._session.flush()
+
+    @override
+    async def get_run(
+        self,
+        workspace_id: UUID,
+        run_id: UUID,
+    ) -> AgentRun | None:
+        return await self._session.scalar(
+            select(AgentRun).where(
+                schema.agent_runs.c.workspace_id == workspace_id,
+                schema.agent_runs.c.id == run_id,
+            )
+        )
+
+    @override
+    async def lock_run(
+        self,
+        workspace_id: UUID,
+        run_id: UUID,
+    ) -> AgentRun | None:
+        return await self._session.scalar(
+            select(AgentRun)
+            .where(
+                schema.agent_runs.c.workspace_id == workspace_id,
+                schema.agent_runs.c.id == run_id,
+            )
+            .with_for_update()
+        )
+
+    @override
+    async def lock_claimable_run(
+        self,
+        workspace_id: UUID,
+        run_id: UUID,
+        *,
+        when: datetime,
+    ) -> AgentRun | None:
+        run = await self._session.scalar(
+            select(AgentRun)
+            .where(
+                schema.agent_runs.c.workspace_id == workspace_id,
+                schema.agent_runs.c.id == run_id,
+                or_(
+                    schema.agent_runs.c.status == AgentRunStatus.QUEUED,
+                    and_(
+                        schema.agent_runs.c.status == AgentRunStatus.CLAIMED,
+                        schema.agent_runs.c.lease_expires_at <= when,
+                    ),
+                ),
+            )
+            .with_for_update(skip_locked=True)
+        )
+        if run is None:
+            return None
+
+        if run.status is AgentRunStatus.QUEUED:
+            writer_condition = schema.agent_environments.c.active_run_id.is_(None)
+        else:
+            writer_condition = schema.agent_environments.c.active_run_id == run.id
+        environment = await self._session.scalar(
+            select(AgentEnvironment)
+            .where(
+                schema.agent_environments.c.workspace_id == workspace_id,
+                schema.agent_environments.c.id == run.environment_id,
+                schema.agent_environments.c.status == AgentEnvironmentStatus.READY,
+                writer_condition,
+            )
+            .with_for_update(skip_locked=True)
+        )
+        if environment is None:
+            return None
+        return run
+
+    @override
+    async def lock_expired_running_run(
+        self,
+        workspace_id: UUID,
+        run_id: UUID,
+        *,
+        when: datetime,
+    ) -> AgentRun | None:
+        run = await self._session.scalar(
+            select(AgentRun)
+            .where(
+                schema.agent_runs.c.workspace_id == workspace_id,
+                schema.agent_runs.c.id == run_id,
+                schema.agent_runs.c.status == AgentRunStatus.RUNNING,
+                schema.agent_runs.c.lease_expires_at <= when,
+            )
+            .with_for_update(skip_locked=True)
+        )
+        if run is None:
+            return None
+
+        environment = await self._session.scalar(
+            select(AgentEnvironment)
+            .where(
+                schema.agent_environments.c.workspace_id == workspace_id,
+                schema.agent_environments.c.id == run.environment_id,
+                schema.agent_environments.c.active_run_id == run.id,
+            )
+            .with_for_update(skip_locked=True)
+        )
+        if environment is None:
+            return None
+        return run
+
+    @override
+    async def save_run(self, run: AgentRun) -> None:
+        del run
+        await self._session.flush()
+
+    @override
+    async def get_run_by_idempotency(
+        self,
+        workspace_id: UUID,
+        idempotency_key: str,
+    ) -> AgentRun | None:
+        return await self._session.scalar(
+            select(AgentRun).where(
+                schema.agent_runs.c.workspace_id == workspace_id,
+                schema.agent_runs.c.idempotency_key == idempotency_key,
+            )
+        )
+
+    @override
+    async def list_runs_for_thread(
+        self,
+        workspace_id: UUID,
+        thread_id: UUID,
+    ) -> list[AgentRun]:
+        result = await self._session.scalars(
+            select(AgentRun)
+            .where(
+                schema.agent_runs.c.workspace_id == workspace_id,
+                schema.agent_runs.c.thread_id == thread_id,
+            )
+            .order_by(
+                schema.agent_runs.c.created_at.asc(),
+                schema.agent_runs.c.id.asc(),
+            )
+        )
+        return list(result)
+
+    @override
+    async def list_claimable_run_keys(
+        self,
+        *,
+        when: datetime,
+        limit: int,
+    ) -> list[tuple[UUID, UUID]]:
+        earlier_run = schema.agent_runs.alias("earlier_agent_run")
+        earlier_queued_run_exists = exists(
+            select(1).where(
+                earlier_run.c.workspace_id == schema.agent_runs.c.workspace_id,
+                earlier_run.c.environment_id == schema.agent_runs.c.environment_id,
+                earlier_run.c.status == AgentRunStatus.QUEUED,
+                or_(
+                    earlier_run.c.created_at < schema.agent_runs.c.created_at,
+                    and_(
+                        earlier_run.c.created_at == schema.agent_runs.c.created_at,
+                        earlier_run.c.id < schema.agent_runs.c.id,
+                    ),
+                ),
+            )
+        )
+        statement = (
+            select(
+                schema.agent_runs.c.workspace_id,
+                schema.agent_runs.c.id,
+            )
+            .join(
+                schema.agent_environments,
+                and_(
+                    schema.agent_environments.c.workspace_id
+                    == schema.agent_runs.c.workspace_id,
+                    schema.agent_environments.c.id
+                    == schema.agent_runs.c.environment_id,
+                ),
+            )
+            .where(
+                schema.agent_environments.c.status == AgentEnvironmentStatus.READY,
+                or_(
+                    and_(
+                        schema.agent_runs.c.status == AgentRunStatus.QUEUED,
+                        schema.agent_environments.c.active_run_id.is_(None),
+                        ~earlier_queued_run_exists,
+                    ),
+                    and_(
+                        schema.agent_runs.c.status == AgentRunStatus.CLAIMED,
+                        schema.agent_runs.c.lease_expires_at <= when,
+                        schema.agent_environments.c.active_run_id
+                        == schema.agent_runs.c.id,
+                    ),
+                ),
+            )
+            .order_by(
+                schema.agent_runs.c.created_at.asc(),
+                schema.agent_runs.c.id.asc(),
+            )
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        result = await self._session.execute(statement)
+        return [(row.workspace_id, row.id) for row in result]
+
+    @override
+    async def list_expired_running_run_keys(
+        self,
+        *,
+        when: datetime,
+        limit: int,
+    ) -> list[tuple[UUID, UUID]]:
+        statement = (
+            select(
+                schema.agent_runs.c.workspace_id,
+                schema.agent_runs.c.id,
+            )
+            .join(
+                schema.agent_environments,
+                and_(
+                    schema.agent_environments.c.workspace_id
+                    == schema.agent_runs.c.workspace_id,
+                    schema.agent_environments.c.id
+                    == schema.agent_runs.c.environment_id,
+                ),
+            )
+            .where(
+                schema.agent_runs.c.status == AgentRunStatus.RUNNING,
+                schema.agent_runs.c.lease_expires_at <= when,
+                schema.agent_environments.c.active_run_id == schema.agent_runs.c.id,
+            )
+            .order_by(
+                schema.agent_runs.c.lease_expires_at.asc(),
+                schema.agent_runs.c.id.asc(),
+            )
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        result = await self._session.execute(statement)
+        return [(row.workspace_id, row.id) for row in result]
+
+    @override
+    async def list_interrupting_run_keys(
+        self,
+        *,
+        limit: int,
+    ) -> list[tuple[UUID, UUID]]:
+        statement = (
+            select(
+                schema.agent_runs.c.workspace_id,
+                schema.agent_runs.c.id,
+            )
+            .join(
+                schema.agent_environments,
+                and_(
+                    schema.agent_environments.c.workspace_id
+                    == schema.agent_runs.c.workspace_id,
+                    schema.agent_environments.c.id
+                    == schema.agent_runs.c.environment_id,
+                ),
+            )
+            .where(
+                schema.agent_runs.c.status == AgentRunStatus.INTERRUPTING,
+                schema.agent_environments.c.active_run_id == schema.agent_runs.c.id,
+            )
+            .order_by(
+                schema.agent_runs.c.updated_at.asc(),
+                schema.agent_runs.c.id.asc(),
+            )
+            .limit(limit)
+        )
+        result = await self._session.execute(statement)
+        return [(row.workspace_id, row.id) for row in result]
+
+    @override
+    async def list_cancelling_run_keys(
+        self,
+        *,
+        limit: int,
+    ) -> list[tuple[UUID, UUID]]:
+        statement = (
+            select(
+                schema.agent_runs.c.workspace_id,
+                schema.agent_runs.c.id,
+            )
+            .join(
+                schema.agent_environments,
+                and_(
+                    schema.agent_environments.c.workspace_id
+                    == schema.agent_runs.c.workspace_id,
+                    schema.agent_environments.c.id
+                    == schema.agent_runs.c.environment_id,
+                ),
+            )
+            .where(
+                schema.agent_runs.c.status == AgentRunStatus.CANCELLING,
+                schema.agent_environments.c.active_run_id == schema.agent_runs.c.id,
+            )
+            .order_by(
+                schema.agent_runs.c.updated_at.asc(),
+                schema.agent_runs.c.id.asc(),
+            )
+            .limit(limit)
+        )
+        result = await self._session.execute(statement)
+        return [(row.workspace_id, row.id) for row in result]
+
+    @override
+    async def add_build_attempt(self, build: NodeBuildAttempt) -> None:
+        self._session.add(build)
+        await self._session.flush()
+
+    @override
+    async def get_build_attempt(
+        self,
+        workspace_id: UUID,
+        build_attempt_id: UUID,
+    ) -> NodeBuildAttempt | None:
+        return await self._session.scalar(
+            select(NodeBuildAttempt).where(
+                schema.node_build_attempts.c.workspace_id == workspace_id,
+                schema.node_build_attempts.c.id == build_attempt_id,
+            )
+        )
+
+    @override
+    async def lock_build_attempt(
+        self,
+        workspace_id: UUID,
+        build_attempt_id: UUID,
+    ) -> NodeBuildAttempt | None:
+        return await self._session.scalar(
+            select(NodeBuildAttempt)
+            .where(
+                schema.node_build_attempts.c.workspace_id == workspace_id,
+                schema.node_build_attempts.c.id == build_attempt_id,
+            )
+            .with_for_update()
+        )
+
+    @override
+    async def save_build_attempt(self, build: NodeBuildAttempt) -> None:
+        del build
+        await self._session.flush()
+
+    @override
+    async def list_build_attempts_for_run(
+        self,
+        workspace_id: UUID,
+        run_id: UUID,
+    ) -> list[NodeBuildAttempt]:
+        result = await self._session.scalars(
+            select(NodeBuildAttempt)
+            .where(
+                schema.node_build_attempts.c.workspace_id == workspace_id,
+                schema.node_build_attempts.c.run_id == run_id,
+            )
+            .order_by(
+                schema.node_build_attempts.c.attempt_number.asc(),
+                schema.node_build_attempts.c.id.asc(),
+            )
+        )
+        return list(result)
+
+    @override
+    async def list_build_attempts_for_draft(
+        self,
+        workspace_id: UUID,
+        draft_node_id: UUID,
+    ) -> list[NodeBuildAttempt]:
+        result = await self._session.scalars(
+            select(NodeBuildAttempt)
+            .where(
+                schema.node_build_attempts.c.workspace_id == workspace_id,
+                schema.node_build_attempts.c.draft_node_id == draft_node_id,
+            )
+            .order_by(
+                schema.node_build_attempts.c.attempt_number.asc(),
+                schema.node_build_attempts.c.id.asc(),
+            )
+        )
+        return list(result)
+
+    @override
+    async def get_latest_build_attempt_for_draft(
+        self,
+        workspace_id: UUID,
+        draft_node_id: UUID,
+    ) -> NodeBuildAttempt | None:
+        return await self._session.scalar(
+            select(NodeBuildAttempt)
+            .where(
+                schema.node_build_attempts.c.workspace_id == workspace_id,
+                schema.node_build_attempts.c.draft_node_id == draft_node_id,
+            )
+            .order_by(
+                schema.node_build_attempts.c.attempt_number.desc(),
+                schema.node_build_attempts.c.id.desc(),
+            )
+            .limit(1)
+        )
+
+    @override
+    async def add_event(self, event: AgentEvent) -> None:
+        self._session.add(event)
+        await self._session.flush()
+
+    @override
+    async def list_events(
+        self,
+        workspace_id: UUID,
+        thread_id: UUID,
+        *,
+        after_sequence: int,
+        limit: int,
+    ) -> list[AgentEvent]:
+        result = await self._session.scalars(
+            select(AgentEvent)
+            .where(
+                schema.agent_events.c.workspace_id == workspace_id,
+                schema.agent_events.c.thread_id == thread_id,
+                schema.agent_events.c.sequence > after_sequence,
+            )
+            .order_by(schema.agent_events.c.sequence.asc())
+            .limit(limit)
+        )
+        return list(result)
+
+    @override
+    async def add_capability_approval(
+        self,
+        approval: CapabilityApproval,
+    ) -> None:
+        self._session.add(approval)
+        await self._session.flush()
+
+    @override
+    async def get_capability_approval(
+        self,
+        workspace_id: UUID,
+        build_attempt_id: UUID,
+    ) -> CapabilityApproval | None:
+        return await self._session.scalar(
+            select(CapabilityApproval).where(
+                schema.capability_approvals.c.workspace_id == workspace_id,
+                schema.capability_approvals.c.build_attempt_id == build_attempt_id,
+            )
+        )
+
+    @override
+    async def add_release(self, release: NodeRelease) -> None:
+        self._session.add(release)
+        await self._session.flush()
+
+    @override
+    async def get_release(
+        self,
+        workspace_id: UUID,
+        node_id: UUID,
+        revision: int,
+    ) -> NodeRelease | None:
+        return await self._session.get(
+            NodeRelease,
+            (workspace_id, node_id, revision),
+        )
+
+    @override
+    async def list_releases(
+        self,
+        workspace_id: UUID,
+    ) -> list[NodeRelease]:
+        result = await self._session.scalars(
+            select(NodeRelease)
+            .where(schema.node_releases.c.workspace_id == workspace_id)
+            .order_by(
+                schema.node_releases.c.node_id.asc(),
+                schema.node_releases.c.revision.desc(),
             )
         )
         return list(result)
