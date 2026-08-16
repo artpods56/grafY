@@ -31,12 +31,16 @@ flowchart LR
     Web["Next.js workbench"] --> API
     API --> Core["Typed artifact-graph runtime"]
     API --> Persistence["SQLAlchemy repositories + UoW"]
+    AgentWorker["Durable coding-agent worker + generated-node executor"] --> Persistence
     Persistence --> SQL["SQLite or PostgreSQL"]
     SQL --> Graphs["Saved graph documents"]
     SQL --> Bindings["Revision-scoped output bindings"]
     SQL --> Cache["Content-addressed invocation cache"]
     SQL --> Secrets["Encrypted graph/node secrets"]
     API --> Storage["Local or S3 artifact object storage"]
+    AgentWorker --> Storage
+    API -->|"HMAC-signed generated-node execution"| AgentWorker
+    AgentWorker --> Sandboxes["Isolated sandbox workspaces"]
     API -. "discovers entry points" .-> Plugins["Installed node plugins"]
     Plugins --> Core
 ```
@@ -49,6 +53,13 @@ flowchart LR
   FastAPI routes, persistence, storage, or plugin implementations.
 - `apps/api` owns plugin discovery, runtime composition, and the HTTP adapters
   for execution and saved-graph CRUD under `/v1`.
+- `apps/agent-worker` owns the durable coding-agent loop and the private,
+  HMAC-authenticated generated-node execution endpoint. The verified prototype
+  uses the explicitly enabled trusted-development Docker adapter. A managed
+  Daytona adapter exists, but remains provisional until its whole-sandbox
+  revocation and snapshot behavior pass a live provider acceptance test.
+- `libs/agent` owns the provider-independent authoring tools, coding-agent
+  contracts, source verification, and sandbox boundary.
 - `libs/core/src/grafy_core` owns artifacts, nodes, ports, projections,
   conversions, runtime execution, saved-graph aggregates and use cases, the
   plugin contract, and the generic Image, Sequence, Arithmetic, Text, Schema,
@@ -80,7 +91,7 @@ flowchart LR
   their rationale, acceptance criteria, and deliberately deferred work.
 
 There is intentionally no legacy extraction pipeline, Dagster deployment,
-message broker, worker service, or platform API in this workspace.
+message broker, generic job platform, or platform API in this workspace.
 
 Saved graph documents contain workflow structure and canvas layout, not run
 state. Successful outputs are recorded separately as durable materialization
@@ -239,6 +250,21 @@ Start the API and web app in separate terminals:
 just api
 just web
 ```
+
+Generated-node authoring additionally needs the long-running agent worker. For
+local development, copy the commented generated-node settings from
+`.env.example`, set the API and worker HMAC variables to the same independently
+generated value, configure OpenRouter, and explicitly enable the trusted Docker
+adapter. Then start a third terminal:
+
+```bash
+just agent-worker
+```
+
+The API connects to the worker on `http://127.0.0.1:8091`; generated code and
+dependency commands run in isolated containers, not in FastAPI. The Docker
+adapter is for a trusted local Docker daemon only. The checked production
+Compose deployment does not enable agent authoring yet.
 
 For a VPS deployment behind an existing Nginx instance, use the production
 [Docker Compose guide](infra/docker/README.md). The Compose services publish
