@@ -5,7 +5,8 @@
 - **Audience:** Engineers implementing canvas generation, agent authoring,
   sandbox environments, publication, and generated-node execution
 - **Document type:** Explanation — implemented architecture and boundaries
-- **Related:** [node discovery interaction](node-discovery-interaction.md),
+- **Related:** [plugin unification](plugin-unification.md) (intended Plugin
+  identity), [node discovery interaction](node-discovery-interaction.md),
   [backend architecture](backend-architecture.md),
   [realtime Workbench collaboration](workbench-realtime-collaboration.md)
 
@@ -25,6 +26,10 @@ operator identity `generated.node.<node UUID>@<revision>`. The graph compiler
 resolves an exact published release from PostgreSQL for each run and delegates
 its execution to an isolated worker. A new release therefore becomes available
 without restarting the API.
+
+That one-off identity is the implemented prototype. The intended grouping is a
+uv-managed **Plugin** that can hold one node or many; see
+[plugin unification](plugin-unification.md).
 
 ```mermaid
 flowchart LR

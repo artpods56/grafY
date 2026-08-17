@@ -259,14 +259,20 @@ to own its projection and artifact conversion path.
 
 ### Plugin
 
-An installable declaration that groups nodes, artifact types, artifact
-conversions, and the runtime resolver/writer factories they require under one
-stable slug. The host assigns every installed plugin a catalog origin. Built-in
-plugins are installed explicitly with `builtin` origin; external plugins are
-discovered from the `grafy.plugins` Python entry-point group and installed
-with `external` origin. A plugin does not declare its own origin. Plugins depend
-inward on core contracts and ports, never on the API host or concrete storage
-adapters.
+An installable uv-managed project that groups nodes, artifact types, artifact
+conversions, and the resolver/writer factories those types require under one
+stable slug. Intended execution is an isolated freeze (see
+[plugin unification](docs/design/plugin-unification.md)), not an import into
+the API process.
+
+The host currently still loads monorepo plugins in-process: it assigns every
+installed plugin a catalog origin; built-in plugins are installed explicitly
+with `builtin` origin; external plugins are discovered from the
+`grafy.plugins` Python entry-point group and installed with `external` origin.
+A plugin does not declare its own origin. Plugins depend inward on core
+contracts and ports, never on the API host or concrete storage adapters. The
+canvas Generate prototype still authors one-off `generated.node` identities
+outside this grouping; unification puts every generated node inside a Plugin.
 
 ### Module (workspace library)
 

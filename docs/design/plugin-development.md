@@ -3,7 +3,9 @@
 > How to structure a Grafy plugin when adding new functionality. Read this
 > before creating a new `plugins/*` package or adding operators to an existing
 > one. It describes the *current* committed structure as built — the contracts
-> and conventions the codebase already enforces.
+> and conventions the codebase already enforces. The intended unification with
+> agent-authored, isolated Plugins is
+> [plugin unification](plugin-unification.md).
 
 - **Audience:** contributors adding nodes, artifact types, conversions,
   resolvers, or writers to Grafy.
