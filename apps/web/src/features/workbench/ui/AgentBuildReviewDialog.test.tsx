@@ -101,4 +101,18 @@ describe("AgentBuildReviewDialog", () => {
     expect(html).toContain("Publish node");
     expect(html).not.toContain("Approve exact capabilities");
   });
+
+  it("shows a loading status while the verified build is fetched", () => {
+    const html = renderToStaticMarkup(
+      <AgentBuildReviewDialog
+        {...reviewProps()}
+        review={null}
+        selectedFile={null}
+        loading
+      />,
+    );
+
+    expect(html).toContain("Loading verified build…");
+    expect(html).not.toContain("Approve exact capabilities");
+  });
 });

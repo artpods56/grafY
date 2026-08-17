@@ -70,7 +70,7 @@ def artifacts(*, tests_passed: bool = True) -> BuildArtifactSet:
         runtime_image_digest="f" * 64,
         profile_digest="0" * 64,
         runtime_artifact=RuntimeArtifactReference(
-            provider="daytona",
+            provider="docker-trusted-development",
             ref="snapshot-generated-node-v1",
             digest="1" * 64,
         ),
@@ -194,7 +194,7 @@ def test_environment_allows_only_one_active_writer() -> None:
         workspace_id=WORKSPACE_ID,
         name="Python",
         profile_id="python-3.12",
-        provider="daytona",
+        provider="docker-trusted-development",
         status=AgentEnvironmentStatus.READY,
         provider_environment_id="sandbox-1",
         id=ENVIRONMENT_ID,

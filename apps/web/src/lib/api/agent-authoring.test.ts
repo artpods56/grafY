@@ -428,6 +428,30 @@ describe("agent run lifecycle", () => {
     })).toMatchObject({ state: "published", releaseRevision: 1 });
   });
 
+  it("surfaces catalog awaiting-approval over a stale queued canvas draft", () => {
+    const spec = {
+      operator_id: "generated.node.draft-1",
+      operator_version: 1,
+      agent_authoring: {
+        draft_node_id: "draft-1",
+        status: "awaiting_approval" as const,
+        runnable: false,
+        release_revision: null,
+      },
+    } as NodeSpec;
+    const queued = {
+      ...agentDraftProgressFromCreate(authoringResponse()),
+      state: "queued" as const,
+      targetOperatorVersion: 1,
+    };
+
+    expect(agentDraftProgressFromNodeSpec(spec, queued)).toMatchObject({
+      draftId: "draft-1",
+      buildId: "build-1",
+      state: "awaiting_approval",
+    });
+  });
+
   it("replaces the provisional contract with the published registry spec", () => {
     const provisional = {
       operator_id: "generated.node.draft-1",
@@ -601,6 +625,9 @@ describe("agent run lifecycle", () => {
         capabilities: manifest,
       }),
     );
+    const callsAfterSettled = fetch.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fetch).toHaveBeenCalledTimes(callsAfterSettled);
     stop();
   });
 });

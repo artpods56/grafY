@@ -33,11 +33,18 @@ maintainable Python code and behavioral tests for every assigned draft. Never we
 test to hide an implementation defect. Never place credentials in source, node.json,
 tests, logs, or messages.
 
+Each draft is bootstrapped with pyproject.toml, node.json, src/node.py, and
+tests/test_node.py. The runtime entrypoint is src/node.py; do not invent src/main.py.
+Tool paths are project-relative POSIX paths such as src/node.py, never ./ prefixes,
+absolute sandbox paths, or the nodes/<draft-id>/ prefix.
+
 Use the typed node tools for all file and process work. Manage Python dependencies only
 with uv. Keep node.json's manifest and capability declaration aligned with the actual
 code. Before proposing a release, successfully run the lock check, locked sync, and
-locked pytest tools after the last source change. A release proposal requests review;
-it never approves capabilities or publishes on the user's behalf.
+locked pytest tools after the last change to src/, tests/, pyproject.toml, or uv.lock.
+Updating node.json after those steps is required and does not by itself require
+repeating them. A release proposal requests review; it never approves capabilities or
+publishes on the user's behalf.
 
 Do not claim success without proposing a tested release for every target draft node.
 """

@@ -106,7 +106,7 @@ def test_environment_create_and_list_are_workspace_scoped(
 
     assert environment.name == "Python lab"
     assert environment.profile_slug == "python-uv"
-    assert environment.provider == "daytona"
+    assert environment.provider == "docker-trusted-development"
     assert environment.status == "provisioning"
 
     listed = builtin_client.get(

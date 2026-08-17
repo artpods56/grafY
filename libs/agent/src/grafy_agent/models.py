@@ -32,13 +32,11 @@ def normalized_relative_path(value: str, *, label: str = "Path") -> str:
     path = PurePosixPath(candidate)
     if candidate == "" or path.is_absolute():
         raise SandboxPathError(f"{label} must be a non-empty relative path")
-    if any(part in {"", ".", ".."} for part in path.parts):
-        raise SandboxPathError(
-            f"{label} must not contain empty, dot, or parent segments"
-        )
+    if any(part == ".." for part in path.parts):
+        raise SandboxPathError(f"{label} must not contain parent segments")
     normalized = path.as_posix()
-    if normalized != candidate:
-        raise SandboxPathError(f"{label} must be normalized")
+    if normalized in {"", "."}:
+        raise SandboxPathError(f"{label} must be a non-empty relative path")
     return normalized
 
 

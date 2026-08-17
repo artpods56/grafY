@@ -1,7 +1,10 @@
+from collections.abc import Callable
 from dataclasses import dataclass
+from functools import wraps
+from typing import TypeVar, cast
 from uuid import UUID
 
-from pydantic_ai import FunctionToolset, RunContext
+from pydantic_ai import FunctionToolset, ModelRetry, RunContext
 
 from grafy_core.domain.agent_authoring import CapabilityManifest, GeneratedNodeManifest
 from grafy_core.source_bundles import (
@@ -9,7 +12,7 @@ from grafy_core.source_bundles import (
     read_source_bundle,
 )
 
-from grafy_agent.errors import AgentRuntimeError
+from grafy_agent.errors import AgentRuntimeError, StaleAgentLeaseError
 from grafy_agent.bundles import inspect_node_source_bundle
 from grafy_agent.models import (
     AgentLease,
@@ -86,7 +89,7 @@ class NodeAuthoringTools:
         path: str,
         content: str,
     ) -> SandboxFileChange:
-        self._invalidate_validation(draft_node_id)
+        self._invalidate_validation(draft_node_id, path)
         result = await self._sandbox.write_text(
             self._session,
             path=self._node_path(draft_node_id, path),
@@ -111,7 +114,7 @@ class NodeAuthoringTools:
     ) -> SandboxPatchResult:
         if expected == "":
             raise AgentRuntimeError("Patch expected text must not be empty")
-        self._invalidate_validation(draft_node_id)
+        self._invalidate_validation(draft_node_id, path)
         result = await self._sandbox.replace_text(
             self._session,
             path=self._node_path(draft_node_id, path),
@@ -363,12 +366,37 @@ class NodeAuthoringTools:
                 f"Draft node {draft_node_id} is not assigned to run {self._lease.run_id}"
             )
 
-    def _invalidate_validation(self, draft_node_id: UUID) -> None:
+    def _invalidate_validation(
+        self,
+        draft_node_id: UUID,
+        path: str | None = None,
+    ) -> None:
         self._require_target(draft_node_id)
+        if path is not None and (
+            normalized_relative_path(path, label="Node project path") == "node.json"
+        ):
+            return
         self._validated_steps[draft_node_id].clear()
         self._proposed_release_ids.discard(draft_node_id)
 
 
+_ToolFunction = TypeVar("_ToolFunction", bound=Callable[..., object])
+
+
+def _model_visible_tool_errors(function: _ToolFunction) -> _ToolFunction:
+    @wraps(function)
+    async def wrapped(*args: object, **kwargs: object) -> object:
+        try:
+            return await function(*args, **kwargs)
+        except StaleAgentLeaseError:
+            raise
+        except (FileNotFoundError, AgentRuntimeError) as exc:
+            raise ModelRetry(str(exc)) from exc
+
+    return cast(_ToolFunction, wrapped)
+
+
+@_model_visible_tool_errors
 async def read_node_file(
     ctx: RunContext[NodeToolDependencies],
     draft_node_id: UUID,
@@ -378,6 +406,7 @@ async def read_node_file(
     return await ctx.deps.tools.read_file(draft_node_id, path)
 
 
+@_model_visible_tool_errors
 async def write_node_file(
     ctx: RunContext[NodeToolDependencies],
     draft_node_id: UUID,
@@ -388,6 +417,7 @@ async def write_node_file(
     return await ctx.deps.tools.write_file(draft_node_id, path, content)
 
 
+@_model_visible_tool_errors
 async def apply_node_patch(
     ctx: RunContext[NodeToolDependencies],
     draft_node_id: UUID,
@@ -404,6 +434,7 @@ async def apply_node_patch(
     )
 
 
+@_model_visible_tool_errors
 async def run_node_command(
     ctx: RunContext[NodeToolDependencies],
     draft_node_id: UUID,
@@ -418,6 +449,7 @@ async def run_node_command(
     )
 
 
+@_model_visible_tool_errors
 async def uv_add(
     ctx: RunContext[NodeToolDependencies],
     draft_node_id: UUID,
@@ -427,6 +459,7 @@ async def uv_add(
     return await ctx.deps.tools.uv_add(draft_node_id, tuple(packages))
 
 
+@_model_visible_tool_errors
 async def uv_lock(
     ctx: RunContext[NodeToolDependencies],
     draft_node_id: UUID,
@@ -435,6 +468,7 @@ async def uv_lock(
     return await ctx.deps.tools.uv_lock(draft_node_id)
 
 
+@_model_visible_tool_errors
 async def uv_sync(
     ctx: RunContext[NodeToolDependencies],
     draft_node_id: UUID,
@@ -443,6 +477,7 @@ async def uv_sync(
     return await ctx.deps.tools.uv_sync(draft_node_id)
 
 
+@_model_visible_tool_errors
 async def uv_test(
     ctx: RunContext[NodeToolDependencies],
     draft_node_id: UUID,
@@ -451,6 +486,7 @@ async def uv_test(
     return await ctx.deps.tools.uv_test(draft_node_id)
 
 
+@_model_visible_tool_errors
 async def request_node_capabilities(
     ctx: RunContext[NodeToolDependencies],
     draft_node_id: UUID,
@@ -465,6 +501,7 @@ async def request_node_capabilities(
     )
 
 
+@_model_visible_tool_errors
 async def propose_node_release(
     ctx: RunContext[NodeToolDependencies],
     draft_node_id: UUID,
@@ -492,8 +529,10 @@ def node_authoring_toolset() -> FunctionToolset[NodeToolDependencies]:
             "Each draft has a separate project under the shared environment. "
             "Use only the draft_node_id values assigned to this run. Keep node.json "
             "aligned with the implementation. Use uv for every dependency change. "
-            "Before proposing a release, run uv_lock, uv_sync, and uv_test and inspect "
-            "every non-zero exit. Request only capabilities the code actually needs."
+            "Before proposing a release, run uv_lock, uv_sync, and uv_test after the "
+            "last change to src/, tests/, pyproject.toml, or uv.lock, and inspect "
+            "every non-zero exit. Updating node.json alone does not require repeating "
+            "those steps. Request only capabilities the code actually needs."
         ),
         sequential=True,
     )

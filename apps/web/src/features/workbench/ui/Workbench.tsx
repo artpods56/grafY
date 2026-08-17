@@ -474,6 +474,7 @@ function WorkbenchBody({
       agentDraftHydrationControllersRef.current.clear();
       agentBuildReviewRequestRef.current?.abort();
     },
+    [],
   );
   const [selectedNodeIdSet, setSelectedNodeIdSet] =
     React.useState<ReadonlySet<string>>(new Set());
@@ -503,9 +504,15 @@ function WorkbenchBody({
       const measured = nodeMeasurements[node.id];
       const operatorKey =
         `${node.data.spec.operator_id}@${node.data.spec.operator_version}`;
+      const draftId = node.data.spec.agent_authoring?.draft_node_id;
+      const draftById = draftId
+        ? Object.values(generatedDraftsByOperator).find(
+            (draft) => draft.draftId === draftId,
+          )
+        : undefined;
       const generation = agentDraftProgressFromNodeSpec(
         node.data.spec,
-        generatedDraftsByOperator[operatorKey] ?? node.data.generation,
+        generatedDraftsByOperator[operatorKey] ?? draftById ?? node.data.generation,
       );
       return {
         ...node,
@@ -1253,6 +1260,7 @@ function WorkbenchBody({
       !progress.runId ||
       progress.state === "published" ||
       progress.state === "completed" ||
+      progress.state === "awaiting_approval" ||
       progress.state === "failed" ||
       progress.state === "cancelled" ||
       progress.state === "interrupted"
@@ -1292,7 +1300,6 @@ function WorkbenchBody({
     nodeId: string,
     draft: GeneratedNodeDraftSummary,
   ) => {
-    if (!draft.buildId) return;
     const node = nodesRef.current.find((candidate) => candidate.id === nodeId);
     agentBuildReviewRequestRef.current?.abort();
     const controller = new AbortController();
@@ -1309,9 +1316,35 @@ function WorkbenchBody({
       error: null,
     });
     try {
+      let resolved = draft;
+      if (!resolved.buildId) {
+        const detail = await getAgentDraft(
+          workspaceId,
+          draft.draftId,
+          controller.signal,
+        );
+        resolved = {
+          ...agentDraftProgressFromDetail(detail),
+          pendingAction: null,
+        };
+        updateGeneratedDraft(draft.draftId, () => resolved);
+        setAgentBuildReviewSession((current) => current?.draft.draftId === draft.draftId
+          ? { ...current, draft: resolved }
+          : current);
+      }
+      if (!resolved.buildId) {
+        setAgentBuildReviewSession((current) => current?.draft.draftId === draft.draftId
+          ? {
+              ...current,
+              loading: false,
+              error: "This generated node does not have a verified build to review yet.",
+            }
+          : current);
+        return;
+      }
       const review = await getAgentBuildReview(
         workspaceId,
-        draft.buildId,
+        resolved.buildId,
         controller.signal,
       );
       const selectedPath = review.changes[0]?.path ?? review.files[0]?.path ?? null;
@@ -1330,7 +1363,7 @@ function WorkbenchBody({
       }
       const selectedFile = await getAgentBuildReviewFile(
         workspaceId,
-        draft.buildId,
+        resolved.buildId,
         selectedPath,
         controller.signal,
       );
@@ -1338,19 +1371,26 @@ function WorkbenchBody({
         ? { ...current, selectedFile, fileLoading: false }
         : current);
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (
+        controller.signal.aborted &&
+        agentBuildReviewRequestRef.current !== controller
+      ) {
+        return;
+      }
       setAgentBuildReviewSession((current) => current?.draft.draftId === draft.draftId
         ? {
             ...current,
             loading: false,
             fileLoading: false,
-            error: error instanceof Error
-              ? error.message
-              : "Could not load this verified build.",
+            error: controller.signal.aborted
+              ? current.error
+              : error instanceof Error
+                ? error.message
+                : "Could not load this verified build.",
           }
         : current);
     }
-  }, [workspaceId]);
+  }, [updateGeneratedDraft, workspaceId]);
 
   const openGeneratedNodeIteration = React.useCallback((
     nodeId: string,
@@ -1452,14 +1492,21 @@ function WorkbenchBody({
           ? { ...current, selectedFile, fileLoading: false }
           : current);
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (
+        controller.signal.aborted &&
+        agentBuildReviewRequestRef.current !== controller
+      ) {
+        return;
+      }
       setAgentBuildReviewSession((current) => current
         ? {
             ...current,
             fileLoading: false,
-            error: error instanceof Error
-              ? error.message
-              : "Could not load this source file.",
+            error: controller.signal.aborted
+              ? current.error
+              : error instanceof Error
+                ? error.message
+                : "Could not load this source file.",
           }
         : current);
     }
@@ -1886,6 +1933,7 @@ function WorkbenchBody({
         }
         if (
           detail.latest_run.status !== "completed" &&
+          detail.latest_run.status !== "awaiting_approval" &&
           detail.latest_run.status !== "failed" &&
           detail.latest_run.status !== "cancelled" &&
           detail.latest_run.status !== "interrupted"

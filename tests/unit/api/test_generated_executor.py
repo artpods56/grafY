@@ -76,7 +76,7 @@ def execution_request() -> GeneratedNodeExecutionRequest:
         runtime_image_digest="e" * 64,
         profile_digest="f" * 64,
         runtime_artifact=RuntimeArtifactReference(
-            provider="daytona",
+            provider="docker-trusted-development",
             ref="snapshot/triple-v1",
             digest="0" * 64,
         ),

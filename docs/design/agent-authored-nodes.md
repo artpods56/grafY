@@ -176,10 +176,9 @@ package index. Tests and ordinary commands run with network access blocked.
 Runtime execution never resolves or installs dependencies.
 
 The current environment profile combines a provider-specific immutable base
-identity with its resource and network policy digest. Daytona can use configured
-snapshots; trusted-development Docker uses a configured image. Native
-OS-package installation, arbitrary package indexes, and user-provided base
-images are not implemented by this slice.
+identity with its resource and network policy digest. Trusted-development Docker
+uses a configured image. Native OS-package installation, arbitrary package
+indexes, and user-provided base images are not implemented by this slice.
 
 ## Coding agent and tools
 
@@ -339,24 +338,17 @@ flowchart TB
     Poller --> PAI["PydanticAI FunctionToolset"]
     PAI --> SandboxPort["SandboxWorkspacePort"]
     Executor["Signed execution endpoint"] --> SandboxPort
-    SandboxPort --> Providers["Daytona or trusted-development Docker"]
+    SandboxPort --> Providers["Trusted-development Docker"]
 ```
 
-Daytona is an implemented managed-provider candidate. It creates private, reusable
-sandboxes from configured snapshots, defaults to blocked egress, temporarily
-allows only configured package-index domains for validated `uv` commands, uses
-provider sessions for stable execution identity, and freezes verified snapshots
-for runtime use.
-
-Its dependency rebuild is wheel-only and lease revocation stops the whole
-sandbox before reuse or snapshotting. It is still provisional until those
-properties pass a live provider acceptance test, so the production Compose
-stack does not enable agent authoring.
-
 The Docker adapter is named `docker-trusted-development` and requires explicit
-opt-in. It exercises the same lifecycle locally but is not a production
-security boundary. The in-memory adapter exists for deterministic behavioral
-tests. No other sandbox providers are integrated in this prototype.
+opt-in. It creates one reusable container per environment, defaults to blocked
+egress, runs validated `uv` commands in a short-lived helper container with
+bridge networking, uses a lease-fence marker for execution identity, and freezes
+verified images for runtime use. It is not a production security boundary.
+
+The in-memory adapter exists for deterministic behavioral tests. No other
+sandbox providers are integrated in this prototype.
 
 ## Graph integration
 

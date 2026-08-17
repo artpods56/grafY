@@ -160,7 +160,7 @@ def _generated_release() -> NodeRelease:
     )
     capabilities = CapabilityManifest()
     runtime_artifact = RuntimeArtifactReference(
-        provider="daytona",
+        provider="docker-trusted-development",
         ref="snapshot/triple-values-v1",
         digest="8" * 64,
     )

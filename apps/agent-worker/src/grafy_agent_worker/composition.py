@@ -5,8 +5,6 @@ from uvicorn import Config, Server
 from grafy_agent.ports import SandboxWorkspacePort
 from grafy_agent.pydantic_ai_agent import CodingAgentSettings, PydanticAICodingAgent
 from grafy_agent_worker.sandbox import (
-    DaytonaSandboxSettings,
-    DaytonaSandboxWorkspace,
     DockerSandboxSettings,
     DockerSandboxWorkspace,
 )
@@ -51,11 +49,6 @@ async def run_worker() -> None:
         s3_force_path_style=settings.s3_force_path_style,
     )
     providers: dict[str, SandboxWorkspacePort] = {}
-    daytona: DaytonaSandboxWorkspace | None = None
-    daytona_settings = DaytonaSandboxSettings()
-    if daytona_settings.api_key is not None:
-        daytona = DaytonaSandboxWorkspace(daytona_settings)
-        providers["daytona"] = daytona
     docker_settings = DockerSandboxSettings()
     if docker_settings.trusted_development_enabled:
         docker = DockerSandboxWorkspace(docker_settings)
@@ -63,8 +56,8 @@ async def run_worker() -> None:
     if not providers:
         await database.dispose()
         raise RuntimeError(
-            "No agent sandbox provider is configured; set Daytona credentials or "
-            "explicitly enable the trusted-development Docker adapter"
+            "No agent sandbox provider is configured; set "
+            "GRAFY_AGENT_DOCKER_TRUSTED_DEVELOPMENT_ENABLED=true"
         )
     worker = AgentWorker(
         settings=settings,
@@ -116,8 +109,6 @@ async def run_worker() -> None:
         for task in done:
             task.result()
     finally:
-        if daytona is not None:
-            await daytona.close()
         await database.dispose()
 
 

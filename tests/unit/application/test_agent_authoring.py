@@ -470,7 +470,7 @@ def build_artifacts() -> BuildArtifactSet:
         runtime_image_digest="6" * 64,
         profile_digest="7" * 64,
         runtime_artifact=RuntimeArtifactReference(
-            provider="daytona",
+            provider="docker-trusted-development",
             ref="snapshot-generated-node-v1",
             digest="8" * 64,
         ),
@@ -485,7 +485,7 @@ async def ready_environment(
         workspace_id=WORKSPACE_ID,
         name="Python agent",
         profile_id="python-3.12-uv",
-        provider="daytona",
+        provider="docker-trusted-development",
         created_by_user_id=USER_ID,
     )
     claim = await service.claim_environment_provisioning(
@@ -1102,7 +1102,7 @@ async def test_provisioning_lease_is_reclaimable_and_fenced() -> None:
         workspace_id=WORKSPACE_ID,
         name="Python agent",
         profile_id="python-3.12-uv",
-        provider="daytona",
+        provider="docker-trusted-development",
         created_by_user_id=USER_ID,
     )
 

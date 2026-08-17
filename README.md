@@ -55,9 +55,7 @@ flowchart LR
   for execution and saved-graph CRUD under `/v1`.
 - `apps/agent-worker` owns the durable coding-agent loop and the private,
   HMAC-authenticated generated-node execution endpoint. The verified prototype
-  uses the explicitly enabled trusted-development Docker adapter. A managed
-  Daytona adapter exists, but remains provisional until its whole-sandbox
-  revocation and snapshot behavior pass a live provider acceptance test.
+  uses the explicitly enabled trusted-development Docker adapter.
 - `libs/agent` owns the provider-independent authoring tools, coding-agent
   contracts, source verification, and sandbox boundary.
 - `libs/core/src/grafy_core` owns artifacts, nodes, ports, projections,

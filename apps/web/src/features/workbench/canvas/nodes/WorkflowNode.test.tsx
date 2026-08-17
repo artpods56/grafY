@@ -1144,6 +1144,34 @@ describe("WorkflowNode header", () => {
     React.act(() => node.root.unmount());
   });
 
+  it("keeps review and approve visible without selecting the node", () => {
+    const data = createWorkflowNodeData(chatCompletionSpec());
+    data.generation = {
+      draftId: "draft-1",
+      runId: "run-1",
+      buildId: "build-1",
+      threadId: "thread-1",
+      environmentId: "environment-1",
+      state: "awaiting_approval",
+      error: null,
+      capabilities: null,
+      capabilityDigest: "a".repeat(64),
+      capabilityApprovalId: null,
+      releaseRevision: null,
+      targetOperatorVersion: 1,
+      lastEventSequence: 9,
+    };
+    data.onReviewGeneratedNode = vi.fn();
+    const node = renderNode("generated", data, false);
+
+    expect(
+      node.container.querySelector('[aria-label^="Review generated build"]'),
+    ).not.toBeNull();
+    expect(node.container.textContent).toContain("awaiting approval");
+
+    React.act(() => node.root.unmount());
+  });
+
   it("keeps the published version runnable while showing the next revision", () => {
     const spec = {
       ...chatCompletionSpec(),

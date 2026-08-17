@@ -57,30 +57,21 @@ def test_execution_backend_can_be_selected_from_the_environment(
     assert Settings().execution_backend == "inline"
 
 
-def test_agent_environment_provider_defaults_to_daytona(
+def test_agent_environment_provider_defaults_to_docker_trusted_development(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("GRAFY_AGENT_ENVIRONMENT_PROVIDER", raising=False)
 
     settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
 
-    assert settings.agent_environment_provider == "daytona"
-
-
-def test_trusted_development_agent_provider_requires_explicit_configuration(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(
-        "GRAFY_AGENT_ENVIRONMENT_PROVIDER",
-        "docker-trusted-development",
-    )
-
-    assert Settings().agent_environment_provider == "docker-trusted-development"
+    assert settings.agent_environment_provider == "docker-trusted-development"
 
 
 def test_agent_environment_provider_rejects_unowned_aliases() -> None:
     with pytest.raises(ValidationError):
         Settings.model_validate({"agent_environment_provider": "docker"})
+    with pytest.raises(ValidationError):
+        Settings.model_validate({"agent_environment_provider": "daytona"})
 
 
 def test_generated_executor_requires_paired_https_url_and_hmac_key() -> None:

@@ -263,7 +263,7 @@ def release_proposal(
         runtime_image_digest="e" * 64,
         profile_digest="f" * 64,
         runtime_artifact=SandboxRuntimeArtifact(
-            provider="daytona",
+            provider="docker-trusted-development",
             reference="snapshot:generated-node",
             digest="a" * 64,
         ),

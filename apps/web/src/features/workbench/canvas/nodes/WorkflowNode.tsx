@@ -326,6 +326,10 @@ const s = stylex.create({
     fontSize: "10px",
     fontWeight: 650,
   },
+  generationReview: {
+    cursor: "pointer",
+    fontFamily: "inherit",
+  },
   generationAction: {
     flexShrink: 0,
     minHeight: "22px",
@@ -3395,7 +3399,7 @@ function NodeHeader({
     : false;
   const canReviewGeneration = Boolean(
     generation?.state === "awaiting_approval" &&
-      generation.buildId &&
+      generation.draftId &&
       data.onReviewGeneratedNode,
   );
   const canIterateGeneration = Boolean(
@@ -3438,6 +3442,18 @@ function NodeHeader({
             </button>
           ) : null}
         </>
+      }
+      overflowItems={
+        canReviewGeneration && generation
+          ? [
+              {
+                id: "review-generated-build",
+                label: "Review & approve",
+                icon: <Sparkles size={13} />,
+                onClick: () => data.onReviewGeneratedNode?.(id, generation),
+              },
+            ]
+          : undefined
       }
       onRemove={() => data.onRemoveNode?.(id)}
       status={
@@ -3491,25 +3507,26 @@ function NodeHeader({
       }
     >
       {generation ? (
-        <span
-          title={generation.error ?? `Generated node draft: ${generation.state}`}
-          {...stylex.props(s.generationBadge)}
-        >
-          <Sparkles size={10} />
-          Revision {generation.targetOperatorVersion} · {generation.state.replaceAll("_", " ")}
-        </span>
-      ) : null}
-      {canReviewGeneration && generation ? (
-        <button
-          type="button"
-          aria-label={`Review generated build for ${data.spec.title}`}
-          title="Inspect tested source and requested capabilities"
-          {...nodeInteractionProps(stylex.props(s.generationAction))}
-          onClick={() => data.onReviewGeneratedNode?.(id, generation)}
-        >
-          <Sparkles size={10} />
-          Review build
-        </button>
+        canReviewGeneration ? (
+          <button
+            type="button"
+            aria-label={`Review generated build for ${data.spec.title}`}
+            title="Inspect tested source, then approve capabilities"
+            {...nodeInteractionProps(stylex.props(s.generationBadge, s.generationReview))}
+            onClick={() => data.onReviewGeneratedNode?.(id, generation)}
+          >
+            <Sparkles size={10} />
+            Revision {generation.targetOperatorVersion} · awaiting approval
+          </button>
+        ) : (
+          <span
+            title={generation.error ?? `Generated node draft: ${generation.state}`}
+            {...stylex.props(s.generationBadge)}
+          >
+            <Sparkles size={10} />
+            Revision {generation.targetOperatorVersion} · {generation.state.replaceAll("_", " ")}
+          </span>
+        )
       ) : null}
       {canIterateGeneration && data.generation ? (
         <button

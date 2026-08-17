@@ -63,12 +63,13 @@ function subscribeSystemDark(listener: () => void): () => void {
   return () => media.removeEventListener("change", listener);
 }
 
-function applyColorScheme(preference: ThemePreference) {
-  if (preference === "system") {
-    document.documentElement.style.removeProperty("color-scheme");
-    return;
-  }
-  document.documentElement.style.colorScheme = preference;
+function applyResolvedTheme(resolved: ResolvedTheme) {
+  const root = document.documentElement;
+  // StyleX tokens store `light-dark()` inside CSS variables. Engines treat
+  // that as an invalid color (transparent fills) when the used scheme is the
+  // dual `light dark` value from `:root`. Always pin a single scheme.
+  root.style.colorScheme = resolved;
+  root.dataset.theme = resolved;
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
@@ -87,8 +88,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     preference === "system" ? (systemDark ? "dark" : "light") : preference;
 
   React.useEffect(() => {
-    applyColorScheme(preference);
-  }, [preference]);
+    applyResolvedTheme(resolved);
+  }, [resolved]);
 
   const setPreference = React.useCallback((next: ThemePreference) => {
     writeStoredPreference(next);

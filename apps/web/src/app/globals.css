@@ -275,11 +275,11 @@
   }
 }
 
-:root[style*="color-scheme: light"] {
+:root[data-theme="light"] {
   --grafy-brand-filter: none;
 }
 
-:root[style*="color-scheme: dark"] {
+:root[data-theme="dark"] {
   --grafy-brand-filter: invert(1);
 }
 

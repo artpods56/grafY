@@ -860,3 +860,77 @@ def test_direct_0007_downgrade_refuses_identity_data_but_allows_empty_bootstrap(
     command.upgrade(empty_config, "0007_identity_workspace_foundation")
     command.downgrade(empty_config, "0006_execution_history")
     get_settings.cache_clear()
+
+
+def test_retire_daytona_provider_rewrites_failed_environments(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = tmp_path / "daytona-retire" / "migrated.sqlite3"
+    monkeypatch.setenv(
+        "GRAFY_DATABASE_URL",
+        f"sqlite+aiosqlite:///{database_path}",
+    )
+    get_settings.cache_clear()
+    config = Config(REPOSITORY_ROOT / "alembic.ini")
+    command.upgrade(config, "0013_agent_authoring")
+
+    failed_id = "94c5ff29131445c1907906767b606642"
+    ready_id = "a4c5ff29131445c1907906767b606643"
+    with create_engine(f"sqlite:///{database_path}").begin() as connection:
+        workspace_id = connection.execute(
+            text("SELECT id FROM workspaces LIMIT 1")
+        ).scalar_one()
+        connection.execute(
+            text(
+                "INSERT INTO agent_environments "
+                "(id, workspace_id, name, profile_id, provider, status, "
+                "provider_environment_id, provisioning_fencing_token, "
+                "failure_message, created_at, updated_at) VALUES "
+                "(:id, :workspace_id, :name, 'python-uv', 'daytona', :status, "
+                ":provider_environment_id, 1, :failure_message, "
+                ":created_at, :updated_at)"
+            ),
+            [
+                {
+                    "id": failed_id,
+                    "workspace_id": workspace_id,
+                    "name": "Failed Daytona lab",
+                    "status": "failed",
+                    "provider_environment_id": None,
+                    "failure_message": "No sandbox provider is configured for 'daytona'",
+                    "created_at": "2026-08-17 14:00:00",
+                    "updated_at": "2026-08-17 14:00:00",
+                },
+                {
+                    "id": ready_id,
+                    "workspace_id": workspace_id,
+                    "name": "Ready Daytona lab",
+                    "status": "ready",
+                    "provider_environment_id": "sandbox-keep",
+                    "failure_message": None,
+                    "created_at": "2026-08-17 14:00:00",
+                    "updated_at": "2026-08-17 14:00:00",
+                },
+            ],
+        )
+
+    command.upgrade(config, "head")
+    with create_engine(f"sqlite:///{database_path}").connect() as connection:
+        rows = {
+            row["id"]: row
+            for row in connection.execute(
+                text(
+                    "SELECT id, provider, status, failure_message, "
+                    "provider_environment_id FROM agent_environments"
+                )
+            ).mappings()
+        }
+        assert rows[failed_id]["provider"] == "docker-trusted-development"
+        assert rows[failed_id]["status"] == "provisioning"
+        assert rows[failed_id]["failure_message"] is None
+        assert rows[ready_id]["provider"] == "docker-trusted-development"
+        assert rows[ready_id]["status"] == "ready"
+        assert rows[ready_id]["provider_environment_id"] == "sandbox-keep"
+
+    get_settings.cache_clear()

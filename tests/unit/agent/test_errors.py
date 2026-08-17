@@ -16,7 +16,7 @@ def test_terminal_error_redacts_quoted_headers_and_credentials() -> None:
         "query-secret"
     )
 
-    rendered = terminal_error("Daytona sandbox request", error)
+    rendered = terminal_error("Sandbox request", error)
 
     assert "bearer-secret" not in rendered
     assert "api-key-secret" not in rendered

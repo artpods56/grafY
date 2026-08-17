@@ -96,7 +96,7 @@ def release(
     )
     effective_capabilities = capabilities or CapabilityManifest()
     runtime_artifact = RuntimeArtifactReference(
-        provider="daytona",
+        provider="docker-trusted-development",
         ref="snapshot/triple-values-v1",
         digest=DIGESTS[7],
     )

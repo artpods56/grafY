@@ -216,9 +216,9 @@ export function CanvasNodeHeader({
         {title}
       </span>
       {status}
+      {children}
       {selected ? (
         <>
-          {children}
           <Popover.Root>
             <Popover.Trigger
               type="button"

@@ -184,9 +184,20 @@ export function agentDraftProgressFromNodeSpec(
     const publishedVersionIsCurrent =
       authoring.runnable &&
       current.targetOperatorVersion <= spec.operator_version;
+    const catalogOwnsCurrentRevision =
+      current.targetOperatorVersion <= spec.operator_version;
+    const catalogIsSettled =
+      authoring.status === "awaiting_approval" ||
+      authoring.status === "failed" ||
+      authoring.status === "cancelled" ||
+      authoring.status === "published";
     return {
       ...current,
-      state: publishedVersionIsCurrent ? "published" : current.state,
+      state: publishedVersionIsCurrent
+        ? "published"
+        : catalogOwnsCurrentRevision && catalogIsSettled
+          ? authoring.status
+          : current.state,
       releaseRevision:
         authoring.release_revision ?? current.releaseRevision,
     };
@@ -487,6 +498,7 @@ function isAgentEvent(value: unknown): value is AgentEvent {
 
 function agentRunIsTerminal(status: AgentRunStatus | null): boolean {
   return status === "completed" ||
+    status === "awaiting_approval" ||
     status === "failed" ||
     status === "cancelled" ||
     status === "interrupted";

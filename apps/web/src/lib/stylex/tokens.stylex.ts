@@ -5,7 +5,9 @@ import * as stylex from "@stylexjs/stylex";
  *
  * Monochrome, graph-native system: near-black ink, white surfaces, neutral
  * gray hierarchy. Color tokens use CSS `light-dark()` so the active palette
- * follows `document.documentElement.style.colorScheme` (set by ThemeProvider).
+ * follows the resolved `color-scheme` on `<html>` (`light` or `dark` — never
+ * the dual `light dark` value, which makes `light-dark()` inside these
+ * variables compute to transparent).
  */
 export const tokens = stylex.defineVars({
   // surfaces

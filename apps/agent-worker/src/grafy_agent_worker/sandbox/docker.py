@@ -26,71 +26,12 @@ from grafy_agent.models import (
     SandboxWorkspace,
     normalized_relative_path,
 )
+from grafy_agent_worker.sandbox.guest import program
 from grafy_core.source_bundles import read_source_bundle
 from grafy_core.domain.agent_authoring import RuntimeLimits
 
 
 _CONTAINER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
-_READ_SCRIPT = """import pathlib,sys
-p=pathlib.Path(sys.argv[1])
-limit=int(sys.argv[2])
-data=p.read_bytes()
-if len(data)>limit: raise RuntimeError(f'file exceeds {limit} bytes')
-sys.stdout.buffer.write(data)
-"""
-_WRITE_SCRIPT = """import json,os,pathlib,sys,tempfile
-p=pathlib.Path(sys.argv[1])
-limit=int(sys.argv[2])
-data=sys.stdin.buffer.read(limit+1)
-if len(data)>limit: raise RuntimeError(f'content exceeds {limit} bytes')
-p.parent.mkdir(parents=True,exist_ok=True)
-created=not p.exists()
-fd,tmp=tempfile.mkstemp(dir=p.parent,prefix=f'.{p.name}.')
-try:
- os.write(fd,data); os.fsync(fd); os.close(fd); os.replace(tmp,p)
-except BaseException:
- try: os.close(fd)
- except OSError: pass
- try: os.unlink(tmp)
- except OSError: pass
- raise
-print(json.dumps({'created':created,'byte_count':len(data)}))
-"""
-_PATCH_SCRIPT = """import json,os,pathlib,sys,tempfile
-p=pathlib.Path(sys.argv[1]); limit=int(sys.argv[2])
-request=json.loads(sys.stdin.buffer.read(limit*2+4096))
-data=p.read_text(encoding='utf-8'); expected=request['expected']; replacement=request['replacement']
-count=data.count(expected)
-if count!=1: raise RuntimeError(f'expected exactly one match but found {count}')
-updated=data.replace(expected,replacement,1); raw=updated.encode()
-if len(raw)>limit: raise RuntimeError(f'patched file exceeds {limit} bytes')
-fd,tmp=tempfile.mkstemp(dir=p.parent,prefix=f'.{p.name}.')
-try:
- os.write(fd,raw); os.fsync(fd); os.close(fd); os.replace(tmp,p)
-except BaseException:
- try: os.close(fd)
- except OSError: pass
- try: os.unlink(tmp)
- except OSError: pass
- raise
-print(json.dumps({'replacements':1,'byte_count':len(raw)}))
-"""
-_FENCE_EXEC_SCRIPT = """import os,pathlib,sys
-marker=pathlib.Path(sys.argv[1]); expected=sys.argv[2]
-if marker.read_text(encoding='utf-8')!=expected: raise RuntimeError('sandbox lease fence is stale')
-os.execvp(sys.argv[3],sys.argv[3:])
-"""
-_WRITE_MARKER_SCRIPT = """import os,pathlib,sys,tempfile
-p=pathlib.Path(sys.argv[1]); data=sys.argv[2].encode(); p.parent.mkdir(parents=True,exist_ok=True)
-fd,tmp=tempfile.mkstemp(dir=p.parent,prefix='.fence-')
-try: os.write(fd,data); os.fsync(fd); os.close(fd); os.replace(tmp,p)
-except BaseException:
- try: os.close(fd)
- except OSError: pass
- try: os.unlink(tmp)
- except OSError: pass
- raise
-"""
 
 
 class _WriteResponse(BaseModel):
@@ -325,7 +266,7 @@ class DockerSandboxWorkspace:
         marker = self._session_marker(session)
         written = await self._raw_docker_exec(
             workspace,
-            ("python3", "-c", _WRITE_MARKER_SCRIPT, marker, self._fence_value(session)),
+            self._guest("write_marker", marker, self._fence_value(session)),
             cwd=workspace.root,
             stdin=None,
             timeout_seconds=30.0,
@@ -360,13 +301,7 @@ class DockerSandboxWorkspace:
         marker = self._session_marker_for(workspace, provider_session_id)
         revoked = await self._raw_docker_exec(
             workspace,
-            (
-                "python3",
-                "-c",
-                _WRITE_MARKER_SCRIPT,
-                marker,
-                f"revoked:{provider_session_id}",
-            ),
+            self._guest("write_marker", marker, f"revoked:{provider_session_id}"),
             cwd=workspace.root,
             stdin=None,
             timeout_seconds=30.0,
@@ -517,12 +452,6 @@ class DockerSandboxWorkspace:
             )
         freezer = f"grafy-freeze-{sha256(artifact_name.encode()).hexdigest()[:24]}"
         volume = f"{session.workspace.provider_environment_id}-workspace"
-        copy_script = (
-            "import pathlib,shutil; "
-            "source=pathlib.Path('/source/node'); "
-            "target=pathlib.Path('/opt/grafy-runtime/node'); "
-            "shutil.copytree(source,target,symlinks=True)"
-        )
         created = await self._run_host(
             (
                 self._settings.executable,
@@ -539,9 +468,11 @@ class DockerSandboxWorkspace:
                 "--volume",
                 f"{volume}:/source:ro",
                 self._settings.image,
-                "python3",
-                "-c",
-                copy_script,
+                *self._guest(
+                    "copy_runtime_tree",
+                    "/source/node",
+                    "/opt/grafy-runtime/node",
+                ),
             ),
             stdin=None,
             timeout_seconds=60.0,
@@ -696,10 +627,8 @@ class DockerSandboxWorkspace:
         normalized = normalized_relative_path(path)
         result = await self._docker_exec(
             session,
-            (
-                "python3",
-                "-c",
-                _READ_SCRIPT,
+            self._guest(
+                "read_text",
                 f"{workspace.root}/{normalized}",
                 str(max_bytes),
             ),
@@ -747,10 +676,8 @@ class DockerSandboxWorkspace:
             )
         result = await self._docker_exec(
             session,
-            (
-                "python3",
-                "-c",
-                _WRITE_SCRIPT,
+            self._guest(
+                "write_text",
                 f"{workspace.root}/{normalized}",
                 str(max_bytes),
             ),
@@ -787,10 +714,8 @@ class DockerSandboxWorkspace:
             raise SandboxOperationError("Patch request exceeds its bounded input size")
         result = await self._docker_exec(
             session,
-            (
-                "python3",
-                "-c",
-                _PATCH_SCRIPT,
+            self._guest(
+                "replace_text",
                 f"{workspace.root}/{normalized}",
                 str(max_bytes),
             ),
@@ -850,22 +775,9 @@ class DockerSandboxWorkspace:
         normalized = normalized_relative_path(path)
         result = await self._docker_exec(
             session,
-            (
-                "tar",
-                "--sort=name",
-                "--mtime=@0",
-                "--owner=0",
-                "--group=0",
-                "--numeric-owner",
-                "-C",
+            self._guest(
+                "archive_reviewable_tree",
                 f"{workspace.root}/{normalized}",
-                "-czf",
-                "-",
-                "pyproject.toml",
-                "uv.lock",
-                "node.json",
-                "src",
-                "tests",
             ),
             cwd=workspace.root,
             stdin=None,
@@ -938,11 +850,11 @@ class DockerSandboxWorkspace:
         self._require_session(session)
         workspace = session.workspace
         guarded = (
-            "python3",
-            "-c",
-            _FENCE_EXEC_SCRIPT,
-            self._session_marker(session),
-            self._fence_value(session),
+            *self._guest(
+                "fence_exec",
+                self._session_marker(session),
+                self._fence_value(session),
+            ),
             *command,
         )
         return await self._raw_docker_exec(
@@ -1018,11 +930,11 @@ class DockerSandboxWorkspace:
                 "--workdir",
                 f"{workspace.root}/{request.cwd}",
                 self._settings.image,
-                "python3",
-                "-c",
-                _FENCE_EXEC_SCRIPT,
-                self._session_marker(session),
-                self._fence_value(session),
+                *self._guest(
+                    "fence_exec",
+                    self._session_marker(session),
+                    self._fence_value(session),
+                ),
                 "timeout",
                 "--signal=KILL",
                 f"{request.timeout_seconds}s",
@@ -1154,6 +1066,10 @@ class DockerSandboxWorkspace:
             duration_ms=int((monotonic() - started) * 1_000),
             output_truncated=stdout_truncated or stderr_truncated,
         )
+
+    @staticmethod
+    def _guest(name: str, *args: str) -> tuple[str, ...]:
+        return ("python3", "-c", program(name), *args)
 
     @staticmethod
     def _require_success(result: _HostCommandResult, operation: str) -> None:

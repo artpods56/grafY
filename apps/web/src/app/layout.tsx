@@ -35,10 +35,12 @@ export const metadata: Metadata = {
 const themeScript = `
 (function () {
   try {
-    var theme = localStorage.getItem("grafy-theme") || localStorage.getItem("ns-theme");
-    if (theme === "light" || theme === "dark") {
-      document.documentElement.style.colorScheme = theme;
-    }
+    var stored = localStorage.getItem("grafy-theme") || localStorage.getItem("ns-theme");
+    var theme = stored === "light" || stored === "dark"
+      ? stored
+      : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.style.colorScheme = theme;
+    document.documentElement.dataset.theme = theme;
   } catch (e) {}
 })();
 `;

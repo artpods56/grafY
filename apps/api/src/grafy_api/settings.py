@@ -62,10 +62,9 @@ class Settings(BaseSettings):
     database_url: SecretStr | None = None
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     execution_backend: Literal["prefect", "inline"] = "prefect"
-    agent_environment_provider: Literal[
-        "daytona",
-        "docker-trusted-development",
-    ] = "daytona"
+    agent_environment_provider: Literal["docker-trusted-development"] = (
+        "docker-trusted-development"
+    )
     generated_executor_url: str | None = None
     generated_executor_hmac_key: SecretStr | None = None
     generated_executor_allow_insecure_http: bool = False
