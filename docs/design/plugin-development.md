@@ -5,7 +5,7 @@
 > one. It describes the *current* committed structure as built — the contracts
 > and conventions the codebase already enforces. The intended unification with
 > agent-authored, isolated Plugins is
-> [plugin unification](plugin-unification.md).
+> [workspace plugins](workspace-plugins/README.md).
 
 - **Audience:** contributors adding nodes, artifact types, conversions,
   resolvers, or writers to Grafy.

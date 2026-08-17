@@ -31,6 +31,7 @@ members = [
     "plugins/ocr",
     "plugins/gis",
     "plugins/sql",
+    "examples/plugin-notes",
     "apps/api",
     "apps/agent-worker",
     "apps/mcp",
@@ -46,12 +47,14 @@ grafy-persistence = { workspace = true }
 grafy-plugin-llm = { workspace = true }
 grafy-plugin-ocr = { workspace = true }
 grafy-plugin-gis = { workspace = true }
+grafy-plugin-notes = { workspace = true }
 grafy-plugin-sql = { workspace = true }
 grafy-storage = { workspace = true }
 
 [dependency-groups]
 dev = [
     "basedpyright>=1.36.2",
+    "grafy-plugin-notes",
     "httpx>=0.28.0",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.3.0",
@@ -72,6 +75,7 @@ include = [
     "plugins/ocr/*",
     "plugins/gis/*",
     "plugins/sql/*",
+    "examples/plugin-notes/*",
     "apps/api/*",
     "apps/agent-worker/*",
     "apps/mcp/*",
@@ -92,6 +96,7 @@ executionEnvironments = [
         "plugins/ocr/src",
         "plugins/gis/src",
         "plugins/sql/src",
+        "examples/plugin-notes/src",
         "apps/api/src",
         "apps/agent-worker/src",
         "apps/mcp/src",

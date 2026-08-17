@@ -16,6 +16,7 @@ members = [
     "grafy-persistence",
     "grafy-plugin-gis",
     "grafy-plugin-llm",
+    "grafy-plugin-notes",
     "grafy-plugin-ocr",
     "grafy-plugin-sql",
     "grafy-storage",
@@ -868,6 +869,21 @@ requires-dist = [
 ]
 
 [[package]]
+name = "grafy-plugin-notes"
+version = "0.1.0"
+source = { editable = "examples/plugin-notes" }
+dependencies = [
+    { name = "grafy-core" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "grafy-core", editable = "libs/core" },
+    { name = "pydantic" },
+]
+
+[[package]]
 name = "grafy-plugin-ocr"
 version = "0.1.0"
 source = { editable = "plugins/ocr" }
@@ -952,6 +968,7 @@ sql = [
 [package.dev-dependencies]
 dev = [
     { name = "basedpyright" },
+    { name = "grafy-plugin-notes" },
     { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -976,6 +993,7 @@ provides-extras = ["gis", "llm", "ocr", "sql"]
 [package.metadata.requires-dev]
 dev = [
     { name = "basedpyright", specifier = ">=1.36.2" },
+    { name = "grafy-plugin-notes", editable = "examples/plugin-notes" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },

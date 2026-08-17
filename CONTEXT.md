@@ -262,7 +262,7 @@ to own its projection and artifact conversion path.
 An installable uv-managed project that groups nodes, artifact types, artifact
 conversions, and the resolver/writer factories those types require under one
 stable slug. Intended execution is an isolated freeze (see
-[plugin unification](docs/design/plugin-unification.md)), not an import into
+[plugin unification](docs/design/workspace-plugins/README.md)), not an import into
 the API process.
 
 The host currently still loads monorepo plugins in-process: it assigns every

@@ -5,8 +5,9 @@
 - **Audience:** Engineers implementing canvas generation, agent authoring,
   sandbox environments, publication, and generated-node execution
 - **Document type:** Explanation — implemented architecture and boundaries
-- **Related:** [plugin unification](plugin-unification.md) (intended Plugin
-  identity), [node discovery interaction](node-discovery-interaction.md),
+- **Related:** [workspace plugins](workspace-plugins/README.md) (intended
+  Plugin identity and canvas islands),
+  [node discovery interaction](node-discovery-interaction.md),
   [backend architecture](backend-architecture.md),
   [realtime Workbench collaboration](workbench-realtime-collaboration.md)
 
@@ -29,7 +30,7 @@ without restarting the API.
 
 That one-off identity is the implemented prototype. The intended grouping is a
 uv-managed **Plugin** that can hold one node or many; see
-[plugin unification](plugin-unification.md).
+[workspace plugins](workspace-plugins/README.md).
 
 ```mermaid
 flowchart LR

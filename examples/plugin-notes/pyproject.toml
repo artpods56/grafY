@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grafy-plugin-notes"
+version = "0.1.0"
+requires-python = "==3.12.9"
+dependencies = [
+    "grafy-core",
+    "pydantic",
+]
+description = "Example Workspace Plugin: uv project, no host entry point"
+
+# Intentionally no [project.entry-points."grafy.plugins"]. FastAPI must not
+# import this package. Publication is a freeze of this tree, not sys.path.
+
+[tool.uv.sources]
+grafy-core = { workspace = true }
+
+[tool.basedpyright]
+extends = "../../pyproject.toml"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
