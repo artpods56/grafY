@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Final, cast, final, override
+from urllib.parse import urlparse
 from uuid import UUID
 
 from openai import (
@@ -60,6 +61,54 @@ OPENAI_COMPATIBLE_SUPPORTED_IMAGE_CONTENT_TYPES: Final = frozenset(
         "image/webp",
     }
 )
+
+
+def _provider_status_guidance(
+    status_code: int,
+    *,
+    base_url: str,
+    model: str,
+) -> str:
+    if status_code == 400:
+        return (
+            "The provider rejected the request. Check whether the model "
+            "supports the supplied messages, including images, and "
+            "strict JSON Schema response formatting."
+        )
+    if status_code == 401:
+        guidance = (
+            "The provider did not accept the configured API key. The key must "
+            "be issued by the API at the configured base URL."
+        )
+        host = (urlparse(base_url).hostname or "").lower()
+        if host == "api.openai.com" and "/" in model:
+            return (
+                f"{guidance} Vendor-prefixed model ids are usually served by a "
+                "gateway such as OpenRouter, not by api.openai.com."
+            )
+        return guidance
+    if status_code == 402:
+        return (
+            "The provider requires additional credits or quota for this "
+            "request."
+        )
+    if status_code == 403:
+        return (
+            "The configured API key does not have access to this model "
+            "or endpoint."
+        )
+    if status_code == 404:
+        return "Check that the base URL and model identifier are correct."
+    if status_code == 408:
+        return "The provider timed out while processing the request."
+    if status_code == 429:
+        return "The provider rate limit or account quota was exceeded."
+    if 500 <= status_code <= 599:
+        return (
+            "The provider is currently unavailable or failed while "
+            "processing the request."
+        )
+    return "The provider rejected the request."
 
 
 @final
@@ -224,37 +273,11 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
                 f"{config.model!r}"
             ) from None
         except APIStatusError as exc:
-            if exc.status_code == 400:
-                guidance = (
-                    "The provider rejected the request. Check whether the model "
-                    "supports the supplied messages, including images, and "
-                    "strict JSON Schema response formatting."
-                )
-            elif exc.status_code == 401:
-                guidance = "The provider did not accept the configured API key."
-            elif exc.status_code == 402:
-                guidance = (
-                    "The provider requires additional credits or quota for this "
-                    "request."
-                )
-            elif exc.status_code == 403:
-                guidance = (
-                    "The configured API key does not have access to this model "
-                    "or endpoint."
-                )
-            elif exc.status_code == 404:
-                guidance = "Check that the base URL and model identifier are correct."
-            elif exc.status_code == 408:
-                guidance = "The provider timed out while processing the request."
-            elif exc.status_code == 429:
-                guidance = "The provider rate limit or account quota was exceeded."
-            elif 500 <= exc.status_code <= 599:
-                guidance = (
-                    "The provider is currently unavailable or failed while "
-                    "processing the request."
-                )
-            else:
-                guidance = "The provider rejected the request."
+            guidance = _provider_status_guidance(
+                exc.status_code,
+                base_url=config.base_url,
+                model=config.model,
+            )
             raise OpenAICompatibleProviderError(
                 f"Chat Completions request to {endpoint!r} returned HTTP "
                 f"{exc.status_code} for model {config.model!r}. {guidance}"

@@ -502,7 +502,7 @@ async def test_provider_error_never_contains_response_body_or_api_key(
     ("status_code", "expected_guidance"),
     [
         (400, "supplied messages, including images.*strict JSON Schema"),
-        (401, "configured API key"),
+        (401, "configured API key.*base URL.*OpenRouter"),
         (402, "additional credits or quota"),
         (403, "does not have access"),
         (404, "base URL and model identifier"),
@@ -540,6 +540,83 @@ async def test_provider_status_errors_include_safe_actionable_guidance(
     assert "provider/model" in message
     assert api_key not in message
     assert echoed_body not in message
+    assert captured.value.__cause__ is None
+
+
+async def test_provider_401_on_openai_host_hints_gateway_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = sdk_provider(
+        monkeypatch,
+        RequestRecorder(httpx.Response(401, text="unauthorized")),
+    )
+
+    with pytest.raises(OpenAICompatibleProviderError) as captured:
+        await provider.complete(
+            [PromptMessage(role=PromptMessageRole.USER, text="Complete it.")],
+            None,
+            OpenAICompatibleConfig(model="openai/gpt-5.6-luna"),
+            SecretStr("secret-provider-key"),
+            workspace_id=WORKSPACE_ID,
+        )
+
+    message = str(captured.value)
+    assert "HTTP 401" in message
+    assert "https://api.openai.com/v1/chat/completions" in message
+    assert "openai/gpt-5.6-luna" in message
+    assert "issued by the API at the configured base URL" in message
+    assert "OpenRouter" in message
+    assert captured.value.__cause__ is None
+
+
+async def test_provider_401_on_custom_host_does_not_assume_openrouter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = sdk_provider(
+        monkeypatch,
+        RequestRecorder(httpx.Response(401, text="unauthorized")),
+    )
+
+    with pytest.raises(OpenAICompatibleProviderError) as captured:
+        await provider.complete(
+            [PromptMessage(role=PromptMessageRole.USER, text="Complete it.")],
+            None,
+            OpenAICompatibleConfig(
+                base_url="https://openrouter.ai/api/v1",
+                model="openai/gpt-4o",
+            ),
+            SecretStr("secret-provider-key"),
+            workspace_id=WORKSPACE_ID,
+        )
+
+    message = str(captured.value)
+    assert "HTTP 401" in message
+    assert "https://openrouter.ai/api/v1/chat/completions" in message
+    assert "issued by the API at the configured base URL" in message
+    assert "OpenRouter" not in message
+    assert captured.value.__cause__ is None
+
+
+async def test_provider_401_on_openai_host_without_vendor_prefix_omits_gateway_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = sdk_provider(
+        monkeypatch,
+        RequestRecorder(httpx.Response(401, text="unauthorized")),
+    )
+
+    with pytest.raises(OpenAICompatibleProviderError) as captured:
+        await provider.complete(
+            [PromptMessage(role=PromptMessageRole.USER, text="Complete it.")],
+            None,
+            OpenAICompatibleConfig(model="gpt-4.1-mini"),
+            SecretStr("secret-provider-key"),
+            workspace_id=WORKSPACE_ID,
+        )
+
+    message = str(captured.value)
+    assert "issued by the API at the configured base URL" in message
+    assert "OpenRouter" not in message
     assert captured.value.__cause__ is None
 
 

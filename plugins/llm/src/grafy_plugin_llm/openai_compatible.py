@@ -28,7 +28,11 @@ class OpenAICompatibleConfig(NodeConfig):
     base_url: StrictStr = Field(
         default="https://api.openai.com/v1",
         min_length=1,
-        description="OpenAI-compatible API base URL, including its version path.",
+        description=(
+            "OpenAI-compatible API base URL, including its version path. Must "
+            "match the API that issued the key, for example "
+            "https://api.openai.com/v1 or https://openrouter.ai/api/v1."
+        ),
     )
     model: StrictStr = Field(
         default="gpt-4.1-mini",
