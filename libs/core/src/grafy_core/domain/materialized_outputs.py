@@ -1,3 +1,5 @@
+import json
+from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -33,10 +35,13 @@ def _utc_now() -> datetime:
 
 def _node_execution_signature(node: "SavedGraphNode") -> tuple[object, ...]:
     pin = node.plugin_release_pin
+    # JSON keeps booleans, integers, and floats distinct unlike Python equality.
+    config = json.dumps(node.config_dict(), sort_keys=True, separators=(",", ":"))
     return (
+        node.kind,
         node.operator_id,
         node.operator_version,
-        node.config_dict(),
+        config,
         tuple((plug.id, plug.port) for plug in node.input_plugs),
         None if pin is None else (pin.scope, pin.slug, pin.revision),
         tuple(
@@ -55,7 +60,6 @@ def _incoming_edge_signature(edge: "SavedGraphEdge") -> tuple[object, ...]:
     if edge.projection is not None:
         projection = tuple(edge.projection.path)
     return (
-        edge.enabled,
         edge.from_node,
         edge.from_port,
         edge.to_node,
@@ -71,11 +75,14 @@ def _incoming_edges_by_target(
     document: "SavedGraphDocument",
 ) -> dict[str, tuple[tuple[object, ...], ...]]:
     grouped: dict[str, list[tuple[object, ...]]] = {}
-    for edge in document.edges:
+    # Unplugged variadic inputs use saved edge order; explicit plugs own their order.
+    for edge in sorted(
+        document.edges, key=lambda edge: (edge.to_port, edge.to_plug or "")
+    ):
+        if not edge.enabled:
+            continue
         grouped.setdefault(edge.to_node, []).append(_incoming_edge_signature(edge))
-    return {
-        node_id: tuple(sorted(signatures)) for node_id, signatures in grouped.items()
-    }
+    return {node_id: tuple(signatures) for node_id, signatures in grouped.items()}
 
 
 def materializations_for_compatible_nodes(
@@ -88,8 +95,9 @@ def materializations_for_compatible_nodes(
     """Copy pins forward for nodes whose execution identity is unchanged.
 
     Position, layout, and presentation may change across a saved revision without
-    invalidating already materialized outputs. Node config, plugs, bindings, and
-    incoming edge topology must match exactly.
+    invalidating already materialized outputs. A change to a node's execution
+    identity or enabled inputs invalidates that node and every descendant along
+    enabled edges. Earlier revision bindings are retained unchanged.
     """
     if next_revision < 1:
         raise ValueError("Materialized output graph revision must be at least 1")
@@ -99,18 +107,35 @@ def materializations_for_compatible_nodes(
     previous_incoming = _incoming_edges_by_target(previous_document)
     next_incoming = _incoming_edges_by_target(next_document)
 
+    invalidated: set[str] = set()
+    for node_id, next_node in next_nodes.items():
+        previous_node = previous_nodes.get(node_id)
+        if (
+            previous_node is None
+            or _node_execution_signature(previous_node)
+            != _node_execution_signature(next_node)
+            or previous_incoming.get(node_id) != next_incoming.get(node_id)
+        ):
+            invalidated.add(node_id)
+
+    downstream_nodes: dict[str, list[str]] = {}
+    for edge in next_document.edges:
+        if edge.enabled:
+            downstream_nodes.setdefault(edge.from_node, []).append(edge.to_node)
+
+    pending = deque(invalidated)
+    while pending:
+        node_id = pending.popleft()
+        for downstream_node_id in downstream_nodes.get(node_id, ()):
+            if downstream_node_id not in invalidated:
+                invalidated.add(downstream_node_id)
+                pending.append(downstream_node_id)
+
     carried: list[MaterializedNodeOutputs] = []
     for materialization in previous_materializations:
-        previous_node = previous_nodes.get(materialization.node_id)
-        next_node = next_nodes.get(materialization.node_id)
-        if previous_node is None or next_node is None:
-            continue
-        if _node_execution_signature(previous_node) != _node_execution_signature(
-            next_node
-        ):
-            continue
-        if previous_incoming.get(materialization.node_id) != next_incoming.get(
-            materialization.node_id
+        if (
+            materialization.node_id not in next_nodes
+            or materialization.node_id in invalidated
         ):
             continue
         carried.append(

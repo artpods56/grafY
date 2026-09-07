@@ -93,32 +93,6 @@ export function withMaterializedNodeRuns(
   });
 }
 
-/** Overlay succeeded materializations without clearing unrelated local runs. */
-export function mergeMaterializedNodeRuns(
-  nodes: readonly SavedGraphWorkflowNode[],
-  nodeRuns: readonly RunNodeResult[],
-): SavedGraphWorkflowNode[] {
-  const runsByNodeId = new Map(
-    nodeRuns
-      .filter((run) => run.status === "succeeded")
-      .map((run) => [run.node_id, run]),
-  );
-  if (!runsByNodeId.size) return [...nodes];
-
-  return nodes.map((node) => {
-    const run = runsByNodeId.get(node.id);
-    if (!run) return node;
-    return {
-      ...node,
-      data: {
-        ...node.data,
-        run,
-        execution: { status: "succeeded" },
-      },
-    };
-  });
-}
-
 export class SavedGraphHydrationError extends Error {
   constructor(message: string) {
     super(message);

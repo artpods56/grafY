@@ -382,7 +382,12 @@ def _collect_run_payload(graph: SavedGraphResponse) -> dict[str, object]:
     ).model_dump(mode="json")
 
 
-def _full_run_payload(graph_id: str, graph_revision: int) -> dict[str, object]:
+def _full_run_payload(
+    graph_id: str,
+    graph_revision: int,
+    *,
+    nine_value: int = 9,
+) -> dict[str, object]:
     return RunRequest(
         nodes=[
             RunNodeRequest(
@@ -390,7 +395,7 @@ def _full_run_payload(graph_id: str, graph_revision: int) -> dict[str, object]:
                 id="nine",
                 operator_id="arithmetic.number",
                 operator_version=1,
-                config={"value": 9},
+                config={"value": nine_value},
             ),
             RunNodeRequest(
                 kind="builtin",
@@ -888,6 +893,95 @@ def test_graph_update_carries_compatible_materializations_to_new_revision(
     }
     assert previous_ids == {"nine", "four", "add", "multiply"}
     assert carried_ids == previous_ids
+
+
+def test_execution_affecting_update_invalidates_downstream_materializations(
+    durable_api: DurableApiFixture,
+) -> None:
+    with _durable_client(durable_api) as client:
+        created = client.post(
+            "/v1/workspaces/00000000-0000-0000-0000-000000000007/graphs",
+            json=_graph_payload(),
+        )
+        assert created.status_code == 201
+        graph = SavedGraphResponse.model_validate(created.json())
+
+        initial_response = client.post(
+            "/v1/workspaces/00000000-0000-0000-0000-000000000007/runs",
+            json=_full_run_payload(str(graph.id), graph.revision),
+        )
+        assert initial_response.status_code == 200
+        initial_run = RunResponse.model_validate(initial_response.json())
+        old_add_value = _output(initial_run, "add").value
+        assert isinstance(old_add_value, ArtifactRef)
+
+        changed_payload = _graph_payload(expected_revision=graph.revision)
+        document = cast(dict[str, object], changed_payload["document"])
+        nodes = cast(list[dict[str, object]], document["nodes"])
+        nine = next(node for node in nodes if node["id"] == "nine")
+        nine["config"] = {"value": 6}
+        updated = client.put(
+            f"/v1/workspaces/00000000-0000-0000-0000-000000000007/graphs/{graph.id}",
+            json=changed_payload,
+        )
+        assert updated.status_code == 200
+        next_graph = SavedGraphResponse.model_validate(updated.json())
+
+        previous_response = client.get(
+            f"/v1/workspaces/00000000-0000-0000-0000-000000000007/graphs/{graph.id}/materializations",
+            params={"graph_revision": graph.revision},
+        )
+        current_response = client.get(
+            f"/v1/workspaces/00000000-0000-0000-0000-000000000007/graphs/{graph.id}/materializations",
+            params={"graph_revision": next_graph.revision},
+        )
+
+        assert previous_response.status_code == 200
+        previous = GraphMaterializationsResponse.model_validate(
+            previous_response.json()
+        )
+        assert {node_run.node_id for node_run in previous.node_runs} == {
+            "nine",
+            "four",
+            "add",
+            "multiply",
+        }
+        old_content = (
+            GrafyApi(client)
+            .workspace(WORKSPACE_ID)
+            .artifacts.content(old_add_value.artifact_id)
+        )
+        assert old_content.status_code == 200
+        assert old_content.json() == {"value": 13}
+
+        assert current_response.status_code == 200
+        current = GraphMaterializationsResponse.model_validate(current_response.json())
+        assert {node_run.node_id for node_run in current.node_runs} == {"four"}
+
+        selected = client.post(
+            "/v1/workspaces/00000000-0000-0000-0000-000000000007/runs",
+            json=_downstream_run_payload(
+                str(graph.id),
+                next_graph.revision,
+                pinned_value=old_add_value.model_dump(mode="json"),
+            ),
+        )
+        assert selected.status_code == 422
+        assert "Run with dependencies" in selected.json()["detail"]
+
+        rerun_response = client.post(
+            "/v1/workspaces/00000000-0000-0000-0000-000000000007/runs",
+            json=_full_run_payload(
+                str(graph.id),
+                next_graph.revision,
+                nine_value=6,
+            ),
+        )
+
+    assert rerun_response.status_code == 200
+    rerun = RunResponse.model_validate(rerun_response.json())
+    assert rerun.status == "succeeded"
+    assert _output(rerun, "multiply").artifacts[0].text == "100"
 
 
 def test_downstream_run_without_materialization_returns_dependency_guidance(

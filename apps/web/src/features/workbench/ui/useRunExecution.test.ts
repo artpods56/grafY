@@ -11,11 +11,14 @@ import type {
   RunExecutionEventSubscription,
   RunExecutionNodeProgressEvent,
   RunExecutionStatusEvent,
+  RunNodeResult,
   RunRequest,
 } from "@/lib/api";
+import { encodeHandleId } from "../canvas/handles";
 import {
   WORKFLOW_NODE_TYPE,
   createWorkflowNodeData,
+  type WorkflowEdge,
 } from "../canvas/types";
 import { savedGraphExecutionFingerprint } from "../canvas/saved-graph";
 import type { WorkflowNode } from "../model/execution-plan";
@@ -124,6 +127,85 @@ function workflowNode(id = "node-1"): WorkflowNode {
     type: WORKFLOW_NODE_TYPE,
     position: { x: 0, y: 0 },
     data: createWorkflowNodeData(nodeSpec()),
+  };
+}
+
+function connectedSelection(): {
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+} {
+  const source = workflowNode("source");
+  source.data.spec = {
+    ...source.data.spec,
+    title: "Source",
+    outputs: [{
+      name: "output",
+      title: "Output",
+      description: null,
+      direction: "output",
+      artifact_type: { id: "text.plain", schema_version: 1 },
+      shape: "one",
+      accepted_shapes: ["one"],
+      instance_plugs: false,
+      variadic: false,
+      required: true,
+    }],
+  };
+  const target = { ...workflowNode("target"), selected: true };
+  target.data.spec = {
+    ...target.data.spec,
+    title: "Target",
+    inputs: [{
+      name: "input",
+      title: "Input",
+      description: null,
+      direction: "input",
+      artifact_type: { id: "text.plain", schema_version: 1 },
+      shape: "one",
+      accepted_shapes: ["one"],
+      instance_plugs: false,
+      variadic: false,
+      required: true,
+    }],
+  };
+  const edge: WorkflowEdge = {
+    id: "source-to-target",
+    type: "workflow",
+    source: source.id,
+    target: target.id,
+    sourceHandle: encodeHandleId({
+      portName: "output",
+      artifactTypeId: "text.plain",
+      schemaVersion: 1,
+      shape: "one",
+      direction: "output",
+    }),
+    targetHandle: encodeHandleId({
+      portName: "input",
+      artifactTypeId: "text.plain",
+      schemaVersion: 1,
+      shape: "one",
+      direction: "input",
+    }),
+  };
+  return { nodes: [source, target], edges: [edge] };
+}
+
+function materializedRun(nodeId: string, artifactId: string): RunNodeResult {
+  return {
+    node_id: nodeId,
+    status: "succeeded",
+    error: null,
+    outputs: [{
+      port: "output",
+      kind: "single",
+      value: {
+        artifact_id: artifactId,
+        artifact_type: "text.plain",
+        schema_version: 1,
+      },
+      artifacts: [],
+    }],
   };
 }
 
@@ -877,6 +959,158 @@ describe("useRunExecution", () => {
       error:
         "Cannot run Test operator: Operator test.operator@1 is unavailable.",
     });
+  });
+
+  it("clears a stale upstream pin when the current saved revision has no materialization", async () => {
+    const graph = connectedSelection();
+    graph.nodes[0].data.run = materializedRun("source", "stale-artifact");
+    graph.nodes[0].data.execution = { status: "succeeded" };
+    apiMocks.getGraphMaterializations.mockResolvedValue({
+      graph_id: "graph-1",
+      graph_revision: 7,
+      node_runs: [],
+    });
+    const harness = hookHarness({
+      ...graph,
+      activeGraph: {
+        id: "graph-1",
+        revision: 7,
+        nodes: [],
+      },
+      canMaterializeSavedGraph: true,
+    });
+    const hook = await renderHook(useRunExecution, harness.hookOptions);
+
+    await React.act(async () => {
+      await hook.result.current.runWorkflow("selected");
+    });
+
+    expect(apiMocks.startRunExecution).not.toHaveBeenCalled();
+    expect(harness.nodes()[0]?.data.run).toBeNull();
+    expect(harness.runError()).toContain(
+      "no accessible materialized output is available for Source.output",
+    );
+  });
+
+  it("does not restore an old successful pin from a preserved failure display", async () => {
+    const graph = connectedSelection();
+    graph.nodes[0].data.run = materializedRun("source", "stale-artifact");
+    graph.nodes[0].data.execution = {
+      status: "failed",
+      error: "A later attempt failed",
+    };
+    apiMocks.getGraphMaterializations.mockResolvedValue({
+      graph_id: "graph-1",
+      graph_revision: 7,
+      node_runs: [],
+    });
+    const harness = hookHarness({
+      ...graph,
+      activeGraph: {
+        id: "graph-1",
+        revision: 7,
+        nodes: [],
+      },
+      canMaterializeSavedGraph: true,
+    });
+    const hook = await renderHook(useRunExecution, harness.hookOptions);
+
+    await React.act(async () => {
+      await hook.result.current.runWorkflow("selected");
+    });
+
+    expect(apiMocks.startRunExecution).not.toHaveBeenCalled();
+    expect(harness.nodes()[0]?.data).toMatchObject({
+      run: null,
+      execution: { status: "failed", error: "A later attempt failed" },
+    });
+  });
+
+  it("pins the current saved-revision materialization and preserves an unrelated failure", async () => {
+    const graph = connectedSelection();
+    graph.nodes[0].data.run = materializedRun("source", "stale-artifact");
+    graph.nodes[0].data.execution = { status: "succeeded" };
+    const failed = workflowNode("failed-node");
+    failed.data.run = {
+      node_id: failed.id,
+      status: "failed",
+      error: "Previous failure",
+      outputs: [],
+    };
+    failed.data.execution = {
+      status: "failed",
+      error: "Previous failure",
+    };
+    graph.nodes.push(failed);
+    apiMocks.getGraphMaterializations.mockResolvedValue({
+      graph_id: "graph-1",
+      graph_revision: 7,
+      node_runs: [materializedRun("source", "current-artifact")],
+    });
+    apiMocks.startRunExecution.mockResolvedValue(succeededExecution("target"));
+    const harness = hookHarness({
+      ...graph,
+      activeGraph: {
+        id: "graph-1",
+        revision: 7,
+        nodes: [],
+      },
+      canMaterializeSavedGraph: true,
+    });
+    const hook = await renderHook(useRunExecution, harness.hookOptions);
+
+    await React.act(async () => {
+      await hook.result.current.runWorkflow("selected");
+    });
+
+    expect(apiMocks.startRunExecution).toHaveBeenCalledWith(
+      "workspace-1",
+      expect.objectContaining({
+        pinned_outputs: [expect.objectContaining({
+          from_node: "source",
+          value: expect.objectContaining({ artifact_id: "current-artifact" }),
+        })],
+      }),
+    );
+    expect(harness.nodes().find((node) => node.id === failed.id)?.data)
+      .toMatchObject({
+        run: { status: "failed", error: "Previous failure" },
+        execution: { status: "failed", error: "Previous failure" },
+      });
+    expect(harness.hookOptions.onMaterializationsLoaded).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { name: "an unsaved graph", activeGraph: null },
+    {
+      name: "a dirty saved graph",
+      activeGraph: { id: "graph-1", revision: 7, nodes: [] },
+    },
+  ])("keeps a local selected-run pin for $name", async ({ activeGraph }) => {
+    const graph = connectedSelection();
+    graph.nodes[0].data.run = materializedRun("source", "local-artifact");
+    graph.nodes[0].data.execution = { status: "succeeded" };
+    apiMocks.startRunExecution.mockResolvedValue(succeededExecution("target"));
+    const harness = hookHarness({
+      ...graph,
+      activeGraph,
+      canMaterializeSavedGraph: false,
+    });
+    const hook = await renderHook(useRunExecution, harness.hookOptions);
+
+    await React.act(async () => {
+      await hook.result.current.runWorkflow("selected");
+    });
+
+    expect(apiMocks.getGraphMaterializations).not.toHaveBeenCalled();
+    expect(apiMocks.startRunExecution).toHaveBeenCalledWith(
+      "workspace-1",
+      expect.objectContaining({
+        pinned_outputs: [expect.objectContaining({
+          value: expect.objectContaining({ artifact_id: "local-artifact" }),
+        })],
+      }),
+    );
   });
 
   it("records clean saved executions against the saved graph revision", async () => {

@@ -10,7 +10,6 @@ import type {
 import { decodeHandleId } from "./handles";
 import {
   hydrateSavedGraph,
-  mergeMaterializedNodeRuns,
   savedGraphExecutionFingerprint,
   savedGraphFingerprint,
 } from "./saved-graph";
@@ -458,65 +457,6 @@ describe("saved edge enablement", () => {
     );
     expect(savedGraphExecutionFingerprint(base)).toBe(
       savedGraphExecutionFingerprint(withViewer),
-    );
-  });
-});
-
-describe("mergeMaterializedNodeRuns", () => {
-  it("overlays succeeded runs without clearing unrelated local results", () => {
-    const graph = graphWithEdge({ conversion_path: conversionPath });
-    const hydrated = hydrateSavedGraph(graph, registry());
-    const [source, target] = hydrated.nodes;
-    if (!source || !target) throw new Error("fixture incomplete");
-    const localSourceRun = {
-      node_id: source.id,
-      status: "succeeded" as const,
-      error: null,
-      outputs: [{
-        port: "result",
-        kind: "single" as const,
-        value: {
-          artifact_id: "00000000-0000-0000-0000-000000000111",
-          artifact_type: "scalar.integer",
-          schema_version: 1,
-        },
-        artifacts: [],
-      }],
-    };
-    const withLocal = hydrated.nodes.map((node) =>
-      node.id === source.id
-        ? {
-            ...node,
-            data: {
-              ...node.data,
-              run: localSourceRun,
-              execution: { status: "succeeded" as const },
-            },
-          }
-        : node
-    );
-    const serverTargetRun = {
-      node_id: target.id,
-      status: "succeeded" as const,
-      error: null,
-      outputs: [{
-        port: "result",
-        kind: "single" as const,
-        value: {
-          artifact_id: "00000000-0000-0000-0000-000000000222",
-          artifact_type: "scalar.integer",
-          schema_version: 1,
-        },
-        artifacts: [],
-      }],
-    };
-
-    const merged = mergeMaterializedNodeRuns(withLocal, [serverTargetRun]);
-    expect(merged.find((node) => node.id === source.id)?.data.run).toEqual(
-      localSourceRun,
-    );
-    expect(merged.find((node) => node.id === target.id)?.data.run).toEqual(
-      serverTargetRun,
     );
   });
 });

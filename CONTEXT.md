@@ -94,6 +94,14 @@ artifact with a matching type or producer. A binding is reusable only when all
 of its artifact references are accessible through the active runtime.
 Inaccessible references are not advertised as available outputs.
 
+A binding can carry forward to a new graph revision only while its node and
+all upstream dependencies retain the same execution meaning. Changing a node's
+execution settings or enabled inputs invalidates its outputs and those of every
+downstream node reached through enabled edges. This holds even when the changed
+node has no materialized output of its own. Layout-only edits preserve reusable
+bindings. Invalidation leaves earlier revision bindings and execution history
+available for inspection.
+
 ### Graph execution history
 
 The durable, revision-scoped provenance record for one accepted asynchronous

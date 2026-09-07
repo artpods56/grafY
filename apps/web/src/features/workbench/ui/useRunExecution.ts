@@ -11,9 +11,10 @@ import {
   type RunExecutionEventSubscription,
   type RunExecutionNodeProgressEvent,
   type RunExecution,
+  type RunNodeResult,
 } from "@/lib/api";
 import { ApiError } from "@/lib/api/client";
-import { mergeMaterializedNodeRuns } from "../canvas/saved-graph";
+import { withMaterializedNodeRuns } from "../canvas/saved-graph";
 import {
   nodeSecretBindingReady,
   nodeSecretInputs,
@@ -76,6 +77,35 @@ function nodeExecutionIsTerminal(status: NodeExecutionStatus): boolean {
     status === "failed" ||
     status === "skipped" ||
     status === "cancelled";
+}
+
+function withCurrentMaterializations(
+  nodes: readonly WorkflowNode[],
+  nodeRuns: readonly RunNodeResult[],
+): WorkflowNode[] {
+  const previousNodesById = new Map(nodes.map((node) => [node.id, node]));
+  return withMaterializedNodeRuns(nodes, nodeRuns).map((node) => {
+    if (node.data.run) return node;
+
+    const previous = previousNodesById.get(node.id);
+    if (
+      !previous ||
+      previous.data.execution.status === "succeeded" ||
+      !nodeExecutionIsTerminal(previous.data.execution.status)
+    ) {
+      return node;
+    }
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        run: previous.data.run?.status === "succeeded"
+          ? null
+          : previous.data.run,
+        execution: previous.data.execution,
+      },
+    };
+  });
 }
 
 function withSharedExecutionTerminalNodes(
@@ -382,7 +412,7 @@ export function useRunExecution({
           );
           return;
         }
-        planningNodes = mergeMaterializedNodeRuns(
+        planningNodes = withCurrentMaterializations(
           planningNodes,
           materializations.node_runs,
         ).map((node) => ({
@@ -390,7 +420,7 @@ export function useRunExecution({
           data: { ...node.data, progress: null },
         }));
         setNodes((current) =>
-          mergeMaterializedNodeRuns(current, materializations.node_runs).map(
+          withCurrentMaterializations(current, materializations.node_runs).map(
             (node) => ({
               ...node,
               data: { ...node.data, progress: null },
