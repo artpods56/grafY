@@ -8,9 +8,6 @@ from pydantic.errors import PydanticInvalidForJsonSchema
 
 from grafy_core.artifacts import (
     ArtifactBundleFormat,
-    ArtifactExportFormat,
-    ArtifactFieldProjection,
-    ArtifactTypeSpec,
     MaterializedJsonType,
 )
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
@@ -155,27 +152,11 @@ class FieldProjectionResponse(ApiResponse):
     target_artifact_type: ArtifactTypeKeyResponse
     title: str
 
-    @classmethod
-    def from_projection(cls, projection: ArtifactFieldProjection) -> Self:
-        return cls(
-            path=list(projection.path),
-            target_artifact_type=ArtifactTypeKeyResponse.from_key(projection.target),
-            title=projection.title,
-        )
-
 
 class ArtifactExportFormatResponse(ApiResponse):
     format: str
     content_type: str
     filename: str
-
-    @classmethod
-    def from_export_format(cls, export_format: ArtifactExportFormat) -> Self:
-        return cls(
-            format=export_format.format,
-            content_type=export_format.content_type,
-            filename=export_format.filename,
-        )
 
 
 class ArtifactBundleContractResponse(ApiResponse):
@@ -193,27 +174,6 @@ class ArtifactTypeSpecResponse(ApiResponse):
         default_factory=list,
     )
     bundle: ArtifactBundleContractResponse
-
-    @classmethod
-    def from_spec(cls, spec: ArtifactTypeSpec) -> Self:
-        return cls(
-            key=ArtifactTypeKeyResponse.from_key(spec.key),
-            title=spec.title,
-            payload_schema=spec.payload_schema,
-            field_projections=[
-                FieldProjectionResponse.from_projection(projection)
-                for projection in spec.field_projections
-            ],
-            materialized_json_type=spec.materialized_json_type,
-            export_formats=[
-                ArtifactExportFormatResponse.from_export_format(export_format)
-                for export_format in spec.export_formats
-            ],
-            bundle=ArtifactBundleContractResponse(
-                format=spec.bundle.format,
-                version=spec.bundle.version,
-            ),
-        )
 
     @classmethod
     def from_plugin_contract(cls, contract: PluginArtifactTypeContract) -> Self:
@@ -276,27 +236,6 @@ class ArtifactConversionSpecResponse(ApiResponse):
             source_artifact_type=ArtifactTypeKeyResponse.from_key(spec.source),
             target_artifact_type=ArtifactTypeKeyResponse.from_key(spec.target),
             title=spec.title,
-        )
-
-    @classmethod
-    def from_plugin_contract(
-        cls,
-        contract: PluginArtifactConversionContract,
-    ) -> Self:
-        return cls(
-            key=ArtifactConversionKeyResponse(
-                id=contract.key.id,
-                version=contract.key.version,
-            ),
-            source_artifact_type=ArtifactTypeKeyResponse(
-                id=contract.source.id,
-                schema_version=contract.source.schema_version,
-            ),
-            target_artifact_type=ArtifactTypeKeyResponse(
-                id=contract.target.id,
-                schema_version=contract.target.schema_version,
-            ),
-            title=contract.title,
         )
 
 
