@@ -196,7 +196,12 @@ class JsonSchemaBuilderNode(
         child_index = 0
         for field in config.fields:
             if field.kind in primitive_types:
-                definition: dict[str, object] = {"type": primitive_types[field.kind]}
+                json_type = primitive_types[field.kind]
+                definition = (
+                    {"type": json_type}
+                    if field.required
+                    else {"type": [json_type, "null"]}
+                )
             elif field.kind is SchemaFieldKind.SCHEMA:
                 definition = parse_json_schema(
                     inputs.schemas[child_index],

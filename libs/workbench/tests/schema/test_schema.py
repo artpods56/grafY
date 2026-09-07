@@ -188,9 +188,9 @@ async def test_schema_builder_compiles_inline_fields_to_canonical_object_schema(
                 "type": "string",
                 "description": "Invoice number",
             },
-            "page_count": {"type": "integer"},
-            "confidence": {"type": "number"},
-            "reviewed": {"type": "boolean"},
+            "page_count": {"type": ["integer", "null"]},
+            "confidence": {"type": ["number", "null"]},
+            "reviewed": {"type": ["boolean", "null"]},
             "tags": {"type": "array", "items": {"type": "string"}},
         },
         "additionalProperties": False,
@@ -251,7 +251,7 @@ async def test_schema_builder_inserts_connected_object_and_sequence_item_schemas
     schema = json.loads(output.json_schema)
     assert schema["properties"] == {
         "customer": json.loads(customer_schema),
-        "status": {"type": "string"},
+        "status": {"type": ["string", "null"]},
         "line_items": {
             "type": "array",
             "items": json.loads(line_schema),

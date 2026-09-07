@@ -122,3 +122,79 @@ async def test_provider_accepts_openai_compatible_service_tier_extension(
 
     assert response.structured_value == structured_value
     assert response.model == "compatible-model"
+
+
+def _provider_settings() -> ProviderSettings:
+    return ProviderSettings(
+        base_url="https://provider.example/v1",
+        model="compatible-model",
+        temperature=0,
+        max_completion_tokens=100,
+        timeout_ms=1_000,
+        max_retries=0,
+        schema_name="result",
+        strict=True,
+    )
+
+
+def _completion_with_content(content: str) -> ChatCompletion:
+    return ChatCompletion(
+        id="completion-1",
+        choices=[
+            Choice(
+                finish_reason="stop",
+                index=0,
+                logprobs=None,
+                message=ChatCompletionMessage(
+                    role="assistant",
+                    content=content,
+                ),
+            )
+        ],
+        created=1,
+        model="compatible-model",
+        object="chat.completion",
+    )
+
+
+@pytest.mark.asyncio
+async def test_provider_omits_null_values_for_optional_properties(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    FakeAsyncOpenAI.completion = _completion_with_content(
+        json.dumps({"records": [{"name": "Abbey", "label": None}]})
+    )
+    monkeypatch.setattr(provider_module, "AsyncOpenAI", FakeAsyncOpenAI)
+
+    schema = json.dumps(
+        {
+            "type": "object",
+            "properties": {
+                "records": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "label": {"type": "string"},
+                        },
+                        "required": ["name"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["records"],
+            "additionalProperties": False,
+        }
+    )
+    provider = OpenAICompatibleStructuredProvider(image_reader=UnusedImageReader())
+
+    response = await provider.complete(
+        [ConversationMessage(role=MessageRole.USER, text="Extract")],
+        schema,
+        _provider_settings(),
+        SecretStr("secret"),
+        workspace_id=uuid4(),
+    )
+
+    assert response.structured_value == {"records": [{"name": "Abbey"}]}

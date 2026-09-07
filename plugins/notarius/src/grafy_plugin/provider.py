@@ -61,6 +61,64 @@ SUPPORTED_IMAGE_CONTENT_TYPES: Final = frozenset(
 )
 
 
+def _schema_types(schema: dict[str, object]) -> set[object]:
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        return set(cast(list[object], schema_type))
+    if schema_type is None:
+        return set()
+    return {schema_type}
+
+
+def _omit_null_optional_properties(
+    schema: dict[str, object],
+    value: object,
+) -> object:
+    types = _schema_types(schema)
+    omitted: object = value
+    if "object" in types and isinstance(value, dict):
+        raw_required = schema.get("required")
+        required: set[str] = set()
+        if isinstance(raw_required, list):
+            required = {
+                item
+                for item in cast(list[object], raw_required)
+                if isinstance(item, str)
+            }
+        raw_properties = schema.get("properties")
+        properties = (
+            cast(dict[object, object], raw_properties)
+            if isinstance(raw_properties, dict)
+            else {}
+        )
+        cleaned: dict[str, object] = {}
+        for raw_key, item in cast(dict[object, object], value).items():
+            if not isinstance(raw_key, str):
+                continue
+            if item is None and raw_key not in required:
+                continue
+            property_schema = properties.get(raw_key)
+            if isinstance(property_schema, dict):
+                cleaned[raw_key] = _omit_null_optional_properties(
+                    cast(dict[str, object], property_schema),
+                    item,
+                )
+            else:
+                cleaned[raw_key] = item
+        omitted = cleaned
+    elif "array" in types and isinstance(value, list):
+        items_schema = schema.get("items")
+        if isinstance(items_schema, dict):
+            item_schema = cast(dict[str, object], items_schema)
+            cleaned_items: list[object] = []
+            for item in cast(list[object], value):
+                cleaned_items.append(
+                    _omit_null_optional_properties(item_schema, item)
+                )
+            omitted = cleaned_items
+    return omitted
+
+
 class StructuredExtractionProviderError(StructuredCompletionError):
     """A bounded provider failure safe to present to a graph user."""
 
@@ -341,10 +399,18 @@ class OpenAICompatibleStructuredProvider(StructuredCompletionProvider):
             raise StructuredExtractionProviderError(
                 f"Provider JSON must be an object for model {settings.model!r}"
             )
+        omitted = _omit_null_optional_properties(
+            schema_object,
+            cast(JsonObject, raw_value),
+        )
+        if not isinstance(omitted, dict):
+            raise StructuredExtractionProviderError(
+                f"Provider JSON must be an object for model {settings.model!r}"
+            )
         try:
             structured_value = validate_json_schema_value(
                 json_schema,
-                cast(JsonObject, raw_value),
+                cast(JsonObject, omitted),
             )
         except ValueError as exc:
             raise StructuredExtractionProviderError(str(exc)) from exc

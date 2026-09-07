@@ -109,7 +109,15 @@ class StructuredDatasetExtractionConfig(NodeConfig):
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     max_completion_tokens: StrictInt = Field(default=8_192, ge=1, le=1_000_000)
     timeout_ms: StrictInt = Field(default=120_000, ge=1_000, le=900_000)
-    max_retries: StrictInt = Field(default=0, ge=0, le=5)
+    max_retries: StrictInt = Field(
+        default=0,
+        ge=0,
+        le=5,
+        description=(
+            "Extra provider attempts after a failure, including invalid JSON. "
+            "A page that still fails is recorded and the dataset continues."
+        ),
+    )
     schema_name: StrictStr = Field(
         default="structured_extraction",
         min_length=1,

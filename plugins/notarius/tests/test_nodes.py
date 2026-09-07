@@ -29,6 +29,7 @@ from grafy_plugin.processing import (
     MessageRole,
     ProviderResponse,
     ProviderSettings,
+    StructuredCompletionError,
 )
 
 
@@ -85,6 +86,32 @@ class FakeProvider:
         return ProviderResponse(
             content=json.dumps(value),
             structured_value=value,
+            model="test-model",
+        )
+
+
+class QueueProvider:
+    def __init__(self, outcomes: list[JsonObject | StructuredCompletionError]) -> None:
+        self.outcomes = list(outcomes)
+        self.calls: list[Sequence[ConversationMessage]] = []
+
+    async def complete(
+        self,
+        messages: Sequence[ConversationMessage],
+        json_schema: str,
+        settings: ProviderSettings,
+        api_key: SecretStr,
+        *,
+        workspace_id: UUID,
+    ) -> ProviderResponse:
+        del json_schema, settings, api_key, workspace_id
+        self.calls.append(messages)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, StructuredCompletionError):
+            raise outcome
+        return ProviderResponse(
+            content=json.dumps(outcome),
+            structured_value=outcome,
             model="test-model",
         )
 
@@ -258,6 +285,92 @@ async def test_independent_processing_is_parallel_and_preserves_input_order() ->
     assert [item.source_filename for item in output.dataset.items] == [
         "page-1.jpg",
         "page-2.jpg",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_extraction_retries_invalid_json_then_keeps_the_valid_page() -> None:
+    refs = [image_ref()]
+    filenames = {refs[0].artifact_id: "page-1.jpg"}
+    valid = responses_value("A", False)
+    provider = QueueProvider(
+        [
+            StructuredCompletionError(
+                "Provider returned invalid JSON for model 'test-model'"
+            ),
+            valid,
+        ]
+    )
+    node = StructuredDatasetExtractionNode(
+        provider=provider,
+        image_reader=FakeImageReader(filenames),
+        node_secrets=FakeSecretResolver(),
+    )
+
+    output = await node.run(
+        NodeExecutionContext(workspace_id=uuid4(), node_id="extract"),
+        StructuredDatasetExtractionConfig(max_retries=1),
+        StructuredDatasetExtractionInput(
+            images=ArtifactRefSequence.from_key(
+                key=RASTER_IMAGE.key,
+                item_refs=refs,
+            ),
+            system_prompt="Extract faithfully.",
+            instruction="Extract records from the current image.",
+            json_schema=SCHEMA,
+        ),
+    )
+
+    assert len(provider.calls) == 2
+    assert output.dataset.items[0].structured_value == valid
+
+
+@pytest.mark.asyncio
+async def test_extraction_records_a_failed_page_and_continues() -> None:
+    refs = [image_ref(), image_ref()]
+    filenames = {
+        refs[0].artifact_id: "page-1.jpg",
+        refs[1].artifact_id: "page-2.jpg",
+    }
+    invalid_json = StructuredCompletionError(
+        "Provider returned invalid JSON for model 'test-model'"
+    )
+    second_page = responses_value("B", False)
+    provider = QueueProvider([invalid_json, invalid_json, second_page])
+    node = StructuredDatasetExtractionNode(
+        provider=provider,
+        image_reader=FakeImageReader(filenames),
+        node_secrets=FakeSecretResolver(),
+    )
+
+    output = await node.run(
+        NodeExecutionContext(workspace_id=uuid4(), node_id="extract"),
+        StructuredDatasetExtractionConfig(max_retries=1, window_size=1),
+        StructuredDatasetExtractionInput(
+            images=ArtifactRefSequence.from_key(
+                key=RASTER_IMAGE.key,
+                item_refs=refs,
+            ),
+            system_prompt="Extract faithfully.",
+            instruction="Extract records from the current image.",
+            json_schema=SCHEMA,
+        ),
+    )
+
+    assert len(provider.calls) == 3
+    failed = output.dataset.items[0].structured_value
+    assert failed["records"] == [
+        {
+            "extraction_error": (
+                "Extraction failed for item 1, page-1.jpg: Provider returned "
+                "invalid JSON for model 'test-model'"
+            )
+        }
+    ]
+    assert output.dataset.items[1].structured_value == second_page
+    assert [message.role for message in provider.calls[-1]] == [
+        MessageRole.SYSTEM,
+        MessageRole.USER,
     ]
 
 

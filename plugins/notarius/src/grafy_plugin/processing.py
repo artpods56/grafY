@@ -2,7 +2,8 @@ import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from typing import Protocol
+import json
+from typing import Protocol, cast
 from uuid import UUID
 
 from pydantic import SecretStr
@@ -95,6 +96,38 @@ class StructuredCompletionError(RuntimeError):
 
 class ItemProcessingError(RuntimeError):
     """Structured extraction failure with source-item context."""
+
+
+def _object_array_fields(schema: dict[str, object]) -> list[str]:
+    raw_properties = schema.get("properties")
+    if not isinstance(raw_properties, dict):
+        return []
+    properties = cast(dict[object, object], raw_properties)
+    fields: list[str] = []
+    for name, raw_definition in properties.items():
+        if not isinstance(name, str) or not isinstance(raw_definition, dict):
+            continue
+        definition = cast(dict[object, object], raw_definition)
+        items = definition.get("items")
+        if definition.get("type") == "array" and isinstance(items, dict):
+            item_definition = cast(dict[object, object], items)
+            if item_definition.get("type") == "object":
+                fields.append(name)
+    return fields
+
+
+def failed_extraction_value(json_schema: str, message: str) -> JsonObject:
+    error_row: JsonObject = {"extraction_error": message}
+    value: JsonObject = {"extraction_error": message}
+    try:
+        parsed = json.loads(json_schema)
+    except json.JSONDecodeError:
+        return value
+    if not isinstance(parsed, dict):
+        return value
+    for field in _object_array_fields(cast(dict[str, object], parsed)):
+        value[field] = [error_row]
+    return value
 
 
 class MessageBuilder:
@@ -303,18 +336,40 @@ class ItemProcessor:
         item: PredictionDataItem,
         state: SequenceState,
     ) -> SequenceState:
-        try:
-            response = await self._provider.complete(
-                state.conversation.messages,
-                self._json_schema,
-                self._settings,
-                self._api_key,
-                workspace_id=self._workspace_id,
+        attempts = 1 + self._settings.max_retries
+        response: ProviderResponse | None = None
+        last_error: StructuredCompletionError | None = None
+        for _ in range(attempts):
+            try:
+                response = await self._provider.complete(
+                    state.conversation.messages,
+                    self._json_schema,
+                    self._settings,
+                    self._api_key,
+                    workspace_id=self._workspace_id,
+                )
+                break
+            except StructuredCompletionError as exc:
+                last_error = exc
+        if response is None:
+            message = (
+                f"Extraction failed for item {item.index + 1}, {item.filename}: "
+                f"{last_error}"
             )
-        except StructuredCompletionError as exc:
-            raise ItemProcessingError(
-                f"Extraction failed for item {item.index + 1}, {item.filename}: {exc}"
-            ) from exc
+            structured_value = failed_extraction_value(self._json_schema, message)
+            item.prediction = structured_value
+            item.provider_response = ProviderResponse(
+                content=json.dumps(structured_value, ensure_ascii=False),
+                structured_value=structured_value,
+                model=self._settings.model,
+                finish_reason="error",
+            )
+            messages = state.conversation.messages
+            if messages and messages[-1].role is MessageRole.USER:
+                conversation = Conversation(messages=messages[:-1])
+            else:
+                conversation = state.conversation
+            return replace(state, conversation=conversation)
         item.prediction = response.structured_value
         item.provider_response = response
         assistant_message = ConversationMessage(
