@@ -26,10 +26,10 @@ def upgrade() -> None:
         sa.Column("secret_digest", sa.LargeBinary(length=64), nullable=False),
         sa.Column("label", sa.String(length=160), nullable=False),
         sa.Column("scopes", sa.JSON(), nullable=False),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("expires_at", sa.DateTime(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("last_used_at", sa.DateTime(), nullable=True),
+        sa.Column("revoked_at", sa.DateTime(), nullable=True),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_platform_access_tokens")),
         sa.UniqueConstraint(
             "public_prefix", name="uq_platform_access_tokens_public_prefix"

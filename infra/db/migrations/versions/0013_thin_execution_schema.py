@@ -35,7 +35,7 @@ def upgrade() -> None:
                 "SELECT workspace_id, graph_id, COUNT(*) AS n "
                 "FROM graph_executions "
                 f"WHERE {_ACTIVE_STATUSES_SQL} "
-                "GROUP BY workspace_id, graph_id HAVING n > 1"
+                "GROUP BY workspace_id, graph_id HAVING COUNT(*) > 1"
             )
         )
         .mappings()
@@ -218,7 +218,7 @@ def downgrade() -> None:
         sa.Column("authorization_version", sa.Integer(), nullable=True),
         sa.Column("command_kind", sa.String(length=80), nullable=False),
         sa.Column("command_payload", sa.JSON(), nullable=False),
-        sa.Column("accepted_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("accepted_at", sa.DateTime(), nullable=False),
         sa.CheckConstraint(
             "actor_kind IN ('user', 'system')",
             name="ck_graph_command_journal_actor_kind",
@@ -258,7 +258,7 @@ def downgrade() -> None:
         sa.Column("room_epoch", sa.Uuid(), nullable=False),
         sa.Column("head_sequence", sa.Integer(), nullable=False),
         sa.Column("execution_id", sa.Uuid(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.CheckConstraint(
             "hmac_key_version >= 1",
             name="ck_graph_execution_idempotency_hmac_key_version",
@@ -281,7 +281,7 @@ def downgrade() -> None:
         sa.Column("workspace_id", sa.Uuid(), nullable=False),
         sa.Column("graph_id", sa.Uuid(), nullable=False),
         sa.Column("execution_id", sa.Uuid(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(
             ["workspace_id", "graph_id"],
             [

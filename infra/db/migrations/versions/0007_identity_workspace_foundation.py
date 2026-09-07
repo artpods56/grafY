@@ -6,7 +6,7 @@ Create Date: 2026-08-07
 """
 
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import datetime
 from uuid import UUID
 
 from alembic import op
@@ -19,10 +19,21 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 LOCAL_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")
-LOCAL_WORKSPACE_CREATED_AT = datetime(2026, 8, 7, tzinfo=UTC)
+# UTCDateTime persists UTC timestamps in timezone-naive database columns.
+LOCAL_WORKSPACE_CREATED_AT = datetime(2026, 8, 7)
 
 
 def upgrade() -> None:
+    connection = op.get_bind()
+    if connection.dialect.name == "postgresql":
+        op.alter_column(
+            "alembic_version",
+            "version_num",
+            existing_type=sa.String(length=32),
+            type_=sa.String(length=64),
+            existing_nullable=False,
+        )
+
     op.create_table(
         "users",
         sa.Column("id", sa.Uuid(), nullable=False),

@@ -58,7 +58,7 @@ def _create_release_tables() -> None:
         sa.Column("descriptor_digest", sa.String(length=64), nullable=True),
         sa.Column("published_by_user_id", sa.Uuid(), nullable=True),
         sa.Column("published_by_platform_actor", sa.String(length=255), nullable=True),
-        sa.Column("published_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("published_at", sa.DateTime(), nullable=False),
         sa.CheckConstraint("revision >= 1", name="ck_plugin_releases_plugin_release_revision"),
         sa.CheckConstraint(
             "published_by_user_id IS NULL OR published_by_platform_actor IS NULL",
@@ -131,7 +131,7 @@ def _create_release_tables() -> None:
         sa.Column("distribution", sa.String(length=16), nullable=True),
         sa.Column("installed_by_user_id", sa.Uuid(), nullable=True),
         sa.Column("installed_by_platform_actor", sa.String(length=255), nullable=True),
-        sa.Column("installed_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("installed_at", sa.DateTime(), nullable=False),
         sa.CheckConstraint(
             "scope IN ('system', 'workspace')",
             name="ck_plugin_installations_plugin_installation_scope",
@@ -216,7 +216,7 @@ def _create_selection_table() -> None:
         sa.Column("selected_revision", sa.Integer(), nullable=False),
         sa.Column("lifecycle", sa.String(length=16), nullable=False),
         sa.Column("generation", sa.Integer(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("updated_by_actor", sa.String(length=255), nullable=True),
         sa.CheckConstraint(
             "scope IN ('system', 'workspace')",
@@ -290,7 +290,7 @@ def _create_revocation_table(*, installation_foreign_key: bool) -> None:
         sa.Column("reason", sa.String(length=16), nullable=False),
         sa.Column("revoked_by_user_id", sa.Uuid(), nullable=True),
         sa.Column("revoked_by_platform_actor", sa.String(length=255), nullable=True),
-        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("revoked_at", sa.DateTime(), nullable=False),
         sa.CheckConstraint("scope IN ('system', 'workspace')", name="ck_plugin_release_revocations_revocation_scope"),
         sa.CheckConstraint(
             "(scope = 'system' AND workspace_id IS NULL) OR "
@@ -391,7 +391,7 @@ def _create_legacy_release_table() -> None:
         sa.Column("runtime_profile", sa.String(length=100), nullable=False),
         sa.Column("runtime_image_digest", sa.String(length=64), nullable=True),
         sa.Column("published_by_user_id", sa.Uuid(), nullable=True),
-        sa.Column("published_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("published_at", sa.DateTime(), nullable=False),
         sa.Column("contract_digest", sa.String(length=64), nullable=True),
         sa.Column("protocol_digest", sa.String(length=64), nullable=True),
         sa.Column("profile_digest", sa.String(length=64), nullable=True),

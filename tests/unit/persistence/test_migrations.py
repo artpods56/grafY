@@ -1,5 +1,7 @@
+import asyncio
 import json
 import importlib
+import os
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -12,6 +14,7 @@ import sqlalchemy as sa
 from sqlalchemy import Column, Integer, MetaData, Table, create_engine, inspect, text
 from sqlalchemy.engine import Connection, Row
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.schema import CreateIndex, CreateTable
 from sqlalchemy.sql.schema import SchemaItem
 from sqlalchemy.dialects import postgresql
@@ -27,6 +30,71 @@ from grafy_persistence.schema import (
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+
+
+async def _postgresql_migration_state(
+    database_url: str,
+) -> tuple[list[str], str | None, int | None]:
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            tables = await connection.run_sync(
+                lambda sync_connection: inspect(sync_connection).get_table_names()
+            )
+            if "alembic_version" not in tables:
+                return tables, None, None
+            revision = await connection.scalar(
+                text("SELECT version_num FROM alembic_version")
+            )
+            if "workspaces" not in tables:
+                return tables, revision, None
+            workspace_count = await connection.scalar(
+                text("SELECT COUNT(*) FROM workspaces")
+            )
+            return tables, revision, workspace_count
+    finally:
+        await engine.dispose()
+
+
+def test_fresh_postgresql_database_upgrades_to_head(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = os.environ.get("GRAFY_TEST_POSTGRES_URL")
+    if database_url is None:
+        pytest.skip("GRAFY_TEST_POSTGRES_URL is not configured")
+    if not database_url.startswith("postgresql+asyncpg://"):
+        raise ValueError(
+            "GRAFY_TEST_POSTGRES_URL must use the postgresql+asyncpg driver"
+        )
+
+    monkeypatch.setenv("GRAFY_DATABASE_URL", database_url)
+    get_settings.cache_clear()
+    config = Config(REPOSITORY_ROOT / "alembic.ini")
+    try:
+        existing_tables, _, _ = asyncio.run(_postgresql_migration_state(database_url))
+        if existing_tables:
+            raise RuntimeError(
+                "GRAFY_TEST_POSTGRES_URL must reference an empty disposable database"
+            )
+
+        command.upgrade(config, "head")
+
+        _, revision, workspace_count = asyncio.run(
+            _postgresql_migration_state(database_url)
+        )
+        assert revision == "0026_drop_plugin_distribution"
+        assert workspace_count == 0
+        command.check(config)
+
+        command.downgrade(config, "base")
+        tables, revision, workspace_count = asyncio.run(
+            _postgresql_migration_state(database_url)
+        )
+        assert tables == ["alembic_version"]
+        assert revision is None
+        assert workspace_count is None
+    finally:
+        get_settings.cache_clear()
 
 
 def test_tenant_rebuild_uses_postgresql_temporary_constraint_names() -> None:

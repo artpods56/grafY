@@ -49,7 +49,7 @@ def upgrade() -> None:
         sa.Column("checkpoint_revision", sa.Integer(), nullable=False),
         sa.Column("name", sa.String(length=160), nullable=False),
         sa.Column("document", sa.JSON(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.CheckConstraint(
             "collaboration_sequence >= 0",
             name="ck_collaborative_graph_heads_collaboration_sequence_nonneg",
@@ -94,7 +94,7 @@ def upgrade() -> None:
         sa.Column("authorization_version", sa.Integer(), nullable=True),
         sa.Column("command_kind", sa.String(length=80), nullable=False),
         sa.Column("command_payload", sa.JSON(), nullable=False),
-        sa.Column("accepted_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("accepted_at", sa.DateTime(), nullable=False),
         sa.CheckConstraint(
             "actor_kind IN ('user', 'system')",
             name="ck_graph_command_journal_actor_kind",
@@ -140,7 +140,7 @@ def upgrade() -> None:
         sa.Column("room_epoch", sa.Uuid(), nullable=False),
         sa.Column("accepted_sequence", sa.Integer(), nullable=False),
         sa.Column("outcome", sa.String(length=40), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.CheckConstraint(
             "actor_kind IN ('user', 'system')",
             name="ck_graph_command_receipts_actor_kind",
@@ -171,7 +171,7 @@ def upgrade() -> None:
         sa.Column("room_epoch", sa.Uuid(), nullable=False),
         sa.Column("collaboration_sequence", sa.Integer(), nullable=False),
         sa.Column("saved_revision", sa.Integer(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.CheckConstraint(
             "collaboration_sequence >= 0",
             name="ck_graph_checkpoint_mappings_sequence_nonneg",
@@ -216,7 +216,7 @@ def upgrade() -> None:
         sa.Column("room_epoch", sa.Uuid(), nullable=False),
         sa.Column("head_sequence", sa.Integer(), nullable=False),
         sa.Column("execution_id", sa.Uuid(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.CheckConstraint(
             "hmac_key_version >= 1",
             name="ck_graph_execution_idempotency_hmac_key_version",
@@ -241,7 +241,7 @@ def upgrade() -> None:
         sa.Column("workspace_id", sa.Uuid(), nullable=False),
         sa.Column("graph_id", sa.Uuid(), nullable=False),
         sa.Column("execution_id", sa.Uuid(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(
             ["workspace_id", "graph_id"],
             [

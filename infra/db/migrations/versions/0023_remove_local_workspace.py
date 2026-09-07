@@ -6,7 +6,7 @@ Create Date: 2026-08-26
 """
 
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import datetime
 from uuid import UUID
 
 from alembic import op
@@ -20,7 +20,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 LOCAL_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")
-MIGRATION_TIMESTAMP = datetime(2026, 8, 26, tzinfo=UTC)
+# UTCDateTime persists UTC timestamps in timezone-naive database columns.
+MIGRATION_TIMESTAMP = datetime(2026, 8, 26)
 
 _DIRECT_WORKSPACE_RESOURCES = (
     "artifact_objects",
@@ -114,7 +115,7 @@ def upgrade() -> None:
                     "updated_at = :updated_at WHERE id = :local_id"
                 ).bindparams(
                     local_id,
-                    sa.bindparam("updated_at", type_=sa.DateTime(timezone=True)),
+                    sa.bindparam("updated_at", type_=sa.DateTime()),
                 ),
                 {
                     "local_id": LOCAL_WORKSPACE_ID,
@@ -154,8 +155,8 @@ def downgrade() -> None:
             sa.column("name", sa.String()),
             sa.column("kind", sa.String()),
             sa.column("personal_owner_user_id", sa.Uuid()),
-            sa.column("created_at", sa.DateTime(timezone=True)),
-            sa.column("updated_at", sa.DateTime(timezone=True)),
+            sa.column("created_at", sa.DateTime()),
+            sa.column("updated_at", sa.DateTime()),
         )
         op.bulk_insert(
             workspaces,
@@ -178,7 +179,7 @@ def downgrade() -> None:
                 "updated_at = :updated_at WHERE id = :local_id"
             ).bindparams(
                 local_id,
-                sa.bindparam("updated_at", type_=sa.DateTime(timezone=True)),
+                sa.bindparam("updated_at", type_=sa.DateTime()),
             ),
             {
                 "local_id": LOCAL_WORKSPACE_ID,
@@ -192,8 +193,8 @@ def downgrade() -> None:
         sa.Column("workspace_id", sa.Uuid(), nullable=False),
         sa.Column("issuer", sa.String(length=2048), nullable=False),
         sa.Column("subject", sa.String(length=512), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("consumed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("consumed_at", sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(
             ["workspace_id"],
             ["workspaces.id"],

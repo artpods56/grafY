@@ -35,7 +35,7 @@ def upgrade() -> None:
             sa.String(length=255),
             nullable=True,
         ),
-        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("revoked_at", sa.DateTime(), nullable=False),
         sa.CheckConstraint(
             "scope IN ('system', 'workspace')",
             name="ck_plugin_release_revocations_revocation_scope",

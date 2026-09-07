@@ -30,7 +30,7 @@ def _backfill_selections(connection: sa.Connection) -> None:
         sa.column("workspace_id", sa.Uuid()),
         sa.column("slug", sa.String(length=100)),
         sa.column("revision", sa.Integer()),
-        sa.column("published_at", sa.DateTime(timezone=True)),
+        sa.column("published_at", sa.DateTime()),
     )
     selections = sa.table(
         "plugin_release_selections",
@@ -42,7 +42,7 @@ def _backfill_selections(connection: sa.Connection) -> None:
         sa.column("selected_revision", sa.Integer()),
         sa.column("lifecycle", sa.String(length=16)),
         sa.column("generation", sa.Integer()),
-        sa.column("updated_at", sa.DateTime(timezone=True)),
+        sa.column("updated_at", sa.DateTime()),
         sa.column("updated_by_actor", sa.String(length=255)),
     )
 
@@ -128,7 +128,7 @@ def upgrade() -> None:
         sa.Column("selected_revision", sa.Integer(), nullable=False),
         sa.Column("lifecycle", sa.String(length=16), nullable=False),
         sa.Column("generation", sa.Integer(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("updated_by_actor", sa.String(length=255), nullable=True),
         sa.CheckConstraint(
             "scope IN ('system', 'workspace')",
