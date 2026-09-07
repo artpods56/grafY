@@ -37,18 +37,19 @@ from grafy_api.cli_credentials import (
     parse_sensitive_bearer_token,
     store_sensitive_cli_token,
 )
-from grafy_api.plugin_authoring import PluginAuthoringService
-from grafy_api.plugin_publication import (
+from grafy_api.plugins.publication.authoring import PluginAuthoringService
+from grafy_api.plugins.publication.workflow import (
     PluginPublicationWorkflow,
     SystemPluginPublicationWorkflow,
     SystemPluginRevocationWorkflow,
 )
-from grafy_api.plugin_publisher_sandbox import DockerPluginDirectoryPublisher
-from grafy_api.plugin_publishing import (
+from grafy_api.plugins.publication.sandbox import DockerPluginDirectoryPublisher
+from grafy_api.plugins.publication.source import (
     PluginDirectoryPublisher,
     PluginPublishingError,
 )
-from grafy_api.plugin_oci import PluginOciImageBuilder, runtime_profile
+from grafy_api.plugins.profiles import runtime_profile
+from grafy_api.plugins.publication.oci import PluginOciImageBuilder
 from grafy_api.network_policy import load_network_policy_manifest
 from grafy_api.settings import get_settings
 from grafy_api.storage import configured_file_storage

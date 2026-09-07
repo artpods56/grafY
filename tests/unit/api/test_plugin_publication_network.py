@@ -8,8 +8,8 @@ from grafy_core.domain.plugin_releases import (
     PluginNodeContract,
     PluginNodeHttpEgressContract,
 )
-from grafy_api.plugin_publishing import PluginPublishingError
-from grafy_api.plugin_publication import (
+from grafy_api.plugins.publication.source import PluginPublishingError
+from grafy_api.plugins.publication.workflow import (
     render_plugin_capability_diff,
     require_network_contract,
 )

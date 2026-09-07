@@ -61,7 +61,7 @@ from grafy_api.network_policy import (
     NetworkPolicy,
     resolve_http_egress_authority,
 )
-from grafy_api.plugin_oci import PluginRuntimeProfile
+from grafy_api.plugins.profiles import PluginRuntimeProfile
 
 from .plugin_artifacts import (
     PluginGuestRunError,

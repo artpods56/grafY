@@ -6,16 +6,16 @@ from uuid import UUID
 import pytest
 from typing_extensions import override
 
-from grafy_api.plugin_authoring import (
+from grafy_api.plugins.publication.authoring import (
     PluginAuthoringConflictError,
     PluginAuthoringService,
 )
-from grafy_api.plugin_oci import PluginOciImageBuilder
-from grafy_api.plugin_publication import (
+from grafy_api.plugins.publication.oci import PluginOciImageBuilder
+from grafy_api.plugins.publication.workflow import (
     PluginPublicationConflictError,
     PluginPublicationWorkflow,
 )
-from grafy_api.plugin_publishing import (
+from grafy_api.plugins.publication.source import (
     PluginDirectoryPublisher,
     VerifiedPluginCandidate,
 )

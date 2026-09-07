@@ -51,8 +51,9 @@ from grafy_core.runtime.plugin_invocation import (
 from grafy_core.runtime.plugin_protocol import PluginInvocationLimits
 from grafy_storage import LocalFileObjectStore
 
-from grafy_api.plugin_oci import PluginOciImageBuilder, runtime_profile
-from grafy_api.plugin_publishing import PluginDirectoryPublisher
+from grafy_api.plugins.profiles import runtime_profile
+from grafy_api.plugins.publication.oci import PluginOciImageBuilder
+from grafy_api.plugins.publication.source import PluginDirectoryPublisher
 from grafy_api.v1.routes.executions.runtime.plugin_artifacts import (
     ArtifactBundlePluginInvoker,
 )

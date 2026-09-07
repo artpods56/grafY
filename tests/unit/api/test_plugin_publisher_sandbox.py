@@ -3,12 +3,12 @@ import subprocess
 
 import pytest
 
-from grafy_api.plugin_publisher_sandbox import (
+from grafy_api.plugins.publication.sandbox import (
     DockerPluginDirectoryPublisher,
     DockerPublisherSandbox,
     PublisherSandboxResult,
 )
-from grafy_api.plugin_publishing import PluginPublishingError
+from grafy_api.plugins.publication.source import PluginPublishingError
 from grafy_core.domain.plugin_releases import (
     PluginCapabilityManifest,
     PluginCatalogManifest,

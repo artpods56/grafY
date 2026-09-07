@@ -15,7 +15,7 @@ from grafy_core.domain.plugin_releases import (
 from grafy_core.ports.storage import FileStoragePort
 
 from grafy_api.plugin_egress import PluginEgressDestination
-from grafy_api.plugin_oci import runtime_profile
+from grafy_api.plugins.profiles import runtime_profile
 from grafy_api.v1.routes.executions.runtime.plugin_docker import (
     DockerPluginRuntime,
     DockerPluginRuntimeError,

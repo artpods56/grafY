@@ -35,7 +35,7 @@ from grafy_api.network_policy import (
     NetworkProfileMode,
     NetworkRejectionReason,
 )
-from grafy_api.plugin_oci import PluginRuntimeProfile
+from grafy_api.plugins.profiles import PluginRuntimeProfile
 
 
 PluginNonRunnableReason = Literal[

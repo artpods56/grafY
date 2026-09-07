@@ -917,7 +917,7 @@ Primary touchpoints:
 - `apps/api/src/grafy_api/settings.py`
 - `apps/api/src/grafy_api/main.py`
 - `apps/api/src/grafy_api/plugin_admission.py`
-- `apps/api/src/grafy_api/plugin_publication.py`
+- `apps/api/src/grafy_api/plugins/publication/workflow.py`
 - `.env.example`
 - `infra/docker/.env.production.example`
 - `infra/docker/compose.plugin-runtime.yaml`
@@ -960,11 +960,11 @@ Primary touchpoints:
 
 Primary touchpoints:
 
-- `apps/api/src/grafy_api/plugin_publisher_sandbox.py`
-- `apps/api/src/grafy_api/plugin_publishing.py`
-- `apps/api/src/grafy_api/plugin_oci.py`
-- `apps/api/src/grafy_api/plugin_publication.py`
-- `apps/api/src/grafy_api/plugin_authoring.py`
+- `apps/api/src/grafy_api/plugins/publication/sandbox.py`
+- `apps/api/src/grafy_api/plugins/publication/source.py`
+- `apps/api/src/grafy_api/plugins/publication/oci.py`
+- `apps/api/src/grafy_api/plugins/publication/workflow.py`
+- `apps/api/src/grafy_api/plugins/publication/authoring.py`
 - `infra/docker/compose.yaml`
 - `infra/docker/README.md`
 

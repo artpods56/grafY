@@ -10,12 +10,9 @@ from grafy_core.domain.plugin_releases import (
 )
 from grafy_core.runtime.plugin_loader import WORKSPACE_PLUGIN_LOADER_TARGET
 
-from grafy_api.plugin_oci import (
-    PYTHON_UV_BASE_IMAGE_DIGEST,
-    _dockerfile,
-    runtime_profile,
-)
-from grafy_api.plugin_publishing import VerifiedPluginCandidate
+from grafy_api.plugins.profiles import PYTHON_UV_BASE_IMAGE_DIGEST, runtime_profile
+from grafy_api.plugins.publication.oci import _dockerfile
+from grafy_api.plugins.publication.source import VerifiedPluginCandidate
 from grafy_core.domain.plugin_releases import PluginCapabilityManifest
 
 

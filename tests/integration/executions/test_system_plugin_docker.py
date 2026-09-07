@@ -10,8 +10,9 @@ from grafy_core.domain.plugin_releases import plugin_contract_digest
 from grafy_core.runtime.plugin_loader import PluginGuestLoaderManifest
 from grafy_storage import LocalFileObjectStore
 
-from grafy_api.plugin_oci import PluginOciImageBuilder, runtime_profile
-from grafy_api.plugin_publishing import PluginDirectoryPublisher
+from grafy_api.plugins.profiles import runtime_profile
+from grafy_api.plugins.publication.oci import PluginOciImageBuilder
+from grafy_api.plugins.publication.source import PluginDirectoryPublisher
 
 
 SYSTEM_LOADER_TARGET = "grafy_plugin_llm.plugin:LLM"

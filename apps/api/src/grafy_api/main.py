@@ -24,7 +24,7 @@ from grafy_persistence.unit_of_work import (
 from grafy_api.app_state import AppIdentity, AppResources, get_identity
 from grafy_api.diagnostics import configure_diagnostics
 from grafy_api.http_errors import register_http_error_handlers
-from grafy_api.plugin_oci import runtime_profile
+from grafy_api.plugins.profiles import runtime_profile
 from grafy_api.services.composition import build_workbench_components
 from grafy_api.settings import Settings, get_settings
 from grafy_api.single_owner import ApiOwnerLease

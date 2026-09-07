@@ -131,8 +131,8 @@ release head. It is control state, not part of the frozen Plugin archive.
 
 - **Owner:** Codex
 - **Branch or PR:** —
-- **Implementation evidence:** `plugin_authoring.py` owns fixed scaffolding,
-  reservation, review diff, and review/head fences. `plugin_publication.py` is
+- **Implementation evidence:** `plugins/publication/authoring.py` owns fixed scaffolding,
+  reservation, review diff, and review/head fences. `plugins/publication/workflow.py` is
   the shared human/agent verified publication boundary. `PluginReleaseService`
   owns the `publish_plugin` authorization check and append-only release write.
   The Workbench uses the typed `update_node_plugin_release` authoring command.

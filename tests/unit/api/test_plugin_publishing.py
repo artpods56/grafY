@@ -9,7 +9,7 @@ import tarfile
 import pytest
 
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_api.plugin_publishing import (
+from grafy_api.plugins.publication.source import (
     PluginDirectoryPublisher,
     PluginPublishingError,
     constrained_environment,

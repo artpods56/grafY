@@ -28,9 +28,10 @@ from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 from grafy_api.plugin_admission import isolated_release_admission
-from grafy_api.plugin_oci import PluginOciImageBuilder, runtime_profile
-from grafy_api.plugin_publication import SystemPluginPublicationWorkflow
-from grafy_api.plugin_publishing import PluginDirectoryPublisher
+from grafy_api.plugins.profiles import runtime_profile
+from grafy_api.plugins.publication.oci import PluginOciImageBuilder
+from grafy_api.plugins.publication.workflow import SystemPluginPublicationWorkflow
+from grafy_api.plugins.publication.source import PluginDirectoryPublisher
 from grafy_api.settings import get_settings
 from grafy_api.storage import configured_file_storage
 from grafy_api.system_plugin_inventory import (

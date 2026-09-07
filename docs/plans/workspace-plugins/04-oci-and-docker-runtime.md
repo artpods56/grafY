@@ -239,8 +239,9 @@ operations required by image publication and Plugin invocation.
 
 - **Owner:** Codex
 - **Branch or PR:** —
-- **Implementation evidence:** `plugin_oci.py` owns the pinned `python-uv`
-  build profile and content-addressed OCI archive; `plugin_docker.py` owns the
+- **Implementation evidence:** `plugins/profiles.py` owns the pinned `python-uv`
+  build profile; `plugins/publication/oci.py` owns the content-addressed OCI
+  archive; `plugin_docker.py` owns the
   local Docker lifecycle; `plugin_sandbox.py` and `RunGraph` own typed scope
   propagation; migration `0017_plugin_runtime_artifact.py` and the release
   descriptor persist immutable runtime artifacts. Production uses the pinned

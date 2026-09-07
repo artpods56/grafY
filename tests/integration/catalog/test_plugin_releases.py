@@ -4,7 +4,7 @@ import shutil
 
 from pydantic import SecretStr
 
-from grafy_api.plugin_publishing import PluginDirectoryPublisher
+from grafy_api.plugins.publication.source import PluginDirectoryPublisher
 from grafy_api.settings import Settings
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 from grafy_core.application.plugin_releases import PluginReleaseService

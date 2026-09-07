@@ -28,7 +28,7 @@ from grafy_api.plugin_egress import (
     PluginEgressDestination,
     ResolvedPluginEgressDestination,
 )
-from grafy_api.plugin_oci import runtime_profile
+from grafy_api.plugins.profiles import runtime_profile
 from grafy_api.network_policy import NetworkCaBundle
 from grafy_api.v1.routes.executions.runtime.plugin_docker import (
     DockerPluginRuntime,

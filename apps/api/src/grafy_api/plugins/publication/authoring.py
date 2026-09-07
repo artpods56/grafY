@@ -18,11 +18,11 @@ from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.ports.storage import FileStoragePort
 
-from grafy_api.plugin_publication import (
+from grafy_api.plugins.publication.workflow import (
     PluginPublicationWorkflow,
     render_plugin_capability_diff,
 )
-from grafy_api.plugin_publishing import (
+from grafy_api.plugins.publication.source import (
     build_deterministic_archive,
     scan_source_tree,
     source_archive_entries,

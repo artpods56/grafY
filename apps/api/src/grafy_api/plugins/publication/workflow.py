@@ -35,8 +35,8 @@ from grafy_api.plugin_admission import (
     ReleaseExecutionRejection,
     ReleaseExecutionRoute,
 )
-from grafy_api.plugin_oci import PluginOciImageBuilder
-from grafy_api.plugin_publishing import (
+from grafy_api.plugins.publication.oci import PluginOciImageBuilder
+from grafy_api.plugins.publication.source import (
     PluginDirectoryPublisher,
     PluginPublishingError,
     VerifiedPluginCandidate,

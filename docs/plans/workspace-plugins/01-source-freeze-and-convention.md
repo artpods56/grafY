@@ -78,7 +78,7 @@ approved capability set.
 
 ## Expected ownership
 
-- Publication orchestration: `apps/api/src/grafy_api/plugin_publishing.py`
+- Source verification and freezing: `apps/api/src/grafy_api/plugins/publication/source.py`
 - CLI boundary: `apps/api/src/grafy_api/cli.py`
 - Release application workflow:
   `libs/core/src/grafy_core/application/plugin_releases.py`
@@ -195,7 +195,7 @@ publication helper package for one workflow.
 - **Owner:** Slice 1 agent (opencode)
 - **Branch or PR:** — (work done directly in the working tree; no commits made)
 - **Implementation evidence:**
-  - `apps/api/src/grafy_api/plugin_publishing.py`: repaired corrupted class
+  - `apps/api/src/grafy_api/plugins/publication/source.py`: repaired corrupted class
     definition; allowlisted-root canonical resolution, pre-snapshot rejection
     of symlinks/special files/traversal/oversized trees with contextual
     errors, private staging, deterministic archive built before any Plugin

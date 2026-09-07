@@ -14,7 +14,7 @@ from grafy_api.system_plugin_inventory import (
     SystemPluginInventoryEntry,
     load_system_plugin_inventory,
 )
-from grafy_api.plugin_publishing import (
+from grafy_api.plugins.publication.source import (
     build_deterministic_archive,
     scan_source_tree,
 )

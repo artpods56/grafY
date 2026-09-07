@@ -22,7 +22,7 @@ from grafy_core.domain.plugin_releases import (
 from grafy_core.domain.plugin_selection import PluginReleaseSelection
 from grafy_persistence import schema
 
-from grafy_api.plugin_publishing import (
+from grafy_api.plugins.publication.source import (
     PluginPublishingError,
     build_deterministic_archive,
     scan_source_tree,

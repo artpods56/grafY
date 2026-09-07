@@ -12,10 +12,10 @@ from grafy_api.plugin_egress import (
     PluginEgressDestination,
 )
 from grafy_api.network_policy import legacy_network_policy
-from grafy_api.plugin_oci import runtime_profile
-from grafy_api.plugin_oci import PluginOciImageBuilder
-from grafy_api.plugin_publication import SystemPluginPublicationWorkflow
-from grafy_api.plugin_publishing import (
+from grafy_api.plugins.profiles import runtime_profile
+from grafy_api.plugins.publication.oci import PluginOciImageBuilder
+from grafy_api.plugins.publication.workflow import SystemPluginPublicationWorkflow
+from grafy_api.plugins.publication.source import (
     PluginPublishingError,
     VerifiedPluginCandidate,
 )

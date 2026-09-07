@@ -12,8 +12,8 @@ from sqlalchemy import JSON, Table, func, select, text, type_coerce, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import OperationalError
 
-from grafy_api.plugin_publication import SystemPluginRevocationWorkflow
-from grafy_api.plugin_publishing import PluginPublishingError
+from grafy_api.plugins.publication.workflow import SystemPluginRevocationWorkflow
+from grafy_api.plugins.publication.source import PluginPublishingError
 from grafy_api.system_cutover import (
     CutoverRollbackUnit,
     SystemBaselineCutoverService,

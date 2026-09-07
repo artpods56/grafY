@@ -36,7 +36,7 @@ from grafy_core.runtime.plugin_protocol import (
     PluginInvocationRelease,
 )
 
-from grafy_api.plugin_oci import runtime_profile
+from grafy_api.plugins.profiles import runtime_profile
 from grafy_api.v1.routes.executions.runtime.plugin_artifacts import (
     PluginGuestRunError,
 )
