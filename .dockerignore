@@ -7,6 +7,7 @@
 .ruff_cache
 .grafy-artifacts
 .notarius-artifacts
+.deployment
 .playwright-cli
 **/__pycache__
 **/*.pyc

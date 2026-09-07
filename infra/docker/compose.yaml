@@ -13,6 +13,10 @@ x-persistence-environment: &persistence-environment
 x-api-environment: &api-environment
   <<: *persistence-environment
   OPENAI_CUSTOM_HEADERS: ${OPENAI_CUSTOM_HEADERS:-}
+  GRAFY_ENVIRONMENT: ${GRAFY_ENVIRONMENT:-development}
+  # Import a configured digest, but leave the setting absent in development.
+  # An empty string fails the Settings field's 64-character digest pattern.
+  GRAFY_BUILD_DIGEST:
   GRAFY_LOG_LEVEL: ${GRAFY_LOG_LEVEL:-INFO}
   GRAFY_LOG_RENDERER: ${GRAFY_LOG_RENDERER:-json}
   GRAFY_PUBLIC_ORIGIN: ${GRAFY_PUBLIC_ORIGIN:-https://grafy.example.com}

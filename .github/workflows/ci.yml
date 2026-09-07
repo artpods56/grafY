@@ -17,6 +17,20 @@ jobs:
     name: Backend tests
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: grafy
+          POSTGRES_USER: grafy
+          POSTGRES_PASSWORD: grafy-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username grafy --dbname grafy"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -44,6 +58,12 @@ jobs:
           sudo apt-get install --yes --no-install-recommends gdal-bin
       - name: Install locked Python workspace
         run: uv sync --locked --all-extras
+      - name: Verify fresh PostgreSQL migration
+        env:
+          GRAFY_TEST_POSTGRES_URL: postgresql+asyncpg://grafy:grafy-ci@127.0.0.1:5432/grafy
+        run: >-
+          uv run --all-extras pytest -q -o log_cli=false
+          tests/unit/persistence/test_migrations.py::test_fresh_postgresql_database_upgrades_to_head
       - name: Verify OCI and GIS capabilities
         run: |
           docker version
