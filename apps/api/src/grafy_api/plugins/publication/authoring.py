@@ -507,11 +507,18 @@ class PluginAuthoringService:
         )
         (package / "py.typed").write_bytes(b"")
         (tests / "test_plugin.py").write_text(
-            "from grafy_plugin import PLUGIN\n\n\n"
+            "from grafy_core.domain.plugin_releases import PluginCatalogManifest\n"
+            "from grafy_plugin import PLUGIN, generate_text\n\n\n"
             "def test_plugin_contract() -> None:\n"
             f"    assert PLUGIN.slug == {slug!r}\n"
             f"    assert [node.key for node in PLUGIN.nodes] == "
-            f"[{(operator_id, 1)!r}]\n",
+            f"[{(operator_id, 1)!r}]\n"
+            f"    assert generate_text() == {title!r}\n"
+            "    catalog = PluginCatalogManifest.from_plugin(PLUGIN)\n"
+            "    assert [port.name for port in catalog.nodes[0].outputs] == "
+            '["text"]\n'
+            "    assert catalog.nodes[0].outputs[0].artifact_type.id == "
+            '"scalar.text"\n',
             encoding="utf-8",
         )
 
@@ -619,29 +626,17 @@ where = ["src"]
 
 
 def _node_module(operator_id: str, title: str) -> str:
-    return f"""from typing import Annotated
-
-from grafy_core.artifacts import NoConfig, NodeInput, NodeOutput
-from grafy_core.nodes import OutPort
-from grafy_core.artifact_contracts import TEXT_VALUE, TextValue
-
-from grafy_plugin.declaration import PLUGIN
+    return f"""from grafy_plugin.declaration import PLUGIN
 
 
-class GenerateTextOutput(NodeOutput):
-    text: Annotated[TextValue, OutPort(TEXT_VALUE)]
-
-
-@PLUGIN.function_node(
+@PLUGIN.callable_node(
     operator_id={operator_id!r},
     version=1,
     title={title!r},
+    output_name="text",
 )
-async def generate_text(
-    _config: NoConfig,
-    _inputs: NodeInput,
-) -> GenerateTextOutput:
-    return GenerateTextOutput(text=TextValue(value={title!r}))
+def generate_text() -> str:
+    return {title!r}
 """
 
 

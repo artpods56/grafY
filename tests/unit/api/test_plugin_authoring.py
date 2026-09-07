@@ -132,6 +132,14 @@ def test_agent_authoring_scaffolds_reviews_fences_and_uses_shared_publisher(
     assert "generated.node" not in (
         project / "src" / "grafy_plugin" / "nodes.py"
     ).read_text(encoding="utf-8")
+    generated_nodes = (project / "src" / "grafy_plugin" / "nodes.py").read_text(
+        encoding="utf-8"
+    )
+    assert "@PLUGIN.callable_node(" in generated_nodes
+    assert "def generate_text() -> str:" in generated_nodes
+    generated_tests = (project / "tests" / "test_plugin.py").read_text(encoding="utf-8")
+    assert "PluginCatalogManifest.from_plugin(PLUGIN)" in generated_tests
+    assert "assert generate_text() == 'Generated notes'" in generated_tests
 
     other_workspace_id = UUID(int=2)
     other_project = plugin_root / str(other_workspace_id) / "generated-notes"

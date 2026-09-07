@@ -32,6 +32,7 @@ from grafy_core.conversions import (
     ArtifactConversionKey,
     conversion_runtime_types_are_compatible,
 )
+from grafy_core.callable_nodes import callable_node_class
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.domain.modules import (
     MODULE_BOUNDARY_OPERATOR_VERSION,
@@ -529,6 +530,52 @@ class Plugin:
                 required_capabilities=required_capabilities,
                 cache_policy=cache_policy,
             )(FunctionNodeAdapter)
+            return function
+
+        return decorate
+
+    def callable_node[FunctionT: Callable[..., object]](
+        self,
+        *,
+        operator_id: str,
+        version: int,
+        title: str,
+        output_name: str = "result",
+        http_egress: NodeHttpEgressContract | None = None,
+        required_capabilities: tuple[PluginRuntimeCapability, ...] = (),
+        cache_policy: NodeCachePolicy = NodeCachePolicy.NEVER,
+    ) -> Callable[[FunctionT], FunctionT]:
+        """Register a typed callable without separate configuration or port models.
+
+        Positional parameters are graph inputs, keyword-only parameters are
+        configuration, and the return value is one artifact output. An exact
+        first NodeExecutionContext parameter is injected by the runtime.
+        Standard str/int artifact contracts are inferred but must still be
+        registered as owned types or explicit dependencies. Sync functions run
+        in a worker thread; async functions run on the executor's event loop.
+        The decorator returns the original callable for ordinary Python use.
+        """
+
+        def decorate(function: FunctionT) -> FunctionT:
+            try:
+                node_class = callable_node_class(
+                    function,
+                    operator_id=operator_id,
+                    version=version,
+                    output_name=output_name,
+                )
+            except Exception as exc:
+                raise PluginRegistrationError(
+                    f"Plugin {self.slug!r} callable node {operator_id!r}: {exc}"
+                ) from exc
+            self.node(
+                operator_id=operator_id,
+                version=version,
+                title=title,
+                http_egress=http_egress,
+                required_capabilities=required_capabilities,
+                cache_policy=cache_policy,
+            )(node_class)
             return function
 
         return decorate

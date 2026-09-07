@@ -156,9 +156,14 @@ def _instrumented_plugin_project(repository: Path, destination: Path) -> Path:
 import asyncio
 import os
 import subprocess
-from typing import Literal
+from typing import Annotated, Literal
 
-from grafy_core.artifacts import NodeConfig
+from pydantic import Field
+
+from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.artifact_contracts import TEXT_VALUE, TextValue
+from grafy_core.nodes import OutPort
+from grafy_core.plugins import NodeCachePolicy
 
 
 class RuntimeProbeConfig(NodeConfig):

@@ -21,6 +21,32 @@
 
 ---
 
+## Start with an ordinary function
+
+For one input and one output, the whole node can be one decorated function:
+
+```python
+from grafy_core.artifact_contracts import TEXT_VALUE
+
+from grafy_plugin_my_plugin.declaration import MY_PLUGIN
+
+MY_PLUGIN.register_artifact_type_dependency(TEXT_VALUE)
+
+@MY_PLUGIN.callable_node(
+    operator_id="my_plugin.upper",
+    version=1,
+    title="Uppercase text",
+    output_name="text",
+)
+def upper_text(text: str) -> str:
+    return text.upper()
+```
+
+`text` is a graph input. The returned string is a graph output named `text`.
+The function remains directly callable as `upper_text("hello")`.
+
+---
+
 ## 1. Overview
 
 Grafy is a **typed artifact-graph workbench**. A Plugin is an independently
@@ -84,7 +110,7 @@ plugins/<name>/
     plugin.py                        # registration: nodes, artifacts, adapters
     artifacts.py                     # ArtifactTypeSpec constants
     models.py                        # pydantic payload models
-    nodes.py                         # Node classes + function_node implementations
+    nodes.py                         # callable_node functions and advanced nodes
     persistence.py                   # custom resolvers/writers (if not InlineModel)
     <domain>.py                      # optional: provider/executor adapters (e.g. gdal.py)
     py.typed                          # PEP 561 marker for typed consumers
@@ -171,8 +197,9 @@ __all__ = ["MY_PLUGIN"]
 
 `plugin.py` is intentionally thin — it *registers*, it does not *implement*.
 Keep the registration readable: each `register(...)` call is one capability.
-Node modules are imported (not registered) here; the `@node`/`@function_node`
-decorators inside them attach themselves to the singleton at import time.
+Node modules are imported, not registered, here. The `@callable_node`,
+`@function_node`, and `@node` decorators inside them attach their nodes to the
+singleton at import time.
 
 ### 2.4 `__init__.py`
 
@@ -188,44 +215,145 @@ __all__ = ["MY_PLUGIN"]
 
 ## 3. Registering nodes
 
-There are two ways to add a node, chosen by how much state it needs.
+Start with `callable_node`. Use the model-based decorators when the node has
+multiple outputs, no output, or runtime construction requirements.
 
-### 3.1 `function_node` — stateless operators (preferred)
+### 3.1 `callable_node` for ordinary functions
 
-Use for nodes that need only config + inputs and no external adapter. The
-decorator validates the async signature, resolves type hints, and builds a
-contract from the annotated `NodeConfig` / `NodeInput` / `NodeOutput` models:
+`callable_node` turns an ordinary typed Python function into a node. Positional
+parameters become graph inputs. Keyword-only parameters become node config.
+The return value becomes one graph output named `result` unless you set
+`output_name`.
 
 ```python
 from typing import Annotated
-from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
-from grafy_core.nodes import InPort, OutPort
+from pydantic import Field
 from grafy_core.plugins import NodeCachePolicy
 
-from grafy_plugin_my_plugin.artifacts import RESULT
 from grafy_plugin_my_plugin.declaration import MY_PLUGIN
 
+@MY_PLUGIN.callable_node(
+    operator_id="my_plugin.greet",
+    version=1,
+    title="Greet",
+    output_name="text",
+    cache_policy=NodeCachePolicy.EXACT,
+)
+def greet(
+    name: str,
+    *,
+    prefix: Annotated[str, Field(min_length=1)] = "Hello",
+) -> str:
+    """Greet one person."""
+    return f"{prefix}, {name}"
+```
+
+The decorated object remains the original function. `greet("Ada")` returns
+`"Hello, Ada"` in ordinary Python code. Grafy builds runtime config, input, and
+output models for validation and protocol transport. Config and input parsing
+keep the existing node-model behavior. Return values receive strict output
+validation. The generated model names are stable for each `operator_id` and
+`version`.
+
+The signature controls the generated node contract:
+
+| Function declaration | Generated node contract |
+| --- | --- |
+| Positional parameter | Required graph input |
+| Positional parameter with `None` default | Optional graph input |
+| Keyword-only parameter | Config field |
+| Keyword-only default | Config default |
+| First positional `NodeExecutionContext` | Injected execution context, not a graph input |
+| Return annotation | One output named by `output_name`, or `result` by default |
+
+Grafy infers `scalar.text@1` for `str` and `scalar.integer@1` for `int`.
+`list[str]` and `list[int]` produce sequence-shaped ports for the same artifact
+types. Register those artifact type dependencies explicitly on the Plugin:
+
+```python
+from grafy_core.artifact_contracts import TEXT_VALUE
+
+MY_PLUGIN.register_artifact_type_dependency(TEXT_VALUE)
+```
+
+For a custom artifact, pair its Python type with `InPort` or `OutPort`:
+
+```python
+from typing import Annotated
+from grafy_core.nodes import InPort, OutPort
+
+def summarize(
+    table: Annotated[Table, InPort(TABLE_DATA)],
+) -> Annotated[TableSummary, OutPort(TABLE_SUMMARY)]:
+    ...
+```
+
+The annotations select contracts. They do not register artifact types or
+dependencies. Register a Plugin-owned artifact and its persistence adapters,
+or register a dependency on a producer-neutral core artifact type.
+
+Use normal Python defaults and `Annotated[..., Field(...)]` constraints for
+config. Grafy checks each default against its annotation during registration,
+and generated config models also validate defaults. Put constraints in
+`Annotated`; a `Field` object cannot be the parameter default. Aliases are not
+supported because function parameter names are graph contract names. A graph
+input may have only a nullable `None` default. Grafy rejects other positional
+defaults because upstream edges, not Python defaults, supply graph values.
+
+Both synchronous and asynchronous functions are supported. Grafy runs a
+synchronous function in a worker thread so it does not block the event loop.
+Task cancellation cannot stop Python code already running in that thread. The
+isolated Plugin process owns the hard termination boundary.
+
+Use `NodeExecutionContext` only as the exact first positional annotation when
+the function needs progress or execution identity:
+
+```python
+from grafy_core.nodes import NodeExecutionContext
+
+async def label(context: NodeExecutionContext, text: str) -> str:
+    await context.progress("Labeling text")
+    return text
+```
+
+`callable_node` intentionally has one output. Use `function_node` for multiple
+outputs or no output. Use `function_node` or `node` when explicit model classes
+make a complex contract easier to read. Callable nodes accept named parameters,
+not `*args` or `**kwargs`. They also reject generator functions and nullable,
+tuple, dictionary, or `NodeOutput` return annotations.
+
+### 3.2 `function_node` for explicit models
+
+`function_node` derives a node contract from `NodeConfig`, `NodeInput`, and
+`NodeOutput` models. It is the advanced form for explicit model ownership,
+multiple outputs, and output-free operations:
+
+```python
+from typing import Annotated
+from grafy_core.artifact_contracts import TEXT_VALUE, TextValue
+from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.nodes import InPort, OutPort
+
 class UpperConfig(NodeConfig):
-    text: StrictStr = Field(description="Text to uppercase.")
+    enabled: bool = True
 
 class UpperInput(NodeInput):
-    pass
+    text: Annotated[TextValue, InPort(TEXT_VALUE)]
 
 class UpperOutput(NodeOutput):
-    result: Annotated[ResultPayload, OutPort(RESULT), Field(description="Uppercased text.")]
+    result: Annotated[TextValue, OutPort(TEXT_VALUE)]
 
 @MY_PLUGIN.function_node(
     operator_id="my_plugin.upper",
     version=1,
     title="Uppercase text",
-    cache_policy=NodeCachePolicy.EXACT,
 )
 async def upper_text(config: UpperConfig, inputs: UpperInput) -> UpperOutput:
-    """Uppercases the input text."""
-    return UpperOutput(result=ResultPayload(text=config.text.upper()))
+    value = inputs.text.value.upper() if config.enabled else inputs.text.value
+    return UpperOutput(result=TextValue(value=value))
 ```
 
-### 3.2 `node` — class nodes with an explicit factory
+### 3.3 `node` for an explicit factory
 
 Use when the node needs an adapter (provider client, executor, storage), an
 explicit constructor, or a secret resolver. The factory receives a
@@ -270,7 +398,7 @@ class ExecuteNode(Node[ExecuteConfig, ExecuteInput, ExecuteOutput]):
   registry raises `PluginRegistrationError` if a no-arg construction fails.
 - Use `context.progress(...)` for bounded, user-visible progress text.
 
-### 3.3 Naming and versioning
+### 3.4 Naming and versioning
 
 - `operator_id` is a **globally unique, stable** string, namespaced by plugin:
   `sql.statement.raw`, `gis.features.to_table`. It is part of the identity of
@@ -285,8 +413,9 @@ class ExecuteNode(Node[ExecuteConfig, ExecuteInput, ExecuteOutput]):
 
 ## 4. Node contracts (ports)
 
-Inputs and outputs are pydantic models carrying artifact ports via `Annotated`
-metadata:
+`function_node` and `node` inputs and outputs are pydantic models carrying
+artifact ports through `Annotated` metadata. `callable_node` uses the same
+metadata directly on function parameters and the return annotation.
 
 - **`InPort(artifact_type, variadic=False, instance_plugs=False)`** — marks an
   input field as consuming an artifact type. Set `variadic=True` for list
@@ -308,7 +437,7 @@ class QueryOutput(NodeOutput):
 
 **Contract rules:**
 
-- Models must subclass `NodeConfig`, `NodeInput`, `NodeOutput` and set
+- Explicit models must subclass `NodeConfig`, `NodeInput`, `NodeOutput` and set
   `model_config = ConfigDict(extra="forbid")` — unknown fields are rejected.
 - Port artifact types must be **installed** — the registry's `freeze()` rejects
   any node referencing an artifact type that isn't installed.
@@ -516,8 +645,10 @@ Every Plugin must pass declaration and freeze tests that verify:
 - [ ] `pyproject.toml` declares `grafy-core`; `uv.lock` and the exact SDK-wheel
       supply rule are committed.
 - [ ] One `Plugin` singleton with a stable family slug.
-- [ ] Node models subclass `NodeConfig`/`NodeInput`/`NodeOutput` with
-      `extra="forbid"`; ports use `InPort`/`OutPort` with installed artifact types.
+- [ ] Ordinary one-output functions use `callable_node`; multiple-output,
+      output-free, or explicit-model contracts use `function_node` or `node`.
+- [ ] Custom artifact parameters and returns use `InPort`/`OutPort` with
+      registered artifact types or dependencies.
 - [ ] Artifact types are namespaced, versioned, and declared in `artifacts.py`.
 - [ ] Resolvers/writers either use `InlineModel` adapters or live in
       `persistence.py` with `plugin.py` staying declarative.

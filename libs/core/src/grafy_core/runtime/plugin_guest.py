@@ -1161,7 +1161,9 @@ async def _write_output_bundles(
             if isinstance(value, ArtifactRef)
             else []
         )
-        if not refs:
+        if not refs and not (
+            isinstance(value, ArtifactRefSequence) and declaration.shape == "many"
+        ):
             raise PluginGuestError(
                 f"Plugin output {declaration.port!r} did not persist artifact refs"
             )

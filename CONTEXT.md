@@ -283,8 +283,11 @@ envelopes containing schema-governed JSON objects.
 
 ### Node
 
-A typed operation with a configuration model, input model, output model, and a
-single execution method. Port contracts are derived from its model annotations.
+A typed operation with configuration, graph inputs, and artifact outputs.
+Authors can declare a node through a typed callable or explicit configuration,
+input, and output models. Both forms describe the same versioned port contracts
+and execution semantics. Calling an authored Python function directly returns
+its Python value; a graph execution also materializes and persists its artifacts.
 Changing the artifact key or value shape of a fixed port requires a new operator
 version or an explicit saved-graph migration; the host does not silently rewrite
 older contracts.

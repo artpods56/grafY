@@ -11,6 +11,7 @@ import pytest
 from grafy_core.artifacts import (
     ArtifactObject,
     ArtifactRef,
+    ArtifactRefSequence,
     ArtifactTypeKey,
     JsonObject,
     NodeInput,
@@ -56,32 +57,46 @@ from grafy_api.plugins.runtime.artifacts import (
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000451")
 
 
-def _plugin_python_path(project_root: Path) -> str:
+def _plugin_python_path(
+    project_root: Path,
+    plugin_source: Path | None = None,
+) -> str:
     return ":".join(
         [
-            str(project_root / "examples" / "plugin-notes" / "src"),
+            str(
+                plugin_source
+                if plugin_source is not None
+                else project_root / "examples" / "plugin-notes" / "src"
+            ),
             str(project_root / "libs" / "core" / "src"),
         ]
     )
 
 
-def _inspect_example_plugin(project_root: Path) -> InspectionResult:
+def _inspect_plugin(
+    project_root: Path,
+    plugin_source: Path | None = None,
+) -> InspectionResult:
     completed = subprocess.run(
         [sys.executable, "-m", "grafy_core.plugin_inspector"],
         check=True,
         capture_output=True,
         env={
             "PYTHONHASHSEED": "0",
-            "PYTHONPATH": _plugin_python_path(project_root),
+            "PYTHONPATH": _plugin_python_path(project_root, plugin_source),
             "PYTHONUTF8": "1",
         },
     )
     return InspectionResult.model_validate_json(completed.stdout)
 
 
-def _example_release(inspection: InspectionResult) -> InstalledPluginRelease:
+def _release(
+    inspection: InspectionResult,
+    *,
+    slug: str = "notes",
+) -> InstalledPluginRelease:
     release = PluginRelease(
-        slug="notes",
+        slug=slug,
         revision=1,
         catalog=inspection.catalog,
         contract_digest=plugin_contract_digest(inspection.catalog),
@@ -108,6 +123,57 @@ def _example_release(inspection: InspectionResult) -> InstalledPluginRelease:
             installed_by_user_id=WORKSPACE_ID,
             installed_by_platform_actor=None,
         ),
+    )
+
+
+def _write_empty_sequence_plugin(plugin_source: Path) -> None:
+    package = plugin_source / "grafy_plugin"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text(
+        """from typing import Annotated
+
+from grafy_core.artifact_contracts import TEXT_VALUE, TextValue
+from grafy_core.artifacts import NoConfig, NodeInput, NodeOutput
+from grafy_core.nodes import OutPort
+from grafy_core.plugins import Plugin
+
+
+PLUGIN = Plugin(slug="empty-sequence", title="Empty sequence")
+PLUGIN.register_artifact_type_dependency(TEXT_VALUE)
+
+
+class EmptySequenceInput(NodeInput):
+    pass
+
+
+class EmptySequenceOutput(NodeOutput):
+    texts: Annotated[list[TextValue], OutPort(TEXT_VALUE)]
+
+
+@PLUGIN.function_node(
+    operator_id="empty-sequence.produce",
+    version=1,
+    title="Produce empty sequence",
+)
+async def produce_empty_sequence(
+    _config: NoConfig,
+    _inputs: EmptySequenceInput,
+) -> EmptySequenceOutput:
+    return EmptySequenceOutput(texts=[])
+
+
+@PLUGIN.function_node(
+    operator_id="empty-sequence.produce-one",
+    version=1,
+    title="Produce one-item sequence",
+)
+async def produce_one_item_sequence(
+    _config: NoConfig,
+    _inputs: EmptySequenceInput,
+) -> EmptySequenceOutput:
+    return EmptySequenceOutput(texts=[TextValue(value="only item")])
+""",
+        encoding="utf-8",
     )
 
 
@@ -139,13 +205,13 @@ async def test_example_plugin_executes_inline_artifacts_through_local_guest(
     tmp_path: Path,
 ) -> None:
     project_root = Path(__file__).resolve().parents[3]
-    inspection = _inspect_example_plugin(project_root)
+    inspection = _inspect_plugin(project_root)
     render_contract = next(
         contract
         for contract in inspection.catalog.nodes
         if contract.operator_id == "notes.summary.render"
     )
-    release = _example_release(inspection)
+    release = _release(inspection)
     unit_of_work = InMemoryUnitOfWork()
     artifact = await _seed_summary(unit_of_work)
 
@@ -191,12 +257,82 @@ async def test_example_plugin_executes_inline_artifacts_through_local_guest(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operator_id", "expected_values"),
+    [
+        ("empty-sequence.produce", []),
+        ("empty-sequence.produce-one", ["only item"]),
+    ],
+)
+async def test_workspace_plugin_returns_many_output_through_local_guest(
+    tmp_path: Path,
+    operator_id: str,
+    expected_values: list[str],
+) -> None:
+    project_root = Path(__file__).resolve().parents[3]
+    plugin_source = tmp_path / "plugin-src"
+    _write_empty_sequence_plugin(plugin_source)
+    inspection = _inspect_plugin(project_root, plugin_source)
+    contract = next(
+        node for node in inspection.catalog.nodes if node.operator_id == operator_id
+    )
+    release = _release(inspection, slug="empty-sequence")
+    unit_of_work = InMemoryUnitOfWork()
+    scratch_root = tmp_path / "scratch"
+    runner = SubprocessPluginGuestRunner(
+        (sys.executable, "-m", "grafy_core.runtime.plugin_guest"),
+        environment={
+            "PYTHONPATH": _plugin_python_path(project_root, plugin_source),
+        },
+    )
+    invoker = ArtifactBundlePluginInvoker(
+        unit_of_work=unit_of_work,
+        runner=runner,
+        scratch_root=scratch_root,
+    )
+    node: PluginReleaseNode[
+        PluginReleaseNodeConfig,
+        NodeInput,
+        NodeOutput,
+    ] = PluginReleaseNode(release, contract, invoker)
+
+    output = await node.run(
+        NodeExecutionContext(
+            workspace_id=WORKSPACE_ID,
+            node_id=operator_id,
+            invocation_index=0,
+        ),
+        node.config_contract.model.model_validate({}),
+        node.input_contract.model.model_validate({}),
+    )
+
+    output_ref = cast(Mapping[str, object], output.__dict__)["texts"]
+    assert isinstance(output_ref, ArtifactRefSequence)
+    assert output_ref.artifact_type == "scalar.text"
+    assert output_ref.schema_version == 1
+    assert len(output_ref.item_refs) == len(expected_values)
+    assert isinstance(output_ref.sequence_id, UUID)
+    assert all(
+        ref.key() == ArtifactTypeKey("scalar.text", 1) for ref in output_ref.item_refs
+    )
+    async with unit_of_work as entered:
+        artifacts = await entered.artifacts.list_by_type(
+            WORKSPACE_ID,
+            ArtifactTypeKey("scalar.text", 1),
+        )
+    assert [artifact.inline_payload for artifact in artifacts] == [
+        {"value": value} for value in expected_values
+    ]
+    assert list(scratch_root.iterdir()) == []
+
+
+@pytest.mark.asyncio
 async def test_example_plugin_summarizes_a_stored_table_then_renders_it(
     tmp_path: Path,
 ) -> None:
     project_root = Path(__file__).resolve().parents[3]
-    inspection = _inspect_example_plugin(project_root)
-    release = _example_release(inspection)
+    inspection = _inspect_plugin(project_root)
+    release = _release(inspection)
     summarize_contract = next(
         contract
         for contract in inspection.catalog.nodes
@@ -303,8 +439,8 @@ async def test_guest_rejects_tampered_or_undeclared_input_files(
     mutation: str,
 ) -> None:
     project_root = Path(__file__).resolve().parents[3]
-    inspection = _inspect_example_plugin(project_root)
-    release = _example_release(inspection)
+    inspection = _inspect_plugin(project_root)
+    release = _release(inspection)
     render_contract = next(
         contract
         for contract in inspection.catalog.nodes
