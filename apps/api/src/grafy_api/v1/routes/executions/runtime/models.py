@@ -38,7 +38,6 @@ class CompiledNode:
     artifact_type_bindings: Mapping[str, ArtifactTypeKey]
     plugin_release: PluginReleaseIdentity | None = None
     implementation: ImplementationIdentity | None = None
-    execution_target: Literal["in_process", "isolated"] = "in_process"
 
     def __post_init__(self) -> None:
         object.__setattr__(

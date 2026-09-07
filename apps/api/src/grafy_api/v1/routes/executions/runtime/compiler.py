@@ -1,6 +1,6 @@
 from collections import Counter, deque
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from grafy_core.artifacts import (
@@ -31,7 +31,6 @@ from grafy_core.domain.modules import (
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.domain.plugin_releases import (
     PluginArtifactTypeContract,
-    PluginNodeContract,
     PluginReleaseIdentity,
     PluginReleaseScope,
 )
@@ -202,7 +201,6 @@ class GraphCompiler:
         registrations_by_id: dict[str, NodeRegistration | None] = {}
         releases_by_id: dict[str, PluginReleaseIdentity | None] = {}
         implementations_by_id: dict[str, ImplementationIdentity | None] = {}
-        targets_by_id: dict[str, Literal["in_process", "isolated"]] = {}
         release_snapshots: dict[
             tuple[PluginReleaseScope, str, int],
             _ReleaseExecutionSnapshot,
@@ -213,7 +211,6 @@ class GraphCompiler:
                 registration,
                 release_identity,
                 implementation,
-                execution_target,
             ) = await self._build_node(
                 node_request,
                 module_executor,
@@ -224,7 +221,6 @@ class GraphCompiler:
             registrations_by_id[node_request.id] = registration
             releases_by_id[node_request.id] = release_identity
             implementations_by_id[node_request.id] = implementation
-            targets_by_id[node_request.id] = execution_target
 
         artifact_types = set(self._artifact_types)
         artifact_contracts = dict(self._declared_artifact_contracts)
@@ -315,7 +311,6 @@ class GraphCompiler:
                     artifact_type_bindings=bindings_by_node[node_request.id],
                     plugin_release=releases_by_id[node_request.id],
                     implementation=implementations_by_id[node_request.id],
-                    execution_target=targets_by_id[node_request.id],
                 )
                 for node_request in ordered_requests
             ),
@@ -338,7 +333,6 @@ class GraphCompiler:
         NodeRegistration | None,
         PluginReleaseIdentity | None,
         ImplementationIdentity | None,
-        Literal["in_process", "isolated"],
     ]:
         try:
             module_reference = GraphModuleReference.try_from_operator_identity(
@@ -385,7 +379,6 @@ class GraphCompiler:
         NodeRegistration | None,
         PluginReleaseIdentity | None,
         ImplementationIdentity | None,
-        Literal["in_process", "isolated"],
     ]:
         if request.plugin_release is not None:
             raise GraphExecutionError(
@@ -405,7 +398,6 @@ class GraphCompiler:
                 None,
                 None,
                 None,
-                "in_process",
             )
         if not is_module_boundary:
             raise GraphExecutionError(
@@ -427,7 +419,7 @@ class GraphCompiler:
                 f"Node {request.id!r} references unavailable module boundary "
                 f"{request.operator_id}@{request.operator_version}: {exc}"
             ) from exc
-        return node, registration, None, None, "in_process"
+        return node, registration, None, None
 
     def _build_builtin_node(
         self,
@@ -440,7 +432,6 @@ class GraphCompiler:
         NodeRegistration | None,
         PluginReleaseIdentity | None,
         ImplementationIdentity | None,
-        Literal["in_process", "isolated"],
     ]:
         if request.plugin_release is not None:
             raise GraphExecutionError(
@@ -477,7 +468,6 @@ class GraphCompiler:
             registration,
             None,
             BuiltinImplementationIdentity(build_digest=self._build_digest),
-            "in_process",
         )
 
     async def _build_plugin_node(
@@ -494,7 +484,6 @@ class GraphCompiler:
         NodeRegistration | None,
         PluginReleaseIdentity | None,
         ImplementationIdentity | None,
-        Literal["in_process", "isolated"],
     ]:
         if request.plugin_release is None:
             raise GraphExecutionError(
@@ -633,7 +622,6 @@ class GraphCompiler:
                 manifest_digest=artifact.manifest_digest,
                 image_digest=image_digest,
             ),
-            "isolated",
         )
 
 
