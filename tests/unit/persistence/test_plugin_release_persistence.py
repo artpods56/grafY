@@ -3,7 +3,13 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from sqlalchemy import event
 from sqlalchemy.exc import IntegrityError
+from grafy_core.application.plugin_releases import PluginReleaseService
+from grafy_core.domain.plugin_catalog import PluginCatalogRelease
+from grafy_core.domain.plugin_releases import PluginReleaseError
+from grafy_core.domain.plugin_selection import PluginFamilyLifecycle
+from grafy_storage import LocalFileObjectStore
 
 from grafy_core.domain.identity import User, Workspace, WorkspaceKind
 from grafy_core.domain.plugin_installations import (
@@ -182,9 +188,9 @@ async def test_one_release_can_be_installed_system_and_workspace(
         assert await unit_of_work.plugin_releases.list_current(SYSTEM_NAMESPACE) == [
             resolved_system
         ]
-        assert await unit_of_work.plugin_releases.list_current(
-            WORKSPACE_NAMESPACE
-        ) == [resolved_workspace]
+        assert await unit_of_work.plugin_releases.list_current(WORKSPACE_NAMESPACE) == [
+            resolved_workspace
+        ]
 
 
 @pytest.mark.asyncio
@@ -235,14 +241,17 @@ async def test_historical_installation_resolves_after_selection_moves(
         await unit_of_work.commit()
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        assert await unit_of_work.plugin_releases.get_by_revision(
-            WORKSPACE_NAMESPACE,
-            "notes",
-            1,
-        ) == first
-        assert await unit_of_work.plugin_releases.list_current(
-            WORKSPACE_NAMESPACE
-        ) == [second]
+        assert (
+            await unit_of_work.plugin_releases.get_by_revision(
+                WORKSPACE_NAMESPACE,
+                "notes",
+                1,
+            )
+            == first
+        )
+        assert await unit_of_work.plugin_releases.list_current(WORKSPACE_NAMESPACE) == [
+            second
+        ]
 
 
 @pytest.mark.asyncio
@@ -324,9 +333,112 @@ async def test_retained_catalog_queries_follow_installations(
         ]
 
 
-def test_plugin_release_repository_port_keeps_append_only_release_and_install_methods(
-) -> None:
+def test_plugin_release_repository_port_keeps_append_only_release_and_install_methods() -> (
+    None
+):
     assert hasattr(PluginReleaseRepositoryPort, "add")
     assert hasattr(PluginReleaseRepositoryPort, "add_installation")
     assert not hasattr(PluginReleaseRepositoryPort, "update")
     assert not hasattr(PluginReleaseRepositoryPort, "delete")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("family_count", [0, 1, 5])
+async def test_catalog_reads_selected_scoped_admission_state_in_one_query(
+    database: Database,
+    tmp_path: Path,
+    family_count: int,
+) -> None:
+    expected: list[PluginCatalogRelease] = []
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+        for index in reversed(range(family_count)):
+            slug = f"family-{index}"
+            old = _release(1, "1", slug=slug)
+            current = _release(2, "2", slug=slug)
+            system = _installed(old, SYSTEM_NAMESPACE)
+            local = _installed(current, WORKSPACE_NAMESPACE)
+            foreign = _installed(current, OTHER_WORKSPACE_NAMESPACE)
+            unselected = _installed(old, WORKSPACE_NAMESPACE)
+            await _persist(unit_of_work, old, system, unselected)
+            await _persist(unit_of_work, current, local, foreign)
+            for installed in (system, local, foreign):
+                selection = PluginReleaseSelection.from_release(installed)
+                selection.lifecycle = PluginFamilyLifecycle.WITHDRAWN
+                await unit_of_work.plugin_releases.add_selection(selection)
+                revocation = None
+                if installed is not local:
+                    revocation = PluginReleaseRevocation.from_release(
+                        installed,
+                        reason=PluginReleaseRevocationReason.SECURITY,
+                        revoked_by_platform_actor=(
+                            "test:system" if installed is system else None
+                        ),
+                        revoked_by_user_id=(USER_ID if installed is foreign else None),
+                    )
+                    await unit_of_work.plugin_releases.add_revocation(revocation)
+                if installed is not foreign:
+                    expected.append(
+                        PluginCatalogRelease(installed, selection, revocation)
+                    )
+        await unit_of_work.commit()
+
+    statements: list[str] = []
+
+    def record_statement(
+        _connection: object,
+        _cursor: object,
+        statement: str,
+        _parameters: object,
+        _context: object,
+        _executemany: bool,
+    ) -> None:
+        statements.append(statement)
+
+    service = PluginReleaseService(
+        lambda: SqlAlchemyUnitOfWork(database.sessions),
+        LocalFileObjectStore(tmp_path / "catalog-objects"),
+        bucket="plugins",
+    )
+    event.listen(database.engine.sync_engine, "before_cursor_execute", record_statement)
+    try:
+        actual = await service.list_catalog(WORKSPACE_ID)
+    finally:
+        event.remove(
+            database.engine.sync_engine, "before_cursor_execute", record_statement
+        )
+
+    assert actual == sorted(
+        expected, key=lambda entry: (entry.release.scope.value, entry.release.slug)
+    )
+    assert len(statements) == 1
+    assert statements[0].lstrip().upper().startswith("SELECT")
+    assert all(entry.release.workspace_id in (None, WORKSPACE_ID) for entry in actual)
+    assert all(
+        entry.revocation is None
+        for entry in actual
+        if entry.release.scope is PluginReleaseScope.WORKSPACE
+    )
+
+
+def test_catalog_rejects_selection_for_another_installed_revision() -> None:
+    first = _installed(_release(1, "1"), WORKSPACE_NAMESPACE)
+    second = _installed(_release(2, "2"), WORKSPACE_NAMESPACE)
+    with pytest.raises(PluginReleaseError, match="Catalog selection does not identify"):
+        PluginCatalogRelease(first, PluginReleaseSelection.from_release(second), None)
+
+
+def test_catalog_rejects_revocation_for_another_workspace_installation() -> None:
+    release = _release(1, "1")
+    local = _installed(release, WORKSPACE_NAMESPACE)
+    foreign = _installed(release, OTHER_WORKSPACE_NAMESPACE)
+    revocation = PluginReleaseRevocation.from_release(
+        foreign,
+        reason=PluginReleaseRevocationReason.SECURITY,
+        revoked_by_user_id=USER_ID,
+    )
+    with pytest.raises(
+        PluginReleaseError, match="Catalog revocation does not identify"
+    ):
+        PluginCatalogRelease(
+            local, PluginReleaseSelection.from_release(local), revocation
+        )

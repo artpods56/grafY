@@ -8,6 +8,7 @@ from uuid import UUID
 
 from grafy_core.application.identity import authorize_workspace
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
+from grafy_core.domain.plugin_catalog import PluginCatalogRelease
 from grafy_core.domain.errors import (
     NotFoundError,
     ObjectAlreadyExistsError,
@@ -371,9 +372,7 @@ class PluginReleaseService:
         contract_digest = plugin_contract_digest(catalog)
         profile_digest = plugin_profile_digest(runtime_profile)
         protocol_digest = plugin_protocol_digest()
-        source_object_key = (
-            f"plugin-releases/{catalog.slug}/{source_digest}.tar.gz"
-        )
+        source_object_key = f"plugin-releases/{catalog.slug}/{source_digest}.tar.gz"
         descriptor = PluginReleaseDescriptor(
             source_digest=source_digest,
             contract_digest=contract_digest,
@@ -438,9 +437,7 @@ class PluginReleaseService:
                     )
                 self._require_no_cross_scope_identity_collisions(
                     catalog,
-                    await unit_of_work.plugin_releases.list_catalogs(
-                        system_namespace
-                    ),
+                    await unit_of_work.plugin_releases.list_catalogs(system_namespace),
                     scope=PluginReleaseScope.WORKSPACE,
                 )
             else:
@@ -581,6 +578,11 @@ class PluginReleaseService:
                     f"{artifact.key.id}@{artifact.key.schema_version} conflicts "
                     f"with a retained {retained_scope.value.title()} Plugin identity"
                 )
+
+    async def list_catalog(self, workspace_id: UUID) -> list[PluginCatalogRelease]:
+        """Read selected releases and admission state in one transaction."""
+        async with self._unit_of_work_factory() as unit_of_work:
+            return await unit_of_work.plugin_releases.list_catalog(workspace_id)
 
     async def list_current(
         self,

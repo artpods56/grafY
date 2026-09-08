@@ -2,6 +2,7 @@ from types import TracebackType
 from typing import Protocol, Self
 from uuid import UUID
 
+from grafy_core.domain.plugin_catalog import PluginCatalogRelease
 from grafy_core.domain.execution_history import ActiveGraphExecution
 from grafy_core.domain.plugin_releases import (
     PluginCatalogManifest,
@@ -79,6 +80,10 @@ class PluginReleaseRepositoryPort(Protocol):
         self,
         namespace: PluginReleaseNamespace,
     ) -> list[PluginCatalogManifest]: ...
+
+    async def list_catalog(self, workspace_id: UUID) -> list[PluginCatalogRelease]:
+        """Read System and Workspace selections with exact admission state."""
+        ...
 
     async def list_current(
         self,

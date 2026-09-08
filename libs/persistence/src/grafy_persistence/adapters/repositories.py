@@ -17,6 +17,8 @@ from grafy_core.artifacts import (
     ArtifactRepositoryPort,
     ArtifactTypeKey,
 )
+from grafy_core.domain.plugin_catalog import PluginCatalogRelease
+from grafy_core.domain.plugin_releases import PluginReleaseScope
 from grafy_core.domain.invocation_cache import InvocationCacheEntry
 from grafy_core.domain.identity import (
     AuthSession,
@@ -2065,7 +2067,9 @@ class SqlPluginReleaseRepository(PluginReleaseRepositoryPort):
             # Match cutover lock order. Execution inserts and status updates take
             # conflicting row-exclusive table locks automatically.
             await self._session.execute(
-                text("LOCK TABLE plugin_release_revocations IN SHARE ROW EXCLUSIVE MODE")
+                text(
+                    "LOCK TABLE plugin_release_revocations IN SHARE ROW EXCLUSIVE MODE"
+                )
             )
             await self._session.execute(
                 text("LOCK TABLE graph_executions IN SHARE ROW EXCLUSIVE MODE")
@@ -2269,6 +2273,60 @@ class SqlPluginReleaseRepository(PluginReleaseRepositoryPort):
             )
         )
         return list(result)
+
+    @override
+    async def list_catalog(self, workspace_id: UUID) -> list[PluginCatalogRelease]:
+        releases = schema.plugin_releases
+        selections = schema.plugin_release_selections
+        installations = schema.plugin_installations
+        rows = await self._session.execute(
+            select(
+                PluginRelease,
+                PluginInstallation,
+                PluginReleaseSelection,
+                PluginReleaseRevocation,
+            )
+            .select_from(PluginReleaseSelection)
+            .join(PluginRelease, selections.c.selected_release_id == releases.c.id)
+            .join(
+                PluginInstallation,
+                and_(
+                    installations.c.release_id == releases.c.id,
+                    installations.c.scope == selections.c.scope,
+                    installations.c.workspace_id.is_not_distinct_from(
+                        selections.c.workspace_id
+                    ),
+                ),
+            )
+            .outerjoin(
+                PluginReleaseRevocation,
+                schema.plugin_release_revocations.c.installation_id
+                == installations.c.id,
+            )
+            .where(
+                or_(
+                    and_(
+                        selections.c.scope == PluginReleaseScope.SYSTEM,
+                        selections.c.workspace_id.is_(None),
+                    ),
+                    and_(
+                        selections.c.scope == PluginReleaseScope.WORKSPACE,
+                        selections.c.workspace_id == workspace_id,
+                    ),
+                )
+            )
+            .order_by(selections.c.scope.asc(), releases.c.slug.asc())
+        )
+        return [
+            PluginCatalogRelease(
+                release=InstalledPluginRelease(
+                    release=release, installation=installation
+                ),
+                selection=selection,
+                revocation=revocation,
+            )
+            for release, installation, selection, revocation in rows
+        ]
 
     @override
     async def list_current(

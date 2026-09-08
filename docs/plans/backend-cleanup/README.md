@@ -68,7 +68,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 ## 7. Catalog ownership
 
 - [ ] Move catalog policy assembly from NodeRegistryResponse into a validated application snapshot.
-- [ ] Gather release/selection/revocation state in one concrete transaction-scoped query.
+- [x] Gather release/selection/revocation state in one concrete transaction-scoped query.
 - [x] Use ModuleLibraryService directly; retire GraphModuleCatalog and its fallback validation.
 - [x] Remove unused UnavailableGraphModule and boundary detector while retaining public empty response fields.
 - [ ] Verify collision diagnostics, readiness, query counts, module behavior, and OpenAPI compatibility.
@@ -310,3 +310,16 @@ not prevent a concurrent execution from appearing.
 - API/core-cache typing remains at 442 pre-existing diagnostics. The changed catalog call reports the same unknown workspace argument under `catalog_definitions` instead of the former `list` method; no new type issue was introduced by that call rename.
 - Evidence: `/tmp/grafy-module-owner-tests.log`, `/tmp/grafy-module-owner-validation.log`, `/tmp/grafy-module-owner-final.log`, `/tmp/grafy-module-owner-pyright.json`, `/tmp/grafy-module-owner-core-types.log`, and `/tmp/grafy-module-owner-wheel.log`.
 - Final regression: 594 API/domain/architecture/execution-history/saved-graph/secret tests passed. Changed-file Ruff and diff whitespace checks pass. The core module service has zero Pyright errors or warnings.
+
+
+### Bulk catalog release state
+
+- Added `PluginReleaseService.list_catalog`, backed by one SQL statement joining selected releases, namespace-specific installations, selections, and optional installation revocations.
+- The query returns System entries followed by Workspace entries, each ordered by slug. It includes withdrawn/deprecated selections for readiness handling and excludes unselected releases and other Workspaces.
+- `PluginCatalogRelease` validates that selection and revocation identities match the exact installed release. The result contains release facts, not HTTP response models or presentation policy.
+- The catalog route now consumes this transaction-scoped result instead of opening two release-list transactions plus per-release selection and revocation transactions. Module lookup and HTTP response serialization retain their existing behavior.
+- Real SQLite service tests verify exactly one SQL statement for zero, one, and five families. They cover historical System selection alongside a newer Workspace selection, unselected installed revisions, withdrawn selections, and revocations of a foreign installation sharing the local release identity.
+- Added explicit rejection tests for a mismatched selection and a foreign-installation revocation. Updated the existing test deployment to implement the actual service read contract.
+- OpenAPI is unchanged; changed-file Ruff and diff whitespace checks pass. Evidence: `/tmp/grafy-catalog-snapshot-query.log`, `/tmp/grafy-catalog-snapshot-regression.log`, and `/tmp/grafy-catalog-snapshot-types.log`. The query-only log records the initial missing-import failure; the regression log includes the corrected database tests.
+- Catalog policy extraction and its remaining collision/readiness verification remain open under finding 7.
+- Final validation: 535 persistence, release-service, API, architecture, and execution-route tests passed. Changed core domain/application/port and persistence modules have zero Pyright errors or warnings.

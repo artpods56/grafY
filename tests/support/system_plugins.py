@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from uuid import UUID
 
+from grafy_core.domain.plugin_catalog import PluginCatalogRelease
 from grafy_core.domain.plugin_installations import (
     InstalledPluginRelease,
     PluginInstallation,
@@ -98,6 +99,20 @@ class SelectedSystemReleaseLookup:
     ) -> PluginReleaseSelection | None:
         del workspace_id
         return self._selections.get((scope, slug))
+
+    async def list_catalog(self, workspace_id: UUID) -> list[PluginCatalogRelease]:
+        releases = [
+            *await self.list_current_system(),
+            *await self.list_current(workspace_id),
+        ]
+        return [
+            PluginCatalogRelease(
+                release=release,
+                selection=self._selections[(release.scope, release.slug)],
+                revocation=None,
+            )
+            for release in releases
+        ]
 
     async def list_current_system(self) -> list[InstalledPluginRelease]:
         return [
