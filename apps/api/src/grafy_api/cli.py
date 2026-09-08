@@ -24,7 +24,10 @@ from grafy_core.domain.identity import (
     WorkspacePatPrincipal,
 )
 from grafy_core.domain.plugin_releases import PlatformPluginActor
-from grafy_core.domain.plugin_revocations import PluginReleaseRevocationReason
+from grafy_core.domain.plugin_revocations import (
+    PluginReleaseRevocationError,
+    PluginReleaseRevocationReason,
+)
 from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
@@ -41,7 +44,6 @@ from grafy_api.plugins.publication.authoring import PluginAuthoringService
 from grafy_api.plugins.publication.workflow import (
     PluginPublicationWorkflow,
     SystemPluginPublicationWorkflow,
-    SystemPluginRevocationWorkflow,
 )
 from grafy_api.plugins.publication.sandbox import DockerPluginDirectoryPublisher
 from grafy_api.plugins.publication.source import (
@@ -392,10 +394,7 @@ async def _run(args: argparse.Namespace) -> None:
                 required_scope=PlatformTokenScope.REVOKE_GLOBAL,
             )
             slug, revision = args.release
-            revocation = await SystemPluginRevocationWorkflow(
-                database.sessions,
-                releases,
-            ).revoke(
+            revocation = await releases.revoke_system(
                 slug=slug,
                 revision=revision,
                 reason=PluginReleaseRevocationReason(args.reason),
@@ -819,6 +818,7 @@ def main() -> None:
     except (
         CliCredentialError,
         IdentityInvariantError,
+        PluginReleaseRevocationError,
         PluginPublishingError,
         SystemPluginInventoryError,
     ) as exc:

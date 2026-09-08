@@ -36,7 +36,9 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 - [x] Carry reviewed base revision/generation into the committing release operation and enforce it transactionally.
 - [x] Preserve source re-verification and test concurrent publication after review.
-- [ ] Move System revocation's SQL consistency rule to its owner; coordinate maintenance drain with execution admission through a shared fence.
+- [x] Move System revocation's SQL consistency rule from API workflow to the release transaction and persistence adapter.
+- [x] Fence durable queue admission against the System revocation drain check and commit.
+- [ ] Include transient executions in System revocation fencing; runs without saved-graph context currently have no durable execution row.
 - [ ] Prove active execution/revocation races cannot violate that fence.
 
 ## 4. Plugin ownership and compatibility
@@ -229,3 +231,36 @@ flowchart LR
 - Validation: 656 tests passed across application/API/client tests, release domain and persistence tests, catalog, authorization, saved graphs, and collaboration. Changed-file Ruff passed. Core application/domain and publication-workflow Pyright checks reported zero errors.
 - Local evidence: `/tmp/grafy-publication-race-before.log`, `/tmp/grafy-publication-transaction-race.log`, `/tmp/grafy-publication-regression.log`, and `/tmp/grafy-publication-pyright.log`.
 - Remaining finding 3 work: move System revocation's drain check into its committing owner and share a fence with execution admission. The publication Workspace lock does not provide that global System fence.
+
+
+### Durable System revocation fence
+
+- Removed `SystemPluginRevocationWorkflow` and its API-owned SQL. The CLI calls `PluginReleaseService.revoke_system` directly and renders domain revocation errors at the CLI boundary.
+- The release service now enforces the durable execution drain invariant for every System revocation caller. Previously, direct service calls bypassed the workflow's check.
+- `SqlPluginReleaseRepository.lock_system_revocation` acquires the database fence before reading active executions. SQLite uses `BEGIN IMMEDIATE`. PostgreSQL locks revocations, then executions, in the same relative order as System cutover. Execution inserts and status updates acquire conflicting write locks through the database.
+- The fence remains held through the revocation insert and commit, including when the active set is empty. Unsupported database dialects fail closed.
+- `ActiveGraphExecution` carries only the execution identity and active status. The domain drain error retains the target release and active execution details without loading submitted requests.
+- Three regressions reproduced direct-service revocation while queued, running, or cancelling executions existed. All now reject. Additional SQLite tests cover a queued insert winning the race and a revocation transaction blocking a new insert until commit. CLI error rendering and unsupported-dialect rejection are covered.
+- Focused validation: 33 tests passed. Changed-file Ruff passed. Core application/domain/port, publication workflow, and persistence adapter type checks reported zero errors.
+- Broad validation: 693 passed, five native subprocess failures, and two skips. The untouched `de84244` archive produced the same five failures and two skips, with 687 tests passing. All three core/API/persistence import paths were verified to point into the archive.
+- The five failures are the live Docker egress test and four local guest-protocol cases. Their subprocesses crash with SIGSEGV in macOS Network.framework fork handling on both revisions. They are recorded failures, not passing validation.
+- Evidence: `/tmp/grafy-revocation-before.log`, `/tmp/grafy-revocation-focused.log`, `/tmp/grafy-revocation-regression.log`, `/tmp/grafy-revocation-baseline.log`, and `/tmp/grafy-revocation-persistence-pyright.log`.
+
+```mermaid
+flowchart LR
+    A[CLI] --> B[Release service transaction]
+    B --> C[Persistence fence and drain check]
+    C --> D[Revocation insert and commit]
+    E[Durable execution writes] --> C
+```
+
+This completes only the durable queue portion of finding 3. `RunExecutionManager.start`
+records history only when both graph identity and revision are present. Transient runs
+remain process-local, so the database drain query cannot see them. The compiler checks
+revocation while resolving release facts, but that check alone does not protect an
+already compiled transient run. Keep the remaining execution/revocation race item open
+until those runs participate in a durable admission and completion protocol.
+
+Maintenance guidance: take the shared fence before querying active work and retain it
+through the maintenance commit. Locking only rows returned by an empty-queue query does
+not prevent a concurrent execution from appearing.

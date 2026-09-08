@@ -2,6 +2,7 @@ from types import TracebackType
 from typing import Protocol, Self
 from uuid import UUID
 
+from grafy_core.domain.execution_history import ActiveGraphExecution
 from grafy_core.domain.plugin_releases import (
     PluginCatalogManifest,
     PluginRelease,
@@ -18,6 +19,14 @@ from grafy_core.ports.identity import IdentityRepositoryPort
 
 
 class PluginReleaseRepositoryPort(Protocol):
+    async def lock_system_revocation(self) -> tuple[ActiveGraphExecution, ...]:
+        """Fence durable execution admission and report active executions.
+
+        Call before any reads in a fresh transaction. Hold the fence until the
+        transaction commits or rolls back, including when no executions exist.
+        """
+        ...
+
     async def add(self, release: PluginRelease) -> None: ...
 
     async def add_installation(self, installation: PluginInstallation) -> None: ...

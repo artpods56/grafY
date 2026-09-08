@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Literal, cast
 from uuid import UUID
 
 import pytest
@@ -12,8 +12,6 @@ from sqlalchemy import JSON, Table, func, select, text, type_coerce, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import OperationalError
 
-from grafy_api.plugins.publication.workflow import SystemPluginRevocationWorkflow
-from grafy_api.plugins.publication.source import PluginPublishingError
 from grafy_api.system_cutover import (
     CutoverRollbackUnit,
     SystemBaselineCutoverService,
@@ -44,9 +42,14 @@ from grafy_core.domain.plugin_installations import (
     InstalledPluginRelease,
     PluginInstallation,
 )
-from grafy_core.domain.plugin_revocations import PluginReleaseRevocationReason
+from grafy_core.domain.plugin_revocations import (
+    PluginReleaseRevocation,
+    PluginReleaseRevocationError,
+    PluginReleaseRevocationReason,
+)
 from grafy_core.domain.plugin_selection import PluginReleaseSelection
 from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_persistence.adapters.repositories import SqlPluginReleaseRepository
 from grafy_persistence import schema
 from grafy_persistence.database import Database, create_database
 from grafy_persistence.orm import metadata
@@ -245,9 +248,7 @@ async def cutover_database(
         )
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         await unit_of_work.plugin_releases.add(release.release)
-        await unit_of_work.plugin_releases.add_installation(
-            release.installation
-        )
+        await unit_of_work.plugin_releases.add_installation(release.installation)
         await unit_of_work.plugin_releases.add_selection(
             PluginReleaseSelection.from_release(
                 release,
@@ -576,9 +577,11 @@ async def test_cutover_refuses_active_executions_and_stale_preconditions(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["queued", "running", "cancelling"])
 async def test_system_revocation_requires_durable_execution_drain(
     cutover_database: tuple[Database, InstalledPluginRelease],
     tmp_path: Path,
+    status: Literal["queued", "running", "cancelling"],
 ) -> None:
     database, release = cutover_database
     releases = PluginReleaseService(
@@ -586,15 +589,14 @@ async def test_system_revocation_requires_durable_execution_drain(
         LocalFileObjectStore(tmp_path / "objects"),
         bucket="plugins",
     )
-    workflow = SystemPluginRevocationWorkflow(database.sessions, releases)
     actor = PlatformPluginActor("cli:security-response")
     async with database.engine.begin() as connection:
         await connection.execute(
-            update(schema.graph_executions).values(status="running", finished_at=None)
+            update(schema.graph_executions).values(status=status, finished_at=None)
         )
 
-    with pytest.raises(PluginPublishingError, match="drained execution queue"):
-        await workflow.revoke(
+    with pytest.raises(PluginReleaseRevocationError, match="drained execution queue"):
+        await releases.revoke_system(
             slug=release.slug,
             revision=release.revision,
             reason=PluginReleaseRevocationReason.SECURITY,
@@ -612,7 +614,7 @@ async def test_system_revocation_requires_durable_execution_drain(
         await connection.execute(
             update(schema.graph_executions).values(status="cancelled", finished_at=NOW)
         )
-    revoked = await workflow.revoke(
+    revoked = await releases.revoke_system(
         slug=release.slug,
         revision=release.revision,
         reason=PluginReleaseRevocationReason.SECURITY,
@@ -974,9 +976,7 @@ async def test_apply_cas_rejects_deleted_audited_row_and_rolls_back(
 
     async with database.engine.connect() as connection:
         assert (
-            await connection.scalar(
-                select(func.count()).select_from(schema.templates)
-            )
+            await connection.scalar(select(func.count()).select_from(schema.templates))
             == 1
         )
     assert await _raw_document(database, schema.saved_graphs, "document") == (
@@ -995,3 +995,157 @@ async def test_apply_cas_rejects_deleted_audited_row_and_rolls_back(
             )
             == 1
         )
+
+
+async def test_system_revocation_fence_blocks_queue_insert_until_commit(
+    cutover_database: tuple[Database, InstalledPluginRelease],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, release = cutover_database
+    service = PluginReleaseService(
+        lambda: SqlAlchemyUnitOfWork(database.sessions),
+        LocalFileObjectStore(tmp_path / "objects"),
+        bucket="plugins",
+    )
+    drain_checked = asyncio.Event()
+    resume = asyncio.Event()
+    original_add = SqlPluginReleaseRepository.add_revocation
+
+    async def pause_before_revocation_insert(
+        repository: SqlPluginReleaseRepository,
+        revocation: PluginReleaseRevocation,
+    ) -> PluginReleaseRevocation:
+        drain_checked.set()
+        await resume.wait()
+        return await original_add(repository, revocation)
+
+    monkeypatch.setattr(
+        SqlPluginReleaseRepository, "add_revocation", pause_before_revocation_insert
+    )
+    pending = asyncio.create_task(
+        service.revoke_system(
+            slug=release.slug,
+            revision=release.revision,
+            reason=PluginReleaseRevocationReason.SECURITY,
+            platform_actor=PlatformPluginActor("cli:security-response"),
+        )
+    )
+    try:
+        await asyncio.wait_for(drain_checked.wait(), timeout=10)
+        async with database.engine.connect() as connection:
+            await connection.execute(text("PRAGMA busy_timeout=0"))
+            with pytest.raises(OperationalError, match="database is locked"):
+                await connection.execute(
+                    schema.graph_executions.insert().values(
+                        workspace_id=WORKSPACE_ID,
+                        execution_id=QUEUED_EXECUTION_ID,
+                        graph_id=GRAPH_ID,
+                        graph_revision=7,
+                        status="queued",
+                        scope="all",
+                        submitted_request=_run_request(),
+                        created_at=NOW,
+                    )
+                )
+            await connection.rollback()
+        resume.set()
+        revoked = await pending
+        assert revoked.installation_id == release.installation_id
+        async with database.engine.begin() as connection:
+            await connection.execute(
+                schema.graph_executions.insert().values(
+                    workspace_id=WORKSPACE_ID,
+                    execution_id=QUEUED_EXECUTION_ID,
+                    graph_id=GRAPH_ID,
+                    graph_revision=7,
+                    status="queued",
+                    scope="all",
+                    submitted_request=_run_request(),
+                    created_at=NOW,
+                )
+            )
+        assert (
+            await service.get_system_revocation(
+                slug=release.slug,
+                revision=release.revision,
+            )
+            == revoked
+        )
+    finally:
+        resume.set()
+        await asyncio.gather(pending, return_exceptions=True)
+
+
+async def test_system_revocation_waits_for_queue_insert_before_checking_drain(
+    cutover_database: tuple[Database, InstalledPluginRelease],
+    tmp_path: Path,
+) -> None:
+    database, release = cutover_database
+    service = PluginReleaseService(
+        lambda: SqlAlchemyUnitOfWork(database.sessions),
+        LocalFileObjectStore(tmp_path / "objects"),
+        bucket="plugins",
+    )
+    async with database.sessions() as blocker:
+        await blocker.execute(text("BEGIN IMMEDIATE"))
+        await blocker.execute(
+            schema.graph_executions.insert().values(
+                workspace_id=WORKSPACE_ID,
+                execution_id=QUEUED_EXECUTION_ID,
+                graph_id=GRAPH_ID,
+                graph_revision=7,
+                status="queued",
+                scope="all",
+                submitted_request=_run_request(),
+                created_at=NOW,
+            )
+        )
+        commit = asyncio.create_task(blocker.commit())
+        try:
+            with pytest.raises(
+                PluginReleaseRevocationError, match="drained execution queue"
+            ):
+                await service.revoke_system(
+                    slug=release.slug,
+                    revision=release.revision,
+                    reason=PluginReleaseRevocationReason.SECURITY,
+                    platform_actor=PlatformPluginActor("cli:security-response"),
+                )
+        finally:
+            await commit
+    assert (
+        await service.get_system_revocation(
+            slug=release.slug, revision=release.revision
+        )
+        is None
+    )
+
+
+async def test_system_revocation_fails_closed_without_supported_database_fence(
+    cutover_database: tuple[Database, InstalledPluginRelease],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, release = cutover_database
+    service = PluginReleaseService(
+        lambda: SqlAlchemyUnitOfWork(database.sessions),
+        LocalFileObjectStore(tmp_path / "objects"),
+        bucket="plugins",
+    )
+    monkeypatch.setattr(database.engine.dialect, "name", "oracle")
+    with pytest.raises(
+        PluginReleaseRevocationError, match="database dialect 'oracle' is unsupported"
+    ):
+        await service.revoke_system(
+            slug=release.slug,
+            revision=release.revision,
+            reason=PluginReleaseRevocationReason.SECURITY,
+            platform_actor=PlatformPluginActor("cli:security-response"),
+        )
+    assert (
+        await service.get_system_revocation(
+            slug=release.slug, revision=release.revision
+        )
+        is None
+    )

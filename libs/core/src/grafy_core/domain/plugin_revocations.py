@@ -6,6 +6,7 @@ from enum import StrEnum
 from typing import Self
 from uuid import UUID
 
+from grafy_core.domain.execution_history import ActiveGraphExecution
 from grafy_core.domain.plugin_identity import (
     PlatformPluginActor,
     PluginReleaseNamespace,
@@ -25,6 +26,29 @@ class PluginReleaseRevocationReason(StrEnum):
 
 class PluginReleaseRevocationError(ValueError):
     """An exact release revocation would violate its immutable identity."""
+
+
+class SystemPluginRevocationDrainError(PluginReleaseRevocationError):
+    """A System release cannot be revoked while durable executions are active."""
+
+    def __init__(
+        self,
+        *,
+        slug: str,
+        revision: int,
+        active_executions: tuple[ActiveGraphExecution, ...],
+    ) -> None:
+        self.slug = slug
+        self.revision = revision
+        self.active_executions = active_executions
+        rendered = ", ".join(
+            f"{execution.execution_id}:{execution.status}"
+            for execution in active_executions
+        )
+        super().__init__(
+            f"System Plugin {slug!r} revision {revision} revocation requires a "
+            f"drained execution queue; active executions: {rendered}"
+        )
 
 
 @dataclass
@@ -133,6 +157,7 @@ class PluginReleaseRevocation:
 
 
 __all__ = [
+    "SystemPluginRevocationDrainError",
     "PluginReleaseRevocation",
     "PluginReleaseRevocationError",
     "PluginReleaseRevocationReason",

@@ -4,9 +4,6 @@ import asyncio
 from pathlib import Path
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from grafy_core.application.plugin_releases import (
     PluginReleaseService,
     require_canonical_conversion_references,
@@ -25,11 +22,6 @@ from grafy_core.domain.plugin_releases import (
     PluginReleaseHeadConflictError,
 )
 from grafy_core.domain.plugin_selection import PluginReleaseSelection
-from grafy_core.domain.plugin_revocations import (
-    PluginReleaseRevocation,
-    PluginReleaseRevocationReason,
-)
-from grafy_persistence import schema
 
 from grafy_api.plugin_admission import (
     ReleaseExecutionAdmission,
@@ -265,61 +257,6 @@ class PluginPublicationWorkflow:
             raise PluginPublicationConflictError(str(exc)) from exc
 
 
-class SystemPluginRevocationWorkflow:
-    """Revoke one exact System release only after a durable maintenance drain."""
-
-    _ACTIVE_EXECUTION_STATUSES = ("queued", "running", "cancelling")
-
-    def __init__(
-        self,
-        sessions: async_sessionmaker[AsyncSession],
-        releases: PluginReleaseService,
-    ) -> None:
-        self._sessions = sessions
-        self._releases = releases
-
-    async def revoke(
-        self,
-        *,
-        slug: str,
-        revision: int,
-        reason: PluginReleaseRevocationReason,
-        platform_actor: PlatformPluginActor,
-    ) -> PluginReleaseRevocation:
-        async with self._sessions() as session:
-            active = (
-                await session.execute(
-                    select(
-                        schema.graph_executions.c.execution_id,
-                        schema.graph_executions.c.status,
-                    )
-                    .where(
-                        schema.graph_executions.c.status.in_(
-                            self._ACTIVE_EXECUTION_STATUSES
-                        )
-                    )
-                    .order_by(
-                        schema.graph_executions.c.created_at.asc(),
-                        schema.graph_executions.c.execution_id.asc(),
-                    )
-                )
-            ).all()
-        if active:
-            rendered = ", ".join(
-                f"{execution_id}:{status}" for execution_id, status in active
-            )
-            raise PluginPublishingError(
-                "System Plugin revocation requires a drained execution queue; "
-                f"active executions: {rendered}"
-            )
-        return await self._releases.revoke_system(
-            slug=slug,
-            revision=revision,
-            reason=reason,
-            platform_actor=platform_actor,
-        )
-
-
 class SystemPluginPublicationWorkflow:
     """Stage and explicitly promote global releases from a trusted publisher.
 
@@ -458,7 +395,6 @@ __all__ = [
     "PluginPublicationConflictError",
     "PluginPublicationWorkflow",
     "SystemPluginPublicationWorkflow",
-    "SystemPluginRevocationWorkflow",
     "render_plugin_capability_diff",
     "require_network_contract",
 ]

@@ -39,6 +39,7 @@ from grafy_core.domain.errors import (
     ObjectAlreadyExistsError,
 )
 from grafy_core.domain.execution_history import (
+    ActiveGraphExecution,
     GraphExecution,
     GraphExecutionCursor,
     GraphExecutionDetail,
@@ -2056,6 +2057,40 @@ class SqlModuleLibraryRepository(ModuleLibraryRepositoryPort):
 class SqlPluginReleaseRepository(PluginReleaseRepositoryPort):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    @override
+    async def lock_system_revocation(self) -> tuple[ActiveGraphExecution, ...]:
+        dialect_name = self._session.get_bind().dialect.name
+        if dialect_name == "postgresql":
+            # Match cutover lock order. Execution inserts and status updates take
+            # conflicting row-exclusive table locks automatically.
+            await self._session.execute(
+                text("LOCK TABLE plugin_release_revocations IN SHARE ROW EXCLUSIVE MODE")
+            )
+            await self._session.execute(
+                text("LOCK TABLE graph_executions IN SHARE ROW EXCLUSIVE MODE")
+            )
+        elif dialect_name == "sqlite":
+            if self._session.in_transaction():
+                raise PluginReleaseRevocationError(
+                    "System Plugin revocation fence requires a fresh transaction"
+                )
+            await self._session.execute(text("BEGIN IMMEDIATE"))
+        else:
+            raise PluginReleaseRevocationError(
+                "System Plugin revocation requires an execution admission fence; "
+                f"database dialect {dialect_name!r} is unsupported"
+            )
+        executions = schema.graph_executions
+        rows = await self._session.execute(
+            select(executions.c.execution_id, executions.c.status)
+            .where(executions.c.status.in_(("queued", "running", "cancelling")))
+            .order_by(executions.c.created_at.asc(), executions.c.execution_id.asc())
+        )
+        return tuple(
+            ActiveGraphExecution(execution_id=execution_id, status=status)
+            for execution_id, status in rows
+        )
 
     @override
     async def add(self, release: PluginRelease) -> None:

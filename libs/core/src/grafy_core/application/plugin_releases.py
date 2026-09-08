@@ -39,6 +39,7 @@ from grafy_core.domain.plugin_installations import (
 )
 from grafy_core.domain.plugin_selection import PluginReleaseSelection
 from grafy_core.domain.plugin_revocations import (
+    SystemPluginRevocationDrainError,
     PluginReleaseRevocation,
     PluginReleaseRevocationError,
     PluginReleaseRevocationReason,
@@ -756,6 +757,15 @@ class PluginReleaseService:
                 raise PluginReleaseRevocationError(
                     "System Plugin revocation requires a platform actor"
                 )
+
+            if namespace.scope is PluginReleaseScope.SYSTEM:
+                active = await unit_of_work.plugin_releases.lock_system_revocation()
+                if active:
+                    raise SystemPluginRevocationDrainError(
+                        slug=slug,
+                        revision=revision,
+                        active_executions=active,
+                    )
 
             release = await unit_of_work.plugin_releases.get_by_revision(
                 namespace,

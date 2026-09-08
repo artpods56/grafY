@@ -54,6 +54,14 @@ def _validated_json_object(value: object, label: str) -> JsonObject:
     return cast(JsonObject, value)
 
 
+@dataclass(frozen=True, slots=True)
+class ActiveGraphExecution:
+    """Non-sensitive identity and state used by execution maintenance checks."""
+
+    execution_id: UUID
+    status: Literal["queued", "running", "cancelling"]
+
+
 @dataclass
 class GraphExecution:
     workspace_id: UUID
@@ -268,6 +276,7 @@ class GraphExecutionPage:
 
 
 __all__ = [
+    "ActiveGraphExecution",
     "GraphExecution",
     "GraphExecutionCursor",
     "GraphExecutionDetail",

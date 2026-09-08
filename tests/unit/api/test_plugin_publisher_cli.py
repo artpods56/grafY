@@ -9,6 +9,7 @@ from grafy_api import cli
 from grafy_api.cli_credentials import CredentialDigest
 from grafy_api.plugins.publication.source import PluginPublishingError
 from grafy_api.system_plugin_inventory import SystemPluginInventoryError
+from grafy_core.domain.plugin_revocations import PluginReleaseRevocationError
 from grafy_core.domain.identity import (
     ActorContext,
     PlatformTokenPrincipal,
@@ -429,8 +430,7 @@ def test_global_publish_inspects_with_checked_in_loader_target(
     cli.main()
 
     assert (
-        RecordingSystemPublisher.observed_loader_target
-        == "grafy_plugin_llm.plugin:LLM"
+        RecordingSystemPublisher.observed_loader_target == "grafy_plugin_llm.plugin:LLM"
     )
     assert RecordingSystemPublisher.observed_scratch_root == publisher_scratch_root
     assert (
@@ -617,11 +617,14 @@ def test_auth_and_platform_token_commands_do_not_accept_raw_token_arguments(
     "failure",
     (
         PluginPublishingError("Plugin publisher sandbox lock check failed"),
+        PluginReleaseRevocationError(
+            "System Plugin revocation requires a drained execution queue"
+        ),
         SystemPluginInventoryError("System Plugin 'llm' is not registered"),
     ),
 )
 def test_cli_renders_publication_failures_without_a_traceback(
-    failure: RuntimeError,
+    failure: Exception,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
