@@ -6,10 +6,8 @@ from pydantic import ValidationError
 
 from grafy_core.application.identity import authorize_workspace
 from grafy_core.domain.errors import (
-    ConcurrentWriteError,
     GraphFolderNameConflictError,
     NotFoundError,
-    SavedGraphRevisionConflictError,
 )
 from grafy_core.domain.identity import (
     ActorContext,
@@ -52,26 +50,6 @@ class SavedGraphService:
     ) -> None:
         self._unit_of_work_factory = unit_of_work_factory
         self._plugin_registry = plugin_registry
-
-    async def create(
-        self,
-        *,
-        workspace_id: UUID,
-        created_by_user_id: UUID | None,
-        name: str,
-        document: SavedGraphDocument,
-    ) -> SavedGraph:
-        graph = SavedGraph(
-            workspace_id=workspace_id,
-            created_by_user_id=created_by_user_id,
-            name=name,
-            document=document,
-        )
-        async with self._unit_of_work_factory() as unit_of_work:
-            await unit_of_work.graphs.add(graph)
-            await unit_of_work.graphs.add_revision(graph.snapshot())
-            await unit_of_work.commit()
-        return graph
 
     async def get(self, workspace_id: UUID, graph_id: UUID) -> SavedGraph:
         async with self._unit_of_work_factory() as unit_of_work:
@@ -455,42 +433,6 @@ class SavedGraphService:
             await unit_of_work.commit()
         return state
 
-    async def replace(
-        self,
-        graph_id: UUID,
-        *,
-        workspace_id: UUID,
-        name: str,
-        document: SavedGraphDocument,
-        expected_revision: int,
-    ) -> SavedGraph:
-        async with self._unit_of_work_factory() as unit_of_work:
-            await unit_of_work.graphs.lock_revision(
-                workspace_id,
-                graph_id,
-                expected_revision,
-            )
-            graph = await unit_of_work.graphs.get(workspace_id, graph_id)
-            if graph is None:
-                raise NotFoundError("Saved graph", str(graph_id))
-            await self.apply_replacement_in_unit_of_work(
-                unit_of_work,
-                graph,
-                name=name,
-                document=document,
-                expected_revision=expected_revision,
-                physically_remove_orphaned_secrets=True,
-            )
-            try:
-                await unit_of_work.commit()
-            except ConcurrentWriteError as exc:
-                raise SavedGraphRevisionConflictError(
-                    graph_id=graph_id,
-                    expected_revision=expected_revision,
-                    actual_revision=None,
-                ) from exc
-        return graph
-
     async def apply_replacement_in_unit_of_work(
         self,
         unit_of_work: SavedGraphUnitOfWorkPort,
@@ -639,30 +581,3 @@ class SavedGraphService:
                 secret.node_id,
                 secret.name,
             )
-
-    async def delete(
-        self,
-        graph_id: UUID,
-        *,
-        workspace_id: UUID,
-        expected_revision: int,
-    ) -> None:
-        async with self._unit_of_work_factory() as unit_of_work:
-            await unit_of_work.graphs.lock_revision(
-                workspace_id,
-                graph_id,
-                expected_revision,
-            )
-            graph = await unit_of_work.graphs.get(workspace_id, graph_id)
-            if graph is None:
-                raise NotFoundError("Saved graph", str(graph_id))
-            graph.ensure_revision(expected_revision)
-            await unit_of_work.graphs.remove(workspace_id, graph)
-            try:
-                await unit_of_work.commit()
-            except ConcurrentWriteError as exc:
-                raise SavedGraphRevisionConflictError(
-                    graph_id=graph_id,
-                    expected_revision=graph.revision,
-                    actual_revision=None,
-                ) from exc

@@ -1,4 +1,3 @@
-from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from types import TracebackType
 from typing import Self
@@ -8,9 +7,7 @@ import pytest
 
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.errors import (
-    ConcurrentWriteError,
     NotFoundError,
-    SavedGraphRevisionConflictError,
 )
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
@@ -153,11 +150,9 @@ class FakeSavedGraphUnitOfWork:
         graphs: dict[UUID, SavedGraph],
         revisions: dict[tuple[UUID, int], SavedGraphRevision],
         secrets: dict[tuple[UUID, str, str], EncryptedNodeSecret],
-        commit_error: ConcurrentWriteError | None,
     ) -> None:
         self.graphs = FakeSavedGraphRepository(graphs, revisions)
         self.node_secrets = FakeNodeSecretRepository(secrets)
-        self._commit_error = commit_error
         self.commit_count = 0
         self.rollback_count = 0
 
@@ -176,8 +171,6 @@ class FakeSavedGraphUnitOfWork:
 
     async def commit(self) -> None:
         self.commit_count += 1
-        if self._commit_error is not None:
-            raise self._commit_error
 
     async def rollback(self) -> None:
         self.rollback_count += 1
@@ -189,7 +182,6 @@ class FakeSavedGraphUnitOfWorkFactory:
         self.revisions: dict[tuple[UUID, int], SavedGraphRevision] = {}
         self.secrets: dict[tuple[UUID, str, str], EncryptedNodeSecret] = {}
         self.plugin_registry = PluginRegistry()
-        self.commit_error: ConcurrentWriteError | None = None
         self.created: list[FakeSavedGraphUnitOfWork] = []
 
     def __call__(self) -> FakeSavedGraphUnitOfWork:
@@ -197,7 +189,6 @@ class FakeSavedGraphUnitOfWorkFactory:
             self.graphs,
             self.revisions,
             self.secrets,
-            self.commit_error,
         )
         self.created.append(unit_of_work)
         return unit_of_work
@@ -238,31 +229,6 @@ def _encrypted_secret(graph_id: UUID) -> EncryptedNodeSecret:
 
 
 @pytest.mark.asyncio
-async def test_create_adds_graph_and_commits_once() -> None:
-    factory = FakeSavedGraphUnitOfWorkFactory()
-    service = SavedGraphService(factory, factory.plugin_registry)
-
-    graph = await service.create(
-        workspace_id=WORKSPACE_ID,
-        created_by_user_id=CREATOR_ID,
-        name="  My draft  ",
-        document=_document(),
-    )
-
-    assert graph.name == "My draft"
-    assert factory.graphs == {graph.id: graph}
-    snapshot = factory.revisions[(graph.id, 1)]
-    assert snapshot.graph_id == graph.id
-    assert snapshot.name == graph.name
-    assert snapshot.document == graph.document
-    assert snapshot.created_at == graph.updated_at
-    with pytest.raises(FrozenInstanceError):
-        setattr(snapshot, "name", "Mutated")
-    assert factory.created[-1].commit_count == 1
-    assert factory.created[-1].rollback_count == 0
-
-
-@pytest.mark.asyncio
 async def test_list_and_get_are_read_only() -> None:
     factory = FakeSavedGraphUnitOfWorkFactory()
     saved = SavedGraph(workspace_id=WORKSPACE_ID, name="Saved", document=_document())
@@ -281,12 +247,14 @@ async def test_list_and_get_are_read_only() -> None:
 async def test_graph_reads_are_scoped_to_the_requested_workspace() -> None:
     factory = FakeSavedGraphUnitOfWorkFactory()
     service = SavedGraphService(factory, factory.plugin_registry)
-    graph = await service.create(
+    graph = SavedGraph(
         workspace_id=WORKSPACE_ID,
         created_by_user_id=CREATOR_ID,
         name="Scoped graph",
         document=_document(),
     )
+    factory.graphs[graph.id] = graph
+    factory.revisions[(graph.id, 1)] = graph.snapshot()
     other_workspace_id = UUID("00000000-0000-0000-0000-000000000103")
 
     with pytest.raises(NotFoundError):
@@ -313,21 +281,18 @@ async def test_get_and_list_revisions_keep_historical_snapshots() -> None:
     factory = FakeSavedGraphUnitOfWorkFactory()
     service = SavedGraphService(factory, factory.plugin_registry)
     original = _document("original")
-    graph = await service.create(
+    graph = SavedGraph(
         workspace_id=WORKSPACE_ID,
         created_by_user_id=CREATOR_ID,
         name="Original",
         document=original,
     )
+    factory.graphs[graph.id] = graph
+    factory.revisions[(graph.id, 1)] = graph.snapshot()
     replacement = _document("replacement")
 
-    await service.replace(
-        graph.id,
-        workspace_id=WORKSPACE_ID,
-        name="Replacement",
-        document=replacement,
-        expected_revision=1,
-    )
+    graph.replace(name="Replacement", document=replacement, expected_revision=1)
+    factory.revisions[(graph.id, 2)] = graph.snapshot()
 
     first = await service.get_revision(WORKSPACE_ID, graph.id, 1)
     second = await service.get_revision(WORKSPACE_ID, graph.id, 2)
@@ -353,32 +318,6 @@ async def test_revision_reads_raise_not_found_for_unknown_values() -> None:
 
 
 @pytest.mark.asyncio
-async def test_replace_updates_graph_and_commits_once() -> None:
-    factory = FakeSavedGraphUnitOfWorkFactory()
-    graph = SavedGraph(
-        workspace_id=WORKSPACE_ID, name="Original", document=SavedGraphDocument()
-    )
-    factory.graphs[graph.id] = graph
-    service = SavedGraphService(factory, factory.plugin_registry)
-    replacement = _document("replacement")
-
-    replaced = await service.replace(
-        graph.id,
-        workspace_id=WORKSPACE_ID,
-        name="Replacement",
-        document=replacement,
-        expected_revision=1,
-    )
-
-    assert replaced is graph
-    assert graph.name == "Replacement"
-    assert graph.document == replacement
-    assert graph.revision == 2
-    assert factory.created[-1].graphs.locked_revisions == [(WORKSPACE_ID, graph.id, 1)]
-    assert factory.created[-1].commit_count == 1
-
-
-@pytest.mark.asyncio
 async def test_replace_preserves_secret_for_unchanged_unavailable_operator() -> None:
     factory = FakeSavedGraphUnitOfWorkFactory()
     graph = SavedGraph(workspace_id=WORKSPACE_ID, name="Dormant", document=_document())
@@ -387,13 +326,15 @@ async def test_replace_preserves_secret_for_unchanged_unavailable_operator() -> 
     factory.secrets[(graph.id, secret.node_id, secret.name)] = secret
     service = SavedGraphService(factory, factory.plugin_registry)
 
-    await service.replace(
-        graph.id,
-        workspace_id=WORKSPACE_ID,
-        name="Still dormant",
-        document=_document(),
-        expected_revision=1,
-    )
+    async with factory() as unit_of_work:
+        await service.apply_replacement_in_unit_of_work(
+            unit_of_work,
+            graph,
+            name="Still dormant",
+            document=_document(),
+            expected_revision=1,
+            physically_remove_orphaned_secrets=True,
+        )
 
     assert factory.secrets == {(graph.id, secret.node_id, secret.name): secret}
 
@@ -440,157 +381,14 @@ async def test_replace_deletes_dormant_secret_when_node_identity_changes(
     factory.secrets[(graph.id, secret.node_id, secret.name)] = secret
     service = SavedGraphService(factory, factory.plugin_registry)
 
-    await service.replace(
-        graph.id,
-        workspace_id=WORKSPACE_ID,
-        name=graph.name,
-        document=replacement,
-        expected_revision=1,
-    )
+    async with factory() as unit_of_work:
+        await service.apply_replacement_in_unit_of_work(
+            unit_of_work,
+            graph,
+            name=graph.name,
+            document=replacement,
+            expected_revision=1,
+            physically_remove_orphaned_secrets=True,
+        )
 
     assert factory.secrets == {}
-
-
-@pytest.mark.asyncio
-async def test_replace_preserves_domain_revision_conflict() -> None:
-    factory = FakeSavedGraphUnitOfWorkFactory()
-    graph = SavedGraph(
-        workspace_id=WORKSPACE_ID,
-        name="Current",
-        document=SavedGraphDocument(),
-        revision=2,
-    )
-    factory.graphs[graph.id] = graph
-    service = SavedGraphService(factory, factory.plugin_registry)
-
-    with pytest.raises(SavedGraphRevisionConflictError) as raised:
-        await service.replace(
-            graph.id,
-            workspace_id=WORKSPACE_ID,
-            name="Stale update",
-            document=_document(),
-            expected_revision=1,
-        )
-
-    assert raised.value.expected_revision == 1
-    assert raised.value.actual_revision == 2
-    assert factory.created[-1].graphs.locked_revisions == [(WORKSPACE_ID, graph.id, 1)]
-    assert factory.created[-1].commit_count == 0
-    assert factory.created[-1].rollback_count == 1
-
-
-@pytest.mark.asyncio
-async def test_replace_translates_concurrent_commit_to_revision_conflict() -> None:
-    factory = FakeSavedGraphUnitOfWorkFactory()
-    graph = SavedGraph(
-        workspace_id=WORKSPACE_ID, name="Current", document=SavedGraphDocument()
-    )
-    factory.graphs[graph.id] = graph
-    concurrent_error = ConcurrentWriteError("concurrent update")
-    factory.commit_error = concurrent_error
-    service = SavedGraphService(factory, factory.plugin_registry)
-
-    with pytest.raises(SavedGraphRevisionConflictError) as raised:
-        await service.replace(
-            graph.id,
-            workspace_id=WORKSPACE_ID,
-            name="Competing update",
-            document=_document(),
-            expected_revision=1,
-        )
-
-    assert raised.value.graph_id == graph.id
-    assert raised.value.expected_revision == 1
-    assert raised.value.actual_revision is None
-    assert raised.value.__cause__ is concurrent_error
-    assert factory.created[-1].commit_count == 1
-    assert factory.created[-1].rollback_count == 1
-
-
-@pytest.mark.asyncio
-async def test_delete_removes_graph_and_commits_once() -> None:
-    factory = FakeSavedGraphUnitOfWorkFactory()
-    graph = SavedGraph(
-        workspace_id=WORKSPACE_ID,
-        name="Disposable",
-        document=SavedGraphDocument(),
-    )
-    factory.graphs[graph.id] = graph
-    service = SavedGraphService(factory, factory.plugin_registry)
-
-    await service.delete(
-        graph.id,
-        workspace_id=WORKSPACE_ID,
-        expected_revision=1,
-    )
-
-    assert graph.id not in factory.graphs
-    assert factory.created[-1].graphs.locked_revisions == [(WORKSPACE_ID, graph.id, 1)]
-    assert factory.created[-1].commit_count == 1
-
-
-@pytest.mark.asyncio
-async def test_delete_raises_not_found_without_committing() -> None:
-    factory = FakeSavedGraphUnitOfWorkFactory()
-    service = SavedGraphService(factory, factory.plugin_registry)
-    graph_id = UUID("00000000-0000-0000-0000-000000000404")
-
-    with pytest.raises(NotFoundError, match=str(graph_id)):
-        await service.delete(
-            graph_id,
-            workspace_id=WORKSPACE_ID,
-            expected_revision=1,
-        )
-
-    assert factory.created[-1].commit_count == 0
-    assert factory.created[-1].rollback_count == 1
-
-
-@pytest.mark.asyncio
-async def test_delete_rejects_stale_client_revision_without_removing_graph() -> None:
-    factory = FakeSavedGraphUnitOfWorkFactory()
-    graph = SavedGraph(
-        workspace_id=WORKSPACE_ID,
-        name="Newer graph",
-        document=SavedGraphDocument(),
-        revision=2,
-    )
-    factory.graphs[graph.id] = graph
-    service = SavedGraphService(factory, factory.plugin_registry)
-
-    with pytest.raises(SavedGraphRevisionConflictError) as raised:
-        await service.delete(
-            graph.id,
-            workspace_id=WORKSPACE_ID,
-            expected_revision=1,
-        )
-
-    assert raised.value.actual_revision == 2
-    assert graph.id in factory.graphs
-    assert factory.created[-1].commit_count == 0
-
-
-@pytest.mark.asyncio
-async def test_delete_translates_concurrent_commit_to_revision_conflict() -> None:
-    factory = FakeSavedGraphUnitOfWorkFactory()
-    graph = SavedGraph(
-        workspace_id=WORKSPACE_ID,
-        name="Competing delete",
-        document=SavedGraphDocument(),
-    )
-    factory.graphs[graph.id] = graph
-    concurrent_error = ConcurrentWriteError("concurrent delete")
-    factory.commit_error = concurrent_error
-    service = SavedGraphService(factory, factory.plugin_registry)
-
-    with pytest.raises(SavedGraphRevisionConflictError) as raised:
-        await service.delete(
-            graph.id,
-            workspace_id=WORKSPACE_ID,
-            expected_revision=1,
-        )
-
-    assert raised.value.graph_id == graph.id
-    assert raised.value.expected_revision == graph.revision
-    assert raised.value.actual_revision is None
-    assert raised.value.__cause__ is concurrent_error

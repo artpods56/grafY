@@ -1,5 +1,6 @@
+from dataclasses import FrozenInstanceError
 from types import TracebackType
-from typing import Self
+from typing import Literal, Self
 from uuid import UUID, uuid4
 
 import pytest
@@ -469,7 +470,7 @@ async def test_bootstrap_graph_commits_head_checkpoint_and_receipt() -> None:
     command_id = uuid4()
     graph_id = uuid4()
     command = ReplaceDocumentCommand(
-        name="Bootstrapped",
+        name="  Bootstrapped  ",
         document=SavedGraphDocument(
             nodes=(
                 SavedGraphNode(
@@ -492,6 +493,15 @@ async def test_bootstrap_graph_commits_head_checkpoint_and_receipt() -> None:
     )
 
     assert graph.id == graph_id
+    assert graph.name == "Bootstrapped"
+    snapshot = factory.graphs.revisions[(graph.id, 1)]
+    assert snapshot.graph_id == graph.id
+    assert snapshot.name == graph.name
+    assert snapshot.document == graph.document
+    assert snapshot.created_at == graph.updated_at
+    with pytest.raises(FrozenInstanceError):
+        setattr(snapshot, "name", "Mutated")
+    assert factory.created[-1].rollback_count == 0
     assert graph.revision == 1
     assert head.collaboration_sequence == 1
     assert head.checkpoint_sequence == 1
@@ -1423,7 +1433,8 @@ async def test_copy_locks_workspaces_in_global_order(reverse: bool) -> None:
     factory = FakeFactory()
     service = _service(factory)
     source_id, target_id = (
-        (TARGET_WORKSPACE_ID, WORKSPACE_ID) if reverse
+        (TARGET_WORKSPACE_ID, WORKSPACE_ID)
+        if reverse
         else (WORKSPACE_ID, TARGET_WORKSPACE_ID)
     )
     graph, head, _ = await service.bootstrap_graph(
@@ -1489,7 +1500,9 @@ async def test_graph_creation_rolls_back_when_initial_checkpoint_cannot_be_stage
     service = _service(factory)
 
     async def reject_mapping(mapping: GraphCheckpointMapping) -> None:
-        raise ConcurrentWriteError(f"Cannot stage initial checkpoint for {mapping.graph_id}")
+        raise ConcurrentWriteError(
+            f"Cannot stage initial checkpoint for {mapping.graph_id}"
+        )
 
     monkeypatch.setattr(factory.collaboration, "add_checkpoint_mapping", reject_mapping)
     with pytest.raises(ConcurrentWriteError, match="Cannot stage initial checkpoint"):
@@ -1497,11 +1510,169 @@ async def test_graph_creation_rolls_back_when_initial_checkpoint_cannot_be_stage
             actor=ActorContext(user_id=USER_ID),
             workspace_id=WORKSPACE_ID,
             command_id=uuid4(),
-            command=ReplaceDocumentCommand(name="Rolled back", document=SavedGraphDocument()),
+            command=ReplaceDocumentCommand(
+                name="Rolled back", document=SavedGraphDocument()
+            ),
         )
     assert factory.graphs.graphs == {}
     assert factory.graphs.revisions == {}
     assert factory.collaboration.heads == {}
     assert factory.collaboration.mappings == {}
     assert factory.collaboration.receipts == {}
+    assert factory.security_audit.events == []
+
+
+@pytest.mark.parametrize("operation", ["replace", "delete"])
+async def test_complete_graph_mutation_commits_graph_and_head_together(
+    operation: Literal["replace", "delete"],
+) -> None:
+    factory = FakeFactory()
+    service = _service(factory)
+    graph, original_head, _ = await service.bootstrap_graph(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        command_id=uuid4(),
+        command=ReplaceDocumentCommand(name="Original", document=SavedGraphDocument()),
+        graph_id=uuid4(),
+    )
+    original_snapshot = factory.graphs.revisions[(graph.id, 1)]
+    original_epoch = original_head.room_epoch
+    replacement = SavedGraphDocument(
+        nodes=(
+            SavedGraphNode(
+                kind="builtin",
+                id="replacement",
+                operator_id="example.operator",
+                operator_version=1,
+                position=GraphPoint(x=1, y=2),
+            ),
+        )
+    )
+
+    if operation == "replace":
+        replaced, head = await service.replace_complete_document(
+            actor=ActorContext(user_id=USER_ID),
+            workspace_id=WORKSPACE_ID,
+            graph_id=graph.id,
+            name="Replacement",
+            document=replacement,
+            expected_revision=1,
+        )
+        assert replaced.name == head.name == "Replacement"
+        assert replaced.document == head.document == replacement
+        assert replaced.revision == head.checkpoint_revision == 2
+        assert head.room_epoch != original_epoch
+        assert head.is_fully_checkpointed
+        assert factory.graphs.revisions[(graph.id, 1)] == original_snapshot
+        assert factory.graphs.revisions[(graph.id, 2)] == replaced.snapshot()
+        mapping = factory.collaboration.mappings[
+            (WORKSPACE_ID, graph.id, head.room_epoch, 0)
+        ]
+        assert mapping.saved_revision == 2
+    else:
+        await service.delete_graph(
+            actor=ActorContext(user_id=USER_ID),
+            workspace_id=WORKSPACE_ID,
+            graph_id=graph.id,
+            expected_revision=1,
+        )
+        assert graph.id not in factory.graphs.graphs
+        assert (WORKSPACE_ID, graph.id) not in factory.collaboration.heads
+
+    assert factory.graphs.locked_revisions == [(WORKSPACE_ID, graph.id, 1)]
+    assert factory.created[-1].commit_count == 1
+    assert factory.created[-1].rollback_count == 0
+    assert (
+        factory.security_audit.events[-1].operation
+        == f"collaboration.graph.{operation}"
+    )
+
+
+@pytest.mark.parametrize("operation", ["replace", "delete"])
+@pytest.mark.parametrize("failure", ["stale", "commit"])
+async def test_complete_graph_mutation_conflict_restores_graph_and_checkpoint(
+    operation: Literal["replace", "delete"],
+    failure: Literal["stale", "commit"],
+) -> None:
+    factory = FakeFactory()
+    service = _service(factory)
+    graph, head, _ = await service.bootstrap_graph(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        command_id=uuid4(),
+        graph_id=uuid4(),
+        command=ReplaceDocumentCommand(name="Original", document=SavedGraphDocument()),
+    )
+    original_snapshot = graph.snapshot()
+    original_head = _clone_head(head)
+    original_mappings = dict(factory.collaboration.mappings)
+    original_receipts = dict(factory.collaboration.receipts)
+    original_audits = list(factory.security_audit.events)
+    expected_revision = 2 if failure == "stale" else 1
+    concurrent_error = ConcurrentWriteError("competing graph mutation")
+    if failure == "commit":
+        factory.commit_error = concurrent_error
+
+    with pytest.raises(SavedGraphRevisionConflictError) as raised:
+        if operation == "replace":
+            await service.replace_complete_document(
+                actor=ActorContext(user_id=USER_ID),
+                workspace_id=WORKSPACE_ID,
+                graph_id=graph.id,
+                name="Changed",
+                document=SavedGraphDocument(),
+                expected_revision=expected_revision,
+            )
+        else:
+            await service.delete_graph(
+                actor=ActorContext(user_id=USER_ID),
+                workspace_id=WORKSPACE_ID,
+                graph_id=graph.id,
+                expected_revision=expected_revision,
+            )
+
+    assert raised.value.graph_id == graph.id
+    assert raised.value.expected_revision == expected_revision
+    assert raised.value.actual_revision == (1 if failure == "stale" else None)
+    if failure == "commit":
+        assert raised.value.__cause__ is concurrent_error
+    assert factory.graphs.graphs[graph.id].snapshot() == original_snapshot
+    assert factory.graphs.revisions == {(graph.id, 1): original_snapshot}
+    assert factory.collaboration.heads[(WORKSPACE_ID, graph.id)] == original_head
+    assert factory.collaboration.mappings == original_mappings
+    assert factory.collaboration.receipts == original_receipts
+    assert factory.security_audit.events == original_audits
+    assert factory.graphs.locked_revisions == [
+        (WORKSPACE_ID, graph.id, expected_revision)
+    ]
+    assert factory.created[-1].commit_count == (1 if failure == "commit" else 0)
+    assert factory.created[-1].rollback_count == 1
+
+
+@pytest.mark.parametrize("operation", ["replace", "delete"])
+async def test_complete_graph_mutation_rejects_missing_graph_without_committing(
+    operation: Literal["replace", "delete"],
+) -> None:
+    factory = FakeFactory()
+    service = _service(factory)
+    graph_id = uuid4()
+    with pytest.raises(NotFoundError, match=str(graph_id)):
+        if operation == "replace":
+            await service.replace_complete_document(
+                actor=ActorContext(user_id=USER_ID),
+                workspace_id=WORKSPACE_ID,
+                graph_id=graph_id,
+                name="Missing",
+                document=SavedGraphDocument(),
+                expected_revision=1,
+            )
+        else:
+            await service.delete_graph(
+                actor=ActorContext(user_id=USER_ID),
+                workspace_id=WORKSPACE_ID,
+                graph_id=graph_id,
+                expected_revision=1,
+            )
+    assert factory.created[-1].commit_count == 0
+    assert factory.created[-1].rollback_count == 1
     assert factory.security_audit.events == []

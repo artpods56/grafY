@@ -7,11 +7,10 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
 
-from grafy_core.application.saved_graphs import SavedGraphService
+from grafy_core.application.graph_creation import stage_checkpointed_graph
 from grafy_core.domain.execution_history import GraphExecution
-from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_core.domain.saved_graphs import SavedGraph, SavedGraphDocument
 from grafy_persistence.unit_of_work import (
-    SqlAlchemySavedGraphUnitOfWork,
     SqlAlchemyUnitOfWork,
 )
 
@@ -22,7 +21,6 @@ from grafy_api.v1.routes.executions.models import (
     RunRequest,
 )
 from tests.support.system_plugins import (
-    build_explicit_plugin_registry,
     selected_system_run_node as RunNodeRequest,
 )
 from tests.support.clients import GrafyApi
@@ -432,16 +430,9 @@ def test_duplicate_saved_node_ids_become_a_browsable_failed_execution(
 
 
 async def _seed_active_execution(database_url: str) -> tuple[UUID, UUID]:
-    from grafy_core.domain.collaboration import CollaborativeGraphHead
-
     async with db(database_url) as database:
-        registry = build_explicit_plugin_registry()
-        saved_graphs = SavedGraphService(
-            lambda: SqlAlchemySavedGraphUnitOfWork(database.sessions),
-            registry,
-        )
         await seed_shared_workspace(database)
-        graph = await saved_graphs.create(
+        graph = SavedGraph(
             workspace_id=WORKSPACE_ID,
             created_by_user_id=None,
             name="Interrupted",
@@ -450,17 +441,11 @@ async def _seed_active_execution(database_url: str) -> tuple[UUID, UUID]:
         execution_id = uuid4()
         started_at = datetime.now(UTC)
         async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            await unit_of_work.collaboration.add_head(
-                CollaborativeGraphHead(
-                    workspace_id=WORKSPACE_ID,
-                    graph_id=graph.id,
-                    room_epoch=uuid4(),
-                    collaboration_sequence=1,
-                    checkpoint_sequence=1,
-                    checkpoint_revision=graph.revision,
-                    name=graph.name,
-                    document=graph.document,
-                )
+            await stage_checkpointed_graph(
+                graph,
+                graphs=unit_of_work.graphs,
+                collaboration=unit_of_work.collaboration,
+                collaboration_sequence=1,
             )
             # An active (running) execution is its own uniqueness record; the
             # partial unique index on graph_executions carries the invariant.

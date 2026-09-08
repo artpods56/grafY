@@ -9,6 +9,7 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy import text
 
+from grafy_core.application.collaboration import CollaborationService
 from grafy_core.application.graph_creation import stage_checkpointed_graph
 from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
@@ -68,6 +69,7 @@ from tests.support.system_plugins import (
     build_selected_system_plugin_deployment,
 )
 from tests.support.workbench import workbench_dependency_overrides
+from tests.support.identity import TEST_COMMAND_HMAC_KEY, browser_actor_override
 from tests.testkit import (
     client_with_overrides,
     create_db_url,
@@ -192,13 +194,55 @@ async def node_secret_setup(
         yield database, service, saved_graphs, registry
 
 
-async def _saved_secret_graph(saved_graphs: SavedGraphService):
-    return await saved_graphs.create(
+async def _saved_secret_graph(
+    database: Database,
+    *,
+    name: str = "Shared extraction",
+    document: SavedGraphDocument | None = None,
+) -> SavedGraph:
+    graph = SavedGraph(
         workspace_id=WORKSPACE_ID,
-        created_by_user_id=None,
-        name="Shared extraction",
-        document=_secret_document(),
+        name=name,
+        document=document if document is not None else _secret_document(),
     )
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+        await stage_checkpointed_graph(
+            graph,
+            graphs=unit_of_work.graphs,
+            collaboration=unit_of_work.collaboration,
+        )
+        await unit_of_work.commit()
+    return graph
+
+
+async def _replace_secret_graph(
+    database: Database,
+    registry: PluginRegistry,
+    graph_id: UUID,
+    *,
+    workspace_id: UUID,
+    name: str,
+    document: SavedGraphDocument,
+    expected_revision: int,
+) -> SavedGraph:
+    collaboration = CollaborationService(
+        lambda: SqlAlchemyUnitOfWork(database.sessions),
+        registry,
+        command_hmac_key=TEST_COMMAND_HMAC_KEY.encode(),
+        command_hmac_key_version=1,
+    )
+    graph, head = await collaboration.replace_complete_document(
+        actor=browser_actor_override(),
+        workspace_id=workspace_id,
+        graph_id=graph_id,
+        name=name,
+        document=document,
+        expected_revision=expected_revision,
+    )
+    assert head.is_fully_checkpointed
+    assert head.checkpoint_revision == graph.revision
+    assert head.document == graph.document
+    return graph
 
 
 def _secret_document(
@@ -280,8 +324,8 @@ async def test_configured_secret_is_encrypted_and_resolves_only_for_binding(
         PluginRegistry,
     ],
 ) -> None:
-    database, service, saved_graphs, registry = node_secret_setup
-    graph = await _saved_secret_graph(saved_graphs)
+    database, service, _, registry = node_secret_setup
+    graph = await _saved_secret_graph(database)
     plaintext = "provider-key-that-must-never-be-returned"
 
     configured = await service.configure(
@@ -352,8 +396,8 @@ async def test_secret_cache_revision_is_stable_and_changes_on_replacement(
         PluginRegistry,
     ],
 ) -> None:
-    _, service, saved_graphs, _ = node_secret_setup
-    graph = await _saved_secret_graph(saved_graphs)
+    database, service, _, _ = node_secret_setup
+    graph = await _saved_secret_graph(database)
     await service.configure(
         workspace_id=WORKSPACE_ID,
         graph_id=graph.id,
@@ -412,8 +456,8 @@ async def test_unrelated_graph_edits_retain_and_resolve_secret(
         PluginRegistry,
     ],
 ) -> None:
-    database, service, saved_graphs, _ = node_secret_setup
-    graph = await _saved_secret_graph(saved_graphs)
+    database, service, _, registry = node_secret_setup
+    graph = await _saved_secret_graph(database)
     plaintext = "retained-across-unrelated-edits"
     await service.configure(
         workspace_id=WORKSPACE_ID,
@@ -424,7 +468,9 @@ async def test_unrelated_graph_edits_retain_and_resolve_secret(
         expected_graph_revision=graph.revision,
     )
 
-    updated = await saved_graphs.replace(
+    updated = await _replace_secret_graph(
+        database,
+        registry,
         graph.id,
         workspace_id=WORKSPACE_ID,
         name="Renamed extraction",
@@ -465,8 +511,8 @@ async def test_unavailable_operator_keeps_secret_dormant_until_supported_again(
         PluginRegistry,
     ],
 ) -> None:
-    database, supported_secrets, supported_graphs, _ = node_secret_setup
-    graph = await _saved_secret_graph(supported_graphs)
+    database, supported_secrets, _, _ = node_secret_setup
+    graph = await _saved_secret_graph(database)
     await supported_secrets.configure(
         workspace_id=WORKSPACE_ID,
         graph_id=graph.id,
@@ -477,17 +523,15 @@ async def test_unavailable_operator_keeps_secret_dormant_until_supported_again(
     )
     unavailable_registry = PluginRegistry()
     unavailable_registry.freeze()
-    unavailable_graphs = SavedGraphService(
-        lambda: SqlAlchemyUnitOfWork(database.sessions),
-        unavailable_registry,
-    )
     unavailable_secrets = NodeSecretService(
         unit_of_work_factory=lambda: SqlAlchemyUnitOfWork(database.sessions),
         plugin_registry=unavailable_registry,
         encryption_key=_encryption_key(),
     )
 
-    updated = await unavailable_graphs.replace(
+    updated = await _replace_secret_graph(
+        database,
+        unavailable_registry,
         graph.id,
         workspace_id=WORKSPACE_ID,
         name="Saved while plugin unavailable",
@@ -535,10 +579,9 @@ async def test_pinned_isolated_operator_uses_release_contract_for_secret_binding
         PluginRegistry,
     ],
 ) -> None:
-    database, _, saved_graphs, _ = node_secret_setup
-    graph = await saved_graphs.create(
-        workspace_id=WORKSPACE_ID,
-        created_by_user_id=None,
+    database, _, _, _ = node_secret_setup
+    graph = await _saved_secret_graph(
+        database,
         name="Isolated extraction",
         document=_secret_document(plugin_release_pin=SAVED_PLUGIN_RELEASE_PIN),
     )
@@ -582,8 +625,8 @@ async def test_secret_resolution_uses_the_pinned_saved_graph_revision(
         PluginRegistry,
     ],
 ) -> None:
-    _, service, saved_graphs, _ = node_secret_setup
-    graph = await _saved_secret_graph(saved_graphs)
+    database, service, _, registry = node_secret_setup
+    graph = await _saved_secret_graph(database)
     original_revision = graph.revision
     await service.configure(
         workspace_id=WORKSPACE_ID,
@@ -593,7 +636,9 @@ async def test_secret_resolution_uses_the_pinned_saved_graph_revision(
         value=SecretStr("revision-bound-secret"),
         expected_graph_revision=original_revision,
     )
-    updated = await saved_graphs.replace(
+    updated = await _replace_secret_graph(
+        database,
+        registry,
         graph.id,
         workspace_id=WORKSPACE_ID,
         name=graph.name,
@@ -621,8 +666,8 @@ async def test_changing_dependency_deletes_secret_and_changing_back_does_not_rev
         PluginRegistry,
     ],
 ) -> None:
-    database, service, saved_graphs, _ = node_secret_setup
-    graph = await _saved_secret_graph(saved_graphs)
+    database, service, _, registry = node_secret_setup
+    graph = await _saved_secret_graph(database)
     await service.configure(
         workspace_id=WORKSPACE_ID,
         graph_id=graph.id,
@@ -631,7 +676,9 @@ async def test_changing_dependency_deletes_secret_and_changing_back_does_not_rev
         value=SecretStr("bound-to-original-endpoint"),
         expected_graph_revision=graph.revision,
     )
-    updated = await saved_graphs.replace(
+    updated = await _replace_secret_graph(
+        database,
+        registry,
         graph.id,
         workspace_id=WORKSPACE_ID,
         name=graph.name,
@@ -659,7 +706,9 @@ async def test_changing_dependency_deletes_secret_and_changing_back_does_not_rev
             dependencies={"base_url": "https://changed.example/v1"},
         )
 
-    changed_back = await saved_graphs.replace(
+    changed_back = await _replace_secret_graph(
+        database,
+        registry,
         graph.id,
         workspace_id=WORKSPACE_ID,
         name=graph.name,
@@ -689,8 +738,8 @@ async def test_removing_and_readding_node_id_does_not_revive_secret(
         PluginRegistry,
     ],
 ) -> None:
-    database, service, saved_graphs, _ = node_secret_setup
-    graph = await _saved_secret_graph(saved_graphs)
+    database, service, _, registry = node_secret_setup
+    graph = await _saved_secret_graph(database)
     await service.configure(
         workspace_id=WORKSPACE_ID,
         graph_id=graph.id,
@@ -700,7 +749,9 @@ async def test_removing_and_readding_node_id_does_not_revive_secret(
         expected_graph_revision=1,
     )
 
-    await saved_graphs.replace(
+    await _replace_secret_graph(
+        database,
+        registry,
         graph.id,
         workspace_id=WORKSPACE_ID,
         name=graph.name,
@@ -712,7 +763,9 @@ async def test_removing_and_readding_node_id_does_not_revive_secret(
             text("SELECT COUNT(*) FROM node_secrets WHERE graph_id = :graph_id"),
             {"graph_id": graph.id.hex},
         )
-    readded = await saved_graphs.replace(
+    readded = await _replace_secret_graph(
+        database,
+        registry,
         graph.id,
         workspace_id=WORKSPACE_ID,
         name=graph.name,
@@ -743,8 +796,8 @@ async def test_configure_rejects_stale_revision_and_undeclared_slot(
         PluginRegistry,
     ],
 ) -> None:
-    _, service, saved_graphs, _ = node_secret_setup
-    graph = await _saved_secret_graph(saved_graphs)
+    database, service, _, _ = node_secret_setup
+    graph = await _saved_secret_graph(database)
 
     with pytest.raises(SavedGraphRevisionConflictError):
         await service.configure(
@@ -774,8 +827,8 @@ async def test_status_is_false_and_resolution_fails_with_different_server_key(
         PluginRegistry,
     ],
 ) -> None:
-    database, service, saved_graphs, registry = node_secret_setup
-    graph = await _saved_secret_graph(saved_graphs)
+    database, service, _, registry = node_secret_setup
+    graph = await _saved_secret_graph(database)
     await service.configure(
         workspace_id=WORKSPACE_ID,
         graph_id=graph.id,
@@ -821,8 +874,8 @@ async def test_operator_version_mismatch_cannot_reuse_stored_secret(
         PluginRegistry,
     ],
 ) -> None:
-    database, service, saved_graphs, _ = node_secret_setup
-    graph = await _saved_secret_graph(saved_graphs)
+    database, service, _, _ = node_secret_setup
+    graph = await _saved_secret_graph(database)
     await service.configure(
         workspace_id=WORKSPACE_ID,
         graph_id=graph.id,
@@ -862,8 +915,8 @@ async def test_missing_encryption_key_fails_closed_and_secret_size_is_bounded(
         PluginRegistry,
     ],
 ) -> None:
-    database, _, saved_graphs, registry = node_secret_setup
-    graph = await _saved_secret_graph(saved_graphs)
+    database, _, _, registry = node_secret_setup
+    graph = await _saved_secret_graph(database)
     missing_key_service = NodeSecretService(
         unit_of_work_factory=lambda: SqlAlchemyUnitOfWork(database.sessions),
         plugin_registry=registry,
@@ -903,8 +956,8 @@ async def test_saved_run_passes_validated_graph_context_to_node(
     ],
     tmp_path: Path,
 ) -> None:
-    _, _, saved_graphs, registry = node_secret_setup
-    graph = await _saved_secret_graph(saved_graphs)
+    database, _, saved_graphs, registry = node_secret_setup
+    graph = await _saved_secret_graph(database)
     components = _build_secret_components(
         registry=registry,
         workspace=tmp_path / "context-workbench",
@@ -954,8 +1007,8 @@ async def test_dirty_run_uses_saved_secret_binding_without_materialization_conte
     ],
     tmp_path: Path,
 ) -> None:
-    _, _, saved_graphs, registry = node_secret_setup
-    graph = await _saved_secret_graph(saved_graphs)
+    database, _, saved_graphs, registry = node_secret_setup
+    graph = await _saved_secret_graph(database)
     components = _build_secret_components(
         registry=registry,
         workspace=tmp_path / "dirty-context-workbench",
@@ -1069,11 +1122,10 @@ async def test_dirty_run_rejects_invalid_saved_secret_binding(
     binding_case: str,
     message: str,
 ) -> None:
-    _, _, saved_graphs, registry = node_secret_setup
+    database, _, saved_graphs, registry = node_secret_setup
     if binding_case == "operator":
-        graph = await saved_graphs.create(
-            workspace_id=WORKSPACE_ID,
-            created_by_user_id=None,
+        graph = await _saved_secret_graph(
+            database,
             name="Different operator",
             document=SavedGraphDocument(
                 nodes=(
@@ -1089,7 +1141,7 @@ async def test_dirty_run_rejects_invalid_saved_secret_binding(
             ),
         )
     else:
-        graph = await _saved_secret_graph(saved_graphs)
+        graph = await _saved_secret_graph(database)
     submitted_node_id = "missing" if binding_case == "missing" else "llm"
     base_url = (
         "https://changed.example/v1"
