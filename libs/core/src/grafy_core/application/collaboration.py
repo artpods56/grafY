@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 import hmac
 
+from grafy_core.application.identity import authorize_workspace
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.collaboration import (
     CollaborationActorKind,
@@ -641,35 +642,23 @@ class CollaborationService:
         target_graph_id: UUID | None = None,
     ) -> tuple[SavedGraph, CollaborativeGraphHead, GraphCommandReceipt]:
         async with self._unit_of_work_factory() as unit_of_work:
-            await self._authorize(
-                unit_of_work,
-                actor=actor,
-                workspace_id=source_workspace_id,
-                capability=WorkspaceCapability.VIEW_GRAPH,
-                operation="collaboration.graph.copy",
-                resource_id=str(source_graph_id),
+            requirements = (
+                (source_workspace_id, WorkspaceCapability.VIEW_GRAPH),
+                (target_workspace_id, WorkspaceCapability.CREATE_GRAPH),
+                (target_workspace_id, WorkspaceCapability.EDIT_GRAPH),
+                (target_workspace_id, WorkspaceCapability.CHECKPOINT_GRAPH),
             )
-            access = await self._authorize(
-                unit_of_work,
-                actor=actor,
-                workspace_id=target_workspace_id,
-                capability=WorkspaceCapability.CREATE_GRAPH,
-                operation="collaboration.graph.copy",
-                resource_id=str(source_graph_id),
-            )
-            try:
-                access.require(WorkspaceCapability.EDIT_GRAPH)
-                access.require(WorkspaceCapability.CHECKPOINT_GRAPH)
-            except CapabilityDeniedError:
-                await self._commit_rejection_audit(
+            for workspace_id, capability in sorted(
+                requirements, key=lambda requirement: str(requirement[0])
+            ):
+                await self._authorize(
                     unit_of_work,
                     actor=actor,
-                    workspace_id=target_workspace_id,
+                    workspace_id=workspace_id,
+                    capability=capability,
                     operation="collaboration.graph.copy",
-                    error_code="capability_denied",
                     resource_id=str(source_graph_id),
                 )
-                raise
 
             source_head = await unit_of_work.collaboration.lock_head(
                 source_workspace_id,
@@ -900,22 +889,12 @@ class CollaborationService:
         resource_id: str | None,
     ) -> WorkspaceAccess:
         try:
-            user = await unit_of_work.identity.get_user(actor.user_id)
-            if user is None or not user.active:
-                raise UserDisabledError()
-            membership = await unit_of_work.identity.get_membership(
-                workspace_id=workspace_id,
-                user_id=actor.user_id,
-            )
-            if membership is None or not membership.is_active:
-                raise NotFoundError("Workspace", str(workspace_id))
-            access = WorkspaceAccess(
+            return await authorize_workspace(
+                unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
-                membership=membership,
+                capability=capability,
             )
-            access.require(capability)
-            return access
         except UserDisabledError:
             await self._commit_rejection_audit(
                 unit_of_work,

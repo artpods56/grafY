@@ -4,16 +4,15 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
+from grafy_core.application.identity import authorize_workspace
 from grafy_core.domain.errors import (
     ConcurrentWriteError,
     GraphFolderNameConflictError,
     NotFoundError,
     SavedGraphRevisionConflictError,
-    UserDisabledError,
 )
 from grafy_core.domain.identity import (
     ActorContext,
-    WorkspaceAccess,
     WorkspaceCapability,
 )
 from grafy_core.domain.node_secrets import (
@@ -121,8 +120,8 @@ class SavedGraphService:
     ) -> GraphFolder:
         folder = GraphFolder(workspace_id=workspace_id, name=name)
         async with self._unit_of_work_factory() as unit_of_work:
-            await self._require_capability(
-                unit_of_work,
+            await authorize_workspace(
+                unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.EDIT_GRAPH,
@@ -159,8 +158,8 @@ class SavedGraphService:
         workspace_id: UUID,
     ) -> list[GraphFolder]:
         async with self._unit_of_work_factory() as unit_of_work:
-            await self._require_capability(
-                unit_of_work,
+            await authorize_workspace(
+                unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.VIEW_GRAPH,
@@ -180,8 +179,8 @@ class SavedGraphService:
         name: str,
     ) -> GraphFolder:
         async with self._unit_of_work_factory() as unit_of_work:
-            await self._require_capability(
-                unit_of_work,
+            await authorize_workspace(
+                unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.EDIT_GRAPH,
@@ -227,8 +226,8 @@ class SavedGraphService:
         folder_id: UUID,
     ) -> None:
         async with self._unit_of_work_factory() as unit_of_work:
-            await self._require_capability(
-                unit_of_work,
+            await authorize_workspace(
+                unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.EDIT_GRAPH,
@@ -264,8 +263,8 @@ class SavedGraphService:
         folder_id: UUID | None,
     ) -> GraphOrganization:
         async with self._unit_of_work_factory() as unit_of_work:
-            await self._require_capability(
-                unit_of_work,
+            await authorize_workspace(
+                unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.EDIT_GRAPH,
@@ -311,8 +310,8 @@ class SavedGraphService:
         graph_id: UUID,
     ) -> GraphOrganization:
         async with self._unit_of_work_factory() as unit_of_work:
-            await self._require_capability(
-                unit_of_work,
+            await authorize_workspace(
+                unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.EDIT_GRAPH,
@@ -354,8 +353,8 @@ class SavedGraphService:
         graph_id: UUID,
     ) -> GraphOrganization:
         async with self._unit_of_work_factory() as unit_of_work:
-            await self._require_capability(
-                unit_of_work,
+            await authorize_workspace(
+                unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.EDIT_GRAPH,
@@ -398,8 +397,8 @@ class SavedGraphService:
         starred: bool,
     ) -> UserGraphState:
         async with self._unit_of_work_factory() as unit_of_work:
-            await self._require_capability(
-                unit_of_work,
+            await authorize_workspace(
+                unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.VIEW_GRAPH,
@@ -431,8 +430,8 @@ class SavedGraphService:
         graph_id: UUID,
     ) -> UserGraphState:
         async with self._unit_of_work_factory() as unit_of_work:
-            await self._require_capability(
-                unit_of_work,
+            await authorize_workspace(
+                unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.VIEW_GRAPH,
@@ -455,31 +454,6 @@ class SavedGraphService:
             await unit_of_work.graphs.save_user_state(state)
             await unit_of_work.commit()
         return state
-
-    async def _require_capability(
-        self,
-        unit_of_work: SavedGraphUnitOfWorkPort,
-        *,
-        actor: ActorContext,
-        workspace_id: UUID,
-        capability: WorkspaceCapability,
-    ) -> WorkspaceAccess:
-        user = await unit_of_work.identity.get_user(actor.user_id)
-        if user is None or not user.active:
-            raise UserDisabledError(f"User {actor.user_id} is disabled")
-        membership = await unit_of_work.identity.get_membership(
-            workspace_id=workspace_id,
-            user_id=actor.user_id,
-        )
-        if membership is None or not membership.is_active:
-            raise NotFoundError("Workspace", str(workspace_id))
-        access = WorkspaceAccess(
-            actor=actor,
-            workspace_id=workspace_id,
-            membership=membership,
-        )
-        access.require(capability)
-        return access
 
     async def replace(
         self,

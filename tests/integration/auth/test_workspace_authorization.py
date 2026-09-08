@@ -1,19 +1,26 @@
 """Tenant IDOR and role/capability matrix for workspace-qualified routes."""
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
 from httpx import Response
 from pydantic import SecretStr
+from sqlalchemy import select
 
 from grafy_api.settings import Settings
-from grafy_api.v1.routes.auth.models import WorkspaceInvitationCreateRequest
+from grafy_api.v1.routes.auth.models import (
+    PersonalAccessTokenCreateRequest,
+    PersonalAccessTokenScope,
+    WorkspaceInvitationCreateRequest,
+)
 from grafy_api.v1.routes.auth.services import AuthService, IssuedSession
 from grafy_api.v1.routes.executions.models import RunRequest
 from grafy_api.v1.routes.node_secrets.models import ConfigureNodeSecretRequest
 from grafy_api.v1.routes.saved_graphs.models import (
     AssignGraphFolderRequest,
+    CopyExactHeadRequest,
     CreateSavedGraphRequest,
     GraphFolderWriteRequest,
     SubmitGraphCommandRequest,
@@ -25,6 +32,8 @@ from grafy_core.artifacts import ArtifactObject
 from grafy_core.domain.collaboration import RenameGraphCommand
 from grafy_core.domain.identity import User, Workspace, WorkspaceKind, WorkspaceRole
 from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_core.domain.security_audit import SecurityAuditEvent, SecurityAuditOutcome
+from grafy_persistence import schema
 from grafy_persistence.database import Database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from tests.support.clients import GrafyApi
@@ -957,3 +966,74 @@ async def test_cross_workspace_resource_ids_do_not_authorize_via_wrong_path(
             # Resource remains readable under its owning workspace path.
             assert workspace_a.graphs.get(graph_a.id).status_code == 200
             assert workspace_a.artifacts.content(matrix.artifact_id).status_code == 200
+
+
+async def test_target_bound_pat_cannot_copy_graph_from_another_workspace(
+    tmp_path: Path, settings: Settings
+) -> None:
+    database_url = create_db_url(tmp_path, "pat-cross-workspace-copy.sqlite3")
+    async with db(database_url) as database:
+        app_settings = settings.model_copy(
+            update={
+                "database_url": SecretStr(database_url),
+                "workspace": tmp_path / "workbench",
+            }
+        )
+        matrix = await _seed_authorization_matrix(database)
+        issued = await _auth_service(app_settings, database).issue_session(matrix.both.id)
+        with client_with_overrides(settings=app_settings) as client:
+            api = GrafyApi(client)
+            api.authenticate(issued)
+            source = api.workspace(matrix.workspace_a.id).graphs
+            target = api.workspace(matrix.workspace_b.id)
+            graph = source.create_ok(
+                CreateSavedGraphRequest(name="Source", document=SavedGraphDocument()),
+                headers=_csrf_headers(issued),
+            )
+            head = source.get_head_ok(graph.id)
+            request = CopyExactHeadRequest(
+                source_workspace_id=matrix.workspace_a.id,
+                source_graph_id=graph.id,
+                expected_room_epoch=head.room_epoch,
+                expected_sequence=head.collaboration_sequence,
+                command_id=uuid4(),
+                name="Browser copy",
+            )
+            copied = target.graphs.copy_ok(request, headers=_csrf_headers(issued))
+            assert copied.name == "Browser copy"
+            created = target.create_token_ok(
+                PersonalAccessTokenCreateRequest(
+                    label="target-workspace-copy",
+                    scopes=(
+                        PersonalAccessTokenScope.VIEW_GRAPH,
+                        PersonalAccessTokenScope.CREATE_GRAPH,
+                        PersonalAccessTokenScope.EDIT_GRAPH,
+                        PersonalAccessTokenScope.CHECKPOINT_GRAPH,
+                    ),
+                    expires_at=datetime.now(UTC) + timedelta(hours=1),
+                ),
+                headers=_csrf_headers(issued),
+            )
+            before = target.graphs.list_ok().model_dump()
+            client.cookies.clear()
+            response = target.graphs.copy(
+                request.model_copy(update={"command_id": uuid4(), "name": "PAT copy"}),
+                headers={"Authorization": f"Bearer {created.token.get_secret_value()}"},
+            )
+            assert response.status_code == 404, response.text
+            api.authenticate(issued)
+            assert target.graphs.list_ok().model_dump() == before
+
+        async with database.sessions() as session:
+            events = list(await session.scalars(
+                select(SecurityAuditEvent).where(
+                    schema.security_audit_events.c.operation == "collaboration.graph.copy",
+                    schema.security_audit_events.c.outcome == SecurityAuditOutcome.FAILURE,
+                )
+            ))
+        assert len(events) == 1
+        assert events[0].user_id == matrix.both.id
+        assert events[0].workspace_id == matrix.workspace_a.id
+        assert events[0].resource_id == str(graph.id)
+        assert events[0].credential_reference == f"pat:{created.id}"
+        assert events[0].error_code == "not_found"

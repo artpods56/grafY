@@ -26,6 +26,8 @@ from grafy_core.domain.errors import (
     CollaborationUncheckpointedError,
     ConcurrentWriteError,
     MissingCollaborativeHeadError,
+    NotFoundError,
+    UserDisabledError,
     SavedGraphRevisionConflictError,
 )
 from grafy_core.domain.identity import (
@@ -197,10 +199,21 @@ class FakeIdentityRepository:
         memberships: list[WorkspaceMembership],
     ) -> None:
         self.user = user
+        self.locked_workspaces: list[UUID] = []
         self.memberships = {
             (membership.workspace_id, membership.user_id): membership
             for membership in memberships
         }
+
+    async def lock_workspace_for_membership_mutation(
+        self, workspace_id: UUID
+    ) -> Workspace | None:
+        self.locked_workspaces.append(workspace_id)
+        if not any(key[0] == workspace_id for key in self.memberships):
+            return None
+        workspace = Workspace.shared(slug=f"workspace-{workspace_id}", name="Workspace")
+        workspace.id = workspace_id
+        return workspace
 
     async def get_user(self, user_id: UUID) -> User | None:
         if user_id != self.user.id:
@@ -1402,3 +1415,67 @@ async def test_workspace_qualified_mutations_leave_no_cross_workspace_state() ->
     assert factory.collaboration.heads[(TARGET_WORKSPACE_ID, copied.id)].room_epoch == (
         copied_head.room_epoch
     )
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+async def test_copy_locks_workspaces_in_global_order(reverse: bool) -> None:
+    factory = FakeFactory()
+    service = _service(factory)
+    source_id, target_id = (
+        (TARGET_WORKSPACE_ID, WORKSPACE_ID) if reverse
+        else (WORKSPACE_ID, TARGET_WORKSPACE_ID)
+    )
+    graph, head, _ = await service.bootstrap_graph(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=source_id,
+        command_id=uuid4(),
+        command=ReplaceDocumentCommand(name="Source", document=SavedGraphDocument()),
+    )
+    factory.identity.locked_workspaces.clear()
+    copied, _, _ = await service.copy_exact_head(
+        actor=ActorContext(user_id=USER_ID),
+        source_workspace_id=source_id,
+        source_graph_id=graph.id,
+        target_workspace_id=target_id,
+        expected_room_epoch=head.room_epoch,
+        expected_sequence=head.collaboration_sequence,
+        command_id=uuid4(),
+    )
+    assert copied.workspace_id == target_id
+    locks = factory.identity.locked_workspaces
+    assert set(locks) == {source_id, target_id}
+    assert locks == sorted(locks, key=str)
+
+
+@pytest.mark.parametrize("disabled_user", [False, True])
+async def test_collaboration_rechecks_identity_before_mutating_and_audits_denial(
+    disabled_user: bool,
+) -> None:
+    factory = FakeFactory()
+    service = _service(factory)
+    graph, head, _ = await service.bootstrap_graph(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        command_id=uuid4(),
+        command=ReplaceDocumentCommand(name="Original", document=SavedGraphDocument()),
+    )
+    if disabled_user:
+        factory.user.active = False
+    else:
+        factory.membership.revoke()
+    expected_error = UserDisabledError if disabled_user else NotFoundError
+    with pytest.raises(expected_error):
+        await service.accept_command(
+            actor=ActorContext(user_id=USER_ID),
+            workspace_id=WORKSPACE_ID,
+            graph_id=graph.id,
+            command_id=uuid4(),
+            observed_sequence=head.collaboration_sequence,
+            observed_room_epoch=head.room_epoch,
+            command=RenameGraphCommand(name="Denied", expected_name="Original"),
+        )
+    stored = factory.collaboration.heads[(WORKSPACE_ID, graph.id)]
+    assert stored.name == "Original"
+    failure = factory.security_audit.events[-1]
+    assert failure.outcome == SecurityAuditOutcome.FAILURE
+    assert failure.error_code == ("disabled_user" if disabled_user else "not_found")
