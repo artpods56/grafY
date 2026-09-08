@@ -1,3 +1,4 @@
+import { createUuid } from "@/features/workbench/model/uuid";
 import type { WorkflowInputPlug } from "./input-plugs";
 
 export const ARTIFACT_QUERY_OPERATOR_ID = "sql.artifacts.query";
@@ -41,7 +42,7 @@ export function artifactQueryRelations(value: unknown): ArtifactQueryRelation[] 
 
 export function createArtifactQueryRelation(
   index: number,
-  id: string = crypto.randomUUID(),
+  id: string = createUuid(),
   existingRelations: readonly ArtifactQueryRelation[] = [],
 ): ArtifactQueryRelation {
   const aliases = new Set(

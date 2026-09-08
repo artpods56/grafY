@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 
+import { createUuid } from "@/features/workbench/model/uuid";
 import type { Port } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { CanvasNodeHeader, nodeChrome } from "./CanvasNodeChrome";
@@ -3157,7 +3158,7 @@ function ArtifactQueryTablesBody({
               ...relations,
               createArtifactQueryRelation(
                 relations.length,
-                crypto.randomUUID(),
+                createUuid(),
                 relations,
               ),
             ])

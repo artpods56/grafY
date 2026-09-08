@@ -61,6 +61,7 @@ import {
   PublishModuleDialog,
   type ModuleBoundarySummary,
 } from "./PublishModuleDialog";
+import { createUuid } from "@/features/workbench/model/uuid";
 import { WorkspaceLibraryDialog } from "@/features/workspaces/WorkspaceLibraryDialog";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { usePublishWorkbenchChrome } from "./WorkbenchChromeContext";
@@ -2534,7 +2535,7 @@ function WorkbenchBody({
       const selection = connectionRouteSelection(route);
       const edge: WorkflowEdge = {
         ...committedConnection,
-        id: `edge-${crypto.randomUUID()}`,
+        id: `edge-${createUuid()}`,
         type: WORKFLOW_EDGE_TYPE,
         animated: false,
         data: {
@@ -2653,7 +2654,7 @@ function WorkbenchBody({
         connection.targetHandle === ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE
       ) {
         const binding: ArtifactViewerBinding = {
-          id: `artifact-viewer-binding-${crypto.randomUUID()}`,
+          id: `artifact-viewer-binding-${createUuid()}`,
           sourceViewerId: connection.source,
           targetViewerId: connection.target,
           mappings: [{ sourceField: "", targetField: "" }],
@@ -2671,7 +2672,7 @@ function WorkbenchBody({
         const source = decodeHandleId(connection.sourceHandle);
         if (!source || source.direction !== "output") return;
         const edge: ArtifactViewerEdge = {
-          id: `artifact-viewer-edge-${crypto.randomUUID()}`,
+          id: `artifact-viewer-edge-${createUuid()}`,
           type: ARTIFACT_VIEWER_EDGE_TYPE,
           source: connection.source,
           target: connection.target,
@@ -2771,7 +2772,7 @@ function WorkbenchBody({
 
   const addCatalogNode = React.useCallback(
     (spec: NodeSpec) => {
-      const id = `node-${crypto.randomUUID()}`;
+      const id = `node-${createUuid()}`;
       const center = flow?.screenToFlowPosition({
         x: window.innerWidth / 2,
         y: window.innerHeight / 2,
@@ -2891,7 +2892,7 @@ function WorkbenchBody({
       if (!contextualDiscovery || !registry || !canEditGraph || running) return;
 
       const upstream = contextualDiscovery.direction === "upstream";
-      const id = `node-${crypto.randomUUID()}`;
+      const id = `node-${createUuid()}`;
       const data = attachNodeCallbacks(createWorkflowNodeData(candidate.spec));
       const binding = choice.route.artifactTypeBinding;
       // Bind the artifact type variable on whichever endpoint lives on the new node.
@@ -2937,7 +2938,7 @@ function WorkbenchBody({
             target: id,
             targetHandle: candidateHandle,
           };
-      const edgeId = `edge-${crypto.randomUUID()}`;
+      const edgeId = `edge-${createUuid()}`;
       const selection = connectionRouteSelection(choice.route);
       const nodeCommand = addNodeCommand(
         id,
@@ -2994,7 +2995,7 @@ function WorkbenchBody({
       : null;
 
   const addArtifactViewer = React.useCallback(() => {
-    const id = `artifact-viewer-${crypto.randomUUID()}`;
+    const id = `artifact-viewer-${createUuid()}`;
     const center = flow?.screenToFlowPosition({
       x: window.innerWidth / 2,
       y: window.innerHeight / 2,
@@ -3081,7 +3082,7 @@ function WorkbenchBody({
 
     const duplicates = selectedNodes.map((node) => ({
       node,
-      id: `node-${crypto.randomUUID()}`,
+      id: `node-${createUuid()}`,
     }));
     const duplicatedNodeIds = new Map(
       duplicates.map(({ node, id }) => [node.id, id]),
@@ -3107,7 +3108,7 @@ function WorkbenchBody({
       return [
         {
           ...structuredClone(edge),
-          id: `edge-${crypto.randomUUID()}`,
+          id: `edge-${createUuid()}`,
           from_node: source,
           to_node: target,
         },
@@ -3131,7 +3132,7 @@ function WorkbenchBody({
       const viewerIds = new Map(
         selectedViewers.map((node) => [
           node.id,
-          `artifact-viewer-${crypto.randomUUID()}`,
+          `artifact-viewer-${createUuid()}`,
         ]),
       );
       commitArtifactViewers((current) => ({

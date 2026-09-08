@@ -1,3 +1,4 @@
+import { createUuid } from "@/features/workbench/model/uuid";
 export const SCHEMA_BUILDER_OPERATOR_ID = "schema.builder";
 export const SCHEMA_BUILDER_INPUT_PORT = "schemas";
 
@@ -95,7 +96,7 @@ export function schemaBuilderFields(value: unknown): SchemaBuilderField[] {
 
 export function createSchemaBuilderField(
   index: number,
-  id: string = crypto.randomUUID(),
+  id: string = createUuid(),
 ): SchemaBuilderField {
   return {
     id,

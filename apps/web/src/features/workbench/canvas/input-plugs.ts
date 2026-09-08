@@ -1,3 +1,4 @@
+import { createUuid } from "@/features/workbench/model/uuid";
 import type { NodeSpec, RunNodeResult } from "@/lib/api";
 import {
   SCHEMA_BUILDER_INPUT_PORT,
@@ -32,7 +33,7 @@ function objectRecord(value: unknown): Record<string, unknown> | null {
 }
 
 export function createWorkflowInputPlug(portName: string): WorkflowInputPlug {
-  return { id: crypto.randomUUID(), portName };
+  return { id: createUuid(), portName };
 }
 
 export function initialInputPlugs(spec: NodeSpec): WorkflowInputPlug[] {
