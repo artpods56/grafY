@@ -34,8 +34,8 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 ## 3. Publication consistency
 
-- [ ] Carry reviewed base revision/generation into the committing release operation and enforce it transactionally.
-- [ ] Preserve source re-verification and test concurrent publication after review.
+- [x] Carry reviewed base revision/generation into the committing release operation and enforce it transactionally.
+- [x] Preserve source re-verification and test concurrent publication after review.
 - [ ] Move System revocation's SQL consistency rule to its owner; coordinate maintenance drain with execution admission through a shared fence.
 - [ ] Prove active execution/revocation races cannot violate that fence.
 
@@ -207,3 +207,25 @@ Next migration scope:
 - Baseline verification: both `test_registry_declares_scalar_arithmetic_nodes_and_test_compound_projections` and `test_registry_derives_nested_json_scalar_projections` fail with catalog HTTP 500 on an untouched `a15beca` archive too. The baseline subprocess verified it imported core and API packages from that archive. These remain catalog follow-up work, not passing checks.
 - Local evidence: `/tmp/grafy-mutators-regression.log`, `/tmp/grafy-mutators-baseline.log`, and `/tmp/grafy-mutators-pyright.log`.
 - Finding 2 is complete. No database migration, public HTTP contract change, or automatic repair was introduced. Remaining audit findings stay open.
+
+
+### Transactional publication review checks
+
+- `PluginPublicationWorkflow` passes the reviewed base revision into `PluginReleaseService.publish`. Removed its earlier release-list check, which ran before image construction and could become stale.
+- The core service authorizes the publisher through the canonical Workspace policy before reading release state. That policy holds the existing Workspace lock through commit. This also covers first publication, when no selection row exists to lock.
+- The service compares the reviewed revision with the selected revision inside that transaction, before saving source or inserting releases and installations. It reuses the selection for the existing generation-checked update.
+- `PluginReleaseHeadConflictError` records the Workspace, family, expected revision, and actual revision. The workflow preserves its existing `PluginPublicationConflictError` boundary and retains the original cause.
+- Source re-verification and source-digest review checks remain. Unreviewed CLI publication and idempotent release reuse retain their behavior.
+
+```mermaid
+flowchart LR
+    A[Review records base revision] --> B[Reverify source and build image]
+    B --> C[Lock Workspace and compare revision]
+    C --> D[Append and select release, then commit]
+```
+
+- Regression evidence: two tests reproduced the original failure by publishing a competing release during a paused image build. They now reject stale first publication and stale publication over an existing release.
+- Two further SQLite integration tests pause source storage inside the first publication transaction and wait for the second transaction's lock attempt. Exactly one reviewed publication commits; the other reports the new revision without writing a source archive. These cover absent and existing selections.
+- Validation: 656 tests passed across application/API/client tests, release domain and persistence tests, catalog, authorization, saved graphs, and collaboration. Changed-file Ruff passed. Core application/domain and publication-workflow Pyright checks reported zero errors.
+- Local evidence: `/tmp/grafy-publication-race-before.log`, `/tmp/grafy-publication-transaction-race.log`, `/tmp/grafy-publication-regression.log`, and `/tmp/grafy-publication-pyright.log`.
+- Remaining finding 3 work: move System revocation's drain check into its committing owner and share a fence with execution admission. The publication Workspace lock does not provide that global System fence.

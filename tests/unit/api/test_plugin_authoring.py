@@ -5,6 +5,9 @@ from uuid import UUID
 
 import pytest
 from typing_extensions import override
+from sqlalchemy import func, select
+
+from grafy_persistence import schema
 
 from grafy_api.plugins.publication.authoring import (
     PluginAuthoringConflictError,
@@ -229,3 +232,104 @@ def test_agent_authoring_scaffolds_reviews_fences_and_uses_shared_publisher(
         WORKSPACE_PLUGIN_LOADER_TARGET,
     ]
     asyncio.run(database.dispose())
+
+
+class PausingImageBuilder(RecordingImageBuilder):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+        self.resume = asyncio.Event()
+
+    @override
+    async def build_and_store(
+        self,
+        *,
+        candidate: VerifiedPluginCandidate,
+    ) -> PluginRuntimeArtifact:
+        self.started.set()
+        await self.resume.wait()
+        return await super().build_and_store(candidate=candidate)
+
+
+@pytest.mark.parametrize("base_revision", [0, 1])
+async def test_reviewed_publication_rejects_release_published_during_image_build(
+    tmp_path: Path,
+    base_revision: int,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'publication-race.sqlite3'}"
+    await create_schema(database_url)
+    database = create_database(database_url)
+    releases = PluginReleaseService(
+        lambda: SqlAlchemyUnitOfWork(database.sessions),
+        LocalFileObjectStore(tmp_path / "objects"),
+        bucket="publication-race",
+    )
+    image_builder = PausingImageBuilder()
+    examples = REPOSITORY_ROOT / "examples"
+    publication = PluginPublicationWorkflow(
+        PluginDirectoryPublisher((examples,), runtime_profile="python-uv"),
+        image_builder,
+        releases,
+        load_system_plugin_inventory(CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH),
+    )
+    candidate = await publication.verify(
+        examples / "plugin-notes", expected_slug="notes"
+    )
+    if base_revision:
+        await releases.publish(
+            workspace_id=WORKSPACE_ID,
+            catalog=candidate.catalog,
+            capabilities=candidate.capabilities,
+            source_archive=b"base release",
+            lock_digest=candidate.lock_digest,
+            runtime_profile=candidate.runtime_profile,
+            runtime_artifact=None,
+            published_by_user_id=ACTOR_ID,
+            loader_target=candidate.loader_target,
+        )
+    pending = asyncio.create_task(
+        publication.publish(
+            workspace_id=WORKSPACE_ID,
+            directory=examples / "plugin-notes",
+            expected_slug="notes",
+            published_by_user_id=ACTOR_ID,
+            reviewed_source_digest=candidate.source_digest,
+            reviewed_base_revision=base_revision,
+        )
+    )
+    try:
+        await asyncio.wait_for(image_builder.started.wait(), timeout=10)
+        competing = await releases.publish(
+            workspace_id=WORKSPACE_ID,
+            catalog=candidate.catalog,
+            capabilities=candidate.capabilities,
+            source_archive=b"competing release",
+            lock_digest=candidate.lock_digest,
+            runtime_profile=candidate.runtime_profile,
+            runtime_artifact=None,
+            published_by_user_id=ACTOR_ID,
+            loader_target=candidate.loader_target,
+        )
+        image_builder.resume.set()
+        with pytest.raises(
+            PluginPublicationConflictError, match="head changed after review"
+        ):
+            await pending
+        assert await releases.list_current(WORKSPACE_ID) == [competing]
+        async with database.engine.connect() as connection:
+            assert (
+                await connection.scalar(
+                    select(func.count()).select_from(schema.plugin_releases)
+                )
+                == base_revision + 1
+            )
+            assert (
+                await connection.scalar(
+                    select(func.count()).select_from(schema.plugin_installations)
+                )
+                == base_revision + 1
+            )
+    finally:
+        image_builder.resume.set()
+        await asyncio.gather(pending, return_exceptions=True)
+        await database.dispose()

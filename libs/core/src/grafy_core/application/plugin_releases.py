@@ -6,15 +6,14 @@ from hashlib import sha256
 from io import BytesIO
 from uuid import UUID
 
+from grafy_core.application.identity import authorize_workspace
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
 from grafy_core.domain.errors import (
     NotFoundError,
     ObjectAlreadyExistsError,
-    UserDisabledError,
 )
 from grafy_core.domain.identity import (
     ActorContext,
-    WorkspaceAccess,
     WorkspaceCapability,
 )
 from grafy_core.domain.plugin_releases import (
@@ -26,6 +25,7 @@ from grafy_core.domain.plugin_releases import (
     PluginRelease,
     PluginReleaseDescriptor,
     PluginReleaseError,
+    PluginReleaseHeadConflictError,
     PluginReleaseNamespace,
     PluginReleaseScope,
     PluginRuntimeArtifact,
@@ -173,6 +173,7 @@ class PluginReleaseService:
         runtime_artifact: PluginRuntimeArtifact | None,
         published_by_user_id: UUID,
         loader_target: str,
+        expected_base_revision: int | None = None,
     ) -> InstalledPluginRelease:
         require_workspace_catalog_authority(catalog)
         return await self._append_release(
@@ -191,6 +192,7 @@ class PluginReleaseService:
             published_by_user_id=published_by_user_id,
             published_by_platform_actor=None,
             select_release=True,
+            expected_base_revision=expected_base_revision,
         )
 
     async def publish_system(
@@ -224,6 +226,7 @@ class PluginReleaseService:
             published_by_user_id=None,
             published_by_platform_actor=platform_actor.reference,
             select_release=False,
+            expected_base_revision=None,
         )
 
     async def prepare_system_promotion(
@@ -352,6 +355,7 @@ class PluginReleaseService:
         published_by_user_id: UUID | None,
         published_by_platform_actor: str | None,
         select_release: bool,
+        expected_base_revision: int | None,
         loader_target: str,
     ) -> InstalledPluginRelease:
         require_canonical_conversion_references(catalog)
@@ -381,10 +385,8 @@ class PluginReleaseService:
             runtime_artifact=runtime_artifact,
         )
         async with self._unit_of_work_factory() as unit_of_work:
-            existing = await unit_of_work.plugin_releases.get_by_descriptor_digest(
-                catalog.slug,
-                descriptor.digest,
-            )
+            # Authorization takes the Workspace lock before any release reads.
+            # It also serializes first publications, which have no selection row yet.
             if namespace.scope is PluginReleaseScope.WORKSPACE:
                 if namespace.workspace_id is None or published_by_user_id is None:
                     raise PluginReleaseError(
@@ -395,6 +397,29 @@ class PluginReleaseService:
                     namespace.workspace_id,
                     published_by_user_id,
                 )
+            selection = None
+            if select_release:
+                selection = await unit_of_work.plugin_releases.get_selection(
+                    namespace,
+                    catalog.slug,
+                )
+            if expected_base_revision is not None:
+                current_revision = (
+                    0 if selection is None else selection.selected_revision
+                )
+                if current_revision != expected_base_revision:
+                    assert namespace.workspace_id is not None
+                    raise PluginReleaseHeadConflictError(
+                        workspace_id=namespace.workspace_id,
+                        slug=catalog.slug,
+                        expected_revision=expected_base_revision,
+                        actual_revision=current_revision,
+                    )
+            existing = await unit_of_work.plugin_releases.get_by_descriptor_digest(
+                catalog.slug,
+                descriptor.digest,
+            )
+            if namespace.scope is PluginReleaseScope.WORKSPACE:
                 system_namespace = PluginReleaseNamespace(
                     scope=PluginReleaseScope.SYSTEM,
                     workspace_id=None,
@@ -492,10 +517,6 @@ class PluginReleaseService:
                     installation=installation,
                 )
             if select_release:
-                selection = await unit_of_work.plugin_releases.get_selection(
-                    namespace,
-                    catalog.slug,
-                )
                 actor_reference = f"user:{published_by_user_id}"
                 if selection is None:
                     await unit_of_work.plugin_releases.add_selection(
@@ -832,23 +853,15 @@ class PluginReleaseService:
         workspace_id: UUID,
         published_by_user_id: UUID,
     ) -> None:
-        user = await unit_of_work.identity.get_user(published_by_user_id)
-        if user is None or not user.active:
-            raise UserDisabledError(f"User {published_by_user_id} is disabled")
-        membership = await unit_of_work.identity.get_membership(
-            workspace_id=workspace_id,
-            user_id=published_by_user_id,
-        )
-        if membership is None or not membership.is_active:
-            raise NotFoundError("Workspace", str(workspace_id))
-        WorkspaceAccess(
+        await authorize_workspace(
+            unit_of_work.identity,
             actor=ActorContext(
                 user_id=published_by_user_id,
                 credential_reference="plugin-publication",
             ),
             workspace_id=workspace_id,
-            membership=membership,
-        ).require(WorkspaceCapability.PUBLISH_PLUGIN)
+            capability=WorkspaceCapability.PUBLISH_PLUGIN,
+        )
 
 
 __all__ = [

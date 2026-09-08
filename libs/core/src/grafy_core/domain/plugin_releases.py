@@ -77,6 +77,28 @@ class PluginReleaseError(ValueError):
     """A Plugin release or catalog contract is invalid."""
 
 
+class PluginReleaseHeadConflictError(PluginReleaseError):
+    """Publication no longer matches the Workspace release that was reviewed."""
+
+    def __init__(
+        self,
+        *,
+        workspace_id: UUID,
+        slug: str,
+        expected_revision: int,
+        actual_revision: int,
+    ) -> None:
+        self.workspace_id = workspace_id
+        self.slug = slug
+        self.expected_revision = expected_revision
+        self.actual_revision = actual_revision
+        super().__init__(
+            f"Plugin release head changed after review for Workspace {workspace_id}, "
+            f"family {slug!r}: expected revision {expected_revision}, "
+            f"actual revision {actual_revision}"
+        )
+
+
 class PluginReleaseValue(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(
         extra="forbid",
@@ -905,6 +927,7 @@ __all__ = [
     "PluginRelease",
     "PluginReleaseDescriptor",
     "PluginReleaseError",
+    "PluginReleaseHeadConflictError",
     "PluginReleaseIdentity",
     "PluginReleaseNamespace",
     "PluginReleaseScope",

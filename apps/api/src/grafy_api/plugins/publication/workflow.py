@@ -22,6 +22,7 @@ from grafy_core.domain.plugin_releases import (
     PluginNodeContract,
     PluginNodeHttpEgressContract,
     PluginReleaseError,
+    PluginReleaseHeadConflictError,
 )
 from grafy_core.domain.plugin_selection import PluginReleaseSelection
 from grafy_core.domain.plugin_revocations import (
@@ -235,20 +236,6 @@ class PluginPublicationWorkflow:
             raise PluginPublicationConflictError(
                 "Plugin working copy changed after review"
             )
-        if reviewed_base_revision is not None:
-            current = next(
-                (
-                    release
-                    for release in await self._releases.list_current(workspace_id)
-                    if release.slug == expected_slug
-                ),
-                None,
-            )
-            current_revision = 0 if current is None else current.revision
-            if current_revision != reviewed_base_revision:
-                raise PluginPublicationConflictError(
-                    "Plugin release head changed after review"
-                )
         runtime_artifact = await self._releases.reusable_runtime_artifact(
             catalog=verified.catalog,
             capabilities=verified.capabilities,
@@ -261,17 +248,21 @@ class PluginPublicationWorkflow:
             runtime_artifact = await self._image_builder.build_and_store(
                 candidate=verified,
             )
-        return await self._releases.publish(
-            workspace_id=workspace_id,
-            catalog=verified.catalog,
-            capabilities=verified.capabilities,
-            source_archive=verified.source_archive,
-            lock_digest=verified.lock_digest,
-            runtime_profile=verified.runtime_profile,
-            runtime_artifact=runtime_artifact,
-            loader_target=verified.loader_target,
-            published_by_user_id=published_by_user_id,
-        )
+        try:
+            return await self._releases.publish(
+                workspace_id=workspace_id,
+                catalog=verified.catalog,
+                capabilities=verified.capabilities,
+                source_archive=verified.source_archive,
+                lock_digest=verified.lock_digest,
+                runtime_profile=verified.runtime_profile,
+                runtime_artifact=runtime_artifact,
+                loader_target=verified.loader_target,
+                published_by_user_id=published_by_user_id,
+                expected_base_revision=reviewed_base_revision,
+            )
+        except PluginReleaseHeadConflictError as exc:
+            raise PluginPublicationConflictError(str(exc)) from exc
 
 
 class SystemPluginRevocationWorkflow:

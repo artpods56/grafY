@@ -1,8 +1,10 @@
+import asyncio
 from pathlib import Path
 from uuid import UUID
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
+from typing_extensions import override
 
 from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.domain.identity import (
@@ -26,6 +28,7 @@ from grafy_core.domain.plugin_releases import (
     PluginNodeContract,
     PluginRelease,
     PluginReleaseError,
+    PluginReleaseHeadConflictError,
     PluginReleaseNamespace,
     PluginReleaseScope,
     PluginRuntimeArtifact,
@@ -38,6 +41,7 @@ from grafy_persistence import schema
 from grafy_persistence.database import Database, create_database
 from grafy_persistence.orm import metadata
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
+from grafy_core.ports.storage import SaveFileCommand, StoredFile
 from grafy_storage import LocalFileObjectStore
 
 
@@ -167,9 +171,7 @@ async def test_catalog_shares_system_selection_and_isolates_workspace_releases(
         )
         for release in (first_release, second_release, system_release):
             await unit_of_work.plugin_releases.add(release.release)
-            await unit_of_work.plugin_releases.add_installation(
-                release.installation
-            )
+            await unit_of_work.plugin_releases.add_installation(release.installation)
             await unit_of_work.plugin_releases.add_selection(
                 PluginReleaseSelection.from_release(release)
             )
@@ -198,16 +200,22 @@ async def test_catalog_shares_system_selection_and_isolates_workspace_releases(
         assert first_system_selection is not None
         assert first_system_selection.selected_release_id == system_release.id
 
-        assert await service.get_by_revision(
-            FIRST_WORKSPACE_ID,
-            second_release.slug,
-            second_release.revision,
-        ) is None
-        assert await service.get_by_revision(
-            SECOND_WORKSPACE_ID,
-            first_release.slug,
-            first_release.revision,
-        ) is None
+        assert (
+            await service.get_by_revision(
+                FIRST_WORKSPACE_ID,
+                second_release.slug,
+                second_release.revision,
+            )
+            is None
+        )
+        assert (
+            await service.get_by_revision(
+                SECOND_WORKSPACE_ID,
+                first_release.slug,
+                first_release.revision,
+            )
+            is None
+        )
     finally:
         await database.dispose()
 
@@ -288,9 +296,9 @@ async def _cross_scope_database(tmp_path: Path) -> Database:
 async def _release_count(database: Database, slug: str) -> int:
     async with database.engine.connect() as connection:
         count = await connection.scalar(
-            select(func.count()).select_from(schema.plugin_releases).where(
-                schema.plugin_releases.c.slug == slug
-            )
+            select(func.count())
+            .select_from(schema.plugin_releases)
+            .where(schema.plugin_releases.c.slug == slug)
         )
     assert count is not None
     return count
@@ -580,4 +588,131 @@ async def test_non_colliding_cross_scope_publications_succeed(
         assert await _release_count(database, "workspace-a") == 1
         assert _source_object_count(objects) == 2
     finally:
+        await database.dispose()
+
+
+class PausingPublicationStore(LocalFileObjectStore):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.started = asyncio.Event()
+        self.resume = asyncio.Event()
+        self.saved_paths: list[str] = []
+
+    @override
+    async def save(self, command: SaveFileCommand) -> StoredFile:
+        self.started.set()
+        await self.resume.wait()
+        stored = await super().save(command)
+        self.saved_paths.append(command.path)
+        return stored
+
+
+@pytest.mark.parametrize("base_revision", [0, 1])
+async def test_reviewed_publications_serialize_before_reading_release_head(
+    tmp_path: Path,
+    base_revision: int,
+) -> None:
+    database = await _cross_scope_database(tmp_path)
+    namespace = PluginReleaseNamespace(
+        scope=PluginReleaseScope.WORKSPACE,
+        workspace_id=FIRST_WORKSPACE_ID,
+    )
+    template = _release(namespace, "publication-race")
+    storage = PausingPublicationStore(tmp_path / "objects")
+    service = PluginReleaseService(
+        lambda: SqlAlchemyUnitOfWork(database.sessions),
+        storage,
+        bucket="race",
+    )
+    if base_revision:
+        storage.resume.set()
+        await service.publish(
+            workspace_id=FIRST_WORKSPACE_ID,
+            catalog=template.catalog,
+            capabilities=template.capabilities,
+            source_archive=b"base",
+            lock_digest=template.lock_digest,
+            runtime_profile=template.runtime_profile,
+            runtime_artifact=None,
+            published_by_user_id=PUBLISHER_USER_ID,
+            loader_target=template.loader_target,
+            expected_base_revision=0,
+        )
+        storage.started.clear()
+        storage.resume.clear()
+        storage.saved_paths.clear()
+    first = asyncio.create_task(
+        service.publish(
+            workspace_id=FIRST_WORKSPACE_ID,
+            catalog=template.catalog,
+            capabilities=template.capabilities,
+            source_archive=b"first contender",
+            lock_digest=template.lock_digest,
+            runtime_profile=template.runtime_profile,
+            runtime_artifact=None,
+            published_by_user_id=PUBLISHER_USER_ID,
+            loader_target=template.loader_target,
+            expected_base_revision=base_revision,
+        )
+    )
+    second_lock_attempted = asyncio.Event()
+
+    def observe_lock_attempt(
+        connection: object,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
+        del connection, cursor, parameters, context, executemany
+        if statement == "BEGIN IMMEDIATE":
+            second_lock_attempted.set()
+
+    second = None
+    try:
+        await asyncio.wait_for(storage.started.wait(), timeout=10)
+        event.listen(
+            database.engine.sync_engine, "before_cursor_execute", observe_lock_attempt
+        )
+        second = asyncio.create_task(
+            service.publish(
+                workspace_id=FIRST_WORKSPACE_ID,
+                catalog=template.catalog,
+                capabilities=template.capabilities,
+                source_archive=b"second contender",
+                lock_digest=template.lock_digest,
+                runtime_profile=template.runtime_profile,
+                runtime_artifact=None,
+                published_by_user_id=PUBLISHER_USER_ID,
+                loader_target=template.loader_target,
+                expected_base_revision=base_revision,
+            )
+        )
+        await asyncio.wait_for(second_lock_attempted.wait(), timeout=10)
+        storage.resume.set()
+        accepted = await first
+        with pytest.raises(PluginReleaseHeadConflictError) as raised:
+            await second
+        assert raised.value.workspace_id == FIRST_WORKSPACE_ID
+        assert raised.value.slug == template.slug
+        assert raised.value.expected_revision == base_revision
+        assert raised.value.actual_revision == base_revision + 1
+        assert accepted.revision == base_revision + 1
+        assert await service.list_current(FIRST_WORKSPACE_ID) == [accepted]
+        assert await _release_count(database, template.slug) == base_revision + 1
+        assert len(storage.saved_paths) == 1
+    finally:
+        storage.resume.set()
+        if second is not None:
+            await asyncio.gather(second, return_exceptions=True)
+        await asyncio.gather(first, return_exceptions=True)
+        if event.contains(
+            database.engine.sync_engine, "before_cursor_execute", observe_lock_attempt
+        ):
+            event.remove(
+                database.engine.sync_engine,
+                "before_cursor_execute",
+                observe_lock_attempt,
+            )
         await database.dispose()
