@@ -1171,7 +1171,7 @@ def test_module_uses_existing_map_semantics_and_keeps_revision_pinned(
     assert pinned_artifacts[0]["text"] == '"A"'
 
 
-def test_nested_module_omits_absent_optional_input_and_disabled_edges(
+def test_module_catalog_declares_optional_input(
     module_client: TestClient,
 ) -> None:
     created = module_client.post(
@@ -1197,6 +1197,23 @@ def test_nested_module_omits_absent_optional_input_and_disabled_edges(
         ("suffix", False),
     ]
 
+
+def test_nested_module_omits_absent_optional_input_and_disabled_edges(
+    module_client: TestClient,
+) -> None:
+    created = module_client.post(
+        f"/v1/workspaces/{WORKSPACE}/graphs",
+        json=_optional_input_module_payload(),
+    ).json()
+    graph_id = created["id"]
+    api = GrafyApi(module_client)
+    modules = api.workspace(UUID(WORKSPACE)).modules
+    assert (
+        modules.publish(
+            PublishModuleReleaseRequest(source_graph_id=UUID(graph_id))
+        ).status_code
+        == 201
+    )
     response = module_client.post(
         "/v1/workspaces/00000000-0000-0000-0000-000000000007/runs",
         json=_system_run_request(
@@ -1211,8 +1228,8 @@ def test_nested_module_omits_absent_optional_input_and_disabled_edges(
                 RunNodeRequest(
                     kind="builtin",
                     id="module",
-                    operator_id=module_spec["operator_id"],
-                    operator_version=module_spec["operator_version"],
+                    operator_id=f"graph.module.{graph_id}",
+                    operator_version=1,
                     config={},
                 ),
             ],
@@ -1255,8 +1272,8 @@ def test_nested_module_omits_absent_optional_input_and_disabled_edges(
                 RunNodeRequest(
                     kind="builtin",
                     id="module",
-                    operator_id=module_spec["operator_id"],
-                    operator_version=module_spec["operator_version"],
+                    operator_id=f"graph.module.{graph_id}",
+                    operator_version=1,
                     config={},
                 ),
             ],

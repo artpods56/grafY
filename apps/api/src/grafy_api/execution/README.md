@@ -9,6 +9,7 @@ response models, and `RunResultPresenter` stay in `v1/routes/executions`.
 | `events.py` | Execution status and progress event contracts. |
 | `models.py` | Compiled plans, prepared executions, and execution results. |
 | `preflight.py` | Check submitted inputs and saved context before compilation. |
+| `releases.py` | Resolve and index immutable exact-release contracts for one run. |
 | `compiler.py` | Resolve nodes, releases, contracts, and graph edges into a plan. |
 | `run_graph.py` | Coordinate preparation, nested runs, and sandbox cleanup. |
 | `coordinator.py`, `node_execution.py`, `edge_values.py` | Schedule nodes, execute them, and resolve edge values. |
@@ -48,3 +49,28 @@ pre-change schema and exercise queued recovery, cancellation, and materializatio
 Build both API and core wheels from clean generated build directories and inspect
 their contents. Setuptools can retain deleted modules in an old `build/` directory;
 a successful build alone does not prove that retired paths are absent.
+
+## Release preparation
+
+Preflight resolves exact release contracts before checking saved context and secret
+bindings. It returns a read-only, Workspace-keyed map to compilation. Compilation
+can also resolve contracts directly when used without preflight. Each run owns its
+map; nested runs and later submissions prepare their own contracts.
+
+Selection and revocation are mutable admission state. Compilation always reads
+them after preflight, once per exact release in that compilation. Do not add them
+to the shared preflight map. This preserves revocations arriving during preflight;
+it does not replace the execution/revocation fence tracked in the cleanup plan.
+
+```mermaid
+flowchart LR
+    P[Preflight] --> R[Exact release contracts]
+    R --> C[Compiler]
+    S[Current selection and revocation] --> C
+    C --> E[Execution plan]
+```
+
+Saved-graph and nested-module workflows select their own active nodes and edges.
+`RunNodeRequest.from_saved_node` and `RunEdgeRequest.from_saved_edge` own their
+shared conversions, including connected plugs, release pins, artifact bindings,
+projections, conversion paths, and collection modes.

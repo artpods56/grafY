@@ -18,6 +18,8 @@ from grafy_core.domain.saved_graphs import (
     SavedGraph,
     SavedGraphRevision,
     SavedGraphNodeKind,
+    SavedGraphNode,
+    SavedGraphEdge,
 )
 
 from grafy_api.v1.models import (
@@ -55,6 +57,40 @@ class RunNodeRequest(BaseModel):
         default_factory=list,
     )
     plugin_release: PluginReleasePinModel | None = None
+
+    @classmethod
+    def from_saved_node(
+        cls,
+        node: SavedGraphNode,
+        *,
+        connected_plug_ids: set[str],
+    ) -> "RunNodeRequest":
+        return cls(
+            kind=node.kind,
+            id=node.id,
+            operator_id=node.operator_id,
+            operator_version=node.operator_version,
+            config=node.config_dict(),
+            input_plugs=[
+                RunInputPlugRequest(id=plug.id, port=plug.port)
+                for plug in node.input_plugs
+                if plug.id in connected_plug_ids
+            ],
+            artifact_type_bindings=[
+                ArtifactTypeBindingModel(
+                    variable=binding.variable,
+                    artifact_type=ArtifactTypeKeyResponse.from_key(
+                        binding.artifact_type
+                    ),
+                )
+                for binding in node.artifact_type_bindings
+            ],
+            plugin_release=(
+                PluginReleasePinModel.from_saved_pin(node.plugin_release_pin)
+                if node.plugin_release_pin is not None
+                else None
+            ),
+        )
 
     @model_validator(mode="after")
     def validate_artifact_type_bindings(self) -> "RunNodeRequest":
@@ -101,6 +137,29 @@ class RunEdgeRequest(BaseModel):
     )
     collection_mode: Literal["direct", "map"] = "direct"
 
+    @classmethod
+    def from_saved_edge(cls, edge: SavedGraphEdge) -> "RunEdgeRequest":
+        return cls(
+            from_node=edge.from_node,
+            from_port=edge.from_port,
+            to_node=edge.to_node,
+            to_port=edge.to_port,
+            to_plug=edge.to_plug,
+            projection=(
+                FieldProjectionRequest(path=list(edge.projection.path))
+                if edge.projection is not None
+                else None
+            ),
+            conversion_path=[
+                ArtifactConversionRequest(
+                    id=conversion.id,
+                    version=conversion.version,
+                )
+                for conversion in edge.conversion_path
+            ],
+            collection_mode=edge.collection_mode,
+        )
+
     @model_validator(mode="before")
     @classmethod
     def normalize_singular_conversion(cls, value: object) -> object:
@@ -141,64 +200,19 @@ class RunRequest(BaseModel):
         graph: SavedGraph | SavedGraphRevision,
     ) -> "RunRequest":
         active_edges = [edge for edge in graph.document.edges if edge.enabled]
-        connected_plugs = {
-            (edge.to_node, edge.to_plug)
-            for edge in active_edges
-            if edge.to_plug is not None
-        }
+        connected_plugs: dict[str, set[str]] = {}
+        for edge in active_edges:
+            if edge.to_plug is not None:
+                connected_plugs.setdefault(edge.to_node, set()).add(edge.to_plug)
         return cls(
             nodes=[
-                RunNodeRequest(
-                    kind=node.kind,
-                    id=node.id,
-                    operator_id=node.operator_id,
-                    operator_version=node.operator_version,
-                    config=node.config_dict(),
-                    input_plugs=[
-                        RunInputPlugRequest(id=plug.id, port=plug.port)
-                        for plug in node.input_plugs
-                        if (node.id, plug.id) in connected_plugs
-                    ],
-                    artifact_type_bindings=[
-                        ArtifactTypeBindingModel(
-                            variable=binding.variable,
-                            artifact_type=ArtifactTypeKeyResponse.from_key(
-                                binding.artifact_type
-                            ),
-                        )
-                        for binding in node.artifact_type_bindings
-                    ],
-                    plugin_release=(
-                        PluginReleasePinModel.from_saved_pin(node.plugin_release_pin)
-                        if node.plugin_release_pin is not None
-                        else None
-                    ),
+                RunNodeRequest.from_saved_node(
+                    node,
+                    connected_plug_ids=connected_plugs.get(node.id, set()),
                 )
                 for node in graph.document.nodes
             ],
-            edges=[
-                RunEdgeRequest(
-                    from_node=edge.from_node,
-                    from_port=edge.from_port,
-                    to_node=edge.to_node,
-                    to_port=edge.to_port,
-                    to_plug=edge.to_plug,
-                    projection=(
-                        FieldProjectionRequest(path=list(edge.projection.path))
-                        if edge.projection is not None
-                        else None
-                    ),
-                    conversion_path=[
-                        ArtifactConversionRequest(
-                            id=conversion.id,
-                            version=conversion.version,
-                        )
-                        for conversion in edge.conversion_path
-                    ],
-                    collection_mode=edge.collection_mode,
-                )
-                for edge in active_edges
-            ],
+            edges=[RunEdgeRequest.from_saved_edge(edge) for edge in active_edges],
             scope="all",
             graph_id=graph.id,
             graph_revision=graph.revision,

@@ -1,4 +1,5 @@
 from collections import Counter, deque
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
@@ -83,6 +84,12 @@ from grafy_api.execution.requests import (
     RunRequest,
 )
 from grafy_api.execution.errors import GraphExecutionError
+from grafy_api.execution.releases import (
+    ExactPluginReleaseLookup,
+    ReleaseContractKey,
+    ResolvedPluginRelease,
+    resolve_plugin_release,
+)
 from grafy_api.execution.models import (
     CompiledEdge,
     CompiledGraph,
@@ -91,17 +98,8 @@ from grafy_api.execution.models import (
 )
 
 
-class PluginReleaseLookup(Protocol):
-    """Exact, workspace-scoped Plugin release resolution for compilation."""
-
-    async def get_by_revision(
-        self,
-        workspace_id: UUID,
-        slug: str,
-        revision: int,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
-    ) -> InstalledPluginRelease | None: ...
+class PluginReleaseLookup(ExactPluginReleaseLookup, Protocol):
+    """Exact release contracts and current execution-admission state."""
 
     async def get_selection(
         self,
@@ -189,7 +187,10 @@ class GraphCompiler:
         module_executor: GraphModuleExecutorPort,
         *,
         workspace_id: UUID,
+        resolved_releases: Mapping[ReleaseContractKey, ResolvedPluginRelease]
+        | None = None,
     ) -> CompiledGraph:
+        release_contracts = dict(resolved_releases or {})
         ordered_requests = _topological_order(request.nodes, request.edges)
         pinned_outputs = _pinned_outputs_by_endpoint(
             request.nodes,
@@ -216,6 +217,7 @@ class GraphCompiler:
                 module_executor,
                 workspace_id=workspace_id,
                 release_snapshots=release_snapshots,
+                release_contracts=release_contracts,
             )
             nodes_by_id[node_request.id] = node
             registrations_by_id[node_request.id] = registration
@@ -328,6 +330,7 @@ class GraphCompiler:
             tuple[PluginReleaseScope, str, int],
             _ReleaseExecutionSnapshot,
         ],
+        release_contracts: dict[ReleaseContractKey, ResolvedPluginRelease],
     ) -> tuple[
         Node[Any, Any, Any],
         NodeRegistration | None,
@@ -364,6 +367,7 @@ class GraphCompiler:
             request,
             workspace_id=workspace_id,
             release_snapshots=release_snapshots,
+            release_contracts=release_contracts,
         )
 
     async def _build_module_node(
@@ -382,8 +386,7 @@ class GraphCompiler:
     ]:
         if request.plugin_release is not None:
             raise GraphExecutionError(
-                f"Node {request.id!r} is a module and cannot carry a Plugin "
-                "release pin"
+                f"Node {request.id!r} is a module and cannot carry a Plugin release pin"
             )
         if module_reference is not None:
             try:
@@ -479,6 +482,7 @@ class GraphCompiler:
             tuple[PluginReleaseScope, str, int],
             _ReleaseExecutionSnapshot,
         ],
+        release_contracts: dict[ReleaseContractKey, ResolvedPluginRelease],
     ) -> tuple[
         Node[Any, Any, Any],
         NodeRegistration | None,
@@ -509,26 +513,15 @@ class GraphCompiler:
             request.plugin_release.slug,
             request.plugin_release.revision,
         )
+        resolved = await resolve_plugin_release(
+            workspace_id,
+            request,
+            self._plugin_release_lookup,
+            release_contracts,
+        )
         snapshot = release_snapshots.get(snapshot_key)
         if snapshot is None:
-            release = await self._plugin_release_lookup.get_by_revision(
-                workspace_id,
-                request.plugin_release.slug,
-                request.plugin_release.revision,
-                scope=request.plugin_release.scope,
-            )
-            if release is None:
-                if request.plugin_release.scope is PluginReleaseScope.WORKSPACE:
-                    owner_context = "in this workspace"
-                else:
-                    owner_context = "in the System Plugin catalog"
-                raise GraphExecutionError(
-                    f"Node {request.id!r} pins "
-                    f"{request.plugin_release.scope.value.title()} Plugin release "
-                    f"{request.plugin_release.slug!r} revision "
-                    f"{request.plugin_release.revision}, which does not exist "
-                    f"{owner_context}"
-                )
+            release = resolved.release
             selection = await self._plugin_release_lookup.get_selection(
                 workspace_id,
                 release.slug,
@@ -552,22 +545,7 @@ class GraphCompiler:
             )
             release_snapshots[snapshot_key] = snapshot
         release = snapshot.release
-        contract = None
-        for declared in release.catalog.nodes:
-            if (
-                declared.operator_id == request.operator_id
-                and declared.operator_version == request.operator_version
-            ):
-                contract = declared
-                break
-        if contract is None:
-            raise GraphExecutionError(
-                f"Node {request.id!r} pins "
-                f"{release.scope.value.title()} Plugin release "
-                f"{release.slug!r} revision {release.revision}, which does "
-                f"not declare operator {request.operator_id}@"
-                f"{request.operator_version}"
-            )
+        contract = resolved.contract_for(request)
         decision = self._release_admission.decide(
             release,
             node_contract=contract,

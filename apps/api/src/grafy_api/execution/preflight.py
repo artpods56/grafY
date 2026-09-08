@@ -1,8 +1,10 @@
 """Saved-revision and secret-binding preflight for graph runs."""
 
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Protocol, cast
+from types import MappingProxyType
+from typing import cast
 from uuid import UUID
 
 from grafy_core.application.saved_graphs import SavedGraphService
@@ -22,7 +24,6 @@ from grafy_core.domain.saved_graphs import SavedGraph, SavedGraphRevision
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.domain.plugin_releases import (
     PluginNodeContract,
-    PluginReleaseScope,
 )
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.plugins import PluginRegistry
@@ -38,24 +39,25 @@ from grafy_api.execution.requests import (
     RunRequest,
 )
 from grafy_api.execution.errors import GraphExecutionError
+from grafy_api.execution.releases import (
+    ExactPluginReleaseLookup,
+    ReleaseContractKey,
+    ResolvedPluginRelease,
+    resolve_plugin_release,
+)
 
 
 @dataclass(frozen=True, slots=True)
 class GraphRunContext:
     secret_node_ids: frozenset[str]
+    resolved_releases: Mapping[ReleaseContractKey, ResolvedPluginRelease]
 
-
-class PreflightPluginReleaseLookup(Protocol):
-    """Exact release-contract lookup needed for secret preflight."""
-
-    async def get_by_revision(
-        self,
-        workspace_id: UUID,
-        slug: str,
-        revision: int,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
-    ) -> InstalledPluginRelease | None: ...
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "resolved_releases",
+            MappingProxyType(dict(self.resolved_releases)),
+        )
 
 
 class GraphRunPreflight:
@@ -66,7 +68,7 @@ class GraphRunPreflight:
         *,
         plugin_registry: PluginRegistry,
         saved_graphs: SavedGraphService | None,
-        plugin_release_lookup: PreflightPluginReleaseLookup | None = None,
+        plugin_release_lookup: ExactPluginReleaseLookup | None = None,
         network_policy: NetworkPolicy | None = None,
     ) -> None:
         self._registrations = {
@@ -83,10 +85,7 @@ class GraphRunPreflight:
         request: RunRequest,
     ) -> GraphRunContext:
         submitted_secret_nodes: set[str] = set()
-        release_contracts: dict[
-            tuple[PluginReleaseScope, str, int],
-            InstalledPluginRelease | None,
-        ] = {}
+        resolved_releases: dict[ReleaseContractKey, ResolvedPluginRelease] = {}
         release_contracts_by_node: dict[str, PluginNodeContract] = {}
         for node in request.nodes:
             registration = self._registrations.get(
@@ -120,43 +119,14 @@ class GraphRunPreflight:
                     f"release {pin.slug!r} revision {pin.revision}, but exact "
                     "Plugin release preflight is not configured for this workbench"
                 )
-            release_key = (pin.scope, pin.slug, pin.revision)
-            if release_key not in release_contracts:
-                release_contracts[
-                    release_key
-                ] = await self._plugin_release_lookup.get_by_revision(
-                    workspace_id,
-                    pin.slug,
-                    pin.revision,
-                    scope=pin.scope,
-                )
-            release = release_contracts[release_key]
-            if release is None:
-                if pin.scope is PluginReleaseScope.WORKSPACE:
-                    owner_context = "in this workspace"
-                else:
-                    owner_context = "in the System Plugin catalog"
-                raise GraphExecutionError(
-                    f"Node {node.id!r} pins {pin.scope.value.title()} Plugin "
-                    f"release {pin.slug!r} revision {pin.revision}, which does "
-                    f"not exist {owner_context}"
-                )
-            contract = next(
-                (
-                    declared
-                    for declared in release.catalog.nodes
-                    if declared.operator_id == node.operator_id
-                    and declared.operator_version == node.operator_version
-                ),
-                None,
+            resolved = await resolve_plugin_release(
+                workspace_id,
+                node,
+                self._plugin_release_lookup,
+                resolved_releases,
             )
-            if contract is None:
-                raise GraphExecutionError(
-                    f"Node {node.id!r} pins {pin.scope.value.title()} Plugin "
-                    f"release {pin.slug!r} revision {pin.revision}, which does "
-                    f"not declare operator {node.operator_id}@"
-                    f"{node.operator_version}"
-                )
+            release = resolved.release
+            contract = resolved.contract_for(node)
             release_contracts_by_node[node.id] = contract
             self._validate_network_preflight(node, release, contract)
             if contract.secret_inputs:
@@ -205,7 +175,10 @@ class GraphRunPreflight:
                 self._plugin_registry,
                 release_contracts_by_node,
             )
-        return GraphRunContext(secret_node_ids=frozenset(secret_node_ids))
+        return GraphRunContext(
+            secret_node_ids=frozenset(secret_node_ids),
+            resolved_releases=resolved_releases,
+        )
 
     def _validate_network_preflight(
         self,
@@ -215,9 +188,8 @@ class GraphRunPreflight:
     ) -> None:
         """Deny invocations whose effective network authority cannot be met."""
 
-        if (
-            PluginRuntimeCapability.NETWORK_EGRESS
-            not in set(contract.required_capabilities)
+        if PluginRuntimeCapability.NETWORK_EGRESS not in set(
+            contract.required_capabilities
         ):
             return
         resolution = resolve_http_egress_authority(
@@ -231,11 +203,7 @@ class GraphRunPreflight:
         )
         if resolution.allowed:
             return
-        profile_name = (
-            "none"
-            if resolution.profile is None
-            else resolution.profile.name
-        )
+        profile_name = "none" if resolution.profile is None else resolution.profile.name
         raise GraphExecutionError(
             f"Node {node.id!r} ({contract.operator_id}@"
             f"{contract.operator_version}) cannot run under network profile "

@@ -95,6 +95,9 @@ from grafy_api.execution.requests import (
 from grafy_api.execution.coordinator import GraphExecutionCoordinator
 from grafy_api.v1.routes.catalog.services import GraphModuleCatalog
 from grafy_api.v1.models import PluginReleasePinModel
+from grafy_api.execution.preflight import GraphRunPreflight
+from grafy_api.execution.run_graph import RunGraph
+from grafy_api.execution.materializations import MaterializationService
 from grafy_api.execution.compiler import GraphCompiler
 from grafy_api.execution.errors import GraphExecutionError
 from grafy_api.execution.edge_values import EdgeValueResolver
@@ -1560,17 +1563,18 @@ async def test_host_node_output_feeds_pinned_workspace_plugin_in_same_graph(
         loader_target=HOST_LOADER_TARGET,
         host_build_digest=HOST_BUILD_DIGEST,
     )
+    lookup = RecordingReleaseLookup(
+        _release(1),
+        _release(2),
+        system_release,
+        selection=selection,
+    )
     compiler = GraphCompiler(
         plugin_registry=registry,
         plugin_context=plugin_context,
         module_catalog=GraphModuleCatalog(saved_graphs, registry),
         canonical_artifact_conversions=CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,
-        plugin_release_lookup=RecordingReleaseLookup(
-            _release(1),
-            _release(2),
-            system_release,
-            selection=selection,
-        ),
+        plugin_release_lookup=lookup,
         plugin_invoker=invoker,
         release_admission=ReleaseExecutionAdmission(
             isolated_adapter_available=True,
@@ -1606,12 +1610,6 @@ async def test_host_node_output_feeds_pinned_workspace_plugin_in_same_graph(
             )
         ],
     )
-    plan = await compiler.compile(
-        request,
-        _UnusedModuleExecutor(),
-        workspace_id=WORKSPACE_ID,
-    )
-
     writer_registry = ArtifactWriterRegistry([TextValueOutputWriter(uow=unit_of_work)])
     resolver_registry = ResolverRegistry([TextValueResolver(uow=unit_of_work)])
     artifacts = ArtifactService(
@@ -1636,20 +1634,20 @@ async def test_host_node_output_feeds_pinned_workspace_plugin_in_same_graph(
             node_secrets=UnavailableNodeSecretResolver(),
         )
     )
-    result = await coordinator.execute(
-        PreparedGraphExecution(
-            workspace_id=WORKSPACE_ID,
-            plan=plan,
-            initial_outputs={},
-            graph_id=None,
-            graph_revision=None,
-            secret_graph_id=None,
-            secret_graph_revision=None,
-            secret_node_ids=frozenset(),
-            module_path=(),
-            raise_node_errors=True,
-        )
+    run_graph = RunGraph(
+        preflight=GraphRunPreflight(
+            plugin_registry=registry,
+            saved_graphs=saved_graphs,
+            plugin_release_lookup=lookup,
+        ),
+        compiler=compiler,
+        coordinator=coordinator,
+        materializations=MaterializationService(unit_of_work, artifacts, saved_graphs),
     )
+    result = await run_graph.run(WORKSPACE_ID, request)
+    assert lookup.release_reads == 1
+    assert lookup.selection_reads == 1
+    assert lookup.revocation_reads == 1
 
     assert result.status == "succeeded"
     assert [node.status for node in result.node_results] == [
@@ -1666,3 +1664,82 @@ async def test_host_node_output_feeds_pinned_workspace_plugin_in_same_graph(
         host_ref, WORKSPACE_ID
     ) == ("from host")
     assert result.outputs["plugin-echo"]["text"] == outgoing
+
+
+@pytest.mark.asyncio
+async def test_release_revoked_after_preflight_is_rejected_by_compilation() -> None:
+    release = _release(1)
+    lookup = RecordingReleaseLookup(release)
+    preflight = GraphRunPreflight(
+        plugin_registry=build_explicit_plugin_registry(),
+        saved_graphs=None,
+        plugin_release_lookup=lookup,
+    )
+    request = _echo_run_request(pin_revision=1)
+    context = await preflight.validate(WORKSPACE_ID, request)
+    assert lookup.revocation_reads == 0
+    lookup._revocation = PluginReleaseRevocation.from_release(
+        release,
+        reason=PluginReleaseRevocationReason.SECURITY,
+        revoked_by_user_id=uuid4(),
+    )
+
+    with pytest.raises(GraphExecutionError, match=r"not runnable \(revoked\)"):
+        await _compiler(lookup).compile(
+            request,
+            _UnusedModuleExecutor(),
+            workspace_id=WORKSPACE_ID,
+            resolved_releases=context.resolved_releases,
+        )
+
+    assert lookup.release_reads == 1
+    assert lookup.revocation_reads == 1
+    assert lookup.selection_reads == 1
+
+
+@pytest.mark.asyncio
+async def test_prepared_release_cannot_cross_workspace_boundary() -> None:
+    lookup = RecordingReleaseLookup(_release(1))
+    preflight = GraphRunPreflight(
+        plugin_registry=build_explicit_plugin_registry(),
+        saved_graphs=None,
+        plugin_release_lookup=lookup,
+    )
+    request = _echo_run_request(pin_revision=1)
+    context = await preflight.validate(WORKSPACE_ID, request)
+
+    with pytest.raises(GraphExecutionError, match="does not exist in this workspace"):
+        await _compiler(lookup).compile(
+            request,
+            _UnusedModuleExecutor(),
+            workspace_id=uuid4(),
+            resolved_releases=context.resolved_releases,
+        )
+
+    assert lookup.release_reads == 2
+    assert lookup.revocation_reads == 0
+
+
+@pytest.mark.asyncio
+async def test_release_preparation_is_scoped_to_each_run() -> None:
+    lookup = RecordingReleaseLookup(_release(1))
+    preflight = GraphRunPreflight(
+        plugin_registry=build_explicit_plugin_registry(),
+        saved_graphs=None,
+        plugin_release_lookup=lookup,
+    )
+    compiler = _compiler(lookup)
+    request = _echo_run_request(pin_revision=1)
+    for _ in range(2):
+        context = await preflight.validate(WORKSPACE_ID, request)
+        plan = await compiler.compile(
+            request,
+            _UnusedModuleExecutor(),
+            workspace_id=WORKSPACE_ID,
+            resolved_releases=context.resolved_releases,
+        )
+        assert len(plan.nodes) == 1
+
+    assert lookup.release_reads == 2
+    assert lookup.revocation_reads == 2
+    assert lookup.selection_reads == 2

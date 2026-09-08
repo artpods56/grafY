@@ -11,19 +11,11 @@ from grafy_core.nodes import NodeExecutionContext
 from grafy_core.operators.modules import GraphModuleExecutionError
 from grafy_core.ports.modules import GraphModuleExecutionResult
 
-from grafy_api.v1.models import (
-    ArtifactTypeBindingModel,
-    ArtifactTypeKeyResponse,
-    PluginReleasePinModel,
-)
 
 from grafy_api.execution.requests import (
-    ArtifactConversionRequest,
-    FieldProjectionRequest,
     MAX_EXECUTION_NODE_PATH_LENGTH,
     PinnedOutputRequest,
     RunEdgeRequest,
-    RunInputPlugRequest,
     RunNodeRequest,
     RunRequest,
 )
@@ -157,57 +149,13 @@ class RunGraph:
 
         request = RunRequest(
             nodes=[
-                RunNodeRequest(
-                    kind=node.kind,
-                    id=node.id,
-                    operator_id=node.operator_id,
-                    operator_version=node.operator_version,
-                    config=node.config_dict(),
-                    input_plugs=[
-                        RunInputPlugRequest(id=plug.id, port=plug.port)
-                        for plug in node.input_plugs
-                        if plug.id in active_input_plug_ids_by_node[node.id]
-                    ],
-                    artifact_type_bindings=[
-                        ArtifactTypeBindingModel(
-                            variable=binding.variable,
-                            artifact_type=ArtifactTypeKeyResponse.from_key(
-                                binding.artifact_type
-                            ),
-                        )
-                        for binding in node.artifact_type_bindings
-                    ],
-                    plugin_release=(
-                        PluginReleasePinModel.from_saved_pin(node.plugin_release_pin)
-                        if node.plugin_release_pin is not None
-                        else None
-                    ),
+                RunNodeRequest.from_saved_node(
+                    node,
+                    connected_plug_ids=active_input_plug_ids_by_node[node.id],
                 )
                 for node in executed_nodes
             ],
-            edges=[
-                RunEdgeRequest(
-                    from_node=edge.from_node,
-                    from_port=edge.from_port,
-                    to_node=edge.to_node,
-                    to_port=edge.to_port,
-                    to_plug=edge.to_plug,
-                    projection=(
-                        FieldProjectionRequest(path=list(edge.projection.path))
-                        if edge.projection is not None
-                        else None
-                    ),
-                    conversion_path=[
-                        ArtifactConversionRequest(
-                            id=conversion.id,
-                            version=conversion.version,
-                        )
-                        for conversion in edge.conversion_path
-                    ],
-                    collection_mode=edge.collection_mode,
-                )
-                for edge in active_edges
-            ],
+            edges=[RunEdgeRequest.from_saved_edge(edge) for edge in active_edges],
             pinned_outputs=[
                 PinnedOutputRequest(
                     from_node=port.boundary_node_id,
@@ -277,6 +225,7 @@ class RunGraph:
             request,
             self,
             workspace_id=workspace_id,
+            resolved_releases=run_context.resolved_releases,
         )
         if (
             validate_materialized_pins
