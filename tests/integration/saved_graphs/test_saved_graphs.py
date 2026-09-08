@@ -3,7 +3,6 @@ from typing import cast
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
-import pytest
 
 from grafy_api.v1.models import ArtifactTypeBindingModel, ArtifactTypeKeyResponse
 from grafy_api.v1.routes.saved_graphs.models import (
@@ -21,7 +20,6 @@ from grafy_api.v1.routes.saved_graphs.models import (
     UpdateSavedGraphRequest,
 )
 from grafy_core.domain.collaboration import RenameGraphCommand
-from grafy_core.domain.errors import NotFoundError
 from grafy_core.domain.identity import ActorContext
 from grafy_core.domain.saved_graphs import SavedGraphDocument
 
@@ -520,12 +518,7 @@ def test_http_create_bootstraps_collaborative_head(
     graph_id = UUID(created["id"])
     assert created["revision"] == 1
 
-    head = asyncio.run(
-        builtin_client.app.state.resources.collaboration.initialize_head_for_existing_graph(
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph_id,
-        )
-    )
+    head = graphs.get_head_ok(graph_id)
 
     assert head.collaboration_sequence == 1
     assert head.checkpoint_sequence == 1
@@ -540,12 +533,7 @@ def test_http_replace_resets_collaborative_epoch_when_checkpointed(
     graphs = api.workspace(WORKSPACE_ID).graphs
     created = graphs.create(_graph_request("Before replace")).json()
     graph_id = UUID(created["id"])
-    prior_head = asyncio.run(
-        builtin_client.app.state.resources.collaboration.initialize_head_for_existing_graph(
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph_id,
-        )
-    )
+    prior_head = graphs.get_head_ok(graph_id)
     prior_epoch = prior_head.room_epoch
 
     response = graphs.update(
@@ -557,12 +545,7 @@ def test_http_replace_resets_collaborative_epoch_when_checkpointed(
     assert response.json()["revision"] == 2
     assert response.json()["name"] == "After replace"
 
-    head = asyncio.run(
-        builtin_client.app.state.resources.collaboration.initialize_head_for_existing_graph(
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph_id,
-        )
-    )
+    head = graphs.get_head_ok(graph_id)
     assert head.room_epoch != prior_epoch
     assert head.collaboration_sequence == 0
     assert head.checkpoint_sequence == 0
@@ -578,12 +561,7 @@ def test_http_replace_rejects_uncheckpointed_head(
     created = graphs.create(_graph_request("Live draft")).json()
     graph_id = UUID(created["id"])
     collaboration = builtin_client.app.state.resources.collaboration
-    head = asyncio.run(
-        collaboration.initialize_head_for_existing_graph(
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph_id,
-        )
-    )
+    head = graphs.get_head_ok(graph_id)
     asyncio.run(
         collaboration.accept_command(
             actor=ActorContext(
@@ -621,13 +599,7 @@ def test_http_delete_removes_collaborative_head(
     assert response.status_code == 204
     assert graphs.get(graph_id).status_code == 404
 
-    with pytest.raises(NotFoundError):
-        asyncio.run(
-            builtin_client.app.state.resources.collaboration.initialize_head_for_existing_graph(
-                workspace_id=WORKSPACE_ID,
-                graph_id=graph_id,
-            )
-        )
+    assert graphs.get_head(graph_id).status_code == 404
 
 
 def test_http_live_head_command_checkpoint_and_aware_delete(

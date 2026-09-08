@@ -9,12 +9,13 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy import text
 
-from grafy_core.application.collaboration import CollaborationService
+from grafy_core.application.graph_creation import stage_checkpointed_graph
 from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
+    SavedGraph,
     SavedGraphDocument,
     SavedGraphNode,
     SavedGraphPluginReleasePin,
@@ -1135,25 +1136,25 @@ def test_node_secret_routes_never_return_secret_value(tmp_path: Path) -> None:
             lambda: SqlAlchemyUnitOfWork(database.sessions),
             registry,
         )
-        graph = await _saved_secret_graph(saved_graphs)
-        collaboration = CollaborationService(
-            lambda: SqlAlchemyUnitOfWork(database.sessions),
-            registry,
-            command_hmac_key=b"node-secret-route-test-hmac-key",
-            command_hmac_key_version=1,
-            saved_graphs=saved_graphs,
-        )
-        await collaboration.initialize_head_for_existing_graph(
+        graph = SavedGraph(
             workspace_id=WORKSPACE_ID,
-            graph_id=graph.id,
+            name="Shared extraction",
+            document=_secret_document(),
         )
+        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+            await stage_checkpointed_graph(
+                graph,
+                graphs=unit_of_work.graphs,
+                collaboration=unit_of_work.collaboration,
+            )
+            await unit_of_work.commit()
         service = NodeSecretService(
             unit_of_work_factory=lambda: SqlAlchemyUnitOfWork(database.sessions),
             plugin_registry=registry,
             encryption_key=_encryption_key(),
         )
-        components = _build_secret_components(
-            registry=registry,
+        components = build_workbench_components(
+            plugin_registry=registry,
             workspace=tmp_path / "route-workbench",
             saved_graphs=saved_graphs,
             node_secrets=service,

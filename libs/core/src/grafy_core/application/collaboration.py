@@ -75,44 +75,6 @@ class CollaborationService:
             plugin_registry,
         )
 
-    async def initialize_head_for_existing_graph(
-        self,
-        *,
-        workspace_id: UUID,
-        graph_id: UUID,
-    ) -> CollaborativeGraphHead:
-        async with self._unit_of_work_factory() as unit_of_work:
-            existing = await unit_of_work.collaboration.get_head(
-                workspace_id,
-                graph_id,
-            )
-            if existing is not None:
-                return existing
-            graph = await unit_of_work.graphs.get(workspace_id, graph_id)
-            if graph is None:
-                raise NotFoundError("Saved graph", str(graph_id))
-            head = CollaborativeGraphHead.for_existing_saved_graph(
-                workspace_id=workspace_id,
-                graph_id=graph_id,
-                name=graph.name,
-                document=graph.document,
-                checkpoint_revision=graph.revision,
-                updated_at=graph.updated_at,
-            )
-            await unit_of_work.collaboration.add_head(head)
-            await unit_of_work.security_audit.add(
-                SecurityAuditEvent(
-                    actor_kind=SecurityAuditActorKind.SYSTEM,
-                    operation="collaboration.head.bootstrap",
-                    outcome=SecurityAuditOutcome.SUCCESS,
-                    workspace_id=workspace_id,
-                    resource_type="saved_graph",
-                    resource_id=str(graph_id),
-                )
-            )
-            await unit_of_work.commit()
-        return head
-
     async def verify_every_graph_has_head(self) -> None:
         """Fail closed at startup when migration left any graph without a head."""
         async with self._unit_of_work_factory() as unit_of_work:

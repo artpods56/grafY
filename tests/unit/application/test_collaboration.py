@@ -438,32 +438,28 @@ def _service(factory: FakeFactory) -> CollaborationService:
 
 
 @pytest.mark.asyncio
-async def test_initialize_head_for_existing_graph_is_idempotent() -> None:
+async def test_reading_canonical_head_does_not_reinitialize_it() -> None:
     factory = FakeFactory()
-    graph = SavedGraph(
-        workspace_id=WORKSPACE_ID,
-        created_by_user_id=USER_ID,
-        name="Legacy",
-        document=SavedGraphDocument(),
-        revision=3,
-    )
-    factory.graphs.graphs[graph.id] = graph
     service = _service(factory)
-
-    first = await service.initialize_head_for_existing_graph(
+    graph, created_head, _ = await service.bootstrap_graph(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        command_id=uuid4(),
+        command=ReplaceDocumentCommand(name="Canonical", document=SavedGraphDocument()),
+    )
+    first = await service.get_head(
+        actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         graph_id=graph.id,
     )
-    second = await service.initialize_head_for_existing_graph(
+    second = await service.get_head(
+        actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         graph_id=graph.id,
     )
-
-    assert first.collaboration_sequence == 0
-    assert first.checkpoint_revision == 3
-    assert second.room_epoch == first.room_epoch
-    assert factory.created[0].commit_count == 1
-    assert factory.created[1].commit_count == 0
+    assert first.room_epoch == created_head.room_epoch == second.room_epoch
+    assert first.collaboration_sequence == second.collaboration_sequence == 1
+    assert [unit.commit_count for unit in factory.created] == [1, 0, 0]
 
 
 @pytest.mark.asyncio
@@ -1219,17 +1215,22 @@ async def test_verify_every_graph_has_head_fails_closed_on_gap() -> None:
     with pytest.raises(MissingCollaborativeHeadError):
         await service.verify_every_graph_has_head()
 
-    await service.initialize_head_for_existing_graph(
+    assert factory.collaboration.heads == {}
+    assert factory.graphs.graphs == {graph.id: graph}
+    assert factory.created[-1].commit_count == 0
+
+
+async def test_verify_every_graph_has_head_accepts_canonical_creation() -> None:
+    factory = FakeFactory()
+    service = _service(factory)
+    await service.bootstrap_graph(
+        actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
-        graph_id=graph.id,
+        command_id=uuid4(),
+        command=ReplaceDocumentCommand(name="Canonical", document=SavedGraphDocument()),
     )
     await service.verify_every_graph_has_head()
-    again = await service.initialize_head_for_existing_graph(
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph.id,
-    )
-    assert again.collaboration_sequence == 0
-    assert len(factory.collaboration.heads) == 1
+    assert factory.created[-1].commit_count == 0
 
 
 @pytest.mark.asyncio

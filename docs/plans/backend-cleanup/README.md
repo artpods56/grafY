@@ -29,7 +29,8 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Share graph/revision/head/initial-checkpoint staging across collaboration bootstrap, template instantiation, and module import within caller transactions.
 - [x] Prove immediate checkpoint after template/module creation creates no redundant revision.
 - [ ] Migrate ordinary fixtures off redundant SavedGraphService create/replace/delete paths.
-- [ ] Remove redundant mutators and head-initialization workaround; preserve historical-state migration fixtures.
+- [ ] Remove redundant create/replace/delete mutators after fixture and behavioral-test migration.
+- [x] Remove the runtime head-initialization workaround; preserve historical-state migration coverage.
 
 ## 3. Publication consistency
 
@@ -150,7 +151,7 @@ Append completed batches here with changed owners, commit, exact test scope, out
 - Next: checkpointed graph staging for template instantiation and module import, followed by retirement of redundant graph mutation paths.
 
 
-### Shared checkpointed graph creation
+### Shared checkpointed graph creation, 4f15f4f
 
 - Added application-owned `graph_creation.stage_checkpointed_graph`, used by collaboration bootstrap, exact-head copy, template instantiation, and module import. It stages graph, revision, head, and initial mapping through repositories supplied by the caller; it never commits.
 - Preserved initial collaboration sequence 1 for bootstrap/copy and 0 for template/import. Authorization, receipts, folder assignment, module publication, sanitization, and commits remain with each workflow.
@@ -180,3 +181,14 @@ Next migration scope:
    workaround just to construct test state.
 5. Remove the obsolete methods after rechecking all references and preserving the
    existing revision-conflict, secret, history, and materialization behavioral coverage.
+
+
+### Retired runtime head initialization
+
+- Removed `CollaborationService.initialize_head_for_existing_graph` after confirming no production callers and migrating every test reference.
+- Saved-graph HTTP tests now read the heads created by canonical HTTP operations. The node-secret route fixture stages a checkpointed graph directly in its test transaction.
+- Replaced runtime repair tests with canonical-head read stability and startup verification tests. Missing heads remain a fail-closed condition; no automatic repair is introduced.
+- Preserved and ran `test_collaboration_head_migration_backfills_exactly_one_sequence_zero_head`, which verifies exact historical revisions, one head per graph, and no orphan rows.
+- Fixed an existing node-secret route fixture collision: its test family was registered both as builtin code and as a synthetic published Plugin. The route fixture now uses only its intended builtin registration. All secret metadata, redaction, configuration, revision, and deletion assertions remain and execute successfully.
+- Validation: 49 focused collaboration, saved-graph HTTP, node-secret HTTP, and historical migration tests passed. Ruff passed for all four changed Python files; collaboration Pyright passed. No code references to the retired method remain.
+- Remaining finding 2 work: retire the legacy SavedGraphService create/replace/delete paths and migrate their ordinary fixtures and behavioral tests.
