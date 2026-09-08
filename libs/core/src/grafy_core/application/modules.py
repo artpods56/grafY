@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol
 from uuid import UUID, uuid4
 
 from grafy_core.application.graph_creation import stage_checkpointed_graph
@@ -26,19 +25,10 @@ from grafy_core.domain.modules import (
     GraphModuleReference,
     GraphModuleReferenceError,
 )
-from grafy_core.domain.saved_graphs import SavedGraph, SavedGraphRevision
+from grafy_core.domain.saved_graphs import SavedGraph
 from grafy_core.ports.module_library import ModuleLibraryUnitOfWorkPort
 from grafy_core.ports.saved_graphs import SavedGraphRepositoryPort
 from grafy_core.plugins import PluginRegistry, UnknownOperatorError
-
-
-class _SavedGraphRevisionReader(Protocol):
-    async def get_revision(
-        self,
-        workspace_id: UUID,
-        graph_id: UUID,
-        revision: int,
-    ) -> SavedGraphRevision | None: ...
 
 
 class ModuleLibraryService:
@@ -373,12 +363,93 @@ class ModuleLibraryService:
         workspace_id: UUID,
         graphs: SavedGraphRepositoryPort,
     ) -> None:
-        await validate_optional_input_targets(
-            definition,
-            workspace_id=workspace_id,
-            graphs=graphs,
-            plugin_registry=self._plugin_registry,
-        )
+        """Validate optional module inputs against their declared targets."""
+        nodes_by_id = {node.id: node for node in definition.document.nodes}
+        for public_port in definition.input_ports:
+            if public_port.required:
+                continue
+            for edge in definition.document.edges:
+                if not edge.enabled or edge.from_node != public_port.boundary_node_id:
+                    continue
+                target_node = nodes_by_id[edge.to_node]
+                try:
+                    target_reference = GraphModuleReference.try_from_operator_identity(
+                        target_node.operator_id,
+                        target_node.operator_version,
+                    )
+                except GraphModuleReferenceError as exc:
+                    raise GraphModuleDefinitionError(
+                        f"Graph module {definition.reference.graph_id} revision "
+                        f"{definition.reference.revision} optional public input "
+                        f"{public_port.name!r} edge {edge.id!r} targets invalid "
+                        f"graph module operator {target_node.operator_id}@"
+                        f"{target_node.operator_version}: {exc}"
+                    ) from exc
+
+                if target_reference is not None:
+                    try:
+                        target_revision = await graphs.get_revision(
+                            workspace_id,
+                            target_reference.graph_id,
+                            target_reference.revision,
+                        )
+                        if target_revision is None:
+                            raise NotFoundError(
+                                "Saved graph revision",
+                                f"{target_reference.graph_id}@{target_reference.revision}",
+                            )
+                        target_definition = (
+                            GraphModuleDefinition.from_saved_graph_revision(
+                                target_revision
+                            )
+                        )
+                        target_port = target_definition.input_port(edge.to_port)
+                    except (GraphModuleDefinitionError, NotFoundError) as exc:
+                        raise GraphModuleDefinitionError(
+                            f"Graph module {definition.reference.graph_id} revision "
+                            f"{definition.reference.revision} optional public input "
+                            f"{public_port.name!r} edge {edge.id!r} cannot resolve "
+                            f"target input {target_node.id!r}.{edge.to_port!r} "
+                            f"({target_node.operator_id}@"
+                            f"{target_node.operator_version}): {exc}"
+                        ) from exc
+                    target_required = target_port.required
+                else:
+                    try:
+                        registration = self._plugin_registry.node_registration(
+                            target_node.operator_id,
+                            target_node.operator_version,
+                        )
+                    except UnknownOperatorError as exc:
+                        raise GraphModuleDefinitionError(
+                            f"Graph module {definition.reference.graph_id} revision "
+                            f"{definition.reference.revision} optional public input "
+                            f"{public_port.name!r} edge {edge.id!r} targets unknown "
+                            f"operator {target_node.operator_id}@"
+                            f"{target_node.operator_version}"
+                        ) from exc
+                    target_port = registration.node_class.input_contract.ports.get(
+                        edge.to_port
+                    )
+                    if target_port is None:
+                        raise GraphModuleDefinitionError(
+                            f"Graph module {definition.reference.graph_id} revision "
+                            f"{definition.reference.revision} optional public input "
+                            f"{public_port.name!r} edge {edge.id!r} targets missing "
+                            f"input {target_node.id!r}.{edge.to_port!r} "
+                            f"({target_node.operator_id}@"
+                            f"{target_node.operator_version})"
+                        )
+                    target_required = target_port.required
+
+                if target_required:
+                    raise GraphModuleDefinitionError(
+                        f"Graph module {definition.reference.graph_id} revision "
+                        f"{definition.reference.revision} optional public input "
+                        f"{public_port.name!r} edge {edge.id!r} targets required "
+                        f"input {target_node.id!r}.{edge.to_port!r} "
+                        f"({target_node.operator_id}@{target_node.operator_version})"
+                    )
 
     async def resolve_definition(
         self,
@@ -411,128 +482,6 @@ class ModuleLibraryService:
                 graphs=unit_of_work.graphs,
             )
             return definition
-
-
-async def _resolve_revision_or_none(
-    graphs: _SavedGraphRevisionReader,
-    workspace_id: UUID,
-    graph_id: UUID,
-    revision: int,
-) -> SavedGraphRevision | None:
-    """Fetch a saved-graph revision tolerating both return-None and raise
-    ``NotFoundError`` providers (repository port vs application service)."""
-
-    try:
-        snapshot = await graphs.get_revision(
-            workspace_id,
-            graph_id,
-            revision,
-        )
-    except NotFoundError:
-        return None
-    return snapshot
-
-
-async def validate_optional_input_targets(
-    definition: GraphModuleDefinition,
-    *,
-    workspace_id: UUID,
-    graphs: _SavedGraphRevisionReader,
-    plugin_registry: PluginRegistry,
-) -> None:
-    """Validate that every optional public input's target is satisfiable.
-
-    Shared by the module library service and the HTTP catalog so both resolve
-    definitions through the same canonical rules: nested graph-module targets
-    must resolve to a required input, and operator targets must declare the
-    edge's input port.
-    """
-
-    nodes_by_id = {node.id: node for node in definition.document.nodes}
-    for public_port in definition.input_ports:
-        if public_port.required:
-            continue
-        for edge in definition.document.edges:
-            if not edge.enabled or edge.from_node != public_port.boundary_node_id:
-                continue
-            target_node = nodes_by_id[edge.to_node]
-            try:
-                target_reference = GraphModuleReference.try_from_operator_identity(
-                    target_node.operator_id,
-                    target_node.operator_version,
-                )
-            except GraphModuleReferenceError as exc:
-                raise GraphModuleDefinitionError(
-                    f"Graph module {definition.reference.graph_id} revision "
-                    f"{definition.reference.revision} optional public input "
-                    f"{public_port.name!r} edge {edge.id!r} targets invalid "
-                    f"graph module operator {target_node.operator_id}@"
-                    f"{target_node.operator_version}: {exc}"
-                ) from exc
-
-            if target_reference is not None:
-                try:
-                    target_revision = await _resolve_revision_or_none(
-                        graphs,
-                        workspace_id,
-                        target_reference.graph_id,
-                        target_reference.revision,
-                    )
-                    if target_revision is None:
-                        raise NotFoundError(
-                            "Saved graph revision",
-                            f"{target_reference.graph_id}@{target_reference.revision}",
-                        )
-                    target_definition = GraphModuleDefinition.from_saved_graph_revision(
-                        target_revision
-                    )
-                    target_port = target_definition.input_port(edge.to_port)
-                except (GraphModuleDefinitionError, NotFoundError) as exc:
-                    raise GraphModuleDefinitionError(
-                        f"Graph module {definition.reference.graph_id} revision "
-                        f"{definition.reference.revision} optional public input "
-                        f"{public_port.name!r} edge {edge.id!r} cannot resolve "
-                        f"target input {target_node.id!r}.{edge.to_port!r} "
-                        f"({target_node.operator_id}@"
-                        f"{target_node.operator_version}): {exc}"
-                    ) from exc
-                target_required = target_port.required
-            else:
-                try:
-                    registration = plugin_registry.node_registration(
-                        target_node.operator_id,
-                        target_node.operator_version,
-                    )
-                except UnknownOperatorError as exc:
-                    raise GraphModuleDefinitionError(
-                        f"Graph module {definition.reference.graph_id} revision "
-                        f"{definition.reference.revision} optional public input "
-                        f"{public_port.name!r} edge {edge.id!r} targets unknown "
-                        f"operator {target_node.operator_id}@"
-                        f"{target_node.operator_version}"
-                    ) from exc
-                target_port = registration.node_class.input_contract.ports.get(
-                    edge.to_port
-                )
-                if target_port is None:
-                    raise GraphModuleDefinitionError(
-                        f"Graph module {definition.reference.graph_id} revision "
-                        f"{definition.reference.revision} optional public input "
-                        f"{public_port.name!r} edge {edge.id!r} targets missing "
-                        f"input {target_node.id!r}.{edge.to_port!r} "
-                        f"({target_node.operator_id}@"
-                        f"{target_node.operator_version})"
-                    )
-                target_required = target_port.required
-
-            if target_required:
-                raise GraphModuleDefinitionError(
-                    f"Graph module {definition.reference.graph_id} revision "
-                    f"{definition.reference.revision} optional public input "
-                    f"{public_port.name!r} edge {edge.id!r} targets required "
-                    f"input {target_node.id!r}.{edge.to_port!r} "
-                    f"({target_node.operator_id}@{target_node.operator_version})"
-                )
 
 
 __all__ = ["ModuleLibraryService", "ModulePublicationState"]

@@ -178,7 +178,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 database=database,
                 plugin_registry=components.plugin_registry,
                 uploads=components.uploads,
-                graph_modules=components.modules,
                 plugin_releases=components.plugin_releases,
                 module_library=module_library,
                 templates=templates,

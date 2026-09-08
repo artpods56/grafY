@@ -12,7 +12,12 @@ from grafy_core.artifacts import (
 )
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
 from grafy_core.conversions import ArtifactConversion, ArtifactConversionKey
-from grafy_core.domain.module_library import ModulePublicationState
+from grafy_core.domain.module_library import (
+    Module,
+    ModuleRelease,
+    ModulePublicationState,
+)
+from grafy_core.domain.modules import GraphModuleDefinition
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.domain.plugin_releases import (
     PluginArtifactConversionContract,
@@ -48,21 +53,19 @@ from grafy_api.v1.models import (
     PluginReleasePinModel,
 )
 
-from .services import (
-    GRAPH_MODULE_PLUGIN_SLUG,
-    GraphModuleCatalogEntry,
-    GraphModuleCatalogListing,
-    UnavailableGraphModule,
-)
+GRAPH_MODULE_PLUGIN_SLUG = "graph.module"
 
 
 PortDirection = Literal["input", "output"]
 CatalogOrigin = Literal["builtin", "plugin", "module"]
 CatalogEntryKind = Literal["plugin", "module"]
-CatalogNonRunnableReason = PluginNonRunnableReason | Literal[
-    "deprecated",
-    "withdrawn",
-]
+CatalogNonRunnableReason = (
+    PluginNonRunnableReason
+    | Literal[
+        "deprecated",
+        "withdrawn",
+    ]
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,10 +101,7 @@ def plugin_release_readiness(
         selection=release_state.selection,
         revocation=release_state.revocation,
     )
-    if (
-        isinstance(decision, ReleaseExecutionRejection)
-        and decision.reason == "revoked"
-    ):
+    if isinstance(decision, ReleaseExecutionRejection) and decision.reason == "revoked":
         return PluginReleaseReadiness(
             runnable=False,
             reason=decision.reason,
@@ -520,10 +520,11 @@ class NodeSpecResponse(ApiResponse):
     @classmethod
     def from_graph_module(
         cls,
-        entry: GraphModuleCatalogEntry,
+        module: Module,
+        release: ModuleRelease,
+        definition: GraphModuleDefinition,
         module_executor: GraphModuleExecutorPort,
     ) -> Self:
-        definition = entry.definition
         node = GraphModuleNode(definition, module_executor)
         return cls(
             origin="module",
@@ -545,10 +546,11 @@ class NodeSpecResponse(ApiResponse):
             ],
             module_graph_id=definition.reference.graph_id,
             module_graph_revision=definition.reference.revision,
-            module_id=entry.module_id,
-            publication_state=entry.publication_state,
-            is_current_library_release=entry.is_current_library_release,
-            catalog_visible=entry.catalog_visible,
+            module_id=module.id,
+            publication_state=module.publication_state,
+            is_current_library_release=module.current_library_release
+            == release.revision,
+            catalog_visible=module.current_library_release == release.revision,
         )
 
     @classmethod
@@ -601,15 +603,6 @@ class UnavailableGraphModuleResponse(ApiResponse):
     name: str
     reason: str
 
-    @classmethod
-    def from_module(cls, module: UnavailableGraphModule) -> Self:
-        return cls(
-            graph_id=module.graph_id,
-            revision=module.revision,
-            name=module.name,
-            reason=module.reason,
-        )
-
 
 class NodeRegistryResponse(ApiResponse):
     plugins: list[PluginSpecResponse]
@@ -624,7 +617,7 @@ class NodeRegistryResponse(ApiResponse):
     def from_registry(
         cls,
         registry: PluginRegistry,
-        module_listing: GraphModuleCatalogListing,
+        module_listing: list[tuple[Module, ModuleRelease, GraphModuleDefinition]],
         module_executor: GraphModuleExecutorPort,
         plugin_releases: list[InstalledPluginRelease],
         *,
@@ -684,7 +677,9 @@ class NodeRegistryResponse(ApiResponse):
             for plugin in registry.plugins
             if plugin.slug != GRAPH_MODULE_PLUGIN_SLUG
         }
-        plugin_slug_collisions = installed_plugin_slugs & (system_slugs | workspace_slugs)
+        plugin_slug_collisions = installed_plugin_slugs & (
+            system_slugs | workspace_slugs
+        )
         if plugin_slug_collisions:
             rendered = ", ".join(sorted(plugin_slug_collisions))
             raise ValueError(
@@ -719,22 +714,21 @@ class NodeRegistryResponse(ApiResponse):
                     )
                 release_node_owners[key] = release
 
-        module_node_owners: dict[tuple[str, int], GraphModuleCatalogEntry] = {}
-        for entry in module_listing.entries:
-            definition = entry.definition
+        module_node_keys: set[tuple[str, int]] = set()
+        for _, _, definition in module_listing:
             module_node = GraphModuleNode(definition, module_executor)
             key = (module_node.operator_id, module_node.operator_version)
             if (
                 key in host_nodes
                 or key in release_node_owners
-                or key in module_node_owners
+                or key in module_node_keys
             ):
                 raise ValueError(
                     f"Module {definition.reference.graph_id}@"
                     f"{definition.reference.revision} operator {key[0]}@{key[1]} "
                     "conflicts with another catalog entry"
                 )
-            module_node_owners[key] = entry
+            module_node_keys.add(key)
 
         node_readiness = {
             (release.slug, contract.operator_id, contract.operator_version): (
@@ -757,9 +751,7 @@ class NodeRegistryResponse(ApiResponse):
                 for contract in release.catalog.nodes
             ]
             if any(readiness.runnable for readiness in node_states):
-                release_readiness[release.slug] = PluginReleaseReadiness(
-                    runnable=True
-                )
+                release_readiness[release.slug] = PluginReleaseReadiness(runnable=True)
             else:
                 release_readiness[release.slug] = plugin_release_readiness(
                     release,
@@ -784,9 +776,7 @@ class NodeRegistryResponse(ApiResponse):
             for release in plugin_releases
             for contract in release.catalog.artifact_types
         ]
-        seen_artifact_owners: dict[
-            tuple[str, int], InstalledPluginRelease
-        ] = {}
+        seen_artifact_owners: dict[tuple[str, int], InstalledPluginRelease] = {}
         for key, release in release_artifact_owners:
             other_release = seen_artifact_owners.get(key)
             if other_release is not None:
@@ -920,8 +910,10 @@ class NodeRegistryResponse(ApiResponse):
                 for registration in builtin_nodes
             ]
             + [
-                NodeSpecResponse.from_graph_module(entry, module_executor)
-                for entry in module_listing.entries
+                NodeSpecResponse.from_graph_module(
+                    module, release, definition, module_executor
+                )
+                for module, release, definition in module_listing
             ]
             + [
                 NodeSpecResponse.from_plugin_release(
@@ -938,10 +930,7 @@ class NodeRegistryResponse(ApiResponse):
                 for release in plugin_releases
                 for contract in release.catalog.nodes
             ],
-            unavailable_modules=[
-                UnavailableGraphModuleResponse.from_module(module)
-                for module in module_listing.unavailable
-            ],
+            unavailable_modules=[],
         )
 
 

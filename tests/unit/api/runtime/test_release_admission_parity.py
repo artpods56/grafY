@@ -5,7 +5,6 @@ from uuid import UUID
 
 import pytest
 
-from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.artifact_contracts import TEXT_VALUE
 from grafy_core.artifacts import InMemoryUnitOfWork
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY
@@ -39,10 +38,7 @@ from grafy_storage import LocalFileObjectStore
 from grafy_api.plugins.runtime.admission import ReleaseExecutionAdmission
 from grafy_api.v1.models import PluginReleasePinModel
 from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
-from grafy_api.v1.routes.catalog.services import (
-    GraphModuleCatalog,
-    GraphModuleCatalogListing,
-)
+from grafy_core.application.modules import ModuleLibraryService
 from grafy_api.execution.requests import (
     RunNodeRequest,
     RunRequest,
@@ -219,10 +215,7 @@ def _compiler(
     return GraphCompiler(
         plugin_registry=registry,
         plugin_context=context,
-        module_catalog=GraphModuleCatalog(
-            SavedGraphService(_unused_saved_graph_uow, registry),
-            registry,
-        ),
+        module_library=ModuleLibraryService(_unused_saved_graph_uow, registry),
         canonical_artifact_conversions=CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,
         plugin_release_lookup=_ReleaseLookup(release),
         plugin_invoker=_UnusedPluginInvoker(),
@@ -265,7 +258,7 @@ async def test_catalog_and_compiler_admit_each_contract_with_the_same_policy(
     )
     response = NodeRegistryResponse.from_registry(
         PluginRegistry(),
-        GraphModuleCatalogListing(entries=[], unavailable=[]),
+        [],
         _UnusedModuleExecutor(),
         [release],
         workspace_id=WORKSPACE_ID,
@@ -323,7 +316,7 @@ async def test_catalog_and_compiler_share_release_rejection_reasons(
     release = _release()
     response = NodeRegistryResponse.from_registry(
         PluginRegistry(),
-        GraphModuleCatalogListing(entries=[], unavailable=[]),
+        [],
         _UnusedModuleExecutor(),
         [release],
         workspace_id=WORKSPACE_ID,

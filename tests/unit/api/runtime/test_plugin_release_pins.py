@@ -93,7 +93,7 @@ from grafy_api.execution.requests import (
     RunRequest,
 )
 from grafy_api.execution.coordinator import GraphExecutionCoordinator
-from grafy_api.v1.routes.catalog.services import GraphModuleCatalog
+from grafy_core.application.modules import ModuleLibraryService
 from grafy_api.v1.models import PluginReleasePinModel
 from grafy_api.execution.preflight import GraphRunPreflight
 from grafy_api.execution.run_graph import RunGraph
@@ -399,11 +399,10 @@ def _compiler(
         uow=unit_of_work,
         bucket="test-artifacts",
     )
-    saved_graphs = SavedGraphService(_unused_saved_graph_uow, registry)
     return GraphCompiler(
         plugin_registry=registry,
         plugin_context=plugin_context,
-        module_catalog=GraphModuleCatalog(saved_graphs, registry),
+        module_library=ModuleLibraryService(_unused_saved_graph_uow, registry),
         canonical_artifact_conversions=CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,
         plugin_release_lookup=lookup or RecordingReleaseLookup(),
         plugin_invoker=invoker or NoopInvoker(),
@@ -1572,7 +1571,7 @@ async def test_host_node_output_feeds_pinned_workspace_plugin_in_same_graph(
     compiler = GraphCompiler(
         plugin_registry=registry,
         plugin_context=plugin_context,
-        module_catalog=GraphModuleCatalog(saved_graphs, registry),
+        module_library=ModuleLibraryService(_unused_saved_graph_uow, registry),
         canonical_artifact_conversions=CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,
         plugin_release_lookup=lookup,
         plugin_invoker=invoker,

@@ -40,7 +40,6 @@ from grafy_api.system_host_bindings import (
     validate_system_host_bindings,
 )
 from grafy_api.v1.routes.artifacts.services import ArtifactService
-from grafy_api.v1.routes.catalog.services import GraphModuleCatalog
 from grafy_api.v1.routes.collaboration.hub import GraphRoomHub
 from grafy_api.execution.compiler import GraphCompiler
 from grafy_api.execution.coordinator import GraphExecutionCoordinator
@@ -67,7 +66,7 @@ _WORKBENCH_BUCKET = "workbench-artifacts"
 class WorkbenchComponents:
     plugin_registry: PluginRegistry
     uploads: ImageUploadService
-    modules: GraphModuleCatalog
+    module_library: ModuleLibraryService | None
     plugin_releases: PluginReleaseService | None
     run_graph: RunGraph
     execution_admission: ExecutionAdmissionLimiter
@@ -163,11 +162,6 @@ def build_workbench_components(
             for spec in plugin_registry.artifact_types
         },
     )
-    modules = GraphModuleCatalog(
-        saved_graphs,
-        plugin_registry,
-        module_library=module_library,
-    )
     materializations = MaterializationService(
         resolved_unit_of_work,
         artifacts,
@@ -221,7 +215,7 @@ def build_workbench_components(
     compiler = GraphCompiler(
         plugin_registry=plugin_registry,
         plugin_context=plugin_context,
-        module_catalog=modules,
+        module_library=module_library,
         canonical_artifact_conversions=canonical_artifact_conversions,
         plugin_release_lookup=plugin_releases,
         plugin_invoker=plugin_invoker,
@@ -279,7 +273,7 @@ def build_workbench_components(
     return WorkbenchComponents(
         plugin_registry=plugin_registry,
         uploads=uploads,
-        modules=modules,
+        module_library=module_library,
         plugin_releases=plugin_releases,
         run_graph=run_graph,
         execution_admission=execution_admission,

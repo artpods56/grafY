@@ -1,20 +1,17 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, status
 
 from grafy_core.domain.errors import NotFoundError
 from grafy_core.domain.identity import WorkspaceCapability
 from grafy_core.domain.module_library import ModuleLibraryError
 from grafy_core.domain.modules import GraphModuleDefinition, GraphModuleReference
 
-from grafy_api.app_state import get_resources
 from grafy_api.v1.routes.auth.dependencies import (
     require_workspace_capability,
 )
-from grafy_api.v1.routes.catalog.services import (
-    GraphModuleCatalog,
-    GraphModuleCatalogError,
-)
+from grafy_core.application.modules import ModuleLibraryService
+from grafy_core.domain.modules import GraphModuleDefinitionError
 from grafy_api.v1.routes.modules.dependencies import ModuleLibraryDependency
 from grafy_api.v1.routes.modules.models import (
     ImportModuleReleaseRequest,
@@ -29,7 +26,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/modules", tags=["modules"]
 
 
 async def _definition_for_module(
-    catalog: GraphModuleCatalog,
+    service: ModuleLibraryService,
     *,
     workspace_id: UUID,
     source_graph_id: UUID,
@@ -38,11 +35,11 @@ async def _definition_for_module(
     if revision is None:
         return None
     try:
-        return await catalog.get_definition(
+        return await service.resolve_definition(
             GraphModuleReference(graph_id=source_graph_id, revision=revision),
             workspace_id=workspace_id,
         )
-    except (NotFoundError, GraphModuleCatalogError):
+    except (NotFoundError, GraphModuleDefinitionError):
         return None
 
 
@@ -50,15 +47,13 @@ async def _definition_for_module(
 async def list_modules(
     service: ModuleLibraryDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
-    request: Request,
 ) -> ModuleListResponse:
-    catalog = get_resources(request.app).graph_modules
     modules = await service.list_library(access.workspace_id)
     responses: list[ModuleResponse] = []
     for module in modules:
         releases = await service.list_releases(access.workspace_id, module.id)
         definition = await _definition_for_module(
-            catalog,
+            service,
             workspace_id=access.workspace_id,
             source_graph_id=module.source_graph_id,
             revision=module.current_library_release,
@@ -78,16 +73,14 @@ async def get_module(
     module_id: UUID,
     service: ModuleLibraryDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
-    request: Request,
 ) -> ModuleResponse:
-    catalog = get_resources(request.app).graph_modules
     try:
         module = await service.get(access.workspace_id, module_id)
         releases = await service.list_releases(access.workspace_id, module_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     definition = await _definition_for_module(
-        catalog,
+        service,
         workspace_id=access.workspace_id,
         source_graph_id=module.source_graph_id,
         revision=module.current_library_release,
@@ -135,9 +128,7 @@ async def deprecate_module(
     module_id: UUID,
     service: ModuleLibraryDependency,
     access: require_workspace_capability(WorkspaceCapability.MANAGE_MODULE_LIBRARY),
-    request: Request,
 ) -> ModuleResponse:
-    catalog = get_resources(request.app).graph_modules
     try:
         module = await service.deprecate(
             actor=access.actor,
@@ -150,7 +141,7 @@ async def deprecate_module(
     except ModuleLibraryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     definition = await _definition_for_module(
-        catalog,
+        service,
         workspace_id=access.workspace_id,
         source_graph_id=module.source_graph_id,
         revision=module.current_library_release,

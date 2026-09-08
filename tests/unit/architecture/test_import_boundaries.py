@@ -62,7 +62,6 @@ API_ROUTE_AREAS = (
 )
 API_SERVICE_AREAS = (
     "artifacts",
-    "catalog",
     "executions",
     "node_secrets",
     "uploads",

@@ -20,7 +20,6 @@ from grafy_api.plugins.runtime.admission import ReleaseExecutionAdmission
 from grafy_api.settings import Settings
 from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.v1.routes.auth.services import AuthService
-from grafy_api.v1.routes.catalog.services import GraphModuleCatalog
 from grafy_api.v1.routes.collaboration.hub import GraphRoomHub
 from grafy_api.execution.admission import (
     ExecutionAdmissionDiagnostics,
@@ -71,7 +70,6 @@ class AppResources:
     database: Database
     plugin_registry: PluginRegistry
     uploads: ImageUploadService
-    graph_modules: GraphModuleCatalog
     plugin_releases: PluginReleaseService | None
     module_library: ModuleLibraryService
     templates: TemplateService

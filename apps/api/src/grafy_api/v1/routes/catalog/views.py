@@ -9,11 +9,12 @@ from grafy_api.app_state import get_resources
 from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
 
 from .dependencies import (
-    GraphModuleCatalogDependency,
     GraphModuleExecutorDependency,
     PluginReleaseServiceDependency,
     PluginRegistryDependency,
 )
+from grafy_api.v1.routes.modules.dependencies import ModuleLibraryDependency
+
 from .models import NodeRegistryResponse, PluginCatalogReleaseState
 
 
@@ -24,13 +25,13 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workbench"])
 async def list_nodes(
     request: Request,
     registry: PluginRegistryDependency,
-    modules: GraphModuleCatalogDependency,
+    modules: ModuleLibraryDependency,
     plugin_releases: PluginReleaseServiceDependency,
     module_executor: GraphModuleExecutorDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
 ) -> NodeRegistryResponse:
     resources = get_resources(request.app)
-    module_listing = await modules.list(access.workspace_id)
+    module_listing = await modules.catalog_definitions(access.workspace_id)
     system_plugin_releases = (
         [] if plugin_releases is None else await plugin_releases.list_current_system()
     )

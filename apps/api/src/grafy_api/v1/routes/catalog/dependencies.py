@@ -8,8 +8,6 @@ from grafy_core.ports.modules import GraphModuleExecutorPort
 
 from grafy_api.app_state import get_resources
 
-from .services import GraphModuleCatalog
-
 
 def plugin_registry(request: Request) -> PluginRegistry:
     return get_resources(request.app).plugin_registry
@@ -18,16 +16,6 @@ def plugin_registry(request: Request) -> PluginRegistry:
 PluginRegistryDependency = Annotated[
     PluginRegistry,
     Depends(plugin_registry),
-]
-
-
-def graph_module_catalog(request: Request) -> GraphModuleCatalog:
-    return get_resources(request.app).graph_modules
-
-
-GraphModuleCatalogDependency = Annotated[
-    GraphModuleCatalog,
-    Depends(graph_module_catalog),
 ]
 
 
@@ -52,11 +40,9 @@ GraphModuleExecutorDependency = Annotated[
 
 
 __all__ = [
-    "GraphModuleCatalogDependency",
     "GraphModuleExecutorDependency",
     "PluginRegistryDependency",
     "PluginReleaseServiceDependency",
-    "graph_module_catalog",
     "graph_module_executor",
     "plugin_registry",
     "plugin_release_service",

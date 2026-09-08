@@ -38,7 +38,7 @@ same request and event classes for existing Python clients; internal execution
 code imports them directly from this package.
 
 Remaining dependencies are explicit. Artifact access still uses the artifact
-route service, module lookup still uses the catalog adapter, and the manager
+route service, module lookup uses `ModuleLibraryService` directly, and the manager
 still publishes through the collaboration hub. Their ownership and shared
 transport-model cleanup remain separate audit items.
 

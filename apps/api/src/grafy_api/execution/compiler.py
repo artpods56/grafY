@@ -72,10 +72,9 @@ from grafy_api.plugins.runtime.admission import (
     ReleaseExecutionRejection,
     ReleaseExecutionRoute,
 )
-from grafy_api.v1.routes.catalog.services import (
-    GraphModuleCatalog,
-    GraphModuleCatalogError,
-)
+from grafy_core.application.modules import ModuleLibraryService
+from grafy_core.domain.errors import NotFoundError
+from grafy_core.domain.modules import GraphModuleDefinitionError
 
 from grafy_api.execution.requests import (
     PinnedOutputRequest,
@@ -138,7 +137,7 @@ class GraphCompiler:
         *,
         plugin_registry: PluginRegistry,
         plugin_context: PluginRuntimeContext,
-        module_catalog: GraphModuleCatalog,
+        module_library: ModuleLibraryService | None,
         canonical_artifact_conversions: CanonicalArtifactConversionMap,
         plugin_release_lookup: PluginReleaseLookup | None = None,
         plugin_invoker: PluginInvoker | None = None,
@@ -147,7 +146,7 @@ class GraphCompiler:
     ) -> None:
         self._plugin_registry = plugin_registry
         self._plugin_context = plugin_context
-        self._module_catalog = module_catalog
+        self._module_library = module_library
         self._plugin_release_lookup = plugin_release_lookup
         self._plugin_invoker = plugin_invoker
         self._release_admission = release_admission
@@ -389,13 +388,25 @@ class GraphCompiler:
                 f"Node {request.id!r} is a module and cannot carry a Plugin release pin"
             )
         if module_reference is not None:
+            if self._module_library is None:
+                raise GraphExecutionError(
+                    "Saved graph modules are not configured for this workbench"
+                )
             try:
-                definition = await self._module_catalog.get_definition(
+                definition = await self._module_library.resolve_definition(
                     module_reference,
                     workspace_id=workspace_id,
                 )
-            except GraphModuleCatalogError as exc:
-                raise GraphExecutionError(str(exc)) from exc
+            except NotFoundError as exc:
+                raise NotFoundError(
+                    "Saved graph module",
+                    f"{module_reference.graph_id}@{module_reference.revision}",
+                ) from exc
+            except GraphModuleDefinitionError as exc:
+                raise GraphExecutionError(
+                    f"Saved graph {module_reference.graph_id} revision "
+                    f"{module_reference.revision} is not a valid module: {exc}"
+                ) from exc
             return (
                 GraphModuleNode(definition, module_executor),
                 None,

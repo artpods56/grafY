@@ -310,7 +310,7 @@ flowchart LR
     Runtime --> Persister["OutputPersister\n(writers)"]
     Runtime --> Cache["PersistentInvocationCache"]
     NodeExec --> Secrets["NodeSecretResolverPort"]
-    Compiler --> Catalog["GraphModuleCatalog\nmodule-library catalog"]
+    Compiler --> Catalog["ModuleLibraryService\ncanonical module resolution"]
     Catalog --> Registry["PluginRegistry"]
     Coordinator --> History["ExecutionHistoryService"]
     Engine --> Manager["RunExecutionManager\ninterrupt / lifecycle"]

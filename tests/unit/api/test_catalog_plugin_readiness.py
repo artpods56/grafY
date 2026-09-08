@@ -60,7 +60,6 @@ from grafy_api.v1.routes.catalog.models import (
     PluginSpecResponse,
     plugin_release_readiness,
 )
-from grafy_api.v1.routes.catalog.services import GraphModuleCatalogListing
 
 
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000661")
@@ -483,7 +482,7 @@ def test_system_release_presents_published_plugin_nodes_with_an_exact_pin() -> N
 
     response = NodeRegistryResponse.from_registry(
         registry,
-        GraphModuleCatalogListing(entries=[], unavailable=[]),
+        [],
         UnusedModuleExecutor(),
         [release],
         workspace_id=WORKSPACE_ID,
@@ -528,7 +527,7 @@ def test_system_release_rejects_a_different_host_node_contract() -> None:
     with pytest.raises(ValueError, match="reserved builtin families"):
         NodeRegistryResponse.from_registry(
             registry,
-            GraphModuleCatalogListing(entries=[], unavailable=[]),
+            [],
             UnusedModuleExecutor(),
             [_system_release(HOST_NOTES, catalog=changed_catalog)],
             workspace_id=WORKSPACE_ID,
@@ -541,7 +540,7 @@ def test_builtin_registry_families_appear_in_catalog_without_releases() -> None:
 
     response = NodeRegistryResponse.from_registry(
         registry,
-        GraphModuleCatalogListing(entries=[], unavailable=[]),
+        [],
         UnusedModuleExecutor(),
         [],
         workspace_id=WORKSPACE_ID,
@@ -561,7 +560,7 @@ def test_catalog_keeps_withdrawn_release_visible_disabled_and_exactly_pinned() -
 
     response = NodeRegistryResponse.from_registry(
         PluginRegistry(),
-        GraphModuleCatalogListing(entries=[], unavailable=[]),
+        [],
         UnusedModuleExecutor(),
         [release],
         workspace_id=WORKSPACE_ID,
@@ -594,7 +593,7 @@ def test_builtin_catalog_exposes_host_artifact_and_conversion_contracts() -> Non
 
     response = NodeRegistryResponse.from_registry(
         registry,
-        GraphModuleCatalogListing(entries=[], unavailable=[]),
+        [],
         UnusedModuleExecutor(),
         [],
         workspace_id=WORKSPACE_ID,
@@ -625,7 +624,7 @@ def test_system_release_accepts_exact_installed_foreign_artifact_dependency() ->
 
     response = NodeRegistryResponse.from_registry(
         registry,
-        GraphModuleCatalogListing(entries=[], unavailable=[]),
+        [],
         UnusedModuleExecutor(),
         [release],
         workspace_id=WORKSPACE_ID,
@@ -648,7 +647,7 @@ def test_plugin_dependency_on_host_artifact_keeps_expanded_host_contract() -> No
 
     response = NodeRegistryResponse.from_registry(
         registry,
-        GraphModuleCatalogListing(entries=[], unavailable=[]),
+        [],
         UnusedModuleExecutor(),
         [_release(input_type="json.schema", output_type="json.schema")],
         workspace_id=WORKSPACE_ID,
@@ -684,7 +683,7 @@ def test_system_release_rejects_same_key_with_different_host_artifact_contract()
     with pytest.raises(ValueError, match="conflicts with the host catalog contract"):
         NodeRegistryResponse.from_registry(
             registry,
-            GraphModuleCatalogListing(entries=[], unavailable=[]),
+            [],
             UnusedModuleExecutor(),
             [_system_release(HOST_NOTES, catalog=changed_catalog)],
             workspace_id=WORKSPACE_ID,
@@ -698,7 +697,7 @@ def test_builtin_catalog_entries_do_not_use_plugin_releases() -> None:
 
     response = NodeRegistryResponse.from_registry(
         registry,
-        GraphModuleCatalogListing(entries=[], unavailable=[]),
+        [],
         UnusedModuleExecutor(),
         [],
         workspace_id=WORKSPACE_ID,
@@ -722,7 +721,7 @@ def test_published_plugin_cannot_override_a_reserved_builtin_operator() -> None:
     with pytest.raises(ValueError, match="reserved builtin families"):
         NodeRegistryResponse.from_registry(
             registry,
-            GraphModuleCatalogListing(entries=[], unavailable=[]),
+            [],
             UnusedModuleExecutor(),
             [_system_release(TEXT)],
             workspace_id=WORKSPACE_ID,
@@ -734,7 +733,7 @@ def test_module_provider_is_a_separate_entry_kind_without_plugin_scope() -> None
     registry.register_module_boundaries(MODULE_BOUNDARY_REGISTRATIONS)
     response = NodeRegistryResponse.from_registry(
         registry,
-        GraphModuleCatalogListing(entries=[], unavailable=[]),
+        [],
         UnusedModuleExecutor(),
         [],
         workspace_id=WORKSPACE_ID,
@@ -767,7 +766,7 @@ def test_catalog_rejects_a_foreign_workspace_release() -> None:
     with pytest.raises(ValueError, match="foreign releases.*notes@1"):
         NodeRegistryResponse.from_registry(
             PluginRegistry(),
-            GraphModuleCatalogListing(entries=[], unavailable=[]),
+            [],
             UnusedModuleExecutor(),
             [_release(workspace_id=OTHER_WORKSPACE_ID)],
             workspace_id=WORKSPACE_ID,
@@ -784,7 +783,7 @@ def test_catalog_rejects_a_system_workspace_slug_collision() -> None:
     ):
         NodeRegistryResponse.from_registry(
             PluginRegistry(),
-            GraphModuleCatalogListing(entries=[], unavailable=[]),
+            [],
             UnusedModuleExecutor(),
             [system_release, workspace_release],
             workspace_id=WORKSPACE_ID,

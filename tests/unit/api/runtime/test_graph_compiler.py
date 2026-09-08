@@ -5,7 +5,6 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey, InMemoryUnitOfWork
 from grafy_core.artifact_contracts import INTEGER_VALUE, TEXT_VALUE
 from grafy_core.canonical_conversions import (
@@ -33,7 +32,7 @@ from tests.support.system_plugins import (
     build_explicit_plugin_registry,
     build_selected_system_plugin_deployment,
 )
-from grafy_api.v1.routes.catalog.services import GraphModuleCatalog
+from grafy_core.application.modules import ModuleLibraryService
 from grafy_api.plugins.runtime.admission import ReleaseExecutionAdmission
 from grafy_api.execution.compiler import (
     GraphCompiler,
@@ -96,11 +95,10 @@ def _compiler(
         uow=unit_of_work,
         bucket="test-artifacts",
     )
-    saved_graphs = SavedGraphService(_unused_saved_graph_uow, resolved_registry)
     return GraphCompiler(
         plugin_registry=resolved_registry,
         plugin_context=plugin_context,
-        module_catalog=GraphModuleCatalog(saved_graphs, resolved_registry),
+        module_library=ModuleLibraryService(_unused_saved_graph_uow, resolved_registry),
         canonical_artifact_conversions=canonical_artifact_conversions,
         plugin_release_lookup=SYSTEM_DEPLOYMENT.release_lookup,
         release_admission=ReleaseExecutionAdmission(
