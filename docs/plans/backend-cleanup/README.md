@@ -158,3 +158,25 @@ Append completed batches here with changed owners, commit, exact test scope, out
 - Added a rollback regression proving a failed initial mapping leaves no graph, revision, head, receipt, mapping, or success audit.
 - Validation: 633 tests passed across application, API, client, templates, saved graphs, collaboration, workspace authorization, catalog, execution routes, and the module-import checkpoint regression. Focused Ruff passed; Pyright passed for all four changed application modules.
 - Remaining finding 2 work: migrate ordinary fixtures away from redundant SavedGraphService mutators and retire those mutators plus the historical head-initialization workaround. This batch does not claim that retirement is complete.
+
+### Remaining graph lifecycle migration inventory, after 4f15f4f
+
+A bounded caller review found no production callers of `SavedGraphService.create`,
+`replace`, `delete`, or `CollaborationService.initialize_head_for_existing_graph`.
+Keep `SavedGraphService.apply_replacement_in_unit_of_work`: collaboration uses it
+for checkpoint/replacement, secret reconciliation, and materialization carry-forward.
+Also retain `verify_every_graph_has_head`, which checks startup integrity.
+
+Next migration scope:
+
+1. Move legacy mutator behavior coverage in `tests/unit/application/test_saved_graphs.py`
+   to collaboration operations, retaining read-side and revision tests.
+2. Migrate ordinary setup in node-secret integration tests, execution-history tests,
+   and materialized-output tests to checkpointed graph staging in their test transaction.
+3. Replace saved-graph integration calls to the head initializer with canonical head
+   reads. Those graphs were already created through HTTP.
+4. Replace runtime initializer tests with explicit historical-state migration/backfill
+   coverage and fail-closed startup verification. Do not preserve the production
+   workaround just to construct test state.
+5. Remove the obsolete methods after rechecking all references and preserving the
+   existing revision-conflict, secret, history, and materialization behavioral coverage.
