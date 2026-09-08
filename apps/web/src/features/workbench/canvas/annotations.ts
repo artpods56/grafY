@@ -1,3 +1,4 @@
+import { createUuid } from "@/features/workbench/model/uuid";
 import type { Node } from "@xyflow/react";
 
 export type AnnotationKind = "text" | "rectangle" | "ellipse";
@@ -170,7 +171,7 @@ export function serializeAnnotations(
 export function createAnnotationNode(
   kind: AnnotationKind,
   position: { x: number; y: number },
-  id = `annotation-${crypto.randomUUID()}`,
+  id = `annotation-${createUuid()}`,
 ): AnnotationNode {
   return {
     id,

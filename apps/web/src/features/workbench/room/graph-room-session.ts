@@ -1,3 +1,4 @@
+import { createUuid } from "@/features/workbench/model/uuid";
 import type { CollaborativeHead, WorkspaceCapability } from "@/lib/api";
 
 import { graphRoomWebSocketUrl } from "./graph-room-url";
@@ -159,7 +160,7 @@ export class GraphRoomSession {
       options.webSocketFactory ?? ((url) => new WebSocket(url));
     this.reconnectDelayMs = options.reconnectDelayMs ?? 750;
     this.maxReconnectAttempts = options.maxReconnectAttempts ?? 5;
-    this.createCommandId = options.createCommandId ?? (() => crypto.randomUUID());
+    this.createCommandId = options.createCommandId ?? createUuid;
     this.listeners = {
       onStatusChange: options.onStatusChange,
       onReady: options.onReady,

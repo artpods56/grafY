@@ -4,6 +4,7 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Plus, Trash2 } from "lucide-react";
 
+import { createUuid } from "@/features/workbench/model/uuid";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type { WorkflowNodeData } from "../types";
 
@@ -701,7 +702,7 @@ export function VectorLayerStyleBody({
                 categories: [
                   ...style.categories,
                   {
-                    id: `category_${number}_${crypto.randomUUID().slice(0, 8)}`,
+                    id: `category_${number}_${createUuid().slice(0, 8)}`,
                     title: `Category ${number}`,
                     values: [number],
                     point: {

@@ -83,7 +83,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
   Features like `useAuthSession` must be imported from their full file path
   unless a barrel exists.
 
-## Browser storage
+## Browser APIs and storage
+
+- Workbench IDs must support plain HTTP LAN origins used for mobile testing.
+  Use `createUuid` from `features/workbench/model/uuid.ts`; it uses
+  `crypto.getRandomValues` when the secure-context-only `crypto.randomUUID`
+  API is unavailable.
 
 - Web Storage is for device-local presentation preferences only. Current keys
   cover theme, workspace-rail collapse, and canvas-grid settings.

@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { NodeSpec, RunNodeResult } from "@/lib/api";
 import {
   collectContributionLabel,
+  createWorkflowInputPlug,
   initialInputPlugs,
   reconcileSchemaFieldInputPlugs,
   reorderInputPlug,
@@ -14,6 +15,23 @@ import {
 } from "./schema-builder";
 
 describe("ordered input plugs", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("creates distinct plug IDs without the secure-context randomUUID API", () => {
+    vi.stubGlobal("crypto", {
+      getRandomValues: crypto.getRandomValues.bind(crypto),
+    });
+
+    const first = createWorkflowInputPlug("items");
+    const second = createWorkflowInputPlug("items");
+
+    expect(first.portName).toBe("items");
+    expect(first.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(second.id).not.toBe(first.id);
+  });
+
   it("reorders one port by stable id without disturbing another port", () => {
     const plugs: WorkflowInputPlug[] = [
       { id: "a", portName: "items" },
