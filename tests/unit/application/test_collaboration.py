@@ -1479,3 +1479,28 @@ async def test_collaboration_rechecks_identity_before_mutating_and_audits_denial
     failure = factory.security_audit.events[-1]
     assert failure.outcome == SecurityAuditOutcome.FAILURE
     assert failure.error_code == ("disabled_user" if disabled_user else "not_found")
+
+
+async def test_graph_creation_rolls_back_when_initial_checkpoint_cannot_be_staged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    factory = FakeFactory()
+    service = _service(factory)
+
+    async def reject_mapping(mapping: GraphCheckpointMapping) -> None:
+        raise ConcurrentWriteError(f"Cannot stage initial checkpoint for {mapping.graph_id}")
+
+    monkeypatch.setattr(factory.collaboration, "add_checkpoint_mapping", reject_mapping)
+    with pytest.raises(ConcurrentWriteError, match="Cannot stage initial checkpoint"):
+        await service.bootstrap_graph(
+            actor=ActorContext(user_id=USER_ID),
+            workspace_id=WORKSPACE_ID,
+            command_id=uuid4(),
+            command=ReplaceDocumentCommand(name="Rolled back", document=SavedGraphDocument()),
+        )
+    assert factory.graphs.graphs == {}
+    assert factory.graphs.revisions == {}
+    assert factory.collaboration.heads == {}
+    assert factory.collaboration.mappings == {}
+    assert factory.collaboration.receipts == {}
+    assert factory.security_audit.events == []

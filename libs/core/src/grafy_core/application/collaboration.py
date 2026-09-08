@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 import hmac
 
+from grafy_core.application.graph_creation import stage_checkpointed_graph
 from grafy_core.application.identity import authorize_workspace
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.collaboration import (
@@ -213,15 +214,12 @@ class CollaborationService:
                 document=next_document,
                 revision=1,
             )
-            head = CollaborativeGraphHead(
-                workspace_id=workspace_id,
-                graph_id=resolved_graph_id,
+            head = await stage_checkpointed_graph(
+                graph,
+                graphs=unit_of_work.graphs,
+                collaboration=unit_of_work.collaboration,
                 room_epoch=room_epoch,
                 collaboration_sequence=1,
-                checkpoint_sequence=1,
-                checkpoint_revision=1,
-                name=next_name,
-                document=next_document,
             )
             receipt = GraphCommandReceipt(
                 workspace_id=workspace_id,
@@ -235,17 +233,6 @@ class CollaborationService:
                 accepted_sequence=1,
                 outcome=CommandReceiptOutcome.ACCEPTED,
             )
-            mapping = GraphCheckpointMapping(
-                workspace_id=workspace_id,
-                graph_id=resolved_graph_id,
-                room_epoch=room_epoch,
-                collaboration_sequence=1,
-                saved_revision=1,
-            )
-            await unit_of_work.graphs.add(graph)
-            await unit_of_work.graphs.add_revision(graph.snapshot())
-            await unit_of_work.collaboration.add_head(head)
-            await unit_of_work.collaboration.add_checkpoint_mapping(mapping)
             await unit_of_work.collaboration.add_receipt(receipt)
             await unit_of_work.security_audit.add(
                 SecurityAuditEvent(
@@ -740,15 +727,12 @@ class CollaborationService:
                 document=copied_document,
                 revision=1,
             )
-            head = CollaborativeGraphHead(
-                workspace_id=target_workspace_id,
-                graph_id=resolved_graph_id,
+            head = await stage_checkpointed_graph(
+                graph,
+                graphs=unit_of_work.graphs,
+                collaboration=unit_of_work.collaboration,
                 room_epoch=room_epoch,
                 collaboration_sequence=1,
-                checkpoint_sequence=1,
-                checkpoint_revision=1,
-                name=copied_name,
-                document=copied_document,
             )
             receipt = GraphCommandReceipt(
                 workspace_id=target_workspace_id,
@@ -762,17 +746,6 @@ class CollaborationService:
                 accepted_sequence=1,
                 outcome=CommandReceiptOutcome.ACCEPTED,
             )
-            mapping = GraphCheckpointMapping(
-                workspace_id=target_workspace_id,
-                graph_id=resolved_graph_id,
-                room_epoch=room_epoch,
-                collaboration_sequence=1,
-                saved_revision=1,
-            )
-            await unit_of_work.graphs.add(graph)
-            await unit_of_work.graphs.add_revision(graph.snapshot())
-            await unit_of_work.collaboration.add_head(head)
-            await unit_of_work.collaboration.add_checkpoint_mapping(mapping)
             await unit_of_work.collaboration.add_receipt(receipt)
             await unit_of_work.security_audit.add(
                 SecurityAuditEvent(

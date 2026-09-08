@@ -4,8 +4,8 @@ from collections.abc import Callable
 from typing import Protocol
 from uuid import UUID, uuid4
 
+from grafy_core.application.graph_creation import stage_checkpointed_graph
 from grafy_core.domain.collaboration import (
-    CollaborativeGraphHead,
     sanitize_document_for_cross_workspace_copy,
 )
 from grafy_core.domain.errors import (
@@ -301,16 +301,10 @@ class ModuleLibraryService:
                 document=copied_document,
                 id=uuid4(),
             )
-            await unit_of_work.graphs.add(graph)
-            await unit_of_work.graphs.add_revision(graph.snapshot())
-            await unit_of_work.collaboration.add_head(
-                CollaborativeGraphHead.for_existing_saved_graph(
-                    workspace_id=destination_workspace_id,
-                    graph_id=graph.id,
-                    name=graph.name,
-                    document=graph.document,
-                    checkpoint_revision=graph.revision,
-                )
+            await stage_checkpointed_graph(
+                graph,
+                graphs=unit_of_work.graphs,
+                collaboration=unit_of_work.collaboration,
             )
 
             try:

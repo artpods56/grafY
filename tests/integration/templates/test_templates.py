@@ -12,6 +12,7 @@ from grafy_api.settings import Settings
 from grafy_api.app_state import get_resources
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 from grafy_api.v1.routes.saved_graphs.models import (
+    CheckpointGraphRequest,
     GraphFolderWriteRequest,
     UpdateSavedGraphRequest,
 )
@@ -509,3 +510,31 @@ def test_template_destination_folder_must_exist_in_destination_workspace(
     assert response.json()["detail"] == "Not found"
     assert response.json()["code"] == "resource.not_found"
     assert "00000000-0000-0000-0000-000000000999" not in response.text
+
+
+def test_instantiated_template_is_already_checkpointed(
+    template_client: tuple[TestClient, ActorSwitcher],
+) -> None:
+    client, actor = template_client
+    actor.as_user(OWNER_ID)
+    api = GrafyApi(client)
+    template = _create_template(client)
+    instantiated = api.workspace(SOURCE_WORKSPACE_ID).templates.instantiate_ok(
+        template.id,
+        InstantiateTemplateRequest(
+            destination_workspace_id=DESTINATION_WORKSPACE_ID,
+            name="Checkpointed template",
+        ),
+    )
+    graphs = api.workspace(DESTINATION_WORKSPACE_ID).graphs
+    head = graphs.get_head_ok(instantiated.graph_id)
+    result = graphs.checkpoint_ok(
+        instantiated.graph_id,
+        CheckpointGraphRequest(
+            expected_room_epoch=head.room_epoch,
+            expected_sequence=head.collaboration_sequence,
+        ),
+    )
+    assert result.saved_revision == 1
+    assert graphs.get_ok(instantiated.graph_id).revision == 1
+    assert result.head.collaboration_sequence == head.collaboration_sequence

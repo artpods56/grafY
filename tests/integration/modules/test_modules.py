@@ -43,6 +43,7 @@ from tests.support.system_plugins import (
     build_selected_system_plugin_deployment,
     pin_selected_system_nodes,
 )
+from grafy_api.v1.routes.auth.models import WorkspaceCreateRequest
 from grafy_api.settings import Settings
 from grafy_api.v1.models import (
     ArtifactTypeBindingModel,
@@ -54,10 +55,14 @@ from grafy_api.v1.routes.executions.models import (
     RunRequest,
 )
 from grafy_api.v1.routes.modules.dependencies import module_library_service
-from grafy_api.v1.routes.modules.models import PublishModuleReleaseRequest
+from grafy_api.v1.routes.modules.models import (
+    ImportModuleReleaseRequest,
+    PublishModuleReleaseRequest,
+)
 from grafy_api.v1.routes.node_secrets.dependencies import node_secret_service
 from grafy_api.v1.routes.saved_graphs.dependencies import saved_graph_service
 from grafy_api.v1.routes.saved_graphs.models import (
+    CheckpointGraphRequest,
     CreateSavedGraphRequest,
     GraphPointModel,
     SavedGraphEdgeModel,
@@ -1692,3 +1697,36 @@ def test_module_library_resolve_definition_is_the_core_contract(
                 workspace_id=UUID(WORKSPACE),
             )
         )
+
+
+def test_imported_module_is_already_checkpointed(module_client: TestClient) -> None:
+    workspace = GrafyApi(module_client).workspace(UUID(WORKSPACE))
+    source = workspace.graphs.create_ok(
+        CreateSavedGraphRequest.model_validate(_text_module_payload())
+    )
+    module = workspace.modules.publish_ok(
+        PublishModuleReleaseRequest(source_graph_id=source.id)
+    )
+    api = GrafyApi(module_client)
+    destination = api.workspaces.create_ok(
+        WorkspaceCreateRequest(slug="module-import-target", name="Import target")
+    )
+    target = api.workspace(destination.id)
+    imported = target.modules.import_release_ok(
+        ImportModuleReleaseRequest(
+            source_workspace_id=UUID(WORKSPACE),
+            source_module_id=module.id,
+            name="Imported module",
+        )
+    )
+    head = target.graphs.get_head_ok(imported.graph_id)
+    result = target.graphs.checkpoint_ok(
+        imported.graph_id,
+        CheckpointGraphRequest(
+            expected_room_epoch=head.room_epoch,
+            expected_sequence=head.collaboration_sequence,
+        ),
+    )
+    assert result.saved_revision == 1
+    assert target.graphs.get_ok(imported.graph_id).revision == 1
+    assert result.head.collaboration_sequence == head.collaboration_sequence

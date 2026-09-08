@@ -26,8 +26,8 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 ## 2. Checkpointed graph creation
 
-- [ ] Share graph/revision/head/initial-checkpoint staging across collaboration bootstrap, template instantiation, and module import within caller transactions.
-- [ ] Prove immediate checkpoint after template/module creation creates no redundant revision.
+- [x] Share graph/revision/head/initial-checkpoint staging across collaboration bootstrap, template instantiation, and module import within caller transactions.
+- [x] Prove immediate checkpoint after template/module creation creates no redundant revision.
 - [ ] Migrate ordinary fixtures off redundant SavedGraphService create/replace/delete paths.
 - [ ] Remove redundant mutators and head-initialization workaround; preserve historical-state migration fixtures.
 
@@ -139,7 +139,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 Append completed batches here with changed owners, commit, exact test scope, outcome, and remaining gaps. Baseline failures must not be represented as passing checks.
 
 
-### Workspace authorization consolidation
+### Workspace authorization consolidation, f44925c
 
 - Replaced the collaboration policy copy and removed SavedGraphService's private policy implementation. Both call canonical transaction-local authorization.
 - Graph copies authorize Workspace requirements in sorted ID order while retaining collaboration rejection audits.
@@ -148,3 +148,13 @@ Append completed batches here with changed owners, commit, exact test scope, out
 - Validation: 109 application and graph/auth/collaboration integration tests passed; 516 API/client/catalog/execution-route tests passed. Ruff passed for all four changed Python files. Pyright passed for both changed application modules and the HTTP regression module.
 - These checks do not cover the separate credential capability-ceiling and live-session revocation concerns from other reviews. They prove this audit's duplicated-policy and Workspace-binding finding.
 - Next: checkpointed graph staging for template instantiation and module import, followed by retirement of redundant graph mutation paths.
+
+
+### Shared checkpointed graph creation
+
+- Added application-owned `graph_creation.stage_checkpointed_graph`, used by collaboration bootstrap, exact-head copy, template instantiation, and module import. It stages graph, revision, head, and initial mapping through repositories supplied by the caller; it never commits.
+- Preserved initial collaboration sequence 1 for bootstrap/copy and 0 for template/import. Authorization, receipts, folder assignment, module publication, sanitization, and commits remain with each workflow.
+- Both HTTP regressions failed on the original source because an immediate checkpoint produced revision 2. They now verify revision 1 after checkpointing new template/module graphs.
+- Added a rollback regression proving a failed initial mapping leaves no graph, revision, head, receipt, mapping, or success audit.
+- Validation: 633 tests passed across application, API, client, templates, saved graphs, collaboration, workspace authorization, catalog, execution routes, and the module-import checkpoint regression. Focused Ruff passed; Pyright passed for all four changed application modules.
+- Remaining finding 2 work: migrate ordinary fixtures away from redundant SavedGraphService mutators and retire those mutators plus the historical head-initialization workaround. This batch does not claim that retirement is complete.

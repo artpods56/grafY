@@ -2,9 +2,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import UUID
 
+from grafy_core.application.graph_creation import stage_checkpointed_graph
 from grafy_core.application.identity import authorize_workspace, authorize_workspaces
 from grafy_core.domain.collaboration import (
-    CollaborativeGraphHead,
     sanitize_document_for_cross_workspace_copy,
 )
 from grafy_core.domain.errors import CollaborationCommandRejectedError, NotFoundError
@@ -202,17 +202,12 @@ class TemplateService:
                 name=name,
                 document=independent_document,
             )
-            await unit_of_work.graphs.add(graph)
-            await unit_of_work.graphs.add_revision(graph.snapshot())
-            await unit_of_work.collaboration.add_head(
-                CollaborativeGraphHead.for_existing_saved_graph(
-                    workspace_id=destination_workspace_id,
-                    graph_id=graph.id,
-                    name=graph.name,
-                    document=graph.document,
-                    checkpoint_revision=graph.revision,
-                )
+            await stage_checkpointed_graph(
+                graph,
+                graphs=unit_of_work.graphs,
+                collaboration=unit_of_work.collaboration,
             )
+
             if folder_id is not None:
                 await unit_of_work.graphs.save_organization(
                     GraphOrganization(
