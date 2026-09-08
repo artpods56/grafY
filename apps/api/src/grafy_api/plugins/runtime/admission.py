@@ -10,25 +10,22 @@ from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.domain.plugin_releases import (
     PluginArtifactTypeContract,
-    PluginExecutionPolicy,
     PluginNodeContract,
-    PluginReleaseScope,
     plugin_profile_digest,
     plugin_protocol_digest,
 )
 from grafy_core.domain.plugin_revocations import PluginReleaseRevocation
 from grafy_core.domain.plugin_selection import (
-    PluginFamilyLifecycle,
     PluginReleaseSelection,
 )
 from grafy_core.table_contracts import TABLE_DATA
 
 from grafy_api.system_host_bindings import SystemHostPluginBinding
-from grafy_api.plugin_egress import (
+from grafy_api.plugins.runtime.egress import (
     PluginEgressBrokerPolicy,
     PluginEgressProtocol,
 )
-from grafy_api.network_policy import (
+from grafy_api.plugins.runtime.network_policy import (
     NetworkAccessPlane,
     NetworkAccessProfile,
     NetworkPolicy,

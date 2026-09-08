@@ -3,12 +3,12 @@ from pathlib import Path
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from grafy_api.network_policy import (
+from grafy_api.plugins.runtime.network_policy import (
     NetworkAccessPlane,
     NetworkProfileMode,
 )
 from grafy_api.settings import Settings
-from grafy_api.plugin_egress import PluginEgressProtocol
+from grafy_api.plugins.runtime.egress import PluginEgressProtocol
 
 
 @pytest.fixture(autouse=True)

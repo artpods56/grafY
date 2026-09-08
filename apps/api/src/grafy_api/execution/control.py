@@ -6,7 +6,10 @@ from uuid import UUID
 
 from grafy_core.nodes import NodeExecutionContext, NodeProgressReporter
 
-from ..models import NodeExecutionEventStatus, RunExecutionStatus
+from grafy_api.execution.events import (
+    NodeExecutionEventStatus,
+    RunExecutionStatus,
+)
 
 
 class RunExecutionEventReporter(NodeProgressReporter, Protocol):

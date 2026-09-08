@@ -9,15 +9,17 @@ from pydantic import BaseModel, ValidationError
 
 
 from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
-from grafy_api.v1.routes.executions.models import (
+from grafy_api.execution.requests import (
     ArtifactConversionRequest,
     FieldProjectionRequest,
     PinnedOutputRequest,
     RunEdgeRequest,
-    RunPortOutputResponse,
     RunRequest,
-    RunResponse,
     RunNodeRequest as UnpinnedRunNodeRequest,
+)
+from grafy_api.v1.routes.executions.models import (
+    RunPortOutputResponse,
+    RunResponse,
 )
 from tests.support.system_plugins import (
     pin_selected_system_nodes,

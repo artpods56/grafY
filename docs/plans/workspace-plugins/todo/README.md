@@ -94,8 +94,8 @@ uv run ruff check \
   apps/api/src/grafy_api/system_cutover.py \
   apps/api/src/grafy_api/system_plugin_deployment.py \
   apps/api/src/grafy_api/system_plugin_loader.py \
-  apps/api/src/grafy_api/v1/routes/executions/runtime/coordinator.py \
-  apps/api/src/grafy_api/v1/routes/executions/runtime/models.py \
+  apps/api/src/grafy_api/execution/coordinator.py \
+  apps/api/src/grafy_api/execution/models.py \
   tests/unit/application/test_plugin_release_catalog.py \
   tests/unit/persistence/test_plugin_release_persistence.py \
   tests/unit/persistence/test_migrations.py \
@@ -113,8 +113,8 @@ uv run basedpyright \
   apps/api/src/grafy_api/system_cutover.py \
   apps/api/src/grafy_api/system_plugin_deployment.py \
   apps/api/src/grafy_api/system_plugin_loader.py \
-  apps/api/src/grafy_api/v1/routes/executions/runtime/coordinator.py \
-  apps/api/src/grafy_api/v1/routes/executions/runtime/models.py
+  apps/api/src/grafy_api/execution/coordinator.py \
+  apps/api/src/grafy_api/execution/models.py
 
 git diff --check
 ```

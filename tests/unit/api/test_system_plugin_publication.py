@@ -4,14 +4,12 @@ from pathlib import Path
 import pytest
 from typing_extensions import override
 
-from grafy_api.plugin_admission import (
-    isolated_release_admission,
-)
-from grafy_api.plugin_egress import (
+from grafy_api.plugins.runtime.admission import isolated_release_admission
+from grafy_api.plugins.runtime.egress import (
     PluginEgressBrokerPolicy,
     PluginEgressDestination,
 )
-from grafy_api.network_policy import legacy_network_policy
+from grafy_api.plugins.runtime.network_policy import legacy_network_policy
 from grafy_api.plugins.profiles import runtime_profile
 from grafy_api.plugins.publication.oci import PluginOciImageBuilder
 from grafy_api.plugins.publication.workflow import SystemPluginPublicationWorkflow

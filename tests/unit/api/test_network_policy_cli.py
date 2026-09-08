@@ -7,7 +7,10 @@ from types import SimpleNamespace
 import pytest
 
 from grafy_api import cli
-from grafy_api.network_policy import NetworkPolicy, NetworkPolicyError
+from grafy_api.plugins.runtime.network_policy import (
+    NetworkPolicy,
+    NetworkPolicyError,
+)
 
 
 def _settings_with(policy: NetworkPolicy, manifest: Path | None) -> SimpleNamespace:

@@ -31,7 +31,7 @@ from grafy_core.domain.plugin_revocations import (
 from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
-from grafy_api.plugin_admission import isolated_release_admission
+from grafy_api.plugins.runtime.admission import isolated_release_admission
 from grafy_api.cli_credentials import (
     CliCredentialError,
     CredentialDigest,
@@ -52,7 +52,7 @@ from grafy_api.plugins.publication.source import (
 )
 from grafy_api.plugins.profiles import runtime_profile
 from grafy_api.plugins.publication.oci import PluginOciImageBuilder
-from grafy_api.network_policy import load_network_policy_manifest
+from grafy_api.plugins.runtime.network_policy import load_network_policy_manifest
 from grafy_api.settings import get_settings
 from grafy_api.storage import configured_file_storage
 from grafy_api.system_cutover import (

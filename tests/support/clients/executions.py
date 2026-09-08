@@ -11,9 +11,9 @@ from grafy_api.v1.routes.executions.models import (
     GraphExecutionListResponse,
     GraphMaterializationsResponse,
     RunExecutionResponse,
-    RunRequest,
     RunResponse,
 )
+from grafy_api.execution.requests import RunRequest
 from grafy_core.domain.execution_history import GraphExecutionStatus
 
 from tests.support.clients._http import _expect, _parse, _request

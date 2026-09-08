@@ -49,7 +49,7 @@ from grafy_api.v1.models import (
     ArtifactTypeBindingModel,
     ArtifactTypeKeyResponse,
 )
-from grafy_api.v1.routes.executions.models import (
+from grafy_api.execution.requests import (
     RunEdgeRequest,
     RunNodeRequest,
     RunRequest,

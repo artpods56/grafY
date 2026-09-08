@@ -34,12 +34,14 @@ from grafy_api.v1.models import (
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 from grafy_api.v1.routes.executions.models import (
     GraphMaterializationsResponse,
+    RunPortOutputResponse,
+    RunResponse,
+)
+from grafy_api.execution.requests import (
     PinnedOutputRequest,
     RunEdgeRequest,
     RunNodeRequest as UnpinnedRunNodeRequest,
-    RunPortOutputResponse,
     RunRequest,
-    RunResponse,
 )
 from grafy_api.v1.routes.saved_graphs.models import (
     CreateSavedGraphRequest,

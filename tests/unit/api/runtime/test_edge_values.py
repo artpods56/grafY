@@ -35,7 +35,7 @@ from grafy_core.runtime.persistence import (
 from grafy_core.runtime.resolvers import Resolver, ResolverRegistry
 from grafy_storage import LocalFileObjectStore
 
-from grafy_api.v1.routes.executions.models import (
+from grafy_api.execution.requests import (
     ArtifactConversionRequest,
     FieldProjectionRequest,
     RunEdgeRequest,
@@ -43,9 +43,12 @@ from grafy_api.v1.routes.executions.models import (
     RunNodeRequest,
 )
 from grafy_api.v1.routes.artifacts.services import ArtifactService
-from grafy_api.v1.routes.executions.runtime.edge_values import EdgeValueResolver
-from grafy_api.v1.routes.executions.runtime.errors import GraphExecutionError
-from grafy_api.v1.routes.executions.runtime.models import CompiledEdge, CompiledNode
+from grafy_api.execution.edge_values import EdgeValueResolver
+from grafy_api.execution.errors import GraphExecutionError
+from grafy_api.execution.models import (
+    CompiledEdge,
+    CompiledNode,
+)
 
 
 SOURCE_RESPONSE = ArtifactTypeKey("test.edge_values.response", 1)

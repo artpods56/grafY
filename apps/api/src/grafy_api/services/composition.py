@@ -29,11 +29,11 @@ from grafy_core.runtime.persistence import (
 from grafy_core.runtime.resolvers import ResolverRegistry
 from grafy_storage import LocalFileObjectStore
 
-from grafy_api.plugin_admission import (
+from grafy_api.plugins.runtime.admission import (
     HOST_BASE_CAPABILITIES,
     ReleaseExecutionAdmission,
 )
-from grafy_api.network_policy import NetworkPolicy
+from grafy_api.plugins.runtime.network_policy import NetworkPolicy
 from grafy_api.system_host_bindings import (
     LoadedSystemPlugin,
     SystemHostPluginBinding,
@@ -42,32 +42,20 @@ from grafy_api.system_host_bindings import (
 from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.v1.routes.catalog.services import GraphModuleCatalog
 from grafy_api.v1.routes.collaboration.hub import GraphRoomHub
-from grafy_api.v1.routes.executions.runtime.compiler import GraphCompiler
-from grafy_api.v1.routes.executions.runtime.coordinator import (
-    GraphExecutionCoordinator,
-)
-from grafy_api.v1.routes.executions.runtime.edge_values import EdgeValueResolver
-from grafy_api.v1.routes.executions.runtime.invocation_cache import (
-    PersistentInvocationCache,
-)
-from grafy_api.v1.routes.executions.runtime.manager import RunExecutionManager
-from grafy_api.v1.routes.executions.runtime.node_execution import (
-    NodeExecutionService,
-)
-from grafy_api.v1.routes.executions.runtime.plugin_artifacts import (
-    ArtifactBundlePluginInvoker,
-)
-from grafy_api.v1.routes.executions.runtime.plugin_docker import DockerPluginRuntime
-from grafy_api.v1.routes.executions.runtime.admission import (
-    ExecutionAdmissionLimiter,
-)
-from grafy_api.v1.routes.executions.runtime.preflight import GraphRunPreflight
-from grafy_api.v1.routes.executions.runtime.run_graph import RunGraph
-from grafy_api.v1.routes.executions.services import (
-    ExecutionHistoryService,
-    MaterializationService,
-    RunResultPresenter,
-)
+from grafy_api.execution.compiler import GraphCompiler
+from grafy_api.execution.coordinator import GraphExecutionCoordinator
+from grafy_api.execution.edge_values import EdgeValueResolver
+from grafy_core.runtime.persistent_invocation_cache import PersistentInvocationCache
+from grafy_api.execution.manager import RunExecutionManager
+from grafy_api.execution.node_execution import NodeExecutionService
+from grafy_api.plugins.runtime.artifacts import ArtifactBundlePluginInvoker
+from grafy_api.plugins.runtime.docker import DockerPluginRuntime
+from grafy_api.execution.admission import ExecutionAdmissionLimiter
+from grafy_api.execution.preflight import GraphRunPreflight
+from grafy_api.execution.run_graph import RunGraph
+from grafy_api.execution.history import ExecutionHistoryService
+from grafy_api.execution.materializations import MaterializationService
+from grafy_api.v1.routes.executions.services import RunResultPresenter
 from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES
 from grafy_api.v1.routes.uploads.services import ImageUploadService
 

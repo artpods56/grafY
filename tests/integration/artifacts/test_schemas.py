@@ -3,12 +3,12 @@ from typing import cast
 
 from fastapi.testclient import TestClient
 
-from grafy_api.v1.routes.executions.models import (
+from grafy_api.execution.requests import (
     RunEdgeRequest,
     RunInputPlugRequest,
     RunRequest,
-    RunResponse,
 )
+from grafy_api.v1.routes.executions.models import RunResponse
 from tests.support.system_plugins import selected_system_run_node as RunNodeRequest
 
 from tests.support.clients import GrafyApi

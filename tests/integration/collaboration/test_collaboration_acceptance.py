@@ -18,7 +18,7 @@ from grafy_api.settings import Settings
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 from grafy_api.v1.routes.auth.models import WorkspaceInvitationCreateRequest
 from grafy_api.v1.routes.collaboration.views import websocket_browser_actor
-from grafy_api.v1.routes.executions.models import RunRequest
+from grafy_api.execution.requests import RunRequest
 from grafy_api.v1.routes.saved_graphs.models import CreateSavedGraphRequest
 from grafy_core.domain.identity import (
     User,

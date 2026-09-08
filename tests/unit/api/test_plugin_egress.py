@@ -4,7 +4,7 @@ import socket
 
 import pytest
 
-from grafy_api.plugin_egress import (
+from grafy_api.plugins.runtime.egress import (
     PluginEgressAddressScope,
     PluginEgressBrokerPolicy,
     PluginEgressBrokerPlan,
@@ -14,7 +14,7 @@ from grafy_api.plugin_egress import (
     resolve_public_destination,
     resolve_plugin_egress_destination,
 )
-from grafy_api.plugin_admission import (
+from grafy_api.plugins.runtime.admission import (
     PluginNetworkEgressPolicy,
     PluginPostgresqlEgressPolicy,
 )

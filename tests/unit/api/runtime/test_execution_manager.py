@@ -28,10 +28,12 @@ from grafy_core.nodes import (
 from grafy_core.artifact_contracts import INTEGER_VALUE
 from grafy_core.plugins import Plugin
 
-from grafy_api.v1.routes.executions.models import (
+from grafy_api.execution.events import (
     ExecutionStatusEvent,
     NodeProgressEvent,
     NodeStatusEvent,
+)
+from grafy_api.execution.requests import (
     RunEdgeRequest,
     RunNodeRequest,
     RunRequest,
@@ -41,20 +43,20 @@ from tests.support.system_plugins import (
     build_selected_system_plugin_deployment,
 )
 from grafy_api.services.composition import build_workbench_components
-from grafy_api.v1.routes.executions.runtime.control import RunExecutionControl
-from grafy_api.v1.routes.executions.runtime.admission import (
+from grafy_api.execution.control import RunExecutionControl
+from grafy_api.execution.admission import (
     ExecutionAdmissionLimiter,
     RunExecutionCapacityError,
     RunExecutionQueueFullError,
 )
-from grafy_api.v1.routes.executions.runtime.manager import (
+from grafy_api.execution.manager import (
     RunExecutionIdempotencyConflictError,
     RunExecutionManager,
     RunExecutionSnapshot,
 )
-from grafy_api.v1.routes.executions.runtime.models import GraphExecutionResult
-from grafy_api.v1.routes.executions.runtime.run_graph import RunGraph
-from grafy_api.v1.routes.executions.services import ExecutionHistoryService
+from grafy_api.execution.models import GraphExecutionResult
+from grafy_api.execution.run_graph import RunGraph
+from grafy_api.execution.history import ExecutionHistoryService
 
 
 EXECUTION_TEST_PLUGIN = Plugin(
@@ -1083,7 +1085,7 @@ async def test_recovered_queue_revalidates_submitter_access_before_graph_code(
 ) -> None:
     caplog.set_level(
         logging.ERROR,
-        logger="grafy_api.v1.routes.executions.runtime.manager",
+        logger="grafy_api.execution.manager",
     )
     run_graph = SequencedRunGraph()
     graph_id = uuid4()

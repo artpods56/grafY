@@ -43,22 +43,21 @@ from grafy_core.runtime.persistence import (
 from grafy_core.runtime.plugin_invocation import PluginInvocationError
 from grafy_core.runtime.resolvers import Resolver, ResolverRegistry
 
-from grafy_api.v1.routes.executions.models import RunEdgeRequest, RunNodeRequest
-from grafy_api.v1.routes.executions.runtime.control import RunExecutionControl
-from grafy_api.v1.routes.executions.runtime.coordinator import (
-    GraphExecutionCoordinator,
+from grafy_api.execution.requests import (
+    RunEdgeRequest,
+    RunNodeRequest,
 )
-from grafy_api.v1.routes.executions.runtime.edge_values import EdgeValueResolver
-from grafy_api.v1.routes.executions.runtime.errors import GraphExecutionError
-from grafy_api.v1.routes.executions.runtime.models import (
+from grafy_api.execution.control import RunExecutionControl
+from grafy_api.execution.coordinator import GraphExecutionCoordinator
+from grafy_api.execution.edge_values import EdgeValueResolver
+from grafy_api.execution.errors import GraphExecutionError
+from grafy_api.execution.models import (
     PreparedGraphExecution,
     CompiledEdge,
     CompiledGraph,
     CompiledNode,
 )
-from grafy_api.v1.routes.executions.runtime.node_execution import (
-    NodeExecutionService,
-)
+from grafy_api.execution.node_execution import NodeExecutionService
 
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
@@ -833,7 +832,7 @@ async def test_failed_nodes_expose_typed_failure_codes_in_graph_results(
 ) -> None:
     caplog.set_level(
         logging.ERROR,
-        logger="grafy_api.v1.routes.executions.runtime.coordinator",
+        logger="grafy_api.execution.coordinator",
     )
     writer = RecordingWriter()
     operator_node = _compiled_add(

@@ -15,8 +15,11 @@ from grafy_core.plugins import NodeRegistration
 from grafy_core.runtime.invocation import NodeInvocation
 from grafy_core.runtime.plugin_protocol import PluginFailureCode
 
-from ..models import RunEdgeRequest, RunNodeRequest
-from .control import RunExecutionControl
+from grafy_api.execution.requests import (
+    RunEdgeRequest,
+    RunNodeRequest,
+)
+from grafy_api.execution.control import RunExecutionControl
 
 type OutputEndpoint = tuple[str, str]
 

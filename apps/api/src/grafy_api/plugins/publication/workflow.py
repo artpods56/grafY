@@ -23,7 +23,7 @@ from grafy_core.domain.plugin_releases import (
 )
 from grafy_core.domain.plugin_selection import PluginReleaseSelection
 
-from grafy_api.plugin_admission import (
+from grafy_api.plugins.runtime.admission import (
     ReleaseExecutionAdmission,
     ReleaseExecutionRejection,
     ReleaseExecutionRoute,

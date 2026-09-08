@@ -41,7 +41,7 @@ from grafy_core.domain.modules import GraphModuleDefinition
 from grafy_core.nodes import NodeExecutionContext, PortShape
 from grafy_core.operators.modules import MODULE_BOUNDARY_REGISTRATIONS
 from grafy_workbench.arithmetic import ARITHMETIC
-from grafy_core.artifact_contracts import INTEGER_VALUE, RASTER_IMAGE, TEXT_VALUE
+from grafy_core.artifact_contracts import RASTER_IMAGE, TEXT_VALUE
 from grafy_core.table_contracts import TABLE_DATA
 from grafy_core.schema_contracts import JSON_SCHEMA
 from grafy_workbench import BuiltinNodeCatalog
@@ -49,7 +49,7 @@ from grafy_workbench.text import TEXT
 from grafy_core.plugins import Plugin, PluginRegistry
 from grafy_core.ports.modules import GraphModuleExecutionResult
 
-from grafy_api.plugin_admission import (
+from grafy_api.plugins.runtime.admission import (
     ReleaseExecutionAdmission,
     ReleaseExecutionRoute,
 )

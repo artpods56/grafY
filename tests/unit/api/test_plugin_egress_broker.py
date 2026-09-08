@@ -6,7 +6,7 @@ from typing import cast
 
 import pytest
 
-from grafy_api.plugin_egress import (
+from grafy_api.plugins.runtime.egress import (
     PLUGIN_EGRESS_BROKER_CONFIG_VERSION,
     PLUGIN_EGRESS_BROKER_CONFIG_VERSION_LABEL,
     PluginEgressAddressScope,

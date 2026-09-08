@@ -36,14 +36,14 @@ from grafy_core.runtime.plugin_protocol import (
     PluginInvocationLimits,
 )
 
-from grafy_api.plugin_admission import (
+from grafy_api.plugins.runtime.admission import (
     ISOLATED_BASE_CAPABILITIES,
     ReleaseExecutionAdmission,
     ReleaseExecutionRejection,
     ReleaseExecutionRoute,
     isolated_release_admission,
 )
-from grafy_api.plugin_egress import (
+from grafy_api.plugins.runtime.egress import (
     PLUGIN_EGRESS_BROKER_CONFIG_VERSION,
     PLUGIN_EGRESS_BROKER_CONFIG_VERSION_LABEL,
     PLUGIN_HTTP_PROXY_PORT,
@@ -56,19 +56,19 @@ from grafy_api.plugin_egress import (
     resolve_plugin_egress_destination,
     resolve_public_destination,
 )
-from grafy_api.network_policy import (
+from grafy_api.plugins.runtime.network_policy import (
     NetworkCaBundle,
     NetworkPolicy,
     resolve_http_egress_authority,
 )
 from grafy_api.plugins.profiles import PluginRuntimeProfile
 
-from .plugin_artifacts import (
+from grafy_api.plugins.runtime.artifacts import (
     PluginGuestRunError,
     PluginGuestRunner,
     PluginInvocationScratch,
 )
-from .plugin_sandbox import (
+from grafy_api.plugins.runtime.sandbox import (
     PluginSandboxLifecycle,
     PluginSandboxScopeId,
     current_plugin_sandbox_scope,

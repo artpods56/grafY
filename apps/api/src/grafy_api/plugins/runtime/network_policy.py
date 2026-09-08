@@ -22,7 +22,7 @@ from cryptography import x509
 from grafy_core.domain.plugin_releases import PluginNodeContract
 from grafy_core.domain.plugin_identity import PluginReleaseScope
 
-from grafy_api.plugin_egress import (
+from grafy_api.plugins.runtime.egress import (
     PLUGIN_EGRESS_CONNECT_TIMEOUT_SECONDS,
     PLUGIN_EGRESS_CONNECTION_LIMIT,
     PLUGIN_EGRESS_IDLE_TIMEOUT_SECONDS,

@@ -9,12 +9,12 @@ from urllib.parse import urlsplit
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from grafy_api.plugin_egress import (
+from grafy_api.plugins.runtime.egress import (
     PluginEgressBrokerPolicy,
     PluginEgressDestination,
     PluginEgressProtocol,
 )
-from grafy_api.network_policy import (
+from grafy_api.plugins.runtime.network_policy import (
     NetworkPolicy,
     NetworkPolicyError,
     legacy_network_policy,

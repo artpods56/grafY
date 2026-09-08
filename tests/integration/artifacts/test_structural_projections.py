@@ -2,14 +2,14 @@ from fastapi.testclient import TestClient
 
 from grafy_api.v1.models import ArtifactTypeBindingModel, ArtifactTypeKeyResponse
 from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
-from grafy_api.v1.routes.executions.models import (
+from grafy_api.execution.requests import (
     ArtifactConversionRequest,
     FieldProjectionRequest,
     RunEdgeRequest,
     RunInputPlugRequest,
     RunRequest,
-    RunResponse,
 )
+from grafy_api.v1.routes.executions.models import RunResponse
 from tests.support.system_plugins import selected_system_run_node as RunNodeRequest
 
 from tests.support.clients import GrafyApi

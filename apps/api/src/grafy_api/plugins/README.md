@@ -1,29 +1,34 @@
-# Plugin publication ownership
+# Plugin application ownership
 
-This package owns the API application's Plugin publication adapters and shared
-runtime profiles. Immutable releases, installations, and selections remain owned
-by `grafy_core`; database implementations remain in `grafy_persistence`.
+This package owns application Plugin publication and runtime hosting. Immutable
+release facts remain in `grafy_core`; database implementations remain in
+`grafy_persistence`.
 
 | Module | Responsibility |
 | --- | --- |
-| `profiles.py` | Deployment-owned image pins, capabilities, and resource limits shared by publication and execution. |
+| `profiles.py` | Image pins, capabilities, and resource limits shared by publication and execution. |
 | `publication/authoring.py` | Working-copy scaffolding, reservations, review diffs, and review fences. |
 | `publication/source.py` | Source validation, deterministic archives, inspection, and verified candidates. |
 | `publication/sandbox.py` | Docker-isolated source inspection. |
 | `publication/oci.py` | Build and store immutable OCI images from verified candidates. |
-| `publication/workflow.py` | Coordinate publication and revocation with release services and System inventory. |
+| `publication/workflow.py` | Coordinate verified publication and System promotion. |
+| `runtime/admission.py` | Decide whether an exact release can execute under deployment policy. |
+| `runtime/artifacts.py` | Stage invocation artifacts and exchange requests and results with guests. |
+| `runtime/docker.py` | Run isolated Plugin containers and enforce their runtime limits. |
+| `runtime/sandbox.py` | Track sandbox scopes and their cleanup lifecycle. |
+| `runtime/egress.py` | Coordinate the egress broker with Plugin sandboxes. |
+| `runtime/network_policy.py` | Validate and resolve deployment network-access profiles. |
 
-Import the owning module directly. Keep package initializers free of re-exports
-so importing a runtime profile does not import publication workflows or image
-builders. Execution and admission consume `profiles.py`; they do not need an
-OCI builder to read deployment limits.
+Import the owning module directly. Package initializers do not re-export runtime
+classes or publication tools. Runtime profiles can be imported without loading an
+OCI builder. Plugin hosting does not import the graph execution engine.
 
-The `grafy` CLI remains in `grafy_api.cli`. Runtime execution adapters, egress,
-admission, and System deployment keep their existing owners. Package grouping
-does not change the isolation policy in ADR 0007 or publication authority in
-ADR 0006.
+The `grafy` CLI remains in `grafy_api.cli`. It calls the core release service for
+System revocation. The broker executable and historical host-deployment tools
+still have separate relocation items in the backend cleanup checklist. Their
+commands and supported historical policies remain available.
 
-Run the API and client regression checks from the repository root:
+Run API and client regression checks from the repository root:
 
 ```sh
 uv run --all-extras pytest -q -o log_cli=false tests/unit/api tests/unit/client tests/integration/catalog tests/integration/executions/test_routes.py

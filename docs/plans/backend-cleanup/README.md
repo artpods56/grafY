@@ -44,7 +44,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 ## 4. Plugin ownership and compatibility
 
 - [x] Publication package and independent profiles, commit `9735cc2`.
-- [ ] Group runtime admission, Docker invocation, and artifact staging under application Plugin hosting.
+- [x] Group runtime admission, Docker invocation, and artifact staging under application Plugin hosting.
 - [ ] Move SQL System cutover/baseline operations to persistence; keep command parsing/files/reporting in operator tooling.
 - [ ] Give the egress broker a dedicated executable application owner.
 - [ ] Relocate old host loader/builder/bindings as explicit compatibility tooling; retain CLI commands and historical policies.
@@ -52,11 +52,11 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 ## 5. Execution ownership
 
-- [ ] Move compilation, scheduling, cancellation, caching, and node execution out of v1/routes.
-- [ ] Split execution history, materialization, and HTTP presentation by owner.
-- [ ] Move execution request/plan contracts while preserving queued recovery serialization.
-- [ ] Move the portable persistent invocation-cache adapter beside core cache semantics.
-- [ ] Verify recovery, MAP ordering, cancellation, history, imports, and HTTP contracts.
+- [x] Move compilation, scheduling, cancellation, caching, and node execution out of v1/routes.
+- [x] Split execution history, materialization, and HTTP presentation by owner.
+- [x] Move execution request/plan contracts while preserving queued recovery serialization.
+- [x] Move the portable persistent invocation-cache adapter beside core cache semantics.
+- [x] Verify recovery, MAP ordering, cancellation, history, imports, and HTTP contracts.
 
 ## 6. Execution preparation duplication
 
@@ -264,3 +264,19 @@ until those runs participate in a durable admission and completion protocol.
 Maintenance guidance: take the shared fence before querying active work and retain it
 through the maintenance commit. Locking only rows returned by an empty-queue query does
 not prevent a concurrent execution from appearing.
+
+
+### Execution and Plugin runtime ownership
+
+- Moved the execution engine from `v1/routes/executions/runtime` to `grafy_api/execution`, preserving compilation, scheduling, MAP behavior, cancellation, and error propagation.
+- Split execution history and materialization into `execution/history.py` and `execution/materializations.py`. `RunResultPresenter` and HTTP response models remain beside the routes.
+- Moved durable request definitions to `execution/requests.py` and event definitions to `execution/events.py`. The HTTP models module re-exports the same classes for existing Python clients. Their serialized shapes and validation bodies are unchanged.
+- Grouped Plugin admission, artifact staging, Docker invocation, sandbox scope, egress coordination, and network policy under `plugins/runtime`. Hosting has no dependency on graph execution.
+- Moved `PersistentInvocationCache` to `grafy_core/runtime/persistent_invocation_cache.py`; it depends only on core contracts. Updated application wiring, tests, E2E bootstrap, and operational documentation to use the owning modules directly.
+- No forwarding modules remain for the old internal runtime paths. The intentional HTTP request/event re-exports retain public import compatibility.
+- Verified all 189 captured class/function ASTs against the pre-move source: none changed or disappeared. OpenAPI is exactly unchanged.
+- Validation: 611 API/client/architecture and selected integration tests passed, followed by 397 application/core/persistence/template/module tests. The initial 169 execution-runtime tests also passed and are included in the 611 count.
+- Ruff passes across all 77 changed Python files. API/core-cache Pyright reported no new diagnostic messages. Existing diagnostics dropped from 520 to 445 after request annotations gained their missing SavedGraph/SavedGraphRevision imports; this is not a claim that API typing is clean.
+- Built API and core wheels and verified imports and OpenAPI from their extracted contents. The first wheel inspection caught stale deleted modules retained in setuptools build output. Clean builds exclude all retired paths. Execution package documentation now requires checking wheel contents after moves.
+- Evidence: `/tmp/grafy-execution-ownership/` contains before/after OpenAPI and typing reports, the AST comparison, test logs, wheels, and packaged import checks.
+- Finding 5 is complete. Artifact access, catalog lookup, collaboration hub ownership, shared transport contracts, and transient-run revocation coordination remain tracked under their original findings.

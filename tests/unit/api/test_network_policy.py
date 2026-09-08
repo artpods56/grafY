@@ -12,7 +12,7 @@ from grafy_core.domain.plugin_releases import (
     PluginNodeContract,
     PluginNodeHttpEgressContract,
 )
-from grafy_api.network_policy import (
+from grafy_api.plugins.runtime.network_policy import (
     NetworkAccessPlane,
     NetworkAccessProfile,
     NetworkCaBundle,
@@ -29,7 +29,10 @@ from grafy_api.network_policy import (
     render_effective_network_policy,
     resolve_http_egress_authority,
 )
-from grafy_api.plugin_egress import PluginEgressDestination, PluginEgressProtocol
+from grafy_api.plugins.runtime.egress import (
+    PluginEgressDestination,
+    PluginEgressProtocol,
+)
 
 
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000993")

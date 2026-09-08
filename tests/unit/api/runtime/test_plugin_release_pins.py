@@ -72,7 +72,7 @@ from grafy_core.runtime.plugin_invocation import (
 from grafy_core.runtime.resolvers import ResolverRegistry
 from grafy_storage import LocalFileObjectStore
 
-from grafy_api.plugin_admission import (
+from grafy_api.plugins.runtime.admission import (
     PluginNonRunnableReason,
     ReleaseExecutionAdmission,
     ReleaseExecutionRejection,
@@ -86,24 +86,20 @@ from grafy_api.system_host_bindings import (
 )
 from tests.support.system_plugins import build_explicit_plugin_registry
 from grafy_api.v1.routes.artifacts.services import ArtifactService
-from grafy_api.v1.routes.executions.models import (
+from grafy_api.execution.requests import (
     FieldProjectionRequest,
     RunEdgeRequest,
     RunNodeRequest,
     RunRequest,
 )
-from grafy_api.v1.routes.executions.runtime.coordinator import (
-    GraphExecutionCoordinator,
-)
+from grafy_api.execution.coordinator import GraphExecutionCoordinator
 from grafy_api.v1.routes.catalog.services import GraphModuleCatalog
 from grafy_api.v1.models import PluginReleasePinModel
-from grafy_api.v1.routes.executions.runtime.compiler import GraphCompiler
-from grafy_api.v1.routes.executions.runtime.errors import GraphExecutionError
-from grafy_api.v1.routes.executions.runtime.edge_values import EdgeValueResolver
-from grafy_api.v1.routes.executions.runtime.models import PreparedGraphExecution
-from grafy_api.v1.routes.executions.runtime.node_execution import (
-    NodeExecutionService,
-)
+from grafy_api.execution.compiler import GraphCompiler
+from grafy_api.execution.errors import GraphExecutionError
+from grafy_api.execution.edge_values import EdgeValueResolver
+from grafy_api.execution.models import PreparedGraphExecution
+from grafy_api.execution.node_execution import NodeExecutionService
 
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000871")
@@ -434,7 +430,7 @@ def _echo_run_request(
 ) -> RunRequest:
     """One pinned echo node fed by a pinned upstream output edge."""
     from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
-    from grafy_api.v1.routes.executions.models import (
+    from grafy_api.execution.requests import (
         PinnedOutputRequest,
         RunEdgeRequest,
     )
@@ -1306,7 +1302,7 @@ async def test_pinned_plugin_participates_in_ordinary_map_semantics() -> None:
         selection=selection,
     )
     from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
-    from grafy_api.v1.routes.executions.models import (
+    from grafy_api.execution.requests import (
         PinnedOutputRequest,
         RunEdgeRequest,
     )
@@ -1447,7 +1443,7 @@ async def test_release_node_executes_with_caching_disabled_and_refs_untouched() 
     from grafy_core.artifacts import ArtifactTypeSpec
     from grafy_core.plugins import NodeCachePolicy, NodeRegistration
     from grafy_core.runtime.invocation_cache import InvocationCachePort
-    from grafy_api.v1.routes.executions.runtime.models import (
+    from grafy_api.execution.models import (
         CompiledGraph,
         CompiledNode,
     )

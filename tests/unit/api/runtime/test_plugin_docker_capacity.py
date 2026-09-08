@@ -14,18 +14,16 @@ from grafy_core.domain.plugin_releases import (
 )
 from grafy_core.ports.storage import FileStoragePort
 
-from grafy_api.plugin_egress import PluginEgressDestination
+from grafy_api.plugins.runtime.egress import PluginEgressDestination
 from grafy_api.plugins.profiles import runtime_profile
-from grafy_api.v1.routes.executions.runtime.plugin_docker import (
+from grafy_api.plugins.runtime.docker import (
     DockerPluginRuntime,
     DockerPluginRuntimeError,
     PluginRuntimeReleaseLookup,
-    _Sandbox,  # pyright: ignore[reportPrivateUsage]
-    _SandboxKey,  # pyright: ignore[reportPrivateUsage]
+    _Sandbox,
+    _SandboxKey,
 )
-from grafy_api.v1.routes.executions.runtime.plugin_sandbox import (
-    PluginSandboxScopeId,
-)
+from grafy_api.plugins.runtime.sandbox import PluginSandboxScopeId
 
 
 def _key(

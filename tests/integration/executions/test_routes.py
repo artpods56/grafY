@@ -19,8 +19,8 @@ from grafy_api.v1.routes.executions.models import (
     RunExecutionCapacityErrorResponse,
     RunExecutionIdempotencyConflictErrorResponse,
     RunExecutionQueueFullErrorResponse,
-    RunRequest,
 )
+from grafy_api.execution.requests import RunRequest
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
 from tests.support.system_plugins import (
     TEST_SYSTEM_PLUGINS,
@@ -29,14 +29,12 @@ from tests.support.system_plugins import (
 from tests.support.clients import GrafyApi
 from grafy_api.v1.routes.executions.dependencies import run_execution_manager
 from grafy_api.v1.routes.executions.dependencies import execution_admission_limiter
-from grafy_api.v1.routes.executions.runtime.admission import (
+from grafy_api.execution.admission import (
     ExecutionAdmissionLimiter,
     RunExecutionCapacityError,
     RunExecutionQueueFullError,
 )
-from grafy_api.v1.routes.executions.runtime.manager import (
-    RunExecutionIdempotencyConflictError,
-)
+from grafy_api.execution.manager import RunExecutionIdempotencyConflictError
 from grafy_api.v1.routes.uploads.models import SampleRequest
 from grafy_api.v1.routes.uploads.services import ImageUploadService
 from grafy_api.settings import Settings

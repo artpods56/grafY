@@ -14,7 +14,7 @@ from grafy_api.v1.routes.artifacts.models import (
     TableQueryRequest,
 )
 from grafy_api.v1.routes.artifacts.services import ArtifactService
-from grafy_api.v1.routes.executions.models import RunRequest
+from grafy_api.execution.requests import RunRequest
 from tests.support.system_plugins import selected_system_run_node as RunNodeRequest
 from grafy_api.v1.routes.executions.services import RunResultPresenter
 from grafy_core.artifacts import ArtifactObject, InMemoryUnitOfWork

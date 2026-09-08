@@ -17,7 +17,7 @@ from grafy_api.v1.models import (
     PluginReleasePinModel,
 )
 
-from ..models import (
+from grafy_api.execution.requests import (
     ArtifactConversionRequest,
     FieldProjectionRequest,
     MAX_EXECUTION_NODE_PATH_LENGTH,
@@ -27,14 +27,17 @@ from ..models import (
     RunNodeRequest,
     RunRequest,
 )
-from ..services import MaterializationService
-from .compiler import GraphCompiler
-from .control import RunExecutionControl
-from .coordinator import GraphExecutionCoordinator
-from .errors import GraphExecutionError
-from .models import GraphExecutionResult, PreparedGraphExecution
-from .preflight import GraphRunPreflight
-from .plugin_sandbox import (
+from grafy_api.execution.materializations import MaterializationService
+from grafy_api.execution.compiler import GraphCompiler
+from grafy_api.execution.control import RunExecutionControl
+from grafy_api.execution.coordinator import GraphExecutionCoordinator
+from grafy_api.execution.errors import GraphExecutionError
+from grafy_api.execution.models import (
+    GraphExecutionResult,
+    PreparedGraphExecution,
+)
+from grafy_api.execution.preflight import GraphRunPreflight
+from grafy_api.plugins.runtime.sandbox import (
     PluginSandboxLifecycle,
     PluginSandboxScopeId,
     activate_plugin_sandbox_scope,

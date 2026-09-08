@@ -1,3 +1,4 @@
+import ast
 from hashlib import sha256
 from pathlib import Path
 import tomllib
@@ -307,3 +308,38 @@ def test_host_eligible_plugins_carry_their_exact_build_backend() -> None:
         assert sha256(wheel.read_bytes()).hexdigest() == (
             "51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670"
         )
+
+
+def test_execution_and_plugin_hosting_do_not_import_execution_routes() -> None:
+    api_root = REPO_ROOT / "apps/api/src/grafy_api"
+    for package in (api_root / "execution", api_root / "plugins/runtime"):
+        for path in package.rglob("*.py"):
+            for node in ast.walk(ast.parse(path.read_text())):
+                imported = []
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    imported.append(node.module)
+                elif isinstance(node, ast.Import):
+                    imported.extend(alias.name for alias in node.names)
+                for module in imported:
+                    assert not module.startswith("grafy_api.v1.routes.executions"), (
+                        f"{path.relative_to(REPO_ROOT)} imports its HTTP transport: {module}"
+                    )
+                    if package.name == "runtime":
+                        assert not module.startswith("grafy_api.execution"), (
+                            f"{path.relative_to(REPO_ROOT)} couples Plugin hosting to graph execution: {module}"
+                        )
+
+
+def test_execution_http_models_preserve_public_request_and_event_identity() -> None:
+    from grafy_api.execution import events, requests
+    from grafy_api.v1.routes.executions import models
+
+    for module, names in (
+        (
+            requests,
+            ("RunRequest", "RunNodeRequest", "RunEdgeRequest", "PinnedOutputRequest"),
+        ),
+        (events, ("ExecutionStatusEvent", "NodeStatusEvent", "NodeProgressEvent")),
+    ):
+        for name in names:
+            assert getattr(models, name) is getattr(module, name)

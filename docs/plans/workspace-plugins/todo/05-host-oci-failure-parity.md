@@ -62,8 +62,8 @@ assertion pass [R10: Tests Must Not Justify Bad Design].
 - `libs/core/src/grafy_core/runtime/execution.py`
 - `libs/core/src/grafy_core/runtime/plugin_invocation.py` only if the error type
   needs a narrow correction
-- `apps/api/src/grafy_api/v1/routes/executions/runtime/coordinator.py`
-- `apps/api/src/grafy_api/v1/routes/executions/runtime/models.py`
+- `apps/api/src/grafy_api/execution/coordinator.py`
+- `apps/api/src/grafy_api/execution/models.py`
 - `tests/unit/api/runtime/test_system_adapter_parity.py`
 - `tests/unit/api/runtime/test_graph_execution_coordinator.py`
 - focused core execution/invocation tests if an existing assertion requires the
@@ -114,16 +114,16 @@ uv run pytest -q -o log_cli=false \
 uv run ruff check \
   libs/core/src/grafy_core/runtime/execution.py \
   libs/core/src/grafy_core/runtime/plugin_invocation.py \
-  apps/api/src/grafy_api/v1/routes/executions/runtime/coordinator.py \
-  apps/api/src/grafy_api/v1/routes/executions/runtime/models.py \
+  apps/api/src/grafy_api/execution/coordinator.py \
+  apps/api/src/grafy_api/execution/models.py \
   tests/unit/api/runtime/test_system_adapter_parity.py \
   tests/unit/api/runtime/test_graph_execution_coordinator.py
 
 uv run basedpyright \
   libs/core/src/grafy_core/runtime/execution.py \
   libs/core/src/grafy_core/runtime/plugin_invocation.py \
-  apps/api/src/grafy_api/v1/routes/executions/runtime/coordinator.py \
-  apps/api/src/grafy_api/v1/routes/executions/runtime/models.py
+  apps/api/src/grafy_api/execution/coordinator.py \
+  apps/api/src/grafy_api/execution/models.py
 ```
 
 ## Definition of done
@@ -140,8 +140,8 @@ uv run basedpyright \
 Files changed (relative to HEAD):
 
 - `libs/core/src/grafy_core/runtime/execution.py` (modified) — `NodeRunError` carries the stable `PluginFailureCode`; `NodeRuntime` converts every operator invocation failure at the public boundary: `PluginInvocationError` keeps its explicit code (or defaults to `internal_adapter_failure` when unclassified), every other operator exception becomes `operator_failure`, and the original exception is preserved as `__cause__`. Host and OCI failures therefore surface through the identical typed shape.
-- `apps/api/src/grafy_api/v1/routes/executions/runtime/coordinator.py` (modified) — graph results expose the typed `failure_code` per failed node (`operator_failure`, `output_validation`, `internal_adapter_failure`); raise mode keeps the typed failure in the cause chain.
-- `apps/api/src/grafy_api/v1/routes/executions/runtime/models.py` (modified) — result models carry the `failure_code` field.
+- `apps/api/src/grafy_api/execution/coordinator.py` (modified) — graph results expose the typed `failure_code` per failed node (`operator_failure`, `output_validation`, `internal_adapter_failure`); raise mode keeps the typed failure in the cause chain.
+- `apps/api/src/grafy_api/execution/models.py` (modified) — result models carry the `failure_code` field.
 - `tests/unit/api/runtime/test_system_adapter_parity.py` (new) — 5 tests; this completion rewrote `test_same_exact_system_release_has_failure_and_cancellation_parity` to assert `NodeRunError` + `failure_code` + cause chains for both host and OCI (host: native operator exception; OCI: `PluginInvocationError`), and added `test_same_exact_system_release_has_graph_result_failure_code_parity` and `test_oci_invoker_failures_preserve_explicit_codes_and_default_to_internal` (with a failing invoker fixture).
 - `tests/unit/api/runtime/test_graph_execution_coordinator.py` (modified) — added `test_failed_nodes_expose_typed_failure_codes_in_graph_results` (operator_failure / output_validation / internal_adapter_failure via missing inputs, dependents `skipped=None`) and `test_raise_mode_keeps_the_typed_failure_in_the_cause_chain`.
 - `tests/unit/core/test_modules.py` (modified) — existing assertion updated to the new public error contract, as this packet's owned-files clause permits for focused core execution tests: `test_graph_module_node_preserves_inner_failure_as_contextual_cause` now asserts `NodeRunError(operator_failure)` at the `run_node` boundary with the `GraphModuleExecutionError` (and its inner `RuntimeError`) preserved through the cause chain.
@@ -150,7 +150,7 @@ Focused gates (all green):
 
 - `uv run pytest -q -o log_cli=false tests/unit/api/runtime/test_system_adapter_parity.py tests/unit/api/runtime/test_graph_execution_coordinator.py tests/unit/core/test_modules.py` → 43 passed (5 + 8 + 30).
 - `uv run ruff check` on the six files above → All checks passed.
-- `uv run basedpyright libs/core/src/grafy_core/runtime/execution.py apps/api/src/grafy_api/v1/routes/executions/runtime/coordinator.py apps/api/src/grafy_api/v1/routes/executions/runtime/models.py` → 0 errors.
+- `uv run basedpyright libs/core/src/grafy_core/runtime/execution.py apps/api/src/grafy_api/execution/coordinator.py apps/api/src/grafy_api/execution/models.py` → 0 errors.
 - `git diff --check` → clean.
 
 Deliberately unsupported states: host operators are always classified `operator_failure` at the `NodeRuntime` boundary — there is no finer host-side classification, and OCI adapters never invent a code where the invocation did not provide one (unclassified → `internal_adapter_failure`).

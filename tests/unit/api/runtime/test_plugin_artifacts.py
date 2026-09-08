@@ -110,7 +110,7 @@ from grafy_core.runtime.table_bundle import (
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.table.persistence import TableArtifactResolver, TableArtifactWriter
 
-from grafy_api.v1.routes.executions.runtime.plugin_artifacts import (
+from grafy_api.plugins.runtime.artifacts import (
     ArtifactBundlePluginInvoker,
     PluginGuestRunError,
     PluginGuestRunner,

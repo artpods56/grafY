@@ -16,7 +16,7 @@ from grafy_api.v1.routes.auth.models import (
     WorkspaceInvitationCreateRequest,
 )
 from grafy_api.v1.routes.auth.services import AuthService, IssuedSession
-from grafy_api.v1.routes.executions.models import RunRequest
+from grafy_api.execution.requests import RunRequest
 from grafy_api.v1.routes.node_secrets.models import ConfigureNodeSecretRequest
 from grafy_api.v1.routes.saved_graphs.models import (
     AssignGraphFolderRequest,

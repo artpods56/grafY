@@ -36,7 +36,7 @@ from grafy_core.operators.modules import GraphModuleNode
 from grafy_core.plugins import NodeRegistration, NodeSecretInput, PluginRegistry
 from grafy_core.ports.modules import GraphModuleExecutorPort
 
-from grafy_api.plugin_admission import (
+from grafy_api.plugins.runtime.admission import (
     PluginNonRunnableReason,
     ReleaseExecutionAdmission,
     ReleaseExecutionRejection,

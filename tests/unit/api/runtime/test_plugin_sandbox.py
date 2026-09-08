@@ -17,14 +17,14 @@ from grafy_core.domain.saved_graphs import (
 )
 from grafy_core.nodes import NodeExecutionContext
 
-from grafy_api.v1.routes.executions.models import RunRequest
-from grafy_api.v1.routes.executions.runtime.control import RunExecutionControl
-from grafy_api.v1.routes.executions.runtime.models import GraphExecutionResult
-from grafy_api.v1.routes.executions.runtime.plugin_sandbox import (
+from grafy_api.execution.requests import RunRequest
+from grafy_api.execution.control import RunExecutionControl
+from grafy_api.execution.models import GraphExecutionResult
+from grafy_api.plugins.runtime.sandbox import (
     PluginSandboxScopeId,
     current_plugin_sandbox_scope,
 )
-from grafy_api.v1.routes.executions.runtime.run_graph import RunGraph
+from grafy_api.execution.run_graph import RunGraph
 
 
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000952")

@@ -47,7 +47,7 @@ from grafy_core.runtime.plugin_invocation import (
 )
 from grafy_storage import LocalFileObjectStore
 
-from grafy_api.v1.routes.executions.runtime.plugin_artifacts import (
+from grafy_api.plugins.runtime.artifacts import (
     ArtifactBundlePluginInvoker,
     SubprocessPluginGuestRunner,
 )

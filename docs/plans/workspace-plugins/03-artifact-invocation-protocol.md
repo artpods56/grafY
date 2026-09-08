@@ -207,7 +207,7 @@ The result needs:
   request in `plugin_invocation.py`; the fixed-convention guest in
   `plugin_guest.py`; and host authorization, staging, validation, and atomic
   import in
-  `apps/api/src/grafy_api/v1/routes/executions/runtime/plugin_artifacts.py`.
+  `apps/api/src/grafy_api/plugins/runtime/artifacts.py`.
 - **Verification evidence:** `uv run pytest tests/unit/core/test_plugin_protocol.py
   tests/unit/api/runtime/test_plugin_artifacts.py
   tests/integration/executions/test_workspace_plugin_protocol.py -q` (27 passed

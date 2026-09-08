@@ -916,7 +916,7 @@ Primary touchpoints:
 - `libs/core/src/grafy_core/runtime/plugin_protocol.py`
 - `apps/api/src/grafy_api/settings.py`
 - `apps/api/src/grafy_api/main.py`
-- `apps/api/src/grafy_api/plugin_admission.py`
+- `apps/api/src/grafy_api/plugins/runtime/admission.py`
 - `apps/api/src/grafy_api/plugins/publication/workflow.py`
 - `.env.example`
 - `infra/docker/.env.production.example`
@@ -938,11 +938,11 @@ Primary touchpoints:
 
 Primary touchpoints:
 
-- `apps/api/src/grafy_api/plugin_egress.py`
+- `apps/api/src/grafy_api/plugins/runtime/egress.py`
 - `apps/api/src/grafy_api/plugin_egress_broker.py`
-- `apps/api/src/grafy_api/v1/routes/executions/runtime/preflight.py`
-- `apps/api/src/grafy_api/v1/routes/executions/runtime/plugin_docker.py`
-- `apps/api/src/grafy_api/v1/routes/executions/runtime/compiler.py`
+- `apps/api/src/grafy_api/execution/preflight.py`
+- `apps/api/src/grafy_api/plugins/runtime/docker.py`
+- `apps/api/src/grafy_api/execution/compiler.py`
 - `apps/api/src/grafy_api/services/composition.py`
 - `plugins/llm/src/grafy_plugin_llm/openai_compatible.py`
 - `plugins/gis/src/grafy_plugin_gis/nodes.py`

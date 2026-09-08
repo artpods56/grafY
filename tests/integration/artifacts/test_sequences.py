@@ -15,17 +15,15 @@ from grafy_workbench.sequence.nodes import ItemAtConfig, SliceConfig
 
 from grafy_api.v1.models import ArtifactTypeBindingModel, ArtifactTypeKeyResponse
 from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
-from grafy_api.v1.routes.executions.models import (
+from grafy_api.execution.requests import (
     ArtifactConversionRequest,
     PinnedOutputRequest,
     RunEdgeRequest,
     RunInputPlugRequest,
     RunRequest,
-    RunResponse,
 )
-from grafy_api.v1.routes.executions.models import (
-    RunNodeRequest as UnpinnedRunNodeRequest,
-)
+from grafy_api.v1.routes.executions.models import RunResponse
+from grafy_api.execution.requests import RunNodeRequest as UnpinnedRunNodeRequest
 from tests.support.system_plugins import selected_system_run_node as RunNodeRequest
 
 from tests.support.clients import GrafyApi

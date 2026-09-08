@@ -16,10 +16,8 @@ from grafy_persistence.unit_of_work import (
 
 from tests.support.identity import browser_actor_override
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
-from grafy_api.v1.routes.executions.models import (
-    RunExecutionResponse,
-    RunRequest,
-)
+from grafy_api.v1.routes.executions.models import RunExecutionResponse
+from grafy_api.execution.requests import RunRequest
 from tests.support.system_plugins import (
     selected_system_run_node as RunNodeRequest,
 )

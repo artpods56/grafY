@@ -21,7 +21,7 @@ from grafy_core.domain.plugin_releases import (
 from grafy_core.ports.storage import FileStoragePort
 from grafy_core.runtime.plugin_invocation import PluginInvocationRequest
 
-from grafy_api.plugin_egress import (
+from grafy_api.plugins.runtime.egress import (
     PluginEgressAddressScope,
     PluginEgressBrokerPlan,
     PluginEgressBrokerPolicy,
@@ -29,18 +29,16 @@ from grafy_api.plugin_egress import (
     ResolvedPluginEgressDestination,
 )
 from grafy_api.plugins.profiles import runtime_profile
-from grafy_api.network_policy import NetworkCaBundle
-from grafy_api.v1.routes.executions.runtime.plugin_docker import (
+from grafy_api.plugins.runtime.network_policy import NetworkCaBundle
+from grafy_api.plugins.runtime.docker import (
     DockerPluginRuntime,
     DockerPluginRuntimeError,
     PluginRuntimeReleaseLookup,
-    _Sandbox,  # pyright: ignore[reportPrivateUsage]
-    _SandboxKey,  # pyright: ignore[reportPrivateUsage]
-    _sandbox_key_sha256,  # pyright: ignore[reportPrivateUsage]
+    _Sandbox,
+    _SandboxKey,
+    _sandbox_key_sha256,
 )
-from grafy_api.v1.routes.executions.runtime.plugin_sandbox import (
-    PluginSandboxScopeId,
-)
+from grafy_api.plugins.runtime.sandbox import PluginSandboxScopeId
 
 
 _BROKER_IMAGE = "registry.example/grafy-egress@sha256:" + "a" * 64
@@ -124,7 +122,7 @@ async def test_runtime_readiness_rejects_incompatible_egress_broker(
 ) -> None:
     caplog.set_level(
         logging.ERROR,
-        logger="grafy_api.v1.routes.executions.runtime.plugin_docker",
+        logger="grafy_api.plugins.runtime.docker",
     )
     runtime = _runtime(tmp_path)
     commands: list[tuple[str, ...]] = []
@@ -204,7 +202,7 @@ async def test_runtime_readiness_logs_safe_broker_contract_failure_reason(
 ) -> None:
     caplog.set_level(
         logging.ERROR,
-        logger="grafy_api.v1.routes.executions.runtime.plugin_docker",
+        logger="grafy_api.plugins.runtime.docker",
     )
     runtime = _runtime(tmp_path)
 
@@ -418,7 +416,7 @@ async def test_broker_readiness_failure_keeps_safe_deployment_diagnostics(
 ) -> None:
     caplog.set_level(
         logging.ERROR,
-        logger="grafy_api.v1.routes.executions.runtime.plugin_docker",
+        logger="grafy_api.plugins.runtime.docker",
     )
     runtime = _runtime(tmp_path)
     commands: list[tuple[str, ...]] = []

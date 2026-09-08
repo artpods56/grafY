@@ -54,11 +54,9 @@ from grafy_storage import LocalFileObjectStore
 from grafy_api.plugins.profiles import runtime_profile
 from grafy_api.plugins.publication.oci import PluginOciImageBuilder
 from grafy_api.plugins.publication.source import PluginDirectoryPublisher
-from grafy_api.v1.routes.executions.runtime.plugin_artifacts import (
-    ArtifactBundlePluginInvoker,
-)
-from grafy_api.v1.routes.executions.runtime.plugin_docker import DockerPluginRuntime
-from grafy_api.v1.routes.executions.runtime.plugin_sandbox import (
+from grafy_api.plugins.runtime.artifacts import ArtifactBundlePluginInvoker
+from grafy_api.plugins.runtime.docker import DockerPluginRuntime
+from grafy_api.plugins.runtime.sandbox import (
     PluginSandboxScopeId,
     activate_plugin_sandbox_scope,
     reset_plugin_sandbox_scope,

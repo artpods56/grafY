@@ -32,7 +32,10 @@ from grafy_workbench import BUILTIN_FAMILIES
 
 from grafy_api.system_host_bindings import LoadedSystemPlugin, SystemHostPluginBinding
 from grafy_api.v1.models import ArtifactTypeBindingModel
-from grafy_api.v1.routes.executions.models import RunInputPlugRequest, RunNodeRequest
+from grafy_api.execution.requests import (
+    RunInputPlugRequest,
+    RunNodeRequest,
+)
 
 
 TEST_SYSTEM_PLUGINS: tuple[Plugin, ...] = BUILTIN_FAMILIES

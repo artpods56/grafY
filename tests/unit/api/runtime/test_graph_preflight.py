@@ -43,15 +43,15 @@ from grafy_api.v1.models import (
     ArtifactTypeKeyResponse,
     PluginReleasePinModel,
 )
-from grafy_api.network_policy import (
+from grafy_api.plugins.runtime.network_policy import (
     NetworkAccessPlane,
     NetworkAccessProfile,
     NetworkPolicy,
     NetworkProfileAssignment,
     NetworkProfileMode,
 )
-from grafy_api.plugin_egress import PluginEgressDestination
-from grafy_api.v1.routes.executions.models import (
+from grafy_api.plugins.runtime.egress import PluginEgressDestination
+from grafy_api.execution.requests import (
     ArtifactConversionRequest,
     FieldProjectionRequest,
     RunEdgeRequest,
@@ -59,8 +59,8 @@ from grafy_api.v1.routes.executions.models import (
     RunNodeRequest,
     RunRequest,
 )
-from grafy_api.v1.routes.executions.runtime.errors import GraphExecutionError
-from grafy_api.v1.routes.executions.runtime.preflight import GraphRunPreflight
+from grafy_api.execution.errors import GraphExecutionError
+from grafy_api.execution.preflight import GraphRunPreflight
 from tests.support.system_plugins import build_selected_system_plugin_deployment
 
 

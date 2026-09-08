@@ -20,7 +20,7 @@ from grafy_core.ports.modules import GraphModuleExecutionResult
 from grafy_core.runtime.invocation import InvocationMode
 from grafy_storage import LocalFileObjectStore
 
-from grafy_api.v1.routes.executions.models import (
+from grafy_api.execution.requests import (
     ArtifactConversionRequest,
     PinnedOutputRequest,
     RunEdgeRequest,
@@ -34,12 +34,12 @@ from tests.support.system_plugins import (
     build_selected_system_plugin_deployment,
 )
 from grafy_api.v1.routes.catalog.services import GraphModuleCatalog
-from grafy_api.plugin_admission import ReleaseExecutionAdmission
-from grafy_api.v1.routes.executions.runtime.compiler import (
+from grafy_api.plugins.runtime.admission import ReleaseExecutionAdmission
+from grafy_api.execution.compiler import (
     GraphCompiler,
     _topological_order,
 )
-from grafy_api.v1.routes.executions.runtime.errors import GraphExecutionError
+from grafy_api.execution.errors import GraphExecutionError
 
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")

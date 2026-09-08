@@ -73,7 +73,7 @@ materialized Plugin Python values.
 - Run request API models: `apps/api/src/grafy_api/v1/routes/executions/models.py`
 - Release repository port: `libs/core/src/grafy_core/ports/plugin_releases.py`
 - Persistence schema, ORM, repository, migration, and UoW
-- Compiler: `apps/api/src/grafy_api/v1/routes/executions/runtime/compiler.py`
+- Compiler: `apps/api/src/grafy_api/execution/compiler.py`
 - Core node proxy and invocation port near the caller that owns the need
 - Invocation cache fingerprint: `libs/core/src/grafy_core/runtime/`
 - Web API contract and saved-graph serialization

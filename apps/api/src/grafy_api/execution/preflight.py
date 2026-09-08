@@ -27,13 +27,17 @@ from grafy_core.domain.plugin_releases import (
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.plugins import PluginRegistry
 
-from grafy_api.network_policy import (
+from grafy_api.plugins.runtime.network_policy import (
     NetworkPolicy,
     resolve_http_egress_authority,
 )
 
-from ..models import RunEdgeRequest, RunNodeRequest, RunRequest
-from .errors import GraphExecutionError
+from grafy_api.execution.requests import (
+    RunEdgeRequest,
+    RunNodeRequest,
+    RunRequest,
+)
+from grafy_api.execution.errors import GraphExecutionError
 
 
 @dataclass(frozen=True, slots=True)

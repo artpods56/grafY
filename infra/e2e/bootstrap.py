@@ -27,7 +27,7 @@ from grafy_core.domain.plugin_releases import PlatformPluginActor
 from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
-from grafy_api.plugin_admission import isolated_release_admission
+from grafy_api.plugins.runtime.admission import isolated_release_admission
 from grafy_api.plugins.profiles import runtime_profile
 from grafy_api.plugins.publication.oci import PluginOciImageBuilder
 from grafy_api.plugins.publication.workflow import SystemPluginPublicationWorkflow

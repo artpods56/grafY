@@ -64,7 +64,7 @@ not a safe realtime collaboration seam:
 - [`useRunExecution.ts`](../../apps/web/src/features/workbench/ui/useRunExecution.ts)
   learns the execution id only after its own start request and owns the visible
   execution state for that browser.
-- [`RunExecutionManager`](../../apps/api/src/grafy_api/v1/routes/executions/runtime/manager.py)
+- [`RunExecutionManager`](../../apps/api/src/grafy_api/execution/manager.py)
   and its event replay journal live in one API process.
 
 The current optimistic revision rule remains valuable. Collaboration should

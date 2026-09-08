@@ -35,13 +35,13 @@ from grafy_core.domain.identity import Workspace
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_storage import LocalFileObjectStore
 
-from grafy_api.v1.routes.executions.models import RunRequest
+from grafy_api.execution.requests import RunRequest
 from tests.support.clients import GrafyApi
 from tests.support.system_plugins import (
     build_selected_system_plugin_deployment,
     selected_system_run_node as RunNodeRequest,
 )
-from grafy_api.v1.routes.executions.runtime.invocation_cache import (
+from grafy_core.runtime.persistent_invocation_cache import (
     InvocationCacheAccessError,
     PersistentInvocationCache,
 )

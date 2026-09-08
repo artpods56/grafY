@@ -21,8 +21,11 @@ from grafy_core.runtime.persistence import (
 from grafy_core.runtime.resolvers import ResolverRegistry
 
 from grafy_api.v1.routes.artifacts.services import ArtifactService
-from .errors import GraphExecutionError
-from .models import CompiledEdge, CompiledNode
+from grafy_api.execution.errors import GraphExecutionError
+from grafy_api.execution.models import (
+    CompiledEdge,
+    CompiledNode,
+)
 
 
 class EdgeValueResolver:

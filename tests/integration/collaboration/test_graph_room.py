@@ -34,7 +34,7 @@ from grafy_api.v1.routes.collaboration.models import (
     RoomReadyMessage,
 )
 from grafy_api.v1.routes.collaboration.views import websocket_browser_actor
-from grafy_api.v1.routes.executions.models import RunRequest
+from grafy_api.execution.requests import RunRequest
 from grafy_api.v1.routes.saved_graphs.models import (
     CreateSavedGraphRequest,
     SubmitGraphCommandRequest,
