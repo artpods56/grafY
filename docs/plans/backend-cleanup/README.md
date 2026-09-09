@@ -91,6 +91,8 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 ## 10. Spatial contracts and reads
 
 - [ ] Share dependency-light persisted spatial contracts in core while preserving stored schema and HTTP defaults.
+- [x] Share feature-collection payload and vector/raster projection fields while preserving stricter GIS producer validation.
+- [ ] Consolidate remaining spatial references, styles, map documents, and manifest contracts with explicit compatibility differences.
 - [ ] Share feature-collection reconstruction and logical-byte integrity checks.
 - [ ] Keep GDAL, network requests, tile serving, and HTTP render responses with deployment owners.
 - [ ] Verify existing stored fixtures, API schemas, and GIS round trips.
@@ -799,3 +801,23 @@ flowchart LR
 - Updated application ownership documentation and current network-access feature paths. The broker application README documents the independent package and unchanged container protocol.
 - Evidence: `/tmp/grafy-broker-owner-focused.log`, `/tmp/grafy-broker-owner-regression.log`, `/tmp/grafy-broker-owner-types.log`, `/tmp/grafy-broker-owner-build.log`, `/tmp/grafy-broker-owner-api-build.log`, `/tmp/grafy-broker-owner-docker-build.log`, and `/tmp/grafy-broker-owner-verify.log`.
 - Finding 4 is complete across the publication/runtime, persistence, compatibility, inactive-state, and broker batches. The full goal remains open for publication fencing, graph transport, spatial contracts, and final architecture/regression gates.
+
+
+### Shared spatial payload and projection fields
+
+- Added `grafy_core.spatial_contracts` as the producer-neutral owner of feature-collection payload fields and stored vector/raster projection metadata. API models retain explicit imports under their existing names. GIS models inherit the shared fields and zoom-range validation while retaining producer defaults, annotated bounds, finite/range checks, geometry validation, and source-name constraints. [R08: Model-Owned Serialization]
+- Preserved the deliberate reader/producer differences. API projection readers still require stored discriminator/content fields and accept historical bounds that GIS producers reject. Feature readers retain their historical payload acceptance; GIS feature construction still checks geometry against bounds. Shared fields do not broaden producer validation or narrow historical API reads.
+- Compared all 57 Pydantic model schemas in the affected API/GIS modules with pre-change definitions; they match exactly. OpenAPI also matches the pre-change snapshot exactly. No schema versions, serialized field ordering, or defaults changed.
+- Added six compatibility contracts for geometry/bounds, Unicode round trips, required stored fields versus producer defaults, and reversed zoom ranges. Artifact/GIS regression passed 156 tests; architecture checks passed 18 tests. Ruff and diff checks pass.
+- Targeted typing reports the same seven existing API list/default-factory diagnostics before and after at the same source paths. The new core models, GIS models, and new tests report no diagnostics.
+- Built core and API wheels and imported their extracted contents together. Core spatial contracts load without API, GIS, persistence, or GDAL imports. The API alias resolves to the shared class, GIS feature serialization round-trips through that class, and packaged OpenAPI remains identical.
+- Evidence: `/tmp/grafy-spatial-api-before.py`, `/tmp/grafy-spatial-gis-before.py`, `/tmp/grafy-spatial-schema-check.py`, `/tmp/grafy-spatial-contracts-regression.log`, `/tmp/grafy-spatial-contracts-architecture.log`, `/tmp/grafy-spatial-contracts-types.log`, `/tmp/grafy-spatial-contracts-baseline-types.log`, and `/tmp/grafy-spatial-contracts-verification.log`.
+- Finding 10 remains open for shared reference/style/map/manifest contracts and the shared reconstruction/integrity reader. This batch establishes the shared payload contract needed by that reader; it does not claim the whole spatial cleanup is complete.
+
+```mermaid
+flowchart LR
+    Stored[Core stored spatial contracts] --> API[API historical readers]
+    Stored --> GIS[GIS producer validation and defaults]
+    GIS --> Storage[Persisted feature and projection payloads]
+    Storage --> API
+```

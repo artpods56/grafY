@@ -16,12 +16,17 @@ from pydantic import (
 )
 
 from grafy_core.artifacts import ArtifactExportFormat, JsonObject
+from grafy_core.spatial_contracts import (
+    GeoBounds as GeoBounds,
+    GeoFeatureCollectionPayload as GeoFeatureCollectionPayload,
+    GeoVectorProjectionMetadata as GeoVectorProjectionMetadata,
+    GeoRasterProjectionMetadata as GeoRasterProjectionMetadata,
+)
 from grafy_core.table_contracts import TableColumn, TablePage, TableValueType
 
 from grafy_api.v1.models import ApiResponse
 
 
-type GeoBounds = tuple[float, float, float, float]
 type GeoArtifactKind = Literal[
     "feature_collection",
     "raster_scan",
@@ -307,14 +312,6 @@ class GeoArtifactRefPayload(StrictGeoModel):
     content_hash: StrictStr | None = None
 
 
-class GeoFeatureCollectionPayload(StrictGeoModel):
-    type: Literal["FeatureCollection"] = "FeatureCollection"
-    crs: Literal["EPSG:4326"] = "EPSG:4326"
-    features: list[JsonObject]
-    source_name: StrictStr = Field(min_length=1)
-    bounds: GeoBounds | None
-
-
 class GeoFeatureManifestMetadata(StrictGeoModel):
     kind: Literal["geo.feature_collection"]
     crs: Literal["EPSG:4326"] = "EPSG:4326"
@@ -323,49 +320,6 @@ class GeoFeatureManifestMetadata(StrictGeoModel):
     property_fields: list[GeoPropertyFieldResponse] = Field(
         default_factory=list,
     )
-
-
-class GeoVectorProjectionMetadata(StrictGeoModel):
-    kind: Literal["pmtiles"]
-    bucket: StrictStr = Field(min_length=1)
-    object_key: StrictStr = Field(min_length=1)
-    content_type: Literal["application/vnd.pmtiles"]
-    byte_size: StrictInt = Field(ge=1)
-    sha256: StrictStr = Field(pattern=r"^[0-9a-f]{64}$")
-    min_zoom: StrictInt = Field(ge=0, le=22)
-    max_zoom: StrictInt = Field(ge=0, le=22)
-    source_layer: StrictStr = Field(min_length=1)
-    bounds: GeoBounds | None
-    compiler: StrictStr = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def validate_zoom_range(self) -> Self:
-        if self.min_zoom > self.max_zoom:
-            raise ValueError("min_zoom must not exceed max_zoom")
-        return self
-
-
-class GeoRasterProjectionMetadata(StrictGeoModel):
-    kind: Literal["xyz"]
-    bucket: StrictStr = Field(min_length=1)
-    prefix: StrictStr = Field(min_length=1)
-    extension: Literal["png"]
-    content_type: Literal["image/png"]
-    min_zoom: StrictInt = Field(ge=0, le=22)
-    max_zoom: StrictInt = Field(ge=0, le=22)
-    tile_size: Literal[256]
-    bounds: GeoBounds
-    source_crs: StrictStr = Field(min_length=1)
-    width: StrictInt = Field(ge=1)
-    height: StrictInt = Field(ge=1)
-    band_count: StrictInt = Field(ge=1)
-    compiler: StrictStr = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def validate_zoom_range(self) -> Self:
-        if self.min_zoom > self.max_zoom:
-            raise ValueError("min_zoom must not exceed max_zoom")
-        return self
 
 
 class GeoFeatureArtifactSourcePayload(StrictGeoModel):

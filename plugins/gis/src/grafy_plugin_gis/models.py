@@ -17,6 +17,11 @@ from pydantic import (
 )
 
 from grafy_core.artifacts import ArtifactRef, JsonObject
+from grafy_core.spatial_contracts import (
+    GeoFeatureCollectionPayload,
+    GeoVectorProjectionMetadata,
+    GeoRasterProjectionMetadata,
+)
 
 
 Bounds = Annotated[
@@ -123,14 +128,9 @@ def _validate_ref(
         )
 
 
-class GeoFeatureCollection(BaseModel):
+class GeoFeatureCollection(GeoFeatureCollectionPayload):
     """An exact, canonical WGS84 GeoJSON FeatureCollection."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    type: Literal["FeatureCollection"] = "FeatureCollection"
-    crs: Literal["EPSG:4326"] = "EPSG:4326"
-    features: list[JsonObject]
     source_name: StrictStr = Field(min_length=1, max_length=1_024)
     bounds: Bounds | None
 
@@ -517,50 +517,23 @@ class GeoMapDocument(BaseModel):
         return self
 
 
-class VectorProjectionMetadata(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class VectorProjectionMetadata(GeoVectorProjectionMetadata):
     kind: Literal["pmtiles"] = "pmtiles"
-    bucket: StrictStr = Field(min_length=1)
-    object_key: StrictStr = Field(min_length=1)
     content_type: Literal["application/vnd.pmtiles"] = "application/vnd.pmtiles"
-    byte_size: StrictInt = Field(ge=1)
-    sha256: StrictStr = Field(pattern=r"^[0-9a-f]{64}$")
-    min_zoom: StrictInt = Field(ge=0, le=22)
-    max_zoom: StrictInt = Field(ge=0, le=22)
-    source_layer: StrictStr = Field(min_length=1)
     bounds: Bounds | None
-    compiler: StrictStr = Field(min_length=1)
 
     @field_validator("bounds")
     @classmethod
     def validate_bounds(cls, value: Bounds | None) -> Bounds | None:
         return _validated_bounds(value, field_name="vector projection bounds")
 
-    @model_validator(mode="after")
-    def validate_zoom_range(self) -> Self:
-        if self.min_zoom > self.max_zoom:
-            raise ValueError("min_zoom must not exceed max_zoom")
-        return self
 
-
-class RasterProjectionMetadata(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class RasterProjectionMetadata(GeoRasterProjectionMetadata):
     kind: Literal["xyz"] = "xyz"
-    bucket: StrictStr = Field(min_length=1)
-    prefix: StrictStr = Field(min_length=1)
     extension: Literal["png"] = "png"
     content_type: Literal["image/png"] = "image/png"
-    min_zoom: StrictInt = Field(ge=0, le=22)
-    max_zoom: StrictInt = Field(ge=0, le=22)
     tile_size: Literal[256] = 256
     bounds: Bounds
-    source_crs: StrictStr = Field(min_length=1)
-    width: StrictInt = Field(ge=1)
-    height: StrictInt = Field(ge=1)
-    band_count: StrictInt = Field(ge=1)
-    compiler: StrictStr = Field(min_length=1)
 
     @field_validator("bounds")
     @classmethod
@@ -569,12 +542,6 @@ class RasterProjectionMetadata(BaseModel):
         if validated is None:
             raise ValueError("raster projection bounds are required")
         return validated
-
-    @model_validator(mode="after")
-    def validate_zoom_range(self) -> Self:
-        if self.min_zoom > self.max_zoom:
-            raise ValueError("min_zoom must not exceed max_zoom")
-        return self
 
 
 def _validate_geometry(
