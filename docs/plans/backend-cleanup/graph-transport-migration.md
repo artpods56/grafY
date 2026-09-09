@@ -29,3 +29,10 @@ flowchart LR
 ## Verification for this batch
 
 HTTP contracts cover exact canonical content, unchanged legacy reads, matching missing and unauthorized graph handling, and uncheckpointed collaboration metadata. Existing OpenAPI paths and schemas compare equal to the pre-change snapshot. The extracted API wheel generates the checked-in schema, and TypeScript generation is consistent. Frontend and room consumers remain on their existing contracts.
+
+
+## Client projection preparation
+
+The room command bridge now reuses the authored-document node and edge projections for both command directions. Its legacy head adapter only renames the projected pin field. Single-object commands no longer construct temporary whole documents. This removes duplicated conversion logic while keeping current room and head state contracts intact.
+
+The HTTP refresh flow still shares flattened head state with room replay and checkpoint reconciliation. Migrate that shared representation together; merely converting a canonical HTTP response back to the old shape would add an adapter without removing the duplicated state contract.

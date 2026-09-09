@@ -10,94 +10,18 @@ import {
   authoredGraphDocument,
   authoredGraphDocumentFromCollaborativeHead,
   createSavedGraphRequest,
+  projectSavedGraphNode,
+  projectSavedGraphEdge,
   type AuthoredGraphDocument,
   type GraphCommand,
 } from "../model/graph-document";
 import type { RoomGraphCommand } from "./protocol";
 
-type RoomSavedGraphNode = Extract<
-  RoomGraphCommand,
-  { readonly kind: "add_node" }
->["node"];
-type RoomSavedGraphEdge = Extract<
-  RoomGraphCommand,
-  { readonly kind: "add_edge" }
->["edge"];
 type RoomReplaceDocumentCommand = Extract<
   RoomGraphCommand,
   { readonly kind: "replace_document" }
 >;
 type CollaborativeSavedGraphNode = CollaborativeHead["nodes"][number];
-
-function toRoomSavedGraphNode(node: AuthoredGraphDocument["nodes"][number]): RoomSavedGraphNode {
-  return {
-    artifact_type_bindings: (node.artifact_type_bindings ?? []).map(
-      (binding) => ({
-        variable: binding.variable,
-        artifact_type: {
-          id: binding.artifact_type.id,
-          schema_version: binding.artifact_type.schema_version,
-        },
-      }),
-    ),
-    config: structuredClone(node.config ?? {}),
-    id: node.id,
-    kind: node.kind,
-    input_plugs: (node.input_plugs ?? []).map((plug) => ({
-      id: plug.id,
-      port: plug.port,
-    })),
-    layout:
-      node.layout === null || node.layout === undefined
-        ? null
-        : {
-            appendix_height: node.layout.appendix_height ?? null,
-            body_height: node.layout.body_height ?? null,
-            width: node.layout.width ?? null,
-          },
-    operator_id: node.operator_id,
-    operator_version: node.operator_version,
-    plugin_release_pin:
-      node.plugin_release_pin === null || node.plugin_release_pin === undefined
-        ? null
-        : {
-            scope: node.plugin_release_pin.scope,
-            slug: node.plugin_release_pin.slug,
-            revision: node.plugin_release_pin.revision,
-          },
-    position: {
-      x: node.position.x,
-      y: node.position.y,
-    },
-  };
-}
-
-function toRoomSavedGraphEdge(
-  edge: AuthoredGraphDocument["edges"][number],
-): RoomSavedGraphEdge {
-  return {
-    collection_mode: edge.collection_mode,
-    conversion_path: (edge.conversion_path ?? []).map((conversion) => ({
-      id: conversion.id,
-      version: conversion.version,
-    })),
-    enabled: edge.enabled,
-    from_node: edge.from_node,
-    from_port: edge.from_port,
-    id: edge.id,
-    projection:
-      edge.projection === null || edge.projection === undefined
-        ? null
-        : { path: [...edge.projection.path] },
-    route_offset:
-      edge.route_offset === null || edge.route_offset === undefined
-        ? null
-        : { x: edge.route_offset.x, y: edge.route_offset.y },
-    to_node: edge.to_node,
-    to_plug: edge.to_plug ?? null,
-    to_port: edge.to_port,
-  };
-}
 
 /** Project the REST/UI draft aliases into the exact graph-room wire contract. */
 export function toRoomReplaceDocumentCommand(
@@ -110,8 +34,8 @@ export function toRoomReplaceDocumentCommand(
     name: document.name,
     document: {
       schema_version: 6,
-      nodes: document.nodes.map(toRoomSavedGraphNode),
-      edges: document.edges.map(toRoomSavedGraphEdge),
+      nodes: document.nodes.map(projectSavedGraphNode),
+      edges: document.edges.map(projectSavedGraphEdge),
       presentation: {
         annotations: [...(presentation.annotations ?? [])],
         bindings: [...(presentation.bindings ?? [])],
@@ -122,87 +46,11 @@ export function toRoomReplaceDocumentCommand(
   };
 }
 
-function toRestSavedGraphNode(node: RoomSavedGraphNode): AuthoredGraphDocument["nodes"][number] {
-  return {
-    artifact_type_bindings: (node.artifact_type_bindings ?? []).map(
-      (binding) => ({
-        variable: binding.variable,
-        artifact_type: {
-          id: binding.artifact_type.id,
-          schema_version: binding.artifact_type.schema_version,
-        },
-      }),
-    ),
-    config: structuredClone(node.config ?? {}),
-    id: node.id,
-    kind: node.kind,
-    input_plugs: (node.input_plugs ?? []).map((plug) => ({
-      id: plug.id,
-      port: plug.port,
-    })),
-    layout:
-      node.layout === null || node.layout === undefined
-        ? null
-        : {
-            appendix_height: node.layout.appendix_height ?? null,
-            body_height: node.layout.body_height ?? null,
-            width: node.layout.width ?? null,
-          },
-    operator_id: node.operator_id,
-    operator_version: node.operator_version,
-    plugin_release_pin:
-      node.plugin_release_pin === null || node.plugin_release_pin === undefined
-        ? null
-        : {
-            scope: node.plugin_release_pin.scope,
-            slug: node.plugin_release_pin.slug,
-            revision: node.plugin_release_pin.revision,
-          },
-    position: {
-      x: node.position.x,
-      y: node.position.y,
-    },
-  };
-}
-
 function toCollaborativeSavedGraphNode(
   node: AuthoredGraphDocument["nodes"][number],
 ): CollaborativeSavedGraphNode {
-  return {
-    artifact_type_bindings: node.artifact_type_bindings.map((binding) => ({
-      variable: binding.variable,
-      artifact_type: {
-        id: binding.artifact_type.id,
-        schema_version: binding.artifact_type.schema_version,
-      },
-    })),
-    config: structuredClone(node.config ?? {}),
-    id: node.id,
-    kind: node.kind,
-    input_plugs: node.input_plugs.map((plug) => ({
-      id: plug.id,
-      port: plug.port,
-    })),
-    layout:
-      node.layout === null || node.layout === undefined
-        ? null
-        : {
-            appendix_height: node.layout.appendix_height ?? null,
-            body_height: node.layout.body_height ?? null,
-            width: node.layout.width ?? null,
-          },
-    operator_id: node.operator_id,
-    operator_version: node.operator_version,
-    plugin_release:
-      node.plugin_release_pin === null || node.plugin_release_pin === undefined
-        ? null
-        : {
-            scope: node.plugin_release_pin.scope,
-            slug: node.plugin_release_pin.slug,
-            revision: node.plugin_release_pin.revision,
-          },
-    position: { x: node.position.x, y: node.position.y },
-  };
+  const { plugin_release_pin, ...canonical } = projectSavedGraphNode(node);
+  return { ...canonical, plugin_release: plugin_release_pin };
 }
 
 /** Map a local authoring command to a room submit payload when the shapes align. */
@@ -222,33 +70,15 @@ export function toRoomGraphCommand(
           y: position.y,
         })),
       });
-    case "add_node": {
-      const projected = createSavedGraphRequest({
-        name: document.name,
-        nodes: [command.node],
-        edges: [],
-      });
-      const node = projected.document.nodes[0];
-      return node
-        ? { kind: "add_node", node: toRoomSavedGraphNode(node) }
-        : null;
-    }
+    case "add_node":
+      return { kind: "add_node", node: projectSavedGraphNode(command.node) };
     case "remove_nodes":
       return asRoom({
         kind: "remove_nodes",
         node_ids: [...command.node_ids],
       });
-    case "add_edge": {
-      const projected = createSavedGraphRequest({
-        name: document.name,
-        nodes: document.nodes,
-        edges: [command.edge],
-      });
-      const edge = projected.document.edges[0];
-      return edge
-        ? { kind: "add_edge", edge: toRoomSavedGraphEdge(edge) }
-        : null;
-    }
+    case "add_edge":
+      return { kind: "add_edge", edge: projectSavedGraphEdge(command.edge) };
     case "remove_edges":
       return asRoom({
         kind: "remove_edges",
@@ -358,23 +188,10 @@ export function toRoomGraphCommand(
         (candidate) => candidate.id === command.edge_id,
       );
       if (!edge) return null;
-      const projected = createSavedGraphRequest({
-        name: document.name,
-        nodes: document.nodes,
-        edges: [{ ...edge, ...command.update }],
-      });
-      const expected = createSavedGraphRequest({
-        name: document.name,
-        nodes: document.nodes,
-        edges: [edge],
-      });
-      const projectedEdge = projected.document.edges[0];
-      const expectedEdge = expected.document.edges[0];
-      if (!projectedEdge || !expectedEdge) return null;
       return {
         kind: "update_edge",
-        expected_edge: toRoomSavedGraphEdge(expectedEdge),
-        edge: toRoomSavedGraphEdge(projectedEdge),
+        expected_edge: projectSavedGraphEdge(edge),
+        edge: projectSavedGraphEdge({ ...edge, ...command.update }),
       };
     }
     case "replace_document": {
@@ -420,7 +237,7 @@ export function toLocalGraphCommand(
         })),
       };
     case "add_node":
-      return { kind: "add_node", node: toRestSavedGraphNode(command.node) };
+      return { kind: "add_node", node: projectSavedGraphNode(command.node) };
     case "remove_nodes":
       return { kind: "remove_nodes", node_ids: command.node_ids };
     case "add_edge":
@@ -505,7 +322,7 @@ export function toLocalGraphCommand(
         }),
       };
     case "duplicate_node":
-      return { kind: "add_node", node: toRestSavedGraphNode(command.node) };
+      return { kind: "add_node", node: projectSavedGraphNode(command.node) };
     case "replace_presentation":
     case "move_artifact_viewers":
     case "move_annotations":

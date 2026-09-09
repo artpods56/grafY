@@ -78,6 +78,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [ ] Reuse SavedGraphDocument internally through one compatibility transport adapter.
 - [x] Replace manual node/edge/presentation conversion trees with canonical serialization and explicit pin-name compatibility.
 - [ ] Remove repeated graph validators and conversion logic without losing aliases.
+- [x] Consolidate client room node/edge projection under the canonical authored-document model.
 - [ ] Migrate clients toward collaboration metadata plus canonical document.
 - [x] Make the versioned compatibility decision explicit before retiring flattened public fields and mirrored schemas; see [graph transport migration](graph-transport-migration.md).
 - [x] Add an opt-in canonical head read endpoint and regenerate OpenAPI/TypeScript contracts without changing existing responses.
@@ -915,3 +916,22 @@ flowchart LR
 - Compatibility decision and remaining migration steps are recorded in `graph-transport-migration.md`. Finding 8 stays open for client/room migration, internal canonical reuse, and retirement of repeated validators after compatibility requirements are resolved.
 - Proposed transport rule: a response model used by clients to parse JSON must retain its deserialization contract as well as serialization and OpenAPI. A serializer-only domain annotation is insufficient when client parsers still consume the legacy wire shape. [R23: Maintain The Rules]
 - Evidence: `/tmp/grafy-canonical-head-regression.log`, `/tmp/grafy-canonical-head-contracts.log`, `/tmp/grafy-canonical-head-baseline-types.log`, `/tmp/grafy-canonical-head-types.log`, `/tmp/grafy-canonical-head-codegen-check.log`, and `/tmp/grafy-canonical-head-build.log`.
+
+
+### Shared client graph projection for room commands
+
+- Exported the existing node and edge projections from the authored graph document model and reused them for outbound room commands, inbound node commands, and replayed heads. Removed the duplicate room node/edge conversion implementations. The legacy head adapter now only renames the projected `plugin_release_pin` to `plugin_release`. [R01: Direct Ownership] [R08: Model-Owned Serialization]
+- Individual add-node, add-edge, and update-edge commands project their target directly. Removed temporary saved-document construction, duplicate projection, and impossible empty-array fallback branches. Unrelated nodes are no longer copied to construct an edge command. Production code shrank by 183 net lines.
+- Existing full-field pin, replacement, replay, and expected-value contracts remain intact. Added a boundary contract proving runtime callbacks/selection fields are excluded and nested configuration copies are independent across source, outbound room command, inbound local command, and replayed head. All 13 bridge tests, including the new contract, also pass against the committed pre-change implementation. [R43: Tests Are Behavioral Contracts]
+- All 601 frontend tests across 89 files pass. Full frontend TypeScript checking is clean before and after. ESLint passes for all three changed TypeScript files. No UI layout or browser interaction behavior changed; a production browser build was not run.
+- Copied installed frontend dependencies into this worktree using filesystem cloning. Tests and tools run from the isolated copy; the main checkout remains untouched.
+- Evidence: `/tmp/grafy-room-projection-baseline-tests.log`, `/tmp/grafy-room-projection-baseline-types.log`, `/tmp/grafy-room-projection-all-tests.log`, `/tmp/grafy-room-projection-types.log`, `/tmp/grafy-room-projection-lint.log`, and `/tmp/grafy-room-projection-new-contract-baseline.log`.
+- Finding 8 remains open. HTTP refresh, room replay, and checkpoint reconciliation share the current flattened head state. The canonical HTTP endpoint is not yet consumed by that flow; changing only its fetch would require another adapter. This batch removes projection duplication needed by those consumers without claiming client or room protocol migration is complete.
+
+```mermaid
+flowchart LR
+    Draft[Authored graph document] --> Projection[Canonical node and edge projection]
+    Room[Room command bridge] --> Projection
+    Projection --> Commands[Canonical room command payloads]
+    Projection --> Alias[Legacy head pin alias]
+```

@@ -174,7 +174,7 @@ export function createSavedGraphRequest(
   };
 }
 
-function projectSavedGraphNode(
+export function projectSavedGraphNode(
   node: SavedGraphNode | CollaborativeSavedGraphNode,
 ): SavedGraphNode {
   let pluginReleasePin: SavedGraphNode["plugin_release_pin"] = null;
@@ -239,7 +239,7 @@ function projectArtifactTypeBinding(
   };
 }
 
-function projectSavedGraphEdge(
+export function projectSavedGraphEdge(
   edge: SavedGraphEdge | CollaborativeSavedGraphEdge,
 ): SavedGraphEdge {
   return {

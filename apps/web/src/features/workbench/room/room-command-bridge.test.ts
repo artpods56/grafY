@@ -121,6 +121,40 @@ describe("room-command-bridge", () => {
     });
   });
 
+  it("isolates room and local nodes while excluding runtime fields", () => {
+    const node = {
+      ...scopedNode,
+      config: { nested: { threshold: 3 } },
+      position: { x: 80, y: 120, selected: true },
+      selected: true,
+      onClick: () => undefined,
+    };
+    const room = toRoomGraphCommand({ kind: "add_node", node }, document);
+    if (room?.kind !== "add_node") throw new Error("Expected add_node");
+    const local = toLocalGraphCommand(room);
+    if (local?.kind !== "add_node") throw new Error("Expected local add_node");
+    const replay = applyRoomCommandToHead(head, room, 4);
+    const replayedNode = replay.nodes.find((candidate) => candidate.id === node.id);
+
+    node.config.nested.threshold = 99;
+    node.position.x = 999;
+    expect(room.node.config).toEqual({ nested: { threshold: 3 } });
+    expect(local.node.config).toEqual({ nested: { threshold: 3 } });
+    expect(replayedNode?.config).toEqual({ nested: { threshold: 3 } });
+    expect(room.node.position).toEqual({ x: 80, y: 120 });
+    expect(local.node.position).toEqual({ x: 80, y: 120 });
+    for (const projected of [room.node, local.node, replayedNode]) {
+      expect(projected).not.toHaveProperty("selected");
+      expect(projected).not.toHaveProperty("onClick");
+      expect(projected?.position).not.toHaveProperty("selected");
+    }
+    Object.assign(room.node.config ?? {}, { nested: { threshold: 77 } });
+    expect(local.node.config).toEqual({ nested: { threshold: 3 } });
+    expect(replayedNode?.config).toEqual({ nested: { threshold: 3 } });
+    expect(replayedNode).toHaveProperty("plugin_release", scopedNode.plugin_release_pin);
+    expect(replayedNode).not.toHaveProperty("plugin_release_pin");
+  });
+
   it("maps scoped pins through replace_document in both directions", () => {
     const room = toRoomGraphCommand(
       {
