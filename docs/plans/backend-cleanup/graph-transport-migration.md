@@ -41,9 +41,9 @@ Collaboration commands and head state use `SavedGraphDocument`. `CollaborativeHe
 
 Substantive shared validation rules now have canonical ownership. The acceptance table below records the distinctions retained at legacy parsing boundaries. Mirrored response schema declarations remain to preserve the published OpenAPI and room v1 contracts; they no longer define a second internal graph representation.
 
-## Remaining verification and future compatibility
+## Final verification and future compatibility
 
-Complete runtime browser verification and the whole-cleanup source/behavior audit before marking the overall goal complete. The backend and frontend migration implementation is complete; evidence is recorded below and in the checklist.
+The backend/frontend migration, running-browser verification and whole-cleanup source/behavior audit are complete. Evidence and the disclosed baseline/platform limits are recorded in `final-audit.md` and the checklist.
 
 Retire legacy transport only through a separately reviewed compatibility decision with evidence that supported clients have migrated. No removal date is set, and this cleanup does not remove v1 support.
 

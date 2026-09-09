@@ -234,4 +234,5 @@ Remaining work and per-batch evidence live in the
 migration and the supported single-owner revocation/recovery implementation are
 complete. The [final audit](../plans/backend-cleanup/final-audit.md) tracks source
 evidence, broad regression and packaging checks, and runtime browser verification.
-Those final gates remain open; this reference does not claim whole-goal completion.
+The cleanup verification gates are complete with the baseline and platform limits
+listed in that audit. Changes remain in the separate review worktree.
