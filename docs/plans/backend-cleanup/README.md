@@ -102,7 +102,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Split repository ownership into identity, graphs, artifacts, execution, plugins, and library.
 - [x] Split table ownership by the same features, with one metadata bootstrap.
 - [x] Reuse bulk node hydration for queued/interrupted execution history, preserving ordering.
-- [ ] Verify SQLite and PostgreSQL behavior and migration metadata.
+- [x] Verify SQLite and PostgreSQL behavior and migration metadata.
 
 ## 12. Artifact contracts and in-memory persistence
 
@@ -471,3 +471,14 @@ flowchart TD
     Bootstrap --> ORM[ORM mappings]
     Bootstrap --> Migrations[Alembic metadata]
 ```
+
+
+### PostgreSQL execution recovery verification
+
+- Parameterized the existing execution-history repository suite for SQLite and PostgreSQL. PostgreSQL cases use a unique schema and per-connection search path, create the real metadata, and remove the schema after disposing test connections. The fixture requires an explicitly configured asyncpg test URL and skips PostgreSQL cases when it is absent.
+- All seventeen existing contracts now run on both databases, including queue ordering/conditional claims, immutable requests, pagination, cross-Workspace history, active-execution uniqueness, partial/completion ordering, deletion, interruption, and batches of 0/1/5/401 executions.
+- The live run passed 81 tests: 34 history cases across both databases, 46 column-type contracts, and the PostgreSQL migration upgrade/downgrade test. The 401-execution PostgreSQL queue and interruption cases each satisfy the same three-SELECT budget as SQLite.
+- Used a disposable PostgreSQL 15 container with temporary storage and a loopback-only port; it was removed after the run. No project database or mounted project files were used.
+- Ruff and whitespace checks pass. The test file retains only its two previously recorded diagnostics at the unchanged artifact-union assertion; the new fixture introduces none.
+- Evidence: `/tmp/grafy-history-postgres-sqlite.log`, `/tmp/grafy-history-postgres-live.log`, and `/tmp/grafy-history-postgres-types.log`.
+- Finding 11 is complete: shared typed serializers, repository and table ownership, shared recovery hydration, unchanged migration metadata, SQLite regression, and live PostgreSQL migration/storage/recovery checks all have evidence. Other original findings and final whole-backend gates remain open.
