@@ -79,7 +79,8 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Replace manual node/edge/presentation conversion trees with canonical serialization and explicit pin-name compatibility.
 - [ ] Remove repeated graph validators and conversion logic without losing aliases.
 - [ ] Migrate clients toward collaboration metadata plus canonical document.
-- [ ] Make the versioned compatibility decision explicit before retiring flattened public fields and mirrored schemas.
+- [x] Make the versioned compatibility decision explicit before retiring flattened public fields and mirrored schemas; see [graph transport migration](graph-transport-migration.md).
+- [x] Add an opt-in canonical head read endpoint and regenerate OpenAPI/TypeScript contracts without changing existing responses.
 - [ ] Verify graph round trips, old/new transport compatibility, generated clients, and OpenAPI.
 
 ## 9. Artifact availability
@@ -902,3 +903,15 @@ flowchart LR
     Adapter --> Response[Existing collaboration response]
     Response --> Clients[Existing clients]
 ```
+
+
+### Opt-in canonical collaboration head transport
+
+- Added `GET /v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document`. Its `CanonicalCollaborativeHeadResponse` pairs the existing collaboration metadata with `SavedGraphDocument` directly. It uses the existing authorized collaboration head read and introduces no independent document conversion tree. [R08: Model-Owned Serialization]
+- Existing head reads, command/checkpoint responses, and room protocol v1 remain unchanged. Every pre-existing OpenAPI path and schema is identical. Generated OpenAPI and TypeScript add only the new path, operation, and response model.
+- Three HTTP contracts prove exact canonical document serialization, coexistence with legacy reads, matching missing/cross-workspace rejection, and visibility of uncheckpointed collaboration metadata without changing the saved revision. API/client/collaboration/architecture regression passed 581 tests before the third contract was added; all three focused contracts then passed. [R43: Tests Are Behavioral Contracts]
+- Built and extracted the API wheel; its actual app registers the route and produces the checked-in OpenAPI exactly. OpenAPI TypeScript generation passes its consistency check. Ruff and diff checks pass. A full frontend build was not run; frontend consumers have not migrated in this batch.
+- Targeted Pyright reports 125 diagnostics on the committed baseline and 131 after this change. The six added diagnostics repeat the route module's existing dynamic `require_workspace_capability(...)` annotation pattern (invalid type expression and resulting unknown access/actor/workspace types). Runtime dependency registration and authorization are covered by the HTTP tests. This is recorded debt, not a passing type check. [R11: Framework Constraints Must Be Explicit]
+- Compatibility decision and remaining migration steps are recorded in `graph-transport-migration.md`. Finding 8 stays open for client/room migration, internal canonical reuse, and retirement of repeated validators after compatibility requirements are resolved.
+- Proposed transport rule: a response model used by clients to parse JSON must retain its deserialization contract as well as serialization and OpenAPI. A serializer-only domain annotation is insufficient when client parsers still consume the legacy wire shape. [R23: Maintain The Rules]
+- Evidence: `/tmp/grafy-canonical-head-regression.log`, `/tmp/grafy-canonical-head-contracts.log`, `/tmp/grafy-canonical-head-baseline-types.log`, `/tmp/grafy-canonical-head-types.log`, `/tmp/grafy-canonical-head-codegen-check.log`, and `/tmp/grafy-canonical-head-build.log`.

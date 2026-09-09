@@ -504,6 +504,58 @@
         "title": "Body_upload_file_v1_workspaces__workspace_id__uploads_post",
         "type": "object"
       },
+      "CanonicalCollaborativeHeadResponse": {
+        "additionalProperties": false,
+        "description": "Collaboration metadata paired with the canonical saved graph document.",
+        "properties": {
+          "checkpoint_revision": {
+            "title": "Checkpoint Revision",
+            "type": "integer"
+          },
+          "checkpoint_sequence": {
+            "title": "Checkpoint Sequence",
+            "type": "integer"
+          },
+          "collaboration_sequence": {
+            "title": "Collaboration Sequence",
+            "type": "integer"
+          },
+          "document": {
+            "$ref": "#/components/schemas/SavedGraphDocument"
+          },
+          "graph_id": {
+            "format": "uuid",
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "room_epoch": {
+            "format": "uuid",
+            "title": "Room Epoch",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "graph_id",
+          "room_epoch",
+          "collaboration_sequence",
+          "checkpoint_sequence",
+          "checkpoint_revision",
+          "name",
+          "updated_at",
+          "document"
+        ],
+        "title": "CanonicalCollaborativeHeadResponse",
+        "type": "object"
+      },
       "CheckpointGraphRequest": {
         "additionalProperties": false,
         "properties": {
@@ -10737,6 +10789,67 @@
           }
         ],
         "summary": "Get Collaborative Head",
+        "tags": [
+          "saved graphs"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document": {
+      "get": {
+        "operationId": "get_canonical_collaborative_head_v1_workspaces__workspace_id__graphs__graph_id__head_document_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonicalCollaborativeHeadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Canonical Collaborative Head",
         "tags": [
           "saved graphs"
         ]

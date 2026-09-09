@@ -521,6 +521,25 @@ class CollaborativeHeadResponse(SavedGraphApiModel):
         )
 
 
+class CanonicalCollaborativeHeadResponse(SavedGraphApiModel):
+    """Collaboration metadata paired with the canonical saved graph document."""
+
+    graph_id: UUID
+    room_epoch: UUID
+    collaboration_sequence: int
+    checkpoint_sequence: int
+    checkpoint_revision: int
+    name: str
+    updated_at: datetime
+    document: SavedGraphDocument
+
+    @classmethod
+    def from_head(
+        cls, head: CollaborativeGraphHead
+    ) -> "CanonicalCollaborativeHeadResponse":
+        return cls.model_validate(head, from_attributes=True)
+
+
 class SubmitGraphCommandRequest(SavedGraphApiModel):
     command_id: UUID
     room_epoch: UUID

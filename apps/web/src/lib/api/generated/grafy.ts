@@ -626,6 +626,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Canonical Collaborative Head */
+        readonly get: operations["get_canonical_collaborative_head_v1_workspaces__workspace_id__graphs__graph_id__head_document_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}/materializations": {
         readonly parameters: {
             readonly query?: never;
@@ -1279,6 +1296,36 @@ export interface components {
         readonly Body_upload_file_v1_workspaces__workspace_id__uploads_post: {
             /** File */
             readonly file: string;
+        };
+        /**
+         * CanonicalCollaborativeHeadResponse
+         * @description Collaboration metadata paired with the canonical saved graph document.
+         */
+        readonly CanonicalCollaborativeHeadResponse: {
+            /** Checkpoint Revision */
+            readonly checkpoint_revision: number;
+            /** Checkpoint Sequence */
+            readonly checkpoint_sequence: number;
+            /** Collaboration Sequence */
+            readonly collaboration_sequence: number;
+            readonly document: components["schemas"]["SavedGraphDocument"];
+            /**
+             * Graph Id
+             * Format: uuid
+             */
+            readonly graph_id: string;
+            /** Name */
+            readonly name: string;
+            /**
+             * Room Epoch
+             * Format: uuid
+             */
+            readonly room_epoch: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
         };
         /** CheckpointGraphRequest */
         readonly CheckpointGraphRequest: {
@@ -5532,6 +5579,38 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["CollaborativeHeadResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_canonical_collaborative_head_v1_workspaces__workspace_id__graphs__graph_id__head_document_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly graph_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CanonicalCollaborativeHeadResponse"];
                 };
             };
             /** @description Validation Error */
