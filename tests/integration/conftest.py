@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
-from grafy_core.artifacts import InMemoryUnitOfWork
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY

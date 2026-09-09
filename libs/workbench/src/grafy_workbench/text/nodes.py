@@ -18,8 +18,8 @@ from grafy_core.artifacts import (
     NodeConfig,
     NodeInput,
     NodeOutput,
-    UnitOfWorkPort,
 )
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.domain.errors import NotFoundError
 from grafy_core.nodes import InPort, OutPort
 from grafy_core.plugins import NodeCachePolicy

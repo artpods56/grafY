@@ -18,7 +18,8 @@ from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.execution.requests import RunRequest
 from tests.support.system_plugins import selected_system_run_node as RunNodeRequest
 from grafy_api.v1.routes.executions.services import RunResultPresenter
-from grafy_core.artifacts import ArtifactObject, InMemoryUnitOfWork
+from grafy_core.artifacts import ArtifactObject
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.table_contracts import (
     Table,

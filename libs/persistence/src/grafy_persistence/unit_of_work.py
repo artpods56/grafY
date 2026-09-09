@@ -6,7 +6,7 @@ from typing import override, Self
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
 
-from grafy_core.artifacts import ArtifactRepositoryPort
+from grafy_core.ports.artifacts import ArtifactRepositoryPort
 from grafy_core.domain.errors import ConcurrentWriteError
 from grafy_core.ports.collaboration import (
     CollaborationRepositoryPort,

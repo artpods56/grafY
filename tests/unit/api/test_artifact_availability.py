@@ -5,12 +5,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactRefSequence,
-    ArtifactTypeKey,
-    InMemoryUnitOfWork,
-)
+from grafy_core.artifacts import ArtifactObject, ArtifactRefSequence, ArtifactTypeKey
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.ports.storage import SaveFileCommand, StoredObjectInfo
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_storage import LocalFileObjectStore

@@ -3,13 +3,8 @@ from uuid import UUID
 
 import pytest
 
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactRef,
-    ArtifactRefSequence,
-    InMemoryDataStore,
-    InMemoryUnitOfWork,
-)
+from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactRefSequence
+from grafy_core.runtime.in_memory import InMemoryDataStore, InMemoryUnitOfWork
 from grafy_core.domain.artifact_outputs import (
     artifact_outputs_from_storage,
     artifact_outputs_to_storage,

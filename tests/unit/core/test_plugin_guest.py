@@ -15,13 +15,8 @@ from grafy_core.domain.plugin_releases import (
     plugin_protocol_digest,
 )
 from grafy_core.domain.plugin_identity import PluginReleaseScope
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactRef,
-    ArtifactTypeKey,
-    InMemoryUnitOfWork,
-    NodeInput,
-)
+from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactTypeKey, NodeInput
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.nodes import InputContract, InputPortSpec
 from grafy_core.ports.storage import SaveFileCommand
 from grafy_core.runtime.plugin_guest import (
@@ -77,9 +72,8 @@ def _loader_release(
         slug=slug,
         revision=1,
         source_digest="a" * 64,
-        contract_digest=contract_digest or plugin_contract_digest(
-            PluginCatalogManifest.from_plugin(TEXT)
-        ),
+        contract_digest=contract_digest
+        or plugin_contract_digest(PluginCatalogManifest.from_plugin(TEXT)),
         protocol_digest=plugin_protocol_digest(),
         descriptor_digest="d" * 64,
     )

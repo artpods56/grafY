@@ -18,13 +18,8 @@ from grafy_core.domain.errors import NotFoundError, UserDisabledError
 from grafy_core.domain.identity import ActorContext
 from grafy_core.domain.modules import GraphModuleReference
 from grafy_core.domain.saved_graphs import SavedGraphDocument
-from grafy_core.artifacts import (
-    InMemoryUnitOfWork,
-    NoConfig,
-    NodeConfig,
-    NodeInput,
-    NodeOutput,
-)
+from grafy_core.artifacts import NoConfig, NodeConfig, NodeInput, NodeOutput
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
 from grafy_core.artifact_contracts import TEXT_VALUE
 from grafy_core.plugins import NodeSecretInput, Plugin

@@ -32,12 +32,8 @@ from openai.types.shared_params import ResponseFormatJSONSchema
 from pydantic import SecretStr
 
 from grafy_core.artifact_contracts import RASTER_IMAGE
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactRef,
-    JsonObject,
-    UnitOfWorkPort,
-)
+from grafy_core.artifacts import ArtifactObject, ArtifactRef, JsonObject
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.storage import FileStoragePort
 from grafy_core.schema_contracts import (
     parse_json_schema,
@@ -112,9 +108,7 @@ def _omit_null_optional_properties(
             item_schema = cast(dict[str, object], items_schema)
             cleaned_items: list[object] = []
             for item in cast(list[object], value):
-                cleaned_items.append(
-                    _omit_null_optional_properties(item_schema, item)
-                )
+                cleaned_items.append(_omit_null_optional_properties(item_schema, item))
             omitted = cleaned_items
     return omitted
 

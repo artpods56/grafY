@@ -28,7 +28,8 @@ from openai.types.chat.completion_create_params import (
 from openai.types.shared_params import ResponseFormatJSONSchema
 from pydantic import SecretStr, ValidationError
 
-from grafy_core.artifacts import JsonObject, UnitOfWorkPort
+from grafy_core.artifacts import JsonObject
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.prompt_contracts import PromptMessage, PromptMessageRole
 from grafy_core.schema_contracts import (
     parse_json_schema,

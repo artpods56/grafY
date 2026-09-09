@@ -6,11 +6,8 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactRepositoryPort,
-    ArtifactTypeKey,
-)
+from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey
+from grafy_core.ports.artifacts import ArtifactRepositoryPort
 from grafy_core.domain.staged_uploads import StagedUpload
 from grafy_core.ports.staged_uploads import StagedUploadRepositoryPort
 from grafy_persistence import schema

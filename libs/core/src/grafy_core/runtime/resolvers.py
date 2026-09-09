@@ -3,11 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from grafy_core.artifacts import (
-    ArtifactRef,
-    ArtifactTypeKey,
-    UnitOfWorkPort,
-)
+from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.domain.errors import NotFoundError
 
 

@@ -5,7 +5,8 @@ from uuid import UUID
 from PIL import Image as ImageModule
 from PIL.Image import Image
 
-from grafy_core.artifacts import ArtifactRef, UnitOfWorkPort
+from grafy_core.artifacts import ArtifactRef
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.domain.errors import NotFoundError
 from grafy_core.artifact_contracts import RASTER_IMAGE
 from grafy_core.ports.storage import FileStoragePort

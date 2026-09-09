@@ -19,12 +19,8 @@ from grafy_core.artifact_collections import (
     JsonCollectionsManifest,
     save_json_collections,
 )
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactTypeKey,
-    InMemoryUnitOfWork,
-    JsonObject,
-)
+from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey, JsonObject
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.ports.storage import (
     FileStoragePort,
     FileStreamProtocol,

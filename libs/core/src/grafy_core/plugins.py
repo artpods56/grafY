@@ -24,9 +24,9 @@ from grafy_core.artifacts import (
     NodeConfig,
     NodeInput,
     NodeOutput,
-    UnitOfWorkPort,
     Artifact,
 )
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.conversions import (
     ArtifactConversion,
     ArtifactConversionKey,

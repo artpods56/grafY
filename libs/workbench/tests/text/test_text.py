@@ -5,11 +5,8 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from grafy_core.artifacts import (
-    ArtifactRef,
-    InMemoryUnitOfWork,
-    NoConfig,
-)
+from grafy_core.artifacts import ArtifactRef, NoConfig
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.artifact_contracts import (
     TEXT_VALUE,
     TextValue,

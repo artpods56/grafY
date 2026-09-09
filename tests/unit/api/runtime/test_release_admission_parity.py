@@ -6,7 +6,7 @@ from uuid import UUID
 import pytest
 
 from grafy_core.artifact_contracts import TEXT_VALUE
-from grafy_core.artifacts import InMemoryUnitOfWork
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY
 from grafy_core.domain.modules import GraphModuleDefinition
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability

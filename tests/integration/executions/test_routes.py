@@ -38,7 +38,7 @@ from grafy_api.execution.manager import RunExecutionIdempotencyConflictError
 from grafy_api.v1.routes.uploads.models import SampleRequest
 from grafy_api.v1.routes.uploads.services import ImageUploadService
 from grafy_api.settings import Settings
-from grafy_core.artifacts import InMemoryUnitOfWork
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 
 from tests.testkit import app_with_overrides, create_db_url, db
 
@@ -133,9 +133,7 @@ def test_node_registry_does_not_synthesize_plugins_from_runtime_registry(
         ),
     }
     assert {spec.key.id for spec in registry.artifact_types} == {
-        spec.key.id
-        for plugin in TEST_SYSTEM_PLUGINS
-        for spec in plugin.artifact_types
+        spec.key.id for plugin in TEST_SYSTEM_PLUGINS for spec in plugin.artifact_types
     }
     assert {spec.key.id for spec in registry.artifact_conversions} == {
         conversion.key.id for conversion in CANONICAL_ARTIFACT_CONVERSIONS

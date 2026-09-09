@@ -3,12 +3,8 @@ from typing import cast
 
 from pydantic import BaseModel, ConfigDict, StrictInt
 
-from grafy_core.artifacts import (
-    ArtifactTypeKey,
-    ArtifactTypeSpec,
-    InMemoryUnitOfWork,
-    JsonObject,
-)
+from grafy_core.artifacts import ArtifactTypeKey, ArtifactTypeSpec, JsonObject
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_workbench.arithmetic.nodes import (
     INTEGER_VALUE,
     IntegerValueOutputWriter,

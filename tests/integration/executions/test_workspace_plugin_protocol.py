@@ -12,11 +12,11 @@ from grafy_core.artifacts import (
     ArtifactObject,
     ArtifactRef,
     ArtifactTypeKey,
-    InMemoryUnitOfWork,
     JsonObject,
     NodeInput,
     NodeOutput,
 )
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.plugin_releases import (
     PluginExecutionPolicy,
     PluginRelease,

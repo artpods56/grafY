@@ -2,7 +2,7 @@ import tomllib
 from io import BytesIO
 from pathlib import Path
 
-from grafy_core.artifacts import InMemoryUnitOfWork
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.table_contracts import (
     TABLE_DATA,
 )

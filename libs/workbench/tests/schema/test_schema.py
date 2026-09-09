@@ -6,7 +6,8 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from grafy_core.artifacts import ArtifactTypeKey, InMemoryUnitOfWork
+from grafy_core.artifacts import ArtifactTypeKey
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.nodes import NodeExecutionContext, PortShape
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.storage import FileStoragePort

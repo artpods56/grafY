@@ -5,7 +5,7 @@ from uuid import UUID
 import pytest
 
 from grafy_core.artifact_contracts import RASTER_IMAGE, RasterImageContent
-from grafy_core.artifacts import InMemoryUnitOfWork
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.staged_uploads import StagedUpload
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext

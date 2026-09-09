@@ -8,7 +8,8 @@ import pytest
 from openpyxl import Workbook
 from pydantic import ValidationError
 
-from grafy_core.artifacts import ArtifactObject, InMemoryUnitOfWork, JsonObject
+from grafy_core.artifacts import ArtifactObject, JsonObject
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.staged_uploads import StagedUpload
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.table_contracts import (
@@ -49,6 +50,7 @@ from grafy_core.ports.storage import (
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext
 from grafy_core.runtime.resolvers import ResolutionError
+
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
 

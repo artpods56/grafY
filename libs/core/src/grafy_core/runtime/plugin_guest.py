@@ -19,10 +19,10 @@ from grafy_core.artifacts import (
     ArtifactRef,
     ArtifactRefSequence,
     ArtifactTypeKey,
-    InMemoryUnitOfWork,
     JsonObject,
-    UnitOfWorkPort,
 )
+from grafy_core.ports.artifacts import UnitOfWorkPort
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.plugin_releases import (
     PLUGIN_INVOCATION_PROTOCOL,
     PluginCatalogManifest,
@@ -98,9 +98,7 @@ class PluginGuestError(RuntimeError):
     """The staged invocation cannot be executed by the guest runtime."""
 
 
-SYSTEM_PLUGIN_LOADER_MANIFEST_PATH = Path(
-    "/opt/grafy/plugin/plugin-loader.json"
-)
+SYSTEM_PLUGIN_LOADER_MANIFEST_PATH = Path("/opt/grafy/plugin/plugin-loader.json")
 
 
 def load_guest_plugin(
@@ -1551,13 +1549,10 @@ async def execute_plugin_invocation(
 def main() -> None:
     if len(sys.argv) not in (2, 3):
         raise SystemExit(
-            "usage: python -m grafy_core.runtime.plugin_guest ROOT "
-            "[LOADER_MANIFEST]"
+            "usage: python -m grafy_core.runtime.plugin_guest ROOT [LOADER_MANIFEST]"
         )
     loader_manifest_path = (
-        SYSTEM_PLUGIN_LOADER_MANIFEST_PATH
-        if len(sys.argv) == 2
-        else Path(sys.argv[2])
+        SYSTEM_PLUGIN_LOADER_MANIFEST_PATH if len(sys.argv) == 2 else Path(sys.argv[2])
     )
     try:
         asyncio.run(

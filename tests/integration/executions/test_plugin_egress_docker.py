@@ -10,7 +10,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from grafy_core.artifacts import ArtifactRef, InMemoryUnitOfWork, NodeInput, NodeOutput
+from grafy_core.artifacts import ArtifactRef, NodeInput, NodeOutput
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.domain.plugin_releases import (
     PluginExecutionPolicy,

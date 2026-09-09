@@ -17,12 +17,8 @@ from grafy_core.artifact_collections import (
     load_json_collections_page,
     save_json_collections,
 )
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactRef,
-    JsonObject,
-    UnitOfWorkPort,
-)
+from grafy_core.artifacts import ArtifactObject, ArtifactRef, JsonObject
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.domain.errors import NotFoundError
 from grafy_core.ports.storage import (
     FileStoragePort,

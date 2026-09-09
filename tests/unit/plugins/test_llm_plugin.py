@@ -2,7 +2,7 @@ import tomllib
 from io import BytesIO
 from pathlib import Path
 
-from grafy_core.artifacts import InMemoryUnitOfWork
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_workbench.arithmetic import ARITHMETIC
 from grafy_workbench.image import IMAGES
 from grafy_workbench.schema import SCHEMAS

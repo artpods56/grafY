@@ -19,8 +19,8 @@ from grafy_core.artifacts import (
     NodeConfig,
     NodeInput,
     NodeOutput,
-    UnitOfWorkPort,
 )
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import Node, NodeExecutionContext, OutPort
 from grafy_core.plugins import NodeStagedUploadInput

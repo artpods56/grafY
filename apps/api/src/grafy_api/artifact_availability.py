@@ -9,12 +9,8 @@ from grafy_core.artifact_collections import (
     JSON_COLLECTIONS_STORAGE_FORMAT,
     json_collections_artifact_is_accessible,
 )
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactRef,
-    ArtifactRefSequence,
-    UnitOfWorkPort,
-)
+from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactRefSequence
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.ports.storage import FileStoragePort
 from grafy_core.runtime.table_storage import table_artifact_is_accessible

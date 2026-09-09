@@ -10,8 +10,8 @@ from grafy_core.artifacts import (
     ArtifactRef,
     ArtifactRefSequence,
     ArtifactTypeKey,
-    InMemoryUnitOfWork,
 )
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.canonical_conversions import INTEGER_TO_TEXT
 from grafy_core.conversions import ArtifactConversion, ArtifactConversionKey
 from grafy_core.nodes import resolve_node_contracts

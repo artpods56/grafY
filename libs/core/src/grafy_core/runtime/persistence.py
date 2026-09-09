@@ -12,8 +12,8 @@ from grafy_core.artifacts import (
     ArtifactRefSequence,
     ArtifactTypeKey,
     JsonObject,
-    UnitOfWorkPort,
 )
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.nodes import (
     NodeExecutionContext,
     OutputContract,

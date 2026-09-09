@@ -12,12 +12,8 @@ import grafy_plugin_gis.wfs as wfs_module
 import pytest
 from pydantic import ValidationError
 
-from grafy_core.artifacts import (
-    ArtifactRef,
-    ArtifactRefSequence,
-    ArtifactTypeSpec,
-    InMemoryUnitOfWork,
-)
+from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeSpec
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.staged_uploads import StagedUpload
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.table_contracts import (

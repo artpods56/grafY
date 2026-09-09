@@ -2,10 +2,8 @@ from uuid import UUID
 
 import pytest
 
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactRef,
-    ArtifactTypeKey,
+from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactTypeKey
+from grafy_core.runtime.in_memory import (
     InMemoryDataStore,
     InMemoryInvocationCacheRepository,
     InMemoryUnitOfWork,

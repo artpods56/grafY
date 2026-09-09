@@ -8,7 +8,8 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import StrictInt, ValidationError
 
-from grafy_core.artifacts import InMemoryUnitOfWork, NoConfig, NodeInput, NodeOutput
+from grafy_core.artifacts import NoConfig, NodeInput, NodeOutput
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.artifacts import JsonObject
 from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.domain.execution_history import (

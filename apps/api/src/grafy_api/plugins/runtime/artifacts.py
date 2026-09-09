@@ -19,8 +19,8 @@ from grafy_core.artifacts import (
     ArtifactRefSequence,
     ArtifactTypeKey,
     JsonObject,
-    UnitOfWorkPort,
 )
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.domain.plugin_releases import (
     PluginArtifactBundleContract,
     PluginArtifactReferenceContract,

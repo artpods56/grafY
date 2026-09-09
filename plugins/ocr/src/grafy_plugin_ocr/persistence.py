@@ -2,12 +2,8 @@ import json
 from hashlib import sha256
 from typing import cast, final, override
 
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactRef,
-    JsonObject,
-    UnitOfWorkPort,
-)
+from grafy_core.artifacts import ArtifactObject, ArtifactRef, JsonObject
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.runtime.persistence import (
     ArtifactOutputWriter,
     ArtifactWriteContext,

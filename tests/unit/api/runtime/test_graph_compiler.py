@@ -5,7 +5,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey, InMemoryUnitOfWork
+from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.artifact_contracts import INTEGER_VALUE, TEXT_VALUE
 from grafy_core.canonical_conversions import (
     CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,

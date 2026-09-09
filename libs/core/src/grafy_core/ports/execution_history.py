@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from grafy_core.artifacts import UnitOfWorkPort
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.domain.execution_history import (
     GraphExecution,
     GraphExecutionCursor,

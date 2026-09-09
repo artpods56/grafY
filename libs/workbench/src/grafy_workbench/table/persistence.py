@@ -3,12 +3,8 @@ from io import BytesIO
 from typing import cast, final, override
 from uuid import UUID
 
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactRef,
-    JsonObject,
-    UnitOfWorkPort,
-)
+from grafy_core.artifacts import ArtifactObject, ArtifactRef, JsonObject
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.domain.errors import NotFoundError
 from grafy_core.ports.storage import FileMetadata, FileStoragePort, SaveFileCommand
 from grafy_core.runtime.persistence import ArtifactOutputWriter, ArtifactWriteContext

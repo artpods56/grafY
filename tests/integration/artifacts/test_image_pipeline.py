@@ -4,11 +4,8 @@ from uuid import UUID, uuid4
 import pytest
 from PIL import Image
 
-from grafy_core.artifacts import (
-    ArtifactRef,
-    ArtifactRefSequence,
-    InMemoryUnitOfWork,
-)
+from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.staged_uploads import StagedUpload
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.artifact_contracts import RASTER_IMAGE, RasterImageContent

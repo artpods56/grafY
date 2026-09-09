@@ -8,11 +8,8 @@ import httpx
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from grafy_core.artifacts import (
-    ArtifactObject,
-    InMemoryUnitOfWork,
-    JsonObject,
-)
+from grafy_core.artifacts import ArtifactObject, JsonObject
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.artifact_contracts import RASTER_IMAGE
 from grafy_core.prompt_contracts import PromptMessage, PromptMessageRole
 from grafy_core.ports.storage import SaveFileCommand, StoredFile, StoredObjectInfo

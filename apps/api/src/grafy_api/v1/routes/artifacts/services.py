@@ -22,8 +22,8 @@ from grafy_core.artifacts import (
     ArtifactObject,
     ArtifactRef,
     ArtifactTypeSpec,
-    UnitOfWorkPort,
 )
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.table_contracts import (
     TABLE_DATA,
     TablePage,

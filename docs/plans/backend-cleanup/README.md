@@ -106,7 +106,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 ## 12. Artifact contracts and in-memory persistence
 
-- [ ] Move artifact repository contracts to ports/artifacts and concrete in-memory implementations to a production core runtime owner.
+- [x] Move artifact repository contracts to ports/artifacts and concrete in-memory implementations to a production core runtime owner.
 - [ ] Share lifecycle-only transaction protocol across feature protocols while keeping repository requirements explicit.
 - [ ] Declare materialized-output dependency in saved-graph transaction contract and remove reflective fallback.
 - [ ] Preserve task isolation, cloning, rollback, guest execution, and supported SDK imports.
@@ -482,3 +482,26 @@ flowchart TD
 - Ruff and whitespace checks pass. The test file retains only its two previously recorded diagnostics at the unchanged artifact-union assertion; the new fixture introduces none.
 - Evidence: `/tmp/grafy-history-postgres-sqlite.log`, `/tmp/grafy-history-postgres-live.log`, and `/tmp/grafy-history-postgres-types.log`.
 - Finding 11 is complete: shared typed serializers, repository and table ownership, shared recovery hydration, unchanged migration metadata, SQLite regression, and live PostgreSQL migration/storage/recovery checks all have evidence. Other original findings and final whole-backend gates remain open.
+
+
+### Artifact ports and in-memory runtime ownership
+
+- Moved `ArtifactRepositoryPort` and the artifact-bearing `UnitOfWorkPort` to `ports/artifacts.py`. Moved the concrete store, repositories, task-local transaction state, and cloning implementation to `runtime/in_memory.py`. `artifacts.py` retains artifact models and supported SDK exports.
+- Internal production and test callers import ports and memory implementations directly from their owners. The standalone plugin example retains its old public import because its frozen source bundle carries an older SDK wheel. Publication tests caught this boundary before commit; no bundled SDK or plugin behavior was changed.
+- Legacy SDK exports use module-level lazy attribute resolution. Eager exports re-entered the domain package before `GraphModuleDefinition` existed; the lazy boundary removes that cycle while preserving object identity and wildcard imports. This local-import exception has a demonstrated initialization reason. [R05: Top-Level Imports By Default]
+- All 27 original class/function syntax trees are identical after extraction. Locking, task isolation, cloning, commit/rollback, stored history, staged uploads, and cache behavior remain unchanged.
+- Added five fresh-process import-order tests covering artifact, domain, ports, memory runtime, and plugin entry points. They verify explicit/wildcard SDK exports resolve to the same objects and unknown attributes raise `AttributeError`. The extracted core wheel passes the same entry-point checks.
+- Validation passed 535 core/application/persistence/architecture tests, 520 API/execution-route tests, 102 plugin/storage tests, 79 workbench tests, and 5 import tests, totaling 1,241 passing tests. Nineteen optional PostgreSQL cases were skipped in this run; the preceding live PostgreSQL evidence remains valid because implementations are unchanged.
+- Ruff and whitespace checks pass. Targeted Pyright reports the same eight pre-existing untyped-dict-factory diagnostics as the saved pre-move artifact module, now distributed between models and memory state. No new diagnostics were introduced.
+- Evidence: `/tmp/grafy-artifact-owners-before.py`, `/tmp/grafy-artifact-owners-core.log`, `/tmp/grafy-artifact-owners-api.log`, `/tmp/grafy-artifact-owners-plugins.log`, `/tmp/grafy-artifact-owners-workbench.log`, `/tmp/grafy-artifact-owners-imports.log`, `/tmp/grafy-artifact-owners-baseline-types.log`, `/tmp/grafy-artifact-owners-types.log`, and `/tmp/grafy-artifact-owners-wheel.log`.
+- Finding 12 remains open for shared lifecycle-only transaction contracts and explicit saved-graph materialization requirements. Reusable compatibility lesson: when a source example contains a pinned SDK wheel, migrate its imports only alongside that SDK version, or retain the supported public imports. [R23: Maintain The Rules]
+
+```mermaid
+flowchart LR
+    Callers[Application and runtime callers] --> Ports[Artifact repository and transaction ports]
+    Callers --> Memory[In-memory persistence runtime]
+    Memory --> Ports
+    Ports --> Models[Artifact data models]
+    SDK[Legacy SDK imports] -. lazy compatibility exports .-> Memory
+    SDK -. lazy compatibility exports .-> Ports
+```

@@ -4,12 +4,8 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactRef,
-    ArtifactRefSequence,
-    InMemoryUnitOfWork,
-)
+from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactRefSequence
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.artifact_contracts import RASTER_IMAGE
 from grafy_workbench.sequence.nodes import ItemAtConfig, SliceConfig
 

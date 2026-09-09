@@ -1,7 +1,7 @@
 import tomllib
 from pathlib import Path
 
-from grafy_core.artifacts import InMemoryUnitOfWork
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.artifact_contracts import RASTER_IMAGE
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_plugin_ocr import OCR

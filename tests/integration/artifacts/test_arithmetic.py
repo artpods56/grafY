@@ -30,8 +30,8 @@ from grafy_core.artifacts import (
     ArtifactRef,
     ArtifactRefSequence,
     ArtifactTypeKey,
-    InMemoryUnitOfWork,
 )
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.conversions import MAX_ARTIFACT_CONVERSION_HOPS
 from grafy_workbench.arithmetic.nodes import (
     BinaryIntegerInput,

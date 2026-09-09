@@ -7,13 +7,8 @@ from uuid import UUID
 import pytest
 from sqlalchemy import event
 
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactRefSequence,
-    ArtifactTypeKey,
-    InMemoryDataStore,
-    InMemoryUnitOfWork,
-)
+from grafy_core.artifacts import ArtifactObject, ArtifactRefSequence, ArtifactTypeKey
+from grafy_core.runtime.in_memory import InMemoryDataStore, InMemoryUnitOfWork
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.domain.saved_graphs import (
     SavedGraph,

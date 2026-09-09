@@ -15,7 +15,7 @@ from grafy_api.settings import (
 )
 from grafy_api.v1.routes.uploads.dependencies import image_upload_service
 from grafy_api.v1.routes.uploads.services import ImageUploadService
-from grafy_core.artifacts import InMemoryUnitOfWork
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.staged_uploads import StagedUpload
 from tests.support.clients import GrafyApi
 from tests.support.identity import TEST_USER_ID, WORKSPACE_ID

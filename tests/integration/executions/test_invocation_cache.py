@@ -12,12 +12,8 @@ from grafy_core.artifact_collections import (
     load_json_collections_manifest,
     save_json_collections,
 )
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactRef,
-    ArtifactTypeKey,
-    InMemoryUnitOfWork,
-)
+from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactTypeKey
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.invocation_cache import InvocationCacheEntry
 from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.nodes import NodeExecutionContext

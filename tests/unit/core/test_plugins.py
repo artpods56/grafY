@@ -11,13 +11,13 @@ from grafy_core.artifacts import (
     ArtifactFieldProjection,
     ArtifactTypeKey,
     ArtifactTypeSpec,
-    InMemoryUnitOfWork,
     JsonObject,
     NoConfig,
     NodeConfig,
     NodeInput,
     NodeOutput,
 )
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.conversions import (
     ArtifactConversion,
     ArtifactConversionKey,
@@ -436,7 +436,9 @@ def test_node_decorator_rejects_missing_secret_config_dependency() -> None:
 def test_http_egress_contract_requires_network_egress_capability() -> None:
     plugin = Plugin(slug="example.egress", title="Example egress")
 
-    with pytest.raises(PluginRegistrationError, match="without requiring network.egress"):
+    with pytest.raises(
+        PluginRegistrationError, match="without requiring network.egress"
+    ):
         plugin.node(
             operator_id="example.egress",
             version=1,

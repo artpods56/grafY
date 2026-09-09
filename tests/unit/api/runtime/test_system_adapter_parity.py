@@ -13,11 +13,11 @@ from grafy_core.artifact_contracts import TEXT_VALUE
 from grafy_core.artifacts import (
     ArtifactObject,
     ArtifactRef,
-    InMemoryUnitOfWork,
     NodeConfig,
     NodeInput,
     NodeOutput,
 )
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.invocation_cache import InvocationCacheEntry
 from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
@@ -47,7 +47,12 @@ from grafy_core.nodes import (
     UserFacingNodeError,
     resolve_node_contracts,
 )
-from grafy_core.plugins import NodeCachePolicy, Plugin, PluginRegistry, PluginRuntimeContext
+from grafy_core.plugins import (
+    NodeCachePolicy,
+    Plugin,
+    PluginRegistry,
+    PluginRuntimeContext,
+)
 from grafy_core.ports.node_secrets import UnavailableNodeSecretResolver
 from grafy_core.runtime.execution import NodeRunError, NodeRuntime
 from grafy_core.runtime.invocation import NodeInvocation
@@ -90,9 +95,7 @@ from grafy_api.plugins.runtime.artifacts import ArtifactBundlePluginInvoker
 
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000972")
 INPUT_ID = UUID("00000000-0000-4000-8000-000000000973")
-LOADER_TARGET = (
-    "tests.unit.api.runtime.test_system_adapter_parity:PARITY_PLUGIN"
-)
+LOADER_TARGET = "tests.unit.api.runtime.test_system_adapter_parity:PARITY_PLUGIN"
 
 
 class ParityConfig(NodeConfig):
@@ -139,12 +142,8 @@ async def parity_transform(
 
 
 PARITY_PLUGIN.register_artifact_type_dependency(TEXT_VALUE)
-PARITY_PLUGIN.register_resolver(
-    lambda context: TextValueResolver(uow=context.uow)
-)
-PARITY_PLUGIN.register_writer(
-    lambda context: TextValueOutputWriter(uow=context.uow)
-)
+PARITY_PLUGIN.register_resolver(lambda context: TextValueResolver(uow=context.uow))
+PARITY_PLUGIN.register_writer(lambda context: TextValueOutputWriter(uow=context.uow))
 
 
 class _MemoryInvocationCache(InvocationCachePort):
@@ -331,9 +330,7 @@ def _secret_release() -> InstalledPluginRelease:
                     config_dependencies=("secret_name",),
                 ),
             ),
-            "required_capabilities": (
-                PluginRuntimeCapability.NODE_SECRETS,
-            ),
+            "required_capabilities": (PluginRuntimeCapability.NODE_SECRETS,),
         }
     )
     catalog = base.catalog.model_copy(update={"nodes": (contract,)})
@@ -497,9 +494,11 @@ async def test_same_exact_system_release_has_output_progress_cache_and_provenanc
 
     host_artifact = await _artifact_for(host_uow, host_results[0])
     oci_artifact = await _artifact_for(oci_uow, oci_results[0])
-    assert host_artifact.inline_payload == oci_artifact.inline_payload == {
-        "value": "PARITY"
-    }
+    assert (
+        host_artifact.inline_payload
+        == oci_artifact.inline_payload
+        == {"value": "PARITY"}
+    )
     assert host_artifact.metadata["provenance"] == oci_artifact.metadata["provenance"]
     assert oci_artifact.metadata["plugin_release"] == identity.provenance_document()
     assert "plugin_release" not in host_artifact.metadata
@@ -512,10 +511,14 @@ async def test_same_exact_system_release_has_output_progress_cache_and_provenanc
             }
         ]
     }
-    assert host_reporter.events == oci_reporter.events == [
-        ("started", 1, 2),
-        ("finished", 2, 2),
-    ]
+    assert (
+        host_reporter.events
+        == oci_reporter.events
+        == [
+            ("started", 1, 2),
+            ("finished", 2, 2),
+        ]
+    )
     assert host_results[0].cache_misses == oci_results[0].cache_misses == 1
     assert host_results[1].cache_hits == oci_results[1].cache_hits == 1
     assert host_results[0].values == host_results[1].values
@@ -602,13 +605,13 @@ async def test_same_exact_system_release_has_failure_and_cancellation_parity(
     assert oci_failure.value.failure_code is PluginFailureCode.OPERATOR_FAILURE
     oci_invocation_error = oci_failure.value.__cause__
     assert isinstance(oci_invocation_error, PluginInvocationError)
-    assert (
-        oci_invocation_error.failure_code is PluginFailureCode.OPERATOR_FAILURE
-    )
+    assert oci_invocation_error.failure_code is PluginFailureCode.OPERATOR_FAILURE
     assert "intentional parity failure" not in str(oci_failure.value)
-    assert host_failure_progress.events == oci_failure_progress.events == [
-        ("started", 1, 2)
-    ]
+    assert (
+        host_failure_progress.events
+        == oci_failure_progress.events
+        == [("started", 1, 2)]
+    )
 
     host_cancel = asyncio.create_task(
         host_runtime.run_node(
@@ -758,9 +761,7 @@ async def test_same_exact_system_release_has_graph_result_failure_code_parity(
     assert host_node_result.status == "failed"
     assert oci_node_result.status == "failed"
     assert host_node_result.failure_code is PluginFailureCode.OPERATOR_FAILURE
-    assert (
-        host_node_result.failure_code == oci_node_result.failure_code
-    )
+    assert host_node_result.failure_code == oci_node_result.failure_code
     assert host_node_result.plugin_release is not None
     assert host_node_result.plugin_release is oci_node_result.plugin_release
     assert host_node_result.plugin_release == identity

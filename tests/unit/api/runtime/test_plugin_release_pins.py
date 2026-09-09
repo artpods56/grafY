@@ -9,12 +9,8 @@ import pytest
 from pydantic import ValidationError
 
 from grafy_core.application.saved_graphs import SavedGraphService
-from grafy_core.artifacts import (
-    ArtifactFieldProjection,
-    ArtifactRef,
-    ArtifactTypeKey,
-    InMemoryUnitOfWork,
-)
+from grafy_core.artifacts import ArtifactFieldProjection, ArtifactRef, ArtifactTypeKey
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY
 from grafy_core.domain.modules import (
     MODULE_INPUT_OPERATOR_ID,
