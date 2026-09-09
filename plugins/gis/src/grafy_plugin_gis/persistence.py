@@ -14,8 +14,12 @@ from grafy_core.artifact_collections import (
     SUPPORTED_JSON_COLLECTIONS_STORAGE_FORMATS,
     JsonCollection,
     JsonCollectionsManifest,
-    load_json_collections_page,
     save_json_collections,
+)
+from grafy_core.spatial_contracts import GeoFeatureCollectionMetadata
+from grafy_core.spatial_storage import (
+    load_feature_collection,
+    verify_spatial_artifact_content,
 )
 from grafy_core.artifacts import ArtifactObject, ArtifactRef, JsonObject
 from grafy_core.ports.artifacts import UnitOfWorkPort
@@ -66,12 +70,8 @@ class _FeaturePropertyFieldMetadata(BaseModel):
     value_type: _PropertyValueType
 
 
-class _FeatureCollectionManifestMetadata(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class _FeatureCollectionManifestMetadata(GeoFeatureCollectionMetadata):
     kind: Literal["geo.feature_collection"] = "geo.feature_collection"
-    crs: Literal["EPSG:4326"] = "EPSG:4326"
-    source_name: StrictStr = Field(min_length=1)
     bounds: Bounds | None
     property_fields: list[_FeaturePropertyFieldMetadata] = Field(
         default_factory=list,
@@ -111,21 +111,6 @@ def _feature_property_fields(
         )
         for field_name, value_types in observed.items()
     ]
-
-
-def _verify_artifact_content(artifact: ArtifactObject, content: bytes) -> None:
-    if artifact.byte_size is not None and len(content) != artifact.byte_size:
-        raise ValueError(
-            f"Spatial artifact {artifact.id} contains {len(content)} bytes, "
-            f"expected {artifact.byte_size}"
-        )
-    if artifact.sha256 is not None:
-        observed_sha256 = sha256(content).hexdigest()
-        if observed_sha256 != artifact.sha256:
-            raise ValueError(
-                f"Spatial artifact {artifact.id} has SHA-256 "
-                f"{observed_sha256}, expected {artifact.sha256}"
-            )
 
 
 def _json_metadata(model: BaseModel) -> JsonObject:
@@ -172,13 +157,7 @@ class FeatureCollectionOutputWriter(ArtifactOutputWriter):
         context: ArtifactWriteContext,
     ) -> ArtifactRef:
         payload = GeoFeatureCollection.model_validate(value)
-        payload_json = cast(JsonObject, payload.model_dump(mode="json"))
-        logical_content = json.dumps(
-            payload_json,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
+        logical_content = payload.canonical_json_bytes()
         content_hash = sha256(logical_content).hexdigest()
         property_fields = _feature_property_fields(payload.features)
         manifest_metadata = _FeatureCollectionManifestMetadata(
@@ -424,33 +403,14 @@ class FeatureCollectionResolver(Resolver[GeoFeatureCollection]):
                     f"Feature collection artifact {artifact.id} has invalid "
                     "feature_count metadata"
                 )
-            page = await load_json_collections_page(
+            loaded = await load_feature_collection(
                 artifact,
                 self._storage,
-                offset=0,
-                limit=max(1, feature_count),
+                feature_count=feature_count,
+                metadata_type=_FeatureCollectionManifestMetadata,
+                payload_type=GeoFeatureCollection,
             )
-            metadata = _FeatureCollectionManifestMetadata.model_validate(page.metadata)
-            if len(page.collections) != 1 or page.collections[0].id != "features":
-                raise ValueError(
-                    "Geo feature collection manifest must contain one 'features' collection"
-                )
-            collection = page.collections[0]
-            if len(collection.items) != collection.total_items:
-                raise ValueError("Geo feature collection page is incomplete")
-            payload = GeoFeatureCollection(
-                features=collection.items,
-                source_name=metadata.source_name,
-                bounds=metadata.bounds,
-            )
-            logical_content = json.dumps(
-                cast(JsonObject, payload.model_dump(mode="json")),
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-            _verify_artifact_content(artifact, logical_content)
-            return payload
+            return loaded.payload
         except (ArtifactContractError, ResolutionError):
             raise
         except Exception as exc:
@@ -734,7 +694,7 @@ class RasterScanResolver(Resolver[GeoRasterScan]):
                 content = stream.read()
             finally:
                 stream.close()
-            _verify_artifact_content(artifact, content)
+            verify_spatial_artifact_content(artifact, content)
             return GeoRasterScan(
                 content=content,
                 filename=original_filename,

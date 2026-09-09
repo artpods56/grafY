@@ -19,6 +19,7 @@ from grafy_core.artifacts import ArtifactExportFormat, JsonObject
 from grafy_core.spatial_contracts import (
     GeoBounds as GeoBounds,
     GeoFeatureCollectionPayload as GeoFeatureCollectionPayload,
+    GeoFeatureCollectionMetadata,
     GeoVectorProjectionMetadata as GeoVectorProjectionMetadata,
     GeoRasterProjectionMetadata as GeoRasterProjectionMetadata,
 )
@@ -312,11 +313,7 @@ class GeoArtifactRefPayload(StrictGeoModel):
     content_hash: StrictStr | None = None
 
 
-class GeoFeatureManifestMetadata(StrictGeoModel):
-    kind: Literal["geo.feature_collection"]
-    crs: Literal["EPSG:4326"] = "EPSG:4326"
-    source_name: StrictStr = Field(min_length=1)
-    bounds: GeoBounds | None
+class GeoFeatureManifestMetadata(GeoFeatureCollectionMetadata):
     property_fields: list[GeoPropertyFieldResponse] = Field(
         default_factory=list,
     )

@@ -93,7 +93,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [ ] Share dependency-light persisted spatial contracts in core while preserving stored schema and HTTP defaults.
 - [x] Share feature-collection payload and vector/raster projection fields while preserving stricter GIS producer validation.
 - [ ] Consolidate remaining spatial references, styles, map documents, and manifest contracts with explicit compatibility differences.
-- [ ] Share feature-collection reconstruction and logical-byte integrity checks.
+- [x] Share feature-collection reconstruction and logical-byte integrity checks.
 - [ ] Keep GDAL, network requests, tile serving, and HTTP render responses with deployment owners.
 - [ ] Verify existing stored fixtures, API schemas, and GIS round trips.
 
@@ -820,4 +820,26 @@ flowchart LR
     Stored --> GIS[GIS producer validation and defaults]
     GIS --> Storage[Persisted feature and projection payloads]
     Storage --> API
+```
+
+
+### Shared feature-collection reconstruction and integrity
+
+- Added `grafy_core.spatial_storage.load_feature_collection`. It loads the complete feature page, validates the caller's existing metadata model, checks the collection identity/completeness, constructs the caller's payload model, and verifies canonical byte size and SHA-256. Its typed result carries both the validated payload and verified bytes, avoiding a second serialization. API reads and the GIS resolver now use this owner. [R18: One Layer Per Function]
+- Moved canonical JSON serialization onto the shared feature payload model. The GIS writer, GIS resolver, and API reader use the same serialization rules. Shared metadata fields live in `GeoFeatureCollectionMetadata`; API property-field behavior and GIS strict/defaulted metadata remain in their existing subclasses. [R08: Model-Owned Serialization]
+- Reused the spatial integrity check for the GIS stored-object resolver too. API/GIS public contextual exceptions and causes remain intact. API feature integrity failures now have the shared nested `Spatial artifact` wording instead of `Artifact`; artifact identity, observed/expected values, and outward API error text are unchanged.
+- Added 16 real-storage contracts across both readers: exact Unicode content, absent legacy integrity fields, wrong size/hash, wrong collection identity, incomplete pages, missing discriminator metadata, and bounds/geometry mismatch. The missing-discriminator and geometry cases explicitly preserve different API/GIS acceptance behavior. All 16 pass against the committed pre-change implementation and against the final extracted core/API wheels. [R43: Tests Are Behavioral Contracts]
+- Artifact/GIS/architecture regression passed 190 tests. All 57 affected API/GIS schemas and OpenAPI still match the original pre-spatial definitions. Shared core reader/contracts and new tests report zero typing errors; the three affected consumer modules retain exactly eleven existing diagnostics before/after. Ruff and diff checks pass.
+- Verification uncovered an environment issue: standalone integration tests imported an older installed GIS wheel, while unit-test collection selected source imports. Installed this worktree's GIS source editably for verification and confirmed its absolute module path before rerunning tests. The corrected schema comparison also confirms the preceding spatial-contract batch against the actual changed GIS source.
+- Proposed test-environment rule: when changing an optional Plugin together with its host or SDK, verify its imported `__file__` points to the intended worktree or built wheel before accepting integration evidence. Do not rely on test collection order to select changed source. [R23: Maintain The Rules]
+- Evidence: `/tmp/grafy-spatial-reader-contracts.log`, `/tmp/grafy-spatial-reader-baseline-contracts.log`, `/tmp/grafy-spatial-reader-regression.log`, `/tmp/grafy-spatial-reader-schemas.log`, `/tmp/grafy-spatial-reader-types.log`, `/tmp/grafy-spatial-reader-baseline-verification.log`, `/tmp/grafy-spatial-reader-consumer-types.log`, and `/tmp/grafy-spatial-reader-wheel.log`.
+- Finding 10 remains open for remaining reference/style/map/manifest contract consolidation. The shared reconstruction/integrity subtask is complete; deployment-specific GDAL/network/tile/render code remains with its current owners.
+
+```mermaid
+flowchart LR
+    API[API feature content] --> Reader[Core spatial storage reader]
+    GIS[GIS feature resolver] --> Reader
+    Reader --> Models[Shared fields and caller validation models]
+    Reader --> Bytes[Verified canonical bytes and payload]
+    Writer[GIS feature writer] --> Models
 ```

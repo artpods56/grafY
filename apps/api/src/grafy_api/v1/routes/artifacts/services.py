@@ -17,6 +17,7 @@ from grafy_core.artifact_collections import (
     JSON_COLLECTIONS_STORAGE_FORMAT,
     load_json_collections_page,
 )
+from grafy_core.spatial_storage import load_feature_collection
 from grafy_core.artifacts import (
     ArtifactExportFormat,
     ArtifactObject,
@@ -256,21 +257,6 @@ class ArtifactResponseTooLargeError(WorkbenchOperationError):
         self.max_byte_size = max_byte_size
 
 
-def _verify_artifact_content(artifact: ArtifactObject, content: bytes) -> None:
-    if artifact.byte_size is not None and len(content) != artifact.byte_size:
-        raise ValueError(
-            f"Artifact {artifact.id} contains {len(content)} bytes, expected "
-            f"{artifact.byte_size}"
-        )
-    if artifact.sha256 is not None:
-        observed_sha256 = sha256(content).hexdigest()
-        if observed_sha256 != artifact.sha256:
-            raise ValueError(
-                f"Artifact {artifact.id} has SHA-256 {observed_sha256}, "
-                f"expected {artifact.sha256}"
-            )
-
-
 def _etag(info: StoredObjectInfo, fallback_sha256: str) -> str:
     if info.etag is not None:
         return info.etag if info.etag.startswith('"') else f'"{info.etag}"'
@@ -444,34 +430,14 @@ class ArtifactService:
         ):
             feature_count = self._feature_count(artifact)
             try:
-                page = await load_json_collections_page(
+                loaded = await load_feature_collection(
                     artifact,
                     self._storage,
-                    offset=0,
-                    limit=max(1, feature_count),
+                    feature_count=feature_count,
+                    metadata_type=GeoFeatureManifestMetadata,
+                    payload_type=GeoFeatureCollectionPayload,
                 )
-                metadata = GeoFeatureManifestMetadata.model_validate(page.metadata)
-                if len(page.collections) != 1 or page.collections[0].id != "features":
-                    raise ValueError(
-                        "Geo feature collection manifest must contain one "
-                        "'features' collection"
-                    )
-                collection = page.collections[0]
-                if len(collection.items) != collection.total_items:
-                    raise ValueError("Geo feature collection page is incomplete")
-                payload = GeoFeatureCollectionPayload(
-                    features=collection.items,
-                    source_name=metadata.source_name,
-                    bounds=metadata.bounds,
-                )
-                content = json.dumps(
-                    payload.model_dump(mode="json"),
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-                _verify_artifact_content(artifact, content)
-                return content
+                return loaded.content
             except ArtifactContentUnavailableError:
                 raise
             except Exception as exc:

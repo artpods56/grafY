@@ -1,5 +1,6 @@
 """Producer-neutral stored spatial payloads shared by API readers and GIS writers."""
 
+import json
 from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_validator
@@ -16,6 +17,23 @@ class GeoFeatureCollectionPayload(BaseModel):
     type: Literal["FeatureCollection"] = "FeatureCollection"
     crs: Literal["EPSG:4326"] = "EPSG:4326"
     features: list[JsonObject]
+    source_name: StrictStr = Field(min_length=1)
+    bounds: GeoBounds | None
+
+    def canonical_json_bytes(self) -> bytes:
+        return json.dumps(
+            self.model_dump(mode="json"),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+
+class GeoFeatureCollectionMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["geo.feature_collection"]
+    crs: Literal["EPSG:4326"] = "EPSG:4326"
     source_name: StrictStr = Field(min_length=1)
     bounds: GeoBounds | None
 
