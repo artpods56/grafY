@@ -35,6 +35,7 @@ from grafy_core.runtime.persistence import (
 from grafy_core.runtime.resolvers import Resolver, ResolverRegistry
 from grafy_storage import LocalFileObjectStore
 
+from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.execution.requests import (
     ArtifactConversionRequest,
     FieldProjectionRequest,
@@ -100,6 +101,9 @@ def _edge_value_resolver(
     artifacts = ArtifactService(
         unit_of_work,
         LocalFileObjectStore(tmp_path / "objects"),
+        availability=ArtifactAvailability(
+            unit_of_work, LocalFileObjectStore(tmp_path / "objects")
+        ),
     )
     return (
         EdgeValueResolver(

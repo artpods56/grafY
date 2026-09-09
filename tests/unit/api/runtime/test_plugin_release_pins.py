@@ -1619,6 +1619,7 @@ async def test_host_node_output_feeds_pinned_workspace_plugin_in_same_graph(
             (spec.key.id, spec.key.schema_version): spec
             for spec in registry.artifact_types
         },
+        availability=ArtifactAvailability(unit_of_work, storage),
     )
     coordinator = GraphExecutionCoordinator(
         node_execution=NodeExecutionService(

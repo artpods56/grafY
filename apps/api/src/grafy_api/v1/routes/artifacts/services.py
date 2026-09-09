@@ -20,6 +20,7 @@ from grafy_core.artifact_collections import (
 from grafy_core.artifacts import (
     ArtifactExportFormat,
     ArtifactObject,
+    ArtifactRef,
     ArtifactTypeSpec,
     UnitOfWorkPort,
 )
@@ -38,6 +39,8 @@ from grafy_core.ports.storage import (
     FileStreamProtocol,
     StoredObjectInfo,
 )
+
+from grafy_api.artifact_availability import ArtifactAvailability, ArtifactReferenceError
 
 from grafy_api.services.errors import (
     ArtifactContentUnavailableError,
@@ -359,14 +362,17 @@ def _validate_public_wms_url(source: GeoWmsSourcePayload) -> None:
 
 
 class ArtifactService:
-    """Loads persisted artifacts and validates graph-facing artifact references."""
+    """Loads persisted artifacts for HTTP content, table, and spatial views."""
 
     def __init__(
         self,
         unit_of_work: UnitOfWorkPort,
         storage: FileStoragePort,
         artifact_types: Mapping[tuple[str, int], ArtifactTypeSpec] | None = None,
+        *,
+        availability: ArtifactAvailability,
     ) -> None:
+        self._availability = availability
         self._unit_of_work = unit_of_work
         self._storage = storage
         self._artifact_types = artifact_types or {}
@@ -1187,28 +1193,30 @@ class ArtifactService:
                     f"{context} references {ref.artifact_type}@{ref.schema_version}, "
                     f"expected {expected_type}@1"
                 )
-        ids = [ref.artifact_id for ref in refs]
-        async with self._unit_of_work as unit_of_work:
-            artifacts = await unit_of_work.artifacts.get_many(workspace_id, ids)
-        resolved: list[ArtifactObject] = []
-        for ref in refs:
-            artifact = artifacts.get(ref.artifact_id)
-            if artifact is None:
-                raise ArtifactContentUnavailableError(
-                    f"{context} references missing artifact {ref.artifact_id}"
+        exact_refs = [
+            ArtifactRef(
+                artifact_id=ref.artifact_id,
+                artifact_type=ref.artifact_type,
+                schema_version=ref.schema_version,
+                content_hash=ref.content_hash,
+            )
+            for ref in refs
+        ]
+        try:
+            return list(
+                await self._availability.resolve_refs(
+                    workspace_id,
+                    exact_refs,
+                    context=context,
                 )
-            repository_ref = artifact.ref()
-            if (
-                repository_ref.artifact_type != ref.artifact_type
-                or repository_ref.schema_version != ref.schema_version
-                or repository_ref.content_hash != ref.content_hash
-            ):
-                raise ArtifactContentUnavailableError(
-                    f"{context} reference for artifact {ref.artifact_id} does not "
-                    "match the repository artifact"
-                )
-            resolved.append(artifact)
-        return resolved
+            )
+        except ArtifactReferenceError as exc:
+            if exc.reason == "missing":
+                raise ArtifactContentUnavailableError(str(exc)) from exc
+            raise ArtifactContentUnavailableError(
+                f"{context} reference for artifact {exc.reference.artifact_id} does not "
+                "match the repository artifact"
+            ) from exc
 
     async def load_raster_tilejson(
         self,
@@ -1612,7 +1620,6 @@ class ArtifactService:
                 if row_index in highlighted_indices
             ],
         )
-
 
 
 __all__ = [

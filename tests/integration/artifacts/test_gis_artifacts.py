@@ -41,6 +41,7 @@ from grafy_core.domain.identity import (
     WorkspaceRole,
 )
 
+from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.v1.routes.artifacts import services as artifact_services
 from grafy_api.v1.routes.artifacts.dependencies import artifact_service
 from grafy_api.v1.routes.artifacts.models import (
@@ -144,7 +145,9 @@ def geo_artifact_client(
     unit_of_work = InMemoryUnitOfWork()
     storage = TrackingStorage(LocalFileObjectStore(tmp_path / "objects"))
     application = FastAPI()
-    service = ArtifactService(unit_of_work, storage)
+    service = ArtifactService(
+        unit_of_work, storage, availability=ArtifactAvailability(unit_of_work, storage)
+    )
     application.dependency_overrides[artifact_service] = lambda: service
     application.dependency_overrides[identity_service] = (
         lambda: _AllowAllIdentityService()
@@ -835,7 +838,9 @@ async def test_wms_tile_pins_validated_address_against_dns_rebinding(
     monkeypatch.setattr(socket, "getaddrinfo", rebind_host)
     unit_of_work = InMemoryUnitOfWork()
     storage = TrackingStorage(LocalFileObjectStore(tmp_path / "objects"))
-    service = ArtifactService(unit_of_work, storage)
+    service = ArtifactService(
+        unit_of_work, storage, availability=ArtifactAvailability(unit_of_work, storage)
+    )
     production_client = cast(httpx.AsyncClient, getattr(service, "_wms_client"))
     await production_client.aclose()
     monkeypatch.setattr(

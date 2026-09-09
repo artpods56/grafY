@@ -612,6 +612,9 @@ async def test_artifact_summaries_never_embed_unbounded_or_table_json(
         ArtifactService(
             unit_of_work,
             LocalFileObjectStore(tmp_path / "objects"),
+            availability=ArtifactAvailability(
+                unit_of_work, LocalFileObjectStore(tmp_path / "objects")
+            ),
         ),
         ArtifactAvailability(unit_of_work, LocalFileObjectStore(tmp_path / "objects")),
     )

@@ -5,6 +5,7 @@ from uuid import UUID
 
 import pytest
 
+from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.v1.routes.artifacts.services import (
     ARTIFACT_RESPONSE_CHUNK_SIZE,
     BUFFERED_ARTIFACT_RESPONSE_MAX_BYTES,
@@ -59,9 +60,11 @@ async def _consume(content: ArtifactContentRead) -> bytes:
 def test_stored_artifact_content_streams_fixed_chunks_and_closes_source() -> None:
     expected = b"x" * (ARTIFACT_RESPONSE_CHUNK_SIZE + 17)
     storage = TrackingStorage(expected)
+    unit_of_work = InMemoryUnitOfWork()
     service = ArtifactService(
-        InMemoryUnitOfWork(),
+        unit_of_work,
         cast(FileStoragePort, storage),
+        availability=ArtifactAvailability(unit_of_work, cast(FileStoragePort, storage)),
     )
     artifact = ArtifactObject(
         workspace_id=UUID("00000000-0000-0000-0000-000000000007"),
@@ -105,9 +108,11 @@ def test_buffered_reconstruction_is_rejected_before_loading_storage(
     metadata: dict[str, object],
 ) -> None:
     storage = TrackingStorage(b"manifest must not be loaded")
+    unit_of_work = InMemoryUnitOfWork()
     service = ArtifactService(
-        InMemoryUnitOfWork(),
+        unit_of_work,
         cast(FileStoragePort, storage),
+        availability=ArtifactAvailability(unit_of_work, cast(FileStoragePort, storage)),
     )
     artifact = ArtifactObject(
         workspace_id=UUID("00000000-0000-0000-0000-000000000007"),
@@ -134,9 +139,13 @@ def test_buffered_reconstruction_is_rejected_before_loading_storage(
 
 
 def test_small_inline_content_without_size_metadata_remains_available() -> None:
+    unit_of_work = InMemoryUnitOfWork()
     service = ArtifactService(
-        InMemoryUnitOfWork(),
+        unit_of_work,
         cast(FileStoragePort, TrackingStorage(b"unused")),
+        availability=ArtifactAvailability(
+            unit_of_work, cast(FileStoragePort, TrackingStorage(b"unused"))
+        ),
     )
     artifact = ArtifactObject(
         workspace_id=UUID("00000000-0000-0000-0000-000000000007"),

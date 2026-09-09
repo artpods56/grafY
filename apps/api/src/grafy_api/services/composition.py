@@ -155,15 +155,16 @@ def build_workbench_components(
         list(plugin_registry.build_writers(plugin_context))
     )
 
+    availability = ArtifactAvailability(resolved_unit_of_work, resolved_storage)
     artifacts = ArtifactService(
         resolved_unit_of_work,
         resolved_storage,
+        availability=availability,
         artifact_types={
             (spec.key.id, spec.key.schema_version): spec
             for spec in plugin_registry.artifact_types
         },
     )
-    availability = ArtifactAvailability(resolved_unit_of_work, resolved_storage)
     materializations = MaterializationService(
         resolved_unit_of_work,
         availability,
