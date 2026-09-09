@@ -4,8 +4,9 @@ from collections.abc import AsyncIterator, Iterator
 from hashlib import sha256
 from io import StringIO
 
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
+from grafy_core.stored_models import load_stored_model
 from grafy_core.artifacts import ArtifactObject
 from grafy_core.ports.storage import FileStoragePort
 from grafy_core.runtime.resolvers import ArtifactContractError, ResolutionError
@@ -54,35 +55,6 @@ def iter_table_chunks(table: Table) -> Iterator[TableChunk]:
         offset = chunk_end
 
 
-async def _load_stored_model[T: BaseModel](
-    storage: FileStoragePort,
-    *,
-    bucket: str,
-    object_key: str,
-    model: type[T],
-    expected_byte_size: int | None = None,
-    expected_sha256: str | None = None,
-) -> T:
-    stream = await storage.load(bucket=bucket, path=object_key)
-    try:
-        content = stream.read()
-    finally:
-        stream.close()
-    if expected_byte_size is not None and len(content) != expected_byte_size:
-        raise ValueError(
-            f"Stored object {object_key!r} contains {len(content)} bytes, "
-            f"expected {expected_byte_size}"
-        )
-    if expected_sha256 is not None:
-        observed_sha256 = sha256(content).hexdigest()
-        if observed_sha256 != expected_sha256:
-            raise ValueError(
-                f"Stored object {object_key!r} has SHA-256 {observed_sha256}, "
-                f"expected {expected_sha256}"
-            )
-    return model.model_validate_json(content)
-
-
 async def load_table_manifest(
     artifact: ArtifactObject,
     storage: FileStoragePort,
@@ -110,7 +82,7 @@ async def load_table_manifest(
             f"Table artifact {artifact.id} has invalid manifest_sha256 metadata"
         )
     try:
-        return await _load_stored_model(
+        return await load_stored_model(
             storage,
             bucket=artifact.bucket,
             object_key=artifact.object_key,
@@ -144,7 +116,7 @@ async def _load_table_page_from_manifest(
         if chunk_end <= offset or descriptor.offset >= page_end:
             continue
         try:
-            chunk = await _load_stored_model(
+            chunk = await load_stored_model(
                 storage,
                 bucket=artifact.bucket,
                 object_key=descriptor.object_key,
@@ -311,7 +283,7 @@ async def iter_table_csv(
     writer = csv.writer(buffer)
     writer.writerow([column.id for column in manifest.columns])
     for descriptor in manifest.chunks:
-        chunk = await _load_stored_model(
+        chunk = await load_stored_model(
             storage,
             bucket=artifact.bucket,
             object_key=descriptor.object_key,

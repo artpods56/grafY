@@ -126,7 +126,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Remove unused compiled execution target, commit `f4b8eda`.
 - [x] Remove test-only wait_for_events wrapper; test production subscription behavior.
 - [ ] Inline sole-production-caller storage selection, preserving supported package compatibility.
-- [ ] Share stored-model integrity readers used by collections and tables.
+- [x] Share stored-model integrity readers used by collections and tables.
 - [ ] Consolidate PluginRegistry state into immutable family declarations plus needed indexes; preserve ordering, freeze behavior, collisions.
 - [ ] Replace InstalledPluginRelease forwarding properties with explicit release/installation access while preserving pair invariants.
 
@@ -641,3 +641,12 @@ flowchart LR
 - Removed `RunExecutionManager.wait_for_events`, whose only callers were tests. Four tests now retain the same `subscribe_events` handle across waits, matching HTTP streaming.
 - Existing contracts still cover cancellation transitions, quiet polls, failure/skipped-node events, mapped progress, bounded replay, terminal delivery, late-progress suppression, and subscriptions surviving manager eviction. The production journal and subscription implementations are unchanged.
 - All 41 execution-manager and execution-route tests passed. Changed-file Ruff and whitespace checks passed. Evidence: `/tmp/grafy-event-subscription-tests.log`.
+
+
+### Shared stored-model integrity reader
+
+- Added `grafy_core.stored_models.load_stored_model` and removed the two identical private readers from collection and table storage. All six manifest/chunk call sites use the shared reader. Both original function bodies match the new function body exactly by syntax-tree comparison.
+- The reader loads bytes, closes the stream in `finally`, checks optional byte size and SHA-256, then delegates parsing to the supplied Pydantic model. Feature-specific manifest/chunk validation and error translation remain with collections and tables. Historical manifests without integrity metadata remain readable. [R09: Narrow IO Boundaries]
+- Added twelve contract cases through the public table/collection manifest loaders using real local storage: valid and legacy records, incorrect size/hash, malformed JSON, and invalid model shape. Every case checks stream closure; failures preserve the artifact/path context and original validation or integrity cause.
+- Validation passed 148 artifact/table-bundle/cache tests and 12 new integrity cases. Targeted typing of the reader, table storage, and new tests reports zero errors or warnings. Changed-file Ruff and whitespace checks pass. The built/extracted core wheel imports one shared reader through both feature owners and contains neither retired private reader.
+- Evidence: `/tmp/grafy-stored-model-regression.log`, `/tmp/grafy-stored-model-contracts.log`, `/tmp/grafy-stored-model-types.log`, and `/tmp/grafy-stored-model-build.log`. Finding 14 remains open for storage-factory compatibility, registry state, and release/installation forwarding cleanup.

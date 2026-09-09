@@ -14,6 +14,7 @@ from pydantic import (
     model_validator,
 )
 
+from grafy_core.stored_models import load_stored_model
 from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey, JsonObject
 from grafy_core.ports.storage import (
     FileMetadata,
@@ -153,35 +154,6 @@ class StoredJsonCollections:
     storage_byte_size: int
     total_items: int
     collection_count: int
-
-
-async def _load_stored_model[ModelT: BaseModel](
-    storage: FileStoragePort,
-    *,
-    bucket: str,
-    object_key: str,
-    model: type[ModelT],
-    expected_byte_size: int | None = None,
-    expected_sha256: str | None = None,
-) -> ModelT:
-    stream = await storage.load(bucket=bucket, path=object_key)
-    try:
-        content = stream.read()
-    finally:
-        stream.close()
-    if expected_byte_size is not None and len(content) != expected_byte_size:
-        raise ValueError(
-            f"Stored object {object_key!r} contains {len(content)} bytes, "
-            f"expected {expected_byte_size}"
-        )
-    if expected_sha256 is not None:
-        observed_sha256 = sha256(content).hexdigest()
-        if observed_sha256 != expected_sha256:
-            raise ValueError(
-                f"Stored object {object_key!r} has SHA-256 {observed_sha256}, "
-                f"expected {expected_sha256}"
-            )
-    return model.model_validate_json(content)
 
 
 async def save_json_collections(
@@ -345,7 +317,7 @@ async def load_json_collections_manifest(
             f"Artifact {artifact.id} has invalid manifest_sha256 metadata"
         )
     try:
-        return await _load_stored_model(
+        return await load_stored_model(
             storage,
             bucket=artifact.bucket,
             object_key=artifact.object_key,
@@ -396,7 +368,7 @@ async def load_json_collections_page(
                 if chunk_end <= local_start or descriptor.offset >= local_end:
                     continue
                 try:
-                    chunk = await _load_stored_model(
+                    chunk = await load_stored_model(
                         storage,
                         bucket=artifact.bucket,
                         object_key=descriptor.object_key,
@@ -491,7 +463,7 @@ async def json_collections_artifact_is_intact(
             if await storage.stat(artifact.bucket, descriptor.object_key) is None:
                 return False
             try:
-                chunk = await _load_stored_model(
+                chunk = await load_stored_model(
                     storage,
                     bucket=artifact.bucket,
                     object_key=descriptor.object_key,
