@@ -40,7 +40,9 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Fence durable queue admission against the System revocation drain check and commit.
 - [x] Include transient executions in System revocation and cutover fencing through durable activity markers; see [transient fence design and status](transient-execution-fence.md).
 - [x] Verify startup ownership, orphan-cleanup ordering, marker retention on failure, and safe owner-disabled behavior.
-- [ ] Prove active execution/revocation races cannot violate that fence.
+- [x] Prove manager admission, preflight, invocation, and sandbox-cleanup races on SQLite and PostgreSQL.
+- [ ] Cover synchronous `POST /runs`, which still calls `RunGraph.run` directly without durable activity registration. Preserve response, error, cancellation, and admission behavior.
+- [ ] Re-audit every execution entry point and prove active execution/revocation races cannot violate the fence.
 
 ## 4. Plugin ownership and compatibility
 
@@ -984,3 +986,13 @@ flowchart LR
 - Evidence: `/tmp/grafy-recovery-baseline.log`, `/tmp/grafy-recovery-regression.log`, `/tmp/grafy-recovery-focused.log`, `/tmp/grafy-recovery-main-types.log`, `/tmp/grafy-recovery-types.log`, and `/tmp/grafy-recovery-wheel.log`.
 - Proposed recovery rule: verify exclusive authority before invoking a cleanup operation that can terminate workers; refusing the later database update is too late. Track successful cleanup explicitly instead of inferring it from a configured runtime. [R23: Maintain The Rules]
 - Startup ownership/orphan-recovery verification is complete for the supported single-owner deployment. Finding 3 still needs the end-to-end admission/preflight/revocation race proof; graph transport migration and final completion gates also remain open.
+
+
+### Real execution race coverage and synchronous-route gap
+
+- Added `test_transient_execution_revocation.py` using the real SQL release service, manager, preflight, compiler, coordinator, and node executor. Controlled Plugin invocation and sandbox lifecycle implementations pause work at their existing IO interfaces. [R43: Tests Are Behavioral Contracts]
+- If revocation obtains the database fence first, manager admission blocks at the SQL insert until revocation commits. Compilation then rejects the revoked release without invoking it. If preflight, invocation, or sandbox cleanup is already active, revocation rejects and writes no revocation row. It succeeds after the task terminates and its marker is removed.
+- Verified all eight execution scenarios across SQLite and PostgreSQL. Combined with the database lock-ordering and transient lifecycle modules, 26 tests pass. PostgreSQL uses a disposable container and unique temporary schemas. Ruff passes and the new test module has zero Pyright errors. Evidence: `/tmp/grafy-transient-e2e-final-postgres.log` and `/tmp/grafy-transient-e2e-final-types.log`.
+- The entry-point audit found that `v1/routes/executions/views.py::run_graph`, the synchronous `POST /runs` route, still invokes `RunGraph.run` directly. Its capacity lease is process-local; it does not call the manager's durable registration. This route remains outside the maintenance fence. The passing tests establish manager behavior only, so finding 3 remains open.
+- Next implementation scope: synchronous execution orchestration, its HTTP dependency/call site, and behavioral tests. Preserve synchronous response/error semantics, request cancellation and guest cleanup, and capacity accounting through response presentation. Register activity before preflight, retain it until cleanup completes, and fail closed on persistence errors. Keep transient requests out of saved graph history. [R01: Direct Ownership]
+- Proposed reusable audit rule: when an invariant is enforced by an execution manager, enumerate direct executor call sites and verify every externally reachable path crosses that invariant before claiming complete coverage. [R23: Maintain The Rules]

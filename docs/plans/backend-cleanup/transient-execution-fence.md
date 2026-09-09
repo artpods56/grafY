@@ -30,8 +30,9 @@ startup never runs global orphan cleanup. If there are no stale markers, that
 configuration may still start without deleting other workers.
 
 Lifecycle, rollback, owner-bound removal, fail-closed deletion, additive migration,
-and both database lock orderings have passing tests. End-to-end admission versus
-revocation integration proof remains open. Startup lifespan tests verify successful
+and both database lock orderings have passing tests. Real manager execution tests
+cover revocation before admission and active preflight, invocation, and sandbox
+cleanup on SQLite and PostgreSQL. Startup lifespan tests verify successful
 recovery, disabled owner/runtime, failed orphan cleanup, and lease contention.
 The single-owner deployment assumption still applies; this does not add multi-owner
 or multi-host coordination.
@@ -123,5 +124,15 @@ sequenceDiagram
 7. Run execution, persistence, release-maintenance, architecture, and packaging
    checks; retain established baseline failures separately.
 
-The durable-marker implementation closes the reproduced gap. Checklist finding 3
-remains open until the remaining end-to-end race and recovery evidence is complete.
+The durable-marker implementation closes the reproduced manager gap. The final
+entry-point audit found an additional bypass: synchronous `POST /runs` in
+`v1/routes/executions/views.py` calls `RunGraph.run` directly. It acquires a
+process-local admission lease but never registers durable activity. Checklist
+finding 3 remains open until this path is covered and all entry points are
+rechecked. Manager race tests do not establish safety for this route.
+
+The next change must preserve the synchronous route's response and exception
+translation, cancellation and sandbox cleanup, and admission lease lifetime through
+response presentation. It must register before preflight, retain activity through
+cleanup, and fail closed on registration or removal errors. It must not create
+saved execution history for transient requests.
