@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
-from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
+from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactRefSequence
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.table_contracts import TABLE_DATA
@@ -13,7 +13,10 @@ from grafy_api.v1.routes.artifacts.models import (
     ArtifactSummaryResponse,
 )
 from grafy_api.v1.routes.artifacts.services import ArtifactService
-from grafy_api.artifact_availability import ArtifactAvailability
+from grafy_api.artifact_availability import (
+    ArtifactAvailability,
+    ArtifactAvailabilityBatch,
+)
 
 from .models import (
     GraphMaterializationsResponse,
@@ -45,6 +48,14 @@ class RunResultPresenter:
         workspace_id: UUID,
         execution: "GraphExecutionResult",
     ) -> RunResponse:
+        batch = await self._availability.load(
+            workspace_id,
+            (
+                value
+                for node in execution.node_results
+                for value in node.outputs.values()
+            ),
+        )
         return RunResponse(
             status=execution.status,
             node_runs=[
@@ -53,8 +64,8 @@ class RunResultPresenter:
                     status=node_result.status,
                     error=node_result.error,
                     outputs=[
-                        await self.port_output_response(
-                            workspace_id,
+                        self._port_output_response(
+                            batch,
                             port_name,
                             value,
                         )
@@ -91,14 +102,18 @@ class RunResultPresenter:
         graph_revision: int,
         materializations: Sequence[MaterializedNodeOutputs],
     ) -> GraphMaterializationsResponse:
+        batch = await self._availability.load(
+            workspace_id,
+            (value for item in materializations for value in item.outputs.values()),
+        )
         node_runs: list[RunNodeResponse] = []
         for materialization in materializations:
             accessible_outputs: list[RunPortOutputResponse] = []
             for port_name, value in materialization.outputs.items():
-                if await self._availability.is_accessible(workspace_id, value):
+                if await batch.is_accessible(value):
                     accessible_outputs.append(
-                        await self.port_output_response(
-                            workspace_id,
+                        self._port_output_response(
+                            batch,
                             port_name,
                             value,
                         )
@@ -125,6 +140,15 @@ class RunResultPresenter:
         port_name: str,
         value: ArtifactOutputValue,
     ) -> RunPortOutputResponse:
+        batch = await self._availability.load(workspace_id, [value])
+        return self._port_output_response(batch, port_name, value)
+
+    def _port_output_response(
+        self,
+        batch: ArtifactAvailabilityBatch,
+        port_name: str,
+        value: ArtifactOutputValue,
+    ) -> RunPortOutputResponse:
         if isinstance(value, ArtifactRefSequence):
             refs = list(value.item_refs)
             kind: Literal["single", "sequence"] = "sequence"
@@ -135,15 +159,17 @@ class RunResultPresenter:
             port=port_name,
             kind=kind,
             value=value,
-            artifacts=[await self.artifact_summary(workspace_id, ref) for ref in refs],
+            artifacts=[
+                self.artifact_summary(ref, batch.artifacts.get(ref.artifact_id))
+                for ref in refs
+            ],
         )
 
-    async def artifact_summary(
+    def artifact_summary(
         self,
-        workspace_id: UUID,
         ref: ArtifactRef,
+        artifact: ArtifactObject | None,
     ) -> ArtifactSummaryResponse:
-        artifact = await self._artifacts.get(workspace_id, ref.artifact_id)
         if artifact is None:
             return ArtifactSummaryResponse(
                 artifact_id=ref.artifact_id,

@@ -68,6 +68,16 @@ class MaterializationService:
             for materialization in materializations
         }
 
+        batch = await self._availability.load(
+            workspace_id,
+            (
+                value
+                for materialization in materializations
+                for port, value in materialization.outputs.items()
+                if (materialization.node_id, port) in submitted_pins
+            ),
+        )
+
         for (from_node, from_port), submitted_value in submitted_pins.items():
             materialization = by_node.get(from_node)
             materialized_value = (
@@ -75,9 +85,8 @@ class MaterializationService:
                 if materialization is not None
                 else None
             )
-            if materialized_value is None or not await self._availability.is_accessible(
-                workspace_id,
-                materialized_value,
+            if materialized_value is None or not await batch.is_accessible(
+                materialized_value
             ):
                 raise GraphExecutionError(
                     f"Cannot reuse upstream output {from_node!r}.{from_port!r}: "
@@ -98,16 +107,16 @@ class MaterializationService:
         workspace_id: UUID,
         pinned_outputs: Mapping[tuple[str, str], ArtifactOutputValue],
     ) -> dict[str, dict[str, ArtifactOutputValue]]:
+        batch = await self._availability.load(workspace_id, pinned_outputs.values())
         outputs: dict[str, dict[str, ArtifactOutputValue]] = {}
         for (from_node, from_port), value in pinned_outputs.items():
             context = f"Pinned output {from_node!r}.{from_port!r}"
-            resolved = await self._availability.resolve_refs(
-                workspace_id,
+            resolved = batch.resolve_refs(
                 value,
                 context=context,
             )
             for artifact in resolved:
-                if not await self._availability.artifact_is_accessible(artifact):
+                if not await batch.artifact_is_accessible(artifact):
                     raise GraphExecutionError(f"{context} is not accessible")
             outputs.setdefault(from_node, {})[from_port] = value
         return outputs

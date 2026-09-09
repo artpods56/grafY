@@ -1202,14 +1202,9 @@ class ArtifactService:
             )
             for ref in refs
         ]
+        batch = await self._availability.load(workspace_id, exact_refs)
         try:
-            return list(
-                await self._availability.resolve_refs(
-                    workspace_id,
-                    exact_refs,
-                    context=context,
-                )
-            )
+            return list(batch.resolve_refs(exact_refs, context=context))
         except ArtifactReferenceError as exc:
             if exc.reason == "missing":
                 raise ArtifactContentUnavailableError(str(exc)) from exc

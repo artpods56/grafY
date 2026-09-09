@@ -84,8 +84,8 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 ## 9. Artifact availability
 
 - [x] Extract exact artifact resolution/storage availability from HTTP ArtifactService into a concrete application owner.
-- [ ] Batch resolution and reuse format-specific object enumeration.
-- [ ] Remove repeated reads during materialization checks.
+- [x] Batch resolution and reuse format-specific object enumeration.
+- [x] Remove repeated reads during materialization checks.
 - [x] Preserve the distinction between availability and stronger cache content-integrity checks.
 
 ## 10. Spatial contracts and reads
@@ -371,3 +371,26 @@ flowchart LR
 - Evidence: `/tmp/grafy-spatial-refs-tests.log`, `/tmp/grafy-spatial-refs-regression.log`, and `/tmp/grafy-spatial-refs-types.log`.
 - Finding 9 still tracks sharing across separate outputs/materialization phases and format-specific object enumeration. The exact-reference ownership item is now complete.
 - Final validation: 659 API, architecture, artifact, and execution-route/history tests passed. Availability and materialization type checks report zero errors or warnings. OpenAPI is unchanged; changed-file Ruff and whitespace checks pass.
+
+
+### Availability batches across outputs
+
+- `ArtifactAvailability.load` now resolves all supplied scalar/sequence values with one Workspace-scoped `get_many` operation. Its concrete `ArtifactAvailabilityBatch` holds read-only rows, exact-reference validation, and memoized storage-presence results for that operation.
+- Latest-pin validation, pinned-output resolution, materialization presentation, and run-result presentation each load one batch across their outputs. Pinned outputs preserve endpoint order, sequence indices, and repeated references.
+- Result presentation builds summaries from the already-loaded rows instead of reopening the artifact repository for every summary. The asynchronous single-port presenter remains the live-route boundary; its shared rendering code performs no repository IO.
+- Spatial lookup uses the same batch owner, retaining its existing type checks and error translation.
+- Format-specific enumeration remains with `table_artifact_is_accessible` and `json_collections_artifact_is_accessible`. These functions already own their manifests and chunk layouts; batches reuse each result once per artifact, without duplicating those loops in API or execution code. Cache content-integrity logic remains independent.
+- Batches are deliberately fresh across application operations and execution-preparation phases. They are never retained on the service. This avoids carrying a prior presence result across later requests or the intervening work between validation phases.
+- Tests now cover eleven output ports sharing a ten-artifact sequence, with repeated item ordering and one repository transaction. A separate presentation test covers six outputs sharing a stored artifact: one transaction and one stat, followed by a fresh operation after deletion that performs another transaction/stat and hides all unavailable outputs.
+- Focused validation: 304 runtime/artifact tests passed. Availability and materialization have zero Pyright errors or warnings; changed-file Ruff passes.
+- Evidence: `/tmp/grafy-availability-batch-focused.log`, `/tmp/grafy-availability-batch-regression.log`, `/tmp/grafy-availability-batch-final.log`, and `/tmp/grafy-availability-batch-types.log`.
+
+```mermaid
+flowchart LR
+    Values[Outputs for one operation] --> Load[One scoped row batch]
+    Load --> Check[Exact refs and shared presence checks]
+    Load --> Render[Artifact summaries]
+    Check --> Render
+```
+
+- Final validation: 677 API, architecture, artifact, nested-module, and execution-route/history tests passed. OpenAPI is unchanged. Finding 9 is complete; batches remain operation-local by design.

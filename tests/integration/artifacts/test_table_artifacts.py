@@ -256,7 +256,9 @@ def test_table_page_bounds_cell_previews_and_full_download(
         "metadata",
     ]
 
-    summary = asyncio.run(components.presenter.artifact_summary(WORKSPACE_ID, ref))
+    summary = asyncio.run(
+        components.presenter.port_output_response(WORKSPACE_ID, "output", ref)
+    ).artifacts[0]
     assert summary.byte_size is not None
 
     content_response = artifacts.content(ref.artifact_id)
@@ -620,15 +622,19 @@ async def test_artifact_summaries_never_embed_unbounded_or_table_json(
     )
 
     assert (
-        await presenter.artifact_summary(WORKSPACE_ID, unknown_size.ref())
-    ).text is None
-    assert (await presenter.artifact_summary(WORKSPACE_ID, large.ref())).text is None
+        await presenter.port_output_response(WORKSPACE_ID, "output", unknown_size.ref())
+    ).artifacts[0].text is None
     assert (
-        await presenter.artifact_summary(WORKSPACE_ID, table_artifact.ref())
-    ).text is None
+        await presenter.port_output_response(WORKSPACE_ID, "output", large.ref())
+    ).artifacts[0].text is None
     assert (
-        await presenter.artifact_summary(WORKSPACE_ID, small.ref())
-    ).text == "bounded"
+        await presenter.port_output_response(
+            WORKSPACE_ID, "output", table_artifact.ref()
+        )
+    ).artifacts[0].text is None
+    assert (
+        await presenter.port_output_response(WORKSPACE_ID, "output", small.ref())
+    ).artifacts[0].text == "bounded"
 
 
 async def test_iter_table_csv_encodes_utf8_bom_crlf_and_quoting(

@@ -1,6 +1,7 @@
 """Exact reference resolution and storage availability for application workflows."""
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from types import MappingProxyType
 from typing import Literal
 from uuid import UUID
 
@@ -57,9 +58,38 @@ class ArtifactAvailability:
         self._unit_of_work = unit_of_work
         self._storage = storage
 
-    async def resolve_refs(
+    async def load(
         self,
         workspace_id: UUID,
+        values: Iterable[ArtifactOutputValue],
+    ) -> "ArtifactAvailabilityBatch":
+        artifact_ids: set[UUID] = set()
+        for value in values:
+            refs = (
+                value.item_refs if isinstance(value, ArtifactRefSequence) else (value,)
+            )
+            artifact_ids.update(ref.artifact_id for ref in refs)
+        artifacts: dict[UUID, ArtifactObject] = {}
+        if artifact_ids:
+            async with self._unit_of_work as unit_of_work:
+                artifacts = await unit_of_work.artifacts.get_many(
+                    workspace_id, artifact_ids
+                )
+        return ArtifactAvailabilityBatch(artifacts, self._storage)
+
+
+class ArtifactAvailabilityBatch:
+    """Rows and memoized presence checks for one application operation only."""
+
+    def __init__(
+        self, artifacts: Mapping[UUID, ArtifactObject], storage: FileStoragePort
+    ) -> None:
+        self.artifacts = MappingProxyType(dict(artifacts))
+        self._storage = storage
+        self._accessible: dict[UUID, bool] = {}
+
+    def resolve_refs(
+        self,
         value: ArtifactOutputValue | Sequence[ArtifactRef],
         *,
         context: str,
@@ -70,16 +100,9 @@ class ArtifactAvailability:
             refs = (value,)
         else:
             refs = value
-        if not refs:
-            return ()
-        async with self._unit_of_work as unit_of_work:
-            artifacts = await unit_of_work.artifacts.get_many(
-                workspace_id,
-                {ref.artifact_id for ref in refs},
-            )
         resolved: list[ArtifactObject] = []
         for index, ref in enumerate(refs):
-            artifact = artifacts.get(ref.artifact_id)
+            artifact = self.artifacts.get(ref.artifact_id)
             if artifact is None or artifact.ref() != ref:
                 raise ArtifactReferenceError(
                     ref,
@@ -92,19 +115,10 @@ class ArtifactAvailability:
             resolved.append(artifact)
         return tuple(resolved)
 
-    async def is_accessible(
-        self, workspace_id: UUID, value: ArtifactOutputValue
-    ) -> bool:
+    async def is_accessible(self, value: ArtifactOutputValue) -> bool:
         refs = value.item_refs if isinstance(value, ArtifactRefSequence) else (value,)
-        if not refs:
-            return True
-        async with self._unit_of_work as unit_of_work:
-            artifacts = await unit_of_work.artifacts.get_many(
-                workspace_id,
-                {ref.artifact_id for ref in refs},
-            )
         for ref in refs:
-            artifact = artifacts.get(ref.artifact_id)
+            artifact = self.artifacts.get(ref.artifact_id)
             if artifact is None or artifact.ref() != ref:
                 return False
             if not await self.artifact_is_accessible(artifact):
@@ -112,19 +126,26 @@ class ArtifactAvailability:
         return True
 
     async def artifact_is_accessible(self, artifact: ArtifactObject) -> bool:
+        cached = self._accessible.get(artifact.id)
+        if cached is not None:
+            return cached
         if (
             artifact.artifact_type == TABLE_DATA.key.id
             and artifact.schema_version == TABLE_DATA.key.schema_version
         ):
-            return await table_artifact_is_accessible(artifact, self._storage)
-        if artifact.metadata.get("storage_format") == JSON_COLLECTIONS_STORAGE_FORMAT:
-            return await json_collections_artifact_is_accessible(
+            accessible = await table_artifact_is_accessible(artifact, self._storage)
+        elif artifact.metadata.get("storage_format") == JSON_COLLECTIONS_STORAGE_FORMAT:
+            accessible = await json_collections_artifact_is_accessible(
                 artifact, self._storage
             )
-        if artifact.inline_payload is not None:
-            return True
-        if artifact.bucket is None or artifact.object_key is None:
-            return False
-        return (
-            await self._storage.stat(artifact.bucket, artifact.object_key) is not None
-        )
+        elif artifact.inline_payload is not None:
+            accessible = True
+        elif artifact.bucket is None or artifact.object_key is None:
+            accessible = False
+        else:
+            accessible = (
+                await self._storage.stat(artifact.bucket, artifact.object_key)
+                is not None
+            )
+        self._accessible[artifact.id] = accessible
+        return accessible

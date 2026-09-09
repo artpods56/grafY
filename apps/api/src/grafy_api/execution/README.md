@@ -75,3 +75,12 @@ Saved-graph and nested-module workflows select their own active nodes and edges.
 `RunNodeRequest.from_saved_node` and `RunEdgeRequest.from_saved_edge` own their
 shared conversions, including connected plugs, release pins, artifact bindings,
 projections, conversion paths, and collection modes.
+
+## Artifact availability lifetime
+
+Materialization and presentation load a fresh `ArtifactAvailabilityBatch` per
+operation. Rows are read together, and repeated artifacts share a presence check.
+Presentation uses those rows for summaries. Keep batches local to the operation;
+a later request or preparation phase must reload and recheck storage. Availability
+uses the core format-specific manifest/chunk checks and does not replace invocation
+cache content-integrity validation.
