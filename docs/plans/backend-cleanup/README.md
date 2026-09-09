@@ -1063,3 +1063,11 @@ flowchart LR
 ## Final audit started, 2026-09-09
 
 The final evidence review is tracked in [final-audit.md](final-audit.md). Production source is at `c88bd00`. The first pass reviewed findings 1–9 and kept unresolved final gates explicit. Fresh verification passed 1,123 non-persistence unit tests, 199 persistence tests with 41 skips, and 15 authorization/template/module integration tests. These results do not yet prove whole-goal completion; remaining source review, integration/packaging reconciliation and browser verification are open.
+
+
+## Final source audit and integration follow-up, 2026-09-09
+
+- Completed source review for findings 10–14 and corrected stale architecture-reference statements about graph migration and revocation/recovery implementation. Detailed evidence is in `final-audit.md`. [R23: Maintain The Rules]
+- Broad integration run: 328 passed, one exact-OpenAPI test failed. Fixed the missing canonical-head route expectation and two assertions proven stale against base `2013e7f`; all five OpenAPI tests pass on rerun. Existing schemas are unchanged. [R43: Tests Are Behavioral Contracts]
+- Fresh disposable PostgreSQL/SQLite fence and execution-cleanup verification: 66 passed. Container cleanup completed. Two known native macOS fork-crash files were excluded from broad integration; a readiness test emitted an aiosqlite shutdown warning. Full details and remaining gates are recorded in the final audit.
+- Whole-goal completion remains open for browser runtime verification and final packaging/platform/contract reconciliation.

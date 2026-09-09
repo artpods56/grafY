@@ -82,7 +82,10 @@ flattened nodes/edges/presentation and the `plugin_release` alias. The opt-in
 `GET /v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document` exposes
 collaboration metadata plus canonical `SavedGraphDocument`, whose node field is
 `plugin_release_pin`. Existing command/checkpoint responses and room protocol v1
-retain the legacy head shape. See the [migration decision](../plans/backend-cleanup/graph-transport-migration.md).
+retain the legacy head shape through `CollaborativeHeadResponse.from_head`.
+The frontend uses canonical head state and normalizes legacy command/checkpoint
+and room responses through one client adapter. Shared layout, pin-presence and
+legacy edge-conversion rules live beside the canonical models. See the [migration decision](../plans/backend-cleanup/graph-transport-migration.md).
 
 ## MCP
 
@@ -228,5 +231,7 @@ extracted-wheel checks protect contracts that directory checks cannot prove.
 
 Remaining work and per-batch evidence live in the
 [backend cleanup checklist](../plans/backend-cleanup/README.md). Graph transport
-migration, remaining revocation/recovery proofs, and final broad verification remain open;
-this reference records current ownership, not completion of those tasks.
+migration and the supported single-owner revocation/recovery implementation are
+complete. The [final audit](../plans/backend-cleanup/final-audit.md) tracks source
+evidence, broad regression and packaging checks, and runtime browser verification.
+Those final gates remain open; this reference does not claim whole-goal completion.

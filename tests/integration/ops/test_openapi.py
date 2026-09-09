@@ -51,6 +51,7 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions/{execution_id}",
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/folder",
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/head",
+        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document",
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/materializations",
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/node-secrets",
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}",
@@ -320,7 +321,12 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
     assert "map_inputs" not in node_schema["properties"]
 
     plugin_schema = schema["components"]["schemas"]["PluginSpecResponse"]
-    assert "origin" not in plugin_schema["properties"]
+    assert plugin_schema["properties"]["origin"] == {
+        "default": "plugin",
+        "enum": ["builtin", "plugin", "module"],
+        "title": "Origin",
+        "type": "string",
+    }
     assert set(plugin_schema["required"]) == {"slug", "title"}
     assert "Plugin" + "Origin" not in schema["components"]["schemas"]
     assert plugin_schema["properties"]["runnable"] == {
@@ -408,6 +414,7 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
 
     run_node_schema = schema["components"]["schemas"]["RunNodeRequest"]
     assert set(run_node_schema["required"]) == {
+        "kind",
         "id",
         "operator_id",
         "operator_version",
