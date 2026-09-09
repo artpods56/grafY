@@ -634,20 +634,6 @@ class RunExecutionManager:
                 oldest_pending_wait_seconds=max(pending_waits, default=0.0),
             )
 
-    async def wait_for_events(
-        self,
-        workspace_id: UUID,
-        execution_id: UUID,
-        *,
-        after_sequence: int = 0,
-        timeout: float = 15,
-    ) -> RunExecutionEventBatch:
-        subscription = await self.subscribe_events(workspace_id, execution_id)
-        return await subscription.wait(
-            after_sequence=after_sequence,
-            timeout=timeout,
-        )
-
     async def subscribe_events(
         self,
         workspace_id: UUID,

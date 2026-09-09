@@ -124,7 +124,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 - [x] Retain the runtime bundle in AppResources instead of duplicating its fields; preserve lifecycle/shutdown order.
 - [x] Remove unused compiled execution target, commit `f4b8eda`.
-- [ ] Remove test-only wait_for_events wrapper; test production subscription behavior.
+- [x] Remove test-only wait_for_events wrapper; test production subscription behavior.
 - [ ] Inline sole-production-caller storage selection, preserving supported package compatibility.
 - [ ] Share stored-model integrity readers used by collections and tables.
 - [ ] Consolidate PluginRegistry state into immutable family declarations plus needed indexes; preserve ordering, freeze behavior, collisions.
@@ -634,3 +634,10 @@ flowchart LR
     Routes[HTTP dependencies and readiness] --> Bundle
     Resources --> Shutdown[Rooms, executions, optional runtime, storage]
 ```
+
+
+### Test execution events through retained subscriptions
+
+- Removed `RunExecutionManager.wait_for_events`, whose only callers were tests. Four tests now retain the same `subscribe_events` handle across waits, matching HTTP streaming.
+- Existing contracts still cover cancellation transitions, quiet polls, failure/skipped-node events, mapped progress, bounded replay, terminal delivery, late-progress suppression, and subscriptions surviving manager eviction. The production journal and subscription implementations are unchanged.
+- All 41 execution-manager and execution-route tests passed. Changed-file Ruff and whitespace checks passed. Evidence: `/tmp/grafy-event-subscription-tests.log`.

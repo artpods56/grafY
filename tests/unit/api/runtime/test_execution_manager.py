@@ -528,15 +528,12 @@ async def test_manager_reports_exact_node_and_cancellation_stops_downstream(
     assert (
         await manager.get(WORKSPACE_ID, execution.execution_id)
     ).active_node_id == "first"
-    observed = await manager.wait_for_events(
-        WORKSPACE_ID,
-        execution.execution_id,
+    subscription = await manager.subscribe_events(WORKSPACE_ID, execution.execution_id)
+    observed = await subscription.wait(
         after_sequence=0,
         timeout=0,
     )
-    quiet = await manager.wait_for_events(
-        WORKSPACE_ID,
-        execution.execution_id,
+    quiet = await subscription.wait(
         after_sequence=observed.events[-1].sequence,
         timeout=0,
     )
@@ -557,9 +554,7 @@ async def test_manager_reports_exact_node_and_cancellation_stops_downstream(
     assert cancelled.result is None
     assert cancelled.error is None
     assert _downstream_calls == []
-    terminal_events = await manager.wait_for_events(
-        WORKSPACE_ID,
-        execution.execution_id,
+    terminal_events = await subscription.wait(
         after_sequence=0,
         timeout=0,
     )
@@ -739,9 +734,8 @@ async def test_manager_preserves_failed_graph_result(tmp_path: Path) -> None:
     assert failed.result is not None
     assert failed.result.status == "failed"
     assert "controlled node failure" in (failed.result.node_results[0].error or "")
-    batch = await manager.wait_for_events(
-        WORKSPACE_ID,
-        execution.execution_id,
+    subscription = await manager.subscribe_events(WORKSPACE_ID, execution.execution_id)
+    batch = await subscription.wait(
         after_sequence=0,
         timeout=0,
     )
@@ -796,9 +790,8 @@ async def test_manager_replays_lifecycle_and_mapped_progress_events(
     )
     assert (await _terminal(manager, execution.execution_id)).status == "succeeded"
 
-    batch = await manager.wait_for_events(
-        WORKSPACE_ID,
-        execution.execution_id,
+    subscription = await manager.subscribe_events(WORKSPACE_ID, execution.execution_id)
+    batch = await subscription.wait(
         after_sequence=0,
         timeout=0,
     )
@@ -824,9 +817,7 @@ async def test_manager_replays_lifecycle_and_mapped_progress_events(
 
     terminal_sequence = batch.events[-1].sequence
     await _progress_contexts[0].progress("Too late")
-    after_terminal = await manager.wait_for_events(
-        WORKSPACE_ID,
-        execution.execution_id,
+    after_terminal = await subscription.wait(
         after_sequence=terminal_sequence,
         timeout=0,
     )
@@ -843,15 +834,12 @@ async def test_manager_bounds_event_replay_and_detects_terminal_delivery(
     execution = await manager.start(WORKSPACE_ID, RunRequest(nodes=[]))
     assert (await _terminal(manager, execution.execution_id)).status == "succeeded"
 
-    replay = await manager.wait_for_events(
-        WORKSPACE_ID,
-        execution.execution_id,
+    subscription = await manager.subscribe_events(WORKSPACE_ID, execution.execution_id)
+    replay = await subscription.wait(
         after_sequence=0,
         timeout=0,
     )
-    after_terminal = await manager.wait_for_events(
-        WORKSPACE_ID,
-        execution.execution_id,
+    after_terminal = await subscription.wait(
         after_sequence=replay.events[-1].sequence,
         timeout=0,
     )
