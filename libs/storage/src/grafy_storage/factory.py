@@ -1,3 +1,5 @@
+"""Public storage-package factory retained for supported caller imports."""
+
 from pathlib import Path
 from typing import Literal
 

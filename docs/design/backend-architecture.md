@@ -135,7 +135,7 @@ it constructs every service from concrete adapters, binds them to
 ```mermaid
 flowchart TB
     Settings["Settings\n(env + .env)"] --> Database["create_database\ngrafy_persistence.database"]
-    Settings --> StorageFactory["create_file_storage\ngrafy_storage.factory"]
+    Settings --> StorageFactory["configured_file_storage\ngrafy_api.storage"]
     Settings --> OwnerLease["ApiOwnerLease\nsingle-owner lock"]
 
     Database --> Db["Database\nengine + async_sessionmaker"]
@@ -392,7 +392,7 @@ adapters selected by `storage_backend` in settings (`local` | `s3`).
 
 ```mermaid
 flowchart LR
-    Core["FileStoragePort\ngrafy_core/ports/storage.py"] --> Factory["create_file_storage\ngrafy_storage/factory.py"]
+    Core["FileStoragePort\ngrafy_core/ports/storage.py"] --> Factory["configured_file_storage\ngrafy_api/storage.py"]
     Factory --> Local["LocalFileObjectStore\nlocal FS root"]
     Factory --> S3["S3ObjectStore\nS3-compatible (MinIO/AWS)"]
     Local --> FS["filesystem"]
@@ -400,8 +400,10 @@ flowchart LR
 ```
 
 Artifacts and uploads are written through `FileStoragePort`, never through a
-concrete store — so swapping local for S3 changes only the factory call in
-`main.py`.
+concrete store. API startup and publication CLI share `configured_file_storage`,
+which selects the adapter from settings. The public `grafy_storage.create_file_storage`
+and `grafy_storage.factory.create_file_storage` imports remain available for package
+callers; application composition no longer routes through that compatibility factory.
 
 ---
 

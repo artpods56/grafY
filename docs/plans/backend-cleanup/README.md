@@ -125,7 +125,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Retain the runtime bundle in AppResources instead of duplicating its fields; preserve lifecycle/shutdown order.
 - [x] Remove unused compiled execution target, commit `f4b8eda`.
 - [x] Remove test-only wait_for_events wrapper; test production subscription behavior.
-- [ ] Inline sole-production-caller storage selection, preserving supported package compatibility.
+- [x] Inline sole-production-caller storage selection, preserving supported package compatibility.
 - [x] Share stored-model integrity readers used by collections and tables.
 - [x] Consolidate PluginRegistry state into immutable family declarations plus needed indexes; preserve ordering, freeze behavior, collisions.
 - [x] Replace InstalledPluginRelease forwarding properties with explicit release/installation access while preserving pair invariants.
@@ -693,3 +693,14 @@ flowchart LR
     Snapshot --> Indexes[Node, artifact, conversion, and owner indexes]
     Indexes --> Freeze[Validate contracts and expand projections]
 ```
+
+
+### Application-owned storage backend selection
+
+- `configured_file_storage` now directly constructs Local or S3 adapters after the existing settings normalization. API startup and publication CLI continue sharing that configuration owner; the application no longer imports or calls the lower-level package factory. [R01: Direct Ownership]
+- Retained `grafy_storage.create_file_storage`, `grafy_storage.factory.create_file_storage`, and `StorageBackend` for supported external package imports. The factory implementation and defaults are unchanged; its module documentation makes the compatibility role explicit. This deliberately preserves the small public constructor branch while removing it from the application composition path.
+- Updated the storage-specific architecture diagrams and text to show application-owned selection. The broader architecture-reference cleanup remains a separate open gate.
+- Tests verify real local save/load beneath the workspace objects root, S3 endpoint/access-key/secret normalization, region and path-style forwarding, existing package factories, startup, CLI publication, and artifact streaming. The shared configuration function still trims access-key whitespace, preserves secret-key whitespace, and maps blank values to None.
+- Validation: 34 storage/configuration/startup/CLI tests and 146 artifact/streaming/architecture tests passed, totaling 180. Targeted typing reports zero errors or warnings; changed-file Ruff and whitespace checks pass. Extracted API/storage wheels preserve both public factory imports and construct both supported adapters without network IO.
+- Evidence: `/tmp/grafy-storage-owner-tests.log`, `/tmp/grafy-storage-owner-artifacts.log`, `/tmp/grafy-storage-owner-types.log`, and `/tmp/grafy-storage-owner-build.log`.
+- Finding 14 is complete across its recorded batches. Findings 3, 4, 8, 10, and final whole-backend gates remain open; this is not whole-goal completion.
