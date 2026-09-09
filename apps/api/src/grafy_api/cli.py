@@ -55,7 +55,7 @@ from grafy_api.plugins.publication.oci import PluginOciImageBuilder
 from grafy_api.plugins.runtime.network_policy import load_network_policy_manifest
 from grafy_api.settings import get_settings
 from grafy_api.storage import configured_file_storage
-from grafy_api.system_cutover import (
+from grafy_persistence.system_cutover import (
     SystemBaselineCutoverService,
     SystemCutoverCommand,
 )

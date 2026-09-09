@@ -704,3 +704,23 @@ flowchart LR
 - Validation: 34 storage/configuration/startup/CLI tests and 146 artifact/streaming/architecture tests passed, totaling 180. Targeted typing reports zero errors or warnings; changed-file Ruff and whitespace checks pass. Extracted API/storage wheels preserve both public factory imports and construct both supported adapters without network IO.
 - Evidence: `/tmp/grafy-storage-owner-tests.log`, `/tmp/grafy-storage-owner-artifacts.log`, `/tmp/grafy-storage-owner-types.log`, and `/tmp/grafy-storage-owner-build.log`.
 - Finding 14 is complete across its recorded batches. Findings 3, 4, 8, 10, and final whole-backend gates remain open; this is not whole-goal completion.
+
+
+### Persistence-owned SQL cutover operations
+
+- Moved the complete SQL cutover module from `grafy_api.system_cutover` to `grafy_persistence.system_cutover`. Its full syntax tree is unchanged, including typed command/report/baseline models, maintenance fencing, audited fingerprints, compare-and-swap writes, cache clearing, and transaction boundaries. [R18: One Layer Per Function]
+- Moved the cutover database tests to `tests/unit/persistence/test_system_cutover.py`. CLI parsing, file checksums, rollback-manifest files, and reporting remain in operator tooling and import the persistence owner.
+- Updated current cutover maintenance commands and owned-file paths. Historical implementation-evidence commands retain their original paths, with a note pointing to the current ownership.
+- Focused cutover, inventory, CLI, and architecture checks passed 48 tests. Broader persistence and API suites passed 154 and 484 tests respectively, in separate processes to avoid the known migration/logging interaction. Nineteen optional PostgreSQL cases were skipped. The moved suite retains SQL-fence ordering probes and real SQLite contention/atomicity tests; this batch does not claim new live PostgreSQL verification.
+- Targeted typing of the persistence module, operator file operations, and moved tests reports zero errors or warnings. Changed-file Ruff and whitespace checks pass. Clean API/persistence wheels import cutover through persistence and omit the retired API SQL module.
+- Evidence: `/tmp/grafy-cutover-before.py`, `/tmp/grafy-cutover-owner-tests.log`, `/tmp/grafy-cutover-owner-persistence.log`, `/tmp/grafy-cutover-owner-api.log`, `/tmp/grafy-cutover-owner-types.log`, and `/tmp/grafy-cutover-owner-build.log`.
+- Finding 4's SQL ownership item remains open for `SystemBaselineManifestGenerator`. That class still joins persisted selections inside API inventory tooling and depends on inventory authority models and historical host-binding contracts. Moving it requires separating those contracts without introducing a persistence-to-API dependency. The cutover move is one completed part of that item, not completion of the whole finding.
+
+```mermaid
+flowchart LR
+    CLI[Operator command parsing] --> Files[Manifest IO and checksums]
+    CLI --> SQL[Persistence cutover service]
+    Files --> Models[Persistence cutover command/report models]
+    SQL --> Models
+    SQL --> DB[Maintenance locks and atomic database transaction]
+```

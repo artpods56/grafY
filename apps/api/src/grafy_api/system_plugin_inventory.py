@@ -32,7 +32,7 @@ from grafy_core.domain.plugin_releases import (
 )
 from grafy_persistence import schema
 
-from grafy_api.system_cutover import (
+from grafy_persistence.system_cutover import (
     SystemBaselineArtifactType,
     SystemBaselineManifest,
     SystemBaselineOperator,

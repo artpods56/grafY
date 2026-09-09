@@ -75,8 +75,8 @@ current service still:
 
 ## Owned files
 
-- `apps/api/src/grafy_api/system_cutover.py`
-- `tests/unit/api/test_system_cutover.py`
+- `libs/persistence/src/grafy_persistence/system_cutover.py`
+- `tests/unit/persistence/test_system_cutover.py`
 
 Do not add a global application maintenance mode or edit graph-authoring routes in
 this packet. The database transaction is the owner of this narrow cutover fence.
@@ -119,13 +119,13 @@ Behavioral Contracts].
 ## Focused gate
 
 ```bash
-uv run pytest -q -o log_cli=false tests/unit/api/test_system_cutover.py
+uv run pytest -q -o log_cli=false tests/unit/persistence/test_system_cutover.py
 uv run ruff check \
-  apps/api/src/grafy_api/system_cutover.py \
-  tests/unit/api/test_system_cutover.py
+  libs/persistence/src/grafy_persistence/system_cutover.py \
+  tests/unit/persistence/test_system_cutover.py
 uv run basedpyright \
-  apps/api/src/grafy_api/system_cutover.py \
-  tests/unit/api/test_system_cutover.py
+  libs/persistence/src/grafy_persistence/system_cutover.py \
+  tests/unit/persistence/test_system_cutover.py
 ```
 
 ## Definition of done
@@ -135,6 +135,9 @@ uv run basedpyright \
 - Exact stale/missing-row CAS failures roll back the entire cutover.
 - Focused tests, Ruff, type checking, and `git diff --check` pass.
 - Implementation evidence is appended below.
+
+Current ownership: the SQL service and its tests now live in persistence.
+The implementation evidence below retains the paths used by its original runs.
 
 ## Implementation evidence
 

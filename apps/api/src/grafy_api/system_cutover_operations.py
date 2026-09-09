@@ -9,7 +9,7 @@ from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from grafy_api.system_cutover import (
+from grafy_persistence.system_cutover import (
     CutoverRollbackUnit,
     SystemBaselineManifest,
 )

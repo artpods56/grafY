@@ -12,7 +12,7 @@ from sqlalchemy import JSON, Table, func, select, text, type_coerce, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import OperationalError
 
-from grafy_api.system_cutover import (
+from grafy_persistence.system_cutover import (
     CutoverRollbackUnit,
     SystemBaselineCutoverService,
     SystemBaselineManifest,

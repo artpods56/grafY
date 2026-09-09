@@ -7,7 +7,7 @@ from uuid import UUID
 import pytest
 
 from grafy_api import cli
-from grafy_api.system_cutover import (
+from grafy_persistence.system_cutover import (
     CutoverRollbackUnit,
     CutoverStoreReport,
     SystemBaselineManifest,

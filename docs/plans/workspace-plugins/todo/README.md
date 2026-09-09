@@ -79,7 +79,7 @@ uv run pytest -q -o log_cli=false \
   tests/unit/application/test_plugin_release_catalog.py \
   tests/unit/persistence/test_plugin_release_persistence.py \
   tests/unit/persistence/test_migrations.py \
-  tests/unit/api/test_system_cutover.py \
+  tests/unit/persistence/test_system_cutover.py \
   tests/unit/api/test_system_plugin_deployment.py \
   tests/unit/api/test_system_plugin_loader.py \
   tests/unit/api/runtime/test_system_adapter_parity.py \
@@ -91,7 +91,7 @@ uv run ruff check \
   libs/core/src/grafy_core/runtime/execution.py \
   libs/persistence/src/grafy_persistence/adapters/repositories.py \
   infra/db/migrations/versions/0020_plugin_release_selections.py \
-  apps/api/src/grafy_api/system_cutover.py \
+  libs/persistence/src/grafy_persistence/system_cutover.py \
   apps/api/src/grafy_api/system_plugin_deployment.py \
   apps/api/src/grafy_api/system_plugin_loader.py \
   apps/api/src/grafy_api/execution/coordinator.py \
@@ -99,7 +99,7 @@ uv run ruff check \
   tests/unit/application/test_plugin_release_catalog.py \
   tests/unit/persistence/test_plugin_release_persistence.py \
   tests/unit/persistence/test_migrations.py \
-  tests/unit/api/test_system_cutover.py \
+  tests/unit/persistence/test_system_cutover.py \
   tests/unit/api/test_system_plugin_deployment.py \
   tests/unit/api/test_system_plugin_loader.py \
   tests/unit/api/runtime/test_system_adapter_parity.py \
@@ -110,7 +110,7 @@ uv run basedpyright \
   libs/core/src/grafy_core/ports/plugin_releases.py \
   libs/core/src/grafy_core/runtime/execution.py \
   libs/persistence/src/grafy_persistence/adapters/repositories.py \
-  apps/api/src/grafy_api/system_cutover.py \
+  libs/persistence/src/grafy_persistence/system_cutover.py \
   apps/api/src/grafy_api/system_plugin_deployment.py \
   apps/api/src/grafy_api/system_plugin_loader.py \
   apps/api/src/grafy_api/execution/coordinator.py \
