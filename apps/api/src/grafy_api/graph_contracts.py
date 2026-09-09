@@ -29,11 +29,8 @@ from grafy_core.domain.saved_graphs import (
     GraphBrowserItem,
     GraphFolder,
     GraphOrganization,
-    GraphPresentationDocument,
     SavedGraph,
     SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphNode,
     UserGraphState,
     normalize_saved_graph_edge_conversion,
 )
@@ -104,11 +101,6 @@ class SavedGraphNodeModel(SavedGraphApiModel):
         validate_graph_node_release_pin(self.kind, has_pin=self.plugin_release is not None)
         return self
 
-    @classmethod
-    def from_domain(cls, node: SavedGraphNode) -> "SavedGraphNodeModel":
-        payload = node.model_dump()
-        payload["plugin_release"] = payload.pop("plugin_release_pin")
-        return cls.model_validate(payload)
 
 
 class SavedGraphProjectionModel(SavedGraphApiModel):
@@ -140,9 +132,6 @@ class SavedGraphEdgeModel(SavedGraphApiModel):
         normalize_saved_graph_edge_conversion
     )
 
-    @classmethod
-    def from_domain(cls, edge: SavedGraphEdge) -> "SavedGraphEdgeModel":
-        return cls.model_validate(edge.model_dump())
 
 
 class GraphPresentationViewerModel(SavedGraphApiModel):
@@ -202,15 +191,6 @@ class GraphPresentationDocumentModel(SavedGraphApiModel):
     bindings: list[GraphPresentationBindingModel] = Field(default_factory=list)
     annotations: list[GraphPresentationAnnotationModel] = Field(default_factory=list)
 
-    def to_domain(self) -> GraphPresentationDocument:
-        return GraphPresentationDocument.model_validate(self.model_dump())
-
-    @classmethod
-    def from_domain(
-        cls,
-        presentation: GraphPresentationDocument,
-    ) -> "GraphPresentationDocumentModel":
-        return cls.model_validate(presentation.model_dump())
 
 
 class SavedGraphWriteRequest(SavedGraphApiModel):
@@ -470,24 +450,17 @@ class CollaborativeHeadResponse(SavedGraphApiModel):
 
     @classmethod
     def from_head(cls, head: CollaborativeGraphHead) -> "CollaborativeHeadResponse":
-        return cls(
-            graph_id=head.graph_id,
-            room_epoch=head.room_epoch,
-            collaboration_sequence=head.collaboration_sequence,
-            checkpoint_sequence=head.checkpoint_sequence,
-            checkpoint_revision=head.checkpoint_revision,
-            name=head.name,
-            updated_at=head.updated_at,
-            nodes=[
-                SavedGraphNodeModel.from_domain(node) for node in head.document.nodes
-            ],
-            edges=[
-                SavedGraphEdgeModel.from_domain(edge) for edge in head.document.edges
-            ],
-            presentation=GraphPresentationDocumentModel.from_domain(
-                head.document.presentation
-            ),
+        payload = CanonicalCollaborativeHeadResponse.from_head(head).model_dump(
+            exclude={"document"}
         )
+        payload.update(head.document.model_dump(exclude={"schema_version", "nodes"}))
+        nodes: list[dict[str, object]] = []
+        for node in head.document.nodes:
+            serialized = node.model_dump()
+            serialized["plugin_release"] = serialized.pop("plugin_release_pin")
+            nodes.append(serialized)
+        payload["nodes"] = nodes
+        return cls.model_validate(payload)
 
 
 class CanonicalCollaborativeHeadResponse(SavedGraphApiModel):

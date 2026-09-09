@@ -35,12 +35,17 @@ flowchart LR
 
 Room wire messages still use protocol v1. Internal client normalization does not require a new protocol version. Changing the wire payload later requires explicit versioning or capability negotiation. Existing clients remain supported; no legacy removal date is set.
 
-## Remaining work
+## Backend migration implementation
 
-1. Consolidate the backend internal compatibility adapter and remove repeated graph validation after mapping acceptance differences. Keep legacy normalization where old clients or stored data require it.
-2. Verify full graph round trips, old/new transport compatibility, generated clients, and OpenAPI after backend consolidation.
-3. Complete the final runtime browser verification alongside the whole cleanup audit.
-4. Retire legacy transport only through a separately reviewed compatibility decision with evidence that supported clients have migrated.
+Collaboration commands and head state use `SavedGraphDocument`. `CollaborativeHeadResponse.from_head` is the single backend compatibility adapter for legacy HTTP and room responses. It serializes the canonical envelope/document and renames each node's pin field. Per-node, per-edge, and presentation conversion wrappers have been removed.
+
+Substantive shared validation rules now have canonical ownership. The acceptance table below records the distinctions retained at legacy parsing boundaries. Mirrored response schema declarations remain to preserve the published OpenAPI and room v1 contracts; they no longer define a second internal graph representation.
+
+## Remaining verification and future compatibility
+
+Complete runtime browser verification and the whole-cleanup source/behavior audit before marking the overall goal complete. The backend and frontend migration implementation is complete; evidence is recorded below and in the checklist.
+
+Retire legacy transport only through a separately reviewed compatibility decision with evidence that supported clients have migrated. No removal date is set, and this cleanup does not remove v1 support.
 
 ## Verification
 
@@ -70,3 +75,6 @@ The shared edge normalizer stays in `grafy_core.domain.saved_graphs`, alongside 
 Layout completeness and the node-kind/release-pin requirement now live beside the canonical values and are called by both Pydantic model boundaries. The boundary methods retain validation order and return their own model instance. The canonical graph identifier constraint and layout dimension ceiling also supply the legacy schema declarations. This shares rules without changing collection mutability or pin parsing. [R01: Direct Ownership]
 
 The duplicate-binding comparison remains inline in each model because it is one expression with a boundary-specific error message. Sharing that expression would introduce a helper without removing meaningful complexity. [R32: Anemic Functions]
+
+
+The final backend adapter batch passes 696 API/core/application/collaboration/saved-graph/module tests. OpenAPI and generated TypeScript remain byte-for-byte unchanged. API and core wheels build offline; 96 tests pass after asserting imports resolve to the extracted wheels and comparing their OpenAPI with the checked-in schema.

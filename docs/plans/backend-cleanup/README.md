@@ -79,14 +79,14 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 ## 8. Graph document contracts
 
-- [ ] Reuse SavedGraphDocument internally through one compatibility transport adapter.
+- [x] Reuse SavedGraphDocument internally through one compatibility transport adapter.
 - [x] Replace manual node/edge/presentation conversion trees with canonical serialization and explicit pin-name compatibility.
-- [ ] Remove repeated graph validators and conversion logic without losing aliases.
+- [x] Remove repeated graph validators and conversion logic without losing aliases.
 - [x] Consolidate client room node/edge projection under the canonical authored-document model.
 - [x] Migrate clients toward collaboration metadata plus canonical document.
 - [x] Make the versioned compatibility decision explicit before retiring flattened public fields and mirrored schemas; see [graph transport migration](graph-transport-migration.md).
 - [x] Add an opt-in canonical head read endpoint and regenerate OpenAPI/TypeScript contracts without changing existing responses.
-- [ ] Verify graph round trips, old/new transport compatibility, generated clients, and OpenAPI.
+- [x] Verify graph round trips, old/new transport compatibility, generated clients, and OpenAPI.
 
 ## 9. Artifact availability
 
@@ -1049,3 +1049,12 @@ flowchart LR
 - Kept the one-expression binding-uniqueness checks inline with their distinct error messages. A separate helper would add indirection without removing meaningful complexity. [R32: Anemic Functions]
 - Added 22 behavioral cases covering independent layout axes, omitted/null dimensions, and every node-kind/pin-presence combination through both model classes. The broader API/core/application/collaboration/saved-graph suite passes all 678 tests. Ruff passes and OpenAPI is byte-for-byte unchanged. Pyright reports the same nine pre-existing diagnostics identified in the previous batch.
 - The next graph-contract step is to consolidate the remaining response conversion methods into the legacy head adapter. Finding 8 and final completion gates remain open.
+
+
+## One legacy head adapter, 2026-09-09
+
+- `CollaborativeHeadResponse.from_head` now obtains metadata from the canonical response, serializes the canonical document, and applies the legacy pin-field rename in one place. Removed the node, edge, and presentation conversion methods and the unused reverse presentation wrapper. HTTP head/command/checkpoint and room ready/rehydrate all use this boundary. [R08: Model-Owned Serialization] [R17: Delete Dead Abstractions]
+- Tests now exercise the surviving head adapter instead of deleted per-model helpers. They preserve node variants, nested configuration isolation, layout, plugs, bindings, edge conversion order/projection/routing, full presentation, uncheckpointed metadata, empty documents, JSON round trips, and canonical validation on domain re-entry. [R43: Tests Are Behavioral Contracts]
+- Verification: 43 focused transport tests and 696 broader API/core/application/collaboration/saved-graph/module tests pass. Ruff passes. Exported OpenAPI is byte-for-byte unchanged and independently generated TypeScript equals the checked-in client. API and core wheels build offline; assertions confirm imports come from the extracted wheels, whose OpenAPI matches the checked-in schema and whose 96 transport/core/saved-graph tests pass. Targeted Pyright reports the same seven pre-existing API collection-default diagnostics and no errors in the changed tests.
+- Final source inspection for finding 8 confirms the collaboration domain and application use `SavedGraphDocument`, while HTTP and room output use the single compatibility adapter. The frontend migration and its 607-test verification are recorded above. Shared substantive validators and aliases are preserved; the short boundary-specific binding uniqueness checks remain inline for the documented reason.
+- Finding 8's implementation checklist is complete. Legacy response schema declarations remain because existing clients and room protocol v1 are supported. Their future retirement requires the separate compatibility decision documented in the migration plan. Whole-goal completion is still unproven: final source/behavior audit, broad regression/packaging gates, and runtime browser verification remain open.

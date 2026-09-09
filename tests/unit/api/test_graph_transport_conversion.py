@@ -1,18 +1,23 @@
 """Contracts for canonical graph values crossing the compatibility transport."""
 
+from datetime import UTC, datetime
 from types import MappingProxyType
+from uuid import UUID
 from typing import Literal
 
 import pytest
 from pydantic import ValidationError
 
 from grafy_api.graph_contracts import (
-    GraphPresentationDocumentModel,
+    CanonicalCollaborativeHeadResponse,
+    CollaborativeHeadResponse,
     SavedGraphEdgeModel,
     SavedGraphNodeModel,
     SavedGraphNodeLayoutModel,
 )
+from grafy_core.domain.collaboration import CollaborativeGraphHead
 from grafy_core.domain.saved_graphs import (
+    SavedGraphDocument,
     GraphPresentationDocument,
     SavedGraphEdge,
     SavedGraphNode,
@@ -20,9 +25,26 @@ from grafy_core.domain.saved_graphs import (
 )
 
 
+@pytest.fixture
+def head() -> CollaborativeGraphHead:
+    return CollaborativeGraphHead(
+        workspace_id=UUID(int=1), graph_id=UUID(int=2), room_epoch=UUID(int=3),
+        collaboration_sequence=8, checkpoint_sequence=3, checkpoint_revision=2,
+        name="Uncheckpointed changes", updated_at=datetime(2026, 9, 9, tzinfo=UTC),
+        document=SavedGraphDocument(nodes=tuple(
+            SavedGraphNode.model_validate({
+                "id": node_id, "kind": "builtin", "operator_id": "example",
+                "operator_version": 1, "position": {"x": 0, "y": 0},
+                "input_plugs": [{"id": "plug", "port": "input"}],
+            }) for node_id in ["node", "source", "target"]
+        )),
+    )
+
+
 @pytest.mark.parametrize("kind", ["builtin", "plugin", "module"])
 def test_node_conversion_preserves_pin_name_and_copies_nested_config(
     kind: Literal["builtin", "plugin", "module"],
+    head: CollaborativeGraphHead,
 ) -> None:
     node = SavedGraphNode.model_validate(
         {
@@ -49,7 +71,8 @@ def test_node_conversion_preserves_pin_name_and_copies_nested_config(
             else None,
         }
     )
-    wire = SavedGraphNodeModel.from_domain(node)
+    head.document = SavedGraphDocument(nodes=(node,))
+    wire = CollaborativeHeadResponse.from_head(head).nodes[0]
     payload = wire.model_dump(mode="json")
 
     assert "plugin_release_pin" not in payload
@@ -73,12 +96,12 @@ def test_node_conversion_preserves_pin_name_and_copies_nested_config(
     }
     wire.config["items"] = ["changed"]
     assert node.config_dict()["items"] == [{"name": "Żółw", "enabled": True}]
-    assert SavedGraphNodeModel.from_domain(node).config["items"] == [
+    assert CollaborativeHeadResponse.from_head(head).nodes[0].config["items"] == [
         {"name": "Żółw", "enabled": True}
     ]
 
 
-def test_edge_conversion_retains_projection_conversion_order_and_routing() -> None:
+def test_edge_conversion_retains_projection_conversion_order_and_routing(head: CollaborativeGraphHead) -> None:
     payload = {
         "id": "edge",
         "enabled": False,
@@ -92,7 +115,8 @@ def test_edge_conversion_retains_projection_conversion_order_and_routing() -> No
         "conversion_path": [{"id": "one", "version": 1}, {"id": "two", "version": 2}],
         "route_offset": {"x": -5, "y": 10},
     }
-    wire = SavedGraphEdgeModel.from_domain(SavedGraphEdge.model_validate(payload))
+    head.document = SavedGraphDocument(nodes=head.document.nodes, edges=(SavedGraphEdge.model_validate(payload),))
+    wire = CollaborativeHeadResponse.from_head(head).edges[0]
     assert wire.model_dump(mode="json") == payload
 
 
@@ -144,22 +168,26 @@ def presentation() -> GraphPresentationDocument:
 
 def test_presentation_round_trip_retains_all_nested_fields_and_is_independent(
     presentation: GraphPresentationDocument,
+    head: CollaborativeGraphHead,
 ) -> None:
-    wire = GraphPresentationDocumentModel.from_domain(presentation)
+    head.document = SavedGraphDocument(nodes=head.document.nodes, presentation=presentation)
+    wire = CollaborativeHeadResponse.from_head(head).presentation
     assert wire.model_dump(mode="json") == presentation.model_dump(mode="json")
-    assert wire.to_domain() == presentation
+    assert GraphPresentationDocument.model_validate(wire.model_dump()) == presentation
     wire.viewers[0].position.x = 999
     assert presentation.viewers[0].position.x == 1
-    assert wire.to_domain().viewers[0].position.x == 999
+    assert GraphPresentationDocument.model_validate(wire.model_dump()).viewers[0].position.x == 999
 
 
 def test_presentation_conversion_still_enforces_domain_relationships(
     presentation: GraphPresentationDocument,
+    head: CollaborativeGraphHead,
 ) -> None:
-    wire = GraphPresentationDocumentModel.from_domain(presentation)
+    head.document = SavedGraphDocument(nodes=head.document.nodes, presentation=presentation)
+    wire = CollaborativeHeadResponse.from_head(head).presentation
     wire.bindings[0].target_viewer_id = "artifact-viewer-missing"
     with pytest.raises(ValidationError, match="references missing target viewer"):
-        wire.to_domain()
+        GraphPresentationDocument.model_validate(wire.model_dump())
 
 
 @pytest.mark.parametrize("model", [SavedGraphEdge, SavedGraphEdgeModel])
@@ -255,3 +283,21 @@ def test_node_models_require_release_pins_only_for_plugins(
         message = "Plugin node must pin an exact Plugin release" if kind == "plugin" else f"{kind} node cannot carry a Plugin release pin"
         with pytest.raises(ValidationError, match=message):
             model.model_validate(payload)
+
+
+def test_head_adapter_preserves_metadata_and_empty_document(head: CollaborativeGraphHead) -> None:
+    head.document = SavedGraphDocument()
+    canonical = CanonicalCollaborativeHeadResponse.from_head(head)
+    legacy = CollaborativeHeadResponse.from_head(head)
+    assert legacy.model_dump(exclude={"nodes", "edges", "presentation"}) == canonical.model_dump(exclude={"document"})
+    assert legacy.collaboration_sequence == 8
+    assert legacy.checkpoint_sequence == 3
+    assert legacy.checkpoint_revision == 2
+    assert legacy.nodes == []
+    assert legacy.edges == []
+    assert legacy.presentation.model_dump(mode="json") == {"viewers": [], "links": [], "bindings": [], "annotations": []}
+    payload = legacy.model_dump(mode="json")
+    assert "document" not in payload
+    assert "schema_version" not in payload
+    assert "workspace_id" not in payload
+    assert CollaborativeHeadResponse.model_validate_json(legacy.model_dump_json()) == legacy
