@@ -20,7 +20,7 @@ from grafy_api.plugins.runtime.admission import ReleaseExecutionAdmission
 from grafy_api.settings import Settings
 from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.v1.routes.auth.services import AuthService
-from grafy_api.v1.routes.collaboration.hub import GraphRoomHub
+from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.execution.admission import (
     ExecutionAdmissionDiagnostics,
     ExecutionAdmissionLimiter,

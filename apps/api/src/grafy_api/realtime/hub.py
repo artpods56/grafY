@@ -8,7 +8,7 @@ from fastapi import WebSocket
 from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
-from grafy_api.v1.routes.collaboration.models import (
+from grafy_api.realtime.protocol import (
     ActorPresentation,
     ExecutionActiveMessage,
     ExecutionClearedMessage,

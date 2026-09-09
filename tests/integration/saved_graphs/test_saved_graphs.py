@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 from fastapi.testclient import TestClient
 
 from grafy_api.v1.models import ArtifactTypeBindingModel, ArtifactTypeKeyResponse
-from grafy_api.v1.routes.saved_graphs.models import (
+from grafy_api.graph_contracts import (
     CheckpointGraphRequest,
     CopyExactHeadRequest,
     CreateSavedGraphRequest,

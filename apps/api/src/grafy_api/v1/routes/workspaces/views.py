@@ -6,11 +6,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
-from pydantic import SecretStr
-
 from grafy_core.domain.identity import (
-    ActorContext,
     PAT_ALLOWED_CAPABILITIES,
+    ActorContext,
     PersonalAccessToken,
     User,
     WorkspaceCapability,
@@ -18,7 +16,12 @@ from grafy_core.domain.identity import (
     WorkspaceRole,
 )
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
+from pydantic import SecretStr
 
+from grafy_api.app_state import get_resources
+from grafy_api.realtime.publish import (
+    close_user_rooms_for_permission_change,
+)
 from grafy_api.v1.routes.auth.dependencies import (
     AuthServiceDependency,
     IdentityServiceDependency,
@@ -42,10 +45,6 @@ from grafy_api.v1.routes.auth.models import (
     WorkspaceMemberRoleRequest,
     WorkspaceResponse,
 )
-from grafy_api.v1.routes.collaboration.publish import (
-    close_user_rooms_for_permission_change,
-)
-
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 me_router = APIRouter(prefix="/me", tags=["workspaces"])
@@ -375,7 +374,7 @@ async def change_member_role(
         role=payload.role,
     )
     await close_user_rooms_for_permission_change(
-        request,
+        get_resources(request.app).graph_room_hub,
         workspace_id=workspace_id,
         user_id=user_id,
         access_revoked=False,
@@ -397,7 +396,7 @@ async def remove_member(
         user_id=user_id,
     )
     await close_user_rooms_for_permission_change(
-        request,
+        get_resources(request.app).graph_room_hub,
         workspace_id=workspace_id,
         user_id=user_id,
         access_revoked=True,

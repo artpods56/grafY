@@ -113,7 +113,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 ## 13. Cross-feature host infrastructure
 
-- [ ] Move GraphRoomHub and post-commit publisher to application realtime ownership.
+- [x] Move GraphRoomHub and post-commit publisher to application realtime ownership.
 - [ ] Move operation audit metadata out of workspace views into HTTP diagnostics near registration.
 - [ ] Delegate malformed OIDC transaction cleanup to authentication.
 - [ ] Give workspace transport models their own owner and return complete application results without route-side transaction reopening.
@@ -526,4 +526,26 @@ flowchart TD
     Features --> Memory[In-memory unit of work]
     Graphs[Saved-graph and collaboration contracts] --> Outputs[Required materialized-output repository]
     Graphs --> Lifecycle
+```
+
+
+### Application-owned realtime rooms
+
+- Moved `GraphRoomHub`, its session/presence state, and post-commit publication to `grafy_api.realtime`. Execution management and app composition now depend on this owner instead of collaboration routes.
+- Room protocol models live in `realtime.protocol`. Shared graph transport contracts live in `graph_contracts.py`, so room messages and graph HTTP endpoints use the same class objects without realtime importing route modules. Existing route-model modules retain explicit compatibility exports.
+- Publication functions accept a concrete hub, not a FastAPI request. HTTP routes resolve the hub through application resources after the domain operation succeeds. Removed the redundant request-to-hub helper from publication. Idempotent command suppression, epoch rehydration, deleted-graph closure, permission-change closure, actor presentation, and wire messages retain their behavior.
+- Hub and room/graph model class/function syntax trees are unchanged. OpenAPI exactly matches the pre-move snapshot, including from the extracted API wheel. The wheel contains the new owners and excludes the retired route hub/publisher modules; compatibility model imports preserve class identity.
+- Updated the route-layout assertion that required hub and publisher files in the collaboration route folder. Added a dependency check prohibiting realtime/shared graph contracts from importing route modules and prohibiting publisher app-resource lookup.
+- Validation: 520 API/execution-route tests, 41 architecture/room tests, and 76 saved-graph/module/template/materialization/node-secret integration tests passed, totaling 637. The first combined run had one stale layout assertion failure; the final architecture/room run verifies its replacement.
+- Targeted typing reports ten diagnostics, exactly matching the saved pre-move implementations under equivalent import resolution. These are existing model default-factory, optional room, and nullable email diagnostics. Changed-file Ruff and whitespace checks pass.
+- Evidence: `/tmp/grafy-realtime-before-openapi.json`, `/tmp/grafy-realtime-tests.log`, `/tmp/grafy-realtime-final-tests.log`, `/tmp/grafy-realtime-graph-tests.log`, `/tmp/grafy-realtime-types.log`, `/tmp/grafy-realtime-baseline-types-final.log`, and `/tmp/grafy-realtime-wheel.log`.
+- Finding 13 remains open for audit metadata, auth cleanup, workspace results/models, node secrets, and staged uploads. Finding 8 remains open: moving shared graph transport classes does not eliminate their compatibility conversion layer or resolve versioned client migration.
+
+```mermaid
+flowchart LR
+    HTTP[HTTP mutation handlers] --> Domain[Committed domain operation]
+    Domain --> Publish[Realtime publisher with explicit hub]
+    Execute[Execution manager] --> Hub[Application graph-room hub]
+    Publish --> Hub
+    Hub --> Clients[Room protocol messages to clients]
 ```

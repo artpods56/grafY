@@ -35,7 +35,7 @@ from grafy_api.v1.routes.artifacts.views import router as artifacts_router
 from grafy_api.v1.routes.catalog.views import router as catalog_router
 from grafy_api.v1.routes.modules.views import router as modules_router
 from grafy_api.v1.routes.templates.views import router as templates_router
-from grafy_api.v1.routes.collaboration.hub import GraphRoomHub
+from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.v1.routes.collaboration.views import router as collaboration_router
 from grafy_api.v1.routes.executions.views import router as executions_router
 from grafy_api.plugins.runtime.docker import DockerPluginRuntime

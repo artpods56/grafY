@@ -18,7 +18,7 @@ from grafy_api.v1.routes.auth.models import (
 from grafy_api.v1.routes.auth.services import AuthService, IssuedSession
 from grafy_api.execution.requests import RunRequest
 from grafy_api.v1.routes.node_secrets.models import ConfigureNodeSecretRequest
-from grafy_api.v1.routes.saved_graphs.models import (
+from grafy_api.graph_contracts import (
     AssignGraphFolderRequest,
     CopyExactHeadRequest,
     CreateSavedGraphRequest,
@@ -980,7 +980,9 @@ async def test_target_bound_pat_cannot_copy_graph_from_another_workspace(
             }
         )
         matrix = await _seed_authorization_matrix(database)
-        issued = await _auth_service(app_settings, database).issue_session(matrix.both.id)
+        issued = await _auth_service(app_settings, database).issue_session(
+            matrix.both.id
+        )
         with client_with_overrides(settings=app_settings) as client:
             api = GrafyApi(client)
             api.authenticate(issued)
@@ -1025,12 +1027,16 @@ async def test_target_bound_pat_cannot_copy_graph_from_another_workspace(
             assert target.graphs.list_ok().model_dump() == before
 
         async with database.sessions() as session:
-            events = list(await session.scalars(
-                select(SecurityAuditEvent).where(
-                    schema.security_audit_events.c.operation == "collaboration.graph.copy",
-                    schema.security_audit_events.c.outcome == SecurityAuditOutcome.FAILURE,
+            events = list(
+                await session.scalars(
+                    select(SecurityAuditEvent).where(
+                        schema.security_audit_events.c.operation
+                        == "collaboration.graph.copy",
+                        schema.security_audit_events.c.outcome
+                        == SecurityAuditOutcome.FAILURE,
+                    )
                 )
-            ))
+            )
         assert len(events) == 1
         assert events[0].user_id == matrix.both.id
         assert events[0].workspace_id == matrix.workspace_a.id

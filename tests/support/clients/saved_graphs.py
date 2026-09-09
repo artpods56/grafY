@@ -6,7 +6,7 @@ from uuid import UUID
 from httpx import Response
 from starlette.testclient import TestClient
 
-from grafy_api.v1.routes.saved_graphs.models import (
+from grafy_api.graph_contracts import (
     AssignGraphFolderRequest,
     CheckpointGraphRequest,
     CheckpointGraphResponse,

@@ -34,14 +34,14 @@ from grafy_api.v1.routes.collaboration.dependencies import (
     IdentityServiceWsDependency,
     IdentityUnitOfWorkFactoryWsDependency,
 )
-from grafy_api.v1.routes.collaboration.hub import (
+from grafy_api.realtime.hub import (
     CLOSE_ACCESS_REVOKED,
     CLOSE_PERMISSIONS_CHANGED,
     CLOSE_PROTOCOL_ERROR,
     GraphRoomHub,
     GraphRoomSession,
 )
-from grafy_api.v1.routes.collaboration.models import (
+from grafy_api.realtime.protocol import (
     CLIENT_ROOM_MESSAGE_ADAPTER,
     CapabilitySnapshot,
     GraphCommandAcceptedMessage,
@@ -53,8 +53,8 @@ from grafy_api.v1.routes.collaboration.models import (
     RoomReadyMessage,
     command_receipt_outcome,
 )
-from grafy_api.v1.routes.collaboration.publish import actor_presentation_for
-from grafy_api.v1.routes.saved_graphs.models import CollaborativeHeadResponse
+from grafy_api.realtime.publish import actor_presentation_for
+from grafy_api.graph_contracts import CollaborativeHeadResponse
 
 
 logger = logging.getLogger(__name__)

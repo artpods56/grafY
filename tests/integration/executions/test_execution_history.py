@@ -22,7 +22,7 @@ from tests.support.system_plugins import (
     selected_system_run_node as RunNodeRequest,
 )
 from tests.support.clients import GrafyApi
-from grafy_api.v1.routes.saved_graphs.models import (
+from grafy_api.graph_contracts import (
     CreateSavedGraphRequest,
     GraphPointModel,
     SavedGraphNodeModel,

@@ -43,7 +43,7 @@ from grafy_api.execution.requests import (
     RunNodeRequest as UnpinnedRunNodeRequest,
     RunRequest,
 )
-from grafy_api.v1.routes.saved_graphs.models import (
+from grafy_api.graph_contracts import (
     CreateSavedGraphRequest,
     GraphPointModel,
     SavedGraphEdgeModel,

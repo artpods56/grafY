@@ -3,8 +3,6 @@
 from collections.abc import Callable
 from uuid import UUID
 
-from fastapi import Request
-
 from grafy_core.domain.collaboration import (
     CollaborativeGraphHead,
     GraphCommand,
@@ -13,25 +11,20 @@ from grafy_core.domain.collaboration import (
 from grafy_core.domain.identity import ActorContext
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
-from grafy_api.app_state import get_resources
-from grafy_api.v1.routes.collaboration.hub import (
+from grafy_api.graph_contracts import CollaborativeHeadResponse
+from grafy_api.realtime.hub import (
     CLOSE_ACCESS_REVOKED,
     CLOSE_GRAPH_DELETED,
     CLOSE_PERMISSIONS_CHANGED,
     GraphRoomHub,
 )
-from grafy_api.v1.routes.collaboration.models import (
+from grafy_api.realtime.protocol import (
     ActorPresentation,
     GraphCommandAcceptedMessage,
     RoomRehydrateMessage,
     actor_display_color,
     bounded_display_name,
 )
-from grafy_api.v1.routes.saved_graphs.models import CollaborativeHeadResponse
-
-
-def graph_room_hub_from_request(request: Request) -> GraphRoomHub:
-    return get_resources(request.app).graph_room_hub
 
 
 async def actor_presentation_for(
@@ -51,7 +44,7 @@ async def actor_presentation_for(
 
 
 async def publish_accepted_command(
-    request: Request,
+    hub: GraphRoomHub,
     *,
     actor: ActorContext,
     workspace_id: UUID,
@@ -61,7 +54,6 @@ async def publish_accepted_command(
     graph_room_session_id: UUID | None = None,
     uow_factory: Callable[[], SqlAlchemyUnitOfWork],
 ) -> None:
-    hub = graph_room_hub_from_request(request)
     presentation = await actor_presentation_for(uow_factory, actor)
     await hub.publish_accepted(
         workspace_id=workspace_id,
@@ -78,13 +70,12 @@ async def publish_accepted_command(
 
 
 async def publish_epoch_reset(
-    request: Request,
+    hub: GraphRoomHub,
     *,
     workspace_id: UUID,
     graph_id: UUID,
     head: CollaborativeGraphHead,
 ) -> None:
-    hub = graph_room_hub_from_request(request)
     await hub.publish_rehydrate(
         workspace_id=workspace_id,
         graph_id=graph_id,
@@ -95,12 +86,11 @@ async def publish_epoch_reset(
 
 
 async def close_graph_room(
-    request: Request,
+    hub: GraphRoomHub,
     *,
     workspace_id: UUID,
     graph_id: UUID,
 ) -> None:
-    hub = graph_room_hub_from_request(request)
     await hub.close_graph(
         workspace_id=workspace_id,
         graph_id=graph_id,
@@ -110,13 +100,12 @@ async def close_graph_room(
 
 
 async def close_user_rooms_for_permission_change(
-    request: Request,
+    hub: GraphRoomHub,
     *,
     workspace_id: UUID,
     user_id: UUID,
     access_revoked: bool,
 ) -> None:
-    hub = graph_room_hub_from_request(request)
     if access_revoked:
         code, reason = CLOSE_ACCESS_REVOKED
     else:

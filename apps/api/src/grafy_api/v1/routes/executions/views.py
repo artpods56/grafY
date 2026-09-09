@@ -22,7 +22,7 @@ from grafy_api.v1.routes.auth.dependencies import (
     IdentityUnitOfWorkFactoryDependency,
     require_workspace_capability,
 )
-from grafy_api.v1.routes.collaboration.publish import actor_presentation_for
+from grafy_api.realtime.publish import actor_presentation_for
 from grafy_api.v1.routes.saved_graphs.dependencies import SavedGraphDependency
 
 from .dependencies import (

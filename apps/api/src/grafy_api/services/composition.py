@@ -40,7 +40,7 @@ from grafy_api.system_host_bindings import (
     validate_system_host_bindings,
 )
 from grafy_api.v1.routes.artifacts.services import ArtifactService
-from grafy_api.v1.routes.collaboration.hub import GraphRoomHub
+from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.execution.compiler import GraphCompiler
 from grafy_api.execution.coordinator import GraphExecutionCoordinator
 from grafy_api.execution.edge_values import EdgeValueResolver

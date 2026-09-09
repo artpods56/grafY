@@ -98,9 +98,7 @@ def test_api_routes_are_organized_as_capability_slices() -> None:
     assert {path.name for path in (routes_root / "collaboration").glob("*.py")} == {
         "__init__.py",
         "dependencies.py",
-        "hub.py",
         "models.py",
-        "publish.py",
         "views.py",
     }
     for area in API_SERVICE_AREAS:
@@ -342,3 +340,30 @@ def test_execution_http_models_preserve_public_request_and_event_identity() -> N
     ):
         for name in names:
             assert getattr(models, name) is getattr(module, name)
+
+
+def test_realtime_ownership_does_not_depend_on_route_modules() -> None:
+    api_root = REPO_ROOT / "apps/api/src/grafy_api"
+    paths = [*(api_root / "realtime").glob("*.py"), api_root / "graph_contracts.py"]
+    offenders: list[str] = []
+    for path in paths:
+        for node in ast.walk(ast.parse(path.read_text())):
+            modules: list[str] = []
+            if isinstance(node, ast.ImportFrom) and node.module:
+                modules.append(node.module)
+                if node.module == "grafy_api.v1" and any(
+                    alias.name == "routes" for alias in node.names
+                ):
+                    offenders.append(str(path.relative_to(REPO_ROOT)))
+            elif isinstance(node, ast.Import):
+                modules.extend(alias.name for alias in node.names)
+            for module in modules:
+                if module == "grafy_api.v1.routes" or module.startswith(
+                    "grafy_api.v1.routes."
+                ):
+                    offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+                if path.name == "publish.py" and module == "grafy_api.app_state":
+                    offenders.append(
+                        f"{path.relative_to(REPO_ROOT)}: request resource lookup"
+                    )
+    assert offenders == []

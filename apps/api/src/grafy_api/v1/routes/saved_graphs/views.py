@@ -3,7 +3,6 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
-
 from grafy_core.domain.collaboration import (
     CommandReceiptOutcome,
     ReplaceDocumentCommand,
@@ -21,27 +20,28 @@ from grafy_core.domain.errors import (
 )
 from grafy_core.domain.identity import ActorContext, WorkspaceCapability
 
+from grafy_api.app_state import get_resources
+from grafy_api.realtime.publish import (
+    close_graph_room,
+    publish_accepted_command,
+    publish_epoch_reset,
+)
 from grafy_api.v1.routes.auth.dependencies import (
     IdentityUnitOfWorkFactoryDependency,
     browser_actor,
     require_workspace_capability,
 )
-from grafy_api.v1.routes.collaboration.publish import (
-    close_graph_room,
-    publish_accepted_command,
-    publish_epoch_reset,
-)
 
 from .dependencies import CollaborationDependency, SavedGraphDependency
 from .models import (
+    AssignGraphFolderRequest,
     CheckpointGraphRequest,
     CheckpointGraphResponse,
     CollaborativeHeadResponse,
     CopyExactHeadRequest,
     CreateSavedGraphRequest,
-    GraphCommandReceiptResponse,
-    AssignGraphFolderRequest,
     GraphBrowserListResponse,
+    GraphCommandReceiptResponse,
     GraphFolderListResponse,
     GraphFolderResponse,
     GraphFolderWriteRequest,
@@ -53,7 +53,6 @@ from .models import (
     UpdateSavedGraphRequest,
     UserGraphStateResponse,
 )
-
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/graphs", tags=["saved graphs"])
 browser_router = APIRouter(prefix="/me/graphs", tags=["graph browser"])
@@ -360,7 +359,7 @@ async def submit_graph_command(
     # rebroadcast an accepted command that peers already applied.
     if receipt.outcome is not CommandReceiptOutcome.IDEMPOTENT_REPLAY:
         await publish_accepted_command(
-            http_request,
+            get_resources(http_request.app).graph_room_hub,
             actor=access.actor,
             workspace_id=access.workspace_id,
             graph_id=graph_id,
@@ -435,7 +434,7 @@ async def update_saved_graph(
     ) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await publish_epoch_reset(
-        http_request,
+        get_resources(http_request.app).graph_room_hub,
         workspace_id=access.workspace_id,
         graph_id=graph_id,
         head=head,
@@ -482,7 +481,7 @@ async def delete_saved_graph(
     ) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await close_graph_room(
-        http_request,
+        get_resources(http_request.app).graph_room_hub,
         workspace_id=access.workspace_id,
         graph_id=graph_id,
     )

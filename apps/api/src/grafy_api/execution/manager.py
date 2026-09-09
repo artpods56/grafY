@@ -12,8 +12,8 @@ from grafy_core.domain.execution_history import GraphExecution
 from grafy_core.domain.errors import NotFoundError
 from grafy_core.nodes import NodeExecutionContext
 
-from grafy_api.v1.routes.collaboration.hub import GraphRoomHub
-from grafy_api.v1.routes.collaboration.models import (
+from grafy_api.realtime.hub import GraphRoomHub
+from grafy_api.realtime.protocol import (
     ActiveExecutionLifecycleStatus,
     ActiveExecutionSummary,
     ActorPresentation,

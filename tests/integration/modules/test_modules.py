@@ -55,7 +55,7 @@ from grafy_api.v1.routes.modules.models import (
 )
 from grafy_api.v1.routes.node_secrets.dependencies import node_secret_service
 from grafy_api.v1.routes.saved_graphs.dependencies import saved_graph_service
-from grafy_api.v1.routes.saved_graphs.models import (
+from grafy_api.graph_contracts import (
     CheckpointGraphRequest,
     CreateSavedGraphRequest,
     GraphPointModel,

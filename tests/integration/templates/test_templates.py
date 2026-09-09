@@ -11,7 +11,7 @@ from pydantic import SecretStr
 from grafy_api.settings import Settings
 from grafy_api.app_state import get_resources
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
-from grafy_api.v1.routes.saved_graphs.models import (
+from grafy_api.graph_contracts import (
     CheckpointGraphRequest,
     GraphFolderWriteRequest,
     UpdateSavedGraphRequest,

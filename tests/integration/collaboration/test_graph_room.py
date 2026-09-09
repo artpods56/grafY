@@ -21,13 +21,13 @@ from grafy_api.settings import Settings
 from grafy_api.v1.models import PluginReleasePinModel
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 from grafy_api.v1.routes.auth.models import WorkspaceMemberRoleRequest
-from grafy_api.v1.routes.collaboration.hub import (
+from grafy_api.realtime.hub import (
     CLOSE_SLOW_CONSUMER,
     OUTBOUND_QUEUE_MAXSIZE,
     GraphRoomHub,
     GraphRoomSession,
 )
-from grafy_api.v1.routes.collaboration.models import (
+from grafy_api.realtime.protocol import (
     ActorPresentation,
     PresenceUpdateSubmitMessage,
     RoomHeartbeatMessage,
@@ -35,7 +35,7 @@ from grafy_api.v1.routes.collaboration.models import (
 )
 from grafy_api.v1.routes.collaboration.views import websocket_browser_actor
 from grafy_api.execution.requests import RunRequest
-from grafy_api.v1.routes.saved_graphs.models import (
+from grafy_api.graph_contracts import (
     CreateSavedGraphRequest,
     SubmitGraphCommandRequest,
     UpdateSavedGraphRequest,

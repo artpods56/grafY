@@ -16,7 +16,7 @@ from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 from grafy_api.app_state import get_identity, get_resources
 from grafy_api.v1.routes.auth.services import AuthService
-from grafy_api.v1.routes.collaboration.hub import GraphRoomHub
+from grafy_api.realtime.hub import GraphRoomHub
 
 
 def graph_room_hub(request: Request) -> GraphRoomHub:
