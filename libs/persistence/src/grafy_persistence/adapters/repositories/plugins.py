@@ -91,9 +91,11 @@ class SqlPluginReleaseRepository(PluginReleaseRepositoryPort):
                 transient.c.created_at, transient.c.execution_id
             )
         )
+        saved_ids = {execution.execution_id for execution in active}
         active.extend(
             ActiveGraphExecution(execution_id=execution_id, status="running")
             for execution_id in transient_rows.scalars()
+            if execution_id not in saved_ids
         )
         return tuple(active)
 

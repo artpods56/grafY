@@ -167,8 +167,9 @@ Plugin orphan cleanup; otherwise it retains them and refuses startup. Without th
 owner lease, global orphan cleanup is skipped. Startup recovery has lifespan tests;
 background and synchronous execution races have SQLite and PostgreSQL coverage.
 Synchronous routes use manager-owned activity while retaining HTTP capacity through
-presentation. Unconfirmed sandbox cleanup still needs fail-closed terminal handling
-and remains open in the cleanup plan.
+presentation. Unconfirmed sandbox cleanup retains activity and active saved history until
+guarded orphan recovery. Saved runs also register activity before preparation, so
+marking saved history interrupted cannot bypass recovery authority.
 
 ## Artifact contracts, reads, and infrastructure
 

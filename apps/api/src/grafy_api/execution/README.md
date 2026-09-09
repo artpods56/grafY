@@ -98,5 +98,27 @@ exceptions and cancellation instead of converting them into pollable state.
 Do not inject `RunGraph` directly into an execution route. That bypasses the durable
 activity used by System revocation and cutover. Module operators execute within
 their parent's scope. Marker removal retries after persistence errors; a failed
-removal retains activity for guarded startup recovery. Unconfirmed sandbox cleanup
-remains an explicit open item in the cleanup plan.
+removal retains activity for guarded startup recovery.
+
+## Cleanup confirmation
+
+Saved runs register an activity marker after claiming their queued history row and
+before preparation. The existing `transient_executions` table tracks in-process
+activity for saved and unsaved runs; it does not replace saved history.
+
+`RunGraph` raises `PluginSandboxCleanupError` when cleanup cannot confirm that the
+scope is stopped. The manager reports the failed local result but retains the
+marker and any active saved history. Only guarded orphan recovery clears that
+uncertainty. An interrupted history row does not override an activity marker.
+Normal execution errors and cancellation still release activity once cleanup is
+confirmed. Caller cancellation and interruption of cleanup are distinct outcomes.
+
+```mermaid
+flowchart LR
+    Admission[Admission and activity registration] --> Run[Preparation and execution]
+    Run --> Cleanup[Sandbox cleanup]
+    Cleanup --> Confirmed[Confirmed stopped]
+    Cleanup --> Unconfirmed[Failed or interrupted]
+    Confirmed --> Release[Release activity]
+    Unconfirmed --> Retain[Retain maintenance fence]
+```

@@ -405,9 +405,14 @@ class SystemBaselineCutoverService:
         transient_ids = await session.scalars(
             select(schema.transient_executions.c.execution_id)
         )
+        saved_ids = {execution_id for execution_id, _status in identities}
         identities = [
             *identities,
-            *((execution_id, "running") for execution_id in transient_ids),
+            *(
+                (execution_id, "running")
+                for execution_id in transient_ids
+                if execution_id not in saved_ids
+            ),
         ]
         if identities:
             rendered = ", ".join(

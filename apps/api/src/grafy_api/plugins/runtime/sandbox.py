@@ -15,6 +15,16 @@ class PluginSandboxScopeId:
         return cls(uuid4())
 
 
+class PluginSandboxCleanupError(RuntimeError):
+    """The scope may still contain live workers and must remain fenced."""
+
+    def __init__(self, scope_id: PluginSandboxScopeId) -> None:
+        self.scope_id = scope_id
+        super().__init__(
+            f"Plugin sandbox cleanup was not confirmed for scope {scope_id.value}"
+        )
+
+
 class PluginSandboxLifecycle(Protocol):
     async def close_scope(self, scope_id: PluginSandboxScopeId, /) -> None: ...
 
@@ -42,6 +52,7 @@ def reset_plugin_sandbox_scope(
 
 
 __all__ = [
+    "PluginSandboxCleanupError",
     "PluginSandboxLifecycle",
     "PluginSandboxScopeId",
     "activate_plugin_sandbox_scope",

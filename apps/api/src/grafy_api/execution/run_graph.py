@@ -30,6 +30,7 @@ from grafy_api.execution.models import (
 )
 from grafy_api.execution.preflight import GraphRunPreflight
 from grafy_api.plugins.runtime.sandbox import (
+    PluginSandboxCleanupError,
     PluginSandboxLifecycle,
     PluginSandboxScopeId,
     activate_plugin_sandbox_scope,
@@ -85,14 +86,26 @@ class RunGraph:
         finally:
             try:
                 if self._plugin_sandboxes is not None:
-                    cleanup_task = asyncio.create_task(
-                        self._plugin_sandboxes.close_scope(sandbox_scope)
-                    )
+                    cleanup_task: asyncio.Task[None] | None = None
                     try:
-                        await asyncio.shield(cleanup_task)
-                    except asyncio.CancelledError:
-                        await cleanup_task
-                        raise
+                        cleanup_task = asyncio.create_task(
+                            self._plugin_sandboxes.close_scope(sandbox_scope)
+                        )
+                        try:
+                            await asyncio.shield(cleanup_task)
+                        except asyncio.CancelledError:
+                            await cleanup_task
+                            raise
+                    except BaseException as exc:
+                        if (
+                            cleanup_task is not None
+                            and cleanup_task.done()
+                            and not cleanup_task.cancelled()
+                            and cleanup_task.exception() is None
+                        ):
+                            # Caller cancellation after confirmed cleanup stays cancellation.
+                            raise
+                        raise PluginSandboxCleanupError(sandbox_scope) from exc
             finally:
                 reset_plugin_sandbox_scope(sandbox_token)
                 _current_execution_control.reset(control_token)

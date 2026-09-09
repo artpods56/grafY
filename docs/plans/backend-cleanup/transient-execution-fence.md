@@ -18,8 +18,10 @@ output remains recorded in the checklist.
 
 Migration 0027 adds a separate activity table. SQL and in-memory adapters implement
 registration, owner-bound removal, listing, and stale-marker clearing. The manager
-registers before task creation and removes activity after task cleanup. Revocation
-and cutover include the new table in their lock/read sets.
+registers unsaved background activity before task creation and saved activity after
+claiming the queued row, before preparation. Inline calls register before entering
+the executor. Activity is removed only after confirmed guest cleanup. Revocation
+and cutover include the table in their lock/read sets and report each identity once.
 
 Startup clears stale activity only after obtaining the single-owner lease and
 successfully completing Plugin orphan recovery. If either condition is unavailable,
@@ -61,7 +63,9 @@ recoverable merely to participate in maintenance coordination.
 The marker contains execution identity, workspace identity, creation time, and
 sufficient owner identity for safe recovery. It contains no request payload,
 configuration, credentials, or artifact capabilities. Presence means active,
-including cancellation while work is still stopping.
+including cancellation while work is still stopping. The existing
+`transient_executions` table also tracks the in-process lifetime of saved runs.
+Their queue and history remain in `graph_executions`; no schema change is needed.
 
 Use the existing execution persistence owner and its transaction port for marker
 admission and release. Mirror its behavior in the in-memory adapter. Keep the
@@ -92,12 +96,17 @@ sequenceDiagram
 - If admission commits first, maintenance observes activity and refuses. If
   maintenance commits first, admission may proceed but later compilation must
   observe the revocation. Test both orderings with actual database transactions.
-- Register before spawning the task. An admission write failure must prevent task
-  creation and release process capacity. Failed task creation must clean up the
-  marker, or retain it with a contextual failure if deletion cannot be confirmed.
+- For unsaved background work, register before spawning the task. An admission
+  write failure must prevent task creation and release process capacity. Failed
+  task creation must clean up the marker, or retain it with a contextual failure
+  if deletion cannot be confirmed. A queued saved row already fences admission;
+  register its activity after the claim and before preparation. Registration
+  failure must prevent entry into the executor.
 - Release activity after the task and guest cleanup end, including success,
   failure, cancellation, shutdown, and cancellation before first task execution.
-  Cancellation intent alone must not remove the marker.
+  Cancellation intent alone must not remove the marker. Failed or interrupted
+  sandbox cleanup raises `PluginSandboxCleanupError`; retain activity and any
+  active saved history until guarded recovery confirms orphan removal.
 - A failed or uncertain marker deletion must fail closed. Do not silently pretend
   maintenance is safe. Retry/reconcile deletion and report execution identity.
 - Recovery must not delete another live owner's markers. Current production uses
@@ -130,10 +139,17 @@ retaining the HTTP admission lease through presentation. Real route-handler race
 verify synchronous preflight, invocation, cleanup, and cancellation. Module execution
 remains nested within its parent's lifetime.
 
-Finding 3 remains open for unconfirmed sandbox cleanup. `DockerPluginRuntime.close_scope`
-can raise after failing to remove a container. Current manager terminal handling
-still removes transient activity or terminalizes saved history after that executor
-error. The next change must distinguish a confirmed stopped execution from a cleanup
-failure, retain the maintenance fence for the latter, and cover both saved and
-transient runs. Normal execution failure and successful cancellation must continue
-to release activity. Startup recovery must remain the authority for orphan cleanup.
+## Cleanup confirmation
+
+`RunGraph` reports a distinct `PluginSandboxCleanupError` with the scope identity
+and original cause when cleanup fails or is interrupted. Caller cancellation after
+confirmed cleanup remains cancellation. The manager retains activity on unconfirmed
+cleanup, reports a failed local result, and leaves saved history active. Even if
+saved history is separately marked interrupted, its activity marker still blocks
+maintenance and requires guarded recovery.
+
+The real-executor tests cover normal cleanup, exceptions, worker cancellation,
+caller cancellation during cleanup, repeated cancellation, revocation and cutover
+report deduplication, and guarded recovery. All 22 SQLite/PostgreSQL cases pass.
+The full evidence and remaining whole-audit work are recorded in the checklist.
+Finding 3 is complete for the supported single-owner deployment.
