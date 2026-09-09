@@ -1,5 +1,6 @@
 """Contracts for canonical graph values crossing the compatibility transport."""
 
+from types import MappingProxyType
 from typing import Literal
 
 import pytest
@@ -157,3 +158,57 @@ def test_presentation_conversion_still_enforces_domain_relationships(
     wire.bindings[0].target_viewer_id = "artifact-viewer-missing"
     with pytest.raises(ValidationError, match="references missing target viewer"):
         wire.to_domain()
+
+
+@pytest.mark.parametrize("model", [SavedGraphEdge, SavedGraphEdgeModel])
+@pytest.mark.parametrize(
+    ("conversion_fields", "expected"),
+    [
+        ({}, []),
+        ({"conversion": None}, []),
+        ({"conversion": {"id": "one", "version": 1}}, [{"id": "one", "version": 1}]),
+        ({"conversion_path": []}, []),
+        (
+            {"conversion_path": [{"id": "one", "version": 1}, {"id": "two", "version": 2}]},
+            [{"id": "one", "version": 1}, {"id": "two", "version": 2}],
+        ),
+    ],
+)
+def test_edge_models_normalize_legacy_conversion_without_mutating_input(
+    model: type[SavedGraphEdge] | type[SavedGraphEdgeModel],
+    conversion_fields: dict[str, object],
+    expected: list[dict[str, object]],
+) -> None:
+    payload = {
+        "id": "edge",
+        "from_node": "source",
+        "from_port": "output",
+        "to_node": "target",
+        "to_port": "input",
+        **conversion_fields,
+    }
+    original = dict(payload)
+    edge = model.model_validate(MappingProxyType(payload))
+    serialized = edge.model_dump(mode="json")
+    assert serialized["conversion_path"] == expected
+    assert "conversion" not in serialized
+    assert payload == original
+    assert model.model_validate_json(edge.model_dump_json()) == edge
+
+
+@pytest.mark.parametrize("model", [SavedGraphEdge, SavedGraphEdgeModel])
+@pytest.mark.parametrize("conversion", [None, {"id": "one", "version": 1}])
+def test_edge_models_reject_both_conversion_forms_even_when_empty(
+    model: type[SavedGraphEdge] | type[SavedGraphEdgeModel],
+    conversion: object,
+) -> None:
+    with pytest.raises(ValidationError, match="cannot declare both conversion and conversion_path"):
+        model.model_validate({
+            "id": "edge",
+            "from_node": "source",
+            "from_port": "output",
+            "to_node": "target",
+            "to_port": "input",
+            "conversion": conversion,
+            "conversion_path": [],
+        })

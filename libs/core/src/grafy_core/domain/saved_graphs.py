@@ -317,6 +317,23 @@ class SavedGraphConversion(SavedGraphValue):
     version: int = Field(ge=1)
 
 
+def normalize_saved_graph_edge_conversion(value: object) -> object:
+    """Accept the legacy singular conversion without changing canonical output."""
+    if not isinstance(value, Mapping):
+        return value
+    raw = cast(Mapping[object, object], value)
+    if "conversion" not in raw:
+        return dict(raw)
+    if "conversion_path" in raw:
+        raise ValueError(
+            "Saved graph edge cannot declare both conversion and conversion_path"
+        )
+    migrated = dict(raw)
+    conversion = migrated.pop("conversion")
+    migrated["conversion_path"] = [] if conversion is None else [conversion]
+    return migrated
+
+
 class SavedGraphEdge(SavedGraphValue):
     id: GraphIdentifier
     enabled: bool = True
@@ -333,22 +350,9 @@ class SavedGraphEdge(SavedGraphValue):
     )
     route_offset: GraphPoint | None = None
 
-    @model_validator(mode="before")
-    @classmethod
-    def migrate_singular_conversion(cls, value: object) -> object:
-        if not isinstance(value, Mapping):
-            return value
-        raw = cast(Mapping[object, object], value)
-        if "conversion" not in raw:
-            return dict(raw)
-        if "conversion_path" in raw:
-            raise ValueError(
-                "Saved graph edge cannot declare both conversion and conversion_path"
-            )
-        migrated = dict(raw)
-        conversion = migrated.pop("conversion")
-        migrated["conversion_path"] = [] if conversion is None else [conversion]
-        return migrated
+    migrate_singular_conversion = model_validator(mode="before")(
+        normalize_saved_graph_edge_conversion
+    )
 
 
 class GraphPresentationViewer(SavedGraphValue):

@@ -1032,3 +1032,12 @@ flowchart LR
 - Existing HTTP response schemas and room protocol v1 payloads remain supported. This is an internal client migration; a future wire change still requires explicit versioning or negotiation.
 - Verification: 607 frontend tests across 90 files pass, full TypeScript check passes, and the production Next build passes. Transport tests cover canonical HTTP reads and legacy command/checkpoint/room normalization with exact pins, presentation, uncheckpointed metadata, optional collections, and malformed graph members. No manual browser smoke test was performed in this batch.
 - Finding 8 remains open for backend internal canonical transport reuse, repeated validator cleanup, and full compatibility verification. Final whole-goal audit gates remain open.
+
+
+## Shared legacy edge normalization, 2026-09-09
+
+- Moved the duplicated singular `conversion` migration into `normalize_saved_graph_edge_conversion` beside the canonical edge. Canonical and legacy transport models register the same Pydantic before-model validator. Alias support, ambiguous-input errors, ordered conversion paths, and mutable-input isolation are unchanged. [R01: Direct Ownership]
+- Added 14 behavioral cases across both models, including JSON round trips, read-only mapping input, omitted/null/singular/path forms, and rejection when both forms are supplied. [R43: Tests Are Behavioral Contracts]
+- Verification: 52 focused tests and 656 broader API/core/application/collaboration/saved-graph tests pass; changed-file Ruff passes; exported OpenAPI is byte-for-byte equal to the checked-in schema. Pyright reports nine diagnostics in unchanged fields; the same nine appear when checking committed baseline sources, which also produce one temporary-path import diagnostic. No new diagnostic was introduced.
+- Recorded the remaining acceptance differences in `graph-transport-migration.md`. Canonical immutable configuration, pin coercion, annotation normalization, presentation prefixes, and relationship validation prevent wholesale substitution of mirrored transport models without compatibility work.
+- Finding 8 remains open for the rest of canonical transport reuse and repeated validation cleanup. Final completion gates remain open.

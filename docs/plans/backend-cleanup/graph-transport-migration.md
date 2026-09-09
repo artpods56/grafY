@@ -47,3 +47,21 @@ Room wire messages still use protocol v1. Internal client normalization does not
 The canonical endpoint batch covered exact canonical content, unchanged legacy reads, matching missing and unauthorized graph handling, and uncheckpointed collaboration metadata. Existing OpenAPI paths and schemas compared equal to the pre-change snapshot. The extracted API wheel generated the checked-in schema, and TypeScript generation was consistent.
 
 The client migration passes 607 frontend tests in 90 files and a full TypeScript check. The production Next build passes. Tests exercise HTTP refresh, v1 ready/rehydrate parsing, command/checkpoint normalization, room replay, and mounted session/lifecycle hooks. They check exact release pins, presentation, uncheckpointed metadata, runtime-field exclusion, optional legacy collections, and rejection of non-object graph members. This batch did not change generated schemas and did not include a manual browser smoke test.
+
+
+## Backend acceptance differences
+
+Source comparison on 2026-09-09 found these constraints on replacing the mirrored transport classes:
+
+| Concern | Canonical graph values | Legacy transport values | Consolidation constraint |
+| --- | --- | --- | --- |
+| Edge conversion alias | Accepts singular `conversion`, rejects both forms, emits `conversion_path` | Same rule | Now registered from one domain-owned normalizer |
+| Node layout | Requires at least one dimension and enforces axis bounds | Same rules | Candidate for shared validation; preserve schema names and mutable transport values |
+| Configuration and collections | Frozen models, recursively frozen JSON configuration, tuples | Mutable models, dictionaries and lists | Do not inherit immutable field types and override them with incompatible mutable types |
+| Release pin | `plugin_release_pin`; rejects surrounding slug whitespace; revision uses normal integer validation | `plugin_release`; strips slug whitespace; revision is strict integer | Preserve transport acceptance and explicit name conversion |
+| Node binding uniqueness | Rejects duplicate variables with a saved-graph-specific error | Same decision with a different error message | Share the decision only if each boundary keeps its existing diagnostic |
+| Presentation IDs | Enforces viewer, link, binding, and annotation prefixes | Only identifier constraints | Keep canonical validation at conversion into domain state |
+| Annotation content | Normalizes legacy colors and hex case; rejects text on non-text shapes | Hex color constraint and text length only | Direct substitution would change accepted inputs and normalization |
+| Presentation relationships | Checks IDs, endpoints, unique effects and single incoming viewer links | Shape validation only | Do not silently introduce domain relationship checks into legacy shape parsing |
+
+The shared edge normalizer stays in `grafy_core.domain.saved_graphs`, alongside the canonical edge. Both models register that function with Pydantic's before-model validator decorator, so neither duplicates the migration algorithm or calls the other model's private validation machinery. [R01: Direct Ownership]

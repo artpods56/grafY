@@ -1,6 +1,5 @@
-from collections.abc import Mapping
 from datetime import datetime
-from typing import Annotated, ClassVar, Literal, Self, cast
+from typing import Annotated, ClassVar, Literal, Self
 from uuid import UUID
 
 from pydantic import (
@@ -32,6 +31,7 @@ from grafy_core.domain.saved_graphs import (
     SavedGraphEdge,
     SavedGraphNode,
     UserGraphState,
+    normalize_saved_graph_edge_conversion,
 )
 from grafy_core.domain.identity import WorkspaceKind
 
@@ -154,22 +154,9 @@ class SavedGraphEdgeModel(SavedGraphApiModel):
     )
     route_offset: GraphPointModel | None = None
 
-    @model_validator(mode="before")
-    @classmethod
-    def normalize_singular_conversion(cls, value: object) -> object:
-        if not isinstance(value, Mapping):
-            return value
-        raw = cast(Mapping[object, object], value)
-        if "conversion" not in raw:
-            return dict(raw)
-        if "conversion_path" in raw:
-            raise ValueError(
-                "Saved graph edge cannot declare both conversion and conversion_path"
-            )
-        normalized = dict(raw)
-        conversion = normalized.pop("conversion")
-        normalized["conversion_path"] = [] if conversion is None else [conversion]
-        return normalized
+    normalize_singular_conversion = model_validator(mode="before")(
+        normalize_saved_graph_edge_conversion
+    )
 
     @classmethod
     def from_domain(cls, edge: SavedGraphEdge) -> "SavedGraphEdgeModel":
