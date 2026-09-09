@@ -10,7 +10,7 @@ from pydantic import SecretStr
 from sqlalchemy import select
 
 from grafy_api.settings import Settings
-from grafy_api.v1.routes.auth.models import (
+from grafy_api.v1.routes.workspaces.models import (
     PersonalAccessTokenCreateRequest,
     PersonalAccessTokenScope,
     WorkspaceInvitationCreateRequest,

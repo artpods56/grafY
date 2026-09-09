@@ -61,7 +61,9 @@ def test_workspace_invitation_lifecycle_expires_at_the_boundary() -> None:
         expires_at=now + timedelta(days=7),
     )
 
-    assert not invitation.expire_if_due(now=invitation.expires_at - timedelta(microseconds=1))
+    assert not invitation.expire_if_due(
+        now=invitation.expires_at - timedelta(microseconds=1)
+    )
     assert invitation.expire_if_due(now=invitation.expires_at)
     assert invitation.status is WorkspaceInvitationStatus.EXPIRED
     assert invitation.resolved_at == invitation.expires_at
@@ -114,21 +116,26 @@ async def test_verified_email_invitation_grants_access_only_after_acceptance(
     pending = await service.list_my_workspace_invitations(
         actor=ActorContext(user_id=invitee.user.id)
     )
-    assert [(item.id, listed_workspace.id) for item, listed_workspace, _ in pending] == [
-        (invitation.id, workspace.id)
-    ]
-    accepted, membership = await service.accept_workspace_invitation(
+    assert [
+        (item.id, listed_workspace.id) for item, listed_workspace, _ in pending
+    ] == [(invitation.id, workspace.id)]
+    acceptance = await service.accept_workspace_invitation(
         actor=ActorContext(
             user_id=invitee.user.id,
             credential_reference="invitee-session",
         ),
         invitation_id=invitation.id,
     )
-    assert accepted.status is WorkspaceInvitationStatus.ACCEPTED
-    assert membership.role is WorkspaceRole.EDITOR
-    assert [(listed_workspace.id, listed_membership.role) for listed_workspace, listed_membership in await service.list_workspaces(actor=ActorContext(user_id=invitee.user.id)) if listed_workspace.id == workspace.id] == [
-        (workspace.id, WorkspaceRole.EDITOR)
-    ]
+    assert acceptance.invitation.status is WorkspaceInvitationStatus.ACCEPTED
+    assert acceptance.workspace == workspace
+    assert acceptance.membership.role is WorkspaceRole.EDITOR
+    assert [
+        (listed_workspace.id, listed_membership.role)
+        for listed_workspace, listed_membership in await service.list_workspaces(
+            actor=ActorContext(user_id=invitee.user.id)
+        )
+        if listed_workspace.id == workspace.id
+    ] == [(workspace.id, WorkspaceRole.EDITOR)]
 
     unverified_user = User(
         email="unverified@example.test",
@@ -671,3 +678,52 @@ async def test_personal_and_platform_credentials_resolve_typed_principals(
             workspace_id=other_workspace.id,
             capability=WorkspaceCapability.VIEW_GRAPH,
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("active", [True, False])
+async def test_role_change_returns_complete_member_after_commit(
+    database: Database,
+    active: bool,
+) -> None:
+    service = _service(database)
+    owner = await service.provision_oidc_identity(
+        issuer="https://issuer.example.test",
+        subject="result-owner",
+        email="owner@example.test",
+        display_name="Owner",
+    )
+    actor = ActorContext(user_id=owner.user.id)
+    workspace = await service.create_shared_workspace(
+        actor=actor,
+        slug="result-team",
+        name="Result team",
+    )
+    member = User(email="member@example.test", display_name="Member", active=active)
+    membership = WorkspaceMembership(
+        workspace_id=workspace.id,
+        user_id=member.id,
+        role=WorkspaceRole.EDITOR,
+    )
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+        await unit_of_work.identity.add_user(member)
+        await unit_of_work.identity.add_membership(membership)
+        await unit_of_work.commit()
+
+    result = await service.change_member_role(
+        actor=actor,
+        workspace_id=workspace.id,
+        user_id=member.id,
+        role=WorkspaceRole.VIEWER,
+    )
+    assert result.user == member
+    assert result.user.active is active
+    assert result.membership.role is WorkspaceRole.VIEWER
+    assert (
+        result.membership.authorization_version == membership.authorization_version + 1
+    )
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+        persisted = await unit_of_work.identity.get_membership(
+            workspace_id=workspace.id, user_id=member.id
+        )
+    assert persisted == result.membership

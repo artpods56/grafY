@@ -116,7 +116,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Move GraphRoomHub and post-commit publisher to application realtime ownership.
 - [x] Move operation audit metadata out of workspace views into HTTP diagnostics near registration.
 - [x] Delegate malformed OIDC transaction cleanup to authentication.
-- [ ] Give workspace transport models their own owner and return complete application results without route-side transaction reopening.
+- [x] Give workspace transport models their own owner and return complete application results without route-side transaction reopening.
 - [x] Move cohesive NodeSecretService outside routes.
 - [x] Rename ImageUploadService to StagedUploadService; share staging/domain results and preserve batch rollback.
 
@@ -591,4 +591,25 @@ flowchart LR
     Stage --> Records[Shared StagedUpload domain records]
     Records --> Transaction[One persistence transaction]
     Records --> Response[Existing HTTP response fields]
+```
+
+
+### Workspace transport and complete mutation results
+
+- Moved workspace, membership, invitation, and personal-access-token transport models from authentication into `v1/routes/workspaces/models.py`. Authentication retains `SessionResponse` and explicit compatibility exports of the moved classes. Production workspace routes and test clients use the owning module. [R01: Direct Ownership]
+- Invitation acceptance returns `WorkspaceInvitationAcceptance`, including the workspace already locked by the transaction. Role changes return `WorkspaceMemberResult`, including the target user loaded before mutation commits. Both routes serialize these complete results without opening a second transaction or querying persistence. Missing records are rejected before committing the mutation. These are internal application return-type changes; HTTP contracts are unchanged.
+- `WorkspaceResponse.from_membership` and `WorkspaceMemberResponse.from_membership` consolidate repeated transport conversion at the owning model. Shared-workspace creation retains its existing capability ordering. Role changes still close existing user rooms after commit. [R08: Model-Owned Serialization]
+- Application tests verify accepted invitations include their workspace and persisted membership. New parameterized tests verify role-change results match committed membership state and preserve support for both active and inactive target users. Compatibility tests verify all sixteen moved model exports retain object identity.
+- Verification: 25 identity/architecture contracts passed. Broader API, authentication, collaboration, module, and execution regression had 610 passes, two skips, and five native subprocess failures. All five are the previously baseline-reproduced Docker/local-guest SIGSEGV cases documented in the publication-fencing batch; they remain limitations, not passing checks. No migration tests were mixed into the logging-sensitive API run.
+- Strict Pyright reports zero errors or warnings for the changed application service and route/model files. Changed-file Ruff and whitespace checks pass. OpenAPI exactly matches the pre-change snapshot. Built and extracted API/core wheels import their new owners, retain model compatibility, and register the same OpenAPI.
+- Evidence: `/tmp/grafy-workspace-results-contracts.log`, `/tmp/grafy-workspace-results-regression.log`, `/tmp/grafy-workspace-results-types.log`, `/tmp/grafy-workspace-results-openapi.json`, and `/tmp/grafy-workspace-results-build.log`. The earlier focused log includes the initial test-only positional-argument error, corrected before the final contract run.
+- Finding 13 is complete across its five recorded batches. Findings 3, 4, 8, 10, 14, and the final whole-backend gates remain open.
+
+```mermaid
+flowchart LR
+    HTTP[Workspace HTTP routes] --> Identity[Identity application service]
+    Identity --> Transaction[Mutation and response data in one transaction]
+    Transaction --> Result[Complete application result]
+    Result --> Models[Workspace transport models]
+    Models --> Response[Unchanged HTTP response]
 ```

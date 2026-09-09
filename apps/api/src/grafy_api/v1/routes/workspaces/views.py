@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
@@ -11,10 +10,8 @@ from grafy_core.domain.identity import (
     PersonalAccessToken,
     User,
     WorkspaceCapability,
-    WorkspaceMembership,
     WorkspaceRole,
 )
-from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from pydantic import SecretStr
 
 from grafy_api.app_state import get_resources
@@ -24,14 +21,12 @@ from grafy_api.realtime.publish import (
 from grafy_api.v1.routes.auth.dependencies import (
     AuthServiceDependency,
     IdentityServiceDependency,
-    IdentityUnitOfWorkFactoryDependency,
     browser_actor,
 )
-from grafy_api.v1.routes.auth.models import (
+from grafy_api.v1.routes.workspaces.models import (
     PersonalAccessTokenCreatedResponse,
     PersonalAccessTokenCreateRequest,
     PersonalAccessTokenResponse,
-    UserResponse,
     WorkspaceCreateRequest,
     WorkspaceInvitationCandidateRequest,
     WorkspaceInvitationCandidateResponse,
@@ -56,16 +51,7 @@ async def list_workspaces(
 ) -> list[WorkspaceResponse]:
     rows = await identity.list_workspaces(actor=actor)
     return [
-        WorkspaceResponse(
-            id=workspace.id,
-            slug=workspace.slug,
-            name=workspace.name,
-            kind=workspace.kind,
-            role=membership.role,
-            capabilities=tuple(
-                sorted(membership.capabilities, key=lambda item: item.value)
-            ),
-        )
+        WorkspaceResponse.from_membership(workspace, membership)
         for workspace, membership in rows
     ]
 
@@ -102,17 +88,7 @@ async def list_members(
         workspace_id=workspace_id,
     )
     return [
-        WorkspaceMemberResponse(
-            user=UserResponse(
-                id=user.id,
-                email=user.email,
-                display_name=user.display_name,
-                active=user.active,
-            ),
-            role=membership.role,
-            authorization_version=membership.authorization_version,
-            revoked_at=membership.revoked_at,
-        )
+        WorkspaceMemberResponse.from_membership(user, membership)
         for user, membership in rows
     ]
 
@@ -218,9 +194,8 @@ async def change_member_role(
     request: Request,
     actor: Annotated[ActorContext, Depends(browser_actor)],
     identity: IdentityServiceDependency,
-    uow_factory: IdentityUnitOfWorkFactoryDependency,
 ) -> WorkspaceMemberResponse:
-    membership = await identity.change_member_role(
+    result = await identity.change_member_role(
         actor=actor,
         workspace_id=workspace_id,
         user_id=user_id,
@@ -232,7 +207,7 @@ async def change_member_role(
         user_id=user_id,
         access_revoked=False,
     )
-    return await _member_response(uow_factory, user_id, membership)
+    return WorkspaceMemberResponse.from_membership(result.user, result.membership)
 
 
 @router.delete("/{workspace_id}/members/{user_id}", status_code=204)
@@ -292,26 +267,12 @@ async def accept_workspace_invitation(
     invitation_id: UUID,
     actor: Annotated[ActorContext, Depends(browser_actor)],
     identity: IdentityServiceDependency,
-    uow_factory: IdentityUnitOfWorkFactoryDependency,
 ) -> WorkspaceResponse:
-    invitation, membership = await identity.accept_workspace_invitation(
+    result = await identity.accept_workspace_invitation(
         actor=actor,
         invitation_id=invitation_id,
     )
-    async with uow_factory() as unit_of_work:
-        workspace = await unit_of_work.identity.get_workspace(invitation.workspace_id)
-    if workspace is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    return WorkspaceResponse(
-        id=workspace.id,
-        slug=workspace.slug,
-        name=workspace.name,
-        kind=workspace.kind,
-        role=membership.role,
-        capabilities=tuple(
-            sorted(membership.capabilities, key=lambda item: item.value)
-        ),
-    )
+    return WorkspaceResponse.from_membership(result.workspace, result.membership)
 
 
 @me_router.post(
@@ -419,28 +380,6 @@ async def revoke_personal_access_token(
         token_id=token_id,
     )
     return Response(status_code=204)
-
-
-async def _member_response(
-    uow_factory: Callable[[], SqlAlchemyUnitOfWork],
-    user_id: UUID,
-    membership: WorkspaceMembership,
-) -> WorkspaceMemberResponse:
-    async with uow_factory() as unit_of_work:
-        user = await unit_of_work.identity.get_user(user_id)
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return WorkspaceMemberResponse(
-        user=UserResponse(
-            id=user.id,
-            email=user.email,
-            display_name=user.display_name,
-            active=user.active,
-        ),
-        role=membership.role,
-        authorization_version=membership.authorization_version,
-        revoked_at=membership.revoked_at,
-    )
 
 
 def _invitation_person_response(user: User) -> WorkspaceInvitationPersonResponse:

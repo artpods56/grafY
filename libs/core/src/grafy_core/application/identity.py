@@ -1,6 +1,7 @@
-from collections.abc import Callable, Sequence
-from datetime import UTC, datetime, timedelta
 import hmac
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from grafy_core.domain.errors import (
@@ -11,14 +12,14 @@ from grafy_core.domain.errors import (
     UserDisabledError,
 )
 from grafy_core.domain.identity import (
+    PAT_ALLOWED_CAPABILITIES,
     ActorContext,
     IdentityProvisioningResult,
     OidcIdentity,
-    PAT_ALLOWED_CAPABILITIES,
+    PersonalAccessToken,
     PlatformAccessToken,
     PlatformTokenPrincipal,
     PlatformTokenScope,
-    PersonalAccessToken,
     User,
     Workspace,
     WorkspaceAccess,
@@ -98,6 +99,19 @@ async def authorize_workspaces(
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceInvitationAcceptance:
+    invitation: WorkspaceInvitation
+    workspace: Workspace
+    membership: WorkspaceMembership
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceMemberResult:
+    user: User
+    membership: WorkspaceMembership
 
 
 class IdentityService:
@@ -410,7 +424,7 @@ class IdentityService:
         *,
         actor: ActorContext,
         invitation_id: UUID,
-    ) -> tuple[WorkspaceInvitation, WorkspaceMembership]:
+    ) -> WorkspaceInvitationAcceptance:
         now = _utc_now()
         async with self._unit_of_work_factory() as unit_of_work:
             await self._require_active_user(unit_of_work, actor.user_id)
@@ -419,9 +433,13 @@ class IdentityService:
             )
             if invitation is None or invitation.invitee_user_id != actor.user_id:
                 raise NotFoundError("Workspace invitation", str(invitation_id))
-            await unit_of_work.identity.lock_workspace_for_membership_mutation(
-                invitation.workspace_id
+            workspace = (
+                await unit_of_work.identity.lock_workspace_for_membership_mutation(
+                    invitation.workspace_id
+                )
             )
+            if workspace is None:
+                raise NotFoundError("Workspace", str(invitation.workspace_id))
             if invitation.expire_if_due(now=now):
                 await self._audit_invitation_expiry(unit_of_work, invitation)
                 await unit_of_work.commit()
@@ -459,7 +477,7 @@ class IdentityService:
                 )
             )
             await unit_of_work.commit()
-            return invitation, membership
+            return WorkspaceInvitationAcceptance(invitation, workspace, membership)
 
     async def decline_workspace_invitation(
         self,
@@ -874,7 +892,7 @@ class IdentityService:
         workspace_id: UUID,
         user_id: UUID,
         role: WorkspaceRole,
-    ) -> WorkspaceMembership:
+    ) -> WorkspaceMemberResult:
         role = WorkspaceRole(role)
         async with self._unit_of_work_factory() as unit_of_work:
             workspace = (
@@ -894,6 +912,9 @@ class IdentityService:
                 workspace_id=workspace_id,
                 user_id=user_id,
             )
+            user = await unit_of_work.identity.get_user(user_id)
+            if user is None:
+                raise NotFoundError("User", str(user_id))
             memberships = await unit_of_work.identity.list_memberships(workspace_id)
             ensure_last_owner_can_change(
                 workspace=workspace,
@@ -922,7 +943,7 @@ class IdentityService:
                 )
             )
             await unit_of_work.commit()
-        return membership
+        return WorkspaceMemberResult(user, membership)
 
     async def remove_member(
         self,

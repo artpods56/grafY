@@ -16,7 +16,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from grafy_api.settings import Settings
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
-from grafy_api.v1.routes.auth.models import WorkspaceInvitationCreateRequest
+from grafy_api.v1.routes.workspaces.models import WorkspaceInvitationCreateRequest
 from grafy_api.v1.routes.collaboration.views import websocket_browser_actor
 from grafy_api.execution.requests import RunRequest
 from grafy_api.graph_contracts import CreateSavedGraphRequest

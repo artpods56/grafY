@@ -6,7 +6,7 @@ from uuid import UUID
 from httpx import Response
 from starlette.testclient import TestClient
 
-from grafy_api.v1.routes.auth.models import (
+from grafy_api.v1.routes.workspaces.models import (
     PersonalAccessTokenCreateRequest,
     PersonalAccessTokenCreatedResponse,
     PersonalAccessTokenResponse,

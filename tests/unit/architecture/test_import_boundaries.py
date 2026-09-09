@@ -91,6 +91,7 @@ def test_api_routes_are_organized_as_capability_slices() -> None:
     }
     assert {path.name for path in (routes_root / "workspaces").glob("*.py")} == {
         "__init__.py",
+        "models.py",
         "views.py",
     }
     assert {path.name for path in (routes_root / "collaboration").glob("*.py")} == {
@@ -370,3 +371,28 @@ def test_application_owners_do_not_depend_on_route_modules() -> None:
                         f"{path.relative_to(REPO_ROOT)}: request resource lookup"
                     )
     assert offenders == []
+
+
+def test_workspace_transport_compatibility_exports_preserve_model_identity() -> None:
+    from grafy_api.v1.routes.auth import models as legacy
+    from grafy_api.v1.routes.workspaces import models
+
+    for name in (
+        "PersonalAccessTokenCreatedResponse",
+        "PersonalAccessTokenCreateRequest",
+        "PersonalAccessTokenResponse",
+        "PersonalAccessTokenScope",
+        "UserResponse",
+        "WorkspaceCreateRequest",
+        "WorkspaceInvitationCandidateRequest",
+        "WorkspaceInvitationCandidateResponse",
+        "WorkspaceInvitationCreateRequest",
+        "WorkspaceInvitationOwnerResponse",
+        "WorkspaceInvitationPersonResponse",
+        "WorkspaceInvitationRecipientResponse",
+        "WorkspaceInvitationWorkspaceResponse",
+        "WorkspaceMemberResponse",
+        "WorkspaceMemberRoleRequest",
+        "WorkspaceResponse",
+    ):
+        assert getattr(legacy, name) is getattr(models, name)

@@ -20,7 +20,7 @@ from starlette.websockets import WebSocketDisconnect, WebSocketState
 from grafy_api.settings import Settings
 from grafy_api.v1.models import PluginReleasePinModel
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
-from grafy_api.v1.routes.auth.models import WorkspaceMemberRoleRequest
+from grafy_api.v1.routes.workspaces.models import WorkspaceMemberRoleRequest
 from grafy_api.realtime.hub import (
     CLOSE_SLOW_CONSUMER,
     OUTBOUND_QUEUE_MAXSIZE,

@@ -37,7 +37,7 @@ from tests.support.system_plugins import (
     build_explicit_plugin_registry,
     pin_selected_system_nodes,
 )
-from grafy_api.v1.routes.auth.models import WorkspaceCreateRequest
+from grafy_api.v1.routes.workspaces.models import WorkspaceCreateRequest
 from grafy_api.settings import Settings
 from grafy_api.v1.models import (
     ArtifactTypeBindingModel,

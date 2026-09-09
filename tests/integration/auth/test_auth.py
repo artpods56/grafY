@@ -13,7 +13,7 @@ from grafy_api.v1.routes.auth.abuse import (
     BROWSER_ABUSE_COOKIE,
     make_browser_abuse_cookie,
 )
-from grafy_api.v1.routes.auth.models import (
+from grafy_api.v1.routes.workspaces.models import (
     PersonalAccessTokenCreatedResponse,
     PersonalAccessTokenCreateRequest,
     PersonalAccessTokenScope,
