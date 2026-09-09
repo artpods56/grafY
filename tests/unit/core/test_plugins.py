@@ -41,6 +41,8 @@ from grafy_core.plugins import (
     PluginRuntimeContext,
     UnknownOperatorError,
 )
+from grafy_core.runtime.resolvers import InlineModelResolver
+from grafy_core.runtime.persistence import InlineModelOutputWriter
 from grafy_core.ports.node_secrets import NodeSecretUnavailableError
 from grafy_storage import LocalFileObjectStore
 
@@ -1384,3 +1386,120 @@ def test_registry_freeze_bounds_derived_projection_count() -> None:
         ),
     ):
         registry.freeze()
+
+
+def test_registry_retains_family_snapshots_and_factory_order(tmp_path: Path) -> None:
+    context = runtime_context(tmp_path)
+    first_type = ArtifactTypeSpec(
+        key=ArtifactTypeKey("snapshot.first", 1),
+        title="First",
+        payload_schema={"type": "integer"},
+    )
+    second_type = ArtifactTypeSpec(
+        key=ArtifactTypeKey("snapshot.second", 1),
+        title="Second",
+        payload_schema={"type": "string"},
+    )
+    first = Plugin(slug="snapshot.first", title="First")
+    second = Plugin(slug="snapshot.second", title="Second")
+    first.register_artifact_type(first_type)
+    first.register_artifact_type_dependency(second_type)
+    second.register_artifact_type(second_type)
+    conversion = ArtifactConversion(
+        key=ArtifactConversionKey("snapshot.convert", 1),
+        source=first_type.key,
+        target=second_type.key,
+        source_type=int,
+        target_type=str,
+        title="Convert",
+        convert=_stringify_integer,
+    )
+    first.register_artifact_conversion(conversion)
+    first.function_node(operator_id="snapshot.node", version=1, title="Node")(
+        empty_function_node
+    )
+    first_resolver = InlineModelResolver(
+        source=first_type.key, target=EmptyInput, uow=context.uow
+    )
+    second_resolver = InlineModelResolver(
+        source=second_type.key, target=EmptyInput, uow=context.uow
+    )
+    first_writer = InlineModelOutputWriter(
+        artifact_type=first_type.key, model=EmptyOutput, uow=context.uow
+    )
+    second_writer = InlineModelOutputWriter(
+        artifact_type=second_type.key, model=EmptyOutput, uow=context.uow
+    )
+    first.register_resolver(lambda _: first_resolver)
+    first.register_writer(lambda _: first_writer)
+    second.register_resolver(lambda _: second_resolver)
+    second.register_writer(lambda _: second_writer)
+    registry = PluginRegistry()
+    registry.install(first)
+    registry.install(second)
+
+    first.title = "Changed after install"
+    first.register_resolver(lambda _: second_resolver)
+    first.register_writer(lambda _: second_writer)
+    first.function_node(operator_id="snapshot.late", version=1, title="Late")(
+        empty_function_node
+    )
+    first.register_artifact_type(
+        ArtifactTypeSpec(
+            key=ArtifactTypeKey("snapshot.late", 1),
+            title="Late",
+            payload_schema={},
+        )
+    )
+    first.register_artifact_type_dependency(
+        ArtifactTypeSpec(
+            key=ArtifactTypeKey("snapshot.dependency", 1),
+            title="Late dependency",
+            payload_schema={},
+        )
+    )
+    for _ in range(2):
+        registry.freeze()
+        assert [(plugin.slug, plugin.title) for plugin in registry.plugins] == [
+            ("snapshot.first", "First"),
+            ("snapshot.second", "Second"),
+        ]
+        assert [node.key for node in registry.nodes] == [("snapshot.node", 1)]
+        assert registry.declared_artifact_types == (first_type, second_type)
+        assert registry.artifact_type_dependencies == (second_type,)
+        assert registry.artifact_conversions == (conversion,)
+        assert registry.artifact_type_owner(first_type.key) == first.slug
+        assert registry.artifact_conversion_owner(conversion.key) == first.slug
+        assert registry.build_resolvers(context) == (first_resolver, second_resolver)
+        assert registry.build_writers(context) == (first_writer, second_writer)
+    with pytest.raises(PluginRegistrationError, match="frozen"):
+        registry.install(Plugin(slug="snapshot.rejected", title="Rejected"))
+
+
+def test_registry_rejected_install_leaves_no_partial_family_state() -> None:
+    artifact = ArtifactTypeSpec(
+        key=ArtifactTypeKey("snapshot.shared", 1),
+        title="Shared",
+        payload_schema={},
+    )
+    first = Plugin(slug="snapshot.owner", title="Owner")
+    first.register_artifact_type(artifact)
+    rejected = Plugin(slug="snapshot.rejected", title="Rejected")
+    rejected.register_artifact_type(artifact)
+    rejected.function_node(
+        operator_id="snapshot.rejected.node", version=1, title="Node"
+    )(empty_function_node)
+    registry = PluginRegistry()
+    registry.install(first)
+    with pytest.raises(
+        PluginRegistrationError, match="snapshot.shared@1 is already installed"
+    ):
+        registry.install(rejected)
+    assert [plugin.slug for plugin in registry.plugins] == [first.slug]
+    assert registry.nodes == ()
+    assert registry.declared_artifact_types == (artifact,)
+    assert registry.artifact_type_owner(artifact.key) == first.slug
+    registry.install(Plugin(slug=rejected.slug, title="Replacement"))
+    registry.freeze()
+    assert [plugin.slug for plugin in registry.plugins] == [first.slug, rejected.slug]
+    assert registry.nodes == ()

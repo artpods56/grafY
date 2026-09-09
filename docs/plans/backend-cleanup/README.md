@@ -127,7 +127,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Remove test-only wait_for_events wrapper; test production subscription behavior.
 - [ ] Inline sole-production-caller storage selection, preserving supported package compatibility.
 - [x] Share stored-model integrity readers used by collections and tables.
-- [ ] Consolidate PluginRegistry state into immutable family declarations plus needed indexes; preserve ordering, freeze behavior, collisions.
+- [x] Consolidate PluginRegistry state into immutable family declarations plus needed indexes; preserve ordering, freeze behavior, collisions.
 - [x] Replace InstalledPluginRelease forwarding properties with explicit release/installation access while preserving pair invariants.
 
 ## Architecture contract and completion gates
@@ -671,4 +671,25 @@ flowchart LR
     Pair --> Check[Validate matching release ID, slug, revision]
     Callers[Admission, execution, publication, persistence] --> Release
     Callers --> Installation
+```
+
+
+### One frozen declaration snapshot per registry family
+
+- `PluginRegistry` now retains a frozen `_InstalledPluginDeclaration` per family, containing its public identity, nodes, declared artifact types, exact dependencies, conversions, and resolver/writer factories. Removed three parallel per-family maps and two flattened factory lists. Each install captures these declarations once before validation and commits the snapshot only after collision checks pass.
+- Kept node, artifact, conversion, and owner lookup indexes. The expanded artifact index remains distinct from originally declared contracts, and host-owned Module boundary registrations remain outside Plugin families. Freeze validation follows the existing family/node/conversion order and keeps existing collision and contract error messages.
+- Public registry methods now read their family data and factories from those snapshots, preserving installation order, within-family factory order, first-seen dependency deduplication, and snapshot behavior after the source Plugin changes.
+- Added a public contract for post-install title/node/artifact/dependency/factory additions, stable factory outputs, lookup owners, repeated freeze, and rejection of further installs after freeze. It passes on both the untouched baseline registry and the refactored registry. A second contract verifies an artifact collision leaves no partial family/node state and permits a later valid install with the rejected slug.
+- Validation: 561 core/application/persistence/architecture tests and 835 broad API/plugin/artifact/catalog/graph/execution tests passed. The final registry/composition contract run passed 57 tests, overlapping those suites and including the final rejection contract. Nineteen optional PostgreSQL cases were skipped; the known native Docker/guest crash files were excluded from runtime regression.
+- Registry and contract-test Pyright reports zero errors or warnings. Changed-file Ruff and whitespace checks pass. The extracted core wheel builds and freezes the builtin catalog and creates its resolver/writer factories. The first packaging smoke command used an incorrect catalog constructor; the corrected check uses the real `BuiltinNodeCatalog.load` API and passes.
+- Evidence: `/tmp/grafy-registry-focused.log`, `/tmp/grafy-registry-baseline-contract.log`, `/tmp/grafy-registry-final-contracts.log`, `/tmp/grafy-registry-core-tests.log`, `/tmp/grafy-registry-runtime-tests.log`, `/tmp/grafy-registry-types.log`, and `/tmp/grafy-registry-build.log`.
+- Finding 14 remains open only for the lower-level storage-factory cleanup and its supported package compatibility. Other unfinished original findings and final whole-backend gates remain open.
+
+```mermaid
+flowchart LR
+    Family[Mutable family declarations] --> Install[Validate install]
+    Install --> Snapshot[Frozen per-family snapshot]
+    Snapshot --> API[Ordered public declarations and factories]
+    Snapshot --> Indexes[Node, artifact, conversion, and owner indexes]
+    Indexes --> Freeze[Validate contracts and expand projections]
 ```

@@ -625,26 +625,28 @@ class InstalledPlugin:
     title: str
 
 
+@dataclass(frozen=True, slots=True)
+class _InstalledPluginDeclaration:
+    plugin: InstalledPlugin
+    nodes: tuple[NodeRegistration, ...]
+    artifact_types: tuple[ArtifactTypeSpec, ...]
+    artifact_type_dependencies: tuple[ArtifactTypeSpec, ...]
+    artifact_conversions: tuple[ArtifactConversion[Any, Any], ...]
+    resolver_factories: tuple[ResolverFactory, ...]
+    writer_factories: tuple[WriterFactory, ...]
+
+
 class PluginRegistry:
     def __init__(self) -> None:
-        self._plugins: dict[str, InstalledPlugin] = {}
+        self._declarations: dict[str, _InstalledPluginDeclaration] = {}
         self._nodes: dict[tuple[str, int], NodeRegistration] = {}
         self._artifact_types: dict[tuple[str, int], ArtifactTypeSpec] = {}
         self._artifact_type_owners: dict[tuple[str, int], str] = {}
-        self._plugin_artifact_types: dict[str, tuple[ArtifactTypeSpec, ...]] = {}
-        self._plugin_artifact_type_dependencies: dict[
-            str, tuple[ArtifactTypeSpec, ...]
-        ] = {}
-        self._plugin_artifact_conversions: dict[
-            str, tuple[ArtifactConversion[Any, Any], ...]
-        ] = {}
         self._artifact_conversions: dict[
             ArtifactConversionKey,
             ArtifactConversion[Any, Any],
         ] = {}
         self._artifact_conversion_owners: dict[ArtifactConversionKey, str] = {}
-        self._resolver_factories: list[ResolverFactory] = []
-        self._writer_factories: list[WriterFactory] = []
         self._frozen = False
 
     def install(
@@ -653,14 +655,24 @@ class PluginRegistry:
     ) -> None:
         if self._frozen:
             raise PluginRegistrationError("Plugin registry is frozen")
-        if plugin.slug in self._plugins:
+        if plugin.slug in self._declarations:
             raise PluginRegistrationError(
                 f"Plugin slug {plugin.slug!r} is already installed"
             )
 
+        declaration = _InstalledPluginDeclaration(
+            plugin=InstalledPlugin(slug=plugin.slug, title=plugin.title),
+            nodes=plugin.nodes,
+            artifact_types=plugin.artifact_types,
+            artifact_type_dependencies=plugin.artifact_type_dependencies,
+            artifact_conversions=plugin.artifact_conversions,
+            resolver_factories=plugin.resolver_factories,
+            writer_factories=plugin.writer_factories,
+        )
+
         duplicate_nodes = [
             registration.key
-            for registration in plugin.nodes
+            for registration in declaration.nodes
             if registration.key in self._nodes
         ]
         if duplicate_nodes:
@@ -673,7 +685,7 @@ class PluginRegistry:
 
         duplicate_artifacts = [
             (artifact_type.key.id, artifact_type.key.schema_version)
-            for artifact_type in plugin.artifact_types
+            for artifact_type in declaration.artifact_types
             if (
                 artifact_type.key.id,
                 artifact_type.key.schema_version,
@@ -689,7 +701,7 @@ class PluginRegistry:
 
         duplicate_conversions = [
             conversion.key
-            for conversion in plugin.artifact_conversions
+            for conversion in declaration.artifact_conversions
             if conversion.key in self._artifact_conversions
         ]
         if duplicate_conversions:
@@ -699,29 +711,19 @@ class PluginRegistry:
                 f"{conversion_key.id}@{conversion_key.version} is already installed"
             )
 
-        self._plugins[plugin.slug] = InstalledPlugin(
-            slug=plugin.slug,
-            title=plugin.title,
-        )
-        for registration in plugin.nodes:
+        self._declarations[plugin.slug] = declaration
+        for registration in declaration.nodes:
             self._nodes[registration.key] = registration
-        for artifact_type in plugin.artifact_types:
+        for artifact_type in declaration.artifact_types:
             key = (
                 artifact_type.key.id,
                 artifact_type.key.schema_version,
             )
             self._artifact_types[key] = artifact_type
             self._artifact_type_owners[key] = plugin.slug
-        self._plugin_artifact_types[plugin.slug] = plugin.artifact_types
-        self._plugin_artifact_type_dependencies[plugin.slug] = (
-            plugin.artifact_type_dependencies
-        )
-        self._plugin_artifact_conversions[plugin.slug] = plugin.artifact_conversions
-        for conversion in plugin.artifact_conversions:
+        for conversion in declaration.artifact_conversions:
             self._artifact_conversions[conversion.key] = conversion
             self._artifact_conversion_owners[conversion.key] = plugin.slug
-        self._resolver_factories.extend(plugin.resolver_factories)
-        self._writer_factories.extend(plugin.writer_factories)
 
     def register_module_boundaries(
         self,
@@ -761,14 +763,11 @@ class PluginRegistry:
             ArtifactTypeKey, tuple[ArtifactTypeSpec, str]
         ] = {
             artifact_type.key: (artifact_type, plugin_slug)
-            for plugin_slug, artifact_types in self._plugin_artifact_types.items()
-            for artifact_type in artifact_types
+            for plugin_slug, declaration in self._declarations.items()
+            for artifact_type in declaration.artifact_types
         }
-        for (
-            plugin_slug,
-            dependencies,
-        ) in self._plugin_artifact_type_dependencies.items():
-            for dependency in dependencies:
+        for plugin_slug, declaration in self._declarations.items():
+            for dependency in declaration.artifact_type_dependencies:
                 existing = artifact_contracts_by_key.get(dependency.key)
                 if existing is None:
                     artifact_contracts_by_key[dependency.key] = (
@@ -786,15 +785,18 @@ class PluginRegistry:
                 )
 
         for registration in self._nodes.values():
-            declared_artifact_keys = {
-                artifact_type.key
-                for artifact_type in (
-                    *self._plugin_artifact_types.get(registration.plugin_slug, ()),
-                    *self._plugin_artifact_type_dependencies.get(
-                        registration.plugin_slug, ()
-                    ),
-                )
-            }
+            declaration = self._declarations.get(registration.plugin_slug)
+            declared_artifact_keys: set[ArtifactTypeKey] = (
+                set()
+                if declaration is None
+                else {
+                    artifact_type.key
+                    for artifact_type in (
+                        *declaration.artifact_types,
+                        *declaration.artifact_type_dependencies,
+                    )
+                }
+            )
             port_contracts = [
                 ("input", port.name, port.accepts)
                 for port in registration.node_class.input_contract.ports.values()
@@ -817,18 +819,15 @@ class PluginRegistry:
                 )
 
         conversions = tuple(self._artifact_conversions.values())
-        for (
-            plugin_slug,
-            plugin_conversions,
-        ) in self._plugin_artifact_conversions.items():
+        for plugin_slug, declaration in self._declarations.items():
             declared_artifact_keys = {
                 artifact_type.key
                 for artifact_type in (
-                    *self._plugin_artifact_types[plugin_slug],
-                    *self._plugin_artifact_type_dependencies[plugin_slug],
+                    *declaration.artifact_types,
+                    *declaration.artifact_type_dependencies,
                 )
             }
-            for conversion in plugin_conversions:
+            for conversion in declaration.artifact_conversions:
                 endpoints = (
                     ("source", conversion.source),
                     ("target", conversion.target),
@@ -870,17 +869,17 @@ class PluginRegistry:
             key: contract
             for key, (contract, _plugin_slug) in artifact_contracts_by_key.items()
         }
-        for plugin_slug, plugin_artifact_types in self._plugin_artifact_types.items():
+        for plugin_slug, declaration in self._declarations.items():
             declared_artifact_keys = {
                 artifact_type.key
                 for artifact_type in (
-                    *plugin_artifact_types,
-                    *self._plugin_artifact_type_dependencies[plugin_slug],
+                    *declaration.artifact_types,
+                    *declaration.artifact_type_dependencies,
                 )
             }
             for artifact_type in (
-                *plugin_artifact_types,
-                *self._plugin_artifact_type_dependencies[plugin_slug],
+                *declaration.artifact_types,
+                *declaration.artifact_type_dependencies,
             ):
                 declared_paths: set[tuple[str, ...]] = set()
                 for projection in artifact_type.field_projections:
@@ -942,7 +941,7 @@ class PluginRegistry:
 
     @property
     def plugins(self) -> tuple[InstalledPlugin, ...]:
-        return tuple(self._plugins.values())
+        return tuple(declaration.plugin for declaration in self._declarations.values())
 
     @property
     def nodes(self) -> tuple[NodeRegistration, ...]:
@@ -958,15 +957,15 @@ class PluginRegistry:
 
         return tuple(
             artifact_type
-            for plugin_artifact_types in self._plugin_artifact_types.values()
-            for artifact_type in plugin_artifact_types
+            for declaration in self._declarations.values()
+            for artifact_type in declaration.artifact_types
         )
 
     @property
     def artifact_type_dependencies(self) -> tuple[ArtifactTypeSpec, ...]:
         dependencies_by_key: dict[ArtifactTypeKey, ArtifactTypeSpec] = {}
-        for dependencies in self._plugin_artifact_type_dependencies.values():
-            for dependency in dependencies:
+        for declaration in self._declarations.values():
+            for dependency in declaration.artifact_type_dependencies:
                 dependencies_by_key.setdefault(dependency.key, dependency)
         return tuple(dependencies_by_key.values())
 
@@ -1016,13 +1015,21 @@ class PluginRegistry:
         self,
         context: PluginRuntimeContext,
     ) -> tuple["Resolver[object]", ...]:
-        return tuple(factory(context) for factory in self._resolver_factories)
+        return tuple(
+            factory(context)
+            for declaration in self._declarations.values()
+            for factory in declaration.resolver_factories
+        )
 
     def build_writers(
         self,
         context: PluginRuntimeContext,
     ) -> tuple["ArtifactOutputWriter", ...]:
-        return tuple(factory(context) for factory in self._writer_factories)
+        return tuple(
+            factory(context)
+            for declaration in self._declarations.values()
+            for factory in declaration.writer_factories
+        )
 
 
 _KNOWN_JSON_SCHEMA_TYPES: Final = frozenset(
