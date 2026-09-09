@@ -23,6 +23,8 @@ from sqlalchemy import Uuid as SaUuid
 from sqlalchemy.engine import Dialect
 from sqlalchemy.types import TypeDecorator
 
+from grafy_persistence.column_types import PydanticJSONType, StringEnumType
+
 from grafy_core.domain.artifact_outputs import (
     ArtifactOutputValue,
     artifact_outputs_from_storage,
@@ -64,192 +66,48 @@ NAMING_CONVENTION = {
 metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
-class SavedGraphDocumentType(TypeDecorator[SavedGraphDocument]):
-    impl = JSON
+class SavedGraphDocumentType(PydanticJSONType[SavedGraphDocument]):
+    model_type = SavedGraphDocument
     cache_ok = True
 
-    def process_bind_param(
-        self,
-        value: SavedGraphDocument | None,
-        dialect: Dialect,
-    ) -> dict[str, object] | None:
-        del dialect
-        if value is None:
-            return None
-        return value.model_dump(mode="json")
 
-    def process_result_value(
-        self,
-        value: object | None,
-        dialect: Dialect,
-    ) -> SavedGraphDocument | None:
-        del dialect
-        if value is None:
-            return None
-        return SavedGraphDocument.model_validate(value)
-
-
-class PluginCatalogManifestType(TypeDecorator[PluginCatalogManifest]):
-    impl = JSON
+class PluginCatalogManifestType(PydanticJSONType[PluginCatalogManifest]):
+    model_type = PluginCatalogManifest
     cache_ok = True
 
-    def process_bind_param(
-        self,
-        value: PluginCatalogManifest | None,
-        dialect: Dialect,
-    ) -> dict[str, object] | None:
-        del dialect
-        if value is None:
-            return None
-        return value.model_dump(mode="json")
 
-    def process_result_value(
-        self,
-        value: object | None,
-        dialect: Dialect,
-    ) -> PluginCatalogManifest | None:
-        del dialect
-        if value is None:
-            return None
-        return PluginCatalogManifest.model_validate(value)
-
-
-class PluginCapabilityManifestType(TypeDecorator[PluginCapabilityManifest]):
-    impl = JSON
+class PluginCapabilityManifestType(PydanticJSONType[PluginCapabilityManifest]):
+    model_type = PluginCapabilityManifest
     cache_ok = True
 
-    def process_bind_param(
-        self,
-        value: PluginCapabilityManifest | None,
-        dialect: Dialect,
-    ) -> dict[str, object] | None:
-        del dialect
-        if value is None:
-            return None
-        return value.model_dump(mode="json")
 
-    def process_result_value(
-        self,
-        value: object | None,
-        dialect: Dialect,
-    ) -> PluginCapabilityManifest | None:
-        del dialect
-        if value is None:
-            return None
-        return PluginCapabilityManifest.model_validate(value)
-
-
-class PluginRuntimeArtifactType(TypeDecorator[PluginRuntimeArtifact]):
-    impl = JSON
+class PluginRuntimeArtifactType(PydanticJSONType[PluginRuntimeArtifact]):
+    model_type = PluginRuntimeArtifact
     cache_ok = True
 
-    def process_bind_param(
-        self,
-        value: PluginRuntimeArtifact | None,
-        dialect: Dialect,
-    ) -> dict[str, object] | None:
-        del dialect
-        if value is None:
-            return None
-        return value.model_dump(mode="json")
 
-    def process_result_value(
-        self,
-        value: object | None,
-        dialect: Dialect,
-    ) -> PluginRuntimeArtifact | None:
-        del dialect
-        if value is None:
-            return None
-        return PluginRuntimeArtifact.model_validate(value)
-
-
-class PluginReleaseScopeType(TypeDecorator[PluginReleaseScope]):
+class PluginReleaseScopeType(StringEnumType[PluginReleaseScope]):
     impl = String(16)
+    enum_type = PluginReleaseScope
     cache_ok = True
 
-    def process_bind_param(
-        self,
-        value: PluginReleaseScope | None,
-        dialect: Dialect,
-    ) -> str | None:
-        del dialect
-        return None if value is None else PluginReleaseScope(value).value
 
-    def process_result_value(
-        self,
-        value: str | None,
-        dialect: Dialect,
-    ) -> PluginReleaseScope | None:
-        del dialect
-        return None if value is None else PluginReleaseScope(value)
-
-
-class PluginReleaseRevocationReasonType(TypeDecorator[PluginReleaseRevocationReason]):
+class PluginReleaseRevocationReasonType(StringEnumType[PluginReleaseRevocationReason]):
     impl = String(16)
+    enum_type = PluginReleaseRevocationReason
     cache_ok = True
 
-    def process_bind_param(
-        self,
-        value: PluginReleaseRevocationReason | None,
-        dialect: Dialect,
-    ) -> str | None:
-        del dialect
-        if value is None:
-            return None
-        return PluginReleaseRevocationReason(value).value
 
-    def process_result_value(
-        self,
-        value: str | None,
-        dialect: Dialect,
-    ) -> PluginReleaseRevocationReason | None:
-        del dialect
-        if value is None:
-            return None
-        return PluginReleaseRevocationReason(value)
-
-
-class PluginExecutionPolicyType(TypeDecorator[PluginExecutionPolicy]):
+class PluginExecutionPolicyType(StringEnumType[PluginExecutionPolicy]):
     impl = String(24)
+    enum_type = PluginExecutionPolicy
     cache_ok = True
 
-    def process_bind_param(
-        self,
-        value: PluginExecutionPolicy | None,
-        dialect: Dialect,
-    ) -> str | None:
-        del dialect
-        return None if value is None else PluginExecutionPolicy(value).value
 
-    def process_result_value(
-        self,
-        value: str | None,
-        dialect: Dialect,
-    ) -> PluginExecutionPolicy | None:
-        del dialect
-        return None if value is None else PluginExecutionPolicy(value)
-
-
-class PluginFamilyLifecycleType(TypeDecorator[PluginFamilyLifecycle]):
+class PluginFamilyLifecycleType(StringEnumType[PluginFamilyLifecycle]):
     impl = String(16)
+    enum_type = PluginFamilyLifecycle
     cache_ok = True
-
-    def process_bind_param(
-        self,
-        value: PluginFamilyLifecycle | None,
-        dialect: Dialect,
-    ) -> str | None:
-        del dialect
-        return None if value is None else PluginFamilyLifecycle(value).value
-
-    def process_result_value(
-        self,
-        value: str | None,
-        dialect: Dialect,
-    ) -> PluginFamilyLifecycle | None:
-        del dialect
-        return None if value is None else PluginFamilyLifecycle(value)
 
 
 class UTCDateTime(TypeDecorator[datetime]):
@@ -374,151 +232,46 @@ class PlatformTokenScopeTupleType(TypeDecorator[tuple[PlatformTokenScope, ...]])
             raise ValueError("Stored platform token scope is unknown") from exc
 
 
-class WorkspaceKindType(TypeDecorator[WorkspaceKind]):
+class WorkspaceKindType(StringEnumType[WorkspaceKind]):
     impl = String(16)
+    enum_type = WorkspaceKind
     cache_ok = True
 
-    def process_bind_param(
-        self,
-        value: WorkspaceKind | None,
-        dialect: Dialect,
-    ) -> str | None:
-        del dialect
-        return None if value is None else WorkspaceKind(value).value
 
-    def process_result_value(
-        self,
-        value: str | None,
-        dialect: Dialect,
-    ) -> WorkspaceKind | None:
-        del dialect
-        return None if value is None else WorkspaceKind(value)
-
-
-class WorkspaceRoleType(TypeDecorator[WorkspaceRole]):
+class WorkspaceRoleType(StringEnumType[WorkspaceRole]):
     impl = String(16)
+    enum_type = WorkspaceRole
     cache_ok = True
 
-    def process_bind_param(
-        self,
-        value: WorkspaceRole | None,
-        dialect: Dialect,
-    ) -> str | None:
-        del dialect
-        return None if value is None else WorkspaceRole(value).value
 
-    def process_result_value(
-        self,
-        value: str | None,
-        dialect: Dialect,
-    ) -> WorkspaceRole | None:
-        del dialect
-        return None if value is None else WorkspaceRole(value)
-
-
-class WorkspaceInvitationStatusType(TypeDecorator[WorkspaceInvitationStatus]):
+class WorkspaceInvitationStatusType(StringEnumType[WorkspaceInvitationStatus]):
     impl = String(16)
+    enum_type = WorkspaceInvitationStatus
     cache_ok = True
 
-    def process_bind_param(
-        self,
-        value: WorkspaceInvitationStatus | None,
-        dialect: Dialect,
-    ) -> str | None:
-        del dialect
-        return None if value is None else WorkspaceInvitationStatus(value).value
 
-    def process_result_value(
-        self,
-        value: str | None,
-        dialect: Dialect,
-    ) -> WorkspaceInvitationStatus | None:
-        del dialect
-        return None if value is None else WorkspaceInvitationStatus(value)
-
-
-class ModulePublicationStateType(TypeDecorator[ModulePublicationState]):
+class ModulePublicationStateType(StringEnumType[ModulePublicationState]):
     impl = String(32)
+    enum_type = ModulePublicationState
     cache_ok = True
 
-    def process_bind_param(
-        self,
-        value: ModulePublicationState | None,
-        dialect: Dialect,
-    ) -> str | None:
-        del dialect
-        return None if value is None else ModulePublicationState(value).value
 
-    def process_result_value(
-        self,
-        value: str | None,
-        dialect: Dialect,
-    ) -> ModulePublicationState | None:
-        del dialect
-        return None if value is None else ModulePublicationState(value)
-
-
-class TemplateStateType(TypeDecorator[TemplateState]):
+class TemplateStateType(StringEnumType[TemplateState]):
     impl = String(16)
+    enum_type = TemplateState
     cache_ok = True
 
-    def process_bind_param(
-        self,
-        value: TemplateState | None,
-        dialect: Dialect,
-    ) -> str | None:
-        del dialect
-        return None if value is None else TemplateState(value).value
 
-    def process_result_value(
-        self,
-        value: str | None,
-        dialect: Dialect,
-    ) -> TemplateState | None:
-        del dialect
-        return None if value is None else TemplateState(value)
-
-
-class SecurityAuditActorKindType(TypeDecorator[SecurityAuditActorKind]):
+class SecurityAuditActorKindType(StringEnumType[SecurityAuditActorKind]):
     impl = String(24)
+    enum_type = SecurityAuditActorKind
     cache_ok = True
 
-    def process_bind_param(
-        self,
-        value: SecurityAuditActorKind | None,
-        dialect: Dialect,
-    ) -> str | None:
-        del dialect
-        return None if value is None else SecurityAuditActorKind(value).value
 
-    def process_result_value(
-        self,
-        value: str | None,
-        dialect: Dialect,
-    ) -> SecurityAuditActorKind | None:
-        del dialect
-        return None if value is None else SecurityAuditActorKind(value)
-
-
-class SecurityAuditOutcomeType(TypeDecorator[SecurityAuditOutcome]):
+class SecurityAuditOutcomeType(StringEnumType[SecurityAuditOutcome]):
     impl = String(16)
+    enum_type = SecurityAuditOutcome
     cache_ok = True
-
-    def process_bind_param(
-        self,
-        value: SecurityAuditOutcome | None,
-        dialect: Dialect,
-    ) -> str | None:
-        del dialect
-        return None if value is None else SecurityAuditOutcome(value).value
-
-    def process_result_value(
-        self,
-        value: str | None,
-        dialect: Dialect,
-    ) -> SecurityAuditOutcome | None:
-        del dialect
-        return None if value is None else SecurityAuditOutcome(value)
 
 
 graph_folders = Table(

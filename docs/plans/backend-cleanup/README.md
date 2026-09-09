@@ -97,8 +97,8 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 ## 11. Persistence cleanup
 
-- [ ] Consolidate four Pydantic JSON and eleven string-enum decorators with typed implementations and named column types.
-- [ ] Preserve SQL metadata and malformed-value behavior; retain specialized datetime/output/enum-collection semantics.
+- [x] Consolidate four Pydantic JSON and eleven string-enum decorators with typed implementations and named column types.
+- [x] Preserve SQL metadata and malformed-value behavior; retain specialized datetime/output/enum-collection semantics.
 - [ ] Split repository/table ownership into identity, graphs, execution, plugins, and library, with one metadata bootstrap.
 - [ ] Reuse bulk node hydration for queued/interrupted execution history, preserving ordering.
 - [ ] Verify SQLite and PostgreSQL behavior and migration metadata.
@@ -394,3 +394,14 @@ flowchart LR
 ```
 
 - Final validation: 677 API, architecture, artifact, nested-module, and execution-route/history tests passed. OpenAPI is unchanged. Finding 9 is complete; batches remain operation-local by design.
+
+
+### Shared persistence column serialization
+
+- Four Pydantic JSON and eleven string-enum column types now reuse two typed implementations in `grafy_persistence.column_types`. Named types, their import paths, SQL lengths, null handling, and Pydantic validation remain unchanged. Specialized datetime, artifact-output, and enum-collection codecs remain separate.
+- Each named subclass retains explicit `cache_ok = True`: SQLAlchemy reads that flag from the concrete class dictionary, so inheriting it alone would disable statement caching. This is a framework requirement, not redundant configuration. [R11: Framework Constraints Must Be Explicit]
+- Forty-five contract tests passed before and after consolidation. They cover both dialect processors, every enum value, malformed stored values, model validation, nulls, and real SQLite round trips with cache warnings treated as errors.
+- Generated SQLite and PostgreSQL table/index DDL exactly matches the baseline for all 32 tables. No migration is required.
+- Regression validation: 205 persistence, application, and architecture tests passed. The live PostgreSQL migration test was skipped because its disposable database URL is not configured. Shared types, schema, and new tests have zero Pyright errors or warnings; Ruff passes.
+- Evidence: `/tmp/grafy-column-types-before.json`, `/tmp/grafy-column-types-baseline.log`, `/tmp/grafy-column-types-focused.log`, `/tmp/grafy-column-types-regression.log`, and `/tmp/grafy-column-types-types.log`.
+- Finding 11 remains open for repository/table ownership, bulk recovery hydration, and live PostgreSQL verification.
