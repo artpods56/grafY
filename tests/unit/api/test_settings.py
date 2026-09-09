@@ -289,6 +289,24 @@ def test_oidc_domain_workspaces_parse_from_deployment_string() -> None:
     assert grant.workspace_name == "IHPAN"
 
 
+def test_oidc_domain_workspaces_parse_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GRAFY_OIDC_DOMAIN_WORKSPACES", "ihpan.edu.pl:ihpan:IHPAN")
+    settings = Settings(_env_file=None)
+
+    assert settings.oidc_domain_workspaces[0].workspace_slug == "ihpan"
+
+
+def test_oidc_domain_workspaces_treat_empty_environment_as_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GRAFY_OIDC_DOMAIN_WORKSPACES", "")
+    settings = Settings(_env_file=None)
+
+    assert settings.oidc_domain_workspaces == ()
+
+
 def test_oidc_domain_workspaces_reject_malformed_grants() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, oidc_domain_workspaces="ihpan.edu.pl")

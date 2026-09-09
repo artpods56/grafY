@@ -1,13 +1,13 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import Annotated, ClassVar, Literal
 import re
 import secrets
 import warnings
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from grafy_api.plugins.runtime.egress import (
     PluginEgressBrokerPolicy,
@@ -83,7 +83,10 @@ class Settings(BaseSettings):
     oidc_callback_path: str = "/api/v1/auth/oidc/callback"
     # Verified email domains that receive shared Workspace membership on login.
     # Each grant is `domain:slug` or `domain:slug:name`.
-    oidc_domain_workspaces: tuple[OidcDomainWorkspaceGrant, ...] = ()
+    oidc_domain_workspaces: Annotated[
+        tuple[OidcDomainWorkspaceGrant, ...],
+        NoDecode,
+    ] = ()
     auth_rate_window_seconds: int = Field(default=60, ge=1, le=3600)
     auth_login_start_rate_limit: int = Field(default=10, ge=1)
     auth_callback_rate_limit: int = Field(default=20, ge=1)
