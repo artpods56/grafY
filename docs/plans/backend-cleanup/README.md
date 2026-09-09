@@ -114,8 +114,8 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 ## 13. Cross-feature host infrastructure
 
 - [x] Move GraphRoomHub and post-commit publisher to application realtime ownership.
-- [ ] Move operation audit metadata out of workspace views into HTTP diagnostics near registration.
-- [ ] Delegate malformed OIDC transaction cleanup to authentication.
+- [x] Move operation audit metadata out of workspace views into HTTP diagnostics near registration.
+- [x] Delegate malformed OIDC transaction cleanup to authentication.
 - [ ] Give workspace transport models their own owner and return complete application results without route-side transaction reopening.
 - [ ] Move cohesive NodeSecretService outside routes.
 - [ ] Rename ImageUploadService to StagedUploadService; share staging/domain results and preserve batch rollback.
@@ -548,4 +548,24 @@ flowchart LR
     Execute[Execution manager] --> Hub[Application graph-room hub]
     Publish --> Hub
     Hub --> Clients[Room protocol messages to clients]
+```
+
+
+### HTTP failure metadata and authentication cleanup
+
+- Moved the route-to-audit-operation map, descriptor, and resolver from workspace views into `http_errors.py`, their sole caller and the owner of global HTTP failure registration. The moved syntax trees are identical, preserving route names, resource identities, invalid-UUID handling, and unaudited-route behavior.
+- `AuthService.cleanup_malformed_callback` now owns callback rate-limit accounting, consumption of the pending login transaction, and release of its outstanding-login reservation. The HTTP validation handler receives the rate-limit decision and retains response formatting, diagnostic scope, security audit invocation, and cookie clearing. Operation order is unchanged.
+- The error handler no longer imports workspace views or knows the OIDC transaction-cookie name and reservation-cleanup sequence. No additional metadata registry or forwarding module was added.
+- Focused validation passed 66 auth, diagnostics, and saved-graph tests. Existing callback coverage checks consumed transactions, released reservations, validation versus rate-limit status, redacted errors, audit events, and transaction-cookie clearing. Broader API/architecture/room/execution regression passed 561 tests; these suites overlap in diagnostics coverage.
+- Both changed HTTP/auth owners pass targeted Pyright with zero errors or warnings. Ruff and whitespace checks pass. OpenAPI is unchanged, including from the extracted API wheel, which resolves the metadata and callback cleanup from their new owners.
+- Evidence: `/tmp/grafy-http-audit-before.py`, `/tmp/grafy-http-ownership-openapi.json`, `/tmp/grafy-http-ownership-focused.log`, `/tmp/grafy-http-ownership-regression.log`, `/tmp/grafy-http-ownership-types.log`, and `/tmp/grafy-http-ownership-wheel.log`.
+- Finding 13 remains open for workspace result/model ownership, node secrets, and staged uploads.
+
+```mermaid
+flowchart LR
+    Validation[Malformed callback] --> HTTP[HTTP error handling]
+    HTTP --> Auth[Authentication cleanup]
+    Auth --> State[Login transaction and abuse reservation]
+    HTTP --> Audit[HTTP-owned operation metadata and audit]
+    HTTP --> Response[Existing status, diagnostics, and cookie response]
 ```

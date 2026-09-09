@@ -1,7 +1,8 @@
 import os
 import time
 from collections.abc import Awaitable, Callable
-from uuid import uuid4
+from uuid import UUID, uuid4
+from dataclasses import dataclass
 
 import structlog
 from fastapi import FastAPI, HTTPException, Request
@@ -16,8 +17,7 @@ from grafy_api.diagnostics import (
     diagnostic_scope,
     record_failure,
 )
-from grafy_api.v1.routes.auth.services import OIDC_TRANSACTION_COOKIE, AuthService
-from grafy_api.v1.routes.workspaces.views import workspace_failure_metadata
+from grafy_api.v1.routes.auth.services import AuthService
 from grafy_core.domain.errors import (
     CapabilityDeniedError,
     Failure,
@@ -73,6 +73,152 @@ def _failure_response(failure: Failure, *, status_code: int) -> JSONResponse:
             "code": failure.code,
             "error_id": str(failure.error_id),
         },
+    )
+
+
+@dataclass(frozen=True)
+class WorkspaceFailureRoute:
+    operation: str
+    resource_type: str | None = None
+    resource_path_param: str | None = None
+
+
+_WORKSPACE_FAILURE_ROUTES: dict[str, WorkspaceFailureRoute] = {
+    "list_workspaces": WorkspaceFailureRoute(
+        operation="workspace.list",
+        resource_type="workspace",
+    ),
+    "create_workspace": WorkspaceFailureRoute(
+        operation="workspace.create",
+        resource_type="workspace",
+    ),
+    "list_members": WorkspaceFailureRoute(
+        operation="workspace.membership.list",
+        resource_type="workspace_membership",
+    ),
+    "resolve_invitation_candidate": WorkspaceFailureRoute(
+        operation="workspace.invitation.candidate.resolve",
+        resource_type="user",
+    ),
+    "create_workspace_invitation": WorkspaceFailureRoute(
+        operation="workspace.invitation.create",
+        resource_type="workspace_invitation",
+    ),
+    "list_workspace_invitations": WorkspaceFailureRoute(
+        operation="workspace.invitation.list",
+        resource_type="workspace_invitation",
+    ),
+    "cancel_workspace_invitation": WorkspaceFailureRoute(
+        operation="workspace.invitation.cancel",
+        resource_type="workspace_invitation",
+        resource_path_param="invitation_id",
+    ),
+    "change_member_role": WorkspaceFailureRoute(
+        operation="workspace.membership.role_change",
+        resource_type="user",
+        resource_path_param="user_id",
+    ),
+    "remove_member": WorkspaceFailureRoute(
+        operation="workspace.membership.remove",
+        resource_type="user",
+        resource_path_param="user_id",
+    ),
+    "list_personal_access_tokens": WorkspaceFailureRoute(
+        operation="credential.pat.list",
+        resource_type="personal_access_token",
+    ),
+    "create_personal_access_token": WorkspaceFailureRoute(
+        operation="credential.pat.create",
+        resource_type="personal_access_token",
+    ),
+    "revoke_personal_access_token": WorkspaceFailureRoute(
+        operation="credential.pat.revoke",
+        resource_type="personal_access_token",
+        resource_path_param="token_id",
+    ),
+    "list_graph_folders": WorkspaceFailureRoute(
+        operation="graph.folder.list",
+        resource_type="graph_folder",
+    ),
+    "create_graph_folder": WorkspaceFailureRoute(
+        operation="graph.folder.create",
+        resource_type="graph_folder",
+    ),
+    "rename_graph_folder": WorkspaceFailureRoute(
+        operation="graph.folder.rename",
+        resource_type="graph_folder",
+        resource_path_param="folder_id",
+    ),
+    "delete_graph_folder": WorkspaceFailureRoute(
+        operation="graph.folder.delete",
+        resource_type="graph_folder",
+        resource_path_param="folder_id",
+    ),
+    "assign_graph_folder": WorkspaceFailureRoute(
+        operation="graph.folder.assign",
+        resource_type="saved_graph",
+        resource_path_param="graph_id",
+    ),
+    "archive_graph": WorkspaceFailureRoute(
+        operation="graph.archive",
+        resource_type="saved_graph",
+        resource_path_param="graph_id",
+    ),
+    "restore_graph": WorkspaceFailureRoute(
+        operation="graph.restore",
+        resource_type="saved_graph",
+        resource_path_param="graph_id",
+    ),
+    "star_graph": WorkspaceFailureRoute(
+        operation="graph.star",
+        resource_type="saved_graph",
+        resource_path_param="graph_id",
+    ),
+    "unstar_graph": WorkspaceFailureRoute(
+        operation="graph.unstar",
+        resource_type="saved_graph",
+        resource_path_param="graph_id",
+    ),
+    "record_graph_open": WorkspaceFailureRoute(
+        operation="graph.open.record",
+        resource_type="saved_graph",
+        resource_path_param="graph_id",
+    ),
+}
+
+
+def workspace_failure_metadata(
+    request: Request,
+) -> tuple[str, UUID | None, str | None, str | None] | None:
+    route = request.scope.get("route")
+    route_name = getattr(route, "name", None)
+    if not isinstance(route_name, str):
+        return None
+    failure_route = _WORKSPACE_FAILURE_ROUTES.get(route_name)
+    if failure_route is None:
+        return None
+
+    workspace_id: UUID | None = None
+    raw_workspace_id = request.path_params.get("workspace_id")
+    if isinstance(raw_workspace_id, str):
+        try:
+            workspace_id = UUID(raw_workspace_id)
+        except ValueError:
+            workspace_id = None
+
+    resource_id: str | None = None
+    if failure_route.resource_path_param is not None:
+        raw_resource_id = request.path_params.get(failure_route.resource_path_param)
+        if isinstance(raw_resource_id, str):
+            try:
+                resource_id = str(UUID(raw_resource_id))
+            except ValueError:
+                resource_id = None
+    return (
+        failure_route.operation,
+        workspace_id,
+        failure_route.resource_type,
+        resource_id,
     )
 
 
@@ -152,16 +298,7 @@ async def _request_validation_error_handler(
 
     if is_oidc_callback:
         auth: AuthService = get_identity(request.app).auth_service
-        abuse_keys = auth.browser_abuse_keys(request)
-        allowed = await auth.allow_callback(
-            abuse_keys.browser_key,
-            abuse_keys.network_key,
-        )
-        consumed_transaction_id = await auth.replace_login_transaction(
-            request.cookies.get(OIDC_TRANSACTION_COOKIE)
-        )
-        if consumed_transaction_id is not None:
-            await auth.release_login(str(consumed_transaction_id))
+        allowed = await auth.cleanup_malformed_callback(request)
         spec = _REQUEST_VALIDATION_SPEC if allowed else _HTTP_CAPACITY_SPEC
         failure = record_failure(
             exception,

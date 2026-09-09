@@ -445,11 +445,9 @@ class AuthService:
             )
         try:
             public_prefix, secret = self._parse_personal_access_token(value)
-            principal = (
-                await self._identity_service.authenticate_personal_access_token(
-                    public_prefix=public_prefix,
-                    secret_digest=self.digest_secret(secret),
-                )
+            principal = await self._identity_service.authenticate_personal_access_token(
+                public_prefix=public_prefix,
+                secret_digest=self.digest_secret(secret),
             )
         except (CredentialAuthenticationError, HTTPException) as exc:
             raise HTTPException(
@@ -458,9 +456,7 @@ class AuthService:
                 headers={"WWW-Authenticate": "Bearer"},
             ) from exc
         request.state.auth_actor_user_id = principal.actor.user_id
-        request.state.auth_credential_reference = (
-            principal.actor.credential_reference
-        )
+        request.state.auth_credential_reference = principal.actor.credential_reference
         return principal
 
     async def current_session(self, request: Request) -> AuthSession:
@@ -725,6 +721,20 @@ class AuthService:
         except ValueError:
             return
         await self._abuse_control.release_login(transaction_id)
+
+    async def cleanup_malformed_callback(self, request: Request) -> bool:
+        """Consume pending login state and return whether callback limits allow it."""
+        abuse_keys = self.browser_abuse_keys(request)
+        allowed = await self.allow_callback(
+            abuse_keys.browser_key,
+            abuse_keys.network_key,
+        )
+        consumed_transaction_id = await self.replace_login_transaction(
+            request.cookies.get(OIDC_TRANSACTION_COOKIE)
+        )
+        if consumed_transaction_id is not None:
+            await self.release_login(str(consumed_transaction_id))
+        return allowed
 
     async def replace_login_transaction(self, value: str | None) -> UUID | None:
         if value is None:
