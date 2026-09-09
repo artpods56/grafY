@@ -54,6 +54,7 @@ from grafy_api.execution.preflight import GraphRunPreflight
 from grafy_api.execution.run_graph import RunGraph
 from grafy_api.execution.history import ExecutionHistoryService
 from grafy_api.execution.materializations import MaterializationService
+from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.v1.routes.executions.services import RunResultPresenter
 from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES
 from grafy_api.v1.routes.uploads.services import ImageUploadService
@@ -162,12 +163,13 @@ def build_workbench_components(
             for spec in plugin_registry.artifact_types
         },
     )
+    availability = ArtifactAvailability(resolved_unit_of_work, resolved_storage)
     materializations = MaterializationService(
         resolved_unit_of_work,
-        artifacts,
+        availability,
         saved_graphs,
     )
-    presenter = RunResultPresenter(artifacts)
+    presenter = RunResultPresenter(artifacts, availability)
     plugin_invoker = None
     artifact_plugin_invoker = None
     release_admission: ReleaseExecutionAdmission | None = None

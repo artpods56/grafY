@@ -13,6 +13,7 @@ from grafy_api.v1.routes.artifacts.models import (
     ArtifactSummaryResponse,
 )
 from grafy_api.v1.routes.artifacts.services import ArtifactService
+from grafy_api.artifact_availability import ArtifactAvailability
 
 from .models import (
     GraphMaterializationsResponse,
@@ -33,8 +34,11 @@ INLINE_SUMMARY_TEXT_BYTE_LIMIT = 64 * 1_024
 class RunResultPresenter:
     """Maps graph execution and materialization results to HTTP response models."""
 
-    def __init__(self, artifacts: ArtifactService) -> None:
+    def __init__(
+        self, artifacts: ArtifactService, availability: ArtifactAvailability
+    ) -> None:
         self._artifacts = artifacts
+        self._availability = availability
 
     async def run_response(
         self,
@@ -91,7 +95,7 @@ class RunResultPresenter:
         for materialization in materializations:
             accessible_outputs: list[RunPortOutputResponse] = []
             for port_name, value in materialization.outputs.items():
-                if await self._artifacts.is_accessible(workspace_id, value):
+                if await self._availability.is_accessible(workspace_id, value):
                     accessible_outputs.append(
                         await self.port_output_response(
                             workspace_id,

@@ -9,7 +9,7 @@ from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.domain.saved_graphs import SavedGraphRevision
 from grafy_core.ports.materialized_outputs import WorkbenchUnitOfWorkPort
 
-from grafy_api.v1.routes.artifacts.services import ArtifactService
+from grafy_api.artifact_availability import ArtifactAvailability
 
 from grafy_api.execution.errors import GraphExecutionError
 
@@ -23,11 +23,11 @@ class MaterializationService:
     def __init__(
         self,
         unit_of_work: WorkbenchUnitOfWorkPort,
-        artifacts: ArtifactService,
+        availability: ArtifactAvailability,
         saved_graphs: SavedGraphService | None,
     ) -> None:
         self._unit_of_work = unit_of_work
-        self._artifacts = artifacts
+        self._availability = availability
         self._saved_graphs = saved_graphs
 
     async def saved_graph_revision(
@@ -75,7 +75,7 @@ class MaterializationService:
                 if materialization is not None
                 else None
             )
-            if materialized_value is None or not await self._artifacts.is_accessible(
+            if materialized_value is None or not await self._availability.is_accessible(
                 workspace_id,
                 materialized_value,
             ):
@@ -101,13 +101,14 @@ class MaterializationService:
         outputs: dict[str, dict[str, ArtifactOutputValue]] = {}
         for (from_node, from_port), value in pinned_outputs.items():
             context = f"Pinned output {from_node!r}.{from_port!r}"
-            await self._artifacts.validate_refs(
+            resolved = await self._availability.resolve_refs(
                 workspace_id,
                 value,
                 context=context,
             )
-            if not await self._artifacts.is_accessible(workspace_id, value):
-                raise GraphExecutionError(f"{context} is not accessible")
+            for artifact in resolved:
+                if not await self._availability.artifact_is_accessible(artifact):
+                    raise GraphExecutionError(f"{context} is not accessible")
             outputs.setdefault(from_node, {})[from_port] = value
         return outputs
 

@@ -15,17 +15,14 @@ import truststore
 
 from grafy_core.artifact_collections import (
     JSON_COLLECTIONS_STORAGE_FORMAT,
-    json_collections_artifact_is_accessible,
     load_json_collections_page,
 )
 from grafy_core.artifacts import (
     ArtifactExportFormat,
     ArtifactObject,
-    ArtifactRefSequence,
     ArtifactTypeSpec,
     UnitOfWorkPort,
 )
-from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.table_contracts import (
     TABLE_DATA,
     TablePage,
@@ -35,7 +32,6 @@ from grafy_core.runtime.table_storage import (
     iter_table_csv,
     load_table_artifact,
     load_table_page,
-    table_artifact_is_accessible,
 )
 from grafy_core.ports.storage import (
     FileStoragePort,
@@ -1617,66 +1613,6 @@ class ArtifactService:
             ],
         )
 
-    async def is_accessible(
-        self,
-        workspace_id: UUID,
-        value: ArtifactOutputValue,
-    ) -> bool:
-        refs = value.item_refs if isinstance(value, ArtifactRefSequence) else (value,)
-        for ref in refs:
-            artifact = await self.get(workspace_id, ref.artifact_id)
-            if artifact is None or artifact.ref() != ref:
-                return False
-            if (
-                artifact.artifact_type == TABLE_DATA.key.id
-                and artifact.schema_version == TABLE_DATA.key.schema_version
-            ):
-                if not await table_artifact_is_accessible(artifact, self._storage):
-                    return False
-                continue
-            if (
-                artifact.metadata.get("storage_format")
-                == JSON_COLLECTIONS_STORAGE_FORMAT
-            ):
-                if not await json_collections_artifact_is_accessible(
-                    artifact,
-                    self._storage,
-                ):
-                    return False
-                continue
-            if artifact.inline_payload is not None:
-                continue
-            if artifact.bucket is None or artifact.object_key is None:
-                return False
-            if await self._storage.stat(artifact.bucket, artifact.object_key) is None:
-                return False
-        return True
-
-    async def validate_refs(
-        self,
-        workspace_id: UUID,
-        value: ArtifactOutputValue,
-        *,
-        context: str,
-    ) -> None:
-        refs = value.item_refs if isinstance(value, ArtifactRefSequence) else (value,)
-        for index, ref in enumerate(refs):
-            item_context = (
-                f" sequence item {index}"
-                if isinstance(value, ArtifactRefSequence)
-                else ""
-            )
-            artifact = await self.get(workspace_id, ref.artifact_id)
-            if artifact is None:
-                raise WorkbenchOperationError(
-                    f"{context}{item_context} references missing artifact "
-                    f"{ref.artifact_id}"
-                )
-            if artifact.ref() != ref:
-                raise WorkbenchOperationError(
-                    f"{context}{item_context} does not match the repository ref "
-                    f"for artifact {ref.artifact_id}"
-                )
 
 
 __all__ = [

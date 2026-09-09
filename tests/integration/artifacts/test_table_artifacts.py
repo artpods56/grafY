@@ -6,6 +6,7 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
+from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.services.composition import WorkbenchComponents
 from grafy_api.v1.routes.artifacts import services as artifact_services
 from grafy_api.v1.routes.artifacts.models import (
@@ -611,7 +612,8 @@ async def test_artifact_summaries_never_embed_unbounded_or_table_json(
         ArtifactService(
             unit_of_work,
             LocalFileObjectStore(tmp_path / "objects"),
-        )
+        ),
+        ArtifactAvailability(unit_of_work, LocalFileObjectStore(tmp_path / "objects")),
     )
 
     assert (

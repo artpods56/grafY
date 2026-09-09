@@ -98,6 +98,7 @@ from grafy_api.v1.models import PluginReleasePinModel
 from grafy_api.execution.preflight import GraphRunPreflight
 from grafy_api.execution.run_graph import RunGraph
 from grafy_api.execution.materializations import MaterializationService
+from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.execution.compiler import GraphCompiler
 from grafy_api.execution.errors import GraphExecutionError
 from grafy_api.execution.edge_values import EdgeValueResolver
@@ -1641,7 +1642,9 @@ async def test_host_node_output_feeds_pinned_workspace_plugin_in_same_graph(
         ),
         compiler=compiler,
         coordinator=coordinator,
-        materializations=MaterializationService(unit_of_work, artifacts, saved_graphs),
+        materializations=MaterializationService(
+            unit_of_work, ArtifactAvailability(unit_of_work, storage), saved_graphs
+        ),
     )
     result = await run_graph.run(WORKSPACE_ID, request)
     assert lookup.release_reads == 1
