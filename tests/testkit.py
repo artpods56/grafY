@@ -124,7 +124,7 @@ async def async_client_with_overrides(
     Usage::
 
         async with async_client_with_overrides(settings=test_settings) as api:
-            api.override(run_graph_service, lambda: fake_run_graph)
+            api.override(run_execution_manager, lambda: execution_manager)
             response = await api.client.get("/ready")
     """
     app = app_with_overrides(

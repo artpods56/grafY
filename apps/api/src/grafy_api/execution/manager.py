@@ -1,4 +1,4 @@
-"""In-process ownership and observation of asynchronous graph executions."""
+"""Execution activity ownership and observation of background graph executions."""
 
 import asyncio
 import logging
@@ -348,6 +348,49 @@ class RunExecutionManager:
         self._shutting_down = False
         self._graph_room_hub = graph_room_hub
         self._admission_limiter.bind_capacity_listener(self._dispatch_wake.set)
+
+    async def run_inline(
+        self, workspace_id: UUID, request: RunRequest
+    ) -> GraphExecutionResult:
+        """Run in the caller task; the caller retains its admission lease.
+
+        Unlike background execution, errors and cancellation propagate directly.
+        Activity covers preflight through sandbox cleanup without creating saved
+        graph history or a pollable background execution.
+        """
+        if self._shutting_down:
+            raise RuntimeError("Run execution manager is shutting down")
+        if self._execution_history is None:
+            raise RuntimeError("Transient execution activity is not configured")
+        execution_id = uuid7()
+        execution_failed = False
+        try:
+            await self._execution_history.register_transient(
+                workspace_id, execution_id, self._transient_owner_id
+            )
+            return await self._run_graph.run(workspace_id, request)
+        except BaseException:
+            execution_failed = True
+            raise
+        finally:
+            # Registration may have committed even if its acknowledgement failed.
+            for attempt in range(2):
+                try:
+                    await self._execution_history.release_transient(
+                        execution_id, self._transient_owner_id
+                    )
+                except Exception as exc:
+                    if attempt == 0:
+                        await asyncio.sleep(0)
+                        continue
+                    message = (
+                        f"Could not release transient execution {execution_id}; "
+                        "activity marker retained for maintenance"
+                    )
+                    logger.exception(message)
+                    if not execution_failed:
+                        raise RuntimeError(message) from exc
+                break
 
     async def active_execution_summary(
         self,

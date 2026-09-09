@@ -14,7 +14,7 @@ response models, and `RunResultPresenter` stay in `v1/routes/executions`.
 | `run_graph.py` | Coordinate preparation, nested runs, and sandbox cleanup. |
 | `coordinator.py`, `node_execution.py`, `edge_values.py` | Schedule nodes, execute them, and resolve edge values. |
 | `manager.py`, `admission.py`, `control.py` | Own run lifecycle, capacity, queue dispatch, events, and cancellation. |
-| `history.py` | Persist and browse saved-graph execution history and recover queued work. |
+| `history.py` | Persist saved-graph history and transient activity, and recover queued work. |
 | `materializations.py` | Validate and retain graph-output materializations. |
 | `errors.py` | Preserve execution failure context across nested runs. |
 
@@ -85,3 +85,18 @@ Presentation uses those rows for summaries. Keep batches local to the operation;
 a later request or preparation phase must reload and recheck storage. Availability
 uses the core format-specific manifest/chunk checks and does not replace invocation
 cache content-integrity validation.
+
+
+## Inline execution ownership
+
+Both background and synchronous HTTP runs enter `RunExecutionManager`. `start`
+owns background tasks and their capacity leases. `run_inline` runs in the HTTP
+caller's task and owns durable activity registration and removal; the HTTP route
+retains its capacity lease through response presentation. Inline execution preserves
+exceptions and cancellation instead of converting them into pollable state.
+
+Do not inject `RunGraph` directly into an execution route. That bypasses the durable
+activity used by System revocation and cutover. Module operators execute within
+their parent's scope. Marker removal retries after persistence errors; a failed
+removal retains activity for guarded startup recovery. Unconfirmed sandbox cleanup
+remains an explicit open item in the cleanup plan.

@@ -21,6 +21,9 @@ from grafy_api.v1.routes.executions.models import (
     RunExecutionQueueFullErrorResponse,
 )
 from grafy_api.execution.requests import RunRequest
+from grafy_api.execution.models import GraphExecutionResult
+from grafy_api.v1.routes.executions.models import RunResponse
+from grafy_api.v1.routes.executions.services import RunResultPresenter
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
 from tests.support.system_plugins import (
     TEST_SYSTEM_PLUGINS,
@@ -467,3 +470,41 @@ def test_image_upload_materializes_sample_images(
     assert content_response.status_code == 200
     assert content_response.headers["content-type"] == "image/png"
     assert content_response.content.startswith(b"\x89PNG")
+
+
+@pytest.mark.parametrize("presentation_fails", [False, True])
+def test_inline_capacity_covers_response_presentation_and_is_always_released(
+    builtin_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    presentation_fails: bool,
+) -> None:
+    application = cast(FastAPI, builtin_client.app)
+    limiter = ExecutionAdmissionLimiter(1)
+    original_override = application.dependency_overrides[execution_admission_limiter]
+    application.dependency_overrides[execution_admission_limiter] = lambda: limiter
+    original_present = RunResultPresenter.run_response
+
+    async def present(
+        self: RunResultPresenter,
+        workspace_id: UUID,
+        execution: GraphExecutionResult,
+    ) -> RunResponse:
+        with pytest.raises(RunExecutionCapacityError):
+            limiter.acquire()
+        if presentation_fails:
+            raise RuntimeError("response presentation failed")
+        return await original_present(self, workspace_id, execution)
+
+    monkeypatch.setattr(RunResultPresenter, "run_response", present)
+    try:
+        executions = GrafyApi(builtin_client).workspace(WORKSPACE_ID).executions
+        if presentation_fails:
+            assert executions.run(RunRequest(nodes=[])).status_code == 500
+        else:
+            assert executions.run_ok(RunRequest(nodes=[])).status == "succeeded"
+        lease = limiter.acquire()
+        lease.release()
+    finally:
+        application.dependency_overrides[execution_admission_limiter] = (
+            original_override
+        )

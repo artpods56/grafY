@@ -344,3 +344,96 @@ async def test_failed_task_creation_clears_registered_activity(
     finally:
         runner.release.set()
         await manager.shutdown()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("committed", [False, True])
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_inline_registration_failure_never_starts_the_executor(
+    cutover_database: tuple[Database, InstalledPluginRelease],
+    monkeypatch: pytest.MonkeyPatch,
+    committed: bool,
+    cancelled: bool,
+) -> None:
+    database, _ = cutover_database
+    original = ExecutionHistoryService.register_transient
+
+    async def fail_registration(
+        self: ExecutionHistoryService,
+        workspace_id: UUID,
+        execution_id: UUID,
+        owner_id: UUID,
+    ) -> None:
+        if committed:
+            await original(self, workspace_id, execution_id, owner_id)
+        if cancelled:
+            raise asyncio.CancelledError()
+        raise RuntimeError("registration acknowledgement failed")
+
+    monkeypatch.setattr(
+        ExecutionHistoryService, "register_transient", fail_registration
+    )
+    runner = ControlledRunGraph()
+    manager = RunExecutionManager(
+        runner,
+        execution_history=ExecutionHistoryService(
+            SqlAlchemyUnitOfWork(database.sessions), None
+        ),
+    )
+    error_type = asyncio.CancelledError if cancelled else RuntimeError
+    with pytest.raises(error_type):
+        await manager.run_inline(WORKSPACE_ID, RunRequest(nodes=[]))
+    assert not runner.started.is_set()
+    async with SqlAlchemyUnitOfWork(database.sessions) as transaction:
+        assert await transaction.execution_history.list_transient() == ()
+    await manager.shutdown()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failures", [1, 2])
+@pytest.mark.parametrize("execution_fails", [False, True])
+async def test_inline_removal_retries_retains_activity_and_preserves_execution_errors(
+    cutover_database: tuple[Database, InstalledPluginRelease],
+    monkeypatch: pytest.MonkeyPatch,
+    failures: int,
+    execution_fails: bool,
+) -> None:
+    database, _ = cutover_database
+    original = ExecutionHistoryService.release_transient
+    attempts = 0
+
+    async def fail_removal(
+        self: ExecutionHistoryService, execution_id: UUID, owner_id: UUID
+    ) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts <= failures:
+            raise RuntimeError("transient deletion failed")
+        await original(self, execution_id, owner_id)
+
+    monkeypatch.setattr(ExecutionHistoryService, "release_transient", fail_removal)
+    runner = FailingRunGraph() if execution_fails else ControlledRunGraph()
+    runner.release.set()
+    manager = RunExecutionManager(
+        runner,
+        execution_history=ExecutionHistoryService(
+            SqlAlchemyUnitOfWork(database.sessions), None
+        ),
+    )
+    if execution_fails:
+        with pytest.raises(RuntimeError, match="deliberate execution failure"):
+            await manager.run_inline(WORKSPACE_ID, RunRequest(nodes=[]))
+    elif failures == 2:
+        with pytest.raises(RuntimeError, match="activity marker retained") as failure:
+            await manager.run_inline(WORKSPACE_ID, RunRequest(nodes=[]))
+        assert str(failure.value.__cause__) == "transient deletion failed"
+    else:
+        result = await manager.run_inline(WORKSPACE_ID, RunRequest(nodes=[]))
+        assert result.status == "succeeded"
+    assert attempts == 2
+    async with SqlAlchemyUnitOfWork(database.sessions) as transaction:
+        activity = await transaction.execution_history.list_transient()
+    assert len(activity) == (1 if failures == 2 else 0)
+    if activity:
+        assert activity[0].workspace_id == WORKSPACE_ID
+    await manager.shutdown()

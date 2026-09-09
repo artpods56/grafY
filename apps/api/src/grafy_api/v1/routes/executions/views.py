@@ -30,7 +30,6 @@ from .dependencies import (
     ExecutionHistoryDependency,
     MaterializationDependency,
     RunExecutionManagerDependency,
-    RunGraphDependency,
     RunResultPresenterDependency,
 )
 from grafy_api.v1.routes.executions.models import (
@@ -100,7 +99,7 @@ def _idempotency_conflict_http_exception(
 )
 async def run_graph(
     request: RunRequest,
-    service: RunGraphDependency,
+    manager: RunExecutionManagerDependency,
     admission_limiter: ExecutionAdmissionLimiterDependency,
     presenter: RunResultPresenterDependency,
     access: require_workspace_capability(WorkspaceCapability.EXECUTE_GRAPH),
@@ -108,7 +107,7 @@ async def run_graph(
     try:
         admission_lease = admission_limiter.acquire()
         try:
-            execution = await service.run(access.workspace_id, request)
+            execution = await manager.run_inline(access.workspace_id, request)
             return await presenter.run_response(access.workspace_id, execution)
         finally:
             admission_lease.release()

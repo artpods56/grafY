@@ -165,7 +165,10 @@ markers. Transient activity is registered before preparation and removed after t
 cleanup. Startup only clears stale markers with exclusive ownership and confirmed
 Plugin orphan cleanup; otherwise it retains them and refuses startup. Without the
 owner lease, global orphan cleanup is skipped. Startup recovery has lifespan tests;
-end-to-end execution/revocation proof remains open in the cleanup plan.
+background and synchronous execution races have SQLite and PostgreSQL coverage.
+Synchronous routes use manager-owned activity while retaining HTTP capacity through
+presentation. Unconfirmed sandbox cleanup still needs fail-closed terminal handling
+and remains open in the cleanup plan.
 
 ## Artifact contracts, reads, and infrastructure
 

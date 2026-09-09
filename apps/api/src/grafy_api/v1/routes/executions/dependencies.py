@@ -6,17 +6,9 @@ from grafy_api.app_state import get_resources
 
 from grafy_api.execution.manager import RunExecutionManager
 from grafy_api.execution.admission import ExecutionAdmissionLimiter
-from grafy_api.execution.run_graph import RunGraph
 from grafy_api.execution.history import ExecutionHistoryService
 from grafy_api.execution.materializations import MaterializationService
 from grafy_api.v1.routes.executions.services import RunResultPresenter
-
-
-def run_graph_service(request: Request) -> RunGraph:
-    return get_resources(request.app).workbench.run_graph
-
-
-RunGraphDependency = Annotated[RunGraph, Depends(run_graph_service)]
 
 
 def execution_admission_limiter(request: Request) -> ExecutionAdmissionLimiter:
@@ -74,12 +66,10 @@ __all__ = [
     "ExecutionAdmissionLimiterDependency",
     "MaterializationDependency",
     "RunExecutionManagerDependency",
-    "RunGraphDependency",
     "RunResultPresenterDependency",
     "execution_history_service",
     "execution_admission_limiter",
     "materialization_service",
     "run_execution_manager",
-    "run_graph_service",
     "run_result_presenter",
 ]

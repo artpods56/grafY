@@ -124,15 +124,16 @@ sequenceDiagram
 7. Run execution, persistence, release-maintenance, architecture, and packaging
    checks; retain established baseline failures separately.
 
-The durable-marker implementation closes the reproduced manager gap. The final
-entry-point audit found an additional bypass: synchronous `POST /runs` in
-`v1/routes/executions/views.py` calls `RunGraph.run` directly. It acquires a
-process-local admission lease but never registers durable activity. Checklist
-finding 3 remains open until this path is covered and all entry points are
-rechecked. Manager race tests do not establish safety for this route.
+Both externally reachable top-level execution paths now enter the manager.
+Background work uses `start`; synchronous `POST /runs` uses `run_inline` while
+retaining the HTTP admission lease through presentation. Real route-handler races
+verify synchronous preflight, invocation, cleanup, and cancellation. Module execution
+remains nested within its parent's lifetime.
 
-The next change must preserve the synchronous route's response and exception
-translation, cancellation and sandbox cleanup, and admission lease lifetime through
-response presentation. It must register before preflight, retain activity through
-cleanup, and fail closed on registration or removal errors. It must not create
-saved execution history for transient requests.
+Finding 3 remains open for unconfirmed sandbox cleanup. `DockerPluginRuntime.close_scope`
+can raise after failing to remove a container. Current manager terminal handling
+still removes transient activity or terminalizes saved history after that executor
+error. The next change must distinguish a confirmed stopped execution from a cleanup
+failure, retain the maintenance fence for the latter, and cover both saved and
+transient runs. Normal execution failure and successful cancellation must continue
+to release activity. Startup recovery must remain the authority for orphan cleanup.

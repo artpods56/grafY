@@ -3,9 +3,11 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import event, select, update
 
 from grafy_api.artifact_availability import ArtifactAvailability
+from grafy_api.execution.admission import ExecutionAdmissionLimiter
 from grafy_api.execution.compiler import GraphCompiler
 from grafy_api.execution.coordinator import GraphExecutionCoordinator
 from grafy_api.execution.edge_values import EdgeValueResolver
@@ -19,6 +21,16 @@ from grafy_api.execution.run_graph import RunGraph
 from grafy_api.plugins.runtime.admission import ReleaseExecutionAdmission
 from grafy_api.plugins.runtime.sandbox import PluginSandboxScopeId
 from grafy_api.v1.models import PluginReleasePinModel
+from grafy_api.v1.routes.artifacts.services import ArtifactService
+from grafy_api.v1.routes.executions.services import RunResultPresenter
+# FastAPI constructs the access parameter annotation through a dependency factory.
+from grafy_api.v1.routes.executions.views import run_graph  # pyright: ignore[reportUnknownVariableType]
+from grafy_core.domain.identity import (
+    ActorContext,
+    WorkspaceAccess,
+    WorkspaceMembership,
+    WorkspaceRole,
+)
 from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.domain.execution_history import ActiveGraphExecution
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
@@ -100,12 +112,21 @@ class GatedSandboxCleanup:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("first", ["revocation", "preflight", "invocation", "cleanup"])
+@pytest.mark.parametrize(
+    ("inline", "first"),
+    [
+        (inline, first)
+        for inline in (False, True)
+        for first in ("revocation", "preflight", "invocation", "cleanup")
+    ]
+    + [(True, "cancellation")],
+)
 async def test_transient_run_and_system_revocation_obey_the_durable_fence(
     execution_database: tuple[Database, InstalledPluginRelease],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     first: str,
+    inline: bool,
 ) -> None:
     database, release = execution_database
     async with database.engine.begin() as connection:
@@ -123,9 +144,9 @@ async def test_transient_run_and_system_revocation_obey_the_durable_fence(
     registry = PluginRegistry()
     invoker = GatedPluginInvoker()
     cleanup = GatedSandboxCleanup()
-    if first != "cleanup":
+    if first not in {"cleanup", "cancellation"}:
         cleanup.release.set()
-    if first != "invocation":
+    if first not in {"invocation", "cancellation"}:
         invoker.release.set()
     resolvers = ResolverRegistry([])
     writers = ArtifactWriterRegistry([])
@@ -171,6 +192,18 @@ async def test_transient_run_and_system_revocation_obey_the_durable_fence(
     )
     manager = RunExecutionManager(
         runner, execution_history=ExecutionHistoryService(uow, None)
+    )
+    availability = ArtifactAvailability(uow, storage)
+    artifacts = ArtifactService(uow, storage, availability=availability)
+    presenter = RunResultPresenter(artifacts, availability)
+    limiter = ExecutionAdmissionLimiter(1)
+    actor = ActorContext(user_id=UUID(int=1))
+    access = WorkspaceAccess(
+        actor=actor,
+        workspace_id=WORKSPACE_ID,
+        membership=WorkspaceMembership(
+            workspace_id=WORKSPACE_ID, user_id=actor.user_id, role=WorkspaceRole.OWNER
+        ),
     )
     request = RunRequest(
         nodes=[
@@ -239,6 +272,35 @@ async def test_transient_run_and_system_revocation_obey_the_durable_fence(
         event.listen(
             database.engine.sync_engine, "before_cursor_execute", observe_insert
         )
+
+    async def run_to_completion() -> tuple[str, str | None]:
+        if inline:
+            try:
+                result = await run_graph(
+                    request=request,
+                    manager=manager,
+                    admission_limiter=limiter,
+                    presenter=presenter,
+                    access=access,
+                )
+            except HTTPException as exc:
+                assert exc.status_code == 422
+                return "failed", str(exc.detail)
+            return result.status, None
+        snapshot = await manager.start(WORKSPACE_ID, request)
+        subscription = await manager.subscribe_events(
+            WORKSPACE_ID, snapshot.execution_id
+        )
+        sequence = 0
+        while True:
+            batch = await subscription.wait(after_sequence=sequence)
+            if batch.terminal:
+                break
+            if batch.events:
+                sequence = batch.events[-1].sequence
+        completed = await manager.get(WORKSPACE_ID, snapshot.execution_id)
+        return completed.status, completed.error
+
     tasks: list[asyncio.Task[object]] = []
     try:
         async with asyncio.timeout(10):
@@ -246,15 +308,15 @@ async def test_transient_run_and_system_revocation_obey_the_durable_fence(
                 revocation = asyncio.create_task(revoke())
                 tasks.append(revocation)
                 await drain_checked.wait()
-                admission = asyncio.create_task(manager.start(WORKSPACE_ID, request))
-                tasks.append(admission)
+                execution = asyncio.create_task(run_to_completion())
+                tasks.append(execution)
                 await insert_issued.wait()
-                assert not admission.done()
+                assert not execution.done()
                 commit_revocation.set()
                 await revocation
-                snapshot = await admission
             else:
-                snapshot = await manager.start(WORKSPACE_ID, request)
+                execution = asyncio.create_task(run_to_completion())
+                tasks.append(execution)
                 if first == "preflight":
                     await preflight_done.wait()
                     assert invoker.requests == []
@@ -263,6 +325,9 @@ async def test_transient_run_and_system_revocation_obey_the_durable_fence(
                     assert len(cleanup.scopes) == 1
                 else:
                     await invoker.started.wait()
+                    if first == "cancellation":
+                        execution.cancel()
+                        await cleanup.started.wait()
                 with pytest.raises(SystemPluginRevocationDrainError):
                     await revoke()
                 assert (
@@ -274,27 +339,26 @@ async def test_transient_run_and_system_revocation_obey_the_durable_fence(
                 continue_preflight.set()
                 invoker.release.set()
                 cleanup.release.set()
-            subscription = await manager.subscribe_events(
-                WORKSPACE_ID, snapshot.execution_id
-            )
-            sequence = 0
-            while True:
-                batch = await subscription.wait(after_sequence=sequence)
-                if batch.terminal:
-                    break
-                if batch.events:
-                    sequence = batch.events[-1].sequence
-            result = await manager.get(WORKSPACE_ID, snapshot.execution_id)
+            if first == "cancellation":
+                with pytest.raises(asyncio.CancelledError):
+                    await execution
+                status, error = "cancelled", None
+            else:
+                status, error = await execution
             if first == "revocation":
-                assert result.status == "failed"
-                assert result.error is not None and "revoked" in result.error
+                assert status == "failed"
+                assert error is not None and "revoked" in error
                 assert invoker.requests == []
             else:
-                assert result.status == "succeeded", result.error
+                assert status == (
+                    "cancelled" if first == "cancellation" else "succeeded"
+                ), error
                 assert len(invoker.requests) == 1
                 await revoke()
             async with SqlAlchemyUnitOfWork(database.sessions) as transaction:
                 assert await transaction.execution_history.list_transient() == ()
+            lease = limiter.acquire()
+            lease.release()
             assert (
                 await releases.get_system_revocation(
                     slug=release.release.slug, revision=release.release.revision
@@ -311,6 +375,7 @@ async def test_transient_run_and_system_revocation_obey_the_durable_fence(
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await manager.shutdown()
+        await artifacts.close()
         if first == "revocation":
             event.remove(
                 database.engine.sync_engine, "before_cursor_execute", observe_insert
