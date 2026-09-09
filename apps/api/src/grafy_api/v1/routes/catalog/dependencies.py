@@ -10,7 +10,7 @@ from grafy_api.app_state import get_resources
 
 
 def plugin_registry(request: Request) -> PluginRegistry:
-    return get_resources(request.app).plugin_registry
+    return get_resources(request.app).workbench.plugin_registry
 
 
 PluginRegistryDependency = Annotated[
@@ -20,7 +20,7 @@ PluginRegistryDependency = Annotated[
 
 
 def plugin_release_service(request: Request) -> PluginReleaseService | None:
-    return get_resources(request.app).plugin_releases
+    return get_resources(request.app).workbench.plugin_releases
 
 
 PluginReleaseServiceDependency = Annotated[
@@ -30,7 +30,7 @@ PluginReleaseServiceDependency = Annotated[
 
 
 def graph_module_executor(request: Request) -> GraphModuleExecutorPort:
-    return get_resources(request.app).run_graph
+    return get_resources(request.app).workbench.run_graph
 
 
 GraphModuleExecutorDependency = Annotated[

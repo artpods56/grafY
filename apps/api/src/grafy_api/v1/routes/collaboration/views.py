@@ -199,7 +199,7 @@ async def graph_room(
         )
         active_execution = await get_resources(
             websocket.app
-        ).execution_manager.active_execution_summary(
+        ).workbench.execution_manager.active_execution_summary(
             workspace_id,
             graph_id,
         )

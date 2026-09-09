@@ -93,7 +93,7 @@ def test_application_lifespan_builds_and_releases_workbench_components(
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
         assert hasattr(application.state, "resources")
-        registry = application.state.resources.plugin_registry
+        registry = application.state.resources.workbench.plugin_registry
         assert {plugin.slug for plugin in registry.plugins} == {
             plugin.slug for plugin in BUILTIN_FAMILIES
         }

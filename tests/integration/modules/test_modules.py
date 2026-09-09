@@ -689,7 +689,8 @@ def test_direct_module_mutation_requires_current_workspace_authority(
         json=_text_module_payload(),
     ).json()
     graph_id = UUID(created["id"])
-    service = get_resources(cast(FastAPI, module_client.app)).module_library
+    service = get_resources(cast(FastAPI, module_client.app)).workbench.module_library
+    assert service is not None
 
     with pytest.raises(UserDisabledError):
         asyncio.run(

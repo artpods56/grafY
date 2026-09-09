@@ -13,14 +13,14 @@ from grafy_api.v1.routes.executions.services import RunResultPresenter
 
 
 def run_graph_service(request: Request) -> RunGraph:
-    return get_resources(request.app).run_graph
+    return get_resources(request.app).workbench.run_graph
 
 
 RunGraphDependency = Annotated[RunGraph, Depends(run_graph_service)]
 
 
 def execution_admission_limiter(request: Request) -> ExecutionAdmissionLimiter:
-    return get_resources(request.app).execution_admission
+    return get_resources(request.app).workbench.execution_admission
 
 
 ExecutionAdmissionLimiterDependency = Annotated[
@@ -30,7 +30,7 @@ ExecutionAdmissionLimiterDependency = Annotated[
 
 
 def run_execution_manager(request: Request) -> RunExecutionManager:
-    return get_resources(request.app).execution_manager
+    return get_resources(request.app).workbench.execution_manager
 
 
 RunExecutionManagerDependency = Annotated[
@@ -40,7 +40,7 @@ RunExecutionManagerDependency = Annotated[
 
 
 def execution_history_service(request: Request) -> ExecutionHistoryService:
-    return get_resources(request.app).execution_history
+    return get_resources(request.app).workbench.execution_history
 
 
 ExecutionHistoryDependency = Annotated[
@@ -50,7 +50,7 @@ ExecutionHistoryDependency = Annotated[
 
 
 def materialization_service(request: Request) -> MaterializationService:
-    return get_resources(request.app).materializations
+    return get_resources(request.app).workbench.materializations
 
 
 MaterializationDependency = Annotated[
@@ -60,7 +60,7 @@ MaterializationDependency = Annotated[
 
 
 def run_result_presenter(request: Request) -> RunResultPresenter:
-    return get_resources(request.app).presenter
+    return get_resources(request.app).workbench.presenter
 
 
 RunResultPresenterDependency = Annotated[

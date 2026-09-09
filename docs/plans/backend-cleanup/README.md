@@ -122,7 +122,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 ## 14. Composition and remaining reductions
 
-- [ ] Retain the runtime bundle in AppResources instead of duplicating its fields; preserve lifecycle/shutdown order.
+- [x] Retain the runtime bundle in AppResources instead of duplicating its fields; preserve lifecycle/shutdown order.
 - [x] Remove unused compiled execution target, commit `f4b8eda`.
 - [ ] Remove test-only wait_for_events wrapper; test production subscription behavior.
 - [ ] Inline sole-production-caller storage selection, preserving supported package compatibility.
@@ -612,4 +612,25 @@ flowchart LR
     Transaction --> Result[Complete application result]
     Result --> Models[Workspace transport models]
     Models --> Response[Unchanged HTTP response]
+```
+
+
+### One retained application runtime bundle
+
+- `AppResources.workbench` retains the `WorkbenchComponents` built during startup. Removed fourteen repeated resource fields and their forwarding constructor arguments. Route dependencies, catalog admission, readiness, and direct test consumers access that same bundle without forwarding properties. [R01: Direct Ownership]
+- `AppResources` still owns application-wide cleanup, preserving room shutdown before execution shutdown, followed by optional plugin-runtime shutdown and artifact storage closure. Startup recovery order, auth-task cancellation, state removal, database disposal, and owner-lease release remain unchanged.
+- The standalone composition bundle supports an absent module library; the API module dependency now checks that optional value explicitly. Full API composition continues to provide the concrete module library.
+- Extended real application-lifespan coverage for both enabled and disabled plugin runtimes. Tests verify diagnostics, ordered shutdown, resource-state removal, and reacquisition of the owner lease. Docker readiness/orphan cleanup/shutdown are stubbed at the process boundary; the room, execution, storage, database, and lifespan implementations run normally.
+- Targeted Pyright reports zero errors or warnings for application resources, startup, module dependency, and lifecycle tests. Changed-file Ruff and whitespace checks pass. Extracted API-wheel registration succeeds with identical OpenAPI.
+- Focused composition/startup/module/ops/architecture validation had 56 passes and one existing OpenAPI assertion failure. That assertion expects `PluginSpecResponse.origin` to be absent, but the saved pre-change schema already contains it; exact schema comparison confirms this batch does not change it. The final lifecycle/architecture run passed 21 tests.
+- Evidence: `/tmp/grafy-runtime-bundle-focused.log`, `/tmp/grafy-runtime-bundle-final.log`, `/tmp/grafy-runtime-bundle-types.log`, `/tmp/grafy-runtime-bundle-build.log`, and `/tmp/grafy-runtime-bundle-regression.log`. The unchanged-schema reference is `/tmp/grafy-workspace-results-openapi.json`.
+- Broader API, authentication, collaboration, module, and execution regression passed 613 tests. The two files containing the five previously reproduced native subprocess crashes were explicitly excluded; this is not evidence of live Docker/guest success.
+- Finding 14 remains open for subscription tests, the lower-level storage factory, stored-model readers, registry declarations, and explicit release/installation access. The original storage-factory finding still has one production caller; `configured_file_storage` itself has two and should remain shared.
+
+```mermaid
+flowchart LR
+    Startup[Explicit startup composition] --> Bundle[WorkbenchComponents]
+    Resources[AppResources] --> Bundle
+    Routes[HTTP dependencies and readiness] --> Bundle
+    Resources --> Shutdown[Rooms, executions, optional runtime, storage]
 ```

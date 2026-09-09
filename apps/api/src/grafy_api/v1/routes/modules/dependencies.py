@@ -8,7 +8,10 @@ from grafy_api.app_state import get_resources
 
 
 def module_library_service(request: Request) -> ModuleLibraryService:
-    return get_resources(request.app).module_library
+    service = get_resources(request.app).workbench.module_library
+    if service is None:
+        raise RuntimeError("Module library is not initialized")
+    return service
 
 
 ModuleLibraryDependency = Annotated[

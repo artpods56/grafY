@@ -1,17 +1,21 @@
 """Phase 7 one-API-owner startup fence."""
 
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from asgi_lifespan import LifespanManager
-from pydantic import SecretStr
-
+from grafy_api.app_state import get_resources
+from grafy_api.execution.manager import RunExecutionManager
 from grafy_api.main import create_app
+from grafy_api.plugins.runtime.docker import DockerPluginRuntime
+from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.settings import Settings
 from grafy_api.single_owner import ApiOwnerLease, assert_single_http_worker
+from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_persistence.database import create_database
 from grafy_persistence.orm import metadata
-
+from pydantic import SecretStr
 
 pytestmark = pytest.mark.single_api_owner
 
@@ -44,7 +48,12 @@ def test_api_owner_lease_rejects_second_holder(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_app_startup_acquires_owner_lease(tmp_path: Path) -> None:
+@pytest.mark.parametrize("plugin_runtime_enabled", [False, True])
+async def test_create_app_startup_acquires_owner_lease(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plugin_runtime_enabled: bool,
+) -> None:
     workspace = tmp_path / "workbench"
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'owner.sqlite3'}"
     database = create_database(database_url)
@@ -58,7 +67,34 @@ async def test_create_app_startup_acquires_owner_lease(tmp_path: Path) -> None:
         database_url=SecretStr(database_url),
         command_hmac_key=SecretStr("test-single-owner-hmac-key"),
         require_single_api_owner=True,
+        plugin_runtime_enabled=plugin_runtime_enabled,
     )
+    shutdown_order: list[str] = []
+    original_hub_shutdown = GraphRoomHub.shutdown
+    original_execution_shutdown = RunExecutionManager.shutdown
+    original_artifact_close = ArtifactService.close
+
+    async def close_rooms(hub: GraphRoomHub) -> None:
+        shutdown_order.append("rooms")
+        await original_hub_shutdown(hub)
+
+    async def stop_executions(manager: RunExecutionManager) -> None:
+        shutdown_order.append("executions")
+        await original_execution_shutdown(manager)
+
+    async def close_artifacts(artifacts: ArtifactService) -> None:
+        shutdown_order.append("artifacts")
+        await original_artifact_close(artifacts)
+
+    async def stop_plugin_runtime(runtime: DockerPluginRuntime) -> None:
+        shutdown_order.append("plugins")
+
+    monkeypatch.setattr(GraphRoomHub, "shutdown", close_rooms)
+    monkeypatch.setattr(RunExecutionManager, "shutdown", stop_executions)
+    monkeypatch.setattr(ArtifactService, "close", close_artifacts)
+    monkeypatch.setattr(DockerPluginRuntime, "shutdown", stop_plugin_runtime)
+    monkeypatch.setattr(DockerPluginRuntime, "check_ready", AsyncMock())
+    monkeypatch.setattr(DockerPluginRuntime, "recover_orphans", AsyncMock())
     app = create_app(settings)
     async with LifespanManager(app):
         lock_path = workspace / ".grafy-api-owner.lock"
@@ -66,3 +102,17 @@ async def test_create_app_startup_acquires_owner_lease(tmp_path: Path) -> None:
         contested = ApiOwnerLease(lock_path)
         with pytest.raises(RuntimeError, match="Another Grafy API owner"):
             contested.acquire()
+
+        resources = get_resources(app)
+        capacity = await resources.capacity_diagnostics()
+        assert capacity.execution_admission.active_executions == 0
+        assert (capacity.plugin_sandboxes is not None) is plugin_runtime_enabled
+        assert (capacity.plugin_invocations is not None) is plugin_runtime_enabled
+    expected = ["rooms", "executions", "plugins", "artifacts"]
+    if not plugin_runtime_enabled:
+        expected.remove("plugins")
+    assert shutdown_order == expected
+    with pytest.raises(RuntimeError, match="not initialized"):
+        get_resources(app)
+    contested.acquire()
+    contested.release()

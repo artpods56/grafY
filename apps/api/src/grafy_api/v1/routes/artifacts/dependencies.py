@@ -8,7 +8,7 @@ from .services import ArtifactService
 
 
 def artifact_service(request: Request) -> ArtifactService:
-    return get_resources(request.app).artifacts
+    return get_resources(request.app).workbench.artifacts
 
 
 ArtifactDependency = Annotated[

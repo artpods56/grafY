@@ -49,7 +49,7 @@ async def list_nodes(
             module_listing,
             releases,
             workspace_id=access.workspace_id,
-            release_admission=resources.release_admission,
+            release_admission=resources.workbench.release_admission,
             plugin_release_states=release_states,
         ),
         module_executor,

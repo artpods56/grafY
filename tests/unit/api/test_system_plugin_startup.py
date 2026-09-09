@@ -36,14 +36,14 @@ async def test_startup_registers_builtin_families_without_host_deployment(
     application = create_app(startup_settings)
 
     async with LifespanManager(application):
-        registry = application.state.resources.plugin_registry
+        registry = application.state.resources.workbench.plugin_registry
         expected_slugs = {family.slug for family in BUILTIN_FAMILIES}
 
         assert {plugin.slug for plugin in registry.plugins} == expected_slugs
         assert {("module.input", 1), ("module.output", 1)}.issubset(
             {node.key for node in registry.nodes}
         )
-        admission = application.state.resources.release_admission
+        admission = application.state.resources.workbench.release_admission
         assert admission is None or admission.system_host_bindings == ()
 
 
@@ -63,8 +63,8 @@ async def test_configured_host_deployment_manifest_is_ignored(
     async with LifespanManager(application):
         resources = application.state.resources
         expected_slugs = {family.slug for family in BUILTIN_FAMILIES}
-        assert {plugin.slug for plugin in resources.plugin_registry.plugins} == (
-            expected_slugs
-        )
-        admission = resources.release_admission
+        assert {
+            plugin.slug for plugin in resources.workbench.plugin_registry.plugins
+        } == (expected_slugs)
+        admission = resources.workbench.release_admission
         assert admission is None or admission.system_host_bindings == ()

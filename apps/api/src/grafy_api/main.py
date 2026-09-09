@@ -176,25 +176,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             resources = AppResources(
                 database=database,
-                plugin_registry=components.plugin_registry,
-                uploads=components.uploads,
-                plugin_releases=components.plugin_releases,
-                module_library=module_library,
+                workbench=components,
                 templates=templates,
-                run_graph=components.run_graph,
-                execution_admission=components.execution_admission,
-                execution_manager=components.execution_manager,
-                execution_history=components.execution_history,
-                materializations=components.materializations,
-                presenter=components.presenter,
-                artifacts=components.artifacts,
                 saved_graphs=saved_graphs,
                 collaboration=collaboration,
                 node_secrets=node_secrets,
                 graph_room_hub=graph_room_hub,
-                plugin_invoker=components.plugin_invoker,
-                plugin_runtime=components.plugin_runtime,
-                release_admission=components.release_admission,
             )
             try:
                 await components.execution_history.interrupt_started()

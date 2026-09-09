@@ -8,7 +8,7 @@ from grafy_api.staged_uploads import StagedUploadService
 
 
 def staged_upload_service(request: Request) -> StagedUploadService:
-    return get_resources(request.app).uploads
+    return get_resources(request.app).workbench.uploads
 
 
 StagedUploadDependency = Annotated[

@@ -1129,7 +1129,7 @@ def test_viewer_discovers_active_execution_on_room_ready_and_cannot_cancel(
     # a dependency override cannot intercept its worker call; hold the run open
     # by swapping the method on that shared instance.
     application = cast(FastAPI, api.raw.app)
-    original_run = application.state.resources.run_graph.run
+    original_run = application.state.resources.workbench.run_graph.run
 
     async def blocking_run(*args, **kwargs):
         del args, kwargs
@@ -1138,7 +1138,7 @@ def test_viewer_discovers_active_execution_on_room_ready_and_cannot_cancel(
         except asyncio.CancelledError:
             raise
 
-    application.state.resources.run_graph.run = blocking_run
+    application.state.resources.workbench.run_graph.run = blocking_run
     try:
         started = workspace_api.executions.start_execution_ok(
             RunRequest(
@@ -1170,7 +1170,7 @@ def test_viewer_discovers_active_execution_on_room_ready_and_cannot_cancel(
         cancel = workspace_api.executions.cancel_execution_ok(started.execution_id)
         assert cancel.status in {"cancelling", "cancelled"}
     finally:
-        application.state.resources.run_graph.run = original_run
+        application.state.resources.workbench.run_graph.run = original_run
 
 
 def test_second_saved_execution_conflicts_while_active(room_client: RoomClient) -> None:
@@ -1185,7 +1185,7 @@ def test_second_saved_execution_conflicts_while_active(room_client: RoomClient) 
     # See test_viewer_discovers_active_execution...: the manager holds the
     # lifespan-built RunGraph, so the swap must target the shared instance.
     application = cast(FastAPI, api.raw.app)
-    original_run = application.state.resources.run_graph.run
+    original_run = application.state.resources.workbench.run_graph.run
 
     async def blocking_run(*args, **kwargs):
         del args, kwargs
@@ -1194,7 +1194,7 @@ def test_second_saved_execution_conflicts_while_active(room_client: RoomClient) 
         except asyncio.CancelledError:
             raise
 
-    application.state.resources.run_graph.run = blocking_run
+    application.state.resources.workbench.run_graph.run = blocking_run
     try:
         run_request = RunRequest(
             nodes=[],
@@ -1211,7 +1211,7 @@ def test_second_saved_execution_conflicts_while_active(room_client: RoomClient) 
 
         workspace_api.executions.cancel_execution_ok(first.execution_id)
     finally:
-        application.state.resources.run_graph.run = original_run
+        application.state.resources.workbench.run_graph.run = original_run
 
 
 def test_two_sessions_see_execution_cancel(room_client: RoomClient) -> None:
@@ -1226,7 +1226,7 @@ def test_two_sessions_see_execution_cancel(room_client: RoomClient) -> None:
     # See test_viewer_discovers_active_execution...: the manager holds the
     # lifespan-built RunGraph, so the swap must target the shared instance.
     application = cast(FastAPI, api.raw.app)
-    original_run = application.state.resources.run_graph.run
+    original_run = application.state.resources.workbench.run_graph.run
 
     async def blocking_run(*args, **kwargs):
         del args, kwargs
@@ -1235,7 +1235,7 @@ def test_two_sessions_see_execution_cancel(room_client: RoomClient) -> None:
         except asyncio.CancelledError:
             raise
 
-    application.state.resources.run_graph.run = blocking_run
+    application.state.resources.workbench.run_graph.run = blocking_run
     try:
         with _connect_room(api, population.workspace.id, graph.id) as owner_ws:
             owner_ws.receive_json()
@@ -1273,4 +1273,4 @@ def test_two_sessions_see_execution_cancel(room_client: RoomClient) -> None:
                 assert owner_cleared["status"] == "cancelled"
                 assert editor_cleared["status"] == "cancelled"
     finally:
-        application.state.resources.run_graph.run = original_run
+        application.state.resources.workbench.run_graph.run = original_run
