@@ -229,21 +229,21 @@ class PluginSpecResponse(ApiResponse):
         release: InstalledPluginRelease,
         readiness: PluginReleaseReadiness,
     ) -> Self:
-        publisher = release.published_by_platform_actor
-        if publisher is None and release.published_by_user_id is not None:
-            publisher = str(release.published_by_user_id)
+        publisher = release.release.published_by_platform_actor
+        if publisher is None and release.release.published_by_user_id is not None:
+            publisher = str(release.release.published_by_user_id)
         return cls(
-            slug=release.slug,
-            title=release.catalog.title,
+            slug=release.release.slug,
+            title=release.release.catalog.title,
             origin="plugin",
-            scope=release.scope,
-            installation_scope=release.scope,
+            scope=release.installation.scope,
+            installation_scope=release.installation.scope,
             plugin_release=PluginReleasePinModel(
-                scope=release.scope,
-                slug=release.slug,
-                revision=release.revision,
+                scope=release.installation.scope,
+                slug=release.release.slug,
+                revision=release.release.revision,
             ),
-            revision=release.revision,
+            revision=release.release.revision,
             publisher=publisher,
             runnable=readiness.runnable,
             non_runnable_reason=readiness.reason,
@@ -492,7 +492,7 @@ class NodeSpecResponse(ApiResponse):
             origin="plugin",
             operator_id=contract.operator_id,
             operator_version=contract.operator_version,
-            plugin_slug=release.slug,
+            plugin_slug=release.release.slug,
             title=contract.title,
             description=contract.description,
             config_schema=contract.config_schema,
@@ -513,11 +513,11 @@ class NodeSpecResponse(ApiResponse):
                 )
                 for secret in contract.secret_inputs
             ],
-            plugin_revision=release.revision,
+            plugin_revision=release.release.revision,
             plugin_release=PluginReleasePinModel(
-                scope=release.scope,
-                slug=release.slug,
-                revision=release.revision,
+                scope=release.installation.scope,
+                slug=release.release.slug,
+                revision=release.release.revision,
             ),
             runnable=readiness.runnable,
             non_runnable_reason=readiness.reason,
@@ -563,7 +563,7 @@ class NodeRegistryResponse(ApiResponse):
             + [
                 PluginSpecResponse.from_plugin_release(
                     release,
-                    snapshot.release_readiness[release.slug],
+                    snapshot.release_readiness[release.release.slug],
                 )
                 for release in snapshot.releases
             ],
@@ -598,14 +598,14 @@ class NodeRegistryResponse(ApiResponse):
                     contract,
                     snapshot.node_readiness[
                         (
-                            release.slug,
+                            release.release.slug,
                             contract.operator_id,
                             contract.operator_version,
                         )
                     ],
                 )
                 for release in snapshot.releases
-                for contract in release.catalog.nodes
+                for contract in release.release.catalog.nodes
             ],
             unavailable_modules=[],
         )

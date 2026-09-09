@@ -182,7 +182,7 @@ class PluginReleaseNode[
     ) -> None:
         matched = [
             declared
-            for declared in release.catalog.nodes
+            for declared in release.release.catalog.nodes
             if declared.operator_id == contract.operator_id
             and declared.operator_version == contract.operator_version
         ]
@@ -190,7 +190,7 @@ class PluginReleaseNode[
             raise PluginReleaseNodeError(
                 f"Plugin node contract {contract.operator_id}@"
                 f"{contract.operator_version} does not match the serialized "
-                f"catalog of {release.slug} revision {release.revision}"
+                f"catalog of {release.release.slug} revision {release.release.revision}"
             )
         self._release = release
         self._contract = contract
@@ -203,8 +203,8 @@ class PluginReleaseNode[
                 artifact.key.schema_version,
             ): artifact.bundle
             for artifact in (
-                *release.catalog.artifact_types,
-                *release.catalog.artifact_type_dependencies,
+                *release.release.catalog.artifact_types,
+                *release.release.catalog.artifact_type_dependencies,
             )
         }
         self._artifact_reference_contracts = {
@@ -213,8 +213,8 @@ class PluginReleaseNode[
                 artifact.key.schema_version,
             ): artifact.references
             for artifact in (
-                *release.catalog.artifact_types,
-                *release.catalog.artifact_type_dependencies,
+                *release.release.catalog.artifact_types,
+                *release.release.catalog.artifact_type_dependencies,
             )
             if artifact.references
         }
@@ -222,7 +222,7 @@ class PluginReleaseNode[
         dynamic_attributes = self.__dict__
         dynamic_attributes["operator_id"] = contract.operator_id
         dynamic_attributes["operator_version"] = contract.operator_version
-        dynamic_attributes["plugin_slug"] = release.slug
+        dynamic_attributes["plugin_slug"] = release.release.slug
         dynamic_attributes["title"] = contract.title
         dynamic_attributes["description"] = contract.description
         dynamic_attributes["cache_policy"] = contract.cache_policy
@@ -269,9 +269,7 @@ class PluginReleaseNode[
                     config=config.model_dump(mode="json", by_alias=True),
                     inputs=request_inputs,
                     artifact_bundle_contracts=self._artifact_bundle_contracts,
-                    artifact_reference_contracts=(
-                        self._artifact_reference_contracts
-                    ),
+                    artifact_reference_contracts=(self._artifact_reference_contracts),
                     required_capabilities=self._contract.required_capabilities,
                     workspace_id=context.workspace_id,
                     node_id=context.node_id,
@@ -286,8 +284,8 @@ class PluginReleaseNode[
             raise
         except Exception as exc:
             raise PluginInvocationError(
-                f"Plugin invoker for {self._release.slug} revision "
-                f"{self._release.revision} operator "
+                f"Plugin invoker for {self._release.release.slug} revision "
+                f"{self._release.release.revision} operator "
                 f"{self._contract.operator_id}@"
                 f"{self._contract.operator_version} failed: {exc}"
             ) from exc
@@ -348,8 +346,7 @@ def _validated_outputs(
     unexpected = sorted(set(outputs) - expected_names)
     if unexpected:
         raise PluginReleaseNodeError(
-            f"Plugin invoker returned unexpected outputs: "
-            f"{', '.join(unexpected)}"
+            f"Plugin invoker returned unexpected outputs: {', '.join(unexpected)}"
         )
     values: dict[str, object] = {}
     for port in contract.outputs:
@@ -357,8 +354,7 @@ def _validated_outputs(
         if value is None:
             if port.required:
                 raise PluginReleaseNodeError(
-                    f"Plugin invoker returned no output for required "
-                    f"port {port.name!r}"
+                    f"Plugin invoker returned no output for required port {port.name!r}"
                 )
             continue
         produces = _artifact_type_key_of(port, artifact_type_bindings)
@@ -395,8 +391,7 @@ def _artifact_type_key_of(
     variable = port.artifact_type_variable
     if variable is None or variable not in artifact_type_bindings:
         raise PluginReleaseNodeError(
-            f"Plugin port {port.name!r} kept an unresolved artifact "
-            "type variable"
+            f"Plugin port {port.name!r} kept an unresolved artifact type variable"
         )
     return artifact_type_bindings[variable]
 

@@ -787,7 +787,7 @@ class PluginReleaseService:
             )
             existing = (
                 await unit_of_work.plugin_releases.get_revocation_by_installation_id(
-                    release.installation_id
+                    release.installation.id
                 )
             )
             if existing is not None:
@@ -796,7 +796,7 @@ class PluginReleaseService:
                 raise PluginReleaseRevocationError(
                     "Plugin release revocation already exists with different "
                     f"immutable intent for {namespace.scope.value}:"
-                    f"{namespace.workspace_id}:{slug}@{revision} ({release.id})"
+                    f"{namespace.workspace_id}:{slug}@{revision} ({release.release.id})"
                 )
             revocation = await unit_of_work.plugin_releases.add_revocation(proposed)
             await unit_of_work.commit()
@@ -817,7 +817,7 @@ class PluginReleaseService:
             if release is None:
                 return None
             return await unit_of_work.plugin_releases.get_revocation_by_installation_id(
-                release.installation_id
+                release.installation.id
             )
 
     async def list_runtime_artifacts(self) -> list[PluginRuntimeArtifact]:

@@ -80,10 +80,10 @@ class ReleaseLookup:
     ) -> InstalledPluginRelease | None:
         for release in self.releases:
             if (
-                scope is release.scope
-                and workspace_id == release.workspace_id
-                and slug == release.slug
-                and revision == release.revision
+                scope is release.installation.scope
+                and workspace_id == release.installation.workspace_id
+                and slug == release.release.slug
+                and revision == release.release.revision
             ):
                 return release
         return None
@@ -109,9 +109,9 @@ class ReleaseLookup:
 
     async def list_runtime_artifacts(self) -> list[PluginRuntimeArtifact]:
         return [
-            release.runtime_artifact
+            release.release.runtime_artifact
             for release in self.releases
-            if release.runtime_artifact is not None
+            if release.release.runtime_artifact is not None
         ]
 
 
@@ -388,7 +388,7 @@ async def test_docker_runtime_restores_reuses_hardens_and_cleans_sandbox(
     )
     contract = next(
         node
-        for node in release.catalog.nodes
+        for node in release.release.catalog.nodes
         if node.operator_id == "notes.summary.render"
     )
     node: PluginReleaseNode[
@@ -403,7 +403,7 @@ async def test_docker_runtime_restores_reuses_hardens_and_cleans_sandbox(
     ] = PluginReleaseNode(second_release, contract, invoker)
     summarize_contract = next(
         catalog_node
-        for catalog_node in release.catalog.nodes
+        for catalog_node in release.release.catalog.nodes
         if catalog_node.operator_id == "notes.table.summarize"
     )
     summarize_node: PluginReleaseNode[
@@ -413,7 +413,7 @@ async def test_docker_runtime_restores_reuses_hardens_and_cleans_sandbox(
     ] = PluginReleaseNode(release, summarize_contract, invoker)
     probe_contract = next(
         catalog_node
-        for catalog_node in release.catalog.nodes
+        for catalog_node in release.release.catalog.nodes
         if catalog_node.operator_id == "notes.runtime.probe"
     )
     probe_node: PluginReleaseNode[

@@ -294,7 +294,7 @@ class FakeSystemPublicationWorkflow:
         platform_actor: PlatformPluginActor,
     ) -> SimpleNamespace:
         del verified, platform_actor
-        return SimpleNamespace(slug="external.llm", revision=1)
+        return SimpleNamespace(release=SimpleNamespace(slug="external.llm", revision=1))
 
 
 class RecordingWorkspacePublicationWorkflow:
@@ -318,9 +318,8 @@ class RecordingWorkspacePublicationWorkflow:
             published_by_user_id,
         )
         return SimpleNamespace(
-            slug=expected_slug,
-            revision=1,
-            workspace_id=workspace_id,
+            release=SimpleNamespace(slug=expected_slug, revision=1),
+            installation=SimpleNamespace(workspace_id=workspace_id),
         )
 
 

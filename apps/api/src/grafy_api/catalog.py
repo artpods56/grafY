@@ -128,30 +128,30 @@ class CatalogSnapshot:
         system_releases = [
             release
             for release in plugin_releases
-            if release.scope is PluginReleaseScope.SYSTEM
+            if release.installation.scope is PluginReleaseScope.SYSTEM
         ]
         workspace_releases = [
             release
             for release in plugin_releases
-            if release.scope is PluginReleaseScope.WORKSPACE
+            if release.installation.scope is PluginReleaseScope.WORKSPACE
         ]
         foreign_workspace_releases = [
             release
             for release in workspace_releases
-            if release.workspace_id != workspace_id
+            if release.installation.workspace_id != workspace_id
         ]
         if foreign_workspace_releases:
             rendered = ", ".join(
                 sorted(
-                    f"{release.slug}@{release.revision} owned by {release.workspace_id}"
+                    f"{release.release.slug}@{release.release.revision} owned by {release.installation.workspace_id}"
                     for release in foreign_workspace_releases
                 )
             )
             raise ValueError(
                 f"Workspace Plugin catalog received foreign releases: {rendered}"
             )
-        system_slugs = {release.slug for release in system_releases}
-        workspace_slugs = {release.slug for release in workspace_releases}
+        system_slugs = {release.release.slug for release in system_releases}
+        workspace_slugs = {release.release.slug for release in workspace_releases}
         if len(system_slugs) != len(system_releases):
             raise ValueError("System Plugin catalog contains duplicate current slugs")
         if len(workspace_slugs) != len(workspace_releases):
@@ -194,20 +194,20 @@ class CatalogSnapshot:
         }
         release_node_owners: dict[tuple[str, int], InstalledPluginRelease] = {}
         for release in plugin_releases:
-            for contract in release.catalog.nodes:
+            for contract in release.release.catalog.nodes:
                 key = (contract.operator_id, contract.operator_version)
                 other_release = release_node_owners.get(key)
                 if other_release is not None:
                     raise ValueError(
-                        f"{release.scope.value.title()} Plugin {release.slug!r} "
+                        f"{release.installation.scope.value.title()} Plugin {release.release.slug!r} "
                         f"operator {key[0]}@{key[1]} conflicts with "
-                        f"{other_release.scope.value} Plugin "
-                        f"{other_release.slug!r}"
+                        f"{other_release.installation.scope.value} Plugin "
+                        f"{other_release.release.slug!r}"
                     )
                 if key in reserved_builtin_keys:
                     host_registration = host_nodes[key]
                     raise ValueError(
-                        f"{release.scope.value.title()} Plugin {release.slug!r} "
+                        f"{release.installation.scope.value.title()} Plugin {release.release.slug!r} "
                         f"operator {key[0]}@{key[1]} conflicts with builtin "
                         f"{host_registration.plugin_slug!r}"
                     )
@@ -229,32 +229,38 @@ class CatalogSnapshot:
             module_node_keys.add(key)
 
         node_readiness = {
-            (release.slug, contract.operator_id, contract.operator_version): (
+            (release.release.slug, contract.operator_id, contract.operator_version): (
                 plugin_release_readiness(
                     release,
                     release_admission,
-                    state=release_states.get(release.id),
+                    state=release_states.get(release.release.id),
                     node_contract=contract,
                 )
             )
             for release in plugin_releases
-            for contract in release.catalog.nodes
+            for contract in release.release.catalog.nodes
         }
         release_readiness: dict[str, PluginReleaseReadiness] = {}
         for release in plugin_releases:
             node_states = [
                 node_readiness[
-                    (release.slug, contract.operator_id, contract.operator_version)
+                    (
+                        release.release.slug,
+                        contract.operator_id,
+                        contract.operator_version,
+                    )
                 ]
-                for contract in release.catalog.nodes
+                for contract in release.release.catalog.nodes
             ]
             if any(readiness.runnable for readiness in node_states):
-                release_readiness[release.slug] = PluginReleaseReadiness(runnable=True)
+                release_readiness[release.release.slug] = PluginReleaseReadiness(
+                    runnable=True
+                )
             else:
-                release_readiness[release.slug] = plugin_release_readiness(
+                release_readiness[release.release.slug] = plugin_release_readiness(
                     release,
                     release_admission,
-                    state=release_states.get(release.id),
+                    state=release_states.get(release.release.id),
                 )
         declared_host_artifacts = {
             (spec.key.id, spec.key.schema_version): spec
@@ -268,26 +274,27 @@ class CatalogSnapshot:
         }
         seen_artifact_owners: dict[tuple[str, int], InstalledPluginRelease] = {}
         for release in plugin_releases:
-            for release_contract in release.catalog.artifact_types:
+            for release_contract in release.release.catalog.artifact_types:
                 key = (release_contract.key.id, release_contract.key.schema_version)
                 other_release = seen_artifact_owners.get(key)
                 if other_release is not None:
                     raise ValueError(
-                        f"{release.scope.value.title()} Plugin {release.slug!r} artifact "
+                        f"{release.installation.scope.value.title()} Plugin {release.release.slug!r} artifact "
                         f"type {key[0]}@{key[1]} conflicts with "
-                        f"{other_release.scope.value} Plugin {other_release.slug!r}"
+                        f"{other_release.installation.scope.value} Plugin {other_release.release.slug!r}"
                     )
                 installed = declared_host_artifacts.get(key)
                 if installed is not None:
                     overlays_matching_host = (
-                        release.scope is PluginReleaseScope.SYSTEM
-                        and registry.artifact_type_owner(installed.key) == release.slug
+                        release.installation.scope is PluginReleaseScope.SYSTEM
+                        and registry.artifact_type_owner(installed.key)
+                        == release.release.slug
                         and release_contract
                         == PluginArtifactTypeContract.from_spec(installed)
                     )
                     if not overlays_matching_host:
                         raise ValueError(
-                            f"{release.scope.value.title()} Plugin {release.slug!r} "
+                            f"{release.installation.scope.value.title()} Plugin {release.release.slug!r} "
                             f"artifact type {key[0]}@{key[1]} conflicts with the "
                             "host catalog contract"
                         )
@@ -300,18 +307,18 @@ class CatalogSnapshot:
             for conversion in CANONICAL_ARTIFACT_CONVERSIONS
         }
         for release in plugin_releases:
-            for contract in release.catalog.artifact_conversions:
+            for contract in release.release.catalog.artifact_conversions:
                 key = (contract.key.id, contract.key.version)
                 canonical_contract = canonical_conversion_contracts.get(key)
                 if canonical_contract is None:
                     raise ValueError(
-                        f"{release.scope.value.title()} Plugin {release.slug!r} "
+                        f"{release.installation.scope.value.title()} Plugin {release.release.slug!r} "
                         f"declares non-canonical artifact conversion "
                         f"{key[0]}@{key[1]}"
                     )
                 if contract != canonical_contract:
                     raise ValueError(
-                        f"{release.scope.value.title()} Plugin {release.slug!r} "
+                        f"{release.installation.scope.value.title()} Plugin {release.release.slug!r} "
                         f"artifact conversion {key[0]}@{key[1]} conflicts with "
                         "the deployment-owned canonical contract"
                     )
@@ -321,15 +328,15 @@ class CatalogSnapshot:
         ] = dict(expanded_host_artifact_contracts)
         for release in plugin_releases:
             for contract in (
-                *release.catalog.artifact_types,
-                *release.catalog.artifact_type_dependencies,
+                *release.release.catalog.artifact_types,
+                *release.release.catalog.artifact_type_dependencies,
             ):
                 key = (contract.key.id, contract.key.schema_version)
                 installed = declared_host_artifacts.get(key)
                 if installed is not None:
                     if contract != PluginArtifactTypeContract.from_spec(installed):
                         raise ValueError(
-                            f"{release.scope.value.title()} Plugin {release.slug!r} "
+                            f"{release.installation.scope.value.title()} Plugin {release.release.slug!r} "
                             f"artifact type {key[0]}@{key[1]} conflicts with the "
                             "host catalog contract"
                         )

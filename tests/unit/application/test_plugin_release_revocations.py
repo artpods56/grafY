@@ -147,9 +147,7 @@ async def test_revocation_service_enforces_authority_scope_and_idempotency(
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         for release in (first, current, system_current):
             await unit_of_work.plugin_releases.add(release.release)
-            await unit_of_work.plugin_releases.add_installation(
-                release.installation
-            )
+            await unit_of_work.plugin_releases.add_installation(release.installation)
         await unit_of_work.plugin_releases.add_selection(
             PluginReleaseSelection.from_release(
                 current,
@@ -166,26 +164,32 @@ async def test_revocation_service_enforces_authority_scope_and_idempotency(
 
     workspace_revocation = await service.revoke(
         workspace_id=WORKSPACE_ID,
-        slug=first.slug,
-        revision=first.revision,
+        slug=first.release.slug,
+        revision=first.release.revision,
         reason=PluginReleaseRevocationReason.SECURITY,
         revoked_by_user_id=TEST_USER_ID,
     )
-    assert workspace_revocation.installation_id == first.installation_id
+    assert workspace_revocation.installation_id == first.installation.id
     assert workspace_revocation.revoked_by_user_id == TEST_USER_ID
-    assert await service.get_revocation(
-        workspace_id=WORKSPACE_ID,
-        slug=first.slug,
-        revision=first.revision,
-    ) == workspace_revocation
+    assert (
+        await service.get_revocation(
+            workspace_id=WORKSPACE_ID,
+            slug=first.release.slug,
+            revision=first.release.revision,
+        )
+        == workspace_revocation
+    )
     assert await service.list_current(WORKSPACE_ID) == [current]
-    assert await service.revoke(
-        workspace_id=WORKSPACE_ID,
-        slug=first.slug,
-        revision=first.revision,
-        reason=PluginReleaseRevocationReason.SECURITY,
-        revoked_by_user_id=TEST_USER_ID,
-    ) == workspace_revocation
+    assert (
+        await service.revoke(
+            workspace_id=WORKSPACE_ID,
+            slug=first.release.slug,
+            revision=first.release.revision,
+            reason=PluginReleaseRevocationReason.SECURITY,
+            revoked_by_user_id=TEST_USER_ID,
+        )
+        == workspace_revocation
+    )
 
     with pytest.raises(
         PluginReleaseRevocationError,
@@ -193,8 +197,8 @@ async def test_revocation_service_enforces_authority_scope_and_idempotency(
     ):
         await service.revoke(
             workspace_id=WORKSPACE_ID,
-            slug=first.slug,
-            revision=first.revision,
+            slug=first.release.slug,
+            revision=first.release.revision,
             reason=PluginReleaseRevocationReason.POLICY,
             revoked_by_user_id=TEST_USER_ID,
         )
@@ -202,31 +206,37 @@ async def test_revocation_service_enforces_authority_scope_and_idempotency(
     with pytest.raises(NotFoundError, match="Workspace Plugin release not found"):
         await service.revoke(
             workspace_id=WORKSPACE_ID,
-            slug=system_current.slug,
-            revision=system_current.revision,
+            slug=system_current.release.slug,
+            revision=system_current.release.revision,
             reason=PluginReleaseRevocationReason.SECURITY,
             revoked_by_user_id=TEST_USER_ID,
         )
 
     platform_actor = PlatformPluginActor("ci:revoker")
     system_revocation = await service.revoke_system(
-        slug=system_current.slug,
-        revision=system_current.revision,
+        slug=system_current.release.slug,
+        revision=system_current.release.revision,
         reason=PluginReleaseRevocationReason.INTEGRITY,
         platform_actor=platform_actor,
     )
     assert system_revocation.revoked_by_user_id is None
     assert system_revocation.revoked_by_platform_actor == platform_actor.reference
-    assert await service.get_system_revocation(
-        slug=system_current.slug,
-        revision=system_current.revision,
-    ) == system_revocation
+    assert (
+        await service.get_system_revocation(
+            slug=system_current.release.slug,
+            revision=system_current.release.revision,
+        )
+        == system_revocation
+    )
     assert await service.list_current_system() == [system_current]
     retained_system = await service.get_system_by_revision(
-        system_current.slug,
-        system_current.revision,
+        system_current.release.slug,
+        system_current.release.revision,
     )
     assert retained_system is not None
-    assert retained_system.runtime_artifact == system_current.runtime_artifact
+    assert (
+        retained_system.release.runtime_artifact
+        == system_current.release.runtime_artifact
+    )
 
     await database.dispose()

@@ -38,7 +38,7 @@ class ResolvedPluginRelease:
             MappingProxyType(
                 {
                     (contract.operator_id, contract.operator_version): contract
-                    for contract in self.release.catalog.nodes
+                    for contract in self.release.release.catalog.nodes
                 }
             ),
         )
@@ -48,8 +48,8 @@ class ResolvedPluginRelease:
         if contract is None:
             release = self.release
             raise GraphExecutionError(
-                f"Node {node.id!r} pins {release.scope.value.title()} Plugin "
-                f"release {release.slug!r} revision {release.revision}, which does "
+                f"Node {node.id!r} pins {release.installation.scope.value.title()} Plugin "
+                f"release {release.release.slug!r} revision {release.release.revision}, which does "
                 f"not declare operator {node.operator_id}@{node.operator_version}"
             )
         return contract

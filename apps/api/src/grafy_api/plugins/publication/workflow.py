@@ -54,8 +54,7 @@ def require_network_contract(catalog: PluginCatalogManifest) -> None:
 
     for node in catalog.nodes:
         if (
-            PluginRuntimeCapability.NETWORK_EGRESS
-            in set(node.required_capabilities)
+            PluginRuntimeCapability.NETWORK_EGRESS in set(node.required_capabilities)
             and node.http_egress is None
         ):
             raise PluginPublishingError(
@@ -137,18 +136,14 @@ def _diff_http_egress(
     previous_fields = set(previous.configured_inputs)
     proposed_fields = set(proposed.configured_inputs)
     for field_name in sorted(proposed_fields - previous_fields):
-        changes.append(
-            f"node {key} now declares configured URL field {field_name!r}"
-        )
+        changes.append(f"node {key} now declares configured URL field {field_name!r}")
     for field_name in sorted(previous_fields - proposed_fields):
         changes.append(
             f"node {key} no longer declares configured URL field {field_name!r}"
         )
     if previous.dynamic_destinations != proposed.dynamic_destinations:
         direction = "now" if proposed.dynamic_destinations else "no longer"
-        changes.append(
-            f"node {key} {direction} requests dynamic destinations"
-        )
+        changes.append(f"node {key} {direction} requests dynamic destinations")
 
 
 def _describe_http_egress(
@@ -197,9 +192,7 @@ class PluginPublicationWorkflow:
         try:
             require_workspace_catalog_authority(verified.catalog)
             require_canonical_conversion_references(verified.catalog)
-            self._system_inventory.require_workspace_catalog_authority(
-                verified.catalog
-            )
+            self._system_inventory.require_workspace_catalog_authority(verified.catalog)
             require_network_contract(verified.catalog)
         except (PluginReleaseError, SystemPluginInventoryError) as exc:
             raise PluginPublishingError(str(exc)) from exc
@@ -343,23 +336,26 @@ class SystemPluginPublicationWorkflow:
                 f"System Plugin release {slug!r} revision {revision} does not exist"
             ) from exc
         try:
-            entry = self._system_inventory.entry_for(candidate.release.slug)
+            entry = self._system_inventory.entry_for(candidate.release.release.slug)
             self._system_inventory.require_catalog_authority(
-                candidate.release.catalog
+                candidate.release.release.catalog
             )
         except SystemPluginInventoryError as exc:
             raise PluginPublishingError(str(exc)) from exc
-        if candidate.release.execution_policy is not entry.execution_policy:
+        if (
+            candidate.release.installation.execution_policy
+            is not entry.execution_policy
+        ):
             raise PluginPublishingError(
                 f"System Plugin {entry.slug!r} execution policy does not match "
                 "the checked-in inventory"
             )
-        if candidate.release.capabilities.capabilities != entry.capabilities:
+        if candidate.release.release.capabilities.capabilities != entry.capabilities:
             raise PluginPublishingError(
                 f"System Plugin {entry.slug!r} capabilities do not match the "
                 "checked-in inventory"
             )
-        if candidate.release.loader_target != entry.loader_target:
+        if candidate.release.release.loader_target != entry.loader_target:
             raise PluginPublishingError(
                 f"System Plugin {entry.slug!r} loader target does not match the "
                 "checked-in inventory"
@@ -374,7 +370,7 @@ class SystemPluginPublicationWorkflow:
                 f"promoted ({decision.reason}): {decision.detail}"
             )
         if (
-            candidate.release.execution_policy
+            candidate.release.installation.execution_policy
             is PluginExecutionPolicy.HOST_ELIGIBLE
             and decision is not ReleaseExecutionRoute.IN_PROCESS
         ):

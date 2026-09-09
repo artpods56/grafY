@@ -126,24 +126,24 @@ def _system_release() -> InstalledPluginRelease:
 
 
 def _baseline(release: InstalledPluginRelease) -> SystemBaselineManifest:
-    assert release.runtime_artifact is not None
-    assert release.runtime_image_digest is not None
+    assert release.release.runtime_artifact is not None
+    assert release.release.runtime_image_digest is not None
     return SystemBaselineManifest(
         releases=(
             SystemBaselineRelease(
-                release_id=release.id,
-                slug=release.slug,
-                revision=release.revision,
+                release_id=release.release.id,
+                slug=release.release.slug,
+                revision=release.release.revision,
                 selection_generation=1,
-                source_digest=release.source_digest,
-                lock_digest=release.lock_digest,
-                descriptor_digest=release.descriptor.digest,
-                contract_digest=release.contract_digest,
-                capability_digest=release.capability_digest,
-                protocol_digest=release.protocol_digest,
-                profile_digest=release.profile_digest,
-                runtime_image_digest=release.runtime_image_digest,
-                runtime_archive_digest=release.runtime_artifact.archive_digest,
+                source_digest=release.release.source_digest,
+                lock_digest=release.release.lock_digest,
+                descriptor_digest=release.release.descriptor.digest,
+                contract_digest=release.release.contract_digest,
+                capability_digest=release.release.capability_digest,
+                protocol_digest=release.release.protocol_digest,
+                profile_digest=release.release.profile_digest,
+                runtime_image_digest=release.release.runtime_image_digest,
+                runtime_archive_digest=release.release.runtime_artifact.archive_digest,
                 operators=(
                     SystemBaselineOperator(
                         operator_id="text.concat",
@@ -597,15 +597,15 @@ async def test_system_revocation_requires_durable_execution_drain(
 
     with pytest.raises(PluginReleaseRevocationError, match="drained execution queue"):
         await releases.revoke_system(
-            slug=release.slug,
-            revision=release.revision,
+            slug=release.release.slug,
+            revision=release.release.revision,
             reason=PluginReleaseRevocationReason.SECURITY,
             platform_actor=actor,
         )
     assert (
         await releases.get_system_revocation(
-            slug=release.slug,
-            revision=release.revision,
+            slug=release.release.slug,
+            revision=release.release.revision,
         )
         is None
     )
@@ -615,13 +615,13 @@ async def test_system_revocation_requires_durable_execution_drain(
             update(schema.graph_executions).values(status="cancelled", finished_at=NOW)
         )
     revoked = await releases.revoke_system(
-        slug=release.slug,
-        revision=release.revision,
+        slug=release.release.slug,
+        revision=release.release.revision,
         reason=PluginReleaseRevocationReason.SECURITY,
         platform_actor=actor,
     )
 
-    assert revoked.installation_id == release.installation_id
+    assert revoked.installation_id == release.installation.id
     assert revoked.reason is PluginReleaseRevocationReason.SECURITY
     assert revoked.revoked_by_platform_actor == actor.reference
 
@@ -1025,8 +1025,8 @@ async def test_system_revocation_fence_blocks_queue_insert_until_commit(
     )
     pending = asyncio.create_task(
         service.revoke_system(
-            slug=release.slug,
-            revision=release.revision,
+            slug=release.release.slug,
+            revision=release.release.revision,
             reason=PluginReleaseRevocationReason.SECURITY,
             platform_actor=PlatformPluginActor("cli:security-response"),
         )
@@ -1051,7 +1051,7 @@ async def test_system_revocation_fence_blocks_queue_insert_until_commit(
             await connection.rollback()
         resume.set()
         revoked = await pending
-        assert revoked.installation_id == release.installation_id
+        assert revoked.installation_id == release.installation.id
         async with database.engine.begin() as connection:
             await connection.execute(
                 schema.graph_executions.insert().values(
@@ -1067,8 +1067,8 @@ async def test_system_revocation_fence_blocks_queue_insert_until_commit(
             )
         assert (
             await service.get_system_revocation(
-                slug=release.slug,
-                revision=release.revision,
+                slug=release.release.slug,
+                revision=release.release.revision,
             )
             == revoked
         )
@@ -1107,8 +1107,8 @@ async def test_system_revocation_waits_for_queue_insert_before_checking_drain(
                 PluginReleaseRevocationError, match="drained execution queue"
             ):
                 await service.revoke_system(
-                    slug=release.slug,
-                    revision=release.revision,
+                    slug=release.release.slug,
+                    revision=release.release.revision,
                     reason=PluginReleaseRevocationReason.SECURITY,
                     platform_actor=PlatformPluginActor("cli:security-response"),
                 )
@@ -1116,7 +1116,7 @@ async def test_system_revocation_waits_for_queue_insert_before_checking_drain(
             await commit
     assert (
         await service.get_system_revocation(
-            slug=release.slug, revision=release.revision
+            slug=release.release.slug, revision=release.release.revision
         )
         is None
     )
@@ -1138,14 +1138,14 @@ async def test_system_revocation_fails_closed_without_supported_database_fence(
         PluginReleaseRevocationError, match="database dialect 'oracle' is unsupported"
     ):
         await service.revoke_system(
-            slug=release.slug,
-            revision=release.revision,
+            slug=release.release.slug,
+            revision=release.release.revision,
             reason=PluginReleaseRevocationReason.SECURITY,
             platform_actor=PlatformPluginActor("cli:security-response"),
         )
     assert (
         await service.get_system_revocation(
-            slug=release.slug, revision=release.revision
+            slug=release.release.slug, revision=release.release.revision
         )
         is None
     )

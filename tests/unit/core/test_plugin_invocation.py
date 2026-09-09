@@ -173,7 +173,7 @@ def _proxy(
     recording_invoker = invoker or RecordingInvoker()
     node: ProxyNode = PluginReleaseNode(
         resolved_release,
-        resolved_release.catalog.nodes[0],
+        resolved_release.release.catalog.nodes[0],
         recording_invoker,
     )
     return node, recording_invoker
@@ -299,7 +299,7 @@ async def test_proxy_validates_host_minted_outputs_against_the_contract() -> Non
     )
     node_extra: ProxyNode = PluginReleaseNode(
         unexpected_release,
-        unexpected_release.catalog.nodes[0],
+        unexpected_release.release.catalog.nodes[0],
         extra_invoker,
     )
     with pytest.raises(

@@ -144,9 +144,7 @@ async def inventory_database(
         for entry in inventory.plugins:
             release = releases[entry.slug]
             await unit_of_work.plugin_releases.add(release.release)
-            await unit_of_work.plugin_releases.add_installation(
-                release.installation
-            )
+            await unit_of_work.plugin_releases.add_installation(release.installation)
             await unit_of_work.plugin_releases.add_selection(
                 PluginReleaseSelection.from_release(
                     release,
@@ -212,9 +210,7 @@ def test_inventory_enforces_explicit_system_identity_authority() -> None:
                 title="OCR page",
             ),
         ),
-        nodes=(
-            _node_contract("ocr.tesseract.pages", "OCR pages"),
-        ),
+        nodes=(_node_contract("ocr.tesseract.pages", "OCR pages"),),
     )
 
     inventory.require_catalog_authority(ocr_catalog)
@@ -228,16 +224,12 @@ def test_inventory_enforces_explicit_system_identity_authority() -> None:
     entries[ocr_position] = entries[ocr_position].model_copy(
         update={"operator_prefixes": ("ocr", "sql.query")}
     )
-    delegating_inventory = inventory.model_copy(
-        update={"plugins": tuple(entries)}
-    )
+    delegating_inventory = inventory.model_copy(update={"plugins": tuple(entries)})
 
     delegated = PluginCatalogManifest(
         slug="external.sql",
         title="SQL",
-        nodes=(
-            _node_contract("sql.query", "Query"),
-        ),
+        nodes=(_node_contract("sql.query", "Query"),),
     )
     with pytest.raises(SystemPluginInventoryError, match="delegated.*external.ocr"):
         delegating_inventory.require_catalog_authority(delegated)
@@ -245,9 +237,7 @@ def test_inventory_enforces_explicit_system_identity_authority() -> None:
     unauthorized = PluginCatalogManifest(
         slug="external.sql",
         title="SQL",
-        nodes=(
-            _node_contract("sqlalchemy.query", "SQL query"),
-        ),
+        nodes=(_node_contract("sqlalchemy.query", "SQL query"),),
     )
     with pytest.raises(SystemPluginInventoryError, match="allowlisted prefixes"):
         inventory.require_catalog_authority(unauthorized)
@@ -345,8 +335,8 @@ async def test_generator_resolves_exact_releases_and_host_bindings_idempotently(
     entries_by_slug = {entry.slug: entry for entry in inventory.plugins}
     for generated in first.releases:
         selected = releases[generated.slug]
-        assert generated.release_id == selected.id
-        assert generated.descriptor_digest == selected.descriptor.digest
+        assert generated.release_id == selected.release.id
+        assert generated.descriptor_digest == selected.release.descriptor.digest
         assert generated.operators[0].operator_id == (
             f"{entries_by_slug[generated.slug].operator_prefixes[0]}.node"
         )

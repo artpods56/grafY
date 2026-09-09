@@ -68,7 +68,11 @@ class SelectedSystemReleaseLookup:
         selections: tuple[PluginReleaseSelection, ...],
     ) -> None:
         self._releases = {
-            (release.scope, release.slug, release.revision): release
+            (
+                release.installation.scope,
+                release.release.slug,
+                release.release.revision,
+            ): release
             for release in releases
         }
         self._selections = {
@@ -91,7 +95,7 @@ class SelectedSystemReleaseLookup:
         expected_workspace_id = (
             workspace_id if scope is PluginReleaseScope.WORKSPACE else None
         )
-        if release.workspace_id != expected_workspace_id:
+        if release.installation.workspace_id != expected_workspace_id:
             return None
         return release
 
@@ -113,7 +117,9 @@ class SelectedSystemReleaseLookup:
         return [
             PluginCatalogRelease(
                 release=release,
-                selection=self._selections[(release.scope, release.slug)],
+                selection=self._selections[
+                    (release.installation.scope, release.release.slug)
+                ],
                 revocation=None,
             )
             for release in releases
@@ -123,7 +129,7 @@ class SelectedSystemReleaseLookup:
         return [
             release
             for release in self._releases.values()
-            if release.scope is PluginReleaseScope.SYSTEM
+            if release.installation.scope is PluginReleaseScope.SYSTEM
         ]
 
     async def list_current(
@@ -133,8 +139,8 @@ class SelectedSystemReleaseLookup:
         return [
             release
             for release in self._releases.values()
-            if release.scope is PluginReleaseScope.WORKSPACE
-            and release.workspace_id == workspace_id
+            if release.installation.scope is PluginReleaseScope.WORKSPACE
+            and release.installation.workspace_id == workspace_id
         ]
 
     async def get_revocation(

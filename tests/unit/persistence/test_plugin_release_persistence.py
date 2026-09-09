@@ -184,7 +184,7 @@ async def test_one_release_can_be_installed_system_and_workspace(
         assert resolved_system is not None
         assert resolved_workspace is not None
         assert resolved_system.release.id == resolved_workspace.release.id == release.id
-        assert resolved_system.installation_id != resolved_workspace.installation_id
+        assert resolved_system.installation.id != resolved_workspace.installation.id
         assert await unit_of_work.plugin_releases.list_current(SYSTEM_NAMESPACE) == [
             resolved_system
         ]
@@ -275,13 +275,13 @@ async def test_revocation_denies_one_installation_without_revoking_shared_releas
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         assert (
             await unit_of_work.plugin_releases.get_revocation_by_installation_id(
-                workspace.installation_id
+                workspace.installation.id
             )
             == revocation
         )
         assert (
             await unit_of_work.plugin_releases.get_revocation_by_installation_id(
-                system.installation_id
+                system.installation.id
             )
             is None
         )
@@ -302,7 +302,7 @@ async def test_installation_table_enforces_scope_policy(
         with pytest.raises(IntegrityError):
             await session.execute(
                 schema.plugin_installations.update()
-                .where(schema.plugin_installations.c.id == workspace.installation_id)
+                .where(schema.plugin_installations.c.id == workspace.installation.id)
                 .values(execution_policy=PluginExecutionPolicy.HOST_ELIGIBLE)
             )
             await session.commit()
@@ -408,15 +408,22 @@ async def test_catalog_reads_selected_scoped_admission_state_in_one_query(
         )
 
     assert actual == sorted(
-        expected, key=lambda entry: (entry.release.scope.value, entry.release.slug)
+        expected,
+        key=lambda entry: (
+            entry.release.installation.scope.value,
+            entry.release.release.slug,
+        ),
     )
     assert len(statements) == 1
     assert statements[0].lstrip().upper().startswith("SELECT")
-    assert all(entry.release.workspace_id in (None, WORKSPACE_ID) for entry in actual)
+    assert all(
+        entry.release.installation.workspace_id in (None, WORKSPACE_ID)
+        for entry in actual
+    )
     assert all(
         entry.revocation is None
         for entry in actual
-        if entry.release.scope is PluginReleaseScope.WORKSPACE
+        if entry.release.installation.scope is PluginReleaseScope.WORKSPACE
     )
 
 

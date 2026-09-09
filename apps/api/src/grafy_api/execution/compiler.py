@@ -229,15 +229,15 @@ class GraphCompiler:
         for snapshot in release_snapshots.values():
             release = snapshot.release
             for contract in (
-                *release.catalog.artifact_types,
-                *release.catalog.artifact_type_dependencies,
+                *release.release.catalog.artifact_types,
+                *release.release.catalog.artifact_type_dependencies,
             ):
                 key = ArtifactTypeKey(contract.key.id, contract.key.schema_version)
                 existing = artifact_contracts.get(key)
                 if existing is not None and existing != contract:
                     raise GraphExecutionError(
-                        f"Exact {release.scope.value.title()} Plugin release "
-                        f"{release.slug!r} revision {release.revision} artifact "
+                        f"Exact {release.installation.scope.value.title()} Plugin release "
+                        f"{release.release.slug!r} revision {release.release.revision} artifact "
                         f"contract {key.id}@{key.schema_version} conflicts with "
                         "another available exact artifact contract"
                     )
@@ -535,19 +535,19 @@ class GraphCompiler:
             release = resolved.release
             selection = await self._plugin_release_lookup.get_selection(
                 workspace_id,
-                release.slug,
-                scope=release.scope,
+                release.release.slug,
+                scope=release.installation.scope,
             )
-            if release.scope is PluginReleaseScope.WORKSPACE:
+            if release.installation.scope is PluginReleaseScope.WORKSPACE:
                 revocation = await self._plugin_release_lookup.get_revocation(
                     workspace_id=workspace_id,
-                    slug=release.slug,
-                    revision=release.revision,
+                    slug=release.release.slug,
+                    revision=release.release.revision,
                 )
             else:
                 revocation = await self._plugin_release_lookup.get_system_revocation(
-                    slug=release.slug,
-                    revision=release.revision,
+                    slug=release.release.slug,
+                    revision=release.release.revision,
                 )
             snapshot = _ReleaseExecutionSnapshot(
                 release=release,
@@ -566,14 +566,14 @@ class GraphCompiler:
         if isinstance(decision, ReleaseExecutionRejection):
             raise GraphExecutionError(
                 f"Node {request.id!r} pins Plugin release "
-                f"{release.slug!r} revision {release.revision}, but that "
+                f"{release.release.slug!r} revision {release.release.revision}, but that "
                 f"node is not runnable ({decision.reason}): "
                 f"{decision.detail}"
             )
         if decision is not ReleaseExecutionRoute.ISOLATED:
             raise GraphExecutionError(
                 f"Node {request.id!r} pins Plugin release "
-                f"{release.slug!r} revision {release.revision}, but published "
+                f"{release.release.slug!r} revision {release.release.revision}, but published "
                 "Plugins execute only in an isolated worker"
             )
         if self._plugin_invoker is None:
@@ -581,12 +581,12 @@ class GraphCompiler:
                 f"Node {request.id!r} selected isolated Plugin execution, "
                 "but its invoker is not configured for this workbench"
             )
-        artifact = release.runtime_artifact
-        image_digest = release.runtime_image_digest
+        artifact = release.release.runtime_artifact
+        image_digest = release.release.runtime_image_digest
         if artifact is None or image_digest is None:
             raise GraphExecutionError(
                 f"Node {request.id!r} pins Plugin release "
-                f"{release.slug!r} revision {release.revision}, but that "
+                f"{release.release.slug!r} revision {release.release.revision}, but that "
                 "release has no immutable image digest"
             )
         proxy: PluginReleaseNode[Any, Any, Any] = PluginReleaseNode(
@@ -604,9 +604,9 @@ class GraphCompiler:
             proxy.release_identity,
             PluginImplementationIdentity(
                 plugin_release_pin=SavedGraphPluginReleasePin(
-                    scope=release.scope,
-                    slug=release.slug,
-                    revision=release.revision,
+                    scope=release.installation.scope,
+                    slug=release.release.slug,
+                    revision=release.release.revision,
                 ),
                 manifest_digest=artifact.manifest_digest,
                 image_digest=image_digest,

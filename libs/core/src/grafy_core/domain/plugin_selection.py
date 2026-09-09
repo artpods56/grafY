@@ -74,11 +74,11 @@ class PluginReleaseSelection:
         actor_reference: str | None = None,
     ) -> "PluginReleaseSelection":
         return cls(
-            scope=release.scope,
-            workspace_id=release.workspace_id,
-            slug=release.slug,
-            selected_release_id=release.id,
-            selected_revision=release.revision,
+            scope=release.installation.scope,
+            workspace_id=release.installation.workspace_id,
+            slug=release.release.slug,
+            selected_release_id=release.release.id,
+            selected_revision=release.release.revision,
             updated_by_actor=actor_reference,
         )
 
@@ -101,16 +101,17 @@ class PluginReleaseSelection:
         when: datetime | None = None,
         actor_reference: str | None = None,
     ) -> None:
-        if release.namespace != self.namespace or release.slug != self.slug:
+        if (
+            release.installation.namespace != self.namespace
+            or release.release.slug != self.slug
+        ):
             raise PluginReleaseSelectionError(
                 "Selected Plugin release must belong to the same scoped family"
             )
-        next_lifecycle = (
-            PluginFamilyLifecycle.PUBLISHED if publish else self.lifecycle
-        )
+        next_lifecycle = PluginFamilyLifecycle.PUBLISHED if publish else self.lifecycle
         if (
-            self.selected_release_id == release.id
-            and self.selected_revision == release.revision
+            self.selected_release_id == release.release.id
+            and self.selected_revision == release.release.revision
             and self.lifecycle is next_lifecycle
         ):
             return
@@ -125,8 +126,8 @@ class PluginReleaseSelection:
                 raise PluginReleaseSelectionError(
                     "Plugin selection actor must contain 1 to 255 characters"
                 )
-        self.selected_release_id = release.id
-        self.selected_revision = release.revision
+        self.selected_release_id = release.release.id
+        self.selected_revision = release.release.revision
         self.lifecycle = next_lifecycle
         self.generation += 1
         self.updated_at = changed_at

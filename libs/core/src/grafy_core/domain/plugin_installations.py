@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.domain.plugin_identity import (
     PlatformPluginActor,
     PluginExecutionPolicy,
@@ -12,12 +11,8 @@ from grafy_core.domain.plugin_identity import (
     PluginReleaseScope,
 )
 from grafy_core.domain.plugin_releases import (
-    PluginCapabilityManifest,
-    PluginCatalogManifest,
     PluginRelease,
-    PluginReleaseDescriptor,
     PluginReleaseError,
-    PluginRuntimeArtifact,
 )
 
 
@@ -131,114 +126,10 @@ class InstalledPluginRelease:
             )
 
     @property
-    def id(self) -> UUID:
-        return self.release.id
-
-    @property
-    def installation_id(self) -> UUID:
-        return self.installation.id
-
-    @property
-    def scope(self) -> PluginReleaseScope:
-        return self.installation.scope
-
-    @property
-    def workspace_id(self) -> UUID | None:
-        return self.installation.workspace_id
-
-    @property
-    def namespace(self) -> PluginReleaseNamespace:
-        return self.installation.namespace
-
-    @property
-    def slug(self) -> str:
-        return self.release.slug
-
-    @property
-    def revision(self) -> int:
-        return self.release.revision
-
-    @property
-    def catalog(self) -> PluginCatalogManifest:
-        return self.release.catalog
-
-    @property
-    def capabilities(self) -> PluginCapabilityManifest:
-        return self.release.capabilities
-
-    @property
-    def capability_digest(self) -> str:
-        return self.release.capability_digest
-
-    @property
-    def execution_policy(self) -> PluginExecutionPolicy:
-        return self.installation.execution_policy
-
-    @property
-    def runtime_artifact(self) -> PluginRuntimeArtifact | None:
-        return self.release.runtime_artifact
-
-    @property
-    def runtime_image_digest(self) -> str | None:
-        return self.release.runtime_image_digest
-
-    @property
-    def runtime_profile(self) -> str:
-        return self.release.runtime_profile
-
-    @property
-    def loader_target(self) -> str:
-        return self.release.loader_target
-
-    @property
-    def published_by_user_id(self) -> UUID | None:
-        return self.release.published_by_user_id
-
-    @property
-    def published_by_platform_actor(self) -> str | None:
-        return self.release.published_by_platform_actor
-
-    @property
-    def published_at(self) -> datetime:
-        return self.release.published_at
-
-    @property
-    def source_digest(self) -> str:
-        return self.release.source_digest
-
-    @property
-    def contract_digest(self) -> str:
-        return self.release.contract_digest
-
-    @property
-    def protocol_digest(self) -> str:
-        return self.release.protocol_digest
-
-    @property
-    def profile_digest(self) -> str:
-        return self.release.profile_digest
-
-    @property
-    def lock_digest(self) -> str:
-        return self.release.lock_digest
-
-    @property
     def descriptor_digest(self) -> str:
         if self.release.descriptor_digest is None:
             raise PluginReleaseError("Plugin release has no descriptor digest")
         return self.release.descriptor_digest
-
-    @property
-    def descriptor(self) -> PluginReleaseDescriptor:
-        return self.release.descriptor
-
-    @property
-    def executable(self) -> bool:
-        return self.release.executable
-
-    @property
-    def required_capabilities(self) -> tuple[PluginRuntimeCapability, ...]:
-        return self.release.capabilities.capabilities
 
 
 __all__ = ["InstalledPluginRelease", "PluginInstallation"]

@@ -188,31 +188,31 @@ async def test_catalog_shares_system_selection_and_isolates_workspace_releases(
 
         first_system_selection = await service.get_selection(
             FIRST_WORKSPACE_ID,
-            system_release.slug,
+            system_release.release.slug,
             scope=PluginReleaseScope.SYSTEM,
         )
         second_system_selection = await service.get_selection(
             SECOND_WORKSPACE_ID,
-            system_release.slug,
+            system_release.release.slug,
             scope=PluginReleaseScope.SYSTEM,
         )
         assert first_system_selection == second_system_selection
         assert first_system_selection is not None
-        assert first_system_selection.selected_release_id == system_release.id
+        assert first_system_selection.selected_release_id == system_release.release.id
 
         assert (
             await service.get_by_revision(
                 FIRST_WORKSPACE_ID,
-                second_release.slug,
-                second_release.revision,
+                second_release.release.slug,
+                second_release.release.revision,
             )
             is None
         )
         assert (
             await service.get_by_revision(
                 SECOND_WORKSPACE_ID,
-                first_release.slug,
-                first_release.revision,
+                first_release.release.slug,
+                first_release.release.revision,
             )
             is None
         )
@@ -501,7 +501,7 @@ async def test_historical_workspace_revision_identity_still_blocks_system_public
             published_by_user_id=PUBLISHER_USER_ID,
             loader_target="grafy_plugin:PLUGIN",
         )
-        assert first.revision == 1
+        assert first.release.revision == 1
 
         with pytest.raises(
             PluginReleaseError,
@@ -582,8 +582,8 @@ async def test_non_colliding_cross_scope_publications_succeed(
             loader_target="grafy_plugin:PLUGIN",
         )
 
-        assert system_release.revision == 1
-        assert workspace_release.revision == 1
+        assert system_release.release.revision == 1
+        assert workspace_release.release.revision == 1
         assert await _release_count(database, "system-b") == 1
         assert await _release_count(database, "workspace-a") == 1
         assert _source_object_count(objects) == 2
@@ -628,14 +628,14 @@ async def test_reviewed_publications_serialize_before_reading_release_head(
         storage.resume.set()
         await service.publish(
             workspace_id=FIRST_WORKSPACE_ID,
-            catalog=template.catalog,
-            capabilities=template.capabilities,
+            catalog=template.release.catalog,
+            capabilities=template.release.capabilities,
             source_archive=b"base",
-            lock_digest=template.lock_digest,
-            runtime_profile=template.runtime_profile,
+            lock_digest=template.release.lock_digest,
+            runtime_profile=template.release.runtime_profile,
             runtime_artifact=None,
             published_by_user_id=PUBLISHER_USER_ID,
-            loader_target=template.loader_target,
+            loader_target=template.release.loader_target,
             expected_base_revision=0,
         )
         storage.started.clear()
@@ -644,14 +644,14 @@ async def test_reviewed_publications_serialize_before_reading_release_head(
     first = asyncio.create_task(
         service.publish(
             workspace_id=FIRST_WORKSPACE_ID,
-            catalog=template.catalog,
-            capabilities=template.capabilities,
+            catalog=template.release.catalog,
+            capabilities=template.release.capabilities,
             source_archive=b"first contender",
-            lock_digest=template.lock_digest,
-            runtime_profile=template.runtime_profile,
+            lock_digest=template.release.lock_digest,
+            runtime_profile=template.release.runtime_profile,
             runtime_artifact=None,
             published_by_user_id=PUBLISHER_USER_ID,
-            loader_target=template.loader_target,
+            loader_target=template.release.loader_target,
             expected_base_revision=base_revision,
         )
     )
@@ -678,14 +678,14 @@ async def test_reviewed_publications_serialize_before_reading_release_head(
         second = asyncio.create_task(
             service.publish(
                 workspace_id=FIRST_WORKSPACE_ID,
-                catalog=template.catalog,
-                capabilities=template.capabilities,
+                catalog=template.release.catalog,
+                capabilities=template.release.capabilities,
                 source_archive=b"second contender",
-                lock_digest=template.lock_digest,
-                runtime_profile=template.runtime_profile,
+                lock_digest=template.release.lock_digest,
+                runtime_profile=template.release.runtime_profile,
                 runtime_artifact=None,
                 published_by_user_id=PUBLISHER_USER_ID,
-                loader_target=template.loader_target,
+                loader_target=template.release.loader_target,
                 expected_base_revision=base_revision,
             )
         )
@@ -695,12 +695,14 @@ async def test_reviewed_publications_serialize_before_reading_release_head(
         with pytest.raises(PluginReleaseHeadConflictError) as raised:
             await second
         assert raised.value.workspace_id == FIRST_WORKSPACE_ID
-        assert raised.value.slug == template.slug
+        assert raised.value.slug == template.release.slug
         assert raised.value.expected_revision == base_revision
         assert raised.value.actual_revision == base_revision + 1
-        assert accepted.revision == base_revision + 1
+        assert accepted.release.revision == base_revision + 1
         assert await service.list_current(FIRST_WORKSPACE_ID) == [accepted]
-        assert await _release_count(database, template.slug) == base_revision + 1
+        assert (
+            await _release_count(database, template.release.slug) == base_revision + 1
+        )
         assert len(storage.saved_paths) == 1
     finally:
         storage.resume.set()

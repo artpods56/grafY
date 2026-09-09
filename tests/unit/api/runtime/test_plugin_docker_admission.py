@@ -69,9 +69,9 @@ class _ReleaseLookup:
         release = self._release
         if (
             workspace_id == WORKSPACE_ID
-            and scope is release.scope
-            and slug == release.slug
-            and revision == release.revision
+            and scope is release.installation.scope
+            and slug == release.release.slug
+            and revision == release.release.revision
         ):
             return release
         return None
@@ -103,7 +103,7 @@ class _ReleaseLookup:
         return None
 
     async def list_runtime_artifacts(self) -> list[PluginRuntimeArtifact]:
-        artifact = self._release.runtime_artifact
+        artifact = self._release.release.runtime_artifact
         return [] if artifact is None else [artifact]
 
 
@@ -163,9 +163,7 @@ def _unsupported_release() -> InstalledPluginRelease:
                 output_schema={"type": "object"},
                 inputs=(),
                 outputs=(),
-                required_capabilities=(
-                    PluginRuntimeCapability.NETWORK_EGRESS,
-                ),
+                required_capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,),
             ),
         ),
     )
@@ -231,7 +229,7 @@ async def test_docker_runtime_rechecks_release_admission_before_starting_guest(
         if revoked
         else None
     )
-    contract = release.catalog.nodes[0]
+    contract = release.release.catalog.nodes[0]
     request = PluginInvocationRequest(
         release=PluginReleaseIdentity.from_release(release),
         contract=contract,
@@ -250,14 +248,14 @@ async def test_docker_runtime_rechecks_release_admission_before_starting_guest(
         workspace_id=WORKSPACE_ID,
         node_id=request.node_id,
         release=PluginInvocationRelease(
-            scope=release.scope,
-            workspace_id=release.workspace_id,
-            slug=release.slug,
-            revision=release.revision,
-            source_digest=release.source_digest,
-            contract_digest=release.contract_digest,
-            protocol_digest=release.protocol_digest,
-            descriptor_digest=release.descriptor.digest,
+            scope=release.installation.scope,
+            workspace_id=release.installation.workspace_id,
+            slug=release.release.slug,
+            revision=release.release.revision,
+            source_digest=release.release.source_digest,
+            contract_digest=release.release.contract_digest,
+            protocol_digest=release.release.protocol_digest,
+            descriptor_digest=release.release.descriptor.digest,
         ),
         operator_id=contract.operator_id,
         operator_version=contract.operator_version,

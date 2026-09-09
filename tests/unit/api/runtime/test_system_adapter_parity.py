@@ -321,7 +321,7 @@ def _release() -> InstalledPluginRelease:
 
 def _secret_release() -> InstalledPluginRelease:
     base = _release()
-    contract = base.catalog.nodes[0].model_copy(
+    contract = base.release.catalog.nodes[0].model_copy(
         update={
             "secret_inputs": (
                 PluginSecretInputContract(
@@ -333,36 +333,36 @@ def _secret_release() -> InstalledPluginRelease:
             "required_capabilities": (PluginRuntimeCapability.NODE_SECRETS,),
         }
     )
-    catalog = base.catalog.model_copy(update={"nodes": (contract,)})
+    catalog = base.release.catalog.model_copy(update={"nodes": (contract,)})
     capabilities = PluginCapabilityManifest(
         capabilities=(PluginRuntimeCapability.NODE_SECRETS,)
     )
     release = PluginRelease(
-        slug=base.slug,
-        revision=base.revision,
+        slug=base.release.slug,
+        revision=base.release.revision,
         catalog=catalog,
         contract_digest=plugin_contract_digest(catalog),
         capabilities=capabilities,
         capability_digest=capabilities.digest,
-        protocol_digest=base.protocol_digest,
-        profile_digest=base.profile_digest,
+        protocol_digest=base.release.protocol_digest,
+        profile_digest=base.release.profile_digest,
         source_object_key=base.release.source_object_key,
-        source_digest=base.source_digest,
-        lock_digest=base.lock_digest,
-        runtime_profile=base.runtime_profile,
-        loader_target=base.loader_target,
-        runtime_image_digest=base.runtime_image_digest,
-        runtime_artifact=base.runtime_artifact,
-        published_by_platform_actor=base.published_by_platform_actor,
+        source_digest=base.release.source_digest,
+        lock_digest=base.release.lock_digest,
+        runtime_profile=base.release.runtime_profile,
+        loader_target=base.release.loader_target,
+        runtime_image_digest=base.release.runtime_image_digest,
+        runtime_artifact=base.release.runtime_artifact,
+        published_by_platform_actor=base.release.published_by_platform_actor,
     )
     return InstalledPluginRelease(
         release=release,
         installation=PluginInstallation.from_release(
             release,
-            namespace=base.namespace,
-            execution_policy=base.execution_policy,
+            namespace=base.installation.namespace,
+            execution_policy=base.installation.execution_policy,
             installed_by_user_id=None,
-            installed_by_platform_actor=base.published_by_platform_actor,
+            installed_by_platform_actor=base.release.published_by_platform_actor,
         ),
     )
 
@@ -420,7 +420,7 @@ async def test_same_exact_system_release_has_output_progress_cache_and_provenanc
     _calls.clear()
     release = _release()
     identity = PluginReleaseIdentity.from_release(release)
-    contract = release.catalog.nodes[0]
+    contract = release.release.catalog.nodes[0]
 
     host_uow = InMemoryUnitOfWork()
     host_input = await _seed_input(host_uow)
@@ -535,7 +535,7 @@ async def test_same_exact_system_release_has_failure_and_cancellation_parity(
     _block_release.clear()
     release = _release()
     identity = PluginReleaseIdentity.from_release(release)
-    contract = release.catalog.nodes[0]
+    contract = release.release.catalog.nodes[0]
 
     host_uow = InMemoryUnitOfWork()
     host_input = await _seed_input(host_uow)
@@ -678,7 +678,7 @@ async def test_same_exact_system_release_has_graph_result_failure_code_parity(
     _calls.clear()
     release = _release()
     identity = PluginReleaseIdentity.from_release(release)
-    contract = release.catalog.nodes[0]
+    contract = release.release.catalog.nodes[0]
 
     host_uow = InMemoryUnitOfWork()
     host_input = await _seed_input(host_uow)
@@ -796,7 +796,7 @@ async def test_oci_invoker_failures_preserve_explicit_codes_and_default_to_inter
     tmp_path: Path,
 ) -> None:
     release = _release()
-    contract = release.catalog.nodes[0]
+    contract = release.release.catalog.nodes[0]
     identity = PluginReleaseIdentity.from_release(release)
 
     cases = [
@@ -856,7 +856,7 @@ async def test_isolated_exact_cache_keys_include_opaque_secret_revision(
     tmp_path: Path,
 ) -> None:
     release = _secret_release()
-    contract = release.catalog.nodes[0]
+    contract = release.release.catalog.nodes[0]
     unit_of_work = InMemoryUnitOfWork()
     input_ref = await _seed_input(unit_of_work)
     invoker = _ReturningInvoker(input_ref)

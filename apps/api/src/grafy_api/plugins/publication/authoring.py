@@ -205,7 +205,7 @@ class PluginAuthoringService:
             (
                 release
                 for release in await self._releases.list_current(workspace_id)
-                if release.slug == slug
+                if release.release.slug == slug
             ),
             None,
         )
@@ -222,7 +222,7 @@ class PluginAuthoringService:
                     stream.close()
             except Exception as exc:
                 raise PluginAuthoringError(
-                    f"Could not load Plugin {slug!r} release {latest.revision} "
+                    f"Could not load Plugin {slug!r} release {latest.release.revision} "
                     "for review"
                 ) from exc
         changes, unified_diff = _source_diff(base_entries, current_entries)
@@ -231,25 +231,29 @@ class PluginAuthoringService:
             workspace_id=workspace_id,
             slug=slug,
             source_digest=source_digest,
-            base_revision=None if latest is None else latest.revision,
+            base_revision=None if latest is None else latest.release.revision,
             changes=changes,
             unified_diff=unified_diff,
-            lock_changed=(latest is None or latest.lock_digest != verified.lock_digest),
+            lock_changed=(
+                latest is None or latest.release.lock_digest != verified.lock_digest
+            ),
             node_contract_changed=(
-                latest is None or latest.catalog.nodes != verified.catalog.nodes
+                latest is None or latest.release.catalog.nodes != verified.catalog.nodes
             ),
             artifact_contract_changed=(
                 latest is None
-                or latest.catalog.artifact_types != verified.catalog.artifact_types
+                or latest.release.catalog.artifact_types
+                != verified.catalog.artifact_types
             ),
             capabilities_changed=(
-                latest is None or latest.capabilities != verified.capabilities
+                latest is None or latest.release.capabilities != verified.capabilities
             ),
             runtime_profile_changed=(
-                latest is None or latest.runtime_profile != verified.runtime_profile
+                latest is None
+                or latest.release.runtime_profile != verified.runtime_profile
             ),
             network_authority_changes=render_plugin_capability_diff(
-                None if latest is None else latest.catalog,
+                None if latest is None else latest.release.catalog,
                 verified.catalog,
             ),
         )

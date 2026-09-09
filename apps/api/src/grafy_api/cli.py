@@ -495,8 +495,8 @@ async def _run(args: argparse.Namespace) -> None:
                     platform_actor=platform_actor,
                 )
                 print(
-                    f"Published global Plugin {release.slug} release "
-                    f"{release.revision}; promote it explicitly to activate it"
+                    f"Published global Plugin {release.release.slug} release "
+                    f"{release.release.revision}; promote it explicitly to activate it"
                 )
                 return
             slug, revision = args.release
@@ -540,8 +540,8 @@ async def _run(args: argparse.Namespace) -> None:
                 published_by_user_id=principal.actor.user_id,
             )
             print(
-                f"Published Plugin {release.slug} release {release.revision} "
-                f"for Workspace {release.workspace_id}"
+                f"Published Plugin {release.release.slug} release {release.release.revision} "
+                f"for Workspace {release.installation.workspace_id}"
             )
             return
         credential = _load_credential_digest(settings.resolved_database_url)
@@ -608,8 +608,8 @@ async def _run(args: argparse.Namespace) -> None:
                 session_id=session_id,
             )
             print(
-                f"Published reviewed Plugin {release.slug} release "
-                f"{release.revision} for Workspace {release.workspace_id}"
+                f"Published reviewed Plugin {release.release.slug} release "
+                f"{release.release.revision} for Workspace {release.installation.workspace_id}"
             )
             return
         if args.command == "release-reservation":

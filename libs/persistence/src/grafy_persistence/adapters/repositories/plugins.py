@@ -471,9 +471,9 @@ class SqlPluginReleaseRepository(PluginReleaseRepositoryPort):
             )
         release = InstalledPluginRelease(release=row[0], installation=row[1])
         if (
-            release.namespace != selection.namespace
-            or release.slug != selection.slug
-            or release.revision != selection.selected_revision
+            release.installation.namespace != selection.namespace
+            or release.release.slug != selection.slug
+            or release.release.revision != selection.selected_revision
         ):
             raise PluginReleaseSelectionError(
                 "Selected Plugin release identity does not match selection family "
@@ -505,9 +505,9 @@ class SqlPluginReleaseRepository(PluginReleaseRepositoryPort):
             )
         release = InstalledPluginRelease(release=row[0], installation=row[1])
         if (
-            release.namespace != revocation.namespace
-            or release.slug != revocation.slug
-            or release.revision != revocation.revision
+            release.installation.namespace != revocation.namespace
+            or release.release.slug != revocation.slug
+            or release.release.revision != revocation.revision
         ):
             raise PluginReleaseRevocationError(
                 "Revoked Plugin release identity does not match exact release "

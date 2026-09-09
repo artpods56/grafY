@@ -310,9 +310,7 @@ class SystemPluginInventory(_InventoryValue):
             prefix for entry in self.plugins for prefix in entry.operator_prefixes
         )
         artifact_type_prefixes = tuple(
-            prefix
-            for entry in self.plugins
-            for prefix in entry.artifact_type_prefixes
+            prefix for entry in self.plugins for prefix in entry.artifact_type_prefixes
         )
         self._require_workspace_identities(
             catalog,
@@ -434,14 +432,18 @@ class SystemBaselineManifestGenerator:
                 baseline_releases: list[SystemBaselineRelease] = []
                 for slug in sorted(inventory_by_slug):
                     entry = inventory_by_slug[slug]
-                    raw_release, installation, selected_revision, generation, _lifecycle = (
-                        releases_by_slug[slug]
-                    )
+                    (
+                        raw_release,
+                        installation,
+                        selected_revision,
+                        generation,
+                        _lifecycle,
+                    ) = releases_by_slug[slug]
                     release = InstalledPluginRelease(
                         release=raw_release,
                         installation=installation,
                     )
-                    inventory.require_catalog_authority(release.catalog)
+                    inventory.require_catalog_authority(release.release.catalog)
                     await self._verify_release(
                         session,
                         entry,
@@ -467,26 +469,29 @@ class SystemBaselineManifestGenerator:
                                 "not match the static inventory"
                             )
 
-                    runtime_artifact = release.runtime_artifact
-                    if runtime_artifact is None or release.runtime_image_digest is None:
+                    runtime_artifact = release.release.runtime_artifact
+                    if (
+                        runtime_artifact is None
+                        or release.release.runtime_image_digest is None
+                    ):
                         raise SystemPluginInventoryError(
                             f"Selected System release {slug!r} has no retained OCI "
                             "artifact"
                         )
                     baseline_releases.append(
                         SystemBaselineRelease(
-                            release_id=release.id,
-                            slug=release.slug,
-                            revision=release.revision,
+                            release_id=release.release.id,
+                            slug=release.release.slug,
+                            revision=release.release.revision,
                             selection_generation=generation,
-                            source_digest=release.source_digest,
-                            lock_digest=release.lock_digest,
-                            descriptor_digest=release.descriptor.digest,
-                            contract_digest=release.contract_digest,
-                            capability_digest=release.capability_digest,
-                            protocol_digest=release.protocol_digest,
-                            profile_digest=release.profile_digest,
-                            runtime_image_digest=release.runtime_image_digest,
+                            source_digest=release.release.source_digest,
+                            lock_digest=release.release.lock_digest,
+                            descriptor_digest=release.release.descriptor.digest,
+                            contract_digest=release.release.contract_digest,
+                            capability_digest=release.release.capability_digest,
+                            protocol_digest=release.release.protocol_digest,
+                            profile_digest=release.release.profile_digest,
+                            runtime_image_digest=release.release.runtime_image_digest,
                             runtime_archive_digest=runtime_artifact.archive_digest,
                             operators=tuple(
                                 SystemBaselineOperator(
@@ -494,7 +499,7 @@ class SystemBaselineManifestGenerator:
                                     operator_version=node.operator_version,
                                 )
                                 for node in sorted(
-                                    release.catalog.nodes,
+                                    release.release.catalog.nodes,
                                     key=lambda node: (
                                         node.operator_id,
                                         node.operator_version,
@@ -507,7 +512,7 @@ class SystemBaselineManifestGenerator:
                                     schema_version=artifact.key.schema_version,
                                 )
                                 for artifact in sorted(
-                                    release.catalog.artifact_types,
+                                    release.release.catalog.artifact_types,
                                     key=lambda artifact: (
                                         artifact.key.id,
                                         artifact.key.schema_version,
@@ -554,55 +559,61 @@ class SystemBaselineManifestGenerator:
         selected_revision: int,
     ) -> None:
         if (
-            release.scope is not PluginReleaseScope.SYSTEM
-            or release.workspace_id is not None
-            or release.slug != entry.slug
-            or release.revision != selected_revision
+            release.installation.scope is not PluginReleaseScope.SYSTEM
+            or release.installation.workspace_id is not None
+            or release.release.slug != entry.slug
+            or release.release.revision != selected_revision
         ):
             raise SystemPluginInventoryError(
                 f"Selected System release {entry.slug!r} has inconsistent identity"
             )
-        if release.catalog.slug != release.slug:
+        if release.release.catalog.slug != release.release.slug:
             raise SystemPluginInventoryError(
                 f"Selected System release {entry.slug!r} catalog slug does not match"
             )
-        if plugin_contract_digest(release.catalog) != release.contract_digest:
+        if (
+            plugin_contract_digest(release.release.catalog)
+            != release.release.contract_digest
+        ):
             raise SystemPluginInventoryError(
                 f"Selected System release {entry.slug!r} contract digest does not "
                 "match its catalog"
             )
-        if release.descriptor_digest != release.descriptor.digest:
+        if release.descriptor_digest != release.release.descriptor.digest:
             raise SystemPluginInventoryError(
                 f"Selected System release {entry.slug!r} descriptor digest does not "
                 "match"
             )
-        if release.execution_policy is not entry.execution_policy:
+        if release.installation.execution_policy is not entry.execution_policy:
             raise SystemPluginInventoryError(
                 f"Selected System release {entry.slug!r} execution policy does not "
                 "match the static inventory"
             )
-        if release.capabilities.capabilities != entry.capabilities:
+        if release.release.capabilities.capabilities != entry.capabilities:
             raise SystemPluginInventoryError(
                 f"Selected System release {entry.slug!r} capabilities do not match "
                 "the static inventory"
             )
-        if release.loader_target != entry.loader_target:
+        if release.release.loader_target != entry.loader_target:
             raise SystemPluginInventoryError(
                 f"Selected System release {entry.slug!r} loader target does not "
                 "match the static inventory"
             )
-        if release.runtime_artifact is None:
+        if release.release.runtime_artifact is None:
             raise SystemPluginInventoryError(
                 f"Selected System release {entry.slug!r} has no retained OCI artifact"
             )
-        if release.runtime_image_digest != release.runtime_artifact.manifest_digest:
+        if (
+            release.release.runtime_image_digest
+            != release.release.runtime_artifact.manifest_digest
+        ):
             raise SystemPluginInventoryError(
                 f"Selected System release {entry.slug!r} OCI digest does not match"
             )
         revoked = await session.scalar(
             select(schema.plugin_release_revocations.c.installation_id).where(
                 schema.plugin_release_revocations.c.installation_id
-                == release.installation_id
+                == release.installation.id
             )
         )
         if revoked is not None:

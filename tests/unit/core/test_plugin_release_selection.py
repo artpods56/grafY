@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -9,6 +10,7 @@ from grafy_core.domain.plugin_releases import (
     PluginExecutionPolicy,
     PluginNodeContract,
     PluginRelease,
+    PluginReleaseError,
     PluginReleaseScope,
     plugin_contract_digest,
     plugin_profile_digest,
@@ -96,13 +98,13 @@ def test_selection_moves_exact_pointer_without_mutating_release_facts() -> None:
     selection.deprecate()
     selection.select(second, when=changed_at)
 
-    assert selection.selected_release_id == second.id
+    assert selection.selected_release_id == second.release.id
     assert selection.selected_revision == 2
     assert selection.lifecycle is PluginFamilyLifecycle.DEPRECATED
     assert selection.generation == 3
     assert selection.updated_at == changed_at
-    assert first.revision == 1
-    assert second.revision == 2
+    assert first.release.revision == 1
+    assert second.release.revision == 2
 
 
 def test_workspace_publication_can_reselect_and_restore_family_visibility() -> None:
@@ -133,3 +135,25 @@ def test_withdrawn_selection_cannot_transition_to_deprecated() -> None:
 
     with pytest.raises(PluginReleaseSelectionError, match="cannot be deprecated"):
         selection.deprecate()
+
+
+@pytest.mark.parametrize("mismatch", ["release_id", "slug", "revision"])
+def test_installed_release_rejects_mismatched_installation(mismatch: str) -> None:
+    installed = _release(1)
+    installation = replace(installed.installation)
+    if mismatch == "release_id":
+        installation.release_id = UUID(int=123)
+    elif mismatch == "slug":
+        installation.slug = "other"
+    else:
+        installation.release_revision = 2
+    with pytest.raises(PluginReleaseError, match="does not match"):
+        InstalledPluginRelease(installed.release, installation)
+
+
+def test_installed_release_requires_descriptor_digest() -> None:
+    installed = _release(1)
+    assert installed.descriptor_digest == installed.release.descriptor.digest
+    installed.release.descriptor_digest = None
+    with pytest.raises(PluginReleaseError, match="no descriptor digest"):
+        _ = installed.descriptor_digest

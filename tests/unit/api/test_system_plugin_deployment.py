@@ -247,9 +247,7 @@ async def deployment_database(
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'deployment.sqlite3'}"
     await create_schema(database_url)
     database = create_database(database_url)
-    inventory = load_system_plugin_inventory(
-        CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH
-    )
+    inventory = load_system_plugin_inventory(CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH)
     yield database, inventory
     await database.dispose()
 
@@ -260,9 +258,7 @@ async def _persist_release(
 ) -> None:
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         await unit_of_work.plugin_releases.add(release.release)
-        await unit_of_work.plugin_releases.add_installation(
-            release.installation
-        )
+        await unit_of_work.plugin_releases.add_installation(release.installation)
         await unit_of_work.commit()
 
 
@@ -292,16 +288,16 @@ async def test_builder_writes_exact_idempotent_manifest_for_absent_selection(
         inventory,
         repository_root=REPOSITORY_ROOT,
         output=output,
-        slug=release.slug,
-        revision=release.revision,
+        slug=release.release.slug,
+        revision=release.release.revision,
     )
     first_bytes = output.read_bytes()
     second = await builder.build(
         inventory,
         repository_root=REPOSITORY_ROOT,
         output=output,
-        slug=release.slug,
-        revision=release.revision,
+        slug=release.release.slug,
+        revision=release.release.revision,
     )
 
     assert first == second
@@ -326,15 +322,15 @@ async def test_builder_retains_generation_for_same_selection_and_increments_chan
         inventory,
         repository_root=REPOSITORY_ROOT,
         output=tmp_path / "same.json",
-        slug=first_release.slug,
-        revision=first_release.revision,
+        slug=first_release.release.slug,
+        revision=first_release.release.revision,
     )
     changed = await builder.build(
         inventory,
         repository_root=REPOSITORY_ROOT,
         output=tmp_path / "changed.json",
-        slug=second_release.slug,
-        revision=second_release.revision,
+        slug=second_release.release.slug,
+        revision=second_release.release.revision,
     )
 
     assert same.plugins == ()
@@ -358,8 +354,8 @@ async def test_builder_does_not_import_isolated_plugin_as_host_target(
         inventory,
         repository_root=REPOSITORY_ROOT,
         output=tmp_path / "mismatch.json",
-        slug=release.slug,
-        revision=release.revision,
+        slug=release.release.slug,
+        revision=release.release.revision,
     )
 
     assert manifest.plugins == ()
@@ -380,7 +376,9 @@ async def test_builder_rejects_same_catalog_with_different_project_implementatio
         destination.write_bytes(content)
     release = _release(inventory, 1, repository_root=repository_root)
     await _persist_release(database, release)
-    implementation = copied_project / "src" / "grafy_plugin_llm" / "openai_compatible.py"
+    implementation = (
+        copied_project / "src" / "grafy_plugin_llm" / "openai_compatible.py"
+    )
     implementation.write_bytes(
         implementation.read_bytes() + b"\n# different image implementation\n"
     )
@@ -393,8 +391,8 @@ async def test_builder_rejects_same_catalog_with_different_project_implementatio
             inventory,
             repository_root=repository_root,
             output=tmp_path / "implementation-mismatch.json",
-            slug=release.slug,
-            revision=release.revision,
+            slug=release.release.slug,
+            revision=release.release.revision,
         )
 
 
@@ -419,8 +417,8 @@ async def test_builder_rejects_inventory_project_that_escapes_repository_root(
             inventory,
             repository_root=repository_root,
             output=tmp_path / "escaped.json",
-            slug=release.slug,
-            revision=release.revision,
+            slug=release.release.slug,
+            revision=release.release.revision,
         )
 
 
@@ -432,7 +430,7 @@ async def test_builder_rejects_staged_lock_digest_mismatch(
     database, inventory = deployment_database
     release = _release(inventory, 1)
     release.release.lock_digest = "f" * 64
-    release.release.descriptor_digest = release.descriptor.digest
+    release.release.descriptor_digest = release.release.descriptor.digest
     await _persist_release(database, release)
 
     with pytest.raises(
@@ -443,8 +441,8 @@ async def test_builder_rejects_staged_lock_digest_mismatch(
             inventory,
             repository_root=REPOSITORY_ROOT,
             output=tmp_path / "lock-mismatch.json",
-            slug=release.slug,
-            revision=release.revision,
+            slug=release.release.slug,
+            revision=release.release.revision,
         )
 
 
@@ -466,8 +464,8 @@ async def test_builder_ignores_host_distribution_digest_for_isolated_releases(
         inventory,
         repository_root=REPOSITORY_ROOT,
         output=tmp_path / "isolated-tamper.json",
-        slug=release.slug,
-        revision=release.revision,
+        slug=release.release.slug,
+        revision=release.release.revision,
     )
 
     assert manifest.plugins == ()
@@ -484,7 +482,7 @@ async def test_builder_rejects_inventory_policy_mismatch(
     await _persist_release(database, release)
     changed_entries = tuple(
         entry.model_copy(update={"execution_policy": "host-eligible"})
-        if entry.slug == release.slug
+        if entry.slug == release.release.slug
         else entry
         for entry in inventory.plugins
     )
@@ -498,8 +496,8 @@ async def test_builder_rejects_inventory_policy_mismatch(
             mismatched_inventory,
             repository_root=REPOSITORY_ROOT,
             output=tmp_path / "policy.json",
-            slug=release.slug,
-            revision=release.revision,
+            slug=release.release.slug,
+            revision=release.release.revision,
         )
 
 
@@ -516,8 +514,8 @@ async def test_builder_never_host_binds_isolated_only_release(
         inventory,
         repository_root=REPOSITORY_ROOT,
         output=tmp_path / "isolated.json",
-        slug=release.slug,
-        revision=release.revision,
+        slug=release.release.slug,
+        revision=release.release.revision,
     )
 
     assert manifest.plugins == ()

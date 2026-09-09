@@ -176,31 +176,33 @@ async def test_system_publication_stages_then_explicitly_promotes_and_rolls_back
         platform_actor=actor,
     )
 
-    assert first.revision == 1
-    assert second.revision == 2
-    assert first.runtime_artifact is not None
-    assert first.contract_digest == plugin_contract_digest(first.catalog)
+    assert first.release.revision == 1
+    assert second.release.revision == 2
+    assert first.release.runtime_artifact is not None
+    assert first.release.contract_digest == plugin_contract_digest(
+        first.release.catalog
+    )
     assert await releases.list_current_system() == []
     assert image_builder.build_count == 2
     assert image_builder.loader_targets == [
-        inventory.entry_for(first.slug).loader_target,
-        inventory.entry_for(second.slug).loader_target,
+        inventory.entry_for(first.release.slug).loader_target,
+        inventory.entry_for(second.release.slug).loader_target,
     ]
 
     selected = await workflow.promote(
-        slug=second.slug,
-        revision=second.revision,
+        slug=second.release.slug,
+        revision=second.release.revision,
         platform_actor=actor,
         expected_generation=0,
     )
-    assert selected.selected_release_id == second.id
+    assert selected.selected_release_id == second.release.id
     assert selected.selected_revision == 2
     assert selected.generation == 1
     assert await releases.list_current_system() == [second]
 
     selected_again = await workflow.promote(
-        slug=second.slug,
-        revision=second.revision,
+        slug=second.release.slug,
+        revision=second.release.revision,
         platform_actor=actor,
         expected_generation=selected.generation,
     )
@@ -208,27 +210,27 @@ async def test_system_publication_stages_then_explicitly_promotes_and_rolls_back
 
     with pytest.raises(PluginReleaseError, match="changed concurrently"):
         await workflow.promote(
-            slug=second.slug,
-            revision=second.revision,
+            slug=second.release.slug,
+            revision=second.release.revision,
             platform_actor=actor,
             expected_generation=selected_again.generation + 1,
         )
     unchanged = await releases.get_selection(
         WORKSPACE_ID,
-        second.slug,
+        second.release.slug,
         scope=PluginReleaseScope.SYSTEM,
     )
     assert unchanged is not None
-    assert unchanged.selected_release_id == second.id
+    assert unchanged.selected_release_id == second.release.id
     assert unchanged.generation == 1
 
     rolled_back = await workflow.promote(
-        slug=first.slug,
-        revision=first.revision,
+        slug=first.release.slug,
+        revision=first.release.revision,
         platform_actor=actor,
         expected_generation=selected.generation,
     )
-    assert rolled_back.selected_release_id == first.id
+    assert rolled_back.selected_release_id == first.release.id
     assert rolled_back.selected_revision == 1
     assert rolled_back.generation == 2
     assert await releases.list_current_system() == [first]
@@ -307,14 +309,14 @@ async def test_isolated_llm_system_release_promotes_without_a_host_manifest(
 
     release = await workflow.publish_verified(candidate, platform_actor=actor)
     selection = await workflow.promote(
-        slug=release.slug,
-        revision=release.revision,
+        slug=release.release.slug,
+        revision=release.release.revision,
         platform_actor=actor,
         expected_generation=0,
     )
 
-    assert release.execution_policy is PluginExecutionPolicy.ISOLATED_ONLY
-    assert selection.selected_release_id == release.id
+    assert release.installation.execution_policy is PluginExecutionPolicy.ISOLATED_ONLY
+    assert selection.selected_release_id == release.release.id
     assert image_builder.loader_targets == [entry.loader_target]
     await database.dispose()
 
@@ -374,11 +376,14 @@ async def test_system_install_reuses_workspace_release_and_runtime_artifact(
         platform_actor=PlatformPluginActor("ci:system-release"),
     )
 
-    assert system_release.id == workspace_release.id
-    assert system_release.installation_id != workspace_release.installation_id
-    assert system_release.runtime_artifact == workspace_release.runtime_artifact
-    assert system_release.scope is PluginReleaseScope.SYSTEM
-    assert workspace_release.scope is PluginReleaseScope.WORKSPACE
+    assert system_release.release.id == workspace_release.release.id
+    assert system_release.installation.id != workspace_release.installation.id
+    assert (
+        system_release.release.runtime_artifact
+        == workspace_release.release.runtime_artifact
+    )
+    assert system_release.installation.scope is PluginReleaseScope.SYSTEM
+    assert workspace_release.installation.scope is PluginReleaseScope.WORKSPACE
     assert image_builder.build_count == 0
     await database.dispose()
 
@@ -422,10 +427,10 @@ async def test_direct_workspace_publish_cannot_reuse_historical_system_identity(
             capabilities=PluginCapabilityManifest(),
             source_archive=b"workspace",
             lock_digest=sha256(b"workspace-lock").hexdigest(),
-                runtime_profile="python-uv",
-                runtime_artifact=None,
-                loader_target="grafy_plugin:PLUGIN",
-                published_by_user_id=TEST_USER_ID,
+            runtime_profile="python-uv",
+            runtime_artifact=None,
+            loader_target="grafy_plugin:PLUGIN",
+            published_by_user_id=TEST_USER_ID,
         )
 
     await database.dispose()

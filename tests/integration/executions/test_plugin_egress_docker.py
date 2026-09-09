@@ -75,10 +75,10 @@ class ReleaseLookup:
         scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
     ) -> InstalledPluginRelease | None:
         if (
-            scope is self.release.scope
-            and workspace_id == self.release.workspace_id
-            and slug == self.release.slug
-            and revision == self.release.revision
+            scope is self.release.installation.scope
+            and workspace_id == self.release.installation.workspace_id
+            and slug == self.release.release.slug
+            and revision == self.release.release.revision
         ):
             return self.release
         return None
@@ -103,9 +103,9 @@ class ReleaseLookup:
         return None
 
     async def list_runtime_artifacts(self) -> list[PluginRuntimeArtifact]:
-        if self.release.runtime_artifact is None:
+        if self.release.release.runtime_artifact is None:
             return []
-        return [self.release.runtime_artifact]
+        return [self.release.release.runtime_artifact]
 
 
 def _docker_available() -> bool:
@@ -444,7 +444,7 @@ async def test_docker_runtime_routes_historical_network_egress_through_live_brok
         )
         contract = next(
             node
-            for node in release.catalog.nodes
+            for node in release.release.catalog.nodes
             if node.operator_id == "notes.network.probe"
         )
         node: PluginReleaseNode[

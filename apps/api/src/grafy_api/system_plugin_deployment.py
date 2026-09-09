@@ -99,7 +99,7 @@ class SystemPluginDeploymentManifestBuilder:
                 selections = await self._observed_selections(session)
                 entries: list[SystemPluginDeploymentEntry] = []
                 for release in releases:
-                    inventory_entry = inventory.entry_for(release.slug)
+                    inventory_entry = inventory.entry_for(release.release.slug)
                     await self._require_staged_release(
                         session,
                         inventory_entry,
@@ -124,16 +124,16 @@ class SystemPluginDeploymentManifestBuilder:
                     except SystemPluginDeploymentError as exc:
                         raise SystemPluginDeploymentBuildError(
                             f"Failed to verify the wheel rebuilt for System "
-                            f"Plugin {release.slug!r} staged revision "
-                            f"{release.revision}"
+                            f"Plugin {release.release.slug!r} staged revision "
+                            f"{release.release.revision}"
                         ) from exc
 
-                    selection = selections.get(release.slug)
+                    selection = selections.get(release.release.slug)
                     if selection is None:
                         selection_generation = 1
                     elif (
-                        selection.selected_release_id == release.id
-                        and selection.selected_revision == release.revision
+                        selection.selected_release_id == release.release.id
+                        and selection.selected_revision == release.release.revision
                     ):
                         selection_generation = selection.generation
                     else:
@@ -145,9 +145,9 @@ class SystemPluginDeploymentManifestBuilder:
                         )
                         if host_build_digest != source_wheel_build_digest:
                             raise SystemPluginDeploymentBuildError(
-                                f"System Plugin {release.slug!r} installed "
+                                f"System Plugin {release.release.slug!r} installed "
                                 "distribution does not match the wheel rebuilt "
-                                f"from staged revision {release.revision}"
+                                f"from staged revision {release.release.revision}"
                             )
                         binding = SystemHostPluginBinding.from_release(
                             release,
@@ -162,7 +162,7 @@ class SystemPluginDeploymentManifestBuilder:
                     ) as exc:
                         raise SystemPluginDeploymentBuildError(
                             f"Failed to bind staged System Plugin "
-                            f"{release.slug!r} revision {release.revision}"
+                            f"{release.release.slug!r} revision {release.release.revision}"
                         ) from exc
                     entries.append(
                         SystemPluginDeploymentEntry(
@@ -179,8 +179,7 @@ class SystemPluginDeploymentManifestBuilder:
             write_system_plugin_deployment_manifest(output, manifest)
         except SystemPluginDeploymentError as exc:
             raise SystemPluginDeploymentBuildError(
-                f"Failed to verify or write System Plugin deployment manifest "
-                f"{output}"
+                f"Failed to verify or write System Plugin deployment manifest {output}"
             ) from exc
         return manifest
 
@@ -211,21 +210,23 @@ class SystemPluginDeploymentManifestBuilder:
         try:
             entries = scan_source_tree(resolved_project)
             source_digest = sha256(build_deterministic_archive(entries)).hexdigest()
-            lock_digest = sha256((resolved_project / "uv.lock").read_bytes()).hexdigest()
+            lock_digest = sha256(
+                (resolved_project / "uv.lock").read_bytes()
+            ).hexdigest()
         except (OSError, PluginPublishingError) as exc:
             raise SystemPluginDeploymentBuildError(
                 f"Failed to snapshot System Plugin {entry.slug!r} project "
                 f"{entry.project!r}"
             ) from exc
-        if source_digest != release.source_digest:
+        if source_digest != release.release.source_digest:
             raise SystemPluginDeploymentBuildError(
                 f"System Plugin {entry.slug!r} project source digest does not match "
-                f"staged revision {release.revision}"
+                f"staged revision {release.release.revision}"
             )
-        if lock_digest != release.lock_digest:
+        if lock_digest != release.release.lock_digest:
             raise SystemPluginDeploymentBuildError(
                 f"System Plugin {entry.slug!r} project lock digest does not match "
-                f"staged revision {release.revision}"
+                f"staged revision {release.release.revision}"
             )
         return entries
 
@@ -274,13 +275,13 @@ class SystemPluginDeploymentManifestBuilder:
             except (OSError, subprocess.TimeoutExpired) as exc:
                 raise SystemPluginDeploymentBuildError(
                     f"Failed to rebuild System Plugin {entry.slug!r} wheel from "
-                    f"staged revision {release.revision}"
+                    f"staged revision {release.release.revision}"
                 ) from exc
             if completed.returncode != 0:
                 detail = (completed.stderr or completed.stdout).strip()
                 raise SystemPluginDeploymentBuildError(
                     f"Failed to rebuild System Plugin {entry.slug!r} wheel from "
-                    f"staged revision {release.revision}: "
+                    f"staged revision {release.release.revision}: "
                     f"{detail[-_WHEEL_BUILD_DIAGNOSTIC_MAX_CHARS:]}"
                 )
             wheels = tuple(output.glob("*.whl"))
@@ -320,8 +321,7 @@ class SystemPluginDeploymentManifestBuilder:
             select(PluginRelease, PluginInstallation)
             .join(
                 PluginInstallation,
-                schema.plugin_installations.c.release_id
-                == schema.plugin_releases.c.id,
+                schema.plugin_installations.c.release_id == schema.plugin_releases.c.id,
             )
             .where(
                 schema.plugin_installations.c.scope == PluginReleaseScope.SYSTEM,
@@ -347,9 +347,9 @@ class SystemPluginDeploymentManifestBuilder:
 
         latest_by_slug: dict[str, InstalledPluginRelease] = {}
         for release in rows:
-            current = latest_by_slug.get(release.slug)
-            if current is None or release.revision > current.revision:
-                latest_by_slug[release.slug] = release
+            current = latest_by_slug.get(release.release.slug)
+            if current is None or release.release.revision > current.release.revision:
+                latest_by_slug[release.release.slug] = release
         inventory_slugs = {entry.slug for entry in inventory.plugins}
         if set(latest_by_slug) != inventory_slugs:
             missing = sorted(inventory_slugs - set(latest_by_slug))
@@ -383,53 +383,58 @@ class SystemPluginDeploymentManifestBuilder:
     ) -> None:
         try:
             if (
-                release.scope is not PluginReleaseScope.SYSTEM
-                or release.workspace_id is not None
-                or release.slug != entry.slug
-                or release.catalog.slug != release.slug
+                release.installation.scope is not PluginReleaseScope.SYSTEM
+                or release.installation.workspace_id is not None
+                or release.release.slug != entry.slug
+                or release.release.catalog.slug != release.release.slug
             ):
                 raise SystemPluginInventoryError(
                     f"Staged System release {entry.slug!r} has inconsistent identity"
                 )
-            entry.require_catalog_authority(release.catalog)
-            if plugin_contract_digest(release.catalog) != release.contract_digest:
+            entry.require_catalog_authority(release.release.catalog)
+            if (
+                plugin_contract_digest(release.release.catalog)
+                != release.release.contract_digest
+            ):
                 raise SystemPluginInventoryError(
                     f"Staged System release {entry.slug!r} contract digest does not "
                     "match its catalog"
                 )
-            if release.descriptor_digest != release.descriptor.digest:
+            if release.descriptor_digest != release.release.descriptor.digest:
                 raise SystemPluginInventoryError(
                     f"Staged System release {entry.slug!r} descriptor digest does "
                     "not match"
                 )
-            if release.execution_policy is not entry.execution_policy:
+            if release.installation.execution_policy is not entry.execution_policy:
                 raise SystemPluginInventoryError(
                     f"Staged System release {entry.slug!r} execution policy does "
                     "not match the checked-in inventory"
                 )
-            if release.capabilities.capabilities != entry.capabilities:
+            if release.release.capabilities.capabilities != entry.capabilities:
                 raise SystemPluginInventoryError(
                     f"Staged System release {entry.slug!r} capabilities do not "
                     "match the checked-in inventory"
                 )
-            if release.loader_target != entry.loader_target:
+            if release.release.loader_target != entry.loader_target:
                 raise SystemPluginInventoryError(
                     f"Staged System release {entry.slug!r} loader target does not "
                     "match the checked-in inventory"
                 )
-            if release.runtime_artifact is None:
+            if release.release.runtime_artifact is None:
                 raise SystemPluginInventoryError(
-                    f"Staged System release {entry.slug!r} has no retained OCI "
-                    "artifact"
+                    f"Staged System release {entry.slug!r} has no retained OCI artifact"
                 )
-            if release.runtime_image_digest != release.runtime_artifact.manifest_digest:
+            if (
+                release.release.runtime_image_digest
+                != release.release.runtime_artifact.manifest_digest
+            ):
                 raise SystemPluginInventoryError(
                     f"Staged System release {entry.slug!r} OCI digest does not match"
                 )
             revoked = await session.scalar(
                 select(schema.plugin_release_revocations.c.installation_id).where(
                     schema.plugin_release_revocations.c.installation_id
-                    == release.installation_id
+                    == release.installation.id
                 )
             )
             if revoked is not None:

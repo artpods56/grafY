@@ -289,10 +289,10 @@ class RecordingReleaseLookup:
         expected_owner = workspace_id if scope is PluginReleaseScope.WORKSPACE else None
         for release in self._releases:
             if (
-                release.scope is scope
-                and release.workspace_id == expected_owner
-                and release.slug == slug
-                and release.revision == revision
+                release.installation.scope is scope
+                and release.installation.workspace_id == expected_owner
+                and release.release.slug == slug
+                and release.release.revision == revision
             ):
                 return release
         return None
@@ -516,7 +516,7 @@ async def test_graph_pinned_to_revision_one_stays_on_it_after_two_is_published()
     pinned = compiled.nodes[0]
     assert isinstance(pinned.node, PluginReleaseNode)
     assert pinned.node is not None
-    assert pinned.node.release.revision == 1  # type: ignore[attr-defined]
+    assert pinned.node.release.release.revision == 1
     assert pinned.registration is None
     assert pinned.plugin_release is not None
     assert pinned.plugin_release.slug == "notes"
@@ -770,8 +770,8 @@ async def test_isolated_exact_release_supplies_its_own_projectable_artifact_cont
     )
     pin = PluginReleasePinModel(
         scope=PluginReleaseScope.SYSTEM,
-        slug=release.slug,
-        revision=release.revision,
+        slug=release.release.slug,
+        revision=release.release.revision,
     )
 
     compiled = await _compiler(RecordingReleaseLookup(release)).compile(
@@ -1012,7 +1012,7 @@ def test_host_binding_registry_contract_mismatch_fails_composition_check() -> No
     mismatched = binding.model_copy(update={"catalog": mismatched_catalog})
     registry = build_explicit_plugin_registry()
     loaded = LoadedSystemPlugin(
-        slug=release.slug,
+        slug=release.release.slug,
         loader_target=HOST_LOADER_TARGET,
         host_build_digest=HOST_BUILD_DIGEST,
     )
@@ -1030,7 +1030,7 @@ def test_host_binding_build_mismatch_fails_composition_check() -> None:
         host_build_digest=HOST_BUILD_DIGEST,
     )
     loaded = LoadedSystemPlugin(
-        slug=release.slug,
+        slug=release.release.slug,
         loader_target=HOST_LOADER_TARGET,
         host_build_digest="e" * 64,
     )

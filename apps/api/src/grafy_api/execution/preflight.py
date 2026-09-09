@@ -194,10 +194,10 @@ class GraphRunPreflight:
             return
         resolution = resolve_http_egress_authority(
             self._network_policy,
-            scope=release.scope,
-            workspace_id=release.workspace_id,
-            slug=release.slug,
-            revision=release.revision,
+            scope=release.installation.scope,
+            workspace_id=release.installation.workspace_id,
+            slug=release.release.slug,
+            revision=release.release.revision,
             contract=contract,
             config=node.config,
         )

@@ -80,9 +80,13 @@ class PluginNetworkEgressPolicy:
 
     @property
     def available(self) -> bool:
-        return self.proxy_adapter_available and self.broker.available and bool(
-            self.broker.destinations_for(PluginEgressProtocol.HTTP)
-            or self.broker.destinations_for(PluginEgressProtocol.HTTPS)
+        return (
+            self.proxy_adapter_available
+            and self.broker.available
+            and bool(
+                self.broker.destinations_for(PluginEgressProtocol.HTTP)
+                or self.broker.destinations_for(PluginEgressProtocol.HTTPS)
+            )
         )
 
 
@@ -95,8 +99,10 @@ class PluginPostgresqlEgressPolicy:
 
     @property
     def available(self) -> bool:
-        return self.tcp_adapter_available and self.broker.available and bool(
-            self.broker.destinations_for(PluginEgressProtocol.POSTGRESQL)
+        return (
+            self.tcp_adapter_available
+            and self.broker.available
+            and bool(self.broker.destinations_for(PluginEgressProtocol.POSTGRESQL))
         )
 
 
@@ -163,30 +169,29 @@ class ReleaseExecutionAdmission:
                     f"({revocation.reason.value})."
                 ),
             )
-        artifact = release.runtime_artifact
+        artifact = release.release.runtime_artifact
         if artifact is None:
             return ReleaseExecutionRejection(
                 reason="missing_runtime_artifact",
                 detail="This release has no immutable runtime image.",
             )
-        if release.protocol_digest != plugin_protocol_digest():
+        if release.release.protocol_digest != plugin_protocol_digest():
             return ReleaseExecutionRejection(
                 reason="incompatible_protocol",
                 detail="This release uses an incompatible invocation protocol.",
             )
         contracts = (
-            release.catalog.nodes if node_contract is None else (node_contract,)
+            release.release.catalog.nodes if node_contract is None else (node_contract,)
         )
         required_capabilities = (
-            set(release.capabilities.capabilities)
+            set(release.release.capabilities.capabilities)
             if node_contract is None
             else set(node_contract.required_capabilities)
         )
         has_secret_inputs = any(contract.secret_inputs for contract in contracts)
         missing_secret_capability = (
             has_secret_inputs
-            and PluginRuntimeCapability.NODE_SECRETS
-            not in required_capabilities
+            and PluginRuntimeCapability.NODE_SECRETS not in required_capabilities
         )
         if missing_secret_capability:
             return ReleaseExecutionRejection(
@@ -204,14 +209,10 @@ class ReleaseExecutionAdmission:
         )
         broker_configured = self.network_egress.broker.broker_image is not None
         if network_requested and broker_configured:
-            network_rejection = self._network_egress_rejection(
-                release, node_contract
-            )
+            network_rejection = self._network_egress_rejection(release, node_contract)
             if network_rejection is not None:
                 return network_rejection
-            effective_isolated_capabilities.add(
-                PluginRuntimeCapability.NETWORK_EGRESS
-            )
+            effective_isolated_capabilities.add(PluginRuntimeCapability.NETWORK_EGRESS)
         elif network_requested:
             effective_isolated_capabilities.discard(
                 PluginRuntimeCapability.NETWORK_EGRESS
@@ -233,8 +234,8 @@ class ReleaseExecutionAdmission:
             (artifact_type.key.id, artifact_type.key.schema_version): artifact_type
             for artifact_type in (
                 *self.platform_artifact_contracts,
-                *release.catalog.artifact_types,
-                *release.catalog.artifact_type_dependencies,
+                *release.release.catalog.artifact_types,
+                *release.release.catalog.artifact_type_dependencies,
             )
         }
         unsupported_types: set[str] = set()
@@ -270,13 +271,14 @@ class ReleaseExecutionAdmission:
 
         if (
             self.runtime_profile is None
-            or release.runtime_profile != self.runtime_profile
-            or release.profile_digest != plugin_profile_digest(self.runtime_profile)
+            or release.release.runtime_profile != self.runtime_profile
+            or release.release.profile_digest
+            != plugin_profile_digest(self.runtime_profile)
         ):
             return ReleaseExecutionRejection(
                 reason="unsupported_runtime_profile",
                 detail=(
-                    f"Runtime profile {release.runtime_profile!r} is not available in "
+                    f"Runtime profile {release.release.runtime_profile!r} is not available in "
                     "this deployment."
                 ),
             )
@@ -295,16 +297,15 @@ class ReleaseExecutionAdmission:
         """Fail closed when the assigned profile cannot satisfy the request."""
 
         if node_contract is not None:
-            if (
-                PluginRuntimeCapability.NETWORK_EGRESS
-                not in set(node_contract.required_capabilities)
+            if PluginRuntimeCapability.NETWORK_EGRESS not in set(
+                node_contract.required_capabilities
             ):
                 return None
             network_contracts = (node_contract,)
         else:
             network_contracts = tuple(
                 contract
-                for contract in release.catalog.nodes
+                for contract in release.release.catalog.nodes
                 if PluginRuntimeCapability.NETWORK_EGRESS
                 in set(contract.required_capabilities)
             )
@@ -312,10 +313,10 @@ class ReleaseExecutionAdmission:
                 return None
         profile = self.network_policy.resolve(
             NetworkAccessPlane.PLUGIN_EXECUTION,
-            scope=release.scope,
-            workspace_id=release.workspace_id,
-            slug=release.slug,
-            revision=release.revision,
+            scope=release.installation.scope,
+            workspace_id=release.installation.workspace_id,
+            slug=release.release.slug,
+            revision=release.release.revision,
         )
         if profile is None:
             return ReleaseExecutionRejection(
@@ -326,13 +327,15 @@ class ReleaseExecutionAdmission:
             return ReleaseExecutionRejection(
                 reason=NetworkRejectionReason.PROFILE_DISABLED,
                 detail=(
-                    f"Assigned network profile {profile.name!r} grants no "
-                    "HTTP egress."
+                    f"Assigned network profile {profile.name!r} grants no HTTP egress."
                 ),
             )
         if node_contract is not None:
             return _node_network_rejection(profile, node_contract)
-        if all(_node_has_network_source(profile, contract) is False for contract in network_contracts):
+        if all(
+            _node_has_network_source(profile, contract) is False
+            for contract in network_contracts
+        ):
             if all(
                 contract.http_egress is not None
                 and contract.http_egress.dynamic_destinations

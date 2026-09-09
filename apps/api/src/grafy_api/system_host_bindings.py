@@ -71,46 +71,52 @@ class SystemHostPluginBinding(BaseModel):
         loader_target: str,
         host_build_digest: str,
     ) -> "SystemHostPluginBinding":
-        if release.scope is not PluginReleaseScope.SYSTEM:
+        if release.installation.scope is not PluginReleaseScope.SYSTEM:
             raise ValueError("Only System Plugin releases can bind to host code")
-        if release.runtime_artifact is None:
+        if release.release.runtime_artifact is None:
             raise ValueError("System host bindings require a retained OCI artifact")
         return cls(
-            release_id=release.id,
-            slug=release.slug,
-            revision=release.revision,
+            release_id=release.release.id,
+            slug=release.release.slug,
+            revision=release.release.revision,
             selection_generation=selection_generation,
-            descriptor_digest=release.descriptor.digest,
-            contract_digest=release.contract_digest,
-            source_digest=release.source_digest,
-            runtime_archive_digest=release.runtime_artifact.archive_digest,
+            descriptor_digest=release.release.descriptor.digest,
+            contract_digest=release.release.contract_digest,
+            source_digest=release.release.source_digest,
+            runtime_archive_digest=release.release.runtime_artifact.archive_digest,
             loader_target=loader_target,
             host_build_digest=host_build_digest,
-            catalog=release.catalog,
+            catalog=release.release.catalog,
         )
 
     def release_mismatch(self, release: InstalledPluginRelease) -> str | None:
         """Return the first immutable identity mismatch, if one exists."""
 
-        if release.scope is not self.scope or release.workspace_id is not None:
+        if (
+            release.installation.scope is not self.scope
+            or release.installation.workspace_id is not None
+        ):
             return "scope"
-        if release.id != self.release_id:
+        if release.release.id != self.release_id:
             return "release id"
-        if release.slug != self.slug:
+        if release.release.slug != self.slug:
             return "slug"
-        if release.revision != self.revision:
+        if release.release.revision != self.revision:
             return "revision"
-        if release.descriptor.digest != self.descriptor_digest:
+        if release.release.descriptor.digest != self.descriptor_digest:
             return "descriptor digest"
-        if release.contract_digest != self.contract_digest:
+        if release.release.contract_digest != self.contract_digest:
             return "contract digest"
-        if release.source_digest != self.source_digest:
+        if release.release.source_digest != self.source_digest:
             return "source digest"
-        if release.runtime_artifact is None:
+        if release.release.runtime_artifact is None:
             return "runtime artifact"
-        if release.runtime_artifact.archive_digest != self.runtime_archive_digest:
+        if (
+            release.release.runtime_artifact.archive_digest
+            != self.runtime_archive_digest
+        ):
             return "runtime archive digest"
-        if release.catalog != self.catalog:
+        if release.release.catalog != self.catalog:
             return "catalog"
         return None
 

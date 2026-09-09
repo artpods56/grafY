@@ -83,9 +83,9 @@ def test_workspace_plugin_release_is_overlaid_in_node_catalog(tmp_path: Path) ->
             published_by_user_id=TEST_USER_ID,
         )
     )
-    assert image_backed_release.revision == 2
-    assert image_backed_release.executable is True
-    assert release.executable is False
+    assert image_backed_release.release.revision == 2
+    assert image_backed_release.release.executable is True
+    assert release.release.executable is False
     same_image_backed_release = asyncio.run(
         service.publish(
             workspace_id=WORKSPACE_ID,
@@ -118,7 +118,7 @@ def test_workspace_plugin_release_is_overlaid_in_node_catalog(tmp_path: Path) ->
             published_by_user_id=TEST_USER_ID,
         )
     )
-    assert changed_image_release.revision == 3
+    assert changed_image_release.release.revision == 3
     changed_profile_release = asyncio.run(
         service.publish(
             workspace_id=WORKSPACE_ID,
@@ -132,7 +132,7 @@ def test_workspace_plugin_release_is_overlaid_in_node_catalog(tmp_path: Path) ->
             published_by_user_id=TEST_USER_ID,
         )
     )
-    assert changed_profile_release.revision == 4
+    assert changed_profile_release.release.revision == 4
 
     changed_copy = tmp_path / "changed-plugin"
     changed_copy.mkdir()
@@ -165,7 +165,7 @@ def test_workspace_plugin_release_is_overlaid_in_node_catalog(tmp_path: Path) ->
             published_by_user_id=TEST_USER_ID,
         )
     )
-    assert changed_release.revision == 5
+    assert changed_release.release.revision == 5
 
     settings = Settings(
         workspace=tmp_path / "workbench",

@@ -361,9 +361,10 @@ class PluginNodeHttpEgressContract(PluginReleaseValue):
                 "Node HTTP egress declares more than eight configured fields"
             )
         for field_name in value:
-            if re.fullmatch(r"[a-z][a-z0-9_]*", field_name) is None or len(
-                field_name
-            ) > 255:
+            if (
+                re.fullmatch(r"[a-z][a-z0-9_]*", field_name) is None
+                or len(field_name) > 255
+            ):
                 raise ValueError(
                     "Node HTTP egress configured inputs must be config field names"
                 )
@@ -619,14 +620,14 @@ class PluginReleaseIdentity:
     @classmethod
     def from_release(cls, release: "InstalledPluginRelease") -> Self:
         return cls(
-            scope=release.scope,
-            workspace_id=release.workspace_id,
-            slug=release.slug,
-            revision=release.revision,
-            source_digest=release.source_digest,
-            contract_digest=release.contract_digest,
-            protocol_digest=release.protocol_digest,
-            descriptor_digest=release.descriptor.digest,
+            scope=release.installation.scope,
+            workspace_id=release.installation.workspace_id,
+            slug=release.release.slug,
+            revision=release.release.revision,
+            source_digest=release.release.source_digest,
+            contract_digest=release.release.contract_digest,
+            protocol_digest=release.release.protocol_digest,
+            descriptor_digest=release.release.descriptor.digest,
         )
 
     def fingerprint_document(self) -> dict[str, object]:
@@ -836,10 +837,13 @@ class PluginRelease:
             raise PluginReleaseError(
                 "Plugin runtime profile must be at most 100 characters"
             )
-        if re.fullmatch(
-            r"[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*",
-            self.loader_target,
-        ) is None:
+        if (
+            re.fullmatch(
+                r"[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*",
+                self.loader_target,
+            )
+            is None
+        ):
             raise PluginReleaseError("Plugin loader target is invalid")
         if self.source_object_key == "":
             raise PluginReleaseError("Plugin source object key must not be blank")
@@ -881,6 +885,7 @@ class PluginRelease:
     @property
     def executable(self) -> bool:
         return self.runtime_artifact is not None
+
 
 def _model_json_schema(model: type[BaseModel]) -> dict[str, object]:
     try:

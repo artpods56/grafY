@@ -77,10 +77,10 @@ class _ReleaseLookup:
     ) -> InstalledPluginRelease | None:
         release = self._release
         if (
-            workspace_id == release.workspace_id
-            and scope is release.scope
-            and slug == release.slug
-            and revision == release.revision
+            workspace_id == release.installation.workspace_id
+            and scope is release.installation.scope
+            and slug == release.release.slug
+            and revision == release.release.revision
         ):
             return release
         return None

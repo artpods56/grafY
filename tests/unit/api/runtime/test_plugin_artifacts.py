@@ -581,7 +581,7 @@ def _request(
         inputs["other_summary"] = second_ref
     return PluginInvocationRequest(
         release=PluginReleaseIdentity.from_release(release),
-        contract=release.catalog.nodes[0],
+        contract=release.release.catalog.nodes[0],
         artifact_type_bindings={},
         config=config or {},
         inputs=inputs,
@@ -590,8 +590,8 @@ def _request(
                 contract.bundle
             )
             for contract in (
-                *release.catalog.artifact_types,
-                *release.catalog.artifact_type_dependencies,
+                *release.release.catalog.artifact_types,
+                *release.release.catalog.artifact_type_dependencies,
             )
         },
         workspace_id=WORKSPACE_ID,
@@ -1335,7 +1335,7 @@ async def test_table_input_and_output_cross_the_bundle_boundary(
     )
     request = PluginInvocationRequest(
         release=PluginReleaseIdentity.from_release(release),
-        contract=release.catalog.nodes[0],
+        contract=release.release.catalog.nodes[0],
         artifact_type_bindings={},
         config={},
         inputs={"source": input_ref},
@@ -1367,9 +1367,9 @@ async def test_table_input_and_output_cross_the_bundle_boundary(
         "slug": "tables",
         "revision": 1,
         "source_digest": "c" * 64,
-        "contract_digest": release.contract_digest,
-        "protocol_digest": release.protocol_digest,
-        "descriptor_digest": release.descriptor.digest,
+        "contract_digest": release.release.contract_digest,
+        "protocol_digest": release.release.protocol_digest,
+        "descriptor_digest": release.release.descriptor.digest,
     }
     assert list((tmp_path / "scratch").iterdir()) == []
 
@@ -1418,7 +1418,7 @@ async def test_binary_input_and_output_use_exact_portable_file_contract(
     result = await invoker.invoke(
         PluginInvocationRequest(
             release=PluginReleaseIdentity.from_release(release),
-            contract=release.catalog.nodes[0],
+            contract=release.release.catalog.nodes[0],
             artifact_type_bindings={},
             config={},
             inputs={"source": source.ref()},
@@ -1510,7 +1510,7 @@ async def test_inline_input_references_are_available_inside_the_plugin_guest(
     result = await invoker.invoke(
         PluginInvocationRequest(
             release=PluginReleaseIdentity.from_release(release),
-            contract=release.catalog.nodes[0],
+            contract=release.release.catalog.nodes[0],
             artifact_type_bindings={},
             config={},
             inputs={"message": prompt_artifact.ref()},
@@ -1519,8 +1519,8 @@ async def test_inline_input_references_are_available_inside_the_plugin_guest(
                     contract.bundle
                 )
                 for contract in (
-                    *release.catalog.artifact_types,
-                    *release.catalog.artifact_type_dependencies,
+                    *release.release.catalog.artifact_types,
+                    *release.release.catalog.artifact_type_dependencies,
                 )
             },
             artifact_reference_contracts={
@@ -1528,8 +1528,8 @@ async def test_inline_input_references_are_available_inside_the_plugin_guest(
                     contract.references
                 )
                 for contract in (
-                    *release.catalog.artifact_types,
-                    *release.catalog.artifact_type_dependencies,
+                    *release.release.catalog.artifact_types,
+                    *release.release.catalog.artifact_type_dependencies,
                 )
                 if contract.references
             },
@@ -1653,12 +1653,12 @@ async def test_gis_object_sets_round_trip_exact_files_and_typed_metadata_referen
     result = await invoker.invoke(
         PluginInvocationRequest(
             release=PluginReleaseIdentity.from_release(release),
-            contract=release.catalog.nodes[0],
+            contract=release.release.catalog.nodes[0],
             artifact_type_bindings={},
             config={},
             inputs={"source": input_ref},
             artifact_bundle_contracts={
-                spec.key: release.catalog.artifact_type_dependencies[0].bundle
+                spec.key: release.release.catalog.artifact_type_dependencies[0].bundle
             },
             workspace_id=WORKSPACE_ID,
             node_id="copy",
@@ -1697,7 +1697,7 @@ async def test_gis_object_sets_round_trip_exact_files_and_typed_metadata_referen
         assert sha256(output_content).hexdigest() == portable_file.sha256
     plugin_release = output.metadata["plugin_release"]
     assert isinstance(plugin_release, dict)
-    assert plugin_release["descriptor_digest"] == release.descriptor.digest
+    assert plugin_release["descriptor_digest"] == release.release.descriptor.digest
 
 
 @pytest.mark.asyncio
@@ -1738,12 +1738,14 @@ async def test_failed_object_set_import_removes_every_new_file_and_mints_no_ref(
         await invoker.invoke(
             PluginInvocationRequest(
                 release=PluginReleaseIdentity.from_release(release),
-                contract=release.catalog.nodes[0],
+                contract=release.release.catalog.nodes[0],
                 artifact_type_bindings={},
                 config={},
                 inputs={"source": input_ref},
                 artifact_bundle_contracts={
-                    spec.key: release.catalog.artifact_type_dependencies[0].bundle
+                    spec.key: release.release.catalog.artifact_type_dependencies[
+                        0
+                    ].bundle
                 },
                 workspace_id=WORKSPACE_ID,
                 node_id="copy",
@@ -1803,7 +1805,7 @@ async def test_table_from_another_workspace_fails_before_staging(
         await invoker.invoke(
             PluginInvocationRequest(
                 release=PluginReleaseIdentity.from_release(release),
-                contract=release.catalog.nodes[0],
+                contract=release.release.catalog.nodes[0],
                 artifact_type_bindings={},
                 config={},
                 inputs={"source": foreign_ref},
@@ -1866,7 +1868,7 @@ async def test_failed_table_import_removes_new_objects_and_exposes_no_output(
     )
     request = PluginInvocationRequest(
         release=PluginReleaseIdentity.from_release(release),
-        contract=release.catalog.nodes[0],
+        contract=release.release.catalog.nodes[0],
         artifact_type_bindings={},
         config={},
         inputs={"source": input_ref},
@@ -1930,9 +1932,9 @@ async def test_host_authorizes_stages_and_atomically_mints_output_refs(
         "slug": "notes",
         "revision": 4,
         "source_digest": "a" * 64,
-        "contract_digest": release.contract_digest,
-        "protocol_digest": release.protocol_digest,
-        "descriptor_digest": release.descriptor.digest,
+        "contract_digest": release.release.contract_digest,
+        "protocol_digest": release.release.protocol_digest,
+        "descriptor_digest": release.release.descriptor.digest,
     }
     assert original is not None
     assert list(tmp_path.iterdir()) == []

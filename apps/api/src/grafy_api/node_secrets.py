@@ -444,7 +444,7 @@ class NodeSecretService(NodeSecretResolverPort):
             node_contract = next(
                 (
                     candidate
-                    for candidate in release.catalog.nodes
+                    for candidate in release.release.catalog.nodes
                     if candidate.operator_id == node.operator_id
                     and candidate.operator_version == node.operator_version
                 ),

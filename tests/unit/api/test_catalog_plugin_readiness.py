@@ -503,7 +503,7 @@ def test_system_release_presents_published_plugin_nodes_with_an_exact_pin() -> N
     )
 
     notes_plugins = [
-        plugin for plugin in response.plugins if plugin.slug == release.slug
+        plugin for plugin in response.plugins if plugin.slug == release.release.slug
     ]
     assert len(notes_plugins) == 1
     plugin = notes_plugins[0]
@@ -513,12 +513,14 @@ def test_system_release_presents_published_plugin_nodes_with_an_exact_pin() -> N
     assert plugin.installation_scope is PluginReleaseScope.SYSTEM
     assert plugin.plugin_release is not None
     assert plugin.plugin_release.scope is PluginReleaseScope.SYSTEM
-    assert plugin.plugin_release.slug == release.slug
-    assert plugin.plugin_release.revision == release.revision
-    assert plugin.revision == release.revision
+    assert plugin.plugin_release.slug == release.release.slug
+    assert plugin.plugin_release.revision == release.release.revision
+    assert plugin.revision == release.release.revision
 
-    notes_nodes = [node for node in response.nodes if node.plugin_slug == release.slug]
-    assert len(notes_nodes) == len(release.catalog.nodes)
+    notes_nodes = [
+        node for node in response.nodes if node.plugin_slug == release.release.slug
+    ]
+    assert len(notes_nodes) == len(release.release.catalog.nodes)
     assert all(node.plugin_release is not None for node in notes_nodes)
     assert all(
         node.plugin_release.scope is PluginReleaseScope.SYSTEM
@@ -578,22 +580,26 @@ def test_catalog_keeps_withdrawn_release_visible_disabled_and_exactly_pinned() -
                 runtime_profile="python-uv",
             ),
             plugin_release_states={
-                release.id: PluginCatalogReleaseState(selection=selection)
+                release.release.id: PluginCatalogReleaseState(selection=selection)
             },
         ),
         UnusedModuleExecutor(),
     )
 
-    plugin = next(entry for entry in response.plugins if entry.slug == release.slug)
-    node = next(entry for entry in response.nodes if entry.plugin_slug == release.slug)
+    plugin = next(
+        entry for entry in response.plugins if entry.slug == release.release.slug
+    )
+    node = next(
+        entry for entry in response.nodes if entry.plugin_slug == release.release.slug
+    )
     assert plugin.runnable is False
     assert plugin.non_runnable_reason == "withdrawn"
     assert plugin.plugin_release is not None
-    assert plugin.plugin_release.revision == release.revision
+    assert plugin.plugin_release.revision == release.release.revision
     assert node.runnable is False
     assert node.non_runnable_reason == "withdrawn"
     assert node.plugin_release is not None
-    assert node.plugin_release.revision == release.revision
+    assert node.plugin_release.revision == release.release.revision
 
 
 def test_builtin_catalog_exposes_host_artifact_and_conversion_contracts() -> None:

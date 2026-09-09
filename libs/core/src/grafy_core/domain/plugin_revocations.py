@@ -123,11 +123,11 @@ class PluginReleaseRevocation:
         revoked_at: datetime | None = None,
     ) -> Self:
         return cls(
-            installation_id=release.installation_id,
-            scope=release.scope,
-            workspace_id=release.workspace_id,
-            slug=release.slug,
-            revision=release.revision,
+            installation_id=release.installation.id,
+            scope=release.installation.scope,
+            workspace_id=release.installation.workspace_id,
+            slug=release.release.slug,
+            revision=release.release.revision,
             reason=reason,
             revoked_by_user_id=revoked_by_user_id,
             revoked_by_platform_actor=revoked_by_platform_actor,

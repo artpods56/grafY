@@ -213,9 +213,9 @@ def test_agent_authoring_scaffolds_reviews_fences_and_uses_shared_publisher(
             session_id=reservation.session_id,
         )
     )
-    assert agent_release.revision == 1
-    assert agent_release.source_digest == second_review.source_digest
-    assert agent_release.published_by_user_id == ACTOR_ID
+    assert agent_release.release.revision == 1
+    assert agent_release.release.source_digest == second_review.source_digest
+    assert agent_release.release.published_by_user_id == ACTOR_ID
     assert not (project / ".grafy" / "authoring.json").exists()
 
     human_release = asyncio.run(

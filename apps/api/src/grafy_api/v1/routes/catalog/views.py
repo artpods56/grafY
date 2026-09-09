@@ -38,7 +38,7 @@ async def list_nodes(
     )
     releases = [entry.release for entry in catalog_releases]
     release_states = {
-        entry.release.id: PluginCatalogReleaseState(
+        entry.release.release.id: PluginCatalogReleaseState(
             selection=entry.selection, revocation=entry.revocation
         )
         for entry in catalog_releases

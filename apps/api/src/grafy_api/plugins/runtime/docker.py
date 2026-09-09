@@ -383,9 +383,7 @@ class DockerPluginRuntime(
                 extra={
                     "broker_image": broker_image,
                     "reason": "image_unavailable",
-                    "expected_contract_version": (
-                        PLUGIN_EGRESS_BROKER_CONFIG_VERSION
-                    ),
+                    "expected_contract_version": (PLUGIN_EGRESS_BROKER_CONFIG_VERSION),
                     "actual_contract_version": "unavailable",
                 },
             )
@@ -401,9 +399,7 @@ class DockerPluginRuntime(
                 extra={
                     "broker_image": broker_image,
                     "reason": "metadata_invalid",
-                    "expected_contract_version": (
-                        PLUGIN_EGRESS_BROKER_CONFIG_VERSION
-                    ),
+                    "expected_contract_version": (PLUGIN_EGRESS_BROKER_CONFIG_VERSION),
                     "actual_contract_version": "invalid",
                 },
             )
@@ -478,16 +474,16 @@ class DockerPluginRuntime(
                 PluginFailureCode.CONTRACT_FAILURE,
                 "Exact Plugin runtime release is unavailable",
             )
-        if release.scope is PluginReleaseScope.WORKSPACE:
+        if release.installation.scope is PluginReleaseScope.WORKSPACE:
             revocation = await self._releases.get_revocation(
                 workspace_id=envelope.workspace_id,
-                slug=release.slug,
-                revision=release.revision,
+                slug=release.release.slug,
+                revision=release.release.revision,
             )
         else:
             revocation = await self._releases.get_system_revocation(
-                slug=release.slug,
-                revision=release.revision,
+                slug=release.release.slug,
+                revision=release.release.revision,
             )
         decision = self._release_admission.decide(
             release,
@@ -505,17 +501,14 @@ class DockerPluginRuntime(
                 PluginFailureCode.INTERNAL_ADAPTER_FAILURE,
                 f"Docker cannot satisfy Plugin execution route {decision.value!r}",
             )
-        artifact = release.runtime_artifact
+        artifact = release.release.runtime_artifact
         if artifact is None:
             raise PluginGuestRunError(
                 PluginFailureCode.CONTRACT_FAILURE,
                 "Plugin release is catalog-only and has no runtime artifact",
             )
         postgresql_destination: PluginEgressDestination | None = None
-        if (
-            PluginRuntimeCapability.POSTGRESQL_EGRESS
-            in request.required_capabilities
-        ):
+        if PluginRuntimeCapability.POSTGRESQL_EGRESS in request.required_capabilities:
             host = request.config.get("host")
             port = request.config.get("port")
             if (
@@ -554,10 +547,10 @@ class DockerPluginRuntime(
         if requires_http_egress:
             egress_resolution = resolve_http_egress_authority(
                 self._network_policy,
-                scope=release.scope,
-                workspace_id=release.workspace_id,
-                slug=release.slug,
-                revision=release.revision,
+                scope=release.installation.scope,
+                workspace_id=release.installation.workspace_id,
+                slug=release.release.slug,
+                revision=release.release.revision,
                 contract=request.contract,
                 config=request.config,
             )
@@ -578,12 +571,12 @@ class DockerPluginRuntime(
         key = _SandboxKey(
             scope_id=scope,
             workspace_id=envelope.workspace_id,
-            release_scope=release.scope,
-            release_workspace_id=release.workspace_id,
-            release_slug=release.slug,
-            release_revision=release.revision,
-            source_digest=release.source_digest,
-            descriptor_digest=release.descriptor.digest,
+            release_scope=release.installation.scope,
+            release_workspace_id=release.installation.workspace_id,
+            release_slug=release.release.slug,
+            release_revision=release.release.revision,
+            source_digest=release.release.source_digest,
+            descriptor_digest=release.release.descriptor.digest,
             required_capabilities=request.required_capabilities,
             postgresql_destination=postgresql_destination,
             network_profile_digest=network_profile_digest,
@@ -886,14 +879,14 @@ class DockerPluginRuntime(
             raise DockerPluginRuntimeError("Plugin image labels are unavailable")
         image_labels = cast(dict[str, object], parsed)
         expected = {
-            "org.opencontainers.image.source.digest": f"sha256:{release.source_digest}",
+            "org.opencontainers.image.source.digest": f"sha256:{release.release.source_digest}",
             "io.grafy.plugin.runtime": "1",
-            "io.grafy.plugin.contract.digest": f"sha256:{release.contract_digest}",
-            "io.grafy.plugin.profile.digest": f"sha256:{release.profile_digest}",
+            "io.grafy.plugin.contract.digest": f"sha256:{release.release.contract_digest}",
+            "io.grafy.plugin.profile.digest": f"sha256:{release.release.profile_digest}",
             "io.grafy.plugin.base.digest": (
                 f"sha256:{self._profile.base_image_digest}"
             ),
-            "io.grafy.plugin.protocol.digest": f"sha256:{release.protocol_digest}",
+            "io.grafy.plugin.protocol.digest": f"sha256:{release.release.protocol_digest}",
         }
         if any(image_labels.get(name) != value for name, value in expected.items()):
             raise DockerPluginRuntimeError(
@@ -1008,9 +1001,7 @@ class DockerPluginRuntime(
                 )
                 if key.postgresql_destination is not None:
                     resolved_postgresql = (
-                        await resolve_public_destination(
-                            key.postgresql_destination
-                        ),
+                        await resolve_public_destination(key.postgresql_destination),
                     )
                 else:
                     resolved_postgresql = ()
@@ -1240,12 +1231,8 @@ class DockerPluginRuntime(
                             "broker_state_probe_succeeded": (
                                 broker_state_probe_succeeded
                             ),
-                            "broker_log_probe_succeeded": (
-                                broker_log_probe_succeeded
-                            ),
-                            "broker_rejected_policy_version": (
-                                rejected_config_version
-                            ),
+                            "broker_log_probe_succeeded": (broker_log_probe_succeeded),
+                            "broker_rejected_policy_version": (rejected_config_version),
                         },
                     )
                     if rejected_config_version:
@@ -1262,53 +1249,55 @@ class DockerPluginRuntime(
                         f"{broker_exit_code}, OOM killed {broker_oom_killed})"
                     )
             command = (
-            "create",
-            "--name",
-            name,
-            "--pull=never",
-            *network_arguments,
-            *ca_mount_arguments,
-            "--read-only",
-            "--user",
-            "65532:65532",
-            "--cap-drop=ALL",
-            "--security-opt",
-            "no-new-privileges=true",
-            "--security-opt",
-            seccomp,
-            "--cpus",
-            str(self._profile.cpu_count),
-            "--memory",
-            str(self._profile.memory_bytes),
-            "--memory-swap",
-            str(self._profile.memory_bytes),
-            "--pids-limit",
-            str(self._profile.pid_limit),
-            "--ulimit",
-            (f"nofile={self._profile.open_file_limit}:{self._profile.open_file_limit}"),
-            "--tmpfs",
-            "/tmp:rw,noexec,nosuid,nodev,size=16777216,mode=1777",
-            "--tmpfs",
-            (
-                "/run/grafy/invocations:rw,noexec,nosuid,nodev,"
-                f"size={self._profile.scratch_bytes},mode=700,uid=65532,gid=65532"
-            ),
-            "--label",
-            _SANDBOX_LABEL,
-            "--label",
-            f"io.grafy.plugin.scope={key.scope_id.value}",
-            "--label",
-            f"io.grafy.plugin.release={key.release_slug}@{key.release_revision}",
-            "--label",
-            f"io.grafy.plugin.release_scope={key.release_scope.value}",
-            "--label",
-            f"io.grafy.plugin.capability_profile={capability_profile_digest}",
-            "--label",
-            f"io.grafy.plugin.created_at={created_at}",
-            f"sha256:{artifact.manifest_digest}",
-            "-c",
-            "import pathlib,time; pathlib.Path('/tmp/home').mkdir(); time.sleep(10**9)",
-        )
+                "create",
+                "--name",
+                name,
+                "--pull=never",
+                *network_arguments,
+                *ca_mount_arguments,
+                "--read-only",
+                "--user",
+                "65532:65532",
+                "--cap-drop=ALL",
+                "--security-opt",
+                "no-new-privileges=true",
+                "--security-opt",
+                seccomp,
+                "--cpus",
+                str(self._profile.cpu_count),
+                "--memory",
+                str(self._profile.memory_bytes),
+                "--memory-swap",
+                str(self._profile.memory_bytes),
+                "--pids-limit",
+                str(self._profile.pid_limit),
+                "--ulimit",
+                (
+                    f"nofile={self._profile.open_file_limit}:{self._profile.open_file_limit}"
+                ),
+                "--tmpfs",
+                "/tmp:rw,noexec,nosuid,nodev,size=16777216,mode=1777",
+                "--tmpfs",
+                (
+                    "/run/grafy/invocations:rw,noexec,nosuid,nodev,"
+                    f"size={self._profile.scratch_bytes},mode=700,uid=65532,gid=65532"
+                ),
+                "--label",
+                _SANDBOX_LABEL,
+                "--label",
+                f"io.grafy.plugin.scope={key.scope_id.value}",
+                "--label",
+                f"io.grafy.plugin.release={key.release_slug}@{key.release_revision}",
+                "--label",
+                f"io.grafy.plugin.release_scope={key.release_scope.value}",
+                "--label",
+                f"io.grafy.plugin.capability_profile={capability_profile_digest}",
+                "--label",
+                f"io.grafy.plugin.created_at={created_at}",
+                f"sha256:{artifact.manifest_digest}",
+                "-c",
+                "import pathlib,time; pathlib.Path('/tmp/home').mkdir(); time.sleep(10**9)",
+            )
             created = await self._docker(
                 command,
                 timeout=60,
@@ -1368,7 +1357,10 @@ class DockerPluginRuntime(
         environment: tuple[str, ...] = ()
         capabilities = sandbox.key.required_capabilities
         if PluginRuntimeCapability.NETWORK_EGRESS in capabilities:
-            if sandbox.egress_plan is None or not sandbox.egress_plan.http_proxy_enabled:
+            if (
+                sandbox.egress_plan is None
+                or not sandbox.egress_plan.http_proxy_enabled
+            ):
                 raise PluginGuestRunError(
                     PluginFailureCode.INTERNAL_ADAPTER_FAILURE,
                     "Plugin HTTP egress broker is unavailable",
@@ -1549,9 +1541,7 @@ def _sandbox_key_sha256(key: _SandboxKey) -> str:
         "workspace_id": str(key.workspace_id),
         "release_scope": key.release_scope.value,
         "release_workspace_id": (
-            None
-            if key.release_workspace_id is None
-            else str(key.release_workspace_id)
+            None if key.release_workspace_id is None else str(key.release_workspace_id)
         ),
         "release_slug": key.release_slug,
         "release_revision": key.release_revision,
@@ -1591,14 +1581,14 @@ def _release_matches_identity(
     identity: PluginReleaseIdentity,
 ) -> bool:
     return (
-        release.scope is identity.scope
-        and release.workspace_id == identity.workspace_id
-        and release.slug == identity.slug
-        and release.revision == identity.revision
-        and release.source_digest == identity.source_digest
-        and release.contract_digest == identity.contract_digest
-        and release.protocol_digest == identity.protocol_digest
-        and release.descriptor.digest == identity.descriptor_digest
+        release.installation.scope is identity.scope
+        and release.installation.workspace_id == identity.workspace_id
+        and release.release.slug == identity.slug
+        and release.release.revision == identity.revision
+        and release.release.source_digest == identity.source_digest
+        and release.release.contract_digest == identity.contract_digest
+        and release.release.protocol_digest == identity.protocol_digest
+        and release.release.descriptor.digest == identity.descriptor_digest
     )
 
 
@@ -1656,11 +1646,7 @@ def _invocation_tar(invocation_root: Path, directory_name: str) -> bytes:
                 )
             content = path.read_bytes()
             info.size = len(content)
-            info.mode = (
-                0o400
-                if relative.startswith(("inputs/", "secrets/"))
-                else 0o600
-            )
+            info.mode = 0o400 if relative.startswith(("inputs/", "secrets/")) else 0o600
             archive.addfile(info, BytesIO(content))
     return destination.getvalue()
 

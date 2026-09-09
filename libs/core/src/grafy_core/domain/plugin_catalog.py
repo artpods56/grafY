@@ -18,23 +18,23 @@ class PluginCatalogRelease:
         release = self.release
         selection = self.selection
         if (
-            selection.namespace != release.namespace
-            or selection.slug != release.slug
-            or selection.selected_release_id != release.id
-            or selection.selected_revision != release.revision
+            selection.namespace != release.installation.namespace
+            or selection.slug != release.release.slug
+            or selection.selected_release_id != release.release.id
+            or selection.selected_revision != release.release.revision
         ):
             raise PluginReleaseError(
-                f"Catalog selection does not identify {release.scope.value} "
-                f"Plugin {release.slug!r} revision {release.revision}"
+                f"Catalog selection does not identify {release.installation.scope.value} "
+                f"Plugin {release.release.slug!r} revision {release.release.revision}"
             )
         if self.revocation is not None and (
-            self.revocation.installation_id != release.installation_id
-            or self.revocation.namespace != release.namespace
-            or self.revocation.slug != release.slug
-            or self.revocation.revision != release.revision
+            self.revocation.installation_id != release.installation.id
+            or self.revocation.namespace != release.installation.namespace
+            or self.revocation.slug != release.release.slug
+            or self.revocation.revision != release.release.revision
         ):
             raise PluginReleaseError(
                 f"Catalog revocation does not identify installation "
-                f"{release.installation_id} of Plugin {release.slug!r} "
-                f"revision {release.revision}"
+                f"{release.installation.id} of Plugin {release.release.slug!r} "
+                f"revision {release.release.revision}"
             )

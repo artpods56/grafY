@@ -128,7 +128,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [ ] Inline sole-production-caller storage selection, preserving supported package compatibility.
 - [x] Share stored-model integrity readers used by collections and tables.
 - [ ] Consolidate PluginRegistry state into immutable family declarations plus needed indexes; preserve ordering, freeze behavior, collisions.
-- [ ] Replace InstalledPluginRelease forwarding properties with explicit release/installation access while preserving pair invariants.
+- [x] Replace InstalledPluginRelease forwarding properties with explicit release/installation access while preserving pair invariants.
 
 ## Architecture contract and completion gates
 
@@ -650,3 +650,25 @@ flowchart LR
 - Added twelve contract cases through the public table/collection manifest loaders using real local storage: valid and legacy records, incorrect size/hash, malformed JSON, and invalid model shape. Every case checks stream closure; failures preserve the artifact/path context and original validation or integrity cause.
 - Validation passed 148 artifact/table-bundle/cache tests and 12 new integrity cases. Targeted typing of the reader, table storage, and new tests reports zero errors or warnings. Changed-file Ruff and whitespace checks pass. The built/extracted core wheel imports one shared reader through both feature owners and contains neither retired private reader.
 - Evidence: `/tmp/grafy-stored-model-regression.log`, `/tmp/grafy-stored-model-contracts.log`, `/tmp/grafy-stored-model-types.log`, and `/tmp/grafy-stored-model-build.log`. Finding 14 remains open for storage-factory compatibility, registry state, and release/installation forwarding cleanup.
+
+
+### Explicit immutable release and scoped installation ownership
+
+- Removed 26 forwarding properties from `InstalledPluginRelease`. Runtime admission, execution preparation, catalog assembly, publication tooling, revocation, persistence, and tests now use `.release` for immutable content/identity and `.installation` for scoped visibility/policy/installation identity. The two-member result model remains intact. [R32: Anemic Functions]
+- Retained constructor validation that installation release ID, slug, and revision match the immutable release. Retained `descriptor_digest`, which rejects a missing digest rather than merely forwarding it. Four new tests cover all three pair mismatches and missing-digest behavior.
+- Migrated callers from type-checker locations, then exercised runtime paths to find accesses hidden by suppressed typing and dynamic CLI test doubles. Updated those tests to the explicit nested result contract; no production compatibility forwarding was added. Public release identity serialization, fingerprints, CLI output, OpenAPI, and persistence schema remain unchanged.
+- Final validation: 560 core/application/persistence/architecture tests, 632 API/auth/collaboration/module/node-secret/execution tests, and 243 plugin/artifact/catalog/template/graph tests passed, totaling 1,435. Nineteen optional PostgreSQL cases were skipped. The API run excluded the two files containing previously reproduced native Docker/guest subprocess crashes; it does not validate live Docker execution.
+- Domain model/invariant-test typing reports zero errors or warnings. Whole-project Pyright has 891 diagnostics both before and after at identical filesystem paths, with no new diagnostic messages or counts. An earlier archive comparison differed by ten import-resolution diagnostics and is superseded by the exact-path baseline. Backed-up edited sources were restored byte-for-byte after baseline checking.
+- Changed-file Ruff and whitespace checks pass. Built/extracted core, persistence, and API wheels import together with unchanged OpenAPI. The internal pair model exposes its two owners and no longer exposes the retired flat properties.
+- Evidence: `/tmp/grafy-installed-core-tests.log`, `/tmp/grafy-installed-final-api-tests.log`, `/tmp/grafy-installed-additional-tests.log`, `/tmp/grafy-installed-final-caller-tests.log`, `/tmp/grafy-installed-domain-types.log`, `/tmp/grafy-installed-exact-baseline-types.json`, `/tmp/grafy-installed-final-types.json`, and `/tmp/grafy-installed-build.log`. Earlier API logs retain the initial stale-test failures; final reruns passed.
+- Proposed R20 amendment: after a type-directed ownership or API migration, search suppressed attribute accesses and run dynamic test doubles against the new contract; a clean typed-call-site search cannot validate those callers. This batch's ignored revision access and flat CLI doubles demonstrate the gap. [R23: Maintain The Rules]
+- Finding 14 remains open for storage-factory compatibility and registry-state consolidation. The other unfinished original findings and final whole-backend gates remain open.
+
+```mermaid
+flowchart LR
+    Pair[InstalledPluginRelease] --> Release[Immutable release: content, catalog, digests]
+    Pair --> Installation[Scoped installation: namespace, policy, identity]
+    Pair --> Check[Validate matching release ID, slug, revision]
+    Callers[Admission, execution, publication, persistence] --> Release
+    Callers --> Installation
+```
