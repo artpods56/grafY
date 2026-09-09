@@ -99,7 +99,8 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 - [x] Consolidate four Pydantic JSON and eleven string-enum decorators with typed implementations and named column types.
 - [x] Preserve SQL metadata and malformed-value behavior; retain specialized datetime/output/enum-collection semantics.
-- [ ] Split repository/table ownership into identity, graphs, execution, plugins, and library, with one metadata bootstrap.
+- [x] Split repository ownership into identity, graphs, artifacts, execution, plugins, and library.
+- [ ] Split table ownership by the same features, with one metadata bootstrap.
 - [x] Reuse bulk node hydration for queued/interrupted execution history, preserving ordering.
 - [ ] Verify SQLite and PostgreSQL behavior and migration metadata.
 
@@ -427,3 +428,24 @@ flowchart LR
 ```
 
 - Finding 11 remains open for repository/table ownership and live PostgreSQL verification. These two persistence batches remove 221 production lines overall without a schema migration.
+
+
+### Feature-owned SQL repositories
+
+- Replaced the 2,571-line `adapters/repositories.py` with a package containing identity, graphs, artifacts, execution, plugins, and library owners. Graph persistence includes collaboration and node secrets; artifact persistence includes staged uploads. The unit of work still composes all adapters into one transaction.
+- The package exports all thirteen named repository classes at their existing import path. No compatibility wrapper, factory, or additional interface was introduced.
+- Compared parsed syntax trees before and after the move: every repository class is identical. Only imports and the location of the execution-status constant changed.
+- Validation: 213 persistence/application/architecture tests and 520 API/execution-route tests passed in separate processes. The live PostgreSQL migration test remains skipped without a disposable database URL. The entire persistence package has zero Pyright errors or warnings; Ruff and whitespace checks pass.
+- Built and extracted the persistence wheel. All six owner modules are present, the retired flat module is absent, old class imports resolve, and ORM initialization registers the same 32 tables from the packaged installation.
+- Evidence: `/tmp/grafy-repositories-before.py`, `/tmp/grafy-repository-owners-types.log`, `/tmp/grafy-repository-owners-database.log`, `/tmp/grafy-repository-owners-api.log`, and `/tmp/grafy-repository-owners-wheel.log`.
+- Table ownership remains open. Inspection confirms that the 32 table declarations use named foreign-key references without direct dependencies on other table variables, which allows a separate move around one shared metadata instance.
+
+```mermaid
+flowchart TD
+    UOW[Shared transaction and unit of work] --> Identity[Identity repositories]
+    UOW --> Graphs[Graphs and collaboration repositories]
+    UOW --> Artifacts[Artifacts and staged uploads]
+    UOW --> Execution[Execution and cache repositories]
+    UOW --> Plugins[Plugin repositories]
+    UOW --> Library[Module and template repositories]
+```
