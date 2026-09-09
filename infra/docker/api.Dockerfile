@@ -17,6 +17,7 @@ COPY libs/storage ./libs/storage
 COPY libs/workbench ./libs/workbench
 COPY plugins ./plugins
 COPY apps/api ./apps/api
+COPY apps/plugin-egress-broker ./apps/plugin-egress-broker
 COPY infra/db ./infra/db
 
 EXPOSE 8000
