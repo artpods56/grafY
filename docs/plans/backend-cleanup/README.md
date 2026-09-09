@@ -48,7 +48,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Move SQL System cutover/baseline operations to persistence; keep command parsing/files/reporting in operator tooling.
 - [ ] Give the egress broker a dedicated executable application owner.
 - [x] Relocate old host loader/builder/bindings as explicit compatibility tooling; retain CLI commands and historical policies.
-- [ ] Remove unused active-runtime host binding/admission state, consistent with ADR 0007.
+- [x] Remove unused active-runtime host binding/admission state, consistent with ADR 0007.
 
 ## 5. Execution ownership
 
@@ -764,4 +764,25 @@ flowchart LR
     Compatibility --> Attestation[Source and wheel byte attestation]
     Compatibility --> Bindings[Deployment and host binding validation]
     Bindings --> Contracts[Core historical binding contracts]
+```
+
+
+### Remove inactive host state from runtime admission
+
+- Removed unused `system_host_bindings`, `host_supported_capabilities`, and `host_network_egress` admission fields, the host capability constant, and the host-binding parameter of `isolated_release_admission`. The admission decision and network-rejection method syntax trees are unchanged.
+- Removed historical deployment arguments and validation from `build_workbench_components`. Active composition has no dependency on the compatibility host package. It uses the runtime's frozen admission policy directly instead of reconstructing all its fields. [R01: Direct Ownership]
+- Retained operator manifest loading and validation, compatibility exports, stored historical policy values, and the existing fail-closed host-eligible promotion check. `IN_PROCESS`, the unused decision selection parameter, and the `host_binding_mismatch` reason remain compatibility vocabulary in this batch. No host execution path was introduced.
+- Migrated test construction away from unused bindings. Renamed built-in compiler tests to match their actual behavior, and removed two duplicate built-in tests whose altered bindings were never read. Real compatibility registry/build validation tests remain. Added ten scope/policy/runtime/revocation cases and two real CLI manifest-validation cases. All twelve pass against committed pre-change production code as well as the cleanup. [R43: Tests Are Behavioral Contracts]
+- Validation: 512 API/architecture tests and 34 execution-route/history/cache/readiness integration tests passed. Earlier focused validation passed 95 tests, overlapping the final suites. The API wheel imports from its extracted contents, preserves promotion CLI help, and generates identical OpenAPI. Ruff and diff whitespace checks pass.
+- Targeted production Pyright reports ten existing network-rejection enum/literal diagnostics. A same-path baseline comparison confirms identical diagnostic text after normalizing line positions, with no new errors. This is not a globally clean typing claim. Live Docker guest execution was not run in this batch.
+- Proposed addition to the runtime test guidance: before asserting a Plugin isolation or host-binding policy, assert that the fixture represents an installed Plugin release or a `kind=plugin` graph node. A `kind=builtin` fixture does not exercise Plugin admission, even when its operator overlaps an installed release. This makes stale migration tests detectable. [R23: Maintain The Rules]
+- Evidence: `/tmp/grafy-host-state-focused.log`, `/tmp/grafy-host-state-regression.log`, `/tmp/grafy-host-state-integration.log`, `/tmp/grafy-host-state-baseline-contracts.log`, `/tmp/grafy-host-state-baseline-types.log`, `/tmp/grafy-host-state-types.log`, `/tmp/grafy-host-state-build.log`, and `/tmp/grafy-host-state-wheel.log`.
+- Finding 4 remains open for the dedicated egress-broker executable owner. Publication fencing, canonical graph transport, spatial contracts, and the final architecture gates also remain open.
+
+```mermaid
+flowchart LR
+    Runtime[Isolated Plugin runtime] --> Admission[Frozen release admission policy]
+    Composition[Workbench composition] --> Admission
+    CLI[Operator commands] --> Compatibility[Historical deployment validation]
+    CLI --> Admission
 ```

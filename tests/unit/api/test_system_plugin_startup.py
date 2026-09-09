@@ -44,7 +44,9 @@ async def test_startup_registers_builtin_families_without_host_deployment(
             {node.key for node in registry.nodes}
         )
         admission = application.state.resources.workbench.release_admission
-        assert admission is None or admission.system_host_bindings == ()
+        assert admission is not None
+        assert admission.isolated_adapter_available is False
+        assert admission.runtime_profile is None
 
 
 @pytest.mark.asyncio
@@ -67,4 +69,6 @@ async def test_configured_host_deployment_manifest_is_ignored(
             plugin.slug for plugin in resources.workbench.plugin_registry.plugins
         } == (expected_slugs)
         admission = resources.workbench.release_admission
-        assert admission is None or admission.system_host_bindings == ()
+        assert admission is not None
+        assert admission.isolated_adapter_available is False
+        assert admission.runtime_profile is None

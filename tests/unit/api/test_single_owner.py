@@ -104,6 +104,15 @@ async def test_create_app_startup_acquires_owner_lease(
             contested.acquire()
 
         resources = get_resources(app)
+        workbench = resources.workbench
+        assert workbench.release_admission is not None
+        if workbench.plugin_runtime is not None:
+            assert (
+                workbench.release_admission
+                == workbench.plugin_runtime.release_admission
+            )
+        else:
+            assert workbench.release_admission.isolated_adapter_available is False
         capacity = await resources.capacity_diagnostics()
         assert capacity.execution_admission.active_executions == 0
         assert (capacity.plugin_sandboxes is not None) is plugin_runtime_enabled

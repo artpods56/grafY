@@ -598,21 +598,14 @@ async def test_same_slug_and_revision_resolve_independently_by_release_scope() -
 
 
 @pytest.mark.asyncio
-async def test_exact_selected_system_release_runs_through_bound_host() -> None:
+async def test_builtin_node_does_not_acquire_selected_plugin_release_identity() -> None:
     release = _host_text_release(1)
     selection = PluginReleaseSelection.from_release(release)
-    binding = SystemHostPluginBinding.from_release(
-        release,
-        selection_generation=selection.generation,
-        loader_target=HOST_LOADER_TARGET,
-        host_build_digest=HOST_BUILD_DIGEST,
-    )
     compiled = await _compiler(
         RecordingReleaseLookup(release, selection=selection),
         admission=ReleaseExecutionAdmission(
             isolated_adapter_available=True,
             runtime_profile="python-uv",
-            system_host_bindings=(binding,),
         ),
     ).compile(
         _system_text_run_request(1),
@@ -628,19 +621,13 @@ async def test_exact_selected_system_release_runs_through_bound_host() -> None:
 
 
 @pytest.mark.asyncio
-async def test_revoked_selected_system_release_cannot_use_bound_host() -> None:
+async def test_builtin_node_is_independent_of_plugin_release_revocation() -> None:
     release = _host_text_release(1)
     selection = PluginReleaseSelection.from_release(release)
     revocation = PluginReleaseRevocation.from_release(
         release,
         reason=PluginReleaseRevocationReason.SECURITY,
         revoked_by_platform_actor="test:system",
-    )
-    binding = SystemHostPluginBinding.from_release(
-        release,
-        selection_generation=selection.generation,
-        loader_target=HOST_LOADER_TARGET,
-        host_build_digest=HOST_BUILD_DIGEST,
     )
 
     compiled = await _compiler(
@@ -652,7 +639,6 @@ async def test_revoked_selected_system_release_cannot_use_bound_host() -> None:
         admission=ReleaseExecutionAdmission(
             isolated_adapter_available=True,
             runtime_profile="python-uv",
-            system_host_bindings=(binding,),
         ),
     ).compile(
         _system_text_run_request(1),
@@ -666,22 +652,15 @@ async def test_revoked_selected_system_release_cannot_use_bound_host() -> None:
 
 
 @pytest.mark.asyncio
-async def test_historical_system_release_overlapping_host_runs_isolated() -> None:
+async def test_builtin_node_is_independent_of_historical_plugin_selection() -> None:
     historical = _host_text_release(1)
     selected = _host_text_release(2)
     selection = PluginReleaseSelection.from_release(selected)
-    binding = SystemHostPluginBinding.from_release(
-        selected,
-        selection_generation=selection.generation,
-        loader_target=HOST_LOADER_TARGET,
-        host_build_digest=HOST_BUILD_DIGEST,
-    )
     compiled = await _compiler(
         RecordingReleaseLookup(historical, selected, selection=selection),
         admission=ReleaseExecutionAdmission(
             isolated_adapter_available=True,
             runtime_profile="python-uv",
-            system_host_bindings=(binding,),
         ),
     ).compile(
         _system_text_run_request(1),
@@ -810,73 +789,10 @@ async def test_isolated_exact_release_supplies_its_own_projectable_artifact_cont
     )
 
 
-@pytest.mark.asyncio
-async def test_selected_host_binding_digest_mismatch_fails_closed() -> None:
-    release = _host_text_release(1)
-    selection = PluginReleaseSelection.from_release(release)
-    binding = SystemHostPluginBinding.from_release(
-        release,
-        selection_generation=selection.generation,
-        loader_target=HOST_LOADER_TARGET,
-        host_build_digest=HOST_BUILD_DIGEST,
-    ).model_copy(update={"runtime_archive_digest": "d" * 64})
-
-    compiled = await _compiler(
-        RecordingReleaseLookup(release, selection=selection),
-        admission=ReleaseExecutionAdmission(
-            isolated_adapter_available=True,
-            runtime_profile="python-uv",
-            system_host_bindings=(binding,),
-        ),
-    ).compile(
-        _system_text_run_request(1),
-        _UnusedModuleExecutor(),
-        workspace_id=WORKSPACE_ID,
-    )
-
-    assert compiled.nodes[0].plugin_release is None
-
-
-@pytest.mark.asyncio
-async def test_selected_host_binding_generation_mismatch_fails_closed() -> None:
-    release = _host_text_release(1)
-    selection = PluginReleaseSelection.from_release(release)
-    binding = SystemHostPluginBinding.from_release(
-        release,
-        selection_generation=selection.generation + 1,
-        loader_target=HOST_LOADER_TARGET,
-        host_build_digest=HOST_BUILD_DIGEST,
-    )
-
-    compiled = await _compiler(
-        RecordingReleaseLookup(release, selection=selection),
-        admission=ReleaseExecutionAdmission(
-            isolated_adapter_available=True,
-            runtime_profile="python-uv",
-            system_host_bindings=(binding,),
-        ),
-    ).compile(
-        _system_text_run_request(1),
-        _UnusedModuleExecutor(),
-        workspace_id=WORKSPACE_ID,
-    )
-
-    assert compiled.nodes[0].plugin_release is None
-
-
 def test_isolated_only_and_workspace_releases_never_select_host_route() -> None:
-    host_release = _host_text_release(1)
-    selection = PluginReleaseSelection.from_release(host_release)
-    binding = SystemHostPluginBinding.from_release(
-        host_release,
-        selection_generation=selection.generation,
-        loader_target=HOST_LOADER_TARGET,
-        host_build_digest=HOST_BUILD_DIGEST,
-    )
     admission = ReleaseExecutionAdmission(
         isolated_adapter_available=True,
         runtime_profile="python-uv",
-        system_host_bindings=(binding,),
     )
     isolated_system = _release(1, scope=PluginReleaseScope.SYSTEM)
     isolated_selection = PluginReleaseSelection.from_release(isolated_system)
@@ -893,21 +809,56 @@ def test_non_published_system_selection_never_selects_host_route() -> None:
     release = _host_text_release(1)
     selection = PluginReleaseSelection.from_release(release)
     selection.lifecycle = PluginFamilyLifecycle.DEPRECATED
-    binding = SystemHostPluginBinding.from_release(
-        release,
-        selection_generation=selection.generation,
-        loader_target=HOST_LOADER_TARGET,
-        host_build_digest=HOST_BUILD_DIGEST,
-    )
 
     assert (
         ReleaseExecutionAdmission(
             isolated_adapter_available=True,
             runtime_profile="python-uv",
-            system_host_bindings=(binding,),
         ).decide(release, selection=selection)
         is ReleaseExecutionRoute.ISOLATED
     )
+
+
+@pytest.mark.parametrize(
+    ("scope", "execution_policy", "revoked"),
+    [
+        (PluginReleaseScope.WORKSPACE, PluginExecutionPolicy.ISOLATED_ONLY, False),
+        (PluginReleaseScope.SYSTEM, PluginExecutionPolicy.ISOLATED_ONLY, False),
+        (PluginReleaseScope.SYSTEM, PluginExecutionPolicy.HOST_ELIGIBLE, False),
+        (PluginReleaseScope.SYSTEM, PluginExecutionPolicy.ISOLATED_ONLY, True),
+        (PluginReleaseScope.SYSTEM, PluginExecutionPolicy.HOST_ELIGIBLE, True),
+    ],
+)
+@pytest.mark.parametrize("runtime_available", [False, True])
+def test_release_scope_and_historical_policy_cannot_bypass_isolation(
+    scope: PluginReleaseScope,
+    execution_policy: PluginExecutionPolicy,
+    runtime_available: bool,
+    revoked: bool,
+) -> None:
+    release = _release(1, scope=scope, execution_policy=execution_policy)
+    revocation = (
+        PluginReleaseRevocation.from_release(
+            release,
+            reason=PluginReleaseRevocationReason.SECURITY,
+            revoked_by_platform_actor="test:system",
+        )
+        if revoked
+        else None
+    )
+    decision = ReleaseExecutionAdmission(
+        isolated_adapter_available=runtime_available,
+        runtime_profile="python-uv",
+    ).decide(release, revocation=revocation)
+
+    if revoked:
+        assert isinstance(decision, ReleaseExecutionRejection)
+        assert decision.reason == "revoked"
+    elif not runtime_available:
+        assert isinstance(decision, ReleaseExecutionRejection)
+        assert decision.reason == "plugin_runtime_unavailable"
+    else:
+        assert decision is ReleaseExecutionRoute.ISOLATED
 
 
 def test_admission_requires_an_exact_artifact_bundle_adapter() -> None:
@@ -1000,7 +951,7 @@ def test_admission_rejects_an_exact_revocation_with_the_stable_reason() -> None:
     assert "security" in decision.detail
 
 
-def test_host_binding_registry_contract_mismatch_fails_composition_check() -> None:
+def test_compatibility_host_binding_rejects_registry_contract_mismatch() -> None:
     release = _host_text_release(1)
     binding = SystemHostPluginBinding.from_release(
         release,
@@ -1023,7 +974,7 @@ def test_host_binding_registry_contract_mismatch_fails_composition_check() -> No
         validate_system_host_bindings((mismatched,), (loaded,), registry)
 
 
-def test_host_binding_build_mismatch_fails_composition_check() -> None:
+def test_compatibility_host_binding_rejects_build_mismatch() -> None:
     release = _host_text_release(1)
     binding = SystemHostPluginBinding.from_release(
         release,
@@ -1290,12 +1241,6 @@ async def test_pinned_plugin_participates_in_ordinary_map_semantics() -> None:
 
     system_release = _host_text_release(1)
     selection = PluginReleaseSelection.from_release(system_release)
-    binding = SystemHostPluginBinding.from_release(
-        system_release,
-        selection_generation=selection.generation,
-        loader_target=HOST_LOADER_TARGET,
-        host_build_digest=HOST_BUILD_DIGEST,
-    )
     lookup = RecordingReleaseLookup(
         _release(1),
         _release(2),
@@ -1357,7 +1302,6 @@ async def test_pinned_plugin_participates_in_ordinary_map_semantics() -> None:
         admission=ReleaseExecutionAdmission(
             isolated_adapter_available=True,
             runtime_profile="python-uv",
-            system_host_bindings=(binding,),
         ),
     ).compile(
         request,
@@ -1555,12 +1499,6 @@ async def test_host_node_output_feeds_pinned_workspace_plugin_in_same_graph(
     saved_graphs = SavedGraphService(_unused_saved_graph_uow, registry)
     system_release = _host_text_release(1)
     selection = PluginReleaseSelection.from_release(system_release)
-    binding = SystemHostPluginBinding.from_release(
-        system_release,
-        selection_generation=selection.generation,
-        loader_target=HOST_LOADER_TARGET,
-        host_build_digest=HOST_BUILD_DIGEST,
-    )
     lookup = RecordingReleaseLookup(
         _release(1),
         _release(2),
@@ -1577,7 +1515,6 @@ async def test_host_node_output_feeds_pinned_workspace_plugin_in_same_graph(
         release_admission=ReleaseExecutionAdmission(
             isolated_adapter_available=True,
             runtime_profile="python-uv",
-            system_host_bindings=(binding,),
         ),
         build_digest="a" * 64,
     )

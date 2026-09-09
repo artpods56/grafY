@@ -20,9 +20,6 @@ from grafy_core.domain.plugin_selection import (
 )
 from grafy_core.table_contracts import TABLE_DATA
 
-from grafy_core.domain.plugin_host_bindings import (
-    SystemHostPluginBinding,
-)
 from grafy_api.plugins.runtime.egress import (
     PluginEgressBrokerPolicy,
     PluginEgressProtocol,
@@ -63,12 +60,6 @@ ISOLATED_BASE_CAPABILITIES = frozenset(
         PluginRuntimeCapability.NODE_SECRETS,
         PluginRuntimeCapability.STAGED_UPLOADS,
         PluginRuntimeCapability.UNTRUSTED_SQL,
-    }
-)
-HOST_BASE_CAPABILITIES = frozenset(
-    {
-        PluginRuntimeCapability.NODE_SECRETS,
-        PluginRuntimeCapability.STAGED_UPLOADS,
     }
 )
 
@@ -132,8 +123,6 @@ class ReleaseExecutionAdmission:
 
     isolated_adapter_available: bool
     runtime_profile: str | None
-    # Backwards-compatible isolated-runtime policy. Host bindings have a
-    # deliberately separate allowlist because they execute in the API process.
     supported_capabilities: frozenset[PluginRuntimeCapability] = frozenset()
     network_egress: PluginNetworkEgressPolicy = PluginNetworkEgressPolicy()
     postgresql_egress: PluginPostgresqlEgressPolicy = PluginPostgresqlEgressPolicy()
@@ -151,9 +140,6 @@ class ReleaseExecutionAdmission:
     platform_artifact_contracts: tuple[PluginArtifactTypeContract, ...] = (
         _DEFAULT_PLATFORM_ARTIFACT_CONTRACTS
     )
-    system_host_bindings: tuple[SystemHostPluginBinding, ...] = ()
-    host_supported_capabilities: frozenset[PluginRuntimeCapability] = frozenset()
-    host_network_egress: PluginNetworkEgressPolicy = PluginNetworkEgressPolicy()
 
     def decide(
         self,
@@ -366,7 +352,6 @@ def isolated_release_admission(
     profile: PluginRuntimeProfile,
     egress_policy: PluginEgressBrokerPolicy,
     network_policy: NetworkPolicy,
-    system_host_bindings: tuple[SystemHostPluginBinding, ...] = (),
     supported_capabilities: frozenset[PluginRuntimeCapability] = (
         ISOLATED_BASE_CAPABILITIES
     ),
@@ -402,8 +387,6 @@ def isolated_release_admission(
         network_egress=network_egress,
         postgresql_egress=postgresql_egress,
         network_policy=network_policy,
-        system_host_bindings=system_host_bindings,
-        host_supported_capabilities=HOST_BASE_CAPABILITIES,
     )
 
 

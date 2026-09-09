@@ -17,9 +17,6 @@ from grafy_api.plugins.publication.source import (
     PluginPublishingError,
     VerifiedPluginCandidate,
 )
-from grafy_core.domain.plugin_host_bindings import (
-    SystemHostPluginBinding,
-)
 from grafy_api.system_plugin_inventory import (
     CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH,
     load_system_plugin_inventory,
@@ -132,8 +129,6 @@ def _workflow(
     image_builder: RecordingSystemImageBuilder,
     releases: PluginReleaseService,
     inventory: SystemPluginInventory,
-    *,
-    bindings: tuple[SystemHostPluginBinding, ...] = (),
 ) -> SystemPluginPublicationWorkflow:
     destination = PluginEgressDestination.parse("https://api.openai.com:443")
     return SystemPluginPublicationWorkflow(
@@ -148,7 +143,6 @@ def _workflow(
             network_policy=legacy_network_policy(
                 http_destinations=(destination,),
             ),
-            system_host_bindings=bindings,
         ),
         inventory,
     )

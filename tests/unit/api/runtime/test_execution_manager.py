@@ -437,8 +437,6 @@ def _manager(
             PluginReleaseService,
             SYSTEM_DEPLOYMENT.release_lookup,
         ),
-        system_host_bindings=SYSTEM_DEPLOYMENT.host_bindings,
-        loaded_system_plugins=SYSTEM_DEPLOYMENT.loaded_plugins,
     )
     return RunExecutionManager(
         components.run_graph,

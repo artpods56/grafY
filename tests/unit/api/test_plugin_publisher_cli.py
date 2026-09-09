@@ -5,6 +5,8 @@ from uuid import UUID
 
 import pytest
 
+from grafy_api.plugins.compatibility.loader import SystemPluginDeploymentError
+from grafy_api.settings import Settings
 from grafy_api import cli
 from grafy_api.cli_credentials import CredentialDigest
 from grafy_api.plugins.publication.source import PluginPublishingError
@@ -646,3 +648,41 @@ def test_cli_renders_publication_failures_without_a_traceback(
     error = capsys.readouterr().err
     assert str(failure) in error
     assert "Traceback" not in error
+
+
+@pytest.mark.parametrize(
+    "manifest_contents", ["not json", '{"manifest_version":"invalid"}']
+)
+def test_global_promotion_still_validates_supplied_compatibility_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    manifest_contents: str,
+) -> None:
+    manifest = tmp_path / "deployment.json"
+    manifest.write_text(manifest_contents)
+    settings = Settings(
+        _env_file=None,  # pyright: ignore[reportCallIssue]
+        workspace=tmp_path / "workspace",
+    )
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli, "create_database", create_fake_database)
+    monkeypatch.setattr(cli, "configured_file_storage", configured_fake_storage)
+    monkeypatch.setattr(cli, "PluginReleaseService", FakePluginReleaseService)
+    monkeypatch.setattr(cli, "PluginOciImageBuilder", FakePluginOciImageBuilder)
+    monkeypatch.setattr(cli, "IdentityService", FakeIdentityService)
+    monkeypatch.setattr(cli, "_load_credential_digest", platform_credential)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "grafy",
+            "plugin",
+            "promote",
+            "external.llm@1",
+            "--deployment-manifest",
+            str(manifest),
+        ],
+    )
+
+    with pytest.raises(SystemPluginDeploymentError, match="deployment manifest"):
+        cli.main()

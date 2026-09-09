@@ -66,9 +66,6 @@ from grafy_api.system_cutover_operations import (
     load_system_baseline_manifest,
     verify_rollback_unit_manifest,
 )
-from grafy_core.domain.plugin_host_bindings import (
-    SystemHostPluginBinding,
-)
 from grafy_api.plugins.compatibility.deployment import (
     SystemPluginDeploymentManifestBuilder,
 )
@@ -455,12 +452,10 @@ async def _run(args: argparse.Namespace) -> None:
                 secret_digest=credential.secret_digest,
                 required_scope=required_scope,
             )
-            host_bindings: tuple[SystemHostPluginBinding, ...] = ()
             if args.command == "promote" and args.deployment_manifest is not None:
-                deployment = load_system_plugin_deployment_file(
+                load_system_plugin_deployment_file(
                     args.deployment_manifest
                 )
-                host_bindings = deployment.bindings
             system_publication = SystemPluginPublicationWorkflow(
                 image_builder,
                 releases,
@@ -468,7 +463,6 @@ async def _run(args: argparse.Namespace) -> None:
                     profile=profile,
                     egress_policy=settings.resolved_plugin_egress_policy,
                     network_policy=settings.resolved_network_policy,
-                    system_host_bindings=host_bindings,
                 ),
                 system_inventory,
             )

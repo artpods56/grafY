@@ -105,7 +105,6 @@ def _compiler(
         release_admission=ReleaseExecutionAdmission(
             isolated_adapter_available=False,
             runtime_profile=None,
-            system_host_bindings=SYSTEM_DEPLOYMENT.host_bindings,
         ),
         build_digest=TEST_BUILD_DIGEST,
     )

@@ -30,17 +30,9 @@ from grafy_core.runtime.resolvers import ResolverRegistry
 from grafy_storage import LocalFileObjectStore
 
 from grafy_api.plugins.runtime.admission import (
-    HOST_BASE_CAPABILITIES,
     ReleaseExecutionAdmission,
 )
 from grafy_api.plugins.runtime.network_policy import NetworkPolicy
-from grafy_api.plugins.compatibility.bindings import (
-    validate_system_host_bindings,
-)
-from grafy_core.domain.plugin_host_bindings import (
-    LoadedSystemPlugin,
-    SystemHostPluginBinding,
-)
 from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.execution.compiler import GraphCompiler
@@ -101,8 +93,6 @@ def build_workbench_components(
     module_library: ModuleLibraryService | None = None,
     plugin_releases: PluginReleaseService | None = None,
     plugin_runtime: DockerPluginRuntime | None = None,
-    system_host_bindings: tuple[SystemHostPluginBinding, ...] = (),
-    loaded_system_plugins: tuple[LoadedSystemPlugin, ...] = (),
     node_secrets: NodeSecretResolverPort | None = None,
     graph_room_hub: GraphRoomHub | None = None,
     network_policy: NetworkPolicy | None = None,
@@ -111,13 +101,6 @@ def build_workbench_components(
     ),
     build_digest: str = "a" * 64,
 ) -> WorkbenchComponents:
-    validate_system_host_bindings(
-        system_host_bindings,
-        loaded_system_plugins,
-        plugin_registry,
-    )
-    if system_host_bindings and plugin_releases is None:
-        raise RuntimeError("System host bindings require Plugin release persistence")
     resolved_workspace = (
         (
             workspace
@@ -181,8 +164,6 @@ def build_workbench_components(
             release_admission = ReleaseExecutionAdmission(
                 isolated_adapter_available=False,
                 runtime_profile=None,
-                system_host_bindings=system_host_bindings,
-                host_supported_capabilities=HOST_BASE_CAPABILITIES,
             )
         else:
             artifact_plugin_invoker = ArtifactBundlePluginInvoker(
@@ -200,23 +181,7 @@ def build_workbench_components(
                 uploads_dir=uploads_dir,
             )
             plugin_invoker = artifact_plugin_invoker
-            runtime_admission = plugin_runtime.release_admission
-            release_admission = ReleaseExecutionAdmission(
-                isolated_adapter_available=(
-                    runtime_admission.isolated_adapter_available
-                ),
-                runtime_profile=runtime_admission.runtime_profile,
-                supported_capabilities=runtime_admission.supported_capabilities,
-                network_egress=runtime_admission.network_egress,
-                postgresql_egress=runtime_admission.postgresql_egress,
-                network_policy=runtime_admission.network_policy,
-                supported_bundle_adapters=(runtime_admission.supported_bundle_adapters),
-                platform_artifact_contracts=(
-                    runtime_admission.platform_artifact_contracts
-                ),
-                system_host_bindings=system_host_bindings,
-                host_supported_capabilities=HOST_BASE_CAPABILITIES,
-            )
+            release_admission = plugin_runtime.release_admission
     compiler = GraphCompiler(
         plugin_registry=plugin_registry,
         plugin_context=plugin_context,
