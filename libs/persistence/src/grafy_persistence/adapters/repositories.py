@@ -1,9 +1,21 @@
 from collections.abc import Collection
 from datetime import UTC, datetime
+from itertools import batched
 from typing import cast, override
 from uuid import UUID
 
-from sqlalchemy import and_, case, delete, func, insert, or_, select, text, update
+from sqlalchemy import (
+    and_,
+    case,
+    delete,
+    func,
+    insert,
+    or_,
+    select,
+    text,
+    tuple_,
+    update,
+)
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import CursorResult
@@ -1236,11 +1248,7 @@ class SqlGraphExecutionHistoryRepository(
         )
         if current_record is None:
             raise NotFoundError("Graph execution", str(execution.execution_id))
-        requested_node_ids = await self._requested_node_ids(
-            execution.workspace_id,
-            execution.execution_id,
-        )
-        current = current_record.to_domain(requested_node_ids)
+        (current,) = await self._hydrate_executions((current_record,))
         if (
             current.graph_id != execution.graph_id
             or current.graph_revision != execution.graph_revision
@@ -1360,9 +1368,7 @@ class SqlGraphExecutionHistoryRepository(
         )
         if record is None:
             return None
-        execution = record.to_domain(
-            await self._requested_node_ids(workspace_id, execution_id)
-        )
+        (execution,) = await self._hydrate_executions((record,))
         nodes = schema.graph_execution_nodes
         result_rows = (
             await self._session.execute(
@@ -1495,43 +1501,16 @@ class SqlGraphExecutionHistoryRepository(
         rows = list((await self._session.execute(statement)).all())
         has_more = len(rows) > limit
         page_rows = rows[:limit]
-        requested_by_execution: dict[UUID, list[tuple[int, str]]] = {}
-        execution_ids = [row[0].execution_id for row in page_rows]
-        if execution_ids:
-            node_rows = (
-                await self._session.execute(
-                    select(
-                        nodes.c.execution_id,
-                        nodes.c.position,
-                        nodes.c.node_id,
-                    )
-                    .where(nodes.c.execution_id.in_(execution_ids))
-                    .where(nodes.c.workspace_id == workspace_id)
-                    .order_by(
-                        nodes.c.execution_id.asc(),
-                        nodes.c.position.asc(),
-                    )
-                )
-            ).all()
-            for requested_execution_id, position, requested_node_id in node_rows:
-                requested_by_execution.setdefault(requested_execution_id, []).append(
-                    (position, requested_node_id)
-                )
+        page_executions = await self._hydrate_executions(
+            tuple(row[0] for row in page_rows)
+        )
         items = tuple(
             GraphExecutionListItem(
-                execution=row[0].to_domain(
-                    tuple(
-                        node_id
-                        for _, node_id in requested_by_execution.get(
-                            row[0].execution_id,
-                            [],
-                        )
-                    )
-                ),
+                execution=execution,
                 node_count=int(row[1]),
                 artifact_count=int(row[2]),
             )
-            for row in page_rows
+            for execution, row in zip(page_executions, page_rows, strict=True)
         )
         next_cursor = None
         if has_more and items:
@@ -1554,14 +1533,7 @@ class SqlGraphExecutionHistoryRepository(
                 )
             )
         )
-        queued: list[GraphExecution] = []
-        for record in records:
-            requested_node_ids = await self._requested_node_ids(
-                record.workspace_id,
-                record.execution_id,
-            )
-            queued.append(record.to_domain(requested_node_ids))
-        return tuple(queued)
+        return await self._hydrate_executions(records)
 
     @override
     async def get_by_idempotency_key(
@@ -1577,11 +1549,8 @@ class SqlGraphExecutionHistoryRepository(
         )
         if record is None:
             return None
-        requested_node_ids = await self._requested_node_ids(
-            workspace_id,
-            record.execution_id,
-        )
-        return record.to_domain(requested_node_ids)
+        (execution,) = await self._hydrate_executions((record,))
+        return execution
 
     @override
     async def claim_queued(
@@ -1625,14 +1594,7 @@ class SqlGraphExecutionHistoryRepository(
                 )
             )
         )
-        interrupted_values: list[GraphExecution] = []
-        for record in records:
-            requested_node_ids = await self._requested_node_ids(
-                record.workspace_id,
-                record.execution_id,
-            )
-            interrupted_values.append(record.to_domain(requested_node_ids))
-        interrupted = tuple(interrupted_values)
+        interrupted = await self._hydrate_executions(records)
         if interrupted:
             await self._session.execute(
                 update(schema.graph_executions)
@@ -1649,21 +1611,33 @@ class SqlGraphExecutionHistoryRepository(
             )
         return interrupted
 
-    async def _requested_node_ids(
+    async def _hydrate_executions(
         self,
-        workspace_id: UUID,
-        execution_id: UUID,
-    ) -> tuple[str, ...]:
+        records: Collection[GraphExecutionRecord],
+    ) -> tuple[GraphExecution, ...]:
         nodes = schema.graph_execution_nodes
-        result = await self._session.scalars(
-            select(nodes.c.node_id)
-            .where(
-                nodes.c.workspace_id == workspace_id,
-                nodes.c.execution_id == execution_id,
+        requested: dict[tuple[UUID, UUID], list[str]] = {}
+        # Each identity binds two values; bounded batches also support SQLite's
+        # older 999-variable statement limit during large queue recovery.
+        for batch in batched(records, 400):
+            identities = [
+                (record.workspace_id, record.execution_id) for record in batch
+            ]
+            rows = await self._session.execute(
+                select(nodes.c.workspace_id, nodes.c.execution_id, nodes.c.node_id)
+                .where(
+                    tuple_(nodes.c.workspace_id, nodes.c.execution_id).in_(identities)
+                )
+                .order_by(nodes.c.workspace_id, nodes.c.execution_id, nodes.c.position)
             )
-            .order_by(nodes.c.position.asc())
+            for workspace_id, execution_id, node_id in rows:
+                requested.setdefault((workspace_id, execution_id), []).append(node_id)
+        return tuple(
+            record.to_domain(
+                tuple(requested.get((record.workspace_id, record.execution_id), ()))
+            )
+            for record in records
         )
-        return tuple(result)
 
 
 class SqlNodeSecretRepository(NodeSecretRepositoryPort):

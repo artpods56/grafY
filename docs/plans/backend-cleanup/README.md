@@ -100,7 +100,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Consolidate four Pydantic JSON and eleven string-enum decorators with typed implementations and named column types.
 - [x] Preserve SQL metadata and malformed-value behavior; retain specialized datetime/output/enum-collection semantics.
 - [ ] Split repository/table ownership into identity, graphs, execution, plugins, and library, with one metadata bootstrap.
-- [ ] Reuse bulk node hydration for queued/interrupted execution history, preserving ordering.
+- [x] Reuse bulk node hydration for queued/interrupted execution history, preserving ordering.
 - [ ] Verify SQLite and PostgreSQL behavior and migration metadata.
 
 ## 12. Artifact contracts and in-memory persistence
@@ -405,3 +405,25 @@ flowchart LR
 - Regression validation: 205 persistence, application, and architecture tests passed. The live PostgreSQL migration test was skipped because its disposable database URL is not configured. Shared types, schema, and new tests have zero Pyright errors or warnings; Ruff passes.
 - Evidence: `/tmp/grafy-column-types-before.json`, `/tmp/grafy-column-types-baseline.log`, `/tmp/grafy-column-types-focused.log`, `/tmp/grafy-column-types-regression.log`, and `/tmp/grafy-column-types-types.log`.
 - Finding 11 remains open for repository/table ownership, bulk recovery hydration, and live PostgreSQL verification.
+
+
+### Batched execution history recovery
+
+- `SqlGraphExecutionHistoryRepository._hydrate_executions` now owns ordered node hydration for queue recovery, restart interruption, history pages, individual detail/idempotency reads, and immutable-request checks during updates. Removed the duplicated page loop and per-execution recovery queries.
+- Node queries match exact `(workspace_id, execution_id)` pairs in batches of 400. Two bound values per pair keep each node query below SQLite's older 999-variable ceiling. Empty input performs no node query.
+- Hydration preserves caller record order, stored request-node position, empty node sets, submitted request data, and Workspace identity. Interruption still returns pre-update execution records and persists the same failed status, timestamp, and error.
+- Added queue/interruption regressions for 0, 1, 5, and 401 executions across two Workspaces. Equal creation times test the existing UUID tie-break; reversed insertion and nonalphabetical node names expose accidental ordering changes. Both 401-execution cases use three SELECTs, down from 402, and interruption checks every persisted result.
+- Validation: 17 focused history tests passed. Separate regression processes passed 213 persistence/application/architecture tests and 204 runtime/core-history/execution-route tests. One live PostgreSQL migration test remains skipped without its disposable database URL. The entire persistence package passes strict Pyright; Ruff and diff whitespace checks pass.
+- The existing history test file has two Pyright diagnostics at its un-narrowed artifact union assertion, unchanged by this batch. New test code introduces none.
+- A combined run produced seven missing-log assertion failures after migration tests. `infra/db/migrations/env.py` calls `fileConfig` with its default disabling of existing loggers; all 204 runtime tests pass in a fresh process. Follow-up: migration tests should restore process logging state after running Alembic, and a combined-run regression should verify subsequent log capture. This is a test-isolation gap outside the persistence read change. [R23: Maintain The Rules]
+- Evidence: `/tmp/grafy-history-batch-focused.log`, `/tmp/grafy-history-batch-regression.log`, `/tmp/grafy-history-batch-runtime.log`, `/tmp/grafy-history-batch-database.log`, `/tmp/grafy-history-batch-types.log`, and `/tmp/grafy-persistence-types.log`.
+
+```mermaid
+flowchart LR
+    Queue[Queue and interruption recovery] --> Hydrate[Shared execution hydration]
+    History[History pages and individual reads] --> Hydrate
+    Hydrate --> Nodes[Scoped node batches of 400]
+    Nodes --> Result[Domain executions in original order]
+```
+
+- Finding 11 remains open for repository/table ownership and live PostgreSQL verification. These two persistence batches remove 221 production lines overall without a schema migration.

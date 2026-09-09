@@ -4,9 +4,10 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
+from typing import Literal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from grafy_core.artifacts import ArtifactObject, ArtifactRefSequence
 from grafy_core.domain.errors import (
@@ -849,3 +850,93 @@ async def test_unified_node_rows_round_trip_partial_executions(
         )
     assert foreign_detail is None
     assert foreign_page.items == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("execution_count", [0, 1, 5, 401])
+@pytest.mark.parametrize("operation", ["queue", "interrupt"])
+async def test_recovery_batches_nodes_and_preserves_execution_contracts(
+    database: Database,
+    execution_count: int,
+    operation: Literal["queue", "interrupt"],
+) -> None:
+    unit_of_work = SqlAlchemyUnitOfWork(database.sessions)
+    created_at = datetime(2026, 9, 1, tzinfo=UTC)
+    expected: list[GraphExecution] = []
+    for index in range(execution_count):
+        workspace_id = WORKSPACE_ONE if index % 2 == 0 else WORKSPACE_TWO
+        graph_id = UUID(int=10000 + index)
+        await _persist_graph_revisions(unit_of_work, graph_id, workspace_id)
+        status: GraphExecutionStatus = "queued"
+        if operation == "interrupt":
+            status = "running" if index % 2 == 0 else "cancelling"
+        expected.append(
+            GraphExecution(
+                workspace_id=workspace_id,
+                execution_id=UUID(int=20000 + index),
+                graph_id=graph_id,
+                graph_revision=2,
+                status=status,
+                requested_node_ids=()
+                if index % 3 == 0
+                else (f"z-{index}", f"a-{index}"),
+                submitted_request={"marker": index},
+                created_at=created_at + timedelta(seconds=index // 2),
+                started_at=None
+                if status == "queued"
+                else created_at + timedelta(seconds=index // 2),
+            )
+        )
+    async with unit_of_work as entered:
+        for execution in reversed(expected):
+            await entered.execution_history.add(execution)
+        await entered.commit()
+
+    statements: list[str] = []
+
+    def record_statement(
+        _connection: object,
+        _cursor: object,
+        statement: str,
+        _parameters: object,
+        _context: object,
+        _executemany: bool,
+    ) -> None:
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    event.listen(database.engine.sync_engine, "before_cursor_execute", record_statement)
+    finished_at = created_at + timedelta(hours=1)
+    try:
+        async with unit_of_work as entered:
+            if operation == "queue":
+                actual = await entered.execution_history.list_queued()
+            else:
+                actual = await entered.execution_history.interrupt_started(
+                    finished_at=finished_at,
+                    error="Restarted",
+                )
+            await entered.commit()
+    finally:
+        event.remove(
+            database.engine.sync_engine, "before_cursor_execute", record_statement
+        )
+
+    assert len(statements) == 1 + (execution_count + 399) // 400
+    if operation == "queue":
+        assert actual == tuple(expected)
+    else:
+        assert sorted(actual, key=lambda execution: execution.execution_id) == expected
+        async with unit_of_work as entered:
+            for original in expected:
+                detail = await entered.execution_history.get(
+                    original.workspace_id,
+                    original.execution_id,
+                )
+                assert detail is not None
+                assert detail.execution == replace(
+                    original,
+                    status="failed",
+                    finished_at=finished_at,
+                    error="Restarted",
+                )
