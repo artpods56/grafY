@@ -100,7 +100,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Consolidate four Pydantic JSON and eleven string-enum decorators with typed implementations and named column types.
 - [x] Preserve SQL metadata and malformed-value behavior; retain specialized datetime/output/enum-collection semantics.
 - [x] Split repository ownership into identity, graphs, artifacts, execution, plugins, and library.
-- [ ] Split table ownership by the same features, with one metadata bootstrap.
+- [x] Split table ownership by the same features, with one metadata bootstrap.
 - [x] Reuse bulk node hydration for queued/interrupted execution history, preserving ordering.
 - [ ] Verify SQLite and PostgreSQL behavior and migration metadata.
 
@@ -448,4 +448,26 @@ flowchart TD
     UOW --> Execution[Execution and cache repositories]
     UOW --> Plugins[Plugin repositories]
     UOW --> Library[Module and template repositories]
+```
+
+
+### Feature-owned SQL schema
+
+- Replaced `schema.py` with identity, graphs, artifacts, execution, plugins, and library table modules. `schema.base` creates the only metadata instance and naming convention; `schema.__init__` loads the complete schema and preserves prior named table/type imports. ORM mapping and Alembic still consume the same bootstrap.
+- Feature-specific model/enum types live beside their tables. Shared datetime, artifact-output, and graph-document types live in `column_types.py`; graph documents are used by both saved graphs and library snapshots. Table modules do not import other feature table modules.
+- All nineteen concrete column-type class syntax trees are unchanged. Every previous named type/table export resolves, and complete SQLite/PostgreSQL table/index DDL exactly matches the baseline for all 32 tables. No migration is needed.
+- Regression validation: 213 persistence/application/architecture tests and 520 API/execution-route tests passed in separate processes. Full persistence and column-contract test typing has zero errors or warnings; Ruff and whitespace checks pass.
+- Found an available local PostgreSQL 15 Docker image and ran the previously skipped fresh-database upgrade/downgrade test successfully. Added an optional asyncpg round-trip test for all four model types and eleven enum types, including every enum member, null values, exact result types, and repeated statement execution. Its tables are connection-local temporary tables.
+- Live PostgreSQL validation passed 47 column-contract and migration tests. The disposable database used temporary storage, a loopback-only random port, and no project mounts. Both validation containers were removed afterward. The ordinary regression run still skips the optional migration test when its database URL is absent; that skip is supplemented by the successful live run.
+- The built/extracted wheel contains all schema modules, omits the old flat module, initializes the shared metadata, and compiles exactly the same SQLite/PostgreSQL DDL independently of editable source imports.
+- Evidence: `/tmp/grafy-schema-owners-before.py`, `/tmp/grafy-schema-owners-before.json`, `/tmp/grafy-schema-owners-types.log`, `/tmp/grafy-schema-owners-database.log`, `/tmp/grafy-schema-owners-api.log`, `/tmp/grafy-schema-owners-postgres.log`, and `/tmp/grafy-schema-owners-wheel.log`.
+- Finding 11's ownership work is complete. Its broader cross-database verification remains open: migration and column behavior now have live PostgreSQL evidence, while the new execution-recovery batching still needs a PostgreSQL repository-level run.
+
+```mermaid
+flowchart TD
+    Base[One metadata instance and naming convention] --> Features[Feature table modules]
+    Types[Shared SQL column types] --> Features
+    Features --> Bootstrap[Complete schema bootstrap]
+    Bootstrap --> ORM[ORM mappings]
+    Bootstrap --> Migrations[Alembic metadata]
 ```

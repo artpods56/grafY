@@ -1,9 +1,18 @@
-"""Shared SQL serialization for Pydantic models and string enums."""
-
+from datetime import UTC, datetime
 from enum import StrEnum
 
+from grafy_core.domain.artifact_outputs import (
+    ArtifactOutputValue,
+    artifact_outputs_from_storage,
+    artifact_outputs_to_storage,
+)
+from grafy_core.domain.saved_graphs import SavedGraphDocument
 from pydantic import BaseModel
-from sqlalchemy import JSON, String
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    String,
+)
 from sqlalchemy.engine import Dialect
 from sqlalchemy.types import TypeDecorator
 
@@ -50,3 +59,62 @@ class StringEnumType[E: StrEnum](TypeDecorator[E]):
     ) -> E | None:
         del dialect
         return None if value is None else self.enum_type(value)
+
+
+class UTCDateTime(TypeDecorator[datetime]):
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(
+        self,
+        value: datetime | None,
+        dialect: Dialect,
+    ) -> datetime | None:
+        del dialect
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError("UTCDateTime requires a timezone-aware datetime")
+        return value.astimezone(UTC).replace(tzinfo=None)
+
+    def process_result_value(
+        self,
+        value: datetime | None,
+        dialect: Dialect,
+    ) -> datetime | None:
+        del dialect
+        if value is None:
+            return None
+        return value.replace(tzinfo=UTC)
+
+
+class ArtifactOutputsType(
+    TypeDecorator[dict[str, ArtifactOutputValue]],
+):
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(
+        self,
+        value: dict[str, ArtifactOutputValue] | None,
+        dialect: Dialect,
+    ) -> list[dict[str, object]] | None:
+        del dialect
+        if value is None:
+            return None
+        return artifact_outputs_to_storage(value)
+
+    def process_result_value(
+        self,
+        value: object | None,
+        dialect: Dialect,
+    ) -> dict[str, ArtifactOutputValue] | None:
+        del dialect
+        if value is None:
+            return None
+        return artifact_outputs_from_storage(value)
+
+
+class SavedGraphDocumentType(PydanticJSONType[SavedGraphDocument]):
+    model_type = SavedGraphDocument
+    cache_ok = True

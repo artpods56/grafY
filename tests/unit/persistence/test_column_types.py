@@ -1,4 +1,5 @@
 from enum import StrEnum
+import os
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -6,6 +7,7 @@ from sqlalchemy import Column, Integer, MetaData, Table, create_engine, insert, 
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import Dialect
 from sqlalchemy.types import TypeDecorator
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from grafy_core.domain.saved_graphs import SavedGraphDocument
 from grafy_core.domain.plugin_releases import (
@@ -174,3 +176,54 @@ def test_enum_columns_round_trip_with_sqlalchemy_statement_caching[E: StrEnum](
                 assert list(connection.scalars(statement)) == expected
     finally:
         engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.filterwarnings("error:.*cache key.*")
+async def test_named_column_types_round_trip_on_postgresql() -> None:
+    database_url = os.environ.get("GRAFY_TEST_POSTGRES_URL")
+    if database_url is None:
+        pytest.skip("GRAFY_TEST_POSTGRES_URL is not configured")
+    if not database_url.startswith("postgresql+asyncpg://"):
+        raise ValueError("GRAFY_TEST_POSTGRES_URL must use postgresql+asyncpg")
+    engine = create_async_engine(database_url)
+    metadata = MetaData()
+    cases: list[tuple[Table, list[BaseModel | StrEnum | None]]] = []
+    for index, (model_column_type, model) in enumerate(MODEL_CASES):
+        table = Table(
+            f"column_contract_model_{index}",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("value", model_column_type()),
+            prefixes=["TEMPORARY"],
+        )
+        cases.append((table, [model, None]))
+    for index, (enum_column_type, enum_type, _) in enumerate(ENUM_CASES):
+        table = Table(
+            f"column_contract_enum_{index}",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("value", enum_column_type()),
+            prefixes=["TEMPORARY"],
+        )
+        cases.append((table, [*enum_type, None]))
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(metadata.create_all)
+            for table, expected in cases:
+                await connection.execute(
+                    insert(table),
+                    [
+                        {"id": index, "value": value}
+                        for index, value in enumerate(expected)
+                    ],
+                )
+                statement = select(table.c.value).order_by(table.c.id)
+                for _ in range(2):
+                    actual = list(await connection.scalars(statement))
+                    assert actual == expected
+                    assert [type(value) for value in actual] == [
+                        type(value) for value in expected
+                    ]
+    finally:
+        await engine.dispose()
