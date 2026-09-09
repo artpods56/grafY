@@ -8,19 +8,32 @@ executor pauses inside `run()`. `SqlPluginReleaseRepository.lock_system_revocati
 returns no active executions, and `PluginReleaseService.revoke_system` commits
 while that executor is still paused.
 
-Run the disposable reproduction from the repository root:
+The original diagnostic is now replaced by
+`tests/unit/persistence/test_transient_executions.py`. Its regression pauses the
+executor, expects `SystemPluginRevocationDrainError`, verifies no revocation row,
+and verifies revocation succeeds once activity ends. The original reproduction
+output remains recorded in the checklist.
 
-```sh
-PYTHONPATH=. .venv/bin/python docs/plans/backend-cleanup/reproduce-transient-revocation.py
-```
+## Implemented status
 
-The diagnostic uses the existing paused-executor test double, real SQL transaction
-adapters, real release service, and an existing fixture that seeds a disposable
-SQLite database. It changes no application data. Zero exit status means the gap
-was reproduced; it is not a passing safety test. Once fixed, replace it with a
-regression that expects `SystemPluginRevocationDrainError` and no revocation row.
+Migration 0027 adds a separate activity table. SQL and in-memory adapters implement
+registration, owner-bound removal, listing, and stale-marker clearing. The manager
+registers before task creation and removes activity after task cleanup. Revocation
+and cutover include the new table in their lock/read sets.
 
-## Why the current fence misses the run
+Startup clears stale activity only after obtaining the single-owner lease and
+successfully completing Plugin orphan recovery. If either condition is unavailable,
+startup refuses to clear markers and reports their IDs. This includes restart with
+stale markers while the Plugin runtime is disabled. It is a fail-closed operational
+condition, not automatic recovery for every configuration.
+
+Lifecycle, rollback, owner-bound removal, fail-closed deletion, additive migration,
+and both database lock orderings have passing tests. End-to-end admission versus
+revocation and startup ownership/orphan-recovery integration proofs remain open.
+The single-owner deployment assumption still applies; this does not add multi-owner
+or multi-host coordination.
+
+## Why the previous fence missed the run
 
 `execution/manager.py:start` creates durable history only when the request has
 both graph ID and revision. A transient run takes a process-local capacity lease
@@ -107,5 +120,5 @@ sequenceDiagram
 7. Run execution, persistence, release-maintenance, architecture, and packaging
    checks; retain established baseline failures separately.
 
-This document and its reproduction establish the defect and implementation
-constraints. They do not close checklist finding 3 or implement the fence.
+The durable-marker implementation closes the reproduced gap. Checklist finding 3
+remains open until the remaining end-to-end race and recovery evidence is complete.

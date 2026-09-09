@@ -330,6 +330,7 @@ class RunExecutionManager:
             raise ValueError("Maximum pending graph executions must be at least one")
         self._run_graph = run_graph
         self._execution_history = execution_history
+        self._transient_owner_id = uuid7()
         self._terminal_retention = terminal_retention
         self._event_capacity = event_capacity
         self._admission_limiter = admission_limiter or ExecutionAdmissionLimiter(2)
@@ -456,6 +457,7 @@ class RunExecutionManager:
                 None if saved_graph_execution else self._admission_limiter.acquire()
             )
             execution_id = uuid7()
+            transient_registration_attempted = False
             try:
                 history_execution: GraphExecution | None = None
                 if saved_graph_execution:
@@ -489,6 +491,11 @@ class RunExecutionManager:
                             starter.actor_id if starter is not None else None
                         ),
                     )
+                elif self._execution_history is not None:
+                    transient_registration_attempted = True
+                    await self._execution_history.register_transient(
+                        workspace_id, execution_id, self._transient_owner_id
+                    )
                 journal = _RunExecutionEventJournal(execution_id, self._event_capacity)
                 control = RunExecutionControl(journal)
                 record = _RunExecutionRecord(
@@ -514,6 +521,19 @@ class RunExecutionManager:
                 self._executions.pop(execution_id, None)
                 if admission_lease is not None:
                     admission_lease.release()
+                if (
+                    transient_registration_attempted
+                    and self._execution_history is not None
+                ):
+                    try:
+                        await self._execution_history.release_transient(
+                            execution_id, self._transient_owner_id
+                        )
+                    except BaseException:
+                        logger.exception(
+                            "Could not clear failed transient admission execution_id=%s",
+                            execution_id,
+                        )
                 raise
             snapshot = self._snapshot_locked(record)
             await self._publish_active(record)
@@ -889,6 +909,26 @@ class RunExecutionManager:
                     history_error = (
                         "Execution history could not record the terminal result: "
                         f"{render_execution_error(history_failure)}"
+                    )
+            if record.history_execution is None and self._execution_history is not None:
+                for attempt in range(2):
+                    try:
+                        await self._execution_history.release_transient(
+                            record.execution_id, self._transient_owner_id
+                        )
+                    except Exception as exc:
+                        history_error = (
+                            f"Could not release transient execution {record.execution_id}: "
+                            f"{render_execution_error(exc)}"
+                        )
+                        if attempt == 0:
+                            await asyncio.sleep(0)
+                    else:
+                        history_error = None
+                        break
+                if history_error is not None:
+                    logger.error(
+                        "%s; activity marker retained for maintenance", history_error
                     )
             active_node_id = record.control.active_node_id
             if active_node_id is not None:

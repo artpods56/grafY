@@ -5,6 +5,7 @@ from uuid import UUID
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.domain.execution_history import (
     GraphExecution,
+    TransientExecution,
     GraphExecutionCursor,
     GraphExecutionDetail,
     GraphExecutionNodeResult,
@@ -14,6 +15,14 @@ from grafy_core.domain.execution_history import (
 
 
 class GraphExecutionHistoryRepositoryPort(Protocol):
+    async def add_transient(self, execution: TransientExecution) -> None: ...
+
+    async def remove_transient(self, execution_id: UUID, owner_id: UUID) -> None: ...
+
+    async def list_transient(self) -> tuple[TransientExecution, ...]: ...
+
+    async def clear_transient(self) -> None: ...
+
     async def add(self, execution: GraphExecution) -> None: ...
 
     async def update(self, execution: GraphExecution) -> None: ...

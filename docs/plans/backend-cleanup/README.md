@@ -38,7 +38,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Preserve source re-verification and test concurrent publication after review.
 - [x] Move System revocation's SQL consistency rule from API workflow to the release transaction and persistence adapter.
 - [x] Fence durable queue admission against the System revocation drain check and commit.
-- [ ] Include transient executions in System revocation fencing; runs without saved-graph context currently have no durable execution row. Reproduced with real SQL; see [transient fence design](transient-execution-fence.md).
+- [x] Include transient executions in System revocation and cutover fencing through durable activity markers; see [transient fence design and status](transient-execution-fence.md).
 - [ ] Prove active execution/revocation races cannot violate that fence.
 
 ## 4. Plugin ownership and compatibility
@@ -955,5 +955,20 @@ flowchart LR
 - Reproduced the open publication-consistency defect using a real manager, SQL history dependency, SQL maintenance fence, and release service. A transient executor paused inside `run()` remains invisible to the database drain, and System revocation commits. The diagnostic creates only a disposable SQLite database and shuts down its task. [R43: Tests Are Behavioral Contracts]
 - Saved the executable diagnostic and implementation constraints in `transient-execution-fence.md`. The next implementation needs an additive durable activity marker, shared maintenance locking for revocation and cutover, fail-closed completion handling, and recovery tied to exclusive ownership plus successful orphan draining. [R25: Design Before Edits]
 - Identified two constraints that a manager-only counter patch would miss: System cutover shares the incomplete drain query, and the single-owner setting can be disabled, so unconditional startup deletion is unsafe.
-- Evidence: `PYTHONPATH=. .venv/bin/python docs/plans/backend-cleanup/reproduce-transient-revocation.py` reproduces the gap; `/tmp/grafy-transient-revocation-reproduction.log` records the original run.
+- Historical evidence: commit `843daa4` contains the disposable reproduction; `/tmp/grafy-transient-revocation-reproduction.log` records that run. The later durable-activity batch replaces that diagnostic with regression tests.
 - Finding 3 remains open. This batch establishes concrete regression evidence and the implementation scope; no runtime or schema behavior changed.
+
+
+### Durable transient execution activity
+
+- Added `TransientExecution` and the additive `0027_transient_executions` migration. The marker carries execution, workspace, owner, and creation identities only. Saved-graph history, its non-null graph/revision keys, browse APIs, and recovery payloads remain unchanged. The marker deliberately has no workspace cascade that could erase evidence of a still-running task. [R01: Direct Ownership]
+- The manager registers activity in a short committed transaction before spawning transient work. It deletes its own marker only after execution and guest cleanup finish. Uncertain admission commits and failed task creation attempt cleanup and return capacity; terminal deletion retries, reports contextual failure, and retains activity if deletion cannot be confirmed. [R42: Errors Carry Context]
+- System revocation and cutover now lock/read transient activity as well as saved executions. Real SQLite and PostgreSQL tests exercise both lock orderings: the second operation receives a database lock error while the first holds its transaction, then proceeds after commit with the expected activity visible. PostgreSQL runs in a disposable container with unique test schemas.
+- Startup recovery runs after Plugin orphan cleanup and requires the existing single-owner lease. If exclusive ownership is disabled, or Plugin runtime/orphan cleanup is unavailable, stale markers are retained and startup fails with their identities. No age-based deletion or silent maintenance bypass is provided. Broader startup integration proofs remain part of the open final race/recovery audit.
+- Replaced the standalone defect diagnostic with regression coverage. New SQL tests cover active revocation/cutover rejection, success, failure, cancellation, shutdown, cancellation before the first task step, uncertain admission acknowledgement, task creation failure, deletion retry/failure, owner-bound deletion, rollback, and guarded recovery. The in-memory adapter has matching transaction coverage. [R43: Tests Are Behavioral Contracts]
+- Verification: 519 API/architecture/core tests passed; the final full persistence run passed 171 tests with 21 skips (19 existing optional PostgreSQL cases and two new PostgreSQL ordering cases). The dedicated SQLite/PostgreSQL ordering run passed all four cases. Final focused lifecycle/in-memory/upgrade checks passed 18 tests. These scopes overlap and must not be summed as unique tests.
+- The migration upgrade from revision 0026 preserves an existing workspace and introduces an empty activity table; schema drift and downgrade/upgrade checks pass. Targeted production and new-test typing report zero errors. Built core, persistence, and API wheels; extracted-wheel lifecycle, schema registration, and unchanged OpenAPI checks pass. The project database was not migrated.
+- Evidence: `/tmp/grafy-transient-api.log`, `/tmp/grafy-transient-persistence-final.log`, `/tmp/grafy-transient-lock-ordering.log`, `/tmp/grafy-transient-final-contracts.log`, `/tmp/grafy-transient-types.log`, and `/tmp/grafy-transient-build.log`.
+- Finding 3's transient activity registration substep is complete. Keep the active execution/revocation race substep open for the remaining end-to-end admission/preflight/revocation and startup ownership/orphan-recovery scenarios. Finding 8 and final completion gates also remain open.
+
+- Proposed maintenance rule: include every execution class in durable activity before preparation starts, release activity only after guest cleanup, and require exclusive owner authority before stale recovery. A process-local capacity counter cannot prove a database maintenance drain. [R23: Maintain The Rules]

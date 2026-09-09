@@ -61,6 +61,9 @@ class SqlPluginReleaseRepository(PluginReleaseRepositoryPort):
             await self._session.execute(
                 text("LOCK TABLE graph_executions IN SHARE ROW EXCLUSIVE MODE")
             )
+            await self._session.execute(
+                text("LOCK TABLE transient_executions IN SHARE ROW EXCLUSIVE MODE")
+            )
         elif dialect_name == "sqlite":
             if self._session.in_transaction():
                 raise PluginReleaseRevocationError(
@@ -78,10 +81,21 @@ class SqlPluginReleaseRepository(PluginReleaseRepositoryPort):
             .where(executions.c.status.in_(("queued", "running", "cancelling")))
             .order_by(executions.c.created_at.asc(), executions.c.execution_id.asc())
         )
-        return tuple(
+        active = [
             ActiveGraphExecution(execution_id=execution_id, status=status)
             for execution_id, status in rows
+        ]
+        transient = schema.transient_executions
+        transient_rows = await self._session.execute(
+            select(transient.c.execution_id).order_by(
+                transient.c.created_at, transient.c.execution_id
+            )
         )
+        active.extend(
+            ActiveGraphExecution(execution_id=execution_id, status="running")
+            for execution_id in transient_rows.scalars()
+        )
+        return tuple(active)
 
     @override
     async def add(self, release: PluginRelease) -> None:

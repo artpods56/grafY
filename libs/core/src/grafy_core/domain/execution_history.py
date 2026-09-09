@@ -62,6 +62,19 @@ class ActiveGraphExecution:
     status: Literal["queued", "running", "cancelling"]
 
 
+@dataclass(frozen=True, slots=True)
+class TransientExecution:
+    """Durable activity identity; no graph history or executable payload."""
+
+    execution_id: UUID
+    workspace_id: UUID
+    owner_id: UUID
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_aware_timestamp(self.created_at, "creation timestamp")
+
+
 @dataclass
 class GraphExecution:
     workspace_id: UUID

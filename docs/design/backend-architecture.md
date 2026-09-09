@@ -160,8 +160,11 @@ flowchart LR
 The core persistent invocation-cache adapter shares cache semantics with the node
 runtime. Queued recovery depends on stable request serialization. MAP ordering,
 cancellation, nested execution, and materialization each have behavioral tests.
-The System revocation fence covers durable queue admission; transient execution
-fencing and active execution/revocation races remain open in the cleanup plan.
+System revocation and cutover fence both durable queue rows and transient activity
+markers. Transient activity is registered before preparation and removed after task
+cleanup. Startup only clears stale markers with exclusive ownership and confirmed
+Plugin orphan cleanup; otherwise it retains them and refuses startup. End-to-end
+execution/revocation and recovery proofs remain open in the cleanup plan.
 
 ## Artifact contracts, reads, and infrastructure
 
@@ -220,5 +223,5 @@ extracted-wheel checks protect contracts that directory checks cannot prove.
 
 Remaining work and per-batch evidence live in the
 [backend cleanup checklist](../plans/backend-cleanup/README.md). Graph transport
-migration, transient revocation fencing, and final broad verification remain open;
+migration, remaining revocation/recovery proofs, and final broad verification remain open;
 this reference records current ownership, not completion of those tasks.

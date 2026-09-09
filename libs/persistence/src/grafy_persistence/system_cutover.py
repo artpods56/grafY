@@ -269,6 +269,7 @@ class SystemBaselineCutoverService:
         "collaborative_graph_heads",
         "templates",
         "graph_executions",
+        "transient_executions",
         "artifact_objects",
         "graph_execution_nodes",
         "invocation_cache_entries",
@@ -401,6 +402,13 @@ class SystemBaselineCutoverService:
                 )
             )
         ).all()
+        transient_ids = await session.scalars(
+            select(schema.transient_executions.c.execution_id)
+        )
+        identities = [
+            *identities,
+            *((execution_id, "running") for execution_id in transient_ids),
+        ]
         if identities:
             rendered = ", ".join(
                 f"{execution_id}:{status}" for execution_id, status in identities
@@ -456,9 +464,7 @@ class SystemBaselineCutoverService:
                     await session.execute(
                         select(
                             schema.plugin_releases,
-                            schema.plugin_installations.c.id.label(
-                                "installation_id"
-                            ),
+                            schema.plugin_installations.c.id.label("installation_id"),
                         )
                         .join(
                             schema.plugin_installations,

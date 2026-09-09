@@ -125,7 +125,7 @@ def _system_release() -> InstalledPluginRelease:
     )
 
 
-def _baseline(release: InstalledPluginRelease) -> SystemBaselineManifest:
+def system_cutover_baseline(release: InstalledPluginRelease) -> SystemBaselineManifest:
     assert release.release.runtime_artifact is not None
     assert release.release.runtime_image_digest is not None
     return SystemBaselineManifest(
@@ -155,7 +155,7 @@ def _baseline(release: InstalledPluginRelease) -> SystemBaselineManifest:
     )
 
 
-def _rollback_unit() -> CutoverRollbackUnit:
+def cutover_rollback_unit() -> CutoverRollbackUnit:
     return CutoverRollbackUnit(
         rollback_unit_id="backup-2026-08-24T10:00Z",
         database_backup_sha256="1" * 64,
@@ -382,8 +382,8 @@ async def test_cutover_backfills_all_stores_without_logical_graph_change_and_is_
     dry_run = await service.execute(
         SystemCutoverCommand(
             mode="dry-run",
-            baseline=_baseline(release),
-            rollback_unit=_rollback_unit(),
+            baseline=system_cutover_baseline(release),
+            rollback_unit=cutover_rollback_unit(),
         )
     )
 
@@ -397,8 +397,8 @@ async def test_cutover_backfills_all_stores_without_logical_graph_change_and_is_
     applied = await service.execute(
         SystemCutoverCommand(
             mode="apply",
-            baseline=_baseline(release),
-            rollback_unit=_rollback_unit(),
+            baseline=system_cutover_baseline(release),
+            rollback_unit=cutover_rollback_unit(),
             expected_precondition_token=dry_run.precondition_token,
         )
     )
@@ -483,16 +483,16 @@ async def test_cutover_backfills_all_stores_without_logical_graph_change_and_is_
     second_audit = await service.execute(
         SystemCutoverCommand(
             mode="dry-run",
-            baseline=_baseline(release),
-            rollback_unit=_rollback_unit(),
+            baseline=system_cutover_baseline(release),
+            rollback_unit=cutover_rollback_unit(),
         )
     )
     assert all(store.changed_rows == 0 for store in second_audit.stores)
     second_apply = await service.execute(
         SystemCutoverCommand(
             mode="apply",
-            baseline=_baseline(release),
-            rollback_unit=_rollback_unit(),
+            baseline=system_cutover_baseline(release),
+            rollback_unit=cutover_rollback_unit(),
             expected_precondition_token=second_audit.precondition_token,
         )
     )
@@ -505,7 +505,7 @@ async def test_cutover_refuses_a_baseline_digest_mismatch_without_rewriting(
     cutover_database: tuple[Database, InstalledPluginRelease],
 ) -> None:
     database, release = cutover_database
-    baseline = _baseline(release)
+    baseline = system_cutover_baseline(release)
     mismatched_release = baseline.releases[0].model_copy(
         update={"source_digest": "0" * 64}
     )
@@ -516,7 +516,7 @@ async def test_cutover_refuses_a_baseline_digest_mismatch_without_rewriting(
             SystemCutoverCommand(
                 mode="dry-run",
                 baseline=mismatched,
-                rollback_unit=_rollback_unit(),
+                rollback_unit=cutover_rollback_unit(),
             )
         )
 
@@ -534,8 +534,8 @@ async def test_cutover_refuses_active_executions_and_stale_preconditions(
     audit = await service.execute(
         SystemCutoverCommand(
             mode="dry-run",
-            baseline=_baseline(release),
-            rollback_unit=_rollback_unit(),
+            baseline=system_cutover_baseline(release),
+            rollback_unit=cutover_rollback_unit(),
         )
     )
     async with database.engine.begin() as connection:
@@ -546,8 +546,8 @@ async def test_cutover_refuses_active_executions_and_stale_preconditions(
         await service.execute(
             SystemCutoverCommand(
                 mode="apply",
-                baseline=_baseline(release),
-                rollback_unit=_rollback_unit(),
+                baseline=system_cutover_baseline(release),
+                rollback_unit=cutover_rollback_unit(),
                 expected_precondition_token=audit.precondition_token,
             )
         )
@@ -569,8 +569,8 @@ async def test_cutover_refuses_active_executions_and_stale_preconditions(
         await service.execute(
             SystemCutoverCommand(
                 mode="apply",
-                baseline=_baseline(release),
-                rollback_unit=_rollback_unit(),
+                baseline=system_cutover_baseline(release),
+                rollback_unit=cutover_rollback_unit(),
                 expected_precondition_token=audit.precondition_token,
             )
         )
@@ -635,8 +635,8 @@ async def test_cutover_transaction_rolls_back_documents_and_cache_deletes_on_err
     audit = await service.execute(
         SystemCutoverCommand(
             mode="dry-run",
-            baseline=_baseline(release),
-            rollback_unit=_rollback_unit(),
+            baseline=system_cutover_baseline(release),
+            rollback_unit=cutover_rollback_unit(),
         )
     )
     async with database.engine.begin() as connection:
@@ -650,8 +650,8 @@ async def test_cutover_transaction_rolls_back_documents_and_cache_deletes_on_err
         await service.execute(
             SystemCutoverCommand(
                 mode="apply",
-                baseline=_baseline(release),
-                rollback_unit=_rollback_unit(),
+                baseline=system_cutover_baseline(release),
+                rollback_unit=cutover_rollback_unit(),
                 expected_precondition_token=audit.precondition_token,
             )
         )
@@ -718,6 +718,7 @@ async def test_postgresql_fence_locks_every_cutover_table_in_fixed_order(
             "collaborative_graph_heads",
             "templates",
             "graph_executions",
+            "transient_executions",
             "artifact_objects",
             "graph_execution_nodes",
             "invocation_cache_entries",
@@ -736,8 +737,8 @@ async def test_apply_fence_fails_closed_on_unsupported_dialect(
     audit = await service.execute(
         SystemCutoverCommand(
             mode="dry-run",
-            baseline=_baseline(release),
-            rollback_unit=_rollback_unit(),
+            baseline=system_cutover_baseline(release),
+            rollback_unit=cutover_rollback_unit(),
         )
     )
     monkeypatch.setattr(database.engine.dialect, "name", "oracle")
@@ -749,8 +750,8 @@ async def test_apply_fence_fails_closed_on_unsupported_dialect(
         await service.execute(
             SystemCutoverCommand(
                 mode="apply",
-                baseline=_baseline(release),
-                rollback_unit=_rollback_unit(),
+                baseline=system_cutover_baseline(release),
+                rollback_unit=cutover_rollback_unit(),
                 expected_precondition_token=audit.precondition_token,
             )
         )
@@ -776,8 +777,8 @@ async def test_apply_fence_serializes_queued_execution_insert_before_drain_check
     audit = await service.execute(
         SystemCutoverCommand(
             mode="dry-run",
-            baseline=_baseline(release),
-            rollback_unit=_rollback_unit(),
+            baseline=system_cutover_baseline(release),
+            rollback_unit=cutover_rollback_unit(),
         )
     )
 
@@ -805,8 +806,8 @@ async def test_apply_fence_serializes_queued_execution_insert_before_drain_check
                 await service.execute(
                     SystemCutoverCommand(
                         mode="apply",
-                        baseline=_baseline(release),
-                        rollback_unit=_rollback_unit(),
+                        baseline=system_cutover_baseline(release),
+                        rollback_unit=cutover_rollback_unit(),
                         expected_precondition_token=audit.precondition_token,
                     )
                 )
@@ -842,8 +843,8 @@ async def test_sqlite_apply_waits_for_write_reservation_before_auditing(
     audit = await service.execute(
         SystemCutoverCommand(
             mode="dry-run",
-            baseline=_baseline(release),
-            rollback_unit=_rollback_unit(),
+            baseline=system_cutover_baseline(release),
+            rollback_unit=cutover_rollback_unit(),
         )
     )
 
@@ -855,8 +856,8 @@ async def test_sqlite_apply_waits_for_write_reservation_before_auditing(
             await service.execute(
                 SystemCutoverCommand(
                     mode="apply",
-                    baseline=_baseline(release),
-                    rollback_unit=_rollback_unit(),
+                    baseline=system_cutover_baseline(release),
+                    rollback_unit=cutover_rollback_unit(),
                     expected_precondition_token=audit.precondition_token,
                 )
             )
@@ -877,8 +878,8 @@ async def test_apply_cas_rejects_document_changed_after_audit_and_rolls_back(
     audit = await service.execute(
         SystemCutoverCommand(
             mode="dry-run",
-            baseline=_baseline(release),
-            rollback_unit=_rollback_unit(),
+            baseline=system_cutover_baseline(release),
+            rollback_unit=cutover_rollback_unit(),
         )
     )
     async with database.engine.begin() as connection:
@@ -897,8 +898,8 @@ async def test_apply_cas_rejects_document_changed_after_audit_and_rolls_back(
         await service.execute(
             SystemCutoverCommand(
                 mode="apply",
-                baseline=_baseline(release),
-                rollback_unit=_rollback_unit(),
+                baseline=system_cutover_baseline(release),
+                rollback_unit=cutover_rollback_unit(),
                 expected_precondition_token=audit.precondition_token,
             )
         )
@@ -949,8 +950,8 @@ async def test_apply_cas_rejects_deleted_audited_row_and_rolls_back(
     audit = await service.execute(
         SystemCutoverCommand(
             mode="dry-run",
-            baseline=_baseline(release),
-            rollback_unit=_rollback_unit(),
+            baseline=system_cutover_baseline(release),
+            rollback_unit=cutover_rollback_unit(),
         )
     )
     async with database.engine.begin() as connection:
@@ -968,8 +969,8 @@ async def test_apply_cas_rejects_deleted_audited_row_and_rolls_back(
         await service.execute(
             SystemCutoverCommand(
                 mode="apply",
-                baseline=_baseline(release),
-                rollback_unit=_rollback_unit(),
+                baseline=system_cutover_baseline(release),
+                rollback_unit=cutover_rollback_unit(),
                 expected_precondition_token=audit.precondition_token,
             )
         )

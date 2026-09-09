@@ -196,3 +196,13 @@ graph_execution_nodes = Table(
         "execution_id",
     ),
 )
+
+
+transient_executions = Table(
+    "transient_executions",
+    metadata,
+    Column("execution_id", SaUuid(as_uuid=True), primary_key=True),
+    Column("workspace_id", SaUuid(as_uuid=True), nullable=False),
+    Column("owner_id", SaUuid(as_uuid=True), nullable=False),
+    Column("created_at", UTCDateTime(), nullable=False),
+)

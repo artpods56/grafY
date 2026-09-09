@@ -6,6 +6,7 @@ from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.artifacts import JsonObject
 from grafy_core.domain.execution_history import (
     GraphExecution,
+    TransientExecution,
     GraphExecutionCursor,
     GraphExecutionDetail,
     GraphExecutionNodeResult,
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
 
 
 class ExecutionHistoryService:
-    """Own the durable lifecycle and browsing of saved-graph executions."""
+    """Own saved-graph history and transient maintenance activity."""
 
     def __init__(
         self,
@@ -34,6 +35,45 @@ class ExecutionHistoryService:
     ) -> None:
         self._unit_of_work = unit_of_work
         self._saved_graphs = saved_graphs
+
+    async def register_transient(
+        self, workspace_id: UUID, execution_id: UUID, owner_id: UUID
+    ) -> None:
+        execution = TransientExecution(
+            workspace_id=workspace_id,
+            execution_id=execution_id,
+            owner_id=owner_id,
+            created_at=datetime.now(UTC),
+        )
+        async with self._unit_of_work as unit_of_work:
+            await unit_of_work.execution_history.add_transient(execution)
+            await unit_of_work.commit()
+
+    async def release_transient(self, execution_id: UUID, owner_id: UUID) -> None:
+        async with self._unit_of_work as unit_of_work:
+            await unit_of_work.execution_history.remove_transient(
+                execution_id, owner_id
+            )
+            await unit_of_work.commit()
+
+    async def recover_transient(
+        self, *, exclusive_owner: bool, orphan_cleanup_confirmed: bool
+    ) -> int:
+        async with self._unit_of_work as unit_of_work:
+            active = await unit_of_work.execution_history.list_transient()
+            if not active:
+                return 0
+            if not exclusive_owner or not orphan_cleanup_confirmed:
+                identities = ", ".join(
+                    str(execution.execution_id) for execution in active
+                )
+                raise RuntimeError(
+                    "Transient execution recovery requires exclusive API ownership and "
+                    f"confirmed Plugin orphan cleanup; retained executions: {identities}"
+                )
+            await unit_of_work.execution_history.clear_transient()
+            await unit_of_work.commit()
+        return len(active)
 
     async def create_queued(
         self,

@@ -184,6 +184,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 graph_room_hub=graph_room_hub,
             )
             try:
+                await components.execution_history.recover_transient(
+                    exclusive_owner=owner_lease is not None,
+                    orphan_cleanup_confirmed=plugin_runtime is not None,
+                )
                 await components.execution_history.interrupt_started()
                 await components.execution_manager.recover_queued()
                 capacity = await resources.capacity_diagnostics()

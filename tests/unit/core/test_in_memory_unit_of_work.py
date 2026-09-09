@@ -1,5 +1,7 @@
 import asyncio
-from uuid import UUID
+from uuid import UUID, uuid4
+from datetime import UTC, datetime
+from grafy_core.domain.execution_history import TransientExecution
 
 import pytest
 
@@ -68,3 +70,33 @@ async def test_nested_entry_rejects_without_corrupting_outer_transaction() -> No
 
     async with unit_of_work as entered:
         assert await entered.artifacts.get(WORKSPACE_ID, artifact.id) == artifact
+
+
+@pytest.mark.asyncio
+async def test_transient_activity_rollback_and_owner_bound_deletion() -> None:
+    unit_of_work = InMemoryUnitOfWork()
+    marker = TransientExecution(
+        execution_id=uuid4(),
+        workspace_id=WORKSPACE_ID,
+        owner_id=uuid4(),
+        created_at=datetime.now(UTC),
+    )
+    async with unit_of_work as transaction:
+        await transaction.execution_history.add_transient(marker)
+    async with unit_of_work as transaction:
+        assert await transaction.execution_history.list_transient() == ()
+        await transaction.execution_history.add_transient(marker)
+        await transaction.commit()
+    async with unit_of_work as transaction:
+        await transaction.execution_history.remove_transient(
+            marker.execution_id, uuid4()
+        )
+        await transaction.commit()
+    async with unit_of_work as transaction:
+        assert await transaction.execution_history.list_transient() == (marker,)
+        await transaction.execution_history.remove_transient(
+            marker.execution_id, marker.owner_id
+        )
+        await transaction.commit()
+    async with unit_of_work as transaction:
+        assert await transaction.execution_history.list_transient() == ()

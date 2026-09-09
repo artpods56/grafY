@@ -27,6 +27,7 @@ from grafy_core.domain.errors import (
 )
 from grafy_core.domain.execution_history import (
     GraphExecution,
+    TransientExecution,
     GraphExecutionCursor,
     GraphExecutionDetail,
     GraphExecutionListItem,
@@ -197,6 +198,46 @@ class SqlGraphExecutionHistoryRepository(
 ):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    @override
+    async def add_transient(self, execution: TransientExecution) -> None:
+        await self._session.execute(
+            insert(schema.transient_executions).values(
+                execution_id=execution.execution_id,
+                workspace_id=execution.workspace_id,
+                owner_id=execution.owner_id,
+                created_at=execution.created_at,
+            )
+        )
+
+    @override
+    async def remove_transient(self, execution_id: UUID, owner_id: UUID) -> None:
+        table = schema.transient_executions
+        await self._session.execute(
+            delete(table).where(
+                table.c.execution_id == execution_id, table.c.owner_id == owner_id
+            )
+        )
+
+    @override
+    async def list_transient(self) -> tuple[TransientExecution, ...]:
+        table = schema.transient_executions
+        rows = await self._session.execute(
+            select(table).order_by(table.c.created_at, table.c.execution_id)
+        )
+        return tuple(
+            TransientExecution(
+                execution_id=row.execution_id,
+                workspace_id=row.workspace_id,
+                owner_id=row.owner_id,
+                created_at=row.created_at,
+            )
+            for row in rows
+        )
+
+    @override
+    async def clear_transient(self) -> None:
+        await self._session.execute(delete(schema.transient_executions))
 
     @override
     async def add(self, execution: GraphExecution) -> None:

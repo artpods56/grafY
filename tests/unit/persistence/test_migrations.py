@@ -82,7 +82,7 @@ def test_fresh_postgresql_database_upgrades_to_head(
         _, revision, workspace_count = asyncio.run(
             _postgresql_migration_state(database_url)
         )
-        assert revision == "0026_drop_plugin_distribution"
+        assert revision == "0027_transient_executions"
         assert workspace_count == 0
         command.check(config)
 
@@ -354,6 +354,7 @@ def test_alembic_migration_upgrades_downgrades_and_has_no_schema_drift(
             "graph_command_receipts",
             "graph_execution_nodes",
             "graph_executions",
+            "transient_executions",
             "graph_folders",
             "graph_organizations",
             "invocation_cache_entries",
@@ -401,6 +402,7 @@ def test_alembic_migration_upgrades_downgrades_and_has_no_schema_drift(
             "graph_command_receipts",
             "graph_execution_nodes",
             "graph_executions",
+            "transient_executions",
             "graph_folders",
             "graph_organizations",
             "invocation_cache_entries",
@@ -2620,3 +2622,42 @@ def test_plugin_registry_unique_indexes_compile_for_postgresql() -> None:
             assert " WHERE descriptor_digest IS NOT NULL" in ddl
         else:
             assert " WHERE scope = " in ddl
+
+
+def test_transient_activity_migration_preserves_existing_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path = tmp_path / "transient-upgrade.sqlite3"
+    monkeypatch.setenv("GRAFY_DATABASE_URL", f"sqlite+aiosqlite:///{database_path}")
+    get_settings.cache_clear()
+    config = Config(REPOSITORY_ROOT / "alembic.ini")
+    try:
+        command.upgrade(config, "0026_drop_plugin_distribution")
+        engine = create_engine(f"sqlite:///{database_path}")
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO workspaces (id, slug, name, kind, created_at, updated_at) VALUES (:id, :slug, :name, :kind, :created_at, :created_at)"
+                ),
+                {
+                    "id": "a" * 32,
+                    "slug": "retained",
+                    "name": "Retained workspace",
+                    "kind": "shared",
+                    "created_at": "2026-09-09 00:00:00",
+                },
+            )
+            before = connection.execute(text("SELECT * FROM workspaces")).all()
+        command.upgrade(config, "head")
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT * FROM workspaces")).all() == before
+            assert (
+                connection.execute(
+                    text("SELECT COUNT(*) FROM transient_executions")
+                ).scalar_one()
+                == 0
+            )
+        command.check(config)
+        engine.dispose()
+    finally:
+        get_settings.cache_clear()

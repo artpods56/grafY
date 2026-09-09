@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
 from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey
 from grafy_core.ports.artifacts import ArtifactRepositoryPort, UnitOfWorkPort
+from grafy_core.domain.execution_history import TransientExecution
 from grafy_core.domain.errors import (
     CollaborationActiveExecutionError,
     NotFoundError,
@@ -49,6 +50,7 @@ def _clone[T](value: T) -> T:
 
 @dataclass(slots=True)
 class InMemoryDataStore:
+    transient_executions: dict[UUID, TransientExecution] = field(default_factory=dict)
     artifacts: dict[UUID, ArtifactObject] = field(default_factory=dict)
     materialized_outputs: dict[
         tuple[UUID, UUID, int, str],
@@ -73,6 +75,7 @@ class InMemoryDataStore:
         return _clone(self)
 
     def replace_with(self, other: Self) -> None:
+        self.transient_executions = _clone(other.transient_executions)
         self.artifacts = _clone(other.artifacts)
         self.materialized_outputs = _clone(other.materialized_outputs)
         self.invocation_cache = _clone(other.invocation_cache)
@@ -222,6 +225,29 @@ class InMemoryInvocationCacheRepository:
 class InMemoryGraphExecutionHistoryRepository:
     def __init__(self, store: InMemoryDataStore) -> None:
         self._store = store
+
+    async def add_transient(self, execution: TransientExecution) -> None:
+        if execution.execution_id in self._store.transient_executions:
+            raise ObjectAlreadyExistsError(
+                f"Transient execution already exists: {execution.execution_id}"
+            )
+        self._store.transient_executions[execution.execution_id] = execution
+
+    async def remove_transient(self, execution_id: UUID, owner_id: UUID) -> None:
+        execution = self._store.transient_executions.get(execution_id)
+        if execution is not None and execution.owner_id == owner_id:
+            del self._store.transient_executions[execution_id]
+
+    async def list_transient(self) -> tuple[TransientExecution, ...]:
+        return tuple(
+            sorted(
+                self._store.transient_executions.values(),
+                key=lambda execution: (execution.created_at, execution.execution_id),
+            )
+        )
+
+    async def clear_transient(self) -> None:
+        self._store.transient_executions.clear()
 
     async def add(self, execution: "GraphExecution") -> None:
         execution_key = execution.execution_id
