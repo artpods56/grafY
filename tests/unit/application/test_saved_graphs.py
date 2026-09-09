@@ -18,6 +18,10 @@ from grafy_core.domain.saved_graphs import (
 )
 from grafy_core.domain.node_secrets import EncryptedNodeSecret
 from grafy_core.plugins import PluginRegistry
+from grafy_core.runtime.in_memory import (
+    InMemoryDataStore,
+    InMemoryMaterializedNodeOutputsRepository,
+)
 
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000101")
@@ -150,13 +154,20 @@ class FakeSavedGraphUnitOfWork:
         graphs: dict[UUID, SavedGraph],
         revisions: dict[tuple[UUID, int], SavedGraphRevision],
         secrets: dict[tuple[UUID, str, str], EncryptedNodeSecret],
+        materialization_store: InMemoryDataStore,
     ) -> None:
         self.graphs = FakeSavedGraphRepository(graphs, revisions)
         self.node_secrets = FakeNodeSecretRepository(secrets)
+        self._materialization_store = materialization_store
+        self.materialized_outputs = InMemoryMaterializedNodeOutputsRepository(
+            materialization_store
+        )
+        self._materialization_snapshot = materialization_store.clone()
         self.commit_count = 0
         self.rollback_count = 0
 
     async def __aenter__(self) -> Self:
+        self._materialization_snapshot = self._materialization_store.clone()
         return self
 
     async def __aexit__(
@@ -171,9 +182,11 @@ class FakeSavedGraphUnitOfWork:
 
     async def commit(self) -> None:
         self.commit_count += 1
+        self._materialization_snapshot = self._materialization_store.clone()
 
     async def rollback(self) -> None:
         self.rollback_count += 1
+        self._materialization_store.replace_with(self._materialization_snapshot)
 
 
 class FakeSavedGraphUnitOfWorkFactory:
@@ -181,6 +194,7 @@ class FakeSavedGraphUnitOfWorkFactory:
         self.graphs: dict[UUID, SavedGraph] = {}
         self.revisions: dict[tuple[UUID, int], SavedGraphRevision] = {}
         self.secrets: dict[tuple[UUID, str, str], EncryptedNodeSecret] = {}
+        self.materialization_store = InMemoryDataStore()
         self.plugin_registry = PluginRegistry()
         self.created: list[FakeSavedGraphUnitOfWork] = []
 
@@ -189,6 +203,7 @@ class FakeSavedGraphUnitOfWorkFactory:
             self.graphs,
             self.revisions,
             self.secrets,
+            self.materialization_store,
         )
         self.created.append(unit_of_work)
         return unit_of_work

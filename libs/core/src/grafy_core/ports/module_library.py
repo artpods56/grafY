@@ -1,11 +1,11 @@
-from types import TracebackType
-from typing import Protocol, Self
+from typing import Protocol
 from uuid import UUID
 
 from grafy_core.domain.module_library import Module, ModuleRelease
 from grafy_core.ports.collaboration import CollaborationRepositoryPort
 from grafy_core.ports.identity import IdentityRepositoryPort
 from grafy_core.ports.saved_graphs import SavedGraphRepositoryPort
+from grafy_core.ports.transactions import TransactionPort
 
 
 class ModuleLibraryRepositoryPort(Protocol):
@@ -39,7 +39,7 @@ class ModuleLibraryRepositoryPort(Protocol):
     ) -> list[ModuleRelease]: ...
 
 
-class ModuleLibraryUnitOfWorkPort(Protocol):
+class ModuleLibraryUnitOfWorkPort(TransactionPort, Protocol):
     @property
     def graphs(self) -> SavedGraphRepositoryPort: ...
 
@@ -51,19 +51,6 @@ class ModuleLibraryUnitOfWorkPort(Protocol):
 
     @property
     def identity(self) -> IdentityRepositoryPort: ...
-
-    async def __aenter__(self) -> Self: ...
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None: ...
-
-    async def commit(self) -> None: ...
-
-    async def rollback(self) -> None: ...
 
 
 __all__ = [

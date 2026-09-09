@@ -1,5 +1,4 @@
-from types import TracebackType
-from typing import TYPE_CHECKING, Protocol, Self
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
 from grafy_core.domain.collaboration import (
@@ -7,12 +6,16 @@ from grafy_core.domain.collaboration import (
     GraphCheckpointMapping,
     GraphCommandReceipt,
 )
+from grafy_core.ports.transactions import TransactionPort
 
 if TYPE_CHECKING:
     from grafy_core.ports.execution_history import GraphExecutionHistoryRepositoryPort
     from grafy_core.ports.identity import (
         IdentityRepositoryPort,
         SecurityAuditRepositoryPort,
+    )
+    from grafy_core.ports.materialized_outputs import (
+        MaterializedNodeOutputsRepositoryPort,
     )
     from grafy_core.ports.node_secrets import NodeSecretRepositoryPort
     from grafy_core.ports.saved_graphs import SavedGraphRepositoryPort
@@ -65,7 +68,10 @@ class CollaborationRepositoryPort(Protocol):
     ) -> None: ...
 
 
-class CollaborationUnitOfWorkPort(Protocol):
+class CollaborationUnitOfWorkPort(TransactionPort, Protocol):
+    @property
+    def materialized_outputs(self) -> "MaterializedNodeOutputsRepositoryPort": ...
+
     @property
     def collaboration(self) -> CollaborationRepositoryPort: ...
 
@@ -83,16 +89,3 @@ class CollaborationUnitOfWorkPort(Protocol):
 
     @property
     def execution_history(self) -> "GraphExecutionHistoryRepositoryPort": ...
-
-    async def __aenter__(self) -> Self: ...
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None: ...
-
-    async def commit(self) -> None: ...
-
-    async def rollback(self) -> None: ...

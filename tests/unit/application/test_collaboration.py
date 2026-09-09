@@ -52,7 +52,12 @@ from grafy_core.domain.security_audit import (
     SecurityAuditEvent,
     SecurityAuditOutcome,
 )
+from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.plugins import PluginRegistry
+from grafy_core.runtime.in_memory import (
+    InMemoryDataStore,
+    InMemoryMaterializedNodeOutputsRepository,
+)
 
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000201")
@@ -254,6 +259,7 @@ class FakeCollaborationUnitOfWork:
         identity: FakeIdentityRepository,
         security_audit: FakeSecurityAuditRepository,
         execution_history: FakeExecutionHistoryRepository,
+        materialization_store: InMemoryDataStore,
         commit_error: ConcurrentWriteError | None = None,
     ) -> None:
         self.collaboration = collaboration
@@ -262,6 +268,11 @@ class FakeCollaborationUnitOfWork:
         self.identity = identity
         self.security_audit = security_audit
         self.execution_history = execution_history
+        self._materialization_store = materialization_store
+        self.materialized_outputs = InMemoryMaterializedNodeOutputsRepository(
+            materialization_store
+        )
+        self._materialization_snapshot = materialization_store.clone()
         self._commit_error = commit_error
         self.commit_count = 0
         self.rollback_count = 0
@@ -273,6 +284,7 @@ class FakeCollaborationUnitOfWork:
         return self
 
     def _capture_state(self) -> dict[str, object]:
+        self._materialization_snapshot = self._materialization_store.clone()
         return {
             "heads": {
                 key: _clone_head(head) for key, head in self.collaboration.heads.items()
@@ -315,6 +327,7 @@ class FakeCollaborationUnitOfWork:
         self.rollback_count += 1
         if self._snapshot is None:
             return
+        self._materialization_store.replace_with(self._materialization_snapshot)
         heads = {
             key: _clone_head(head)
             for key, head in self._snapshot["heads"].items()  # type: ignore[union-attr]
@@ -409,6 +422,7 @@ class FakeFactory:
         self.collaboration.graphs_by_id = self.graphs.graphs
         self.security_audit = FakeSecurityAuditRepository()
         self.execution_history = FakeExecutionHistoryRepository()
+        self.materialization_store = InMemoryDataStore()
         self.identity = FakeIdentityRepository(
             self.user,
             [self.membership, self.target_membership],
@@ -423,6 +437,7 @@ class FakeFactory:
             identity=self.identity,
             security_audit=self.security_audit,
             execution_history=self.execution_history,
+            materialization_store=self.materialization_store,
             commit_error=self.commit_error,
         )
         self.created.append(unit)
@@ -1252,7 +1267,20 @@ async def test_checkpoint_commit_failure_rolls_back_partial_state() -> None:
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(
+            name="Draft",
+            document=SavedGraphDocument(
+                nodes=(
+                    SavedGraphNode(
+                        kind="builtin",
+                        id="node",
+                        operator_id="example.operator",
+                        position=GraphPoint(x=0, y=0),
+                        operator_version=1,
+                    ),
+                )
+            ),
+        ),
         graph_id=graph_id,
     )
     head, _ = await service.accept_command(
@@ -1264,6 +1292,17 @@ async def test_checkpoint_commit_failure_rolls_back_partial_state() -> None:
         observed_room_epoch=head.room_epoch,
         command=RenameGraphCommand(name="Pending", expected_name="Draft"),
     )
+    original_materialization = MaterializedNodeOutputs(
+        workspace_id=WORKSPACE_ID,
+        graph_id=graph_id,
+        graph_revision=1,
+        node_id="node",
+        workflow_run_id=uuid4(),
+        outputs={},
+    )
+    async with factory() as entered:
+        await entered.materialized_outputs.upsert(original_materialization)
+        await entered.commit()
     factory.commit_error = ConcurrentWriteError("checkpoint race")
 
     with pytest.raises(SavedGraphRevisionConflictError):
@@ -1283,6 +1322,32 @@ async def test_checkpoint_commit_failure_rolls_back_partial_state() -> None:
     assert not any(
         key[3] == 2 for key in factory.collaboration.mappings if key[1] == graph_id
     )
+
+    async with factory() as entered:
+        assert await entered.materialized_outputs.list_for_graph(
+            WORKSPACE_ID, graph_id, 1
+        ) == [original_materialization]
+        assert (
+            await entered.materialized_outputs.list_for_graph(WORKSPACE_ID, graph_id, 2)
+            == []
+        )
+
+    factory.commit_error = None
+    await service.checkpoint(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        graph_id=graph_id,
+        expected_sequence=restored.collaboration_sequence,
+        expected_room_epoch=restored.room_epoch,
+    )
+    async with factory() as entered:
+        carried = await entered.materialized_outputs.list_for_graph(
+            WORKSPACE_ID, graph_id, 2
+        )
+    assert len(carried) == 1
+    assert carried[0].node_id == original_materialization.node_id
+    assert carried[0].workflow_run_id == original_materialization.workflow_run_id
+    assert carried[0].graph_revision == 2
 
 
 @pytest.mark.asyncio

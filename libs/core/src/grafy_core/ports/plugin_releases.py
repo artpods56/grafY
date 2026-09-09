@@ -1,22 +1,22 @@
-from types import TracebackType
-from typing import Protocol, Self
+from typing import Protocol
 from uuid import UUID
 
-from grafy_core.domain.plugin_catalog import PluginCatalogRelease
 from grafy_core.domain.execution_history import ActiveGraphExecution
+from grafy_core.domain.plugin_catalog import PluginCatalogRelease
+from grafy_core.domain.plugin_installations import (
+    InstalledPluginRelease,
+    PluginInstallation,
+)
 from grafy_core.domain.plugin_releases import (
     PluginCatalogManifest,
     PluginRelease,
     PluginReleaseNamespace,
     PluginRuntimeArtifact,
 )
-from grafy_core.domain.plugin_installations import (
-    InstalledPluginRelease,
-    PluginInstallation,
-)
 from grafy_core.domain.plugin_revocations import PluginReleaseRevocation
 from grafy_core.domain.plugin_selection import PluginReleaseSelection
 from grafy_core.ports.identity import IdentityRepositoryPort
+from grafy_core.ports.transactions import TransactionPort
 
 
 class PluginReleaseRepositoryPort(Protocol):
@@ -111,25 +111,12 @@ class PluginReleaseRepositoryPort(Protocol):
     async def list_runtime_artifacts(self) -> list[PluginRuntimeArtifact]: ...
 
 
-class PluginReleaseUnitOfWorkPort(Protocol):
+class PluginReleaseUnitOfWorkPort(TransactionPort, Protocol):
     @property
     def plugin_releases(self) -> PluginReleaseRepositoryPort: ...
 
     @property
     def identity(self) -> IdentityRepositoryPort: ...
-
-    async def __aenter__(self) -> Self: ...
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None: ...
-
-    async def commit(self) -> None: ...
-
-    async def rollback(self) -> None: ...
 
 
 __all__ = ["PluginReleaseRepositoryPort", "PluginReleaseUnitOfWorkPort"]

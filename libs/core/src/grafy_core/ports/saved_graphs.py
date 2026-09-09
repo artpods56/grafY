@@ -1,5 +1,4 @@
-from types import TracebackType
-from typing import TYPE_CHECKING, Protocol, Self
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
 from grafy_core.domain.saved_graphs import (
@@ -10,11 +9,15 @@ from grafy_core.domain.saved_graphs import (
     SavedGraphRevision,
     UserGraphState,
 )
+from grafy_core.ports.transactions import TransactionPort
 
 if TYPE_CHECKING:
     from grafy_core.ports.identity import (
         IdentityRepositoryPort,
         SecurityAuditRepositoryPort,
+    )
+    from grafy_core.ports.materialized_outputs import (
+        MaterializedNodeOutputsRepositoryPort,
     )
     from grafy_core.ports.node_secrets import NodeSecretRepositoryPort
 
@@ -98,7 +101,10 @@ class SavedGraphRepositoryPort(Protocol):
     async def remove(self, workspace_id: UUID, graph: SavedGraph) -> None: ...
 
 
-class SavedGraphUnitOfWorkPort(Protocol):
+class SavedGraphUnitOfWorkPort(TransactionPort, Protocol):
+    @property
+    def materialized_outputs(self) -> "MaterializedNodeOutputsRepositoryPort": ...
+
     @property
     def graphs(self) -> SavedGraphRepositoryPort: ...
 
@@ -110,16 +116,3 @@ class SavedGraphUnitOfWorkPort(Protocol):
 
     @property
     def security_audit(self) -> "SecurityAuditRepositoryPort": ...
-
-    async def __aenter__(self) -> Self: ...
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None: ...
-
-    async def commit(self) -> None: ...
-
-    async def rollback(self) -> None: ...

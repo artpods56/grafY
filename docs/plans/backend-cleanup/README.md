@@ -107,9 +107,9 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 ## 12. Artifact contracts and in-memory persistence
 
 - [x] Move artifact repository contracts to ports/artifacts and concrete in-memory implementations to a production core runtime owner.
-- [ ] Share lifecycle-only transaction protocol across feature protocols while keeping repository requirements explicit.
-- [ ] Declare materialized-output dependency in saved-graph transaction contract and remove reflective fallback.
-- [ ] Preserve task isolation, cloning, rollback, guest execution, and supported SDK imports.
+- [x] Share lifecycle-only transaction protocol across feature protocols while keeping repository requirements explicit.
+- [x] Declare materialized-output dependency in saved-graph transaction contract and remove reflective fallback.
+- [x] Preserve task isolation, cloning, rollback, guest execution, and supported SDK imports.
 
 ## 13. Cross-feature host infrastructure
 
@@ -504,4 +504,26 @@ flowchart LR
     Ports --> Models[Artifact data models]
     SDK[Legacy SDK imports] -. lazy compatibility exports .-> Memory
     SDK -. lazy compatibility exports .-> Ports
+```
+
+
+### Shared transaction lifecycle and required materialization
+
+- Added repository-free `TransactionPort` with async enter/exit, commit, and rollback. Nine feature transaction protocols inherit it instead of repeating lifecycle signatures. Artifact, identity, graph, secret, collaboration, plugin, module, template, and upload contracts retain their explicit repository requirements; existing execution/workbench specialization remains intact.
+- Saved-graph and collaboration transaction contracts now require `materialized_outputs`. SavedGraphService uses that property directly instead of an attribute lookup and runtime protocol check that could silently skip carry-forward. SQL composition already provides this repository.
+- Adapted saved-graph and collaboration test transactions to use the production in-memory materialization repository. Their transaction snapshots include this state so failed commits cannot leave materializations on uncommitted revisions.
+- Extended the checkpoint failure contract with an existing node materialization. A failed checkpoint preserves the original revision's output and leaves the new revision empty; retrying successfully carries the same workflow result to the new revision. Existing HTTP tests also verify carry-forward after compatible layout changes.
+- Validation: 556 core/application/persistence/architecture/materialization tests, 520 API/execution-route tests, and 181 plugin/storage/workbench tests passed, totaling 1,257. Nineteen optional PostgreSQL cases were skipped in this run; no persistence implementation or SQL changed.
+- Targeted typing of the new lifecycle, artifact/saved-graph/collaboration contracts, SavedGraphService, and the complete persistence package reports zero errors or warnings. The broader ports directory retains its existing `JsonValue` re-export diagnostic in `ports/__init__.py`; this batch does not alter that export. Changed-file Ruff and whitespace checks pass.
+- The extracted core wheel contains the shared lifecycle module, imports SQL composition, preserves legacy artifact SDK imports, and completes a real in-memory commit/read/remove/rollback cycle.
+- Evidence: `/tmp/grafy-transactions-regression.log`, `/tmp/grafy-transactions-api.log`, `/tmp/grafy-transactions-runtime.log`, `/tmp/grafy-transactions-types.log`, and `/tmp/grafy-transactions-wheel.log`.
+- Finding 12 is complete. Its previous ownership move and import-order/packaging checks, together with this batch's lifecycle and materialization contracts, cover task isolation, cloning, rollback, guest callers, and supported SDK imports. Other original findings and final whole-backend gates remain open.
+
+```mermaid
+flowchart TD
+    Lifecycle[Repository-free transaction lifecycle] --> Features[Feature transaction protocols]
+    Features --> SQL[SQL unit of work]
+    Features --> Memory[In-memory unit of work]
+    Graphs[Saved-graph and collaboration contracts] --> Outputs[Required materialized-output repository]
+    Graphs --> Lifecycle
 ```

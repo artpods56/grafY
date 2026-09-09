@@ -36,9 +36,6 @@ from grafy_core.domain.security_audit import (
     SecurityAuditOutcome,
 )
 from grafy_core.plugins import PluginRegistry
-from grafy_core.ports.materialized_outputs import (
-    MaterializedNodeOutputsRepositoryPort,
-)
 from grafy_core.ports.saved_graphs import SavedGraphUnitOfWorkPort
 
 
@@ -487,9 +484,7 @@ class SavedGraphService:
         next_document: SavedGraphDocument,
         next_revision: int,
     ) -> None:
-        materialized_outputs = getattr(unit_of_work, "materialized_outputs", None)
-        if not isinstance(materialized_outputs, MaterializedNodeOutputsRepositoryPort):
-            return
+        materialized_outputs = unit_of_work.materialized_outputs
         previous = await materialized_outputs.list_for_graph(
             workspace_id,
             graph_id,

@@ -1,6 +1,5 @@
 from collections.abc import Mapping
-from types import TracebackType
-from typing import TYPE_CHECKING, Protocol, Self
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
 from pydantic import SecretStr
@@ -9,6 +8,7 @@ from grafy_core.domain.node_secrets import (
     EncryptedNodeSecret,
     JsonValue,
 )
+from grafy_core.ports.transactions import TransactionPort
 
 if TYPE_CHECKING:
     from grafy_core.ports.saved_graphs import SavedGraphRepositoryPort
@@ -96,22 +96,9 @@ class NodeSecretRepositoryPort(Protocol):
     ) -> None: ...
 
 
-class NodeSecretUnitOfWorkPort(Protocol):
+class NodeSecretUnitOfWorkPort(TransactionPort, Protocol):
     @property
     def graphs(self) -> "SavedGraphRepositoryPort": ...
 
     @property
     def node_secrets(self) -> NodeSecretRepositoryPort: ...
-
-    async def __aenter__(self) -> Self: ...
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None: ...
-
-    async def commit(self) -> None: ...
-
-    async def rollback(self) -> None: ...

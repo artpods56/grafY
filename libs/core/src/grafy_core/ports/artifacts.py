@@ -1,9 +1,9 @@
 from collections.abc import Collection
-from types import TracebackType
-from typing import Protocol, Self
+from typing import Protocol
 from uuid import UUID
 
 from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey
+from grafy_core.ports.transactions import TransactionPort
 
 
 class ArtifactRepositoryPort(Protocol):
@@ -30,19 +30,6 @@ class ArtifactRepositoryPort(Protocol):
     ) -> list[ArtifactObject]: ...
 
 
-class UnitOfWorkPort(Protocol):
+class UnitOfWorkPort(TransactionPort, Protocol):
     @property
     def artifacts(self) -> ArtifactRepositoryPort: ...
-
-    async def __aenter__(self) -> Self: ...
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None: ...
-
-    async def commit(self) -> None: ...
-
-    async def rollback(self) -> None: ...

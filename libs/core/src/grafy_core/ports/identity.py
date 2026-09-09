@@ -1,21 +1,21 @@
 from collections.abc import Sequence
 from datetime import datetime
-from types import TracebackType
-from typing import Protocol, Self
+from typing import Protocol
 from uuid import UUID
 
 from grafy_core.domain.identity import (
     AuthSession,
     OidcIdentity,
     OidcLoginTransaction,
-    PlatformAccessToken,
     PersonalAccessToken,
+    PlatformAccessToken,
     User,
     Workspace,
     WorkspaceInvitation,
     WorkspaceMembership,
 )
 from grafy_core.domain.security_audit import SecurityAuditEvent
+from grafy_core.ports.transactions import TransactionPort
 
 
 class IdentityRepositoryPort(Protocol):
@@ -194,25 +194,12 @@ class SecurityAuditRepositoryPort(Protocol):
     async def delete_before(self, occurred_before: datetime) -> int: ...
 
 
-class IdentityUnitOfWorkPort(Protocol):
+class IdentityUnitOfWorkPort(TransactionPort, Protocol):
     @property
     def identity(self) -> IdentityRepositoryPort: ...
 
     @property
     def security_audit(self) -> SecurityAuditRepositoryPort: ...
-
-    async def __aenter__(self) -> Self: ...
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None: ...
-
-    async def commit(self) -> None: ...
-
-    async def rollback(self) -> None: ...
 
 
 __all__ = [

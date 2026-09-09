@@ -1,11 +1,11 @@
-from types import TracebackType
-from typing import Protocol, Self
+from typing import Protocol
 from uuid import UUID
 
 from grafy_core.domain.templates import Template
 from grafy_core.ports.collaboration import CollaborationRepositoryPort
 from grafy_core.ports.identity import IdentityRepositoryPort
 from grafy_core.ports.saved_graphs import SavedGraphRepositoryPort
+from grafy_core.ports.transactions import TransactionPort
 
 
 class TemplateRepositoryPort(Protocol):
@@ -26,7 +26,7 @@ class TemplateRepositoryPort(Protocol):
     ) -> list[Template]: ...
 
 
-class TemplateUnitOfWorkPort(Protocol):
+class TemplateUnitOfWorkPort(TransactionPort, Protocol):
     @property
     def graphs(self) -> SavedGraphRepositoryPort: ...
 
@@ -38,19 +38,6 @@ class TemplateUnitOfWorkPort(Protocol):
 
     @property
     def templates(self) -> TemplateRepositoryPort: ...
-
-    async def __aenter__(self) -> Self: ...
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None: ...
-
-    async def commit(self) -> None: ...
-
-    async def rollback(self) -> None: ...
 
 
 __all__ = ["TemplateRepositoryPort", "TemplateUnitOfWorkPort"]
