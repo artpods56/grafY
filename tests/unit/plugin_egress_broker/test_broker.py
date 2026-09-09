@@ -2,6 +2,8 @@ import asyncio
 from ipaddress import IPv4Address, ip_address
 from pathlib import Path
 import socket
+import subprocess
+import sys
 from typing import cast
 
 import pytest
@@ -14,8 +16,8 @@ from grafy_api.plugins.runtime.egress import (
     PluginEgressDestination,
     ResolvedPluginEgressDestination,
 )
-from grafy_api import plugin_egress_broker
-from grafy_api.plugin_egress_broker import (
+import grafy_plugin_egress_broker as plugin_egress_broker
+from grafy_plugin_egress_broker import (
     BrokerConfigError,
     BrokerDestination,
     BrokerPolicy,
@@ -72,21 +74,24 @@ def test_broker_loads_only_exact_public_numeric_policy(tmp_path: Path) -> None:
     assert policy.sandbox_key_sha256 == "b" * 64
     assert policy.postgresql_relays[0].listen_port == 5432
     assert policy.limits.connection_limit == 128
-    assert policy.policy_sha256 == PluginEgressBrokerPlan.from_resolved(
-        broker_image=_BROKER_IMAGE,
-        sandbox_key_sha256="b" * 64,
-        destinations=tuple(
-            ResolvedPluginEgressDestination(
-                PluginEgressDestination.parse(value),
-                (ip_address(address),),
-            )
-            for value, address in (
-                ("http://api.example.com:80", "93.184.216.34"),
-                ("https://secure.example.com:443", "8.8.8.8"),
-                ("postgresql://database.example.com:5432", "1.1.1.1"),
-            )
-        ),
-    ).policy_sha256
+    assert (
+        policy.policy_sha256
+        == PluginEgressBrokerPlan.from_resolved(
+            broker_image=_BROKER_IMAGE,
+            sandbox_key_sha256="b" * 64,
+            destinations=tuple(
+                ResolvedPluginEgressDestination(
+                    PluginEgressDestination.parse(value),
+                    (ip_address(address),),
+                )
+                for value, address in (
+                    ("http://api.example.com:80", "93.184.216.34"),
+                    ("https://secure.example.com:443", "8.8.8.8"),
+                    ("postgresql://database.example.com:5432", "1.1.1.1"),
+                )
+            ),
+        ).policy_sha256
+    )
 
     content = policy_path.read_text(encoding="utf-8")
     policy_path.write_text(
@@ -137,9 +142,7 @@ def test_broker_accepts_rfc1918_only_with_explicit_curated_scope(
 
     policy = load_policy(policy_path)
 
-    assert policy.http_destinations[0].connect_addresses == (
-        ip_address("172.18.0.5"),
-    )
+    assert policy.http_destinations[0].connect_addresses == (ip_address("172.18.0.5"),)
     assert policy.http_destinations[0].address_scope == "curated-rfc1918"
 
     content = policy_path.read_text(encoding="utf-8")
@@ -379,3 +382,48 @@ async def test_numeric_connector_forbids_dns_resolution(
         "family": socket.AF_INET,
         "flags": socket.AI_NUMERICHOST,
     }
+
+
+@pytest.mark.parametrize(
+    ("arguments", "environment", "returncode", "message"),
+    [
+        (["--help"], {}, 0, "serve,ready"),
+        (
+            ["serve", "--policy-env", "BROKER_TEST_POLICY"],
+            {"BROKER_TEST_POLICY": "!"},
+            1,
+            "not valid base64",
+        ),
+        (
+            ["ready", "--policy-sha256", "invalid"],
+            {},
+            1,
+            "Expected policy digest is invalid",
+        ),
+    ],
+)
+def test_broker_commands_run_without_site_packages(
+    arguments: list[str],
+    environment: dict[str, str],
+    returncode: int,
+    message: str,
+    tmp_path: Path,
+) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-S",
+            str(Path(plugin_egress_broker.__file__).resolve()),
+            *arguments,
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert result.returncode == returncode
+    assert message in result.stdout + result.stderr

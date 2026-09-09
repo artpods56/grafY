@@ -24,9 +24,11 @@ classes or publication tools. Runtime profiles can be imported without loading a
 OCI builder. Plugin hosting does not import the graph execution engine.
 
 The `grafy` CLI remains in `grafy_api.cli`. It calls the core release service for
-System revocation. The broker executable and historical host-deployment tools
-still have separate relocation items in the backend cleanup checklist. Their
-commands and supported historical policies remain available.
+System revocation. The broker executable belongs to `apps/plugin-egress-broker`;
+API runtime hosting exchanges versioned policy and readiness messages with its
+container. Historical host-deployment tools belong to `plugins/compatibility`,
+with explicit aliases for their old public imports. Their commands and supported
+historical policies remain available.
 
 Run API and client regression checks from the repository root:
 

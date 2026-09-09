@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grafy-plugin-egress-broker"
+version = "0.1.0"
+description = "Destination-scoped HTTP, HTTPS, and PostgreSQL broker for Plugin workers"
+requires-python = "==3.14.*"
+dependencies = []
+
+[project.scripts]
+grafy-plugin-egress-broker = "grafy_plugin_egress_broker:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["grafy_plugin_egress_broker"]

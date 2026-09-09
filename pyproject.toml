@@ -30,6 +30,7 @@ members = [
     "libs/storage",
     "libs/workbench",
     "apps/api",
+    "apps/plugin-egress-broker",
 ]
 exclude = [
     "examples/plugin-notes",
@@ -40,6 +41,7 @@ exclude = [
 ]
 
 [tool.uv.sources]
+grafy-plugin-egress-broker = { workspace = true }
 grafy-api = { workspace = true }
 grafy-client = { workspace = true }
 grafy-core = { workspace = true }
@@ -53,6 +55,7 @@ grafy-plugin-sql = { path = "plugins/sql" }
 
 [dependency-groups]
 dev = [
+    "grafy-plugin-egress-broker",
     "asgi-lifespan>=2.1.0",
     "httpx>=0.28.0",
     "polyfactory>=3.3.0",
@@ -78,6 +81,7 @@ include = [
     "plugins/gis/*",
     "plugins/sql/*",
     "apps/api/*",
+    "apps/plugin-egress-broker/*",
     "tests/*",
 ]
 exclude = [
@@ -100,5 +104,6 @@ executionEnvironments = [
         "plugins/gis/src",
         "plugins/sql/src",
         "apps/api/src",
+        "apps/plugin-egress-broker/src",
     ] },
 ]

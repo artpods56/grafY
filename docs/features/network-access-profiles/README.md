@@ -939,7 +939,7 @@ Primary touchpoints:
 Primary touchpoints:
 
 - `apps/api/src/grafy_api/plugins/runtime/egress.py`
-- `apps/api/src/grafy_api/plugin_egress_broker.py`
+- `apps/plugin-egress-broker/src/grafy_plugin_egress_broker.py`
 - `apps/api/src/grafy_api/execution/preflight.py`
 - `apps/api/src/grafy_api/plugins/runtime/docker.py`
 - `apps/api/src/grafy_api/execution/compiler.py`
@@ -1094,7 +1094,7 @@ Existing suites to extend include:
 - `tests/unit/core/test_plugin_inspector.py`
 - `tests/unit/core/test_plugin_invocation.py`
 - `tests/unit/api/test_plugin_egress.py`
-- `tests/unit/api/test_plugin_egress_broker.py`
+- `tests/unit/plugin_egress_broker/test_broker.py`
 - `tests/unit/api/runtime/test_plugin_docker_egress.py`
 - `tests/unit/api/runtime/test_plugin_docker_capacity.py`
 - `tests/unit/api/runtime/test_plugin_docker_admission.py`

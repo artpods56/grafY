@@ -46,7 +46,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Publication package and independent profiles, commit `9735cc2`.
 - [x] Group runtime admission, Docker invocation, and artifact staging under application Plugin hosting.
 - [x] Move SQL System cutover/baseline operations to persistence; keep command parsing/files/reporting in operator tooling.
-- [ ] Give the egress broker a dedicated executable application owner.
+- [x] Give the egress broker a dedicated executable application owner.
 - [x] Relocate old host loader/builder/bindings as explicit compatibility tooling; retain CLI commands and historical policies.
 - [x] Remove unused active-runtime host binding/admission state, consistent with ADR 0007.
 
@@ -786,3 +786,16 @@ flowchart LR
     CLI[Operator commands] --> Compatibility[Historical deployment validation]
     CLI --> Admission
 ```
+
+
+### Dedicated egress-broker application
+
+- Moved the standalone broker, byte-for-byte, from API sources to `apps/plugin-egress-broker/src/grafy_plugin_egress_broker.py`. Its application package has no runtime dependencies and provides the `grafy-plugin-egress-broker` console command. The root development environment includes the local workspace package; the API does not depend on it. [R01: Direct Ownership]
+- Updated the existing Dockerfile to copy the new source owner to the same `/opt/grafy/bin/grafy-plugin-egress-broker` path. Base-image digest, non-root user, policy-config label, policy parsing, relaying, limits, command arguments, and readiness behavior are unchanged. No API compatibility import remains because repository callers were only the image build and broker tests; the supported executable path is preserved.
+- Moved broker behavior tests to `tests/unit/plugin_egress_broker`. Host coordination tests remain with API runtime hosting. Added three subprocess contracts for help, invalid policy input, and invalid readiness input with site packages disabled. Existing HTTP forwarding, CONNECT, PostgreSQL relay, numeric-address enforcement, credential stripping, and host policy compatibility tests remain. [R43: Tests Are Behavioral Contracts]
+- Validation: 69 focused broker/host tests passed; the broader API/architecture/broker suite passed 515 tests, including the focused cases. Changed executable/test typing reports zero errors; Ruff and diff checks pass. The lockfile adds only the local broker package.
+- Built and inspected the independent wheel: it has no `Requires-Dist`, declares the console entry point, contains exactly the original script bytes, and runs with site packages disabled. Rebuilt the API after removing untracked build output; its wheel omits the broker implementation and constructs the application successfully.
+- Built the actual Docker image with the cached pinned base and no build network. Started a disposable broker with no network, a read-only root filesystem, and a bounded temporary filesystem. Verified readiness for the exact policy digest and rejection of a different digest, then stopped and removed the container. This covers the moved image and executable; it does not claim a new live guest-to-upstream integration run.
+- Updated application ownership documentation and current network-access feature paths. The broker application README documents the independent package and unchanged container protocol.
+- Evidence: `/tmp/grafy-broker-owner-focused.log`, `/tmp/grafy-broker-owner-regression.log`, `/tmp/grafy-broker-owner-types.log`, `/tmp/grafy-broker-owner-build.log`, `/tmp/grafy-broker-owner-api-build.log`, `/tmp/grafy-broker-owner-docker-build.log`, and `/tmp/grafy-broker-owner-verify.log`.
+- Finding 4 is complete across the publication/runtime, persistence, compatibility, inactive-state, and broker batches. The full goal remains open for publication fencing, graph transport, spatial contracts, and final architecture/regression gates.
