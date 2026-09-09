@@ -276,6 +276,24 @@ def test_plugin_egress_partial_or_mistyped_configuration_fails_closed(
         Settings(_env_file=None, **values)  # pyright: ignore[reportCallIssue]
 
 
+def test_oidc_domain_workspaces_parse_from_deployment_string() -> None:
+    settings = Settings(
+        _env_file=None,
+        oidc_domain_workspaces="ihpan.edu.pl:ihpan:IHPAN",
+    )
+
+    assert len(settings.oidc_domain_workspaces) == 1
+    grant = settings.oidc_domain_workspaces[0]
+    assert grant.email_domain == "ihpan.edu.pl"
+    assert grant.workspace_slug == "ihpan"
+    assert grant.workspace_name == "IHPAN"
+
+
+def test_oidc_domain_workspaces_reject_malformed_grants() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, oidc_domain_workspaces="ihpan.edu.pl")
+
+
 def test_oidc_signing_algorithms_are_strictly_allowlisted() -> None:
     with pytest.raises(ValidationError):
         Settings(oidc_allowed_signing_algorithms=("none",))

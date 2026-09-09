@@ -11,9 +11,11 @@ from grafy_core.domain.errors import (
 from grafy_core.domain.identity import (
     ActorContext,
     AuthSession,
+    OidcDomainWorkspaceGrant,
     OidcLoginTransaction,
     PAT_ALLOWED_CAPABILITIES,
     PersonalAccessToken,
+    parse_oidc_domain_workspace_grants,
     Workspace,
     WorkspaceAccess,
     WorkspaceCapability,
@@ -27,6 +29,37 @@ from grafy_core.domain.security_audit import (
     SecurityAuditEvent,
     SecurityAuditOutcome,
 )
+
+
+def test_oidc_domain_workspace_grant_matches_exact_verified_domain_only() -> None:
+    grant = OidcDomainWorkspaceGrant(
+        email_domain="ihpan.edu.pl",
+        workspace_slug="ihpan",
+        workspace_name="IHPAN",
+    )
+
+    assert grant.matches_normalized_email("anna.nowak@ihpan.edu.pl")
+    assert not grant.matches_normalized_email("anna.nowak@staff.ihpan.edu.pl")
+    assert not grant.matches_normalized_email("anna.nowak@example.ihpan.edu.pl")
+    assert not grant.matches_normalized_email("not-ihpan.edu.pl@example.test")
+
+
+def test_oidc_domain_workspace_grants_parse_deployment_strings() -> None:
+    grants = parse_oidc_domain_workspace_grants("ihpan.edu.pl:ihpan:IHPAN")
+
+    assert grants == (
+        OidcDomainWorkspaceGrant(
+            email_domain="ihpan.edu.pl",
+            workspace_slug="ihpan",
+            workspace_name="IHPAN",
+        ),
+    )
+    with pytest.raises(ValueError, match="domain:slug"):
+        parse_oidc_domain_workspace_grants("ihpan.edu.pl")
+    with pytest.raises(ValueError, match="duplicate"):
+        parse_oidc_domain_workspace_grants(
+            "ihpan.edu.pl:ihpan,ihpan.edu.pl:other:Other"
+        )
 
 
 def test_role_policy_is_explicit_and_owner_is_the_union_of_capabilities() -> None:

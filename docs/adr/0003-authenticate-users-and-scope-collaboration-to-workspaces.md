@@ -73,8 +73,15 @@ A `WorkspaceMembership` relates one user to one workspace with one role:
 
 A shared workspace always retains at least one owner. A personal workspace has
 its user as its owner and does not accept additional memberships. New OIDC
-identities create only their personal workspace; there is no special local
-workspace or first-owner bootstrap path.
+identities always receive a personal workspace.
+
+A deployment may also list verified email domains that receive membership in a
+named shared workspace on login (`GRAFY_OIDC_DOMAIN_WORKSPACES`). Email is still
+not an identity-linking key: the grant runs after the `(issuer, subject)` user
+exists. Unverified email is ignored. An existing membership, including a
+revoked one, is left alone. The first active member becomes owner; later
+members become editors. There is no special local workspace or first-owner
+bootstrap path.
 
 The removal migration deletes the deterministic legacy workspace only when it
 is empty and unowned. When it has an active owner, the migration preserves its

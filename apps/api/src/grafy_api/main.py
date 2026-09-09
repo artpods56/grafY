@@ -293,7 +293,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def identity_uow_factory() -> SqlAlchemyUnitOfWork:
         return SqlAlchemyUnitOfWork(database.sessions)
 
-    identity_service = IdentityService(identity_uow_factory)
+    identity_service = IdentityService(
+        identity_uow_factory,
+        domain_workspace_grants=resolved_settings.oidc_domain_workspaces,
+    )
     auth_service = AuthService(
         settings=resolved_settings,
         unit_of_work_factory=identity_uow_factory,

@@ -15,6 +15,7 @@ from grafy_core.domain.identity import (
     PAT_ALLOWED_CAPABILITIES,
     ActorContext,
     IdentityProvisioningResult,
+    OidcDomainWorkspaceGrant,
     OidcIdentity,
     PersonalAccessToken,
     PlatformAccessToken,
@@ -120,8 +121,10 @@ class IdentityService:
     def __init__(
         self,
         unit_of_work_factory: Callable[[], IdentityUnitOfWorkPort],
+        domain_workspace_grants: Sequence[OidcDomainWorkspaceGrant] = (),
     ) -> None:
         self._unit_of_work_factory = unit_of_work_factory
+        self._domain_workspace_grants = tuple(domain_workspace_grants)
 
     async def authenticate_personal_access_token(
         self,
@@ -706,6 +709,7 @@ class IdentityService:
                             role=WorkspaceRole.OWNER,
                         )
                     )
+                await self._ensure_domain_workspace_memberships(unit_of_work, user)
                 await unit_of_work.commit()
                 return IdentityProvisioningResult(
                     user=user,
@@ -744,6 +748,7 @@ class IdentityService:
                     resource_id=str(user.id),
                 )
             )
+            await self._ensure_domain_workspace_memberships(unit_of_work, user)
             await unit_of_work.commit()
         return IdentityProvisioningResult(
             user=user,
@@ -1091,6 +1096,63 @@ class IdentityService:
                 token,
                 actor_kind=SecurityAuditActorKind.AUTHENTICATED,
                 actor=actor,
+            )
+
+    async def _ensure_domain_workspace_memberships(
+        self,
+        unit_of_work: IdentityUnitOfWorkPort,
+        user: User,
+    ) -> None:
+        if (
+            not self._domain_workspace_grants
+            or not user.email_verified
+            or user.normalized_email is None
+        ):
+            return
+        for grant in self._domain_workspace_grants:
+            if not grant.matches_normalized_email(user.normalized_email):
+                continue
+            workspace = (
+                await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
+                    grant.workspace_slug
+                )
+            )
+            if workspace is None:
+                workspace = Workspace.shared(
+                    slug=grant.workspace_slug,
+                    name=grant.workspace_name,
+                )
+                await unit_of_work.identity.add_workspace(workspace)
+            elif workspace.kind is not WorkspaceKind.SHARED:
+                raise IdentityInvariantError(
+                    f"OIDC domain workspace slug {grant.workspace_slug!r} is not shared"
+                )
+            membership = await unit_of_work.identity.get_membership(
+                workspace_id=workspace.id,
+                user_id=user.id,
+            )
+            if membership is not None:
+                continue
+            owner_count = await unit_of_work.identity.count_active_owners(workspace.id)
+            role = (
+                WorkspaceRole.OWNER if owner_count == 0 else WorkspaceRole.EDITOR
+            )
+            await unit_of_work.identity.add_membership(
+                WorkspaceMembership(
+                    workspace_id=workspace.id,
+                    user_id=user.id,
+                    role=role,
+                )
+            )
+            await unit_of_work.security_audit.add(
+                SecurityAuditEvent(
+                    actor_kind=SecurityAuditActorKind.UNAUTHENTICATED,
+                    operation="oidc.domain_workspace.grant",
+                    outcome=SecurityAuditOutcome.SUCCESS,
+                    workspace_id=workspace.id,
+                    resource_type="user",
+                    resource_id=str(user.id),
+                )
             )
 
     async def _require_shared_workspace_for_invitation(

@@ -20,6 +20,10 @@ from grafy_api.plugins.runtime.network_policy import (
     legacy_network_policy,
     load_network_policy_manifest,
 )
+from grafy_core.domain.identity import (
+    OidcDomainWorkspaceGrant,
+    parse_oidc_domain_workspace_grants,
+)
 
 
 _OIDC_ALLOWED_ALGORITHMS = frozenset(
@@ -77,6 +81,9 @@ class Settings(BaseSettings):
     )
     auth_cookie_secure: bool = True
     oidc_callback_path: str = "/api/v1/auth/oidc/callback"
+    # Verified email domains that receive shared Workspace membership on login.
+    # Each grant is `domain:slug` or `domain:slug:name`.
+    oidc_domain_workspaces: tuple[OidcDomainWorkspaceGrant, ...] = ()
     auth_rate_window_seconds: int = Field(default=60, ge=1, le=3600)
     auth_login_start_rate_limit: int = Field(default=10, ge=1)
     auth_callback_rate_limit: int = Field(default=20, ge=1)
@@ -251,6 +258,15 @@ class Settings(BaseSettings):
             destinations=(*parsed_http, *parsed_postgresql),
         )
         return self
+
+    @field_validator("oidc_domain_workspaces", mode="before")
+    @classmethod
+    def _parse_oidc_domain_workspaces(cls, value: object) -> object:
+        if value is None or value == "":
+            return ()
+        if isinstance(value, str | list | tuple):
+            return parse_oidc_domain_workspace_grants(value)
+        return value
 
     @field_validator("plugin_egress_broker_image", mode="before")
     @classmethod

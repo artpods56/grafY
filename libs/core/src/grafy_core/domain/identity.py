@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -259,6 +260,71 @@ class Workspace:
     @classmethod
     def shared(cls, *, slug: str, name: str) -> "Workspace":
         return cls(slug=slug, name=name, kind=WorkspaceKind.SHARED)
+
+
+@dataclass(frozen=True)
+class OidcDomainWorkspaceGrant:
+    """Deployment grant: a verified email domain joins one shared Workspace."""
+
+    email_domain: str
+    workspace_slug: str
+    workspace_name: str
+
+    def __post_init__(self) -> None:
+        domain = self.email_domain.strip().lower()
+        if (
+            not domain
+            or "@" in domain
+            or "." not in domain
+            or any(part == "" for part in domain.split("."))
+        ):
+            raise ValueError("OIDC domain workspace grant needs a DNS email domain")
+        object.__setattr__(self, "email_domain", domain)
+        object.__setattr__(
+            self, "workspace_slug", normalize_workspace_slug(self.workspace_slug)
+        )
+        name = self.workspace_name.strip() or self.workspace_slug
+        object.__setattr__(
+            self,
+            "workspace_name",
+            _require_nonempty(name, "Workspace name", 160),
+        )
+
+    def matches_normalized_email(self, normalized_email: str) -> bool:
+        _, separator, domain = normalized_email.rpartition("@")
+        return bool(separator) and domain == self.email_domain
+
+
+def parse_oidc_domain_workspace_grants(
+    value: str | Sequence[str],
+) -> tuple[OidcDomainWorkspaceGrant, ...]:
+    """Parse `domain:slug` or `domain:slug:name` grants from deployment config."""
+
+    if isinstance(value, str):
+        items = [item.strip() for item in value.split(",") if item.strip()]
+    else:
+        items = [str(item).strip() for item in value if str(item).strip()]
+    grants: list[OidcDomainWorkspaceGrant] = []
+    seen_domains: set[str] = set()
+    for item in items:
+        fields = item.split(":")
+        if len(fields) not in {2, 3}:
+            raise ValueError(
+                "OIDC domain workspace grant must be domain:slug or domain:slug:name"
+            )
+        domain, slug, *rest = fields
+        grant = OidcDomainWorkspaceGrant(
+            email_domain=domain,
+            workspace_slug=slug,
+            workspace_name=rest[0] if rest else slug,
+        )
+        if grant.email_domain in seen_domains:
+            raise ValueError(
+                f"duplicate OIDC domain workspace grant for {grant.email_domain}"
+            )
+        seen_domains.add(grant.email_domain)
+        grants.append(grant)
+    return tuple(grants)
 
 
 @dataclass

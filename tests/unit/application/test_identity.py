@@ -17,6 +17,7 @@ from grafy_core.domain.errors import (
 from grafy_core.domain.identity import (
     ActorContext,
     AuthSession,
+    OidcDomainWorkspaceGrant,
     PersonalAccessToken,
     PlatformAccessToken,
     PlatformTokenScope,
@@ -24,6 +25,7 @@ from grafy_core.domain.identity import (
     WorkspaceCapability,
     WorkspaceInvitation,
     WorkspaceInvitationStatus,
+    WorkspaceKind,
     WorkspaceMembership,
     WorkspaceRole,
 )
@@ -45,8 +47,21 @@ async def database(tmp_path: Path) -> AsyncIterator[Database]:
         await created.dispose()
 
 
-def _service(database: Database) -> IdentityService:
-    return IdentityService(lambda: SqlAlchemyUnitOfWork(database.sessions))
+_IHPAN_GRANT = OidcDomainWorkspaceGrant(
+    email_domain="ihpan.edu.pl",
+    workspace_slug="ihpan",
+    workspace_name="IHPAN",
+)
+
+
+def _service(
+    database: Database,
+    domain_workspace_grants: tuple[OidcDomainWorkspaceGrant, ...] = (),
+) -> IdentityService:
+    return IdentityService(
+        lambda: SqlAlchemyUnitOfWork(database.sessions),
+        domain_workspace_grants=domain_workspace_grants,
+    )
 
 
 def test_workspace_invitation_lifecycle_expires_at_the_boundary() -> None:
@@ -220,6 +235,169 @@ async def test_oidc_provisioning_creates_only_a_personal_workspace(
         and event.resource_id == str(provisioned.user.id)
         for event in provisioning_events
     )
+
+
+@pytest.mark.asyncio
+async def test_verified_ihpan_login_joins_the_shared_workspace(
+    database: Database,
+) -> None:
+    service = _service(database, domain_workspace_grants=(_IHPAN_GRANT,))
+    provisioned = await service.provision_oidc_identity(
+        issuer="https://issuer.example.test",
+        subject="ihpan-researcher",
+        email="anna.nowak@ihpan.edu.pl",
+        display_name="Anna Nowak",
+        email_verified=True,
+    )
+
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+        workspaces = await unit_of_work.identity.list_workspaces_for_user(
+            provisioned.user.id
+        )
+        memberships = await unit_of_work.identity.list_memberships_for_user(
+            provisioned.user.id
+        )
+    shared = next(workspace for workspace in workspaces if workspace.kind is WorkspaceKind.SHARED)
+    shared_membership = next(
+        membership
+        for membership in memberships
+        if membership.workspace_id == shared.id
+    )
+
+    assert {workspace.kind for workspace in workspaces} == {
+        WorkspaceKind.PERSONAL,
+        WorkspaceKind.SHARED,
+    }
+    assert shared.slug == "ihpan"
+    assert shared.name == "IHPAN"
+    assert shared_membership.role is WorkspaceRole.OWNER
+    assert shared_membership.is_active
+
+
+@pytest.mark.asyncio
+async def test_unverified_or_foreign_email_does_not_join_the_shared_workspace(
+    database: Database,
+) -> None:
+    service = _service(database, domain_workspace_grants=(_IHPAN_GRANT,))
+    unverified = await service.provision_oidc_identity(
+        issuer="https://issuer.example.test",
+        subject="unverified-ihpan",
+        email="pending@ihpan.edu.pl",
+        display_name="Pending",
+        email_verified=False,
+    )
+    outsider = await service.provision_oidc_identity(
+        issuer="https://issuer.example.test",
+        subject="outsider",
+        email="guest@example.test",
+        display_name="Guest",
+        email_verified=True,
+    )
+    lookalike = await service.provision_oidc_identity(
+        issuer="https://issuer.example.test",
+        subject="lookalike",
+        email="guest@staff.ihpan.edu.pl",
+        display_name="Lookalike",
+        email_verified=True,
+    )
+
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+        unverified_workspaces = await unit_of_work.identity.list_workspaces_for_user(
+            unverified.user.id
+        )
+        outsider_workspaces = await unit_of_work.identity.list_workspaces_for_user(
+            outsider.user.id
+        )
+        lookalike_workspaces = await unit_of_work.identity.list_workspaces_for_user(
+            lookalike.user.id
+        )
+        shared = await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
+            "ihpan"
+        )
+
+    assert all(workspace.kind is WorkspaceKind.PERSONAL for workspace in unverified_workspaces)
+    assert all(workspace.kind is WorkspaceKind.PERSONAL for workspace in outsider_workspaces)
+    assert all(workspace.kind is WorkspaceKind.PERSONAL for workspace in lookalike_workspaces)
+    assert shared is None
+
+
+@pytest.mark.asyncio
+async def test_later_ihpan_logins_join_as_editors_and_revoked_members_stay_out(
+    database: Database,
+) -> None:
+    service = _service(database, domain_workspace_grants=(_IHPAN_GRANT,))
+    owner = await service.provision_oidc_identity(
+        issuer="https://issuer.example.test",
+        subject="ihpan-owner",
+        email="owner@ihpan.edu.pl",
+        display_name="Owner",
+        email_verified=True,
+    )
+    editor = await service.provision_oidc_identity(
+        issuer="https://issuer.example.test",
+        subject="ihpan-editor",
+        email="editor@IHPAN.EDU.PL",
+        display_name="Editor",
+        email_verified=True,
+    )
+    returning = await service.provision_oidc_identity(
+        issuer="https://issuer.example.test",
+        subject="already-here",
+        email="old@example.test",
+        display_name="Old",
+        email_verified=True,
+    )
+    returning_after_domain = await service.provision_oidc_identity(
+        issuer="https://issuer.example.test",
+        subject="already-here",
+        email="old@ihpan.edu.pl",
+        display_name="Old",
+        email_verified=True,
+    )
+
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+        shared = await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
+            "ihpan"
+        )
+        assert shared is not None
+        owner_membership = await unit_of_work.identity.get_membership(
+            workspace_id=shared.id,
+            user_id=owner.user.id,
+        )
+        editor_membership = await unit_of_work.identity.get_membership(
+            workspace_id=shared.id,
+            user_id=editor.user.id,
+        )
+        returning_membership = await unit_of_work.identity.get_membership(
+            workspace_id=shared.id,
+            user_id=returning.user.id,
+        )
+        assert editor_membership is not None
+        editor_membership.revoke()
+        await unit_of_work.commit()
+
+    await service.provision_oidc_identity(
+        issuer="https://issuer.example.test",
+        subject="ihpan-editor",
+        email="editor@ihpan.edu.pl",
+        display_name="Editor",
+        email_verified=True,
+    )
+
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+        still_revoked = await unit_of_work.identity.get_membership(
+            workspace_id=shared.id,
+            user_id=editor.user.id,
+        )
+
+    assert owner_membership is not None
+    assert owner_membership.role is WorkspaceRole.OWNER
+    assert editor_membership.role is WorkspaceRole.EDITOR
+    assert returning.user.id == returning_after_domain.user.id
+    assert returning_membership is not None
+    assert returning_membership.role is WorkspaceRole.EDITOR
+    assert still_revoked is not None
+    assert not still_revoked.is_active
 
 
 @pytest.mark.asyncio

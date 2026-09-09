@@ -117,8 +117,9 @@ The tenant, sharing boundary, and owner of graphs and workspace resources.
 - A `shared` workspace has one or more members and always retains an owner.
 
 There is no local workspace kind or bootstrap workspace. A new OIDC identity
-creates a personal workspace, and shared workspaces are created explicitly by
-authenticated users.
+creates a personal workspace. Shared workspaces are created by authenticated
+users, or by a deployment-configured verified-email-domain grant that adds
+membership after the OIDC user exists.
 
 “Team” and “organization” are product-language synonyms for a shared
 workspace. They do not introduce additional aggregates.
