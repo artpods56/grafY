@@ -10,11 +10,13 @@ from grafy_api.graph_contracts import (
     GraphPresentationDocumentModel,
     SavedGraphEdgeModel,
     SavedGraphNodeModel,
+    SavedGraphNodeLayoutModel,
 )
 from grafy_core.domain.saved_graphs import (
     GraphPresentationDocument,
     SavedGraphEdge,
     SavedGraphNode,
+    SavedGraphNodeLayout,
 )
 
 
@@ -212,3 +214,44 @@ def test_edge_models_reject_both_conversion_forms_even_when_empty(
             "conversion": conversion,
             "conversion_path": [],
         })
+
+
+@pytest.mark.parametrize("model", [SavedGraphNodeLayout, SavedGraphNodeLayoutModel])
+@pytest.mark.parametrize("dimension", ["width", "body_height", "appendix_height"])
+def test_graph_layout_accepts_each_dimension_independently(
+    model: type[SavedGraphNodeLayout] | type[SavedGraphNodeLayoutModel],
+    dimension: str,
+) -> None:
+    assert model.model_validate({dimension: 300}).model_dump()[dimension] == 300
+
+
+@pytest.mark.parametrize("model", [SavedGraphNodeLayout, SavedGraphNodeLayoutModel])
+@pytest.mark.parametrize("payload", [{}, {"width": None, "body_height": None, "appendix_height": None}])
+def test_graph_layout_rejects_absent_dimensions(
+    model: type[SavedGraphNodeLayout] | type[SavedGraphNodeLayoutModel],
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError, match="must set at least one of width"):
+        model.model_validate(payload)
+
+
+@pytest.mark.parametrize("model", [SavedGraphNode, SavedGraphNodeModel])
+@pytest.mark.parametrize("kind", ["builtin", "plugin", "module"])
+@pytest.mark.parametrize("has_pin", [False, True])
+def test_node_models_require_release_pins_only_for_plugins(
+    model: type[SavedGraphNode] | type[SavedGraphNodeModel],
+    kind: str,
+    has_pin: bool,
+) -> None:
+    pin_field = "plugin_release_pin" if model is SavedGraphNode else "plugin_release"
+    payload = {
+        "id": "node", "kind": kind, "operator_id": "example", "operator_version": 1,
+        "position": {"x": 0, "y": 0},
+        pin_field: {"scope": "system", "slug": "example", "revision": 1} if has_pin else None,
+    }
+    if (kind == "plugin") == has_pin:
+        assert model.model_validate(payload).kind == kind
+    else:
+        message = "Plugin node must pin an exact Plugin release" if kind == "plugin" else f"{kind} node cannot carry a Plugin release pin"
+        with pytest.raises(ValidationError, match=message):
+            model.model_validate(payload)

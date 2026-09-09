@@ -1041,3 +1041,11 @@ flowchart LR
 - Verification: 52 focused tests and 656 broader API/core/application/collaboration/saved-graph tests pass; changed-file Ruff passes; exported OpenAPI is byte-for-byte equal to the checked-in schema. Pyright reports nine diagnostics in unchanged fields; the same nine appear when checking committed baseline sources, which also produce one temporary-path import diagnostic. No new diagnostic was introduced.
 - Recorded the remaining acceptance differences in `graph-transport-migration.md`. Canonical immutable configuration, pin coercion, annotation normalization, presentation prefixes, and relationship validation prevent wholesale substitution of mirrored transport models without compatibility work.
 - Finding 8 remains open for the rest of canonical transport reuse and repeated validation cleanup. Final completion gates remain open.
+
+
+## Shared layout and node release-pin rules, 2026-09-09
+
+- Canonical and legacy graph models now share domain-owned layout completeness and node-kind/release-pin validation. The legacy transport also imports the canonical identifier constraint and layout dimension ceiling instead of maintaining copies. Model mutability, field coercion, validation order, and error text remain unchanged. [R01: Direct Ownership]
+- Kept the one-expression binding-uniqueness checks inline with their distinct error messages. A separate helper would add indirection without removing meaningful complexity. [R32: Anemic Functions]
+- Added 22 behavioral cases covering independent layout axes, omitted/null dimensions, and every node-kind/pin-presence combination through both model classes. The broader API/core/application/collaboration/saved-graph suite passes all 678 tests. Ruff passes and OpenAPI is byte-for-byte unchanged. Pyright reports the same nine pre-existing diagnostics identified in the previous batch.
+- The next graph-contract step is to consolidate the remaining response conversion methods into the legacy head adapter. Finding 8 and final completion gates remain open.

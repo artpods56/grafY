@@ -21,6 +21,10 @@ from grafy_core.domain.collaboration import (
 from grafy_core.domain.saved_graphs import (
     AnnotationColor,
     AnnotationKind,
+    GraphIdentifier,
+    GRAPH_LAYOUT_DIMENSION_MAX,
+    validate_graph_layout_dimensions,
+    validate_graph_node_release_pin,
     DEFAULT_ANNOTATION_COLOR,
     GraphBrowserItem,
     GraphFolder,
@@ -41,10 +45,7 @@ from grafy_api.v1.models import (
 )
 
 
-Identifier = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1, max_length=255),
-]
+Identifier = GraphIdentifier
 
 
 class SavedGraphApiModel(BaseModel):
@@ -64,28 +65,16 @@ class SavedGraphInputPlugModel(SavedGraphApiModel):
     port: Identifier
 
 
-# Keep in sync with grafy_core.domain.saved_graphs._LAYOUT_DIMENSION_MAX.
-_LAYOUT_DIMENSION_MAX = 16_384
-
-
 class SavedGraphNodeLayoutModel(SavedGraphApiModel):
-    width: float | None = Field(default=None, ge=260, le=_LAYOUT_DIMENSION_MAX)
-    body_height: float | None = Field(default=None, ge=96, le=_LAYOUT_DIMENSION_MAX)
+    width: float | None = Field(default=None, ge=260, le=GRAPH_LAYOUT_DIMENSION_MAX)
+    body_height: float | None = Field(default=None, ge=96, le=GRAPH_LAYOUT_DIMENSION_MAX)
     appendix_height: float | None = Field(
-        default=None, ge=120, le=_LAYOUT_DIMENSION_MAX
+        default=None, ge=120, le=GRAPH_LAYOUT_DIMENSION_MAX
     )
 
     @model_validator(mode="after")
     def require_at_least_one_dimension(self) -> Self:
-        if (
-            self.width is None
-            and self.body_height is None
-            and self.appendix_height is None
-        ):
-            raise ValueError(
-                "Saved graph node layout must set at least one of width, "
-                "body_height, or appendix_height"
-            )
+        validate_graph_layout_dimensions(self.width, self.body_height, self.appendix_height)
         return self
 
 
@@ -112,14 +101,7 @@ class SavedGraphNodeModel(SavedGraphApiModel):
 
     @model_validator(mode="after")
     def validate_kind_and_pin(self) -> Self:
-        if self.kind == "plugin":
-            if self.plugin_release is None:
-                raise ValueError(
-                    "Plugin node must pin an exact Plugin release with scope, slug, "
-                    "and revision"
-                )
-        elif self.plugin_release is not None:
-            raise ValueError(f"{self.kind} node cannot carry a Plugin release pin")
+        validate_graph_node_release_pin(self.kind, has_pin=self.plugin_release is not None)
         return self
 
     @classmethod
@@ -171,8 +153,8 @@ class GraphPresentationViewerModel(SavedGraphApiModel):
 
 
 class SavedGraphAnnotationLayoutModel(SavedGraphApiModel):
-    width: float = Field(ge=24, le=_LAYOUT_DIMENSION_MAX)
-    height: float = Field(ge=24, le=_LAYOUT_DIMENSION_MAX)
+    width: float = Field(ge=24, le=GRAPH_LAYOUT_DIMENSION_MAX)
+    height: float = Field(ge=24, le=GRAPH_LAYOUT_DIMENSION_MAX)
 
 
 class GraphPresentationAnnotationModel(SavedGraphApiModel):
