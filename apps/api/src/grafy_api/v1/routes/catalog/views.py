@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request
 
 from grafy_core.domain.identity import WorkspaceCapability
 
+from grafy_api.catalog import CatalogSnapshot
 from grafy_api.app_state import get_resources
 from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
 
@@ -12,7 +13,8 @@ from .dependencies import (
 )
 from grafy_api.v1.routes.modules.dependencies import ModuleLibraryDependency
 
-from .models import NodeRegistryResponse, PluginCatalogReleaseState
+from .models import NodeRegistryResponse
+from grafy_api.catalog import PluginCatalogReleaseState
 
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workbench"])
@@ -41,14 +43,16 @@ async def list_nodes(
         )
         for entry in catalog_releases
     }
-    return NodeRegistryResponse.from_registry(
-        registry,
-        module_listing,
+    return NodeRegistryResponse.from_snapshot(
+        CatalogSnapshot.from_registry(
+            registry,
+            module_listing,
+            releases,
+            workspace_id=access.workspace_id,
+            release_admission=resources.release_admission,
+            plugin_release_states=release_states,
+        ),
         module_executor,
-        releases,
-        workspace_id=access.workspace_id,
-        release_admission=resources.release_admission,
-        plugin_release_states=release_states,
     )
 
 

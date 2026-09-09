@@ -35,6 +35,7 @@ from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.modules import GraphModuleExecutionResult
 from grafy_storage import LocalFileObjectStore
 
+from grafy_api.catalog import CatalogSnapshot
 from grafy_api.plugins.runtime.admission import ReleaseExecutionAdmission
 from grafy_api.v1.models import PluginReleasePinModel
 from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
@@ -152,9 +153,7 @@ def _release() -> InstalledPluginRelease:
     catalog = PluginCatalogManifest(
         slug="parity",
         title="Parity",
-        artifact_type_dependencies=(
-            PluginArtifactTypeContract.from_spec(TEXT_VALUE),
-        ),
+        artifact_type_dependencies=(PluginArtifactTypeContract.from_spec(TEXT_VALUE),),
         nodes=contracts,
     )
     capabilities = PluginCapabilityManifest(
@@ -256,13 +255,15 @@ async def test_catalog_and_compiler_admit_each_contract_with_the_same_policy(
         isolated_adapter_available=True,
         runtime_profile="python-uv",
     )
-    response = NodeRegistryResponse.from_registry(
-        PluginRegistry(),
-        [],
+    response = NodeRegistryResponse.from_snapshot(
+        CatalogSnapshot.from_registry(
+            PluginRegistry(),
+            [],
+            [release],
+            workspace_id=WORKSPACE_ID,
+            release_admission=admission,
+        ),
         _UnusedModuleExecutor(),
-        [release],
-        workspace_id=WORKSPACE_ID,
-        release_admission=admission,
     )
 
     plugin = next(entry for entry in response.plugins if entry.slug == "parity")
@@ -314,13 +315,15 @@ async def test_catalog_and_compiler_share_release_rejection_reasons(
     reason: str,
 ) -> None:
     release = _release()
-    response = NodeRegistryResponse.from_registry(
-        PluginRegistry(),
-        [],
+    response = NodeRegistryResponse.from_snapshot(
+        CatalogSnapshot.from_registry(
+            PluginRegistry(),
+            [],
+            [release],
+            workspace_id=WORKSPACE_ID,
+            release_admission=admission,
+        ),
         _UnusedModuleExecutor(),
-        [release],
-        workspace_id=WORKSPACE_ID,
-        release_admission=admission,
     )
     nodes = {
         node.operator_id: node
@@ -328,16 +331,11 @@ async def test_catalog_and_compiler_share_release_rejection_reasons(
         if node.plugin_slug == "parity"
     }
     assert nodes["parity.safe"].non_runnable_reason == reason
-    assert (
-        nodes["parity.network"].non_runnable_reason
-        == "unsupported_capabilities"
-    )
+    assert nodes["parity.network"].non_runnable_reason == "unsupported_capabilities"
 
     for operator_id in ("parity.safe", "parity.network"):
         expected_reason = (
-            reason
-            if operator_id == "parity.safe"
-            else "unsupported_capabilities"
+            reason if operator_id == "parity.safe" else "unsupported_capabilities"
         )
         with pytest.raises(GraphExecutionError, match=expected_reason):
             await _compiler(tmp_path, release, admission).compile(

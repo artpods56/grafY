@@ -32,6 +32,7 @@ from tests.support.scenarios.structural_projection import (
 from tests.support.system_plugins import (
     TEST_SYSTEM_PLUGINS,
     build_selected_system_plugin_deployment,
+    build_explicit_plugin_registry,
 )
 from tests.support.workbench import workbench_dependency_overrides
 from tests.testkit import client_with_overrides
@@ -106,10 +107,9 @@ def conversion_path_client(
 ) -> Iterator[tuple[TestClient, InMemoryUnitOfWork]]:
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'api.sqlite3'}"
     asyncio.run(create_schema(database_url))
-    deployment = build_selected_system_plugin_deployment(
+    registry = build_explicit_plugin_registry(
         (*TEST_SYSTEM_PLUGINS, CONVERSION_PATH_PLUGIN),
     )
-    registry = deployment.registry
     canonical_conversions = dict(CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY)
     for conversion in CONVERSION_PATH_PLUGIN.artifact_conversions:
         canonical_conversions[conversion.key] = conversion
@@ -119,7 +119,6 @@ def conversion_path_client(
         workspace=tmp_path / "workbench",
         unit_of_work=uow,
         canonical_artifact_conversions=canonical_conversions,
-        plugin_releases=cast(PluginReleaseService, deployment.release_lookup),
     )
     with client_with_overrides(
         settings=Settings(
@@ -135,14 +134,12 @@ def conversion_path_client(
 def structural_projection_client(tmp_path: Path) -> Iterator[TestClient]:
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'api.sqlite3'}"
     asyncio.run(create_schema(database_url))
-    deployment = build_selected_system_plugin_deployment(
+    registry = build_explicit_plugin_registry(
         (*TEST_SYSTEM_PLUGINS, STRUCTURAL_PROJECTION_PLUGIN),
     )
-    registry = deployment.registry
     components = build_workbench_components(
         plugin_registry=registry,
         workspace=tmp_path / "workbench",
-        plugin_releases=cast(PluginReleaseService, deployment.release_lookup),
     )
     with client_with_overrides(
         settings=Settings(

@@ -46,6 +46,11 @@ TEST_BUILD_DIGEST = "a" * 64
 def build_explicit_plugin_registry(
     plugins: Iterable[Plugin] = TEST_SYSTEM_PLUGINS,
 ) -> PluginRegistry:
+    """Install test nodes as builtins, without publishing matching releases.
+
+    A catalog must not also receive published releases for these same families;
+    that describes a builtin/Plugin identity collision, not this test runtime.
+    """
     registry = PluginRegistry()
     registry.register_module_boundaries(MODULE_BOUNDARY_REGISTRATIONS)
     for plugin in plugins:

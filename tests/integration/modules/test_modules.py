@@ -12,7 +12,6 @@ from fastapi.testclient import TestClient
 from pydantic import Field, SecretStr, StrictStr
 
 from grafy_core.application.modules import ModuleLibraryService
-from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.domain.errors import NotFoundError, UserDisabledError
@@ -40,7 +39,7 @@ from grafy_api.services.composition import (
 )
 from tests.support.system_plugins import (
     TEST_SYSTEM_PLUGINS,
-    build_selected_system_plugin_deployment,
+    build_explicit_plugin_registry,
     pin_selected_system_nodes,
 )
 from grafy_api.v1.routes.auth.models import WorkspaceCreateRequest
@@ -202,10 +201,9 @@ def module_client(tmp_path: Path) -> Iterator[TestClient]:
 
     asyncio.run(prepare())
     database = create_database(database_url)
-    deployment = build_selected_system_plugin_deployment(
+    registry = build_explicit_plugin_registry(
         (*TEST_SYSTEM_PLUGINS, SECRET_MODULE_PLUGIN),
     )
-    registry = deployment.registry
     saved_graphs = SavedGraphService(
         lambda: SqlAlchemyUnitOfWork(database.sessions),
         registry,
@@ -226,7 +224,6 @@ def module_client(tmp_path: Path) -> Iterator[TestClient]:
         saved_graphs=saved_graphs,
         module_library=module_library,
         node_secrets=node_secrets,
-        plugin_releases=cast(PluginReleaseService, deployment.release_lookup),
     )
     overrides = {
         **workbench_dependency_overrides(components),

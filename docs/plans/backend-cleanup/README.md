@@ -67,11 +67,11 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 ## 7. Catalog ownership
 
-- [ ] Move catalog policy assembly from NodeRegistryResponse into a validated application snapshot.
+- [x] Move catalog policy assembly from NodeRegistryResponse into a validated application snapshot.
 - [x] Gather release/selection/revocation state in one concrete transaction-scoped query.
 - [x] Use ModuleLibraryService directly; retire GraphModuleCatalog and its fallback validation.
 - [x] Remove unused UnavailableGraphModule and boundary detector while retaining public empty response fields.
-- [ ] Verify collision diagnostics, readiness, query counts, module behavior, and OpenAPI compatibility.
+- [x] Verify collision diagnostics, readiness, query counts, module behavior, and OpenAPI compatibility.
 
 ## 8. Graph document contracts
 
@@ -323,3 +323,25 @@ not prevent a concurrent execution from appearing.
 - OpenAPI is unchanged; changed-file Ruff and diff whitespace checks pass. Evidence: `/tmp/grafy-catalog-snapshot-query.log`, `/tmp/grafy-catalog-snapshot-regression.log`, and `/tmp/grafy-catalog-snapshot-types.log`. The query-only log records the initial missing-import failure; the regression log includes the corrected database tests.
 - Catalog policy extraction and its remaining collision/readiness verification remain open under finding 7.
 - Final validation: 535 persistence, release-service, API, architecture, and execution-route tests passed. Changed core domain/application/port and persistence modules have zero Pyright errors or warnings.
+
+
+### Application-owned catalog policy
+
+- Added `grafy_api.catalog.CatalogSnapshot` as the owner of namespace, family, operator, module, artifact, and canonical-conversion collision checks and node/family readiness. The snapshot has tuple collections and read-only readiness indexes.
+- `NodeRegistryResponse.from_snapshot` now serializes an already-validated result. It no longer decides catalog policy or reads execution admission state. Readiness types and functions live with the application owner.
+- Module identity validation uses its domain operator key instead of constructing an executable module node. HTTP schema generation still constructs the module's transport schemas when serializing it.
+- The snapshot carries declarative conversion contracts instead of callable conversion implementations. Removed the redundant artifact-owner list and repeated search for each owned artifact contract.
+- Existing catalog tests now construct the snapshot before serializing. Added direct checks for duplicate selected families in each scope and duplicate module identities without an executor.
+- Resolved the previously recorded seven module and two artifact catalog failures by correcting their test fixtures. Those fixtures registered extensions as builtins and simultaneously supplied published releases with the same slugs. They now use the explicit builtin registry already used by their execution requests; production collision rejection remains unchanged. The registry helper documents this configuration rule.
+- The focused run passed 112 module, artifact, readiness, and admission-parity tests, including all nine formerly failing catalog cases. OpenAPI exactly matches the pre-cleanup schema. The application catalog owner has zero Pyright errors or warnings.
+- Evidence: `/tmp/grafy-catalog-policy-focused.log`, `/tmp/grafy-catalog-policy-regression.log`, `/tmp/grafy-catalog-policy-full.log`, and `/tmp/grafy-catalog-policy-types.log`.
+
+```mermaid
+flowchart LR
+    Releases[Release service: one scoped query] --> Snapshot[Application catalog snapshot]
+    Modules[Core module library] --> Snapshot
+    Registry[Builtin registry and admission policy] --> Snapshot
+    Snapshot --> HTTP[HTTP response serialization]
+```
+
+- Final validation: 661 API, architecture, module, artifact, and execution-route tests passed. Changed-file Ruff and diff whitespace checks pass. The built API wheel contains the new catalog owner, omits the retired adapter, and produces identical OpenAPI. Finding 7 is complete.
