@@ -20,7 +20,9 @@ from grafy_core.domain.plugin_selection import (
 )
 from grafy_core.table_contracts import TABLE_DATA
 
-from grafy_api.system_host_bindings import SystemHostPluginBinding
+from grafy_core.domain.plugin_host_bindings import (
+    SystemHostPluginBinding,
+)
 from grafy_api.plugins.runtime.egress import (
     PluginEgressBrokerPolicy,
     PluginEgressProtocol,

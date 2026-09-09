@@ -35,9 +35,11 @@ from grafy_api.plugins.runtime.admission import (
 )
 from grafy_api.plugins.runtime.network_policy import NetworkPolicy
 from grafy_api.system_host_bindings import (
+    validate_system_host_bindings,
+)
+from grafy_core.domain.plugin_host_bindings import (
     LoadedSystemPlugin,
     SystemHostPluginBinding,
-    validate_system_host_bindings,
 )
 from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.realtime.hub import GraphRoomHub

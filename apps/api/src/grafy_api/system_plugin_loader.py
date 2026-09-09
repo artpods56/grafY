@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from grafy_core.domain.plugin_releases import PluginCatalogManifest
 from grafy_core.plugins import Plugin
 
-from grafy_api.system_host_bindings import (
+from grafy_core.domain.plugin_host_bindings import (
     LoadedSystemPlugin,
     SystemHostPluginBinding,
 )

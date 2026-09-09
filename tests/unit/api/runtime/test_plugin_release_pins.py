@@ -75,10 +75,12 @@ from grafy_api.plugins.runtime.admission import (
     ReleaseExecutionRoute,
 )
 from grafy_api.system_host_bindings import (
-    LoadedSystemPlugin,
     SystemHostBindingError,
-    SystemHostPluginBinding,
     validate_system_host_bindings,
+)
+from grafy_core.domain.plugin_host_bindings import (
+    LoadedSystemPlugin,
+    SystemHostPluginBinding,
 )
 from tests.support.system_plugins import build_explicit_plugin_registry
 from grafy_api.v1.routes.artifacts.services import ArtifactService

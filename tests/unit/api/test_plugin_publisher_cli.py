@@ -8,7 +8,9 @@ import pytest
 from grafy_api import cli
 from grafy_api.cli_credentials import CredentialDigest
 from grafy_api.plugins.publication.source import PluginPublishingError
-from grafy_api.system_plugin_inventory import SystemPluginInventoryError
+from grafy_core.domain.system_plugin_inventory import (
+    SystemPluginInventoryError,
+)
 from grafy_core.domain.plugin_revocations import PluginReleaseRevocationError
 from grafy_core.domain.identity import (
     ActorContext,

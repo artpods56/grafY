@@ -45,7 +45,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 - [x] Publication package and independent profiles, commit `9735cc2`.
 - [x] Group runtime admission, Docker invocation, and artifact staging under application Plugin hosting.
-- [ ] Move SQL System cutover/baseline operations to persistence; keep command parsing/files/reporting in operator tooling.
+- [x] Move SQL System cutover/baseline operations to persistence; keep command parsing/files/reporting in operator tooling.
 - [ ] Give the egress broker a dedicated executable application owner.
 - [ ] Relocate old host loader/builder/bindings as explicit compatibility tooling; retain CLI commands and historical policies.
 - [ ] Remove unused active-runtime host binding/admission state, consistent with ADR 0007.
@@ -723,4 +723,25 @@ flowchart LR
     Files --> Models[Persistence cutover command/report models]
     SQL --> Models
     SQL --> DB[Maintenance locks and atomic database transaction]
+```
+
+
+### Persistence baseline generation and shared inventory contracts
+
+- Moved `SystemBaselineManifestGenerator` to `grafy_persistence.system_baseline`. It owns the exact selection join, installed-release validation, revocation reads, and baseline construction within the existing transaction. The generator class syntax tree is unchanged.
+- Moved inventory authority models, their canonical-conversion authority table, and validation into `grafy_core.domain.system_plugin_inventory`. Moved historical host-binding/loaded-release models into `grafy_core.domain.plugin_host_bindings`. Model and helper implementations are unchanged; these core contracts import without API, persistence, or SQL modules. [R01: Direct Ownership]
+- API inventory tooling retains the checked-in inventory path and TOML file loading. API host-binding tooling retains validation against the loaded host registry. Command parsing, file checksums, rollback files, and report rendering remain in operator tooling. Internal callers import the actual contract/generator owners; the old model and generator imports remain explicit compatibility aliases to the same class objects.
+- Added an architecture compatibility check for identity of old/new inventory, error, binding, and generator imports. Existing core/persistence architecture rules cover the new modules and prevent an outward dependency.
+- Verification: 58 focused inventory/deployment/cutover/CLI/architecture tests passed. Broader suites passed 579 core/application/persistence/architecture tests and 546 API/module/node-secret/collaboration tests, totaling 1,125 with overlap in the focused run. Nineteen optional PostgreSQL cases were skipped; the SQL generator implementation itself is unchanged.
+- Targeted Pyright reports zero errors or warnings for all five contract/generator/API owner modules. Changed-file Ruff and whitespace checks pass. Extracted core, persistence, and API wheels preserve CLI and legacy import identity, and the core contracts load without SQL or API dependencies.
+- Evidence: `/tmp/grafy-inventory-before.py`, `/tmp/grafy-host-bindings-before.py`, `/tmp/grafy-baseline-owners-focused.log`, `/tmp/grafy-baseline-owners-core-tests.log`, `/tmp/grafy-baseline-owners-api-tests.log`, `/tmp/grafy-baseline-owners-types.log`, and `/tmp/grafy-baseline-owners-build.log`.
+- Finding 4's SQL cutover/baseline ownership item is complete together with the preceding cutover move. Dedicated broker ownership, explicit legacy host tooling, and removal of unused active host-binding state remain open. The historical binding models preserve compatibility policy; they do not introduce or re-enable active host execution.
+
+```mermaid
+flowchart LR
+    Files[API inventory and manifest file IO] --> Contracts[Core inventory and historical binding contracts]
+    Files --> SQL[Persistence baseline generator]
+    SQL --> Contracts
+    SQL --> Database[Selected installations and revocations]
+    Host[Compatibility host-registry validation] --> Contracts
 ```

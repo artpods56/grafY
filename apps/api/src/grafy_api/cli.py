@@ -66,13 +66,19 @@ from grafy_api.system_cutover_operations import (
     load_system_baseline_manifest,
     verify_rollback_unit_manifest,
 )
-from grafy_api.system_host_bindings import SystemHostPluginBinding
+from grafy_core.domain.plugin_host_bindings import (
+    SystemHostPluginBinding,
+)
 from grafy_api.system_plugin_deployment import SystemPluginDeploymentManifestBuilder
 from grafy_api.system_plugin_inventory import (
     CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH,
-    SystemBaselineManifestGenerator,
-    SystemPluginInventoryError,
     load_system_plugin_inventory,
+)
+from grafy_persistence.system_baseline import (
+    SystemBaselineManifestGenerator,
+)
+from grafy_core.domain.system_plugin_inventory import (
+    SystemPluginInventoryError,
 )
 from grafy_api.system_plugin_loader import load_system_plugin_deployment_file
 from grafy_core.runtime.plugin_loader import WORKSPACE_PLUGIN_LOADER_TARGET

@@ -31,7 +31,10 @@ from grafy_core.operators.modules import MODULE_BOUNDARY_REGISTRATIONS
 from grafy_core.plugins import Plugin, PluginRegistry, UnknownOperatorError
 from grafy_workbench import BUILTIN_FAMILIES
 
-from grafy_api.system_host_bindings import LoadedSystemPlugin, SystemHostPluginBinding
+from grafy_core.domain.plugin_host_bindings import (
+    LoadedSystemPlugin,
+    SystemHostPluginBinding,
+)
 from grafy_api.v1.models import ArtifactTypeBindingModel
 from grafy_api.execution.requests import (
     RunInputPlugRequest,

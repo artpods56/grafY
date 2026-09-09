@@ -34,7 +34,7 @@ from grafy_api.plugins.publication.source import (
     PluginPublishingError,
     VerifiedPluginCandidate,
 )
-from grafy_api.system_plugin_inventory import (
+from grafy_core.domain.system_plugin_inventory import (
     SystemPluginInventory,
     SystemPluginInventoryError,
 )

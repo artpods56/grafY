@@ -27,8 +27,10 @@ from grafy_api.plugins.publication.source import (
     build_deterministic_archive,
     scan_source_tree,
 )
-from grafy_api.system_host_bindings import SystemHostPluginBinding
-from grafy_api.system_plugin_inventory import (
+from grafy_core.domain.plugin_host_bindings import (
+    SystemHostPluginBinding,
+)
+from grafy_core.domain.system_plugin_inventory import (
     SystemPluginInventory,
     SystemPluginInventoryEntry,
     SystemPluginInventoryError,

@@ -20,7 +20,7 @@ from grafy_workbench.arithmetic import ARITHMETIC
 from grafy_workbench.text import TEXT
 
 from grafy_api import system_plugin_loader
-from grafy_api.system_host_bindings import (
+from grafy_core.domain.plugin_host_bindings import (
     LoadedSystemPlugin,
     SystemHostPluginBinding,
 )
@@ -401,7 +401,9 @@ def test_loader_rejects_catalog_mismatch(
         load_system_plugin_deployment(_manifest(changed_binding))
 
 
-_WHEEL_METADATA = b"Metadata-Version: 2.4\nName: grafy-plugin-test-system\nVersion: 1.0\n"
+_WHEEL_METADATA = (
+    b"Metadata-Version: 2.4\nName: grafy-plugin-test-system\nVersion: 1.0\n"
+)
 
 
 def _wheel_entries() -> tuple[tuple[str, bytes], ...]:
@@ -520,9 +522,7 @@ def test_wheel_and_installed_digests_share_one_canonical_domain(
         destination = installed_root / name
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(content)
-    record_file = (
-        installed_root / "grafy_plugin_test_system-1.0.dist-info" / "RECORD"
-    )
+    record_file = installed_root / "grafy_plugin_test_system-1.0.dist-info" / "RECORD"
     record_file.write_text("grafy_test_system_plugin.py,,\n", encoding="utf-8")
     installed = _InstalledDistribution(
         installed_root,

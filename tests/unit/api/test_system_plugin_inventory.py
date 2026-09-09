@@ -6,19 +6,25 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import delete
 
-from grafy_api.system_host_bindings import SystemHostPluginBinding
+from grafy_core.domain.plugin_host_bindings import (
+    SystemHostPluginBinding,
+)
 from grafy_api.system_cutover_operations import (
     canonical_model_json_bytes,
     generate_system_baseline_file,
     load_system_baseline_manifest,
 )
 from grafy_api.system_plugin_inventory import (
+    load_system_plugin_inventory,
+)
+from grafy_core.domain.system_plugin_inventory import (
     SYSTEM_PLUGIN_SLUGS,
-    SystemBaselineManifestGenerator,
     SystemPluginInventory,
     SystemPluginInventoryEntry,
     SystemPluginInventoryError,
-    load_system_plugin_inventory,
+)
+from grafy_persistence.system_baseline import (
+    SystemBaselineManifestGenerator,
 )
 from grafy_api.system_plugin_loader import (
     SystemPluginDeploymentEntry,

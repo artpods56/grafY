@@ -10,9 +10,11 @@ from grafy_api.system_plugin_deployment import (
 )
 from grafy_api.system_plugin_inventory import (
     CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH,
+    load_system_plugin_inventory,
+)
+from grafy_core.domain.system_plugin_inventory import (
     SystemPluginInventory,
     SystemPluginInventoryEntry,
-    load_system_plugin_inventory,
 )
 from grafy_api.plugins.publication.source import (
     build_deterministic_archive,

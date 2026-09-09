@@ -14,9 +14,13 @@ from grafy_persistence.system_cutover import (
     SystemBaselineManifest,
 )
 from grafy_api.system_plugin_inventory import (
-    SystemBaselineManifestGenerator,
-    SystemPluginInventory,
     load_system_plugin_inventory,
+)
+from grafy_persistence.system_baseline import (
+    SystemBaselineManifestGenerator,
+)
+from grafy_core.domain.system_plugin_inventory import (
+    SystemPluginInventory,
 )
 from grafy_api.system_plugin_loader import SystemPluginDeploymentManifest
 

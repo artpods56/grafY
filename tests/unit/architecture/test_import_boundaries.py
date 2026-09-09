@@ -396,3 +396,29 @@ def test_workspace_transport_compatibility_exports_preserve_model_identity() -> 
         "WorkspaceResponse",
     ):
         assert getattr(legacy, name) is getattr(models, name)
+
+
+def test_baseline_compatibility_exports_preserve_shared_contract_identity() -> None:
+    from grafy_api import system_host_bindings, system_plugin_inventory
+    from grafy_core.domain import (
+        plugin_host_bindings,
+        system_plugin_inventory as inventory_contracts,
+    )
+    from grafy_persistence.system_baseline import SystemBaselineManifestGenerator
+
+    for name in ("LoadedSystemPlugin", "SystemHostPluginBinding"):
+        assert getattr(system_host_bindings, name) is getattr(
+            plugin_host_bindings, name
+        )
+    for name in (
+        "SystemPluginInventory",
+        "SystemPluginInventoryEntry",
+        "SystemPluginInventoryError",
+    ):
+        assert getattr(system_plugin_inventory, name) is getattr(
+            inventory_contracts, name
+        )
+    assert (
+        system_plugin_inventory.SystemBaselineManifestGenerator
+        is SystemBaselineManifestGenerator
+    )
