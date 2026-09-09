@@ -76,6 +76,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 ## 8. Graph document contracts
 
 - [ ] Reuse SavedGraphDocument internally through one compatibility transport adapter.
+- [x] Replace manual node/edge/presentation conversion trees with canonical serialization and explicit pin-name compatibility.
 - [ ] Remove repeated graph validators and conversion logic without losing aliases.
 - [ ] Migrate clients toward collaboration metadata plus canonical document.
 - [ ] Make the versioned compatibility decision explicit before retiring flattened public fields and mirrored schemas.
@@ -882,4 +883,22 @@ flowchart LR
     API[HTTP compatibility models] --> Reader
     GIS --> GDAL[GIS GDAL and network operations]
     Reader --> HTTP[API content and render handlers]
+```
+
+
+### Canonical graph serialization through compatibility converters
+
+- Replaced 225 lines of manual node, edge, and presentation construction in `grafy_api.graph_contracts` with canonical Pydantic serialization and destination-model validation. Canonical node serialization already thaws frozen config correctly; Pydantic handles nested tuple/list conversion. The `plugin_release_pin` to `plugin_release` rename remains explicit in the node transport converter. [R08: Model-Owned Serialization]
+- Retained response fields, schema names, legacy singular-conversion normalization, layout validation, pin validation, and the existing converter entry points. Presentation conversion still invokes canonical relationship validation. Nested transport mutations do not affect frozen domain values or subsequent responses.
+- Added six contracts covering all three node kinds, exact pin naming, bindings, input plugs, layout/default fields, nested config copying, edge conversion order/projection/routing, full presentation round trips, independent mutation, and missing-viewer rejection. All pass against both the old and new implementations. [R43: Tests Are Behavioral Contracts]
+- API/client/collaboration/architecture regression passed 579 tests. The preceding focused saved-graph/collaboration/core run passed 76 tests and overlaps those suites. OpenAPI is identical to the pre-change snapshot. Ruff and diff checks pass.
+- Targeted typing retains exactly seven existing list/default-factory diagnostics before and after. The new tests add no diagnostics. The extracted API wheel preserves canonical node conversion, the System pin alias, presentation round trips, and OpenAPI.
+- Evidence: `/tmp/grafy-graph-adapter-before.py`, `/tmp/grafy-graph-adapter-contracts.log`, `/tmp/grafy-graph-adapter-baseline-contracts.log`, `/tmp/grafy-graph-adapter-verification.log`, `/tmp/grafy-graph-adapter-regression.log`, `/tmp/grafy-graph-adapter-types.log`, and `/tmp/grafy-graph-adapter-build.log`.
+- Finding 8 remains open for full canonical-document transport reuse, repeated-validator cleanup, client migration, and an explicit versioned compatibility decision. This batch reduces conversion duplication while preserving the current flattened collaboration response; it does not replace that migration.
+
+```mermaid
+flowchart LR
+    Domain[Canonical graph models and serialization] --> Adapter[Transport validation and pin alias]
+    Adapter --> Response[Existing collaboration response]
+    Response --> Clients[Existing clients]
 ```

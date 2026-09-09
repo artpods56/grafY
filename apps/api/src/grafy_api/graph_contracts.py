@@ -23,30 +23,20 @@ from grafy_core.domain.saved_graphs import (
     AnnotationColor,
     AnnotationKind,
     DEFAULT_ANNOTATION_COLOR,
-    GraphPoint,
     GraphBrowserItem,
     GraphFolder,
     GraphOrganization,
-    GraphPresentationAnnotation,
-    GraphPresentationBinding,
-    GraphPresentationBindingMapping,
     GraphPresentationDocument,
-    GraphPresentationLink,
-    GraphPresentationViewer,
     SavedGraph,
-    SavedGraphAnnotationLayout,
     SavedGraphDocument,
     SavedGraphEdge,
     SavedGraphNode,
-    SavedGraphNodeLayout,
-    SavedGraphProjection,
     UserGraphState,
 )
 from grafy_core.domain.identity import WorkspaceKind
 
 from grafy_api.v1.models import (
     ArtifactTypeBindingModel,
-    ArtifactTypeKeyResponse,
     PluginReleasePinModel,
 )
 
@@ -134,41 +124,9 @@ class SavedGraphNodeModel(SavedGraphApiModel):
 
     @classmethod
     def from_domain(cls, node: SavedGraphNode) -> "SavedGraphNodeModel":
-        return cls(
-            kind=node.kind,
-            id=node.id,
-            operator_id=node.operator_id,
-            operator_version=node.operator_version,
-            config=node.config_dict(),
-            position=GraphPointModel(x=node.position.x, y=node.position.y),
-            layout=(
-                SavedGraphNodeLayoutModel(
-                    width=node.layout.width,
-                    body_height=node.layout.body_height,
-                    appendix_height=node.layout.appendix_height,
-                )
-                if node.layout is not None
-                else None
-            ),
-            input_plugs=[
-                SavedGraphInputPlugModel(id=plug.id, port=plug.port)
-                for plug in node.input_plugs
-            ],
-            artifact_type_bindings=[
-                ArtifactTypeBindingModel(
-                    variable=binding.variable,
-                    artifact_type=ArtifactTypeKeyResponse.from_key(
-                        binding.artifact_type
-                    ),
-                )
-                for binding in node.artifact_type_bindings
-            ],
-            plugin_release=(
-                PluginReleasePinModel.from_saved_pin(node.plugin_release_pin)
-                if node.plugin_release_pin is not None
-                else None
-            ),
-        )
+        payload = node.model_dump()
+        payload["plugin_release"] = payload.pop("plugin_release_pin")
+        return cls.model_validate(payload)
 
 
 class SavedGraphProjectionModel(SavedGraphApiModel):
@@ -215,33 +173,7 @@ class SavedGraphEdgeModel(SavedGraphApiModel):
 
     @classmethod
     def from_domain(cls, edge: SavedGraphEdge) -> "SavedGraphEdgeModel":
-        return cls(
-            id=edge.id,
-            enabled=edge.enabled,
-            from_node=edge.from_node,
-            from_port=edge.from_port,
-            to_node=edge.to_node,
-            to_port=edge.to_port,
-            to_plug=edge.to_plug,
-            collection_mode=edge.collection_mode,
-            projection=(
-                SavedGraphProjectionModel(path=list(edge.projection.path))
-                if edge.projection is not None
-                else None
-            ),
-            conversion_path=[
-                SavedGraphConversionModel(
-                    id=conversion.id,
-                    version=conversion.version,
-                )
-                for conversion in edge.conversion_path
-            ],
-            route_offset=(
-                GraphPointModel(x=edge.route_offset.x, y=edge.route_offset.y)
-                if edge.route_offset is not None
-                else None
-            ),
-        )
+        return cls.model_validate(edge.model_dump())
 
 
 class GraphPresentationViewerModel(SavedGraphApiModel):
@@ -302,165 +234,14 @@ class GraphPresentationDocumentModel(SavedGraphApiModel):
     annotations: list[GraphPresentationAnnotationModel] = Field(default_factory=list)
 
     def to_domain(self) -> GraphPresentationDocument:
-        return GraphPresentationDocument(
-            viewers=tuple(
-                GraphPresentationViewer(
-                    id=viewer.id,
-                    position=GraphPoint(x=viewer.position.x, y=viewer.position.y),
-                    layout=(
-                        SavedGraphNodeLayout(
-                            width=viewer.layout.width,
-                            body_height=viewer.layout.body_height,
-                            appendix_height=viewer.layout.appendix_height,
-                        )
-                        if viewer.layout is not None
-                        else None
-                    ),
-                    mode=viewer.mode,
-                )
-                for viewer in self.viewers
-            ),
-            links=tuple(
-                GraphPresentationLink(
-                    id=link.id,
-                    source_node_id=link.source_node_id,
-                    source_port_name=link.source_port_name,
-                    target_viewer_id=link.target_viewer_id,
-                    projection=(
-                        SavedGraphProjection(path=tuple(link.projection.path))
-                        if link.projection is not None
-                        else None
-                    ),
-                    route_offset=(
-                        GraphPoint(
-                            x=link.route_offset.x,
-                            y=link.route_offset.y,
-                        )
-                        if link.route_offset is not None
-                        else None
-                    ),
-                )
-                for link in self.links
-            ),
-            bindings=tuple(
-                GraphPresentationBinding(
-                    id=binding.id,
-                    source_viewer_id=binding.source_viewer_id,
-                    target_viewer_id=binding.target_viewer_id,
-                    mappings=tuple(
-                        GraphPresentationBindingMapping(
-                            source_field=mapping.source_field,
-                            target_field=mapping.target_field,
-                        )
-                        for mapping in binding.mappings
-                    ),
-                    effects=tuple(binding.effects),
-                    empty_selection=binding.empty_selection,
-                )
-                for binding in self.bindings
-            ),
-            annotations=tuple(
-                GraphPresentationAnnotation(
-                    id=annotation.id,
-                    kind=annotation.kind,
-                    position=GraphPoint(
-                        x=annotation.position.x,
-                        y=annotation.position.y,
-                    ),
-                    layout=SavedGraphAnnotationLayout(
-                        width=annotation.layout.width,
-                        height=annotation.layout.height,
-                    ),
-                    text=annotation.text,
-                    color=annotation.color,
-                )
-                for annotation in self.annotations
-            ),
-        )
+        return GraphPresentationDocument.model_validate(self.model_dump())
 
     @classmethod
     def from_domain(
         cls,
         presentation: GraphPresentationDocument,
     ) -> "GraphPresentationDocumentModel":
-        return cls(
-            viewers=[
-                GraphPresentationViewerModel(
-                    id=viewer.id,
-                    position=GraphPointModel(
-                        x=viewer.position.x,
-                        y=viewer.position.y,
-                    ),
-                    layout=(
-                        SavedGraphNodeLayoutModel(
-                            width=viewer.layout.width,
-                            body_height=viewer.layout.body_height,
-                            appendix_height=viewer.layout.appendix_height,
-                        )
-                        if viewer.layout is not None
-                        else None
-                    ),
-                    mode=viewer.mode,
-                )
-                for viewer in presentation.viewers
-            ],
-            links=[
-                GraphPresentationLinkModel(
-                    id=link.id,
-                    source_node_id=link.source_node_id,
-                    source_port_name=link.source_port_name,
-                    target_viewer_id=link.target_viewer_id,
-                    projection=(
-                        SavedGraphProjectionModel(path=list(link.projection.path))
-                        if link.projection is not None
-                        else None
-                    ),
-                    route_offset=(
-                        GraphPointModel(
-                            x=link.route_offset.x,
-                            y=link.route_offset.y,
-                        )
-                        if link.route_offset is not None
-                        else None
-                    ),
-                )
-                for link in presentation.links
-            ],
-            bindings=[
-                GraphPresentationBindingModel(
-                    id=binding.id,
-                    source_viewer_id=binding.source_viewer_id,
-                    target_viewer_id=binding.target_viewer_id,
-                    mappings=[
-                        GraphPresentationBindingMappingModel(
-                            source_field=mapping.source_field,
-                            target_field=mapping.target_field,
-                        )
-                        for mapping in binding.mappings
-                    ],
-                    effects=list(binding.effects),
-                    empty_selection=binding.empty_selection,
-                )
-                for binding in presentation.bindings
-            ],
-            annotations=[
-                GraphPresentationAnnotationModel(
-                    id=annotation.id,
-                    kind=annotation.kind,
-                    position=GraphPointModel(
-                        x=annotation.position.x,
-                        y=annotation.position.y,
-                    ),
-                    layout=SavedGraphAnnotationLayoutModel(
-                        width=annotation.layout.width,
-                        height=annotation.layout.height,
-                    ),
-                    text=annotation.text,
-                    color=annotation.color,
-                )
-                for annotation in presentation.annotations
-            ],
-        )
+        return cls.model_validate(presentation.model_dump())
 
 
 class SavedGraphWriteRequest(SavedGraphApiModel):
