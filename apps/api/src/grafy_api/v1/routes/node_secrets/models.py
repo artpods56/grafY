@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 if TYPE_CHECKING:
-    from grafy_api.v1.routes.node_secrets.services import (
+    from grafy_api.node_secrets import (
         GraphNodeSecretState,
         NodeSecretState,
     )

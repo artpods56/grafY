@@ -57,7 +57,7 @@ from grafy_api.services.composition import (
 )
 from grafy_api.execution.errors import GraphExecutionError
 from grafy_api.v1.routes.node_secrets.models import ConfigureNodeSecretRequest
-from grafy_api.v1.routes.node_secrets.services import (
+from grafy_api.node_secrets import (
     NodeSecretConfigurationError,
     NodeSecretDeclarationError,
     NodeSecretService,

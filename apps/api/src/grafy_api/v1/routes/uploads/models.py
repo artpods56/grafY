@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 from grafy_api.v1.models import ApiResponse
 
-from .services import ImageUploadItem
+from grafy_core.domain.staged_uploads import StagedUpload
 
 
 class SampleRequest(BaseModel):
@@ -17,10 +17,10 @@ class ImageUploadItemResponse(ApiResponse):
     byte_size: int
 
     @classmethod
-    def from_item(cls, item: ImageUploadItem) -> Self:
+    def from_item(cls, item: StagedUpload) -> Self:
         return cls(
             upload_key=item.upload_key,
-            filename=item.filename,
+            filename=item.original_filename,
             byte_size=item.byte_size,
         )
 

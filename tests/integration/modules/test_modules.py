@@ -28,7 +28,7 @@ from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 from grafy_api.app_state import get_resources
-from grafy_api.v1.routes.node_secrets.services import NodeSecretService
+from grafy_api.node_secrets import NodeSecretService
 from grafy_api.services.composition import (
     build_workbench_components,
 )

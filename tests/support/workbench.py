@@ -16,7 +16,7 @@ from grafy_api.v1.routes.executions.dependencies import (
     run_graph_service,
     run_result_presenter,
 )
-from grafy_api.v1.routes.uploads.dependencies import image_upload_service
+from grafy_api.v1.routes.uploads.dependencies import staged_upload_service
 
 from grafy_api.v1.routes.modules.dependencies import module_library_service
 
@@ -31,7 +31,7 @@ def workbench_dependency_overrides(
 
     overrides: dict[AppDependency, DependencyOverride] = {
         plugin_registry: lambda: components.plugin_registry,
-        image_upload_service: lambda: components.uploads,
+        staged_upload_service: lambda: components.uploads,
         run_graph_service: lambda: components.run_graph,
         execution_admission_limiter: lambda: components.execution_admission,
         run_execution_manager: lambda: components.execution_manager,

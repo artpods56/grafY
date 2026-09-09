@@ -36,7 +36,7 @@ from grafy_api.execution.admission import (
 )
 from grafy_api.execution.manager import RunExecutionIdempotencyConflictError
 from grafy_api.v1.routes.uploads.models import SampleRequest
-from grafy_api.v1.routes.uploads.services import ImageUploadService
+from grafy_api.staged_uploads import StagedUploadService
 from grafy_api.settings import Settings
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 
@@ -375,7 +375,7 @@ async def test_upload_from_relative_workspace_returns_opaque_upload_key(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     unit_of_work = InMemoryUnitOfWork()
-    service = ImageUploadService(
+    service = StagedUploadService(
         Path("relative-workbench/uploads"),
         unit_of_work_factory=lambda: unit_of_work,
     )
@@ -392,7 +392,7 @@ async def test_upload_from_relative_workspace_returns_opaque_upload_key(
     assert "/" not in item.upload_key
     assert "\\" not in item.upload_key
     assert item.upload_key.endswith("-page.png")
-    assert item.filename == "page.png"
+    assert item.original_filename == "page.png"
     assert item.byte_size == len(b"image-bytes")
     staged_path = (
         Path("relative-workbench/uploads") / str(workspace_id) / item.upload_key

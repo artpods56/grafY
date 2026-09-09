@@ -17,7 +17,7 @@ from grafy_api.v1.routes.node_secrets.models import (
     GraphNodeSecretsResponse,
     NodeSecretStatusResponse,
 )
-from grafy_api.v1.routes.node_secrets.services import (
+from grafy_api.node_secrets import (
     NodeSecretConfigurationError,
     NodeSecretDeclarationError,
     NodeSecretValueError,

@@ -7,9 +7,9 @@ from grafy_core.domain.identity import WorkspaceCapability
 from grafy_api.services.errors import WorkbenchOperationError
 from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
 
-from .dependencies import ImageUploadDependency
+from .dependencies import StagedUploadDependency
 from .models import ImageUploadItemResponse, SampleRequest
-from .services import StagedUploadTooLargeError
+from grafy_api.staged_uploads import StagedUploadTooLargeError
 
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workbench"])
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workbench"])
 @router.post("/uploads", response_model=ImageUploadItemResponse)
 async def upload_file(
     workspace_id: UUID,
-    service: ImageUploadDependency,
+    service: StagedUploadDependency,
     access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
     file: UploadFile = File(),
 ) -> ImageUploadItemResponse:
@@ -42,7 +42,7 @@ async def upload_file(
 async def create_samples(
     workspace_id: UUID,
     request: SampleRequest,
-    service: ImageUploadDependency,
+    service: StagedUploadDependency,
     access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
 ) -> list[ImageUploadItemResponse]:
     items = await service.create_sample_images(

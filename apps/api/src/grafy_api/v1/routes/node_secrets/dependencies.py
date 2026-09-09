@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from grafy_api.app_state import get_resources
-from grafy_api.v1.routes.node_secrets.services import NodeSecretService
+from grafy_api.node_secrets import NodeSecretService
 
 
 def node_secret_service(request: Request) -> NodeSecretService:

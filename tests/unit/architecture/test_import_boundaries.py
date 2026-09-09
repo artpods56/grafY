@@ -63,8 +63,6 @@ API_ROUTE_AREAS = (
 API_SERVICE_AREAS = (
     "artifacts",
     "executions",
-    "node_secrets",
-    "uploads",
 )
 API_ROUTE_STANDARD_FILES = (
     "__init__.py",
@@ -342,9 +340,14 @@ def test_execution_http_models_preserve_public_request_and_event_identity() -> N
             assert getattr(models, name) is getattr(module, name)
 
 
-def test_realtime_ownership_does_not_depend_on_route_modules() -> None:
+def test_application_owners_do_not_depend_on_route_modules() -> None:
     api_root = REPO_ROOT / "apps/api/src/grafy_api"
-    paths = [*(api_root / "realtime").glob("*.py"), api_root / "graph_contracts.py"]
+    paths = [
+        *(api_root / "realtime").glob("*.py"),
+        api_root / "graph_contracts.py",
+        api_root / "node_secrets.py",
+        api_root / "staged_uploads.py",
+    ]
     offenders: list[str] = []
     for path in paths:
         for node in ast.walk(ast.parse(path.read_text())):

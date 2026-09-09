@@ -1,6 +1,5 @@
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO
@@ -25,18 +24,11 @@ _SAMPLE_PAGE_TEXTS = (
 )
 
 
-@dataclass(frozen=True, slots=True)
-class ImageUploadItem:
-    upload_key: str
-    filename: str
-    byte_size: int
-
-
 class StagedUploadTooLargeError(WorkbenchOperationError):
     """A staged file exceeds the configured per-upload byte limit."""
 
 
-class ImageUploadService:
+class StagedUploadService:
     """Stages opaque file uploads consumed by file-source nodes."""
 
     def __init__(
@@ -64,7 +56,7 @@ class ImageUploadService:
         created_by_user_id: UUID,
         filename: str,
         stream: BinaryIO,
-    ) -> ImageUploadItem:
+    ) -> StagedUpload:
         safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", filename).strip("-") or "upload"
         upload_key = f"{uuid4().hex[:8]}-{safe_name}"
         path = self._path_for(workspace_id, upload_key)
@@ -79,17 +71,15 @@ class ImageUploadService:
             raise WorkbenchOperationError(
                 f"Failed to stage upload {filename!r} in {path.parent}"
             ) from exc
-        item = ImageUploadItem(
-            upload_key=upload_key,
-            filename=filename,
-            byte_size=path.stat().st_size,
-        )
         try:
-            await self._persist_staged_uploads(
+            item = StagedUpload(
                 workspace_id=workspace_id,
                 created_by_user_id=created_by_user_id,
-                items=[item],
+                upload_key=upload_key,
+                original_filename=filename,
+                byte_size=path.stat().st_size,
             )
+            await self._persist_staged_uploads([item])
         except Exception:
             path.unlink(missing_ok=True)
             raise
@@ -101,8 +91,8 @@ class ImageUploadService:
         workspace_id: UUID,
         created_by_user_id: UUID,
         count: int,
-    ) -> list[ImageUploadItem]:
-        items: list[ImageUploadItem] = []
+    ) -> list[StagedUpload]:
+        items: list[StagedUpload] = []
         paths: list[Path] = []
         try:
             for index in range(count):
@@ -122,17 +112,15 @@ class ImageUploadService:
                 path.write_bytes(content)
                 paths.append(path)
                 items.append(
-                    ImageUploadItem(
+                    StagedUpload(
+                        workspace_id=workspace_id,
+                        created_by_user_id=created_by_user_id,
                         upload_key=upload_key,
-                        filename=f"sample-page-{index + 1}.png",
+                        original_filename=f"sample-page-{index + 1}.png",
                         byte_size=len(content),
                     )
                 )
-            await self._persist_staged_uploads(
-                workspace_id=workspace_id,
-                created_by_user_id=created_by_user_id,
-                items=items,
-            )
+            await self._persist_staged_uploads(items)
         except Exception:
             for path in paths:
                 path.unlink(missing_ok=True)
@@ -146,24 +134,10 @@ class ImageUploadService:
             upload_key=upload_key,
         )
 
-    async def _persist_staged_uploads(
-        self,
-        *,
-        workspace_id: UUID,
-        created_by_user_id: UUID,
-        items: list[ImageUploadItem],
-    ) -> None:
+    async def _persist_staged_uploads(self, items: list[StagedUpload]) -> None:
         async with self._unit_of_work_factory() as unit_of_work:
             for item in items:
-                await unit_of_work.staged_uploads.add(
-                    StagedUpload(
-                        workspace_id=workspace_id,
-                        upload_key=item.upload_key,
-                        original_filename=item.filename,
-                        byte_size=item.byte_size,
-                        created_by_user_id=created_by_user_id,
-                    )
-                )
+                await unit_of_work.staged_uploads.add(item)
             await unit_of_work.commit()
 
     def _write_stream(self, path: Path, stream: BinaryIO, filename: str) -> None:
@@ -180,7 +154,6 @@ class ImageUploadService:
 
 
 __all__ = [
-    "ImageUploadItem",
-    "ImageUploadService",
+    "StagedUploadService",
     "StagedUploadTooLargeError",
 ]

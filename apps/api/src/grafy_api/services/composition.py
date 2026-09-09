@@ -57,7 +57,7 @@ from grafy_api.execution.materializations import MaterializationService
 from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.v1.routes.executions.services import RunResultPresenter
 from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES
-from grafy_api.v1.routes.uploads.services import ImageUploadService
+from grafy_api.staged_uploads import StagedUploadService
 
 
 _WORKBENCH_BUCKET = "workbench-artifacts"
@@ -66,7 +66,7 @@ _WORKBENCH_BUCKET = "workbench-artifacts"
 @dataclass(frozen=True, slots=True)
 class WorkbenchComponents:
     plugin_registry: PluginRegistry
-    uploads: ImageUploadService
+    uploads: StagedUploadService
     module_library: ModuleLibraryService | None
     plugin_releases: PluginReleaseService | None
     run_graph: RunGraph
@@ -131,7 +131,7 @@ def build_workbench_components(
     )
     uploads_dir = resolved_workspace / "uploads"
     resolved_unit_of_work = unit_of_work or InMemoryUnitOfWork()
-    uploads = ImageUploadService(
+    uploads = StagedUploadService(
         uploads_dir,
         unit_of_work_factory=lambda: resolved_unit_of_work,
         max_upload_bytes=staged_upload_max_bytes,

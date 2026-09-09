@@ -320,11 +320,7 @@ class NodeSecretService(NodeSecretResolverPort):
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> tuple[_NodeSecretBinding, EncryptedNodeSecret]:
-        if (
-            graph_id is None
-            or graph_revision is None
-            or node_id is None
-        ):
+        if graph_id is None or graph_revision is None or node_id is None:
             raise NodeSecretUnavailableError(
                 "A saved graph context is required to resolve a node secret"
             )

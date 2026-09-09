@@ -1,7 +1,7 @@
 import asyncio
 from io import BytesIO
 from pathlib import Path
-from typing import cast
+from typing import cast, override
 from uuid import UUID
 
 import pytest
@@ -13,8 +13,8 @@ from grafy_api.settings import (
     STAGED_UPLOAD_HARD_MAX_BYTES,
     Settings,
 )
-from grafy_api.v1.routes.uploads.dependencies import image_upload_service
-from grafy_api.v1.routes.uploads.services import ImageUploadService
+from grafy_api.v1.routes.uploads.dependencies import staged_upload_service
+from grafy_api.staged_uploads import StagedUploadService
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.staged_uploads import StagedUpload
 from tests.support.clients import GrafyApi
@@ -43,7 +43,7 @@ def test_staged_upload_settings_enforce_release_bounds() -> None:
 
 def test_upload_service_rejects_limit_above_release_hard_max(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="64 MiB hard limit"):
-        ImageUploadService(
+        StagedUploadService(
             tmp_path / "uploads",
             unit_of_work_factory=InMemoryUnitOfWork,
             max_upload_bytes=STAGED_UPLOAD_HARD_MAX_BYTES + 1,
@@ -55,13 +55,13 @@ def test_upload_endpoint_rejects_oversize_file_and_removes_partial_stage(
     tmp_path: Path,
 ) -> None:
     unit_of_work = InMemoryUnitOfWork()
-    service = ImageUploadService(
+    service = StagedUploadService(
         tmp_path / "limited-uploads",
         unit_of_work_factory=lambda: unit_of_work,
         max_upload_bytes=1024 * 1024,
     )
     application = cast(FastAPI, builtin_client.app)
-    application.dependency_overrides[image_upload_service] = lambda: service
+    application.dependency_overrides[staged_upload_service] = lambda: service
 
     api = GrafyApi(builtin_client)
     uploads = api.workspace(WORKSPACE_ID).uploads
@@ -84,7 +84,7 @@ def test_upload_endpoint_rejects_oversize_file_and_removes_partial_stage(
 
 async def test_upload_at_exact_byte_limit_is_staged(tmp_path: Path) -> None:
     unit_of_work = InMemoryUnitOfWork()
-    service = ImageUploadService(
+    service = StagedUploadService(
         tmp_path / "uploads",
         unit_of_work_factory=lambda: unit_of_work,
         max_upload_bytes=4,
@@ -98,3 +98,54 @@ async def test_upload_at_exact_byte_limit_is_staged(tmp_path: Path) -> None:
     )
 
     assert item.byte_size == 4
+    assert item.workspace_id == WORKSPACE_ID
+    assert item.created_by_user_id == TEST_USER_ID
+    assert item.original_filename == "exact.bin"
+    assert await _list_staged_uploads(unit_of_work, WORKSPACE_ID) == [item]
+
+
+class FailingCommitUnitOfWork(InMemoryUnitOfWork):
+    @override
+    async def commit(self) -> None:
+        raise RuntimeError("staging commit failed")
+
+
+@pytest.mark.parametrize("samples", [False, True])
+async def test_failed_staging_commit_removes_all_files_and_rows(
+    tmp_path: Path,
+    samples: bool,
+) -> None:
+    unit_of_work = FailingCommitUnitOfWork()
+    upload_root = tmp_path / "uploads"
+    service = StagedUploadService(upload_root, lambda: unit_of_work)
+    with pytest.raises(RuntimeError, match="staging commit failed"):
+        if samples:
+            await service.create_sample_images(
+                workspace_id=WORKSPACE_ID,
+                created_by_user_id=TEST_USER_ID,
+                count=3,
+            )
+        else:
+            await service.save_upload(
+                workspace_id=WORKSPACE_ID,
+                created_by_user_id=TEST_USER_ID,
+                filename="data.bin",
+                stream=BytesIO(b"contents"),
+            )
+    assert [path for path in upload_root.rglob("*") if path.is_file()] == []
+    assert await _list_staged_uploads(unit_of_work, WORKSPACE_ID) == []
+
+
+async def test_domain_validation_failure_removes_staged_file(tmp_path: Path) -> None:
+    unit_of_work = InMemoryUnitOfWork()
+    upload_root = tmp_path / "uploads"
+    service = StagedUploadService(upload_root, lambda: unit_of_work)
+    with pytest.raises(ValueError, match="original filename must not be blank"):
+        await service.save_upload(
+            workspace_id=WORKSPACE_ID,
+            created_by_user_id=TEST_USER_ID,
+            filename="   ",
+            stream=BytesIO(b"contents"),
+        )
+    assert [path for path in upload_root.rglob("*") if path.is_file()] == []
+    assert await _list_staged_uploads(unit_of_work, WORKSPACE_ID) == []

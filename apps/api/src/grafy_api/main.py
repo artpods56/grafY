@@ -39,7 +39,7 @@ from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.v1.routes.collaboration.views import router as collaboration_router
 from grafy_api.v1.routes.executions.views import router as executions_router
 from grafy_api.plugins.runtime.docker import DockerPluginRuntime
-from grafy_api.v1.routes.node_secrets.services import NodeSecretService
+from grafy_api.node_secrets import NodeSecretService
 from grafy_api.v1.routes.node_secrets.views import router as node_secrets_router
 from grafy_api.v1.routes.saved_graphs.views import (
     browser_router as graph_browser_router,

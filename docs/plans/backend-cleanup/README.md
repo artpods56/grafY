@@ -117,8 +117,8 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Move operation audit metadata out of workspace views into HTTP diagnostics near registration.
 - [x] Delegate malformed OIDC transaction cleanup to authentication.
 - [ ] Give workspace transport models their own owner and return complete application results without route-side transaction reopening.
-- [ ] Move cohesive NodeSecretService outside routes.
-- [ ] Rename ImageUploadService to StagedUploadService; share staging/domain results and preserve batch rollback.
+- [x] Move cohesive NodeSecretService outside routes.
+- [x] Rename ImageUploadService to StagedUploadService; share staging/domain results and preserve batch rollback.
 
 ## 14. Composition and remaining reductions
 
@@ -568,4 +568,27 @@ flowchart LR
     Auth --> State[Login transaction and abuse reservation]
     HTTP --> Audit[HTTP-owned operation metadata and audit]
     HTTP --> Response[Existing status, diagnostics, and cookie response]
+```
+
+
+### Application-owned node secrets and staged uploads
+
+- Moved `NodeSecretService` and its configuration/contracts to `grafy_api.node_secrets`. The complete parsed module is identical to its pre-move source. Composition, route dependencies, execution/module tests, and transport model typing import the application owner.
+- Moved upload staging to `grafy_api.staged_uploads` and renamed its service/dependency to `StagedUploadService`/`StagedUploadDependency`, reflecting support for arbitrary files. Retired both route service modules.
+- Removed the temporary `ImageUploadItem` dataclass. Single uploads and sample batches construct the actual `StagedUpload` records, persist those same objects in one transaction, and return them. HTTP serialization reads `original_filename` while retaining the public `filename` field and existing response-model names.
+- Domain construction and file stat for a single upload remain inside the file-cleanup exception boundary. Sample creation retains one batch commit and removal of every staged path on failure. Domain records now receive their default timestamps when constructed during staging, before entering the persistence transaction.
+- Added regression checks that exact-limit uploads return their persisted domain record, including Workspace and creator identity; domain validation removes staged files; and failed commits remove files and rows for both a single upload and a three-sample batch.
+- Replaced the layout requirement for node-secret/upload route services with the application-owner dependency check. Both owners are prohibited from importing route modules.
+- Validation: 604 API, architecture, node-secret, upload, module, room, and execution tests passed. A final 15-test architecture run includes both new owner boundaries. Targeted Pyright reports zero errors or warnings for both services and the staging tests; Ruff and whitespace checks pass.
+- OpenAPI is unchanged. The clean built/extracted API wheel contains the application owners, omits both retired route service modules, and imports with identical OpenAPI.
+- Evidence: `/tmp/grafy-node_secrets-before.py`, `/tmp/grafy-uploads-before.py`, `/tmp/grafy-secrets-staging-openapi.json`, `/tmp/grafy-staging-rollback.log`, `/tmp/grafy-secrets-staging-focused.log`, `/tmp/grafy-secrets-staging-regression.log`, `/tmp/grafy-secrets-staging-architecture.log`, `/tmp/grafy-secrets-staging-types.log`, and `/tmp/grafy-secrets-staging-wheel.log`.
+- Finding 13 remains open for workspace transport models and complete application results without route-side transaction reopening.
+
+```mermaid
+flowchart LR
+    HTTP[Upload HTTP boundary] --> Stage[Staged-upload service]
+    Stage --> Files[Staged files]
+    Stage --> Records[Shared StagedUpload domain records]
+    Records --> Transaction[One persistence transaction]
+    Records --> Response[Existing HTTP response fields]
 ```

@@ -41,8 +41,8 @@ from grafy_api.execution.run_graph import RunGraph
 from grafy_api.execution.history import ExecutionHistoryService
 from grafy_api.execution.materializations import MaterializationService
 from grafy_api.v1.routes.executions.services import RunResultPresenter
-from grafy_api.v1.routes.node_secrets.services import NodeSecretService
-from grafy_api.v1.routes.uploads.services import ImageUploadService
+from grafy_api.node_secrets import NodeSecretService
+from grafy_api.staged_uploads import StagedUploadService
 
 
 @dataclass(slots=True)
@@ -69,7 +69,7 @@ class AppResources:
 
     database: Database
     plugin_registry: PluginRegistry
-    uploads: ImageUploadService
+    uploads: StagedUploadService
     plugin_releases: PluginReleaseService | None
     module_library: ModuleLibraryService
     templates: TemplateService
