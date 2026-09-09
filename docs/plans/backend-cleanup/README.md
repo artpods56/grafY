@@ -38,7 +38,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Preserve source re-verification and test concurrent publication after review.
 - [x] Move System revocation's SQL consistency rule from API workflow to the release transaction and persistence adapter.
 - [x] Fence durable queue admission against the System revocation drain check and commit.
-- [ ] Include transient executions in System revocation fencing; runs without saved-graph context currently have no durable execution row.
+- [ ] Include transient executions in System revocation fencing; runs without saved-graph context currently have no durable execution row. Reproduced with real SQL; see [transient fence design](transient-execution-fence.md).
 - [ ] Prove active execution/revocation races cannot violate that fence.
 
 ## 4. Plugin ownership and compatibility
@@ -948,3 +948,12 @@ flowchart LR
 - Proposed architecture-test rule: enforce dependency direction and supported compatibility contracts, not mandatory `services.py` placement. Cover relative and parent-module imports so moving syntax cannot bypass a dependency check. [R23: Maintain The Rules]
 - Evidence: `/tmp/grafy-runtime-boundaries-baseline.log`, `/tmp/grafy-runtime-boundaries-regression.log`, `/tmp/grafy-runtime-boundaries-types.log`, `/tmp/grafy-runtime-boundaries-detection.log`, and `/tmp/grafy-runtime-boundaries-build.log`.
 - The architecture placement/reference substeps are complete. Full completion still requires transient execution/revocation fencing, graph transport migration, and the remaining final source/regression audit.
+
+
+### Transient revocation reproduction and lifecycle design
+
+- Reproduced the open publication-consistency defect using a real manager, SQL history dependency, SQL maintenance fence, and release service. A transient executor paused inside `run()` remains invisible to the database drain, and System revocation commits. The diagnostic creates only a disposable SQLite database and shuts down its task. [R43: Tests Are Behavioral Contracts]
+- Saved the executable diagnostic and implementation constraints in `transient-execution-fence.md`. The next implementation needs an additive durable activity marker, shared maintenance locking for revocation and cutover, fail-closed completion handling, and recovery tied to exclusive ownership plus successful orphan draining. [R25: Design Before Edits]
+- Identified two constraints that a manager-only counter patch would miss: System cutover shares the incomplete drain query, and the single-owner setting can be disabled, so unconditional startup deletion is unsafe.
+- Evidence: `PYTHONPATH=. .venv/bin/python docs/plans/backend-cleanup/reproduce-transient-revocation.py` reproduces the gap; `/tmp/grafy-transient-revocation-reproduction.log` records the original run.
+- Finding 3 remains open. This batch establishes concrete regression evidence and the implementation scope; no runtime or schema behavior changed.
