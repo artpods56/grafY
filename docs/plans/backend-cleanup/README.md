@@ -90,13 +90,13 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 ## 10. Spatial contracts and reads
 
-- [ ] Share dependency-light persisted spatial contracts in core while preserving stored schema and HTTP defaults.
+- [x] Share dependency-light persisted spatial contracts in core while preserving stored schema and HTTP defaults.
 - [x] Share feature-collection payload and vector/raster projection fields while preserving stricter GIS producer validation.
 - [x] Move persisted spatial styles and default rendering to one core owner while retaining required HTTP response fields.
-- [ ] Consolidate remaining spatial references, map documents, and manifest contracts with explicit compatibility differences.
+- [x] Consolidate remaining spatial references, map documents, and manifest contracts with explicit compatibility differences.
 - [x] Share feature-collection reconstruction and logical-byte integrity checks.
-- [ ] Keep GDAL, network requests, tile serving, and HTTP render responses with deployment owners.
-- [ ] Verify existing stored fixtures, API schemas, and GIS round trips.
+- [x] Keep GDAL, network requests, tile serving, and HTTP render responses with deployment owners.
+- [x] Verify existing stored fixtures, API schemas, and GIS round trips.
 
 ## 11. Persistence cleanup
 
@@ -861,4 +861,25 @@ flowchart LR
     Core[Persisted core spatial styles] --> GIS[GIS producer aliases]
     Core --> Defaults[API default rendering]
     Defaults --> HTTP[Required HTTP response fields]
+```
+
+
+### Core-owned map references and persisted feature metadata
+
+- Moved pure spatial reference, source, map-layer, map-document, strict feature/projection models, annotated bounds, and their validation helpers into `grafy_core.spatial_contracts`. Fifteen moved class/function syntax trees are identical. GIS public model/function imports remain aliases to the same core objects. The raw `GeoRasterScan` producer input stays in GIS because it carries upload bytes rather than persisted references. [R01: Direct Ownership]
+- Core now owns property-type choices and the complete stored feature-metadata model. GIS persistence uses `GeoFeaturePropertyMetadata` and `GeoStoredFeatureCollectionMetadata`; property discovery remains with the sole owning writer. Private metadata class names changed, but exact serialized metadata bytes, defaults, field names, and bounds conversion are unchanged.
+- Retained HTTP compatibility models where reader acceptance differs from producer validation. API references still use their existing wire shape, source/style discriminators remain required, historical bounds/metadata acceptance remains intact, and response strings retain their prior validation. These are transport compatibility contracts over the shared persisted definitions, not a second source of producer defaults.
+- No GDAL, HTTP requests, tile serving, or render orchestration moved into core. URL validation only inspects syntax and literal addresses; it performs no DNS or network IO. Fresh core import does not load API, GIS, persistence, or GDAL.
+- Artifact/GIS/architecture regression passed 190 tests. All 57 API/GIS model schemas and OpenAPI remain identical to the original pre-spatial definitions. Core/GIS model typing reports zero errors; Ruff and diff checks pass.
+- Built core, API, and GIS distributions independently. Extracted-wheel verification confirms core import independence, GIS alias identity, unchanged moved validator implementations, exact persisted feature metadata, all 16 real-storage reader contracts, and unchanged OpenAPI.
+- Evidence: `/tmp/grafy-maps-gis-before.py`, `/tmp/grafy-maps-persistence-before.py`, `/tmp/grafy-spatial-maps-focused.log`, `/tmp/grafy-spatial-maps-regression.log`, `/tmp/grafy-spatial-maps-schemas.log`, `/tmp/grafy-spatial-maps-types.log`, `/tmp/grafy-spatial-maps-verification.log`, and `/tmp/grafy-spatial-maps-wheel.log`.
+- Finding 10 is complete across the payload/projection, reconstruction, style, and map/metadata batches. Publication fencing, graph transport migration, and final architecture/regression gates remain open for the full goal.
+
+```mermaid
+flowchart LR
+    Core[Core persisted spatial contracts] --> GIS[GIS producer aliases and writer]
+    Core --> Reader[Shared spatial storage reader]
+    API[HTTP compatibility models] --> Reader
+    GIS --> GDAL[GIS GDAL and network operations]
+    Reader --> HTTP[API content and render handlers]
 ```

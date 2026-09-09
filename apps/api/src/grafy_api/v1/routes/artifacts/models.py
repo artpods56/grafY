@@ -17,6 +17,7 @@ from pydantic import (
 
 from grafy_core.artifacts import ArtifactExportFormat, JsonObject
 from grafy_core.spatial_contracts import (
+    GeoPropertyValueType as GeoPropertyValueType,
     GeoVectorStyle as StoredGeoVectorStyle,
     GeoRasterStyle as StoredGeoRasterStyle,
     GeoBounds as GeoBounds,
@@ -289,17 +290,6 @@ class TableCellResponse(ApiResponse):
 
 class StrictGeoModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-
-type GeoPropertyValueType = Literal[
-    "text",
-    "integer",
-    "number",
-    "boolean",
-    "null",
-    "mixed",
-    "unknown",
-]
 
 
 class GeoPropertyFieldResponse(ApiResponse):

@@ -4,10 +4,10 @@ from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Literal, cast, final, override
+from typing import cast, final, override
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StrictStr
+from pydantic import BaseModel
 
 from grafy_core.artifact_collections import (
     JSON_COLLECTIONS_STORAGE_FORMAT,
@@ -16,7 +16,11 @@ from grafy_core.artifact_collections import (
     JsonCollectionsManifest,
     save_json_collections,
 )
-from grafy_core.spatial_contracts import GeoFeatureCollectionMetadata
+from grafy_core.spatial_contracts import (
+    GeoPropertyValueType,
+    GeoFeaturePropertyMetadata,
+    GeoStoredFeatureCollectionMetadata,
+)
 from grafy_core.spatial_storage import (
     load_feature_collection,
     verify_spatial_artifact_content,
@@ -44,44 +48,17 @@ from grafy_core.runtime.resolvers import (
 from grafy_plugin_gis.artifacts import GEO_FEATURE_COLLECTION, GEO_RASTER_SCAN
 from grafy_plugin_gis.gdal import GdalCli, GdalError
 from grafy_plugin_gis.models import (
-    Bounds,
     GeoFeatureCollection,
     GeoRasterScan,
     RasterProjectionMetadata,
     VectorProjectionMetadata,
 )
 
-type _PropertyValueType = Literal[
-    "text",
-    "integer",
-    "number",
-    "boolean",
-    "null",
-    "mixed",
-    "unknown",
-]
-
-
-class _FeaturePropertyFieldMetadata(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: StrictStr = Field(min_length=1, max_length=255)
-    title: StrictStr = Field(min_length=1, max_length=1_024)
-    value_type: _PropertyValueType
-
-
-class _FeatureCollectionManifestMetadata(GeoFeatureCollectionMetadata):
-    kind: Literal["geo.feature_collection"] = "geo.feature_collection"
-    bounds: Bounds | None
-    property_fields: list[_FeaturePropertyFieldMetadata] = Field(
-        default_factory=list,
-    )
-
 
 def _feature_property_fields(
     features: list[JsonObject],
-) -> list[_FeaturePropertyFieldMetadata]:
-    observed: dict[str, set[_PropertyValueType]] = {}
+) -> list[GeoFeaturePropertyMetadata]:
+    observed: dict[str, set[GeoPropertyValueType]] = {}
     for feature in features:
         properties = feature.get("properties")
         if not isinstance(properties, dict):
@@ -91,7 +68,7 @@ def _feature_property_fields(
             if not field_name or len(field_name) > 255:
                 continue
             if value is None:
-                value_type: _PropertyValueType = "null"
+                value_type: GeoPropertyValueType = "null"
             elif isinstance(value, bool):
                 value_type = "boolean"
             elif isinstance(value, int):
@@ -104,7 +81,7 @@ def _feature_property_fields(
                 value_type = "unknown"
             observed.setdefault(field_name, set()).add(value_type)
     return [
-        _FeaturePropertyFieldMetadata(
+        GeoFeaturePropertyMetadata(
             id=field_name,
             title=field_name,
             value_type=(next(iter(value_types)) if len(value_types) == 1 else "mixed"),
@@ -160,7 +137,7 @@ class FeatureCollectionOutputWriter(ArtifactOutputWriter):
         logical_content = payload.canonical_json_bytes()
         content_hash = sha256(logical_content).hexdigest()
         property_fields = _feature_property_fields(payload.features)
-        manifest_metadata = _FeatureCollectionManifestMetadata(
+        manifest_metadata = GeoStoredFeatureCollectionMetadata(
             source_name=payload.source_name,
             bounds=payload.bounds,
             property_fields=property_fields,
@@ -407,7 +384,7 @@ class FeatureCollectionResolver(Resolver[GeoFeatureCollection]):
                 artifact,
                 self._storage,
                 feature_count=feature_count,
-                metadata_type=_FeatureCollectionManifestMetadata,
+                metadata_type=GeoStoredFeatureCollectionMetadata,
                 payload_type=GeoFeatureCollection,
             )
             return loaded.payload
