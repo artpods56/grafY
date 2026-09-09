@@ -74,7 +74,7 @@ from grafy_api.plugins.runtime.admission import (
     ReleaseExecutionRejection,
     ReleaseExecutionRoute,
 )
-from grafy_api.system_host_bindings import (
+from grafy_api.plugins.compatibility.bindings import (
     SystemHostBindingError,
     validate_system_host_bindings,
 )

@@ -26,7 +26,7 @@ from grafy_core.domain.system_plugin_inventory import (
 from grafy_persistence.system_baseline import (
     SystemBaselineManifestGenerator,
 )
-from grafy_api.system_plugin_loader import (
+from grafy_api.plugins.compatibility.loader import (
     SystemPluginDeploymentEntry,
     SystemPluginDeploymentManifest,
 )

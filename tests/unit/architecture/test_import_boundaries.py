@@ -422,3 +422,18 @@ def test_baseline_compatibility_exports_preserve_shared_contract_identity() -> N
         system_plugin_inventory.SystemBaselineManifestGenerator
         is SystemBaselineManifestGenerator
     )
+
+
+def test_historical_host_exports_resolve_to_compatibility_implementations() -> None:
+    from importlib import import_module
+
+    for old_name, owner in (
+        ("system_plugin_loader", "loader"),
+        ("system_plugin_deployment", "deployment"),
+        ("system_host_bindings", "bindings"),
+    ):
+        legacy = import_module(f"grafy_api.{old_name}")
+        implementation = import_module(f"grafy_api.plugins.compatibility.{owner}")
+        assert legacy.__all__ == implementation.__all__
+        for name in legacy.__all__:
+            assert getattr(legacy, name) is getattr(implementation, name)

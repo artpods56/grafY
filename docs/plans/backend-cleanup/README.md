@@ -47,7 +47,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Group runtime admission, Docker invocation, and artifact staging under application Plugin hosting.
 - [x] Move SQL System cutover/baseline operations to persistence; keep command parsing/files/reporting in operator tooling.
 - [ ] Give the egress broker a dedicated executable application owner.
-- [ ] Relocate old host loader/builder/bindings as explicit compatibility tooling; retain CLI commands and historical policies.
+- [x] Relocate old host loader/builder/bindings as explicit compatibility tooling; retain CLI commands and historical policies.
 - [ ] Remove unused active-runtime host binding/admission state, consistent with ADR 0007.
 
 ## 5. Execution ownership
@@ -744,4 +744,24 @@ flowchart LR
     SQL --> Contracts
     SQL --> Database[Selected installations and revocations]
     Host[Compatibility host-registry validation] --> Contracts
+```
+
+
+### Explicit compatibility owner for historical host deployments
+
+- Moved host deployment loading/byte attestation, deployment-manifest building, and host-registry binding validation to `grafy_api.plugins.compatibility.loader`, `.deployment`, and `.bindings`. Every moved class/function syntax tree is unchanged.
+- Internal operator/composition/test callers use the new owners. The old API modules retain thin explicit re-exports with their original public `__all__` lists, preserving model, function, and exception identity. No duplicate implementation or alternate host execution route was added.
+- Updated current maintenance paths and verification commands while preserving historical implementation evidence. Existing operator command parsing and historical policy validation are unchanged.
+- Added an architecture contract that verifies every declared legacy export resolves to the corresponding compatibility implementation. Focused loader/deployment/CLI/release-pin/architecture validation passed 105 tests. The broader API/architecture run passed 502 tests, including the final export contract.
+- Compatibility implementations and legacy export modules pass targeted Pyright with zero errors or warnings; changed-file Ruff and whitespace checks pass. The extracted API wheel resolves both import surfaces to the same objects and renders help for `plugin build-system-deployment` successfully.
+- Evidence: `/tmp/grafy-compat-system_plugin_loader-before.py`, `/tmp/grafy-compat-system_plugin_deployment-before.py`, `/tmp/grafy-compat-system_host_bindings-before.py`, `/tmp/grafy-host-compat-focused.log`, `/tmp/grafy-host-compat-regression.log`, `/tmp/grafy-host-compat-types.log`, and `/tmp/grafy-host-compat-build.log`.
+- Finding 4 remains open for the dedicated broker executable owner and removal of unused host-binding/admission state from active runtime composition. This move preserves historical tooling; it does not complete that active-state cleanup.
+
+```mermaid
+flowchart LR
+    CLI[Operator commands] --> Compatibility[Historical host compatibility package]
+    Old[Legacy public imports] -. explicit re-exports .-> Compatibility
+    Compatibility --> Attestation[Source and wheel byte attestation]
+    Compatibility --> Bindings[Deployment and host binding validation]
+    Bindings --> Contracts[Core historical binding contracts]
 ```

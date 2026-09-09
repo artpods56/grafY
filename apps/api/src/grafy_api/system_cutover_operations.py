@@ -22,7 +22,7 @@ from grafy_persistence.system_baseline import (
 from grafy_core.domain.system_plugin_inventory import (
     SystemPluginInventory,
 )
-from grafy_api.system_plugin_loader import SystemPluginDeploymentManifest
+from grafy_api.plugins.compatibility.loader import SystemPluginDeploymentManifest
 
 
 class SystemCutoverFileError(RuntimeError):

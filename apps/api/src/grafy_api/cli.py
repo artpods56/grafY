@@ -69,7 +69,9 @@ from grafy_api.system_cutover_operations import (
 from grafy_core.domain.plugin_host_bindings import (
     SystemHostPluginBinding,
 )
-from grafy_api.system_plugin_deployment import SystemPluginDeploymentManifestBuilder
+from grafy_api.plugins.compatibility.deployment import (
+    SystemPluginDeploymentManifestBuilder,
+)
 from grafy_api.system_plugin_inventory import (
     CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH,
     load_system_plugin_inventory,
@@ -80,7 +82,7 @@ from grafy_persistence.system_baseline import (
 from grafy_core.domain.system_plugin_inventory import (
     SystemPluginInventoryError,
 )
-from grafy_api.system_plugin_loader import load_system_plugin_deployment_file
+from grafy_api.plugins.compatibility.loader import load_system_plugin_deployment_file
 from grafy_core.runtime.plugin_loader import WORKSPACE_PLUGIN_LOADER_TARGET
 
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from grafy_api.system_plugin_deployment import (
+from grafy_api.plugins.compatibility.deployment import (
     SystemPluginDeploymentBuildError,
     SystemPluginDeploymentManifestBuilder,
 )
@@ -458,7 +458,7 @@ async def test_builder_ignores_host_distribution_digest_for_isolated_releases(
     release = _release(inventory, 1)
     await _persist_release(database, release)
     monkeypatch.setattr(
-        "grafy_api.system_plugin_deployment.installed_distribution_build_digest",
+        "grafy_api.plugins.compatibility.deployment.installed_distribution_build_digest",
         _mismatched_host_digest,
     )
 

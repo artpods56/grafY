@@ -19,12 +19,12 @@ from grafy_core.plugins import Plugin
 from grafy_workbench.arithmetic import ARITHMETIC
 from grafy_workbench.text import TEXT
 
-from grafy_api import system_plugin_loader
+from grafy_api.plugins.compatibility import loader as system_plugin_loader
 from grafy_core.domain.plugin_host_bindings import (
     LoadedSystemPlugin,
     SystemHostPluginBinding,
 )
-from grafy_api.system_plugin_loader import (
+from grafy_api.plugins.compatibility.loader import (
     SystemPluginDeploymentEntry,
     SystemPluginDeploymentError,
     SystemPluginDeploymentManifest,

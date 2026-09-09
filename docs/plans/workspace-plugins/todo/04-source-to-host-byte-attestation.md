@@ -72,8 +72,8 @@ to completion after the final edit. Treat the code as partial.
 
 ## Owned files
 
-- `apps/api/src/grafy_api/system_plugin_deployment.py`
-- `apps/api/src/grafy_api/system_plugin_loader.py`
+- `apps/api/src/grafy_api/plugins/compatibility/deployment.py`
+- `apps/api/src/grafy_api/plugins/compatibility/loader.py`
 - `tests/unit/api/test_system_plugin_deployment.py`
 - `tests/unit/api/test_system_plugin_loader.py`
 - `infra/docker/api.Dockerfile` only if a real test proves the production image
@@ -127,14 +127,14 @@ uv run pytest -q -o log_cli=false \
   tests/unit/api/test_system_plugin_loader.py
 
 uv run ruff check \
-  apps/api/src/grafy_api/system_plugin_deployment.py \
-  apps/api/src/grafy_api/system_plugin_loader.py \
+  apps/api/src/grafy_api/plugins/compatibility/deployment.py \
+  apps/api/src/grafy_api/plugins/compatibility/loader.py \
   tests/unit/api/test_system_plugin_deployment.py \
   tests/unit/api/test_system_plugin_loader.py
 
 uv run basedpyright \
-  apps/api/src/grafy_api/system_plugin_deployment.py \
-  apps/api/src/grafy_api/system_plugin_loader.py
+  apps/api/src/grafy_api/plugins/compatibility/deployment.py \
+  apps/api/src/grafy_api/plugins/compatibility/loader.py
 ```
 
 ## Definition of done
@@ -145,6 +145,10 @@ uv run basedpyright \
 - A real exact package passes the complete source→wheel→installed→binding chain.
 - Focused tests, Ruff, type checking, and `git diff --check` pass.
 - Implementation evidence is appended below.
+
+Current implementations live under `grafy_api.plugins.compatibility`; old module
+paths retain public re-exports. Historical evidence below keeps the paths used by
+those original runs.
 
 ## Implementation evidence
 

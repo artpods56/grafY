@@ -92,8 +92,8 @@ uv run ruff check \
   libs/persistence/src/grafy_persistence/adapters/repositories.py \
   infra/db/migrations/versions/0020_plugin_release_selections.py \
   libs/persistence/src/grafy_persistence/system_cutover.py \
-  apps/api/src/grafy_api/system_plugin_deployment.py \
-  apps/api/src/grafy_api/system_plugin_loader.py \
+  apps/api/src/grafy_api/plugins/compatibility/deployment.py \
+  apps/api/src/grafy_api/plugins/compatibility/loader.py \
   apps/api/src/grafy_api/execution/coordinator.py \
   apps/api/src/grafy_api/execution/models.py \
   tests/unit/application/test_plugin_release_catalog.py \
@@ -111,8 +111,8 @@ uv run basedpyright \
   libs/core/src/grafy_core/runtime/execution.py \
   libs/persistence/src/grafy_persistence/adapters/repositories.py \
   libs/persistence/src/grafy_persistence/system_cutover.py \
-  apps/api/src/grafy_api/system_plugin_deployment.py \
-  apps/api/src/grafy_api/system_plugin_loader.py \
+  apps/api/src/grafy_api/plugins/compatibility/deployment.py \
+  apps/api/src/grafy_api/plugins/compatibility/loader.py \
   apps/api/src/grafy_api/execution/coordinator.py \
   apps/api/src/grafy_api/execution/models.py
 

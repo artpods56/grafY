@@ -34,7 +34,7 @@ from grafy_api.plugins.runtime.admission import (
     ReleaseExecutionAdmission,
 )
 from grafy_api.plugins.runtime.network_policy import NetworkPolicy
-from grafy_api.system_host_bindings import (
+from grafy_api.plugins.compatibility.bindings import (
     validate_system_host_bindings,
 )
 from grafy_core.domain.plugin_host_bindings import (
