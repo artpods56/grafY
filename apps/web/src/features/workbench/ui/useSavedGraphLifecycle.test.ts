@@ -312,11 +312,16 @@ describe("useSavedGraphLifecycle document ownership", () => {
       checkpoint_revision: 3,
       name: "Live room edit",
       updated_at: "2026-08-13T12:00:00Z",
-      nodes: [{
-        ...checkpointNode,
-        config: { base_url: "https://openrouter.ai/api/v1" },
-      }],
-      edges: [],
+      document: {
+        schema_version: 6,
+        nodes: [{
+            ...checkpointNode,
+          input_plugs: [],
+          artifact_type_bindings: [],
+            config: { base_url: "https://openrouter.ai/api/v1" },
+          }],
+        edges: []
+      }
     };
 
     React.act(() => {
@@ -356,8 +361,11 @@ describe("useSavedGraphLifecycle document ownership", () => {
       checkpoint_revision: 2,
       name: "Checkpoint",
       updated_at: "2026-08-13T12:00:00Z",
-      nodes: [],
-      edges: [],
+      document: {
+        schema_version: 6,
+        nodes: [],
+        edges: []
+      }
     };
     options.roomPersistence = {
       canPersist: true,
@@ -414,6 +422,8 @@ describe("useSavedGraphLifecycle document ownership", () => {
     refreshNodeSecretStatuses.mockClear();
     const checkpointedNode = {
       ...checkpointNode,
+          input_plugs: [],
+          artifact_type_bindings: [],
       config: { base_url: "https://openrouter.ai/api/v1" },
     };
 
@@ -426,8 +436,11 @@ describe("useSavedGraphLifecycle document ownership", () => {
         checkpoint_revision: 2,
         name: "Checkpoint",
         updated_at: "2026-08-13T12:00:00Z",
-        nodes: [checkpointedNode],
-        edges: [],
+        document: {
+          schema_version: 6,
+          nodes: [checkpointedNode],
+          edges: []
+        }
       });
     });
 
@@ -486,9 +499,12 @@ describe("useSavedGraphLifecycle document ownership", () => {
       checkpoint_revision: 1,
       name: "Peer presentation",
       updated_at: "2026-08-13T12:00:00Z",
-      nodes: [],
-      edges: [],
-      presentation: peerPresentation,
+      document: {
+        schema_version: 6,
+        nodes: [],
+        edges: [],
+        presentation: peerPresentation
+      }
     };
     React.act(() => {
       hook.result.current.syncFromCollaborativeHead(peerHeadBeforeCheckpoint);
@@ -503,8 +519,11 @@ describe("useSavedGraphLifecycle document ownership", () => {
         checkpoint_revision: 2,
         name: "Checkpoint",
         updated_at: "2026-08-13T12:00:00Z",
-        nodes: [],
-        edges: [],
+        document: {
+          schema_version: 6,
+          nodes: [],
+          edges: []
+        }
       };
       checkpointContinuation.resolve({
         checkpointHead,

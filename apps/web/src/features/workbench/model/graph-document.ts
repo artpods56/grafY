@@ -1,5 +1,4 @@
 import type {
-  CollaborativeHead,
   CreateSavedGraphRequest,
   SavedGraphDocument,
   SavedGraphEdge,
@@ -22,8 +21,6 @@ export interface AuthoredGraphDocument {
 export type AuthoredGraphNode = SavedGraphNode;
 export type AuthoredGraphEdge = SavedGraphEdge;
 
-type CollaborativeSavedGraphNode = CollaborativeHead["nodes"][number];
-type CollaborativeSavedGraphEdge = CollaborativeHead["edges"][number];
 type SavedGraphEdgeUpdate = Partial<
   Pick<
     AuthoredGraphEdge,
@@ -143,17 +140,6 @@ export function authoredGraphDocument(
   };
 }
 
-/** Project the flattened collaboration response into the canonical document. */
-export function authoredGraphDocumentFromCollaborativeHead(
-  value: Pick<CollaborativeHead, "name" | "nodes" | "edges">,
-): AuthoredGraphDocument {
-  return {
-    name: value.name,
-    nodes: value.nodes.map(projectSavedGraphNode),
-    edges: value.edges.map(projectSavedGraphEdge),
-  };
-}
-
 export function createSavedGraphRequest(
   document: AuthoredGraphDocument,
   presentation?: SavedGraphDocument["presentation"],
@@ -175,14 +161,9 @@ export function createSavedGraphRequest(
 }
 
 export function projectSavedGraphNode(
-  node: SavedGraphNode | CollaborativeSavedGraphNode,
+  node: SavedGraphNode,
 ): SavedGraphNode {
-  let pluginReleasePin: SavedGraphNode["plugin_release_pin"] = null;
-  if ("plugin_release_pin" in node) {
-    pluginReleasePin = node.plugin_release_pin;
-  } else if ("plugin_release" in node) {
-    pluginReleasePin = node.plugin_release;
-  }
+  const pluginReleasePin = node.plugin_release_pin;
   return {
     artifact_type_bindings: (node.artifact_type_bindings ?? []).map(
       projectArtifactTypeBinding,
@@ -240,7 +221,7 @@ function projectArtifactTypeBinding(
 }
 
 export function projectSavedGraphEdge(
-  edge: SavedGraphEdge | CollaborativeSavedGraphEdge,
+  edge: SavedGraphEdge,
 ): SavedGraphEdge {
   return {
     collection_mode: edge.collection_mode ?? "direct",

@@ -294,9 +294,9 @@ export function artifactViewersFromPresentation(
 }
 
 export function presentationFromCollaborativeHead(
-  head: Pick<CollaborativeHead, "presentation">,
+  head: Pick<CollaborativeHead, "document">,
 ): GraphPresentation {
-  const presentation = head.presentation;
+  const presentation = head.document.presentation;
   if (!presentation) return emptyGraphPresentation();
   return {
     viewers: [...(presentation.viewers ?? [])],

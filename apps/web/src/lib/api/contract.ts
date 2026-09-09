@@ -191,16 +191,24 @@ export type SavedGraph =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}"]["get"]["responses"][200]["content"]["application/json"];
 export type UpdateSavedGraphRequest =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}"]["put"]["requestBody"]["content"]["application/json"];
-export type CollaborativeHead =
+export type LegacyCollaborativeHead =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/head"]["get"]["responses"][200]["content"]["application/json"];
+export type CollaborativeHead =
+  paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document"]["get"]["responses"][200]["content"]["application/json"];
 export type SubmitGraphCommandRequest =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/commands"]["post"]["requestBody"]["content"]["application/json"];
-export type SubmitGraphCommandResponse =
+export type LegacySubmitGraphCommandResponse =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/commands"]["post"]["responses"][200]["content"]["application/json"];
 export type CheckpointGraphRequest =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/checkpoint"]["post"]["requestBody"]["content"]["application/json"];
-export type CheckpointGraphResponse =
+export type LegacyCheckpointGraphResponse =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/checkpoint"]["post"]["responses"][200]["content"]["application/json"];
+export type SubmitGraphCommandResponse = Omit<LegacySubmitGraphCommandResponse, "head"> & {
+  readonly head: CollaborativeHead;
+};
+export type CheckpointGraphResponse = Omit<LegacyCheckpointGraphResponse, "head"> & {
+  readonly head: CollaborativeHead;
+};
 export type CopyExactHeadRequest =
   paths["/v1/workspaces/{workspace_id}/graphs/copies"]["post"]["requestBody"]["content"]["application/json"];
 export type CopyExactHeadResponse =

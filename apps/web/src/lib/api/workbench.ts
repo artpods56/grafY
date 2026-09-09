@@ -1,9 +1,11 @@
+import { collaborativeHeadFromLegacy } from "./graph-head";
 import { API_BASE, request } from "./client";
 import type {
   AppliedNodeSecret,
   ApplyNodeSecretRequest,
   CheckpointGraphRequest,
   CheckpointGraphResponse,
+  LegacyCheckpointGraphResponse,
   CollaborativeHead,
   CopyExactHeadRequest,
   CopyExactHeadResponse,
@@ -23,6 +25,7 @@ import type {
   SavedGraph,
   SubmitGraphCommandRequest,
   SubmitGraphCommandResponse,
+  LegacySubmitGraphCommandResponse,
   TableCell,
   TablePage,
   TableSchema,
@@ -376,32 +379,34 @@ export function updateSavedGraph(
 export function getCollaborativeHead(workspaceId: string, graphId: string) {
   return request<CollaborativeHead>(
     "GET",
-    `/v1/workspaces/${encodeURIComponent(workspaceId)}/graphs/${encodeURIComponent(graphId)}/head`,
+    `/v1/workspaces/${encodeURIComponent(workspaceId)}/graphs/${encodeURIComponent(graphId)}/head/document`,
   );
 }
 
-export function submitGraphCommand(
+export async function submitGraphCommand(
   workspaceId: string,
   graphId: string,
   requestBody: SubmitGraphCommandRequest,
-) {
-  return request<SubmitGraphCommandResponse>(
+): Promise<SubmitGraphCommandResponse> {
+  const response = await request<LegacySubmitGraphCommandResponse>(
     "POST",
     `/v1/workspaces/${encodeURIComponent(workspaceId)}/graphs/${encodeURIComponent(graphId)}/commands`,
     { body: requestBody },
   );
+  return { ...response, head: collaborativeHeadFromLegacy(response.head) };
 }
 
-export function checkpointGraph(
+export async function checkpointGraph(
   workspaceId: string,
   graphId: string,
   requestBody: CheckpointGraphRequest,
-) {
-  return request<CheckpointGraphResponse>(
+): Promise<CheckpointGraphResponse> {
+  const response = await request<LegacyCheckpointGraphResponse>(
     "POST",
     `/v1/workspaces/${encodeURIComponent(workspaceId)}/graphs/${encodeURIComponent(graphId)}/checkpoint`,
     { body: requestBody },
   );
+  return { ...response, head: collaborativeHeadFromLegacy(response.head) };
 }
 
 export function copyExactHead(

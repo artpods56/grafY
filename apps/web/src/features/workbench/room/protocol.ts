@@ -1,5 +1,7 @@
+import { collaborativeHeadFromLegacy } from "@/lib/api/graph-head";
 import type {
   CollaborativeHead,
+  LegacyCollaborativeHead,
   SubmitGraphCommandRequest,
   WorkspaceCapability,
 } from "@/lib/api";
@@ -131,6 +133,7 @@ export interface ActiveExecutionSummary {
   readonly cancellable: boolean;
 }
 
+/** Parsed client event: the v1 wire head is normalized to a canonical document. */
 export interface RoomReadyMessage {
   readonly protocol_version: 1;
   readonly type: "room.ready";
@@ -351,7 +354,7 @@ function parseCapabilities(value: unknown): CapabilitySnapshot | null {
   };
 }
 
-function parseHead(value: unknown): CollaborativeHead | null {
+function parseHead(value: unknown): LegacyCollaborativeHead | null {
   if (!isRecord(value)) return null;
   if (
     !isString(value.graph_id) ||
@@ -362,11 +365,13 @@ function parseHead(value: unknown): CollaborativeHead | null {
     !isString(value.name) ||
     !isString(value.updated_at) ||
     !Array.isArray(value.nodes) ||
-    !Array.isArray(value.edges)
+    !Array.isArray(value.edges) ||
+    !value.nodes.every((node) => isRecord(node) && !Array.isArray(node)) ||
+    !value.edges.every((edge) => isRecord(edge) && !Array.isArray(edge))
   ) {
     return null;
   }
-  return value as CollaborativeHead;
+  return value as LegacyCollaborativeHead;
 }
 
 function parseActiveExecution(value: unknown): ActiveExecutionSummary | null {
@@ -447,7 +452,7 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       graph_room_session_id: raw.graph_room_session_id,
       actor,
       capabilities,
-      head,
+      head: collaborativeHeadFromLegacy(head),
       participants: participants as PresenceParticipant[],
       active_execution: activeExecution,
       registry_marker: raw.registry_marker,
@@ -552,7 +557,7 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       protocol_version: 1,
       type: "room.rehydrate",
       reason: "epoch_reset",
-      head,
+      head: collaborativeHeadFromLegacy(head),
     };
   }
   if (type === "execution.active") {

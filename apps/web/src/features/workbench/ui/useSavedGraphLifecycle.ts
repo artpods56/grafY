@@ -31,7 +31,6 @@ import {
 } from "../canvas/artifact-viewer";
 import {
   authoredGraphDocument,
-  authoredGraphDocumentFromCollaborativeHead,
   createSavedGraphRequest,
   type AuthoredGraphDocument,
 } from "../model/graph-document";
@@ -287,7 +286,7 @@ export function useSavedGraphLifecycle({
   const syncFromCollaborativeHead = React.useCallback((
     head: CollaborativeHead,
   ): void => {
-    const responseDocument = authoredGraphDocumentFromCollaborativeHead(head);
+    const responseDocument = authoredGraphDocument(head);
     const responsePresentation = presentationFromCollaborativeHead(head);
     const nextActiveGraph = {
       id: head.graph_id,

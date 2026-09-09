@@ -8,7 +8,6 @@ import {
 import {
   applyGraphCommand,
   authoredGraphDocument,
-  authoredGraphDocumentFromCollaborativeHead,
   createSavedGraphRequest,
   projectSavedGraphNode,
   projectSavedGraphEdge,
@@ -21,7 +20,6 @@ type RoomReplaceDocumentCommand = Extract<
   RoomGraphCommand,
   { readonly kind: "replace_document" }
 >;
-type CollaborativeSavedGraphNode = CollaborativeHead["nodes"][number];
 
 /** Project the REST/UI draft aliases into the exact graph-room wire contract. */
 export function toRoomReplaceDocumentCommand(
@@ -44,13 +42,6 @@ export function toRoomReplaceDocumentCommand(
       },
     },
   };
-}
-
-function toCollaborativeSavedGraphNode(
-  node: AuthoredGraphDocument["nodes"][number],
-): CollaborativeSavedGraphNode {
-  const { plugin_release_pin, ...canonical } = projectSavedGraphNode(node);
-  return { ...canonical, plugin_release: plugin_release_pin };
 }
 
 /** Map a local authoring command to a room submit payload when the shapes align. */
@@ -354,9 +345,12 @@ export function applyRoomCommandToHead(
     return {
       ...head,
       name: command.name,
-      nodes: command.document.nodes.map(toCollaborativeSavedGraphNode),
-      edges: command.document.edges ?? [],
-      presentation: command.document.presentation ?? emptyGraphPresentation(),
+      document: {
+        schema_version: 6,
+        nodes: command.document.nodes.map(projectSavedGraphNode),
+        edges: command.document.edges,
+        presentation: command.document.presentation ?? emptyGraphPresentation(),
+      },
       collaboration_sequence: sequence,
     };
   }
@@ -364,7 +358,7 @@ export function applyRoomCommandToHead(
   if (command.kind === "replace_presentation") {
     return {
       ...head,
-      presentation: command.presentation,
+      document: { ...head.document, presentation: command.presentation },
       collaboration_sequence: sequence,
     };
   }
@@ -380,12 +374,15 @@ export function applyRoomCommandToHead(
     return {
       ...head,
       collaboration_sequence: sequence,
-      presentation: {
-        ...presentation,
-        viewers: (presentation.viewers ?? []).map((viewer) => {
-          const position = positions.get(viewer.id);
-          return position ? { ...viewer, position } : viewer;
-        }),
+      document: {
+        ...head.document,
+        presentation: {
+          ...presentation,
+          viewers: presentation.viewers.map((viewer) => {
+            const position = positions.get(viewer.id);
+            return position ? { ...viewer, position } : viewer;
+          }),
+        },
       },
     };
   }
@@ -401,12 +398,15 @@ export function applyRoomCommandToHead(
     return {
       ...head,
       collaboration_sequence: sequence,
-      presentation: {
-        ...presentation,
-        annotations: (presentation.annotations ?? []).map((annotation) => {
-          const position = positions.get(annotation.id);
-          return position ? { ...annotation, position } : annotation;
-        }),
+      document: {
+        ...head.document,
+        presentation: {
+          ...presentation,
+          annotations: presentation.annotations.map((annotation) => {
+            const position = positions.get(annotation.id);
+            return position ? { ...annotation, position } : annotation;
+          }),
+        },
       },
     };
   }
@@ -415,35 +415,30 @@ export function applyRoomCommandToHead(
     return {
       ...head,
       collaboration_sequence: sequence,
-      nodes: head.nodes.map((node) =>
-        node.id === command.node_id
-          ? { ...node, input_plugs: [...command.input_plugs] }
-          : node,
-      ),
+      document: {
+        ...head.document,
+        nodes: head.document.nodes.map((node) =>
+          node.id === command.node_id
+            ? { ...node, input_plugs: [...command.input_plugs] }
+            : node,
+        ),
+      },
     };
   }
 
-  const base = authoredGraphDocumentFromCollaborativeHead(head);
+  const base = authoredGraphDocument(head);
   const local = toLocalGraphCommand(command, base);
-  if (!local) {
-    return { ...head, collaboration_sequence: sequence };
-  }
+  if (!local) return { ...head, collaboration_sequence: sequence };
 
   const nextDocument = applyGraphCommand(base, local);
-  const request = createSavedGraphRequest(nextDocument);
   let presentation = presentationFromCollaborativeHead(head);
   if (local.kind === "remove_nodes") {
-    presentation = prunePresentationLinks(
-      presentation,
-      new Set(local.node_ids),
-    );
+    presentation = prunePresentationLinks(presentation, new Set(local.node_ids));
   }
+  const request = createSavedGraphRequest(nextDocument, presentation);
   return {
     ...head,
-    name: request.name,
-    nodes: request.document.nodes.map(toCollaborativeSavedGraphNode),
-    edges: request.document.edges,
-    presentation,
+    ...request,
     collaboration_sequence: sequence,
   };
 }

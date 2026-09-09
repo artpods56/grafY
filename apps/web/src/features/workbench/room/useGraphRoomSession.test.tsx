@@ -1,3 +1,5 @@
+import { collaborativeHeadFromLegacy } from "@/lib/api/graph-head";
+import type { LegacyCollaborativeHead } from "@/lib/api";
 // @vitest-environment jsdom
 
 import * as React from "react";
@@ -48,7 +50,7 @@ class FakeWebSocket {
   }
 }
 
-function readyMessage(graphId: string): RoomReadyMessage {
+function readyMessage(graphId: string): Omit<RoomReadyMessage, "head"> & { head: LegacyCollaborativeHead } {
   return {
     protocol_version: 1,
     type: "room.ready",
@@ -232,7 +234,7 @@ describe("useGraphRoomSession", () => {
     React.act(() => {
       effectiveHead = latest?.reconcileCheckpointHead(
         {
-          ...readyMessage("graph-1").head,
+          ...collaborativeHeadFromLegacy(readyMessage("graph-1").head),
           checkpoint_sequence: 4,
           checkpoint_revision: 2,
         },
@@ -244,8 +246,8 @@ describe("useGraphRoomSession", () => {
       collaboration_sequence: 5,
       checkpoint_sequence: 4,
       checkpoint_revision: 2,
-      presentation: {
-        viewers: [expect.objectContaining({ id: "peer-viewer" })],
+      document: {
+        presentation: { viewers: [expect.objectContaining({ id: "peer-viewer" })] },
       },
     });
     expect(latest?.head).toEqual(effectiveHead);

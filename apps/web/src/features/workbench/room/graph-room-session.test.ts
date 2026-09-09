@@ -1,3 +1,4 @@
+import { collaborativeHeadFromLegacy } from "@/lib/api/graph-head";
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -176,7 +177,7 @@ describe("graphRoomWebSocketUrl", () => {
 });
 
 describe("shouldReplaceCollaborativeHead", () => {
-  const base = {
+  const base = collaborativeHeadFromLegacy({
     graph_id: GRAPH_ID,
     room_epoch: ROOM_EPOCH,
     collaboration_sequence: 5,
@@ -186,7 +187,7 @@ describe("shouldReplaceCollaborativeHead", () => {
     updated_at: "2026-08-07T10:00:00Z",
     nodes: [],
     edges: [],
-  };
+  });
 
   it("accepts newer same-epoch snapshots and rejects older ones", () => {
     expect(shouldReplaceCollaborativeHead(null, base)).toBe(true);
@@ -200,7 +201,7 @@ describe("shouldReplaceCollaborativeHead", () => {
       shouldReplaceCollaborativeHead(base, {
         ...base,
         collaboration_sequence: 4,
-        presentation: { viewers: [], links: [], bindings: [] },
+        document: { ...base.document, presentation: { viewers: [], links: [], bindings: [], annotations: [] } },
       }),
     ).toBe(false);
   });
@@ -793,9 +794,9 @@ describe("GraphRoomSession", () => {
       },
     });
     expect(session.getHead()?.collaboration_sequence).toBe(5);
-    expect(session.getHead()?.presentation?.viewers).toHaveLength(1);
+    expect(session.getHead()?.document.presentation?.viewers).toHaveLength(1);
 
-    session.replaceHead({
+    session.replaceHead(collaborativeHeadFromLegacy({
       graph_id: GRAPH_ID,
       room_epoch: ROOM_EPOCH,
       collaboration_sequence: 4,
@@ -806,10 +807,10 @@ describe("GraphRoomSession", () => {
       nodes: [],
       edges: [],
       presentation: { viewers: [], links: [], bindings: [] },
-    });
+    }));
 
     expect(session.getHead()?.collaboration_sequence).toBe(5);
-    expect(session.getHead()?.presentation?.viewers).toHaveLength(1);
+    expect(session.getHead()?.document.presentation?.viewers).toHaveLength(1);
   });
 
   it("keeps a rehydrated epoch when an old-epoch checkpoint response arrives late", async () => {
@@ -893,7 +894,7 @@ describe("GraphRoomSession", () => {
       head: resetHead,
     });
 
-    const effectiveHead = session.reconcileCheckpointHead({
+    const effectiveHead = session.reconcileCheckpointHead(collaborativeHeadFromLegacy({
       graph_id: GRAPH_ID,
       room_epoch: ROOM_EPOCH,
       collaboration_sequence: 5,
@@ -909,10 +910,10 @@ describe("GraphRoomSession", () => {
         bindings: [],
         annotations: [],
       },
-    }, ROOM_EPOCH);
+    }), ROOM_EPOCH);
 
-    expect(effectiveHead).toEqual(resetHead);
-    expect(session.getHead()).toEqual(resetHead);
+    expect(effectiveHead).toEqual(collaborativeHeadFromLegacy(resetHead));
+    expect(session.getHead()).toEqual(collaborativeHeadFromLegacy(resetHead));
   });
 
   it("pauses drain on head_conflict until replaceHead, and still applies peer accept", async () => {
@@ -1158,8 +1159,8 @@ describe("GraphRoomSession", () => {
       head,
     });
 
-    expect(session.getHead()).toEqual(head);
-    expect(onRehydrate).toHaveBeenCalledWith(head);
+    expect(session.getHead()).toEqual(collaborativeHeadFromLegacy(head));
+    expect(onRehydrate).toHaveBeenCalledWith(collaborativeHeadFromLegacy(head));
   });
 
   it.each([

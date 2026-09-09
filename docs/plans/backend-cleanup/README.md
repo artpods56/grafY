@@ -83,7 +83,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Replace manual node/edge/presentation conversion trees with canonical serialization and explicit pin-name compatibility.
 - [ ] Remove repeated graph validators and conversion logic without losing aliases.
 - [x] Consolidate client room node/edge projection under the canonical authored-document model.
-- [ ] Migrate clients toward collaboration metadata plus canonical document.
+- [x] Migrate clients toward collaboration metadata plus canonical document.
 - [x] Make the versioned compatibility decision explicit before retiring flattened public fields and mirrored schemas; see [graph transport migration](graph-transport-migration.md).
 - [x] Add an opt-in canonical head read endpoint and regenerate OpenAPI/TypeScript contracts without changing existing responses.
 - [ ] Verify graph round trips, old/new transport compatibility, generated clients, and OpenAPI.
@@ -1023,3 +1023,12 @@ flowchart LR
 - Evidence: `/tmp/grafy-cleanup-fence-before.log`, `/tmp/grafy-cleanup-fence-api.log`, `/tmp/grafy-cleanup-fence-persistence.log`, `/tmp/grafy-cleanup-fence-postgres.log`, `/tmp/grafy-cleanup-fence-types.log`, and `/tmp/grafy-cleanup-fence-build.log`.
 - Recorded the cleanup-confirmation contract beside the execution owner. Proposed addition to the error-handling rules: when cleanup can leave executable resources live, preserve the operation's maintenance fence until cleanup is confirmed, even if the application task reports a terminal failure. [R23: Maintain The Rules]
 - Finding 8's canonical graph transport/client migration and the final requirement-by-requirement audit remain open. This batch does not complete the full goal.
+
+
+## Canonical client head state, 2026-09-09
+
+- HTTP head reads now use `/head/document`. The API client and room parser normalize legacy command, checkpoint, ready, and rehydrate heads through `collaborativeHeadFromLegacy` before they enter shared state.
+- Room replay, checkpoint reconciliation, presentation access, and editor hydration use `head.document`. Removed the legacy head-to-editor wrapper and reverse pin conversion from replay. The canonical generated response type owns the shared contract. [R08: Model-Owned Serialization]
+- Existing HTTP response schemas and room protocol v1 payloads remain supported. This is an internal client migration; a future wire change still requires explicit versioning or negotiation.
+- Verification: 607 frontend tests across 90 files pass, full TypeScript check passes, and the production Next build passes. Transport tests cover canonical HTTP reads and legacy command/checkpoint/room normalization with exact pins, presentation, uncheckpointed metadata, optional collections, and malformed graph members. No manual browser smoke test was performed in this batch.
+- Finding 8 remains open for backend internal canonical transport reuse, repeated validator cleanup, and full compatibility verification. Final whole-goal audit gates remain open.

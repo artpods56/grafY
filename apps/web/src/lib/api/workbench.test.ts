@@ -118,8 +118,7 @@ describe("collaboration HTTP API", () => {
             checkpoint_revision: 1,
             name: "Draft",
             updated_at: "2026-08-07T00:00:00Z",
-            nodes: [],
-            edges: [],
+            document: { schema_version: 6, nodes: [], edges: [] },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
@@ -165,7 +164,7 @@ describe("collaboration HTTP API", () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      "/api/v1/workspaces/workspace%2F1/graphs/graph%2F1/head",
+      "/api/v1/workspaces/workspace%2F1/graphs/graph%2F1/head/document",
       expect.objectContaining({ method: "GET" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(

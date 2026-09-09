@@ -34,8 +34,11 @@ const head: CollaborativeHead = {
   checkpoint_revision: 1,
   name: "Demo",
   updated_at: "2026-08-07T12:00:00Z",
-  nodes: document.nodes,
-  edges: [],
+  document: {
+    schema_version: 6,
+    nodes: document.nodes,
+    edges: []
+  }
 };
 
 const scopedNode: AuthoredGraphDocument["nodes"][number] = {
@@ -134,7 +137,7 @@ describe("room-command-bridge", () => {
     const local = toLocalGraphCommand(room);
     if (local?.kind !== "add_node") throw new Error("Expected local add_node");
     const replay = applyRoomCommandToHead(head, room, 4);
-    const replayedNode = replay.nodes.find((candidate) => candidate.id === node.id);
+    const replayedNode = replay.document.nodes.find((candidate) => candidate.id === node.id);
 
     node.config.nested.threshold = 99;
     node.position.x = 999;
@@ -151,8 +154,8 @@ describe("room-command-bridge", () => {
     Object.assign(room.node.config ?? {}, { nested: { threshold: 77 } });
     expect(local.node.config).toEqual({ nested: { threshold: 3 } });
     expect(replayedNode?.config).toEqual({ nested: { threshold: 3 } });
-    expect(replayedNode).toHaveProperty("plugin_release", scopedNode.plugin_release_pin);
-    expect(replayedNode).not.toHaveProperty("plugin_release_pin");
+    expect(replayedNode).toHaveProperty("plugin_release_pin", scopedNode.plugin_release_pin);
+    expect(replayedNode).not.toHaveProperty("plugin_release");
   });
 
   it("maps scoped pins through replace_document in both directions", () => {
@@ -199,16 +202,16 @@ describe("room-command-bridge", () => {
     expect(applyRoomCommandToHead(head, room!, 8)).toMatchObject({
       name: "Replacement",
       collaboration_sequence: 8,
-      nodes: [
+      document: { nodes: [
         {
           id: "scoped",
-          plugin_release: {
+          plugin_release_pin: {
             scope: "system",
             slug: "reports",
             revision: 11,
           },
         },
-      ],
+      ] },
     });
   });
 
@@ -322,8 +325,11 @@ describe("room-command-bridge", () => {
     };
     const scopedHead: CollaborativeHead = {
       ...head,
-      nodes: [scopedNode, ...head.nodes],
-      presentation,
+      document: {
+        ...head.document,
+        nodes: [scopedNode, ...head.document.nodes],
+        presentation
+      }
     };
     const room = toRoomGraphCommand(
       {
@@ -341,13 +347,13 @@ describe("room-command-bridge", () => {
 
     const next = applyRoomCommandToHead(scopedHead, room, 9);
 
-    expect(next.nodes[0]?.plugin_release).toEqual({
+    expect(next.document.nodes[0]?.plugin_release_pin).toEqual({
       scope: "system",
       slug: "reports",
       revision: 12,
     });
-    expect(next.nodes[1]).toMatchObject(head.nodes[0]!);
-    expect(next.presentation).toEqual(presentation);
+    expect(next.document.nodes[1]).toMatchObject(head.document.nodes[0]!);
+    expect(next.document.presentation).toEqual(presentation);
     expect(next.collaboration_sequence).toBe(9);
   });
 
@@ -387,7 +393,7 @@ describe("room-command-bridge", () => {
       4,
     );
     expect(next.collaboration_sequence).toBe(4);
-    expect(next.nodes[0]?.position).toEqual({ x: 99, y: 11 });
+    expect(next.document.nodes[0]?.position).toEqual({ x: 99, y: 11 });
   });
 
   it("applies replace_document onto the collaborative head", () => {
@@ -407,8 +413,7 @@ describe("room-command-bridge", () => {
     expect(next).toMatchObject({
       name: "Replaced",
       collaboration_sequence: 5,
-      nodes: [],
-      edges: [],
+      document: { nodes: [], edges: [] },
     });
   });
 
@@ -420,9 +425,9 @@ describe("room-command-bridge", () => {
     if (!add || add.kind !== "add_node") throw new Error("Expected add_node");
 
     const afterAdd = applyRoomCommandToHead(head, add, 4);
-    expect(afterAdd.nodes[1]).toMatchObject({
+    expect(afterAdd.document.nodes[1]).toMatchObject({
       id: "scoped",
-      plugin_release: {
+      plugin_release_pin: {
         scope: "system",
         slug: "reports",
         revision: 11,
@@ -437,9 +442,9 @@ describe("room-command-bridge", () => {
       },
       5,
     );
-    expect(afterDuplicate.nodes[2]).toMatchObject({
+    expect(afterDuplicate.document.nodes[2]).toMatchObject({
       id: "scoped-copy",
-      plugin_release: {
+      plugin_release_pin: {
         scope: "system",
         slug: "reports",
         revision: 11,
@@ -468,7 +473,7 @@ describe("room-command-bridge", () => {
       },
       4,
     );
-    expect(withViewer.presentation?.viewers).toHaveLength(1);
+    expect(withViewer.document.presentation?.viewers).toHaveLength(1);
     const moved = applyRoomCommandToHead(
       withViewer,
       {
@@ -477,6 +482,6 @@ describe("room-command-bridge", () => {
       },
       5,
     );
-    expect(moved.presentation?.viewers?.[0]?.position).toEqual({ x: 8, y: 9 });
+    expect(moved.document.presentation?.viewers?.[0]?.position).toEqual({ x: 8, y: 9 });
   });
 });
