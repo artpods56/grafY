@@ -92,7 +92,8 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 - [ ] Share dependency-light persisted spatial contracts in core while preserving stored schema and HTTP defaults.
 - [x] Share feature-collection payload and vector/raster projection fields while preserving stricter GIS producer validation.
-- [ ] Consolidate remaining spatial references, styles, map documents, and manifest contracts with explicit compatibility differences.
+- [x] Move persisted spatial styles and default rendering to one core owner while retaining required HTTP response fields.
+- [ ] Consolidate remaining spatial references, map documents, and manifest contracts with explicit compatibility differences.
 - [x] Share feature-collection reconstruction and logical-byte integrity checks.
 - [ ] Keep GDAL, network requests, tile serving, and HTTP render responses with deployment owners.
 - [ ] Verify existing stored fixtures, API schemas, and GIS round trips.
@@ -842,4 +843,22 @@ flowchart LR
     Reader --> Models[Shared fields and caller validation models]
     Reader --> Bytes[Verified canonical bytes and payload]
     Writer[GIS feature writer] --> Models
+```
+
+
+### Core-owned persisted spatial styles and rendering defaults
+
+- Moved the eight persisted GIS style classes, category scalar type, style unions, hexadecimal color contract, and raster-resampling choices into `grafy_core.spatial_contracts`. GIS models retain explicit aliases to the same class/type objects. Each moved class has an identical syntax tree and produces identical default JSON. [R01: Direct Ownership]
+- API vector/raster default rendering now validates the corresponding core default style through the existing attribute-aware response model. Removed its independent default-value constructors. Default instances remain independent, so changing one response does not affect subsequent defaults.
+- Retained explicit API response field requirements, validators, and permissive versus strict string behavior. Persisted producer defaults and fully populated HTTP response schemas are distinct contracts; sharing the stored owner does not make required HTTP fields optional. [R08: Model-Owned Serialization]
+- Artifact/GIS/architecture regression passed 190 tests. Compared all 57 API/GIS schemas and OpenAPI against the original pre-spatial definitions with the actual GIS worktree source loaded; they remain identical. Core/GIS typing reports zero errors, and Ruff/diff checks pass.
+- Built core/API wheels and verified style alias identity, unchanged default JSON, required response fields, independent instances, all 16 real-storage reader contracts, and unchanged OpenAPI using their extracted contents.
+- Evidence: `/tmp/grafy-styles-api-before.py`, `/tmp/grafy-styles-gis-before.py`, `/tmp/grafy-spatial-styles-verification.log`, `/tmp/grafy-spatial-styles-regression.log`, `/tmp/grafy-spatial-styles-types.log`, and `/tmp/grafy-spatial-styles-wheel.log`.
+- Finding 10 remains open for reference/map/manifest contract consolidation. No runtime GIS imports were added to API or core; the core contract remains independent of the published Plugin.
+
+```mermaid
+flowchart LR
+    Core[Persisted core spatial styles] --> GIS[GIS producer aliases]
+    Core --> Defaults[API default rendering]
+    Defaults --> HTTP[Required HTTP response fields]
 ```

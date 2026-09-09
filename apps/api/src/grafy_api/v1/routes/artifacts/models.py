@@ -17,6 +17,8 @@ from pydantic import (
 
 from grafy_core.artifacts import ArtifactExportFormat, JsonObject
 from grafy_core.spatial_contracts import (
+    GeoVectorStyle as StoredGeoVectorStyle,
+    GeoRasterStyle as StoredGeoRasterStyle,
     GeoBounds as GeoBounds,
     GeoFeatureCollectionPayload as GeoFeatureCollectionPayload,
     GeoFeatureCollectionMetadata,
@@ -431,31 +433,7 @@ class GeoVectorStyle(ApiResponse):
 
     @classmethod
     def default(cls) -> "GeoVectorStyle":
-        return cls(
-            kind="vector",
-            fill=GeoFillStyle(enabled=True, color="#2563eb", opacity=0.45),
-            line=GeoLineStyle(
-                enabled=True,
-                color="#1d4ed8",
-                opacity=1.0,
-                width=1.5,
-            ),
-            outline=GeoLineStyle(
-                enabled=True,
-                color="#1d4ed8",
-                opacity=1.0,
-                width=1.5,
-            ),
-            point=GeoPointStyle(
-                enabled=True,
-                color="#dc2626",
-                opacity=1.0,
-                radius=5.0,
-                stroke_color="#ffffff",
-                stroke_width=1.0,
-            ),
-            label=None,
-        )
+        return cls.model_validate(StoredGeoVectorStyle())
 
 
 class GeoCategorizedPointStyle(ApiResponse):
@@ -510,16 +488,7 @@ class GeoRasterStyle(ApiResponse):
 
     @classmethod
     def default(cls) -> "GeoRasterStyle":
-        return cls(
-            kind="raster",
-            opacity=1.0,
-            brightness_min=0.0,
-            brightness_max=1.0,
-            contrast=0.0,
-            saturation=0.0,
-            hue=0.0,
-            resampling="linear",
-        )
+        return cls.model_validate(StoredGeoRasterStyle())
 
 
 GeoLayerStyle = Annotated[
