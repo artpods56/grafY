@@ -39,6 +39,7 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 - [x] Move System revocation's SQL consistency rule from API workflow to the release transaction and persistence adapter.
 - [x] Fence durable queue admission against the System revocation drain check and commit.
 - [x] Include transient executions in System revocation and cutover fencing through durable activity markers; see [transient fence design and status](transient-execution-fence.md).
+- [x] Verify startup ownership, orphan-cleanup ordering, marker retention on failure, and safe owner-disabled behavior.
 - [ ] Prove active execution/revocation races cannot violate that fence.
 
 ## 4. Plugin ownership and compatibility
@@ -972,3 +973,14 @@ flowchart LR
 - Finding 3's transient activity registration substep is complete. Keep the active execution/revocation race substep open for the remaining end-to-end admission/preflight/revocation and startup ownership/orphan-recovery scenarios. Finding 8 and final completion gates also remain open.
 
 - Proposed maintenance rule: include every execution class in durable activity before preparation starts, release activity only after guest cleanup, and require exclusive owner authority before stale recovery. A process-local capacity counter cannot prove a database maintenance drain. [R23: Maintain The Rules]
+
+
+### Owner-authorized startup recovery
+
+- Startup integration testing reproduced an ordering defect: with the owner guard disabled, global Docker orphan cleanup ran before transient recovery refused to clear markers. The failing regression observed the destructive callback despite absent owner authority.
+- API startup now invokes orphan cleanup only while holding its owner lease. An explicit boolean becomes true only after cleanup returns successfully; transient recovery consumes that confirmation. Merely constructing the runtime no longer implies cleanup occurred. [R42: Errors Carry Context]
+- Five real lifespan scenarios cover successful recovery, disabled ownership, disabled Plugin runtime, orphan-cleanup failure, and a competing owner lease. They inspect real SQL markers before cleanup and after failure, assert readiness is never exposed on unsafe recovery, and verify owner locks are released. A sixth regression confirms owner-disabled startup with no markers still serves while never reaping other workers. [R43: Tests Are Behavioral Contracts]
+- API/architecture regression passed 522 tests. Focused lifespan/startup tests passed 13 tests both from source and from the extracted API wheel. The wheel preserves OpenAPI exactly. Startup and changed-test typing report zero errors; Ruff and diff checks pass.
+- Evidence: `/tmp/grafy-recovery-baseline.log`, `/tmp/grafy-recovery-regression.log`, `/tmp/grafy-recovery-focused.log`, `/tmp/grafy-recovery-main-types.log`, `/tmp/grafy-recovery-types.log`, and `/tmp/grafy-recovery-wheel.log`.
+- Proposed recovery rule: verify exclusive authority before invoking a cleanup operation that can terminate workers; refusing the later database update is too late. Track successful cleanup explicitly instead of inferring it from a configured runtime. [R23: Maintain The Rules]
+- Startup ownership/orphan-recovery verification is complete for the supported single-owner deployment. Finding 3 still needs the end-to-end admission/preflight/revocation race proof; graph transport migration and final completion gates also remain open.

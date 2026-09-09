@@ -25,11 +25,14 @@ Startup clears stale activity only after obtaining the single-owner lease and
 successfully completing Plugin orphan recovery. If either condition is unavailable,
 startup refuses to clear markers and reports their IDs. This includes restart with
 stale markers while the Plugin runtime is disabled. It is a fail-closed operational
-condition, not automatic recovery for every configuration.
+condition, not automatic recovery for every configuration. Without an owner lease,
+startup never runs global orphan cleanup. If there are no stale markers, that
+configuration may still start without deleting other workers.
 
 Lifecycle, rollback, owner-bound removal, fail-closed deletion, additive migration,
 and both database lock orderings have passing tests. End-to-end admission versus
-revocation and startup ownership/orphan-recovery integration proofs remain open.
+revocation integration proof remains open. Startup lifespan tests verify successful
+recovery, disabled owner/runtime, failed orphan cleanup, and lease contention.
 The single-owner deployment assumption still applies; this does not add multi-owner
 or multi-host coordination.
 

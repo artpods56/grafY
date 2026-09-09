@@ -89,6 +89,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 bucket=resolved_settings.storage_bucket,
             )
             plugin_runtime: DockerPluginRuntime | None = None
+            orphan_cleanup_confirmed = False
             network_policy = resolved_settings.resolved_network_policy
             if resolved_settings.plugin_runtime_enabled:
                 seccomp_profile = resolved_settings.resolved_plugin_seccomp_profile
@@ -125,7 +126,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     network_policy=network_policy,
                 )
                 await plugin_runtime.check_ready()
-                await plugin_runtime.recover_orphans()
+                if owner_lease is not None:
+                    await plugin_runtime.recover_orphans()
+                    orphan_cleanup_confirmed = True
                 for profile in network_policy.profiles:
                     logger.info(
                         "network_profile plane=%s name=%s mode=%s digest=%s",
@@ -186,7 +189,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             try:
                 await components.execution_history.recover_transient(
                     exclusive_owner=owner_lease is not None,
-                    orphan_cleanup_confirmed=plugin_runtime is not None,
+                    orphan_cleanup_confirmed=orphan_cleanup_confirmed,
                 )
                 await components.execution_history.interrupt_started()
                 await components.execution_manager.recover_queued()

@@ -163,8 +163,9 @@ cancellation, nested execution, and materialization each have behavioral tests.
 System revocation and cutover fence both durable queue rows and transient activity
 markers. Transient activity is registered before preparation and removed after task
 cleanup. Startup only clears stale markers with exclusive ownership and confirmed
-Plugin orphan cleanup; otherwise it retains them and refuses startup. End-to-end
-execution/revocation and recovery proofs remain open in the cleanup plan.
+Plugin orphan cleanup; otherwise it retains them and refuses startup. Without the
+owner lease, global orphan cleanup is skipped. Startup recovery has lifespan tests;
+end-to-end execution/revocation proof remains open in the cleanup plan.
 
 ## Artifact contracts, reads, and infrastructure
 

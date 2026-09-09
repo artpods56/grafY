@@ -1,4 +1,7 @@
 from pathlib import Path
+from unittest.mock import AsyncMock
+from grafy_api.plugins.runtime.docker import DockerPluginRuntime
+from grafy_api.app_state import get_resources
 
 from asgi_lifespan import LifespanManager
 from pydantic import SecretStr
@@ -72,3 +75,21 @@ async def test_configured_host_deployment_manifest_is_ignored(
         assert admission is not None
         assert admission.isolated_adapter_available is False
         assert admission.runtime_profile is None
+
+
+@pytest.mark.asyncio
+async def test_runtime_startup_without_owner_does_not_reap_other_workers(
+    startup_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    orphan_recovery = AsyncMock(
+        side_effect=AssertionError("No authority to reap workers")
+    )
+    monkeypatch.setattr(DockerPluginRuntime, "check_ready", AsyncMock())
+    monkeypatch.setattr(DockerPluginRuntime, "recover_orphans", orphan_recovery)
+    monkeypatch.setattr(DockerPluginRuntime, "shutdown", AsyncMock())
+    application = create_app(
+        startup_settings.model_copy(update={"plugin_runtime_enabled": True})
+    )
+    async with LifespanManager(application):
+        assert get_resources(application).workbench.plugin_runtime is not None
+    orphan_recovery.assert_not_awaited()

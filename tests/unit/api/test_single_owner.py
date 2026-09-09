@@ -1,6 +1,9 @@
 """Phase 7 one-API-owner startup fence."""
 
 from pathlib import Path
+from uuid import uuid4
+from grafy_api.execution.history import ExecutionHistoryService
+from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from unittest.mock import AsyncMock
 
 import pytest
@@ -125,3 +128,86 @@ async def test_create_app_startup_acquires_owner_lease(
         get_resources(app)
     contested.acquire()
     contested.release()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "recovered",
+        "owner_disabled",
+        "runtime_disabled",
+        "orphan_failure",
+        "lease_contended",
+    ],
+)
+async def test_startup_recovers_transient_activity_only_after_exclusive_orphan_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    workspace = tmp_path / "workbench"
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'recovery.sqlite3'}"
+    database = create_database(database_url)
+    async with database.engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+    history = ExecutionHistoryService(SqlAlchemyUnitOfWork(database.sessions), None)
+    execution_id, owner_id = uuid4(), uuid4()
+    await history.register_transient(uuid4(), execution_id, owner_id)
+    phases: list[str] = []
+
+    async def recover_orphans(runtime: DockerPluginRuntime) -> None:
+        phases.append("orphans")
+        async with SqlAlchemyUnitOfWork(database.sessions) as transaction:
+            assert [
+                row.execution_id
+                for row in await transaction.execution_history.list_transient()
+            ] == [execution_id]
+        if mode == "orphan_failure":
+            raise RuntimeError("orphan cleanup failed")
+
+    monkeypatch.setattr(DockerPluginRuntime, "check_ready", AsyncMock())
+    monkeypatch.setattr(DockerPluginRuntime, "recover_orphans", recover_orphans)
+    monkeypatch.setattr(DockerPluginRuntime, "shutdown", AsyncMock())
+    settings = Settings(
+        _env_file=None,  # pyright: ignore[reportCallIssue]
+        workspace=workspace,
+        database_url=SecretStr(database_url),
+        command_hmac_key=SecretStr("test-transient-recovery-key"),
+        require_single_api_owner=mode != "owner_disabled",
+        plugin_runtime_enabled=mode != "runtime_disabled",
+    )
+    app = create_app(settings)
+    lock = ApiOwnerLease(workspace / ".grafy-api-owner.lock")
+    if mode == "lease_contended":
+        lock.acquire()
+    try:
+        if mode == "recovered":
+            async with LifespanManager(app):
+                phases.append("ready")
+                get_resources(app)
+                async with SqlAlchemyUnitOfWork(database.sessions) as transaction:
+                    assert await transaction.execution_history.list_transient() == ()
+            assert phases == ["orphans", "ready"]
+        else:
+            expected = {
+                "owner_disabled": "exclusive API ownership",
+                "runtime_disabled": "confirmed Plugin orphan cleanup",
+                "orphan_failure": "orphan cleanup failed",
+                "lease_contended": "Another Grafy API owner",
+            }[mode]
+            with pytest.raises(RuntimeError, match=expected):
+                async with LifespanManager(app):
+                    pytest.fail("Unsafe recovery must not serve requests")
+            async with SqlAlchemyUnitOfWork(database.sessions) as transaction:
+                assert [
+                    row.execution_id
+                    for row in await transaction.execution_history.list_transient()
+                ] == [execution_id]
+            assert phases == (["orphans"] if mode == "orphan_failure" else [])
+        with pytest.raises(RuntimeError, match="not initialized"):
+            get_resources(app)
+    finally:
+        if mode == "lease_contended":
+            lock.release()
+        await database.dispose()
+    lock.acquire()
+    lock.release()
