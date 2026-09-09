@@ -18,7 +18,7 @@ boundary.
 
 | Term | Meaning |
 | --- | --- |
-| `User` | Internal account provisioned only after a valid OIDC callback. Profile email/display name are not authorization keys and never link identities. A verified email domain may grant membership in a configured shared Workspace. |
+| `User` | Internal account provisioned only after a valid OIDC callback. Profile email/display name are not authorization keys and never link identities. An issuer-asserted email domain may grant membership in a configured shared Workspace. |
 | `OidcIdentity` | Exact `(issuer, subject)` link from the configured OpenID Connect provider to one `User`. |
 | `Workspace` | Sole collaboration and tenancy boundary. `personal` has one owner and no other members; `shared` holds `viewer` / `editor` / `owner` memberships. |
 | `WorkspaceMembership` | Active or revoked role of one user in one workspace, with a monotonic authorization version. |

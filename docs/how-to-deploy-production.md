@@ -31,7 +31,7 @@ sudo install -m 600 -o "$USER" \
 ```
 
 Set the existing OIDC, public-origin, encryption, HMAC, and storage values in
-`/opt/graphy/.deployment/grafy.env`. To put every verified `@ihpan.edu.pl`
+`/opt/graphy/.deployment/grafy.env`. To put every `@ihpan.edu.pl`
 login in one shared Workspace, add:
 
 ```dotenv

@@ -264,7 +264,7 @@ class Workspace:
 
 @dataclass(frozen=True)
 class OidcDomainWorkspaceGrant:
-    """Deployment grant: a verified email domain joins one shared Workspace."""
+    """Deployment grant: an issuer-asserted email domain joins one shared Workspace."""
 
     email_domain: str
     workspace_slug: str

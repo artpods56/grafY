@@ -118,8 +118,9 @@ The tenant, sharing boundary, and owner of graphs and workspace resources.
 
 There is no local workspace kind or bootstrap workspace. A new OIDC identity
 creates a personal workspace. Shared workspaces are created by authenticated
-users, or by a deployment-configured verified-email-domain grant that adds
-membership after the OIDC user exists.
+users, or by a deployment-configured email-domain grant that adds membership
+after the OIDC user exists. The grant uses the email asserted by the configured
+issuer; it does not require the IdP `email_verified` claim.
 
 “Team” and “organization” are product-language synonyms for a shared
 workspace. They do not introduce additional aggregates.

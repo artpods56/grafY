@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     )
     auth_cookie_secure: bool = True
     oidc_callback_path: str = "/api/v1/auth/oidc/callback"
-    # Verified email domains that receive shared Workspace membership on login.
+    # Issuer-asserted email domains that receive shared Workspace membership on login.
     # Each grant is `domain:slug` or `domain:slug:name`.
     oidc_domain_workspaces: Annotated[
         tuple[OidcDomainWorkspaceGrant, ...],

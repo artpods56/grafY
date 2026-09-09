@@ -1103,11 +1103,7 @@ class IdentityService:
         unit_of_work: IdentityUnitOfWorkPort,
         user: User,
     ) -> None:
-        if (
-            not self._domain_workspace_grants
-            or not user.email_verified
-            or user.normalized_email is None
-        ):
+        if not self._domain_workspace_grants or user.normalized_email is None:
             return
         for grant in self._domain_workspace_grants:
             if not grant.matches_normalized_email(user.normalized_email):

@@ -238,7 +238,7 @@ async def test_oidc_provisioning_creates_only_a_personal_workspace(
 
 
 @pytest.mark.asyncio
-async def test_verified_ihpan_login_joins_the_shared_workspace(
+async def test_ihpan_login_joins_the_shared_workspace_even_when_email_is_unverified(
     database: Database,
 ) -> None:
     service = _service(database, domain_workspace_grants=(_IHPAN_GRANT,))
@@ -247,7 +247,7 @@ async def test_verified_ihpan_login_joins_the_shared_workspace(
         subject="ihpan-researcher",
         email="anna.nowak@ihpan.edu.pl",
         display_name="Anna Nowak",
-        email_verified=True,
+        email_verified=False,
     )
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
@@ -275,17 +275,10 @@ async def test_verified_ihpan_login_joins_the_shared_workspace(
 
 
 @pytest.mark.asyncio
-async def test_unverified_or_foreign_email_does_not_join_the_shared_workspace(
+async def test_foreign_email_does_not_join_the_shared_workspace(
     database: Database,
 ) -> None:
     service = _service(database, domain_workspace_grants=(_IHPAN_GRANT,))
-    unverified = await service.provision_oidc_identity(
-        issuer="https://issuer.example.test",
-        subject="unverified-ihpan",
-        email="pending@ihpan.edu.pl",
-        display_name="Pending",
-        email_verified=False,
-    )
     outsider = await service.provision_oidc_identity(
         issuer="https://issuer.example.test",
         subject="outsider",
@@ -302,9 +295,6 @@ async def test_unverified_or_foreign_email_does_not_join_the_shared_workspace(
     )
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        unverified_workspaces = await unit_of_work.identity.list_workspaces_for_user(
-            unverified.user.id
-        )
         outsider_workspaces = await unit_of_work.identity.list_workspaces_for_user(
             outsider.user.id
         )
@@ -315,7 +305,6 @@ async def test_unverified_or_foreign_email_does_not_join_the_shared_workspace(
             "ihpan"
         )
 
-    assert all(workspace.kind is WorkspaceKind.PERSONAL for workspace in unverified_workspaces)
     assert all(workspace.kind is WorkspaceKind.PERSONAL for workspace in outsider_workspaces)
     assert all(workspace.kind is WorkspaceKind.PERSONAL for workspace in lookalike_workspaces)
     assert shared is None
