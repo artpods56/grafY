@@ -106,6 +106,56 @@ loads accessible materialized outputs for that exact graph revision. These
 runtime records are separate from the saved graph's workflow structure and
 canvas layout.
 
+## Run browser interaction tests
+
+Install the Chromium build that matches Playwright:
+
+```bash
+cd apps/web
+npm exec playwright install chromium
+```
+
+Run the browser tests in headless mode:
+
+```bash
+npm run test:e2e
+```
+
+To watch the browser interactions, use headed mode:
+
+```bash
+npm run test:e2e:headed
+```
+
+The tests open the real Next.js workbench and send trusted browser input to
+React Flow. They use Chromium with desktop, phone, and tablet emulation. They do
+not cover a physical iOS device or Safari. `e2e/workbench.fixture.ts` replaces
+the API boundary with fixed session, workspace, graph-list, invitation, and
+node-registry responses. An unexpected API request fails with status 501
+instead of reaching a local API process.
+
+The canvas interaction contract differs by input type:
+
+- In the touch projects, one finger pans on the canvas background and two
+  fingers zoom from the canvas background. Neither gesture creates a React Flow
+  selection rectangle.
+- On desktop, a primary-button drag selects and a right-button drag pans.
+- Node dragging and port connection gestures keep their existing behavior.
+
+The suite does not cover a pinch that starts with both fingers on the same node.
+
+The popup suite checks a 24-node catalog, search and filter retention when
+returning from details, visible Add actions, Canvas lab's Advanced disclosure,
+schema navigation, and dialog bounds. It also checks node insertion and port
+popups in a short landscape viewport. Run it separately with:
+
+```bash
+npm run test:e2e -- e2e/workbench-popups.spec.ts
+```
+
+Playwright writes layout screenshots, failure videos and traces, and the HTML report to
+`../../output/playwright/` from this directory.
+
 ## Browser-local preferences
 
 The frontend uses `localStorage` only for device-local presentation settings:

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { Grid3x3, RotateCcw, X } from "lucide-react";
+import { ChevronDown, Grid3x3, RotateCcw, X } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { useCanvasGridSettings } from "../canvas/canvas-grid-settings";
@@ -31,21 +31,19 @@ const s = stylex.create({
     },
     left: {
       default: "auto",
-      "@media (max-width: 620px)":
-        "calc(12px + env(safe-area-inset-left, 0px))",
     },
     width: {
-      default: "min(280px, calc(100% - 26px))",
-      "@media (max-width: 620px)": "auto",
+      default: "min(272px, calc(100% - 26px))",
+      "@media (max-width: 620px)": "min(296px, calc(100% - 24px))",
     },
     maxHeight: {
-      default: "calc(100% - 96px)",
+      default: "min(560px, calc(100% - 96px))",
       "@media (max-width: 620px)":
-        "calc(100% - 92px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))",
+        "min(480px, calc(100% - 92px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)))",
     },
     display: "grid",
-    gap: "10px",
-    padding: "12px",
+    gap: "9px",
+    padding: "10px",
     overflowY: "auto",
     overscrollBehaviorY: "contain",
     borderWidth: 1,
@@ -78,6 +76,34 @@ const s = stylex.create({
     fontSize: tokens.fontSizeXs,
     color: tokens.colorMuted,
     lineHeight: 1.35,
+  },
+  advanced: {
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorDivider,
+  },
+  advancedSummary: {
+    minHeight: {
+      default: "34px",
+      "@media (max-width: 620px)": "44px",
+    },
+    display: "flex",
+    listStyle: "none",
+    alignItems: "center",
+    gap: "7px",
+    color: tokens.colorMuted,
+    cursor: "pointer",
+    fontSize: tokens.fontSizeSm,
+    fontWeight: 650,
+  },
+  advancedChevron: {
+    marginLeft: "auto",
+    color: tokens.colorSubtle,
+  },
+  advancedBody: {
+    display: "grid",
+    gap: "7px",
+    paddingBlock: "2px 4px",
   },
   icon: {
     color: tokens.colorAccent,
@@ -325,17 +351,12 @@ export function CanvasGridSettingsPanel({
   const exampleHeight = lengthFromSpan(exampleRows, settings.cellSize);
 
   return (
-    <aside
-      aria-label="Canvas lab"
-      {...stylex.props(s.panel)}
-    >
+    <aside aria-label="Canvas lab" {...stylex.props(s.panel)}>
       <header {...stylex.props(s.header)}>
         <Grid3x3 size={16} {...stylex.props(s.icon)} />
         <div {...stylex.props(s.titleBlock)}>
           <h2 {...stylex.props(s.title)}>Canvas lab</h2>
-          <p {...stylex.props(s.subtitle)}>
-            Experimental canvas settings — stored in this browser only.
-          </p>
+          <p {...stylex.props(s.subtitle)}>Grid and snapping controls</p>
         </div>
         <button
           type="button"
@@ -355,20 +376,6 @@ export function CanvasGridSettingsPanel({
           <X size={14} />
         </button>
       </header>
-
-      <div {...stylex.props(s.section)}>
-        <Toggle
-          label="Render visible elements only"
-          checked={settings.onlyRenderVisibleElements}
-          onChange={(onlyRenderVisibleElements) =>
-            patchSettings({ onlyRenderVisibleElements })
-          }
-        />
-        <p {...stylex.props(s.hint)}>
-          Reduces work on large canvases by unmounting offscreen nodes and
-          edges. Temporary table and map view state can reset when you pan away.
-        </p>
-      </div>
 
       <div {...stylex.props(s.section)}>
         <Toggle
@@ -423,54 +430,6 @@ export function CanvasGridSettingsPanel({
         </p>
       </div>
 
-      <div {...stylex.props(s.section)}>
-        <Toggle
-          label="Snap position"
-          checked={settings.snapPosition}
-          disabled={!settings.enabled}
-          onChange={(snapPosition) => patchSettings({ snapPosition })}
-        />
-        <Toggle
-          label="Snap size"
-          checked={settings.snapSize}
-          disabled={!settings.enabled}
-          onChange={(snapSize) => patchSettings({ snapSize })}
-        />
-        <Toggle
-          label="Snap while dragging"
-          checked={settings.snapWhileDragging}
-          disabled={!settings.enabled || !settings.snapPosition}
-          onChange={(snapWhileDragging) =>
-            patchSettings({ snapWhileDragging })
-          }
-        />
-        <Toggle
-          label="Snap while resizing"
-          checked={settings.snapWhileResizing}
-          disabled={!settings.enabled || !settings.snapSize}
-          onChange={(snapWhileResizing) =>
-            patchSettings({ snapWhileResizing })
-          }
-        />
-        <Toggle
-          label="Workflow corner resize"
-          checked={settings.allowWorkflowCornerResize}
-          onChange={(allowWorkflowCornerResize) =>
-            patchSettings({ allowWorkflowCornerResize })
-          }
-        />
-        <p {...stylex.props(s.hint)}>
-          Workflow nodes grow from controls (e.g. textarea width and height).
-          Artifact Viewers keep a corner handle. Hold Alt to temporarily bypass
-          snap.
-        </p>
-        {bypassSnap ? (
-          <p role="status" {...stylex.props(s.bypass)}>
-            Alt held — free placement
-          </p>
-        ) : null}
-      </div>
-
       <div {...stylex.props(s.actions)}>
         <button
           type="button"
@@ -487,6 +446,72 @@ export function CanvasGridSettingsPanel({
           {selectedCount ? ` (${selectedCount})` : ""}
         </button>
       </div>
+
+      <details {...stylex.props(s.advanced)}>
+        <summary {...stylex.props(s.advancedSummary)}>
+          Advanced
+          <ChevronDown
+            aria-hidden="true"
+            size={14}
+            {...stylex.props(s.advancedChevron)}
+          />
+        </summary>
+        <div {...stylex.props(s.advancedBody)}>
+          <Toggle
+            label="Render visible elements only"
+            checked={settings.onlyRenderVisibleElements}
+            onChange={(onlyRenderVisibleElements) =>
+              patchSettings({ onlyRenderVisibleElements })
+            }
+          />
+          <p {...stylex.props(s.hint)}>
+            Improves large-canvas performance. Offscreen view state may reset.
+          </p>
+          <Toggle
+            label="Snap position"
+            checked={settings.snapPosition}
+            disabled={!settings.enabled}
+            onChange={(snapPosition) => patchSettings({ snapPosition })}
+          />
+          <Toggle
+            label="Snap size"
+            checked={settings.snapSize}
+            disabled={!settings.enabled}
+            onChange={(snapSize) => patchSettings({ snapSize })}
+          />
+          <Toggle
+            label="Snap while dragging"
+            checked={settings.snapWhileDragging}
+            disabled={!settings.enabled || !settings.snapPosition}
+            onChange={(snapWhileDragging) =>
+              patchSettings({ snapWhileDragging })
+            }
+          />
+          <Toggle
+            label="Snap while resizing"
+            checked={settings.snapWhileResizing}
+            disabled={!settings.enabled || !settings.snapSize}
+            onChange={(snapWhileResizing) =>
+              patchSettings({ snapWhileResizing })
+            }
+          />
+          <Toggle
+            label="Workflow corner resize"
+            checked={settings.allowWorkflowCornerResize}
+            onChange={(allowWorkflowCornerResize) =>
+              patchSettings({ allowWorkflowCornerResize })
+            }
+          />
+          <p {...stylex.props(s.hint)}>
+            Hold Alt while moving or resizing for free placement.
+          </p>
+          {bypassSnap ? (
+            <p role="status" {...stylex.props(s.bypass)}>
+              Alt held — free placement
+            </p>
+          ) : null}
+        </div>
+      </details>
     </aside>
   );
 }

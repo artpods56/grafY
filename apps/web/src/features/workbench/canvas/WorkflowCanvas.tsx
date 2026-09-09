@@ -109,6 +109,7 @@ export function WorkflowCanvas({
 }: WorkflowCanvasProps) {
   const { resolved } = useTheme();
   const compactCanvas = useMediaQuery("(max-width: 720px)");
+  const backgroundTouch = React.useRef(false);
   const renderedEdges = React.useMemo(
     () => edges.map((edge) => ({
       ...edge,
@@ -144,6 +145,48 @@ export function WorkflowCanvas({
         panOnScroll
         panOnDrag={[1, 2]}
         selectionOnDrag
+        onPointerDownCapture={(event) => {
+          // React Flow starts box selection on primary pointerdown, including
+          // touch. Its pan/zoom handler uses touchstart separately, so let that
+          // own background touches without intercepting node or port gestures.
+          backgroundTouch.current =
+            event.pointerType === "touch" &&
+            event.target instanceof Element &&
+            event.target.classList.contains("react-flow__pane");
+          if (backgroundTouch.current) {
+            event.stopPropagation();
+          }
+        }}
+        onClickCapture={(event) => {
+          // In selection mode React Flow relies on pointerdown/up for pane
+          // clicks. Preserve the native touch tap after skipping pointerdown;
+          // pan/zoom prevents the compatibility click once a finger moves.
+          if (
+            !backgroundTouch.current ||
+            !(event.target instanceof Element) ||
+            !event.target.classList.contains("react-flow__pane")
+          ) {
+            return;
+          }
+          backgroundTouch.current = false;
+          onPaneClick?.();
+          const selectedNodes = nodes.filter((node) => node.selected);
+          const selectedEdges = edges.filter((edge) => edge.selected);
+          if (selectedNodes.length) {
+            onNodesChange(selectedNodes.map((node) => ({
+              id: node.id,
+              type: "select",
+              selected: false,
+            })));
+          }
+          if (selectedEdges.length) {
+            onEdgesChange(selectedEdges.map((edge) => ({
+              id: edge.id,
+              type: "select",
+              selected: false,
+            })));
+          }
+        }}
         multiSelectionKeyCode="Shift"
         zoomOnDoubleClick={false}
         nodesDraggable={editable}

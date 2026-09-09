@@ -8,6 +8,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
     "lint": "eslint",
     "typecheck": "tsc --noEmit --incremental false",
     "generate:api:schema": "uv run --directory ../.. --package grafy-api python -m grafy_api.openapi apps/web/openapi/grafy.json",
@@ -28,6 +30,7 @@
     "swr": "^2.4.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@stylexjs/babel-plugin": "^0.19.0",
     "@stylexjs/postcss-plugin": "^0.19.0",
     "@types/node": "^20",

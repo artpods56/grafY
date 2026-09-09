@@ -35,7 +35,10 @@ const SCHEMA = {
           type: "object",
           properties: {
             kind: { const: "raster_scan", type: "string" },
-            artifact: { type: "object", properties: { id: { type: "string" } } },
+            artifact: {
+              type: "object",
+              properties: { id: { type: "string" } },
+            },
           },
         },
       ],
@@ -70,6 +73,15 @@ describe("SchemaDrill", () => {
     expect(container.textContent).toContain("title");
     expect(container.textContent).toContain("source");
     expect(container.textContent).toContain("wms | raster_scan");
+    expect(
+      container.querySelector('[aria-label="Payload schema path"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[aria-label="Payload schema fields"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[aria-current="page"]')?.textContent).toBe(
+      "GeoMapLayer",
+    );
     await unmount();
   });
 
@@ -101,6 +113,9 @@ describe("SchemaDrill", () => {
       false,
     );
     expect(container.textContent).toContain("artifact");
+    expect(container.querySelector('[aria-current="page"]')?.textContent).toBe(
+      "raster_scan",
+    );
     await unmount();
   });
 

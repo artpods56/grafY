@@ -12,6 +12,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - After changing node dimensions, handles, edge SVG styles, or canvas layout,
   verify at least one real pointer-drag connection in the rendered workbench.
   Compilation and programmatic edge insertion do not prove that wiring works.
+- After changing canvas pointer/touch handlers or React Flow interaction options,
+  run the Playwright gesture suite described in `README.md`. Cover touch pan,
+  pinch, cancellation, blank-pane tap deselection, node dragging, port wiring,
+  and desktop mouse selection. A resized viewport alone does not test touch.
 <!-- END:grafy-workbench-rules -->
 
 <!-- BEGIN:web-app-conventions -->
@@ -52,6 +56,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
   height, or responsive frame constraints inline.
 - Use `useMediaQuery` for reactive JavaScript breakpoint state. Keep ARIA and
   behavior breakpoints aligned with the corresponding CSS media query.
+- After changing popup geometry, run the Playwright popup suite at phone,
+  tablet, desktop, and short landscape sizes. Verify the popup stays inside the
+  viewport and its primary action remains visible. A width cap alone does not
+  prevent an anchored popover from being positioned offscreen.
 
 ## CSS
 

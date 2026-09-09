@@ -42,15 +42,18 @@ function canvasOverlayProps(props: ReturnType<typeof stylex.props>) {
 }
 
 const s = stylex.create({
+  positioner: { zIndex: 90 },
   popup: {
-    width: "440px",
+    width: "min(360px, calc(100vw - 24px))",
+    maxHeight: "calc(100dvh - 32px)",
+    display: "grid",
+    gridTemplateRows: "auto minmax(0, 1fr)",
     overflow: "hidden",
-    zIndex: 50,
   },
   header: {
     display: "grid",
-    gap: "6px",
-    padding: "16px 18px 14px",
+    gap: "4px",
+    padding: "11px 14px 10px",
   },
   contract: {
     color: tokens.colorSubtle,
@@ -64,22 +67,28 @@ const s = stylex.create({
     lineHeight: 1.45,
   },
   section: {
-    padding: "14px 18px 18px",
+    minHeight: 0,
+    display: "grid",
+    gridTemplateRows: "auto minmax(0, 1fr)",
+    padding: "10px 14px 14px",
+    overflow: "hidden",
     borderTopWidth: 1,
     borderTopStyle: "solid",
     borderTopColor: tokens.colorDivider,
   },
   tree: {
+    minHeight: 0,
     display: "grid",
     gap: "1px",
-    maxHeight: "420px",
+    maxHeight: "360px",
     overflowY: "auto",
+    overscrollBehaviorY: "contain",
   },
   row: {
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    minHeight: "24px",
+    minHeight: "26px",
     width: "100%",
     padding: "3px 8px",
     borderWidth: 0,
@@ -90,6 +99,10 @@ const s = stylex.create({
     textAlign: "left",
   },
   rowButton: {
+    minHeight: {
+      default: "28px",
+      "@media (max-width: 620px)": "44px",
+    },
     cursor: "pointer",
     backgroundColor: {
       default: "transparent",
@@ -123,14 +136,20 @@ const s = stylex.create({
     display: "flex",
     flexWrap: "wrap",
     gap: "6px",
-    marginBottom: "14px",
-    paddingBottom: "12px",
+    marginBottom: "10px",
+    paddingBottom: "8px",
     alignItems: "center",
     borderBottomWidth: 1,
     borderBottomStyle: "solid",
     borderBottomColor: tokens.colorDivider,
   },
   crumb: {
+    minHeight: {
+      default: "auto",
+      "@media (max-width: 620px)": "44px",
+    },
+    display: "inline-flex",
+    alignItems: "center",
     padding: 0,
     borderWidth: 0,
     backgroundColor: "transparent",
@@ -198,9 +217,10 @@ export function SchemaDrill({
 
   return (
     <>
-      <div {...stylex.props(s.crumbs)}>
+      <nav aria-label="Payload schema path" {...stylex.props(s.crumbs)}>
         <button
           type="button"
+          aria-current={path.length === 0 ? "page" : undefined}
           {...stylex.props(s.crumb, path.length === 0 ? s.crumbCurrent : null)}
           onClick={() => setPath([])}
         >
@@ -211,6 +231,7 @@ export function SchemaDrill({
             <span {...stylex.props(s.crumbSep)}>/</span>
             <button
               type="button"
+              aria-current={index === crumbs.length - 1 ? "page" : undefined}
               {...stylex.props(
                 s.crumb,
                 index === crumbs.length - 1 ? s.crumbCurrent : null,
@@ -221,8 +242,12 @@ export function SchemaDrill({
             </button>
           </React.Fragment>
         ))}
-      </div>
-      <div {...canvasOverlayProps(stylex.props(s.tree))}>
+      </nav>
+      <div
+        role="region"
+        aria-label="Payload schema fields"
+        {...canvasOverlayProps(stylex.props(s.tree))}
+      >
         {rows.map((node) =>
           node.expandable ? (
             <button
@@ -288,9 +313,16 @@ export function PortTypePopover({
       {children}
       <Popover.Portal>
         <Popover.Positioner
+          {...stylex.props(s.positioner)}
           side={port.direction === "input" ? "left" : "right"}
           align="start"
           sideOffset={PORT_POPOVER_OFFSET}
+          collisionAvoidance={{
+            side: "shift",
+            align: "shift",
+            fallbackAxisSide: "none",
+          }}
+          collisionPadding={12}
         >
           <Popover.Popup
             {...canvasOverlayProps(stylex.props(overlay.popup, s.popup))}
@@ -300,9 +332,7 @@ export function PortTypePopover({
                 {shape === "many" ? `list[${contract}]` : contract}
               </span>
               {port.description ? (
-                <span {...stylex.props(s.description)}>
-                  {port.description}
-                </span>
+                <span {...stylex.props(s.description)}>{port.description}</span>
               ) : null}
             </header>
             <section {...stylex.props(s.section)}>

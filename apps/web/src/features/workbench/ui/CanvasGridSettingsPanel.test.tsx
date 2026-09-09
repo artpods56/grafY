@@ -48,7 +48,7 @@ afterEach(() => {
 });
 
 describe("CanvasGridSettingsPanel", () => {
-  it("exposes the offscreen rendering optimization as an opt-in switch", () => {
+  it("keeps primary controls visible and groups detailed controls under Advanced", () => {
     const container = document.createElement("div");
     const root = createRoot(container);
     roots.push(root);
@@ -65,10 +65,28 @@ describe("CanvasGridSettingsPanel", () => {
     const toggle = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Render visible elements only"]',
     );
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-    expect(container.textContent).toContain(
-      "Temporary table and map view state can reset",
+    const advanced = toggle?.closest("details");
+    expect(container.textContent).toContain("Grid and snapping controls");
+    expect(
+      container.querySelector('button[aria-label="Enable snapping"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Show grid lines"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('input[aria-label="Grid cell size"]'),
+    ).not.toBeNull();
+    expect(container.querySelector("summary")?.textContent).toContain(
+      "Advanced",
     );
+    expect(advanced?.open).toBe(false);
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+    expect(container.textContent).toContain("Offscreen view state may reset");
+
+    React.act(() => {
+      container.querySelector("summary")?.click();
+    });
+    expect(advanced?.open).toBe(true);
 
     React.act(() => {
       toggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  devIndicators: { position: "top-right" },
   allowedDevOrigins: ["127.0.0.1", "192.168.1.45"],
   output: "standalone",
   async rewrites() {

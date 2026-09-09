@@ -20,10 +20,7 @@ const s = stylex.create({
     left: "50%",
     top: "50%",
     transform: "translate(-50%, -50%)",
-    borderRadius: {
-      default: tokens.radiusLg,
-      "@media (max-width: 620px)": 0,
-    },
+    borderRadius: tokens.radiusLg,
     backgroundColor: tokens.colorSurface,
     border: `1px solid ${tokens.colorBorder}`,
     display: "flex",
@@ -31,15 +28,12 @@ const s = stylex.create({
     overflow: "hidden",
     maxWidth: {
       default: "92vw",
-      "@media (max-width: 620px)": "100vw",
+      "@media (max-width: 620px)": "calc(100vw - 24px)",
     },
-    height: {
-      default: "auto",
-      "@media (max-width: 620px)": "100dvh",
-    },
+    height: "auto",
     maxHeight: {
       default: "85vh",
-      "@media (max-width: 620px)": "100dvh",
+      "@media (max-width: 620px)": "calc(100dvh - 32px)",
     },
   },
   sizeCompact: {
@@ -63,15 +57,15 @@ const s = stylex.create({
   sizeWide: {
     width: {
       default: "min(960px, 94vw)",
-      "@media (max-width: 620px)": "100vw",
+      "@media (max-width: 620px)": "calc(100vw - 24px)",
     },
     maxWidth: {
       default: "94vw",
-      "@media (max-width: 620px)": "100vw",
+      "@media (max-width: 620px)": "calc(100vw - 24px)",
     },
     maxHeight: {
       default: "90vh",
-      "@media (max-width: 620px)": "100dvh",
+      "@media (max-width: 620px)": "calc(100dvh - 32px)",
     },
   },
   sizeViewport: {
@@ -86,22 +80,25 @@ const s = stylex.create({
     },
     maxHeight: "none",
   },
+  sizeCatalog: {
+    width: "min(1040px, calc(100vw - 24px))",
+    maxWidth: "none",
+    height: "min(680px, calc(100dvh - 40px))",
+    maxHeight: "none",
+  },
   header: {
     paddingTop: {
       default: tokens.space4,
-      "@media (max-width: 620px)":
-        `calc(${tokens.space4} + env(safe-area-inset-top, 0px))`,
+      "@media (max-width: 620px)": `calc(${tokens.space4} + env(safe-area-inset-top, 0px))`,
     },
     paddingRight: {
       default: tokens.space6,
-      "@media (max-width: 620px)":
-        `calc(60px + env(safe-area-inset-right, 0px))`,
+      "@media (max-width: 620px)": `calc(60px + env(safe-area-inset-right, 0px))`,
     },
     paddingBottom: tokens.space2,
     paddingLeft: {
       default: tokens.space4,
-      "@media (max-width: 620px)":
-        `calc(${tokens.space4} + env(safe-area-inset-left, 0px))`,
+      "@media (max-width: 620px)": `calc(${tokens.space4} + env(safe-area-inset-left, 0px))`,
     },
   },
   title: {
@@ -119,18 +116,15 @@ const s = stylex.create({
     paddingTop: tokens.space2,
     paddingRight: {
       default: tokens.space4,
-      "@media (max-width: 620px)":
-        `calc(${tokens.space4} + env(safe-area-inset-right, 0px))`,
+      "@media (max-width: 620px)": `calc(${tokens.space4} + env(safe-area-inset-right, 0px))`,
     },
     paddingBottom: {
       default: tokens.space4,
-      "@media (max-width: 620px)":
-        `calc(${tokens.space4} + env(safe-area-inset-bottom, 0px))`,
+      "@media (max-width: 620px)": `calc(${tokens.space4} + env(safe-area-inset-bottom, 0px))`,
     },
     paddingLeft: {
       default: tokens.space4,
-      "@media (max-width: 620px)":
-        `calc(${tokens.space4} + env(safe-area-inset-left, 0px))`,
+      "@media (max-width: 620px)": `calc(${tokens.space4} + env(safe-area-inset-left, 0px))`,
     },
     overflow: "auto",
     flex: 1,
@@ -139,13 +133,11 @@ const s = stylex.create({
     position: "absolute",
     top: {
       default: tokens.space3,
-      "@media (max-width: 620px)":
-        `calc(${tokens.space1} + env(safe-area-inset-top, 0px))`,
+      "@media (max-width: 620px)": `calc(${tokens.space1} + env(safe-area-inset-top, 0px))`,
     },
     right: {
       default: tokens.space3,
-      "@media (max-width: 620px)":
-        `calc(${tokens.space1} + env(safe-area-inset-right, 0px))`,
+      "@media (max-width: 620px)": `calc(${tokens.space1} + env(safe-area-inset-right, 0px))`,
     },
     display: "inline-flex",
     alignItems: "center",
@@ -169,23 +161,23 @@ const s = stylex.create({
 export const Dialog = DialogPrimitive.Root;
 
 export type DialogContentSize =
-  | "compact"
-  | "default"
-  | "form"
-  | "wide"
-  | "viewport";
+  "compact" | "default" | "form" | "wide" | "catalog" | "viewport";
 
 const dialogSizeStyles = {
   compact: s.sizeCompact,
   default: s.sizeDefault,
   form: s.sizeForm,
   wide: s.sizeWide,
+  catalog: s.sizeCatalog,
   viewport: s.sizeViewport,
 } satisfies Record<DialogContentSize, stylex.StyleXStyles>;
 
 export const DialogContent = React.forwardRef<
   HTMLDivElement,
-  Omit<React.ComponentPropsWithoutRef<typeof DialogPrimitive.Popup>, "className"> & {
+  Omit<
+    React.ComponentPropsWithoutRef<typeof DialogPrimitive.Popup>,
+    "className"
+  > & {
     className?: string;
     size?: DialogContentSize;
   }
@@ -204,10 +196,7 @@ export const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close
-        {...stylex.props(s.close)}
-        aria-label="Close"
-      >
+      <DialogPrimitive.Close {...stylex.props(s.close)} aria-label="Close">
         <X size={16} />
       </DialogPrimitive.Close>
     </DialogPrimitive.Popup>
@@ -220,13 +209,19 @@ export function DialogHeader({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cx(stylex.props(s.header).className, className)} {...props} />
+    <div
+      className={cx(stylex.props(s.header).className, className)}
+      {...props}
+    />
   );
 }
 
 export const DialogTitle = React.forwardRef<
   HTMLHeadingElement,
-  Omit<React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>, "className"> & {
+  Omit<
+    React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>,
+    "className"
+  > & {
     className?: string;
   }
 >(({ className, ...props }, ref) => (
@@ -240,7 +235,10 @@ DialogTitle.displayName = "DialogTitle";
 
 export const DialogDescription = React.forwardRef<
   HTMLParagraphElement,
-  Omit<React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>, "className"> & {
+  Omit<
+    React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>,
+    "className"
+  > & {
     className?: string;
   }
 >(({ className, ...props }, ref) => (

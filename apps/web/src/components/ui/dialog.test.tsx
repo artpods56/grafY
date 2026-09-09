@@ -15,9 +15,7 @@ vi.mock("@stylexjs/stylex", () => ({
     ) as Styles,
   defineVars: <Variables,>(variables: Variables) => variables,
   props: (
-    ...styles: Array<
-      { __styleName?: string } | null | false | undefined
-    >
+    ...styles: Array<{ __styleName?: string } | null | false | undefined>
   ) => ({
     className: styles
       .flatMap((style) =>
@@ -52,6 +50,7 @@ describe("DialogContent", () => {
     ["default", "sizeDefault"],
     ["form", "sizeForm"],
     ["wide", "sizeWide"],
+    ["catalog", "sizeCatalog"],
     ["viewport", "sizeViewport"],
   ])("composes the shared frame with the %s size", async (size, sizeStyle) => {
     const container = document.createElement("div");
