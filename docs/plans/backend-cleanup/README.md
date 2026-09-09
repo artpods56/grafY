@@ -144,9 +144,9 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 - [x] Replace tests enforcing route-folder service placement with dependency rules for application/runtime, HTTP transport, and ADR 0007 hosting.
 - [x] Update stale backend architecture reference as actual ownership changes land; revised for current owners and explicit remaining migration work.
-- [ ] Preserve real distinctions: release/installation/selection, Module/Template, coordinator/node/scalar runtime, raw/validated cache, Local/S3, and host/guest validation.
-- [ ] For every audit item, inspect final source and relevant behavioral evidence before checking completion.
-- [ ] Complete broad regression and packaging checks with every remaining limitation recorded. No whole-goal completion while any required item is unresolved.
+- [x] Preserve real distinctions: release/installation/selection, Module/Template, coordinator/node/scalar runtime, raw/validated cache, Local/S3, and host/guest validation.
+- [x] For every audit item, inspect final source and relevant behavioral evidence before checking completion.
+- [x] Complete broad regression and packaging checks with every remaining limitation recorded. No whole-goal completion while any required item is unresolved.
 
 ## Batch log
 
@@ -1078,3 +1078,12 @@ The final evidence review is tracked in [final-audit.md](final-audit.md). Produc
 The production frontend passed a real API/WebSocket smoke test with isolated SQLite state. Created and saved a text graph, added a viewer and preview link, verified uncheckpointed hydration and two-tab room replay, then checkpointed and reloaded. UI/API assertions confirmed the configuration and presentation survived and that canonical/saved documents matched at revision 2, sequence/checkpoint sequence 8. The reloaded page had no console errors. The dedicated browser and temporary servers were stopped, and authentication state was removed. Details and screenshot location are in `final-audit.md`.
 
 Browser verification is complete. Overall completion remains open for the final packaging/CLI and optional/platform verification reconciliation.
+
+
+## Final verification complete, 2026-09-09
+
+All implementation findings and completion gates are checked, with final evidence and baseline/platform limits recorded in `final-audit.md`. Eight wheels built offline; all 271 Python files match source, all eight package imports resolve to extracted wheels, CLI contracts match, and 123 packaged tests passed across the run and targeted fixture correction.
+
+The all-PostgreSQL pass exposed a real mismatch in new migration 0027: timezone-aware DDL versus runtime UTCDateTime storage. Corrected the migration before merge. The full persistence run had 239 passes; all 32 migration checks passed on fresh PostgreSQL retry, covering the remaining case. The historical deployment test fixture now locates its repository assets independently of installed package location and passes in both source and wheel runs.
+
+The final audit explicitly retains the five baseline-reproduced macOS native subprocess exclusions, existing typing debt, readiness shutdown warning, and repository-input requirement for historical tooling. None is counted as a passing check. No cleanup implementation remains open. The worktree is ready for review; no push, merge or deployment was performed.

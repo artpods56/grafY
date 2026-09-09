@@ -9,7 +9,6 @@ from grafy_api.plugins.compatibility.deployment import (
     SystemPluginDeploymentManifestBuilder,
 )
 from grafy_api.system_plugin_inventory import (
-    CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH,
     load_system_plugin_inventory,
 )
 from grafy_core.domain.system_plugin_inventory import (
@@ -43,7 +42,8 @@ from grafy_plugin_llm import LLM
 from tests.support.identity import create_schema
 
 
-REPOSITORY_ROOT = CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH.parents[1]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+TEST_INVENTORY_PATH = REPOSITORY_ROOT / "plugins" / "system-plugins.toml"
 
 
 def _mismatched_host_digest(_distribution_name: str) -> str:
@@ -249,7 +249,7 @@ async def deployment_database(
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'deployment.sqlite3'}"
     await create_schema(database_url)
     database = create_database(database_url)
-    inventory = load_system_plugin_inventory(CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH)
+    inventory = load_system_plugin_inventory(TEST_INVENTORY_PATH)
     yield database, inventory
     await database.dispose()
 

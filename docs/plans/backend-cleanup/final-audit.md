@@ -82,3 +82,40 @@ Inspected the screenshot at local artifact `output/playwright/final-graph-round-
 Closed only the dedicated Playwright session and stopped its API/frontend/proxy supervisor. All children exited and the protected browser-state file was removed. The disposable database and non-secret logs remain under `/tmp/grafy-final-browser-9pdzueir` as local evidence. No main-checkout database or running app was used.
 
 The browser verification gate is complete. Final packaging/CLI and platform/optional-test classification remain open.
+
+
+## Final package and database verification, 2026-09-09
+
+Built eight wheels offline: client, core, persistence, storage, workbench, API, standalone egress broker and GIS. Every packaged Python member was compared byte-for-byte with its owning source file, and every source Python file was present: 271 modules matched, with no stale moved/deleted modules. Import-path assertions confirmed that all eight packages loaded from the extracted wheels. Their OpenAPI matched the checked-in schema.
+
+Five CLI help contracts matched exactly between source and extracted wheels: root, plugin, historical build-system-deployment, system-cutover and network-policy. The standalone broker entry point constructed successfully. Focused packaged client, core runtime, graph transport, compatibility, storage and spatial tests passed: 113 in the first run plus 10 historical deployment tests after correcting their fixture asset path. The same 10 deployment tests also passed against source. The correction makes repository test assets resolve relative to the test file rather than an installed wheel; it does not change runtime inventory discovery.
+
+The full persistence run with both PostgreSQL configurations enabled initially had 239 passes and one migration parity failure. Migration `0027_transient_executions` used a timezone-aware SQL timestamp while the runtime's `UTCDateTime` stores UTC in a timezone-free column. Corrected that new, unmerged migration to `sa.DateTime()`. A fresh empty PostgreSQL container then passed all 32 migration tests, including upgrade, Alembic metadata comparison, downgrade and preservation coverage. All 240 persistence cases have now passed across the full run and focused retry; no optional case remains unexercised. Both disposable containers were removed.
+
+Proposed rule addition: after a migration or mapped column-type change, run migration-to-runtime metadata comparison on each supported database dialect. A SQLite pass does not establish PostgreSQL type parity, especially for timezone handling. This is a concrete addition to schema verification guidance, not a new permission requirement. [R23: Maintain The Rules]
+
+## Preserved boundaries
+
+| Boundary | Final evidence |
+| --- | --- |
+| Release / installation / selection | Immutable release facts, scoped append-only installation and generation-bearing mutable selection remain separate domain models. InstalledPluginRelease still enforces their exact pairing. Release/catalog/persistence tests passed. |
+| Module / Template | Module release/publication state remains separate from Template snapshot/state. Their API/application workflows and shared graph-staging use were inspected; both integration suites passed. |
+| Coordinator / node / scalar runtime | API execution coordination and per-node execution remain separate from core NodeRuntime; import-boundary checks pass. Execution integration includes passing system OCI and workspace Docker lifecycle tests. |
+| Raw / validated cache | Repository cache storage remains separate from PersistentInvocationCache identity/content checks and conditional stale-generation removal. Core and packaged cache tests passed. |
+| Local / S3 | Concrete storage adapters remain distinct behind FileStoragePort. API selection is explicit, while the public package factory remains supported. Source and packaged storage/compatibility tests passed. |
+| Host / guest validation | Host artifact exchange validates returned identities, formats and outputs; the guest independently validates contracts, materialized inputs and configuration. Source boundaries and unit/packaged contracts were inspected. Five native subprocess cases remain the platform limitation below. |
+
+## Final requirement disposition
+
+All 14 original implementation findings and the architecture-rule correction have current source evidence and relevant behavioral checks in this audit and the batch ledger. The remaining implementation steps referenced in earlier chronological entries are superseded by these final results. In particular, graph transport, revocation/cleanup fencing, PostgreSQL parity, browser verification and package compatibility are complete.
+
+The final source scan preserves supported compatibility exports and response declarations deliberately: the storage package factory, historical host-tool aliases, and v1 graph response schemas remain. Their retention follows the original compatibility requirements and does not leave duplicate application ownership in place. No legacy protocol or feature was silently removed.
+
+### Verification limits retained in the result
+
+- Five native subprocess cases in `test_plugin_egress_docker.py` and `test_workspace_plugin_protocol.py` are excluded from the final broad integration run. The publication-fencing batch reproduced the same SIGSEGV failures in macOS Network.framework on an untouched baseline archive with asserted baseline import paths. They are not counted as passes, and this cleanup does not claim a new Linux run of those cases. Actual system OCI and workspace Docker lifecycle tests did pass.
+- Targeted graph-contract typing retains seven pre-existing collection-default diagnostics; earlier whole-repository type/lint debt is documented in the batch ledger. No whole-repository clean-type-check claim is made. Frontend TypeScript and changed-file lint passed.
+- The broad integration run emitted an aiosqlite worker-thread/event-loop-close warning in a readiness test. No corresponding assertion failed.
+- Historical system deployment tooling still uses repository source/inventory inputs; its default inventory discovery is checkout-oriented exactly as at base `2013e7f`. Packaged implementation behavior was verified with explicit repository fixtures, not represented as a standalone source-free build workflow.
+
+These are classified baseline/platform limits, not unresolved cleanup implementation. All required cleanup completion gates are satisfied with these limits disclosed. Changes remain local on the separate cleanup branch; nothing was pushed, merged or deployed.
