@@ -1,579 +1,224 @@
-# Backend Architecture Reference
+# Backend architecture reference
 
-> Technical documentation for the Grafy backend: package structure, dependency
-> flows, and structural diagrams. This document complements the product
-> vocabulary in `CONTEXT.md` and the interaction plan in
-> `docs/workbench-interaction-plan.md`. It describes the *current* committed
-> backend as built — not a target architecture. Plugin registration,
-> publication, and isolated freezes are described further in
-> [plugin unification](plugin-unification.md).
+This reference describes current source ownership. Product vocabulary lives in
+[CONTEXT.md](../../CONTEXT.md), and architectural decisions live in
+[docs/adr](../adr/). In particular, [ADR 0007](../adr/0007-builtin-families-are-application-code.md)
+supersedes the historical host-eligible Plugin execution model.
 
-- **Audience:** contributors who need to know where code lives, how services are
-  composed, and which dependencies may legally exist between packages.
-- **Scope:** `apps/api`, `apps/mcp`, `libs/core`, `libs/persistence`,
-  `libs/storage`, and `plugins/*`. The Next.js frontend (`apps/web`) is covered
-  only at its HTTP boundary.
+## Packages and dependency direction
 
----
+| Owner | Responsibility |
+| --- | --- |
+| `apps/api/src/grafy_api` | HTTP and room transport, application composition, graph execution, Plugin publication and isolated hosting. |
+| `apps/mcp/src/grafy_mcp` | MCP tools through an injected graph-workspace operations contract. |
+| `apps/plugin-egress-broker/src/grafy_plugin_egress_broker.py` | Standalone restricted HTTP egress broker executable. |
+| `libs/core/src/grafy_core` | Domain models, application workflows, ports, node runtime, artifact contracts, portable cache and storage readers. |
+| `libs/persistence/src/grafy_persistence` | SQL repositories, transaction adapters, table metadata, database setup, System cutover and baseline persistence operations. |
+| `libs/storage/src/grafy_storage` | Local and S3 object-store adapters. |
+| `libs/workbench/src/grafy_workbench` | Application-owned builtin families: arithmetic, image, sequence, text, schema, and table. |
+| `plugins/{gis,llm,ocr,sql}` | Independently published Plugin implementations and their provider-specific dependencies. |
+| `libs/client/src/grafy_client` | Python HTTP client contracts and operations. |
 
-## 1. Overview
-
-Grafy is a node-first workbench for building and running typed artifact
-graphs. The backend is a Python monorepo (managed by `uv`) organized as a
-**hexagonal / ports-and-adapters architecture** with one clean composition root.
-
-The backend has three execution and authoring surfaces over the same domain:
-
-1. **FastAPI HTTP API** (`apps/api`) — the primary REST surface under `/v1`,
-   consumed by the Next.js workbench and by agent clients over REST.
-2. **FastMCP Streamable HTTP server** (`apps/mcp`) — agent graph-discovery and
-   collaboration-aware authoring tools, mounted at `/mcp` on the API process.
-3. **Plugin releases** — serialized System releases visible globally and
-   Workspace releases visible only to their owner. A release contributes exact
-   node, artifact, conversion, and runtime contracts to the effective catalog.
-   Published Modules remain a separate catalog entry kind.
+Core defines ports; persistence and storage implement them. Core does not import
+those concrete adapters, API, FastAPI, SQLAlchemy, or published Plugin packages.
+API composition constructs the adapters. Published Plugins do not import each
+other or host application implementations.
 
 ```mermaid
 flowchart LR
-    subgraph Clients["Clients"]
-        Web["Next.js workbench"]
-        Agent["Codex / MCP clients"]
-    end
-    Web --> API["FastAPI workbench API\napps/api"]
-    Agent --> MCP["FastMCP Streamable HTTP\napps/mcp (mounted at /mcp)"]
-    MCP --> API
-    API --> Core["grafy_core\nlibs/core"]
-    API --> Persistence["grafy_persistence\nlibs/persistence"]
-    API --> Storage["grafy_storage\nlibs/storage"]
-    Publisher["Workspace publish or\none-shot platform publisher"] --> Releases["Serialized Plugin releases\nSystem + Workspace"]
-    Releases --> API
-    API --> HostAdapter["Exact System host adapter"]
-    API --> OCIAdapter["Retained OCI adapter"]
-    HostAdapter --> Core
-    OCIAdapter --> Core
-    Core --> Persistence
-    Core --> Storage
-    Persistence --> SQL["SQLite / PostgreSQL"]
-    Storage --> Objects["Local FS / S3"]
+    API[API composition and workflows] --> Core[Core domain and ports]
+    API --> Persistence[SQL persistence]
+    API --> Storage[Object storage]
+    Persistence --> Core
+    Storage --> Core
+    Plugins[Published Plugin code] --> Core
 ```
 
----
+These arrows denote imports, not the order of runtime calls. A core workflow can
+call a port implemented by persistence without importing persistence.
 
-## 2. Package inventory and ownership
+## Composition and lifecycle
 
-| Package | Path | Responsibility |
-| --- | --- | --- |
-| `grafy_api` | `apps/api/src/grafy_api` | FastAPI app, `/v1` routes, exact release admission and host loading, runtime composition, HTTP adapters. |
-| `grafy_mcp` | `apps/mcp/src/grafy_mcp` | Stateless FastMCP Streamable HTTP tools; request-scoped PAT actor context. |
-| `grafy_core` | `libs/core/src/grafy_core` | Domain aggregates, ports, application services, runtime primitives, Plugin and producer-neutral artifact contracts, Module boundaries. |
-| `grafy_persistence` | `libs/persistence/src/grafy_persistence` | Async SQLAlchemy repositories, unit-of-work adapters, ORM mappings, Alembic schema. |
-| `grafy_storage` | `libs/storage/src/grafy_storage` | Local and S3-compatible object stores. |
-| `grafy_workbench` | `libs/workbench` | App-owned builtin families: arithmetic, image, sequence, text, schema, and table. |
-| `grafy_plugin_llm` | `plugins/llm` | OpenAI-compatible Chat Completions node and deterministic prompt-message construction. |
-| `grafy_plugin_ocr` | `plugins/ocr` | OCR page node; Tesseract adapter. |
-| `grafy_plugin_gis` | `plugins/gis` | WGS84 vector sources, georeferenced raster scans, OGC WFS/WMS integration, map-layer recipes. |
-| `grafy_plugin_sql` | `plugins/sql` | Parameterized statement artifacts, PostgreSQL batch executor, DuckDB join executor. |
+`grafy_api.main.create_app` registers transport and configures lifespan. Lifespan
+loads `BuiltinNodeCatalog` using the deployment build digest, selects storage
+through `grafy_api.storage.configured_file_storage`, constructs domain services,
+and optionally starts the Docker Plugin runtime.
 
-### Dependency direction (hexagonal)
+`services/composition.py` builds `WorkbenchComponents`, including compilation,
+execution, artifact reads, catalog, and runtime dependencies. `AppResources`
+retains that bundle rather than copying its fields. `AppIdentity` owns the
+identity and authentication services. Request dependencies retrieve these typed
+resources; domain services receive their dependencies directly.
 
-The core is the architectural center. Concrete infrastructure (SQLAlchemy, S3,
-provider SDKs) lives behind ports and is wired only at composition time.
+Shutdown closes the graph-room hub, execution manager, optional Plugin runtime,
+and artifact HTTP client in that order. The API's owner lease and database
+lifecycle remain in `main.py`. In-memory room coordination requires the configured
+single API owner; multiple workers are not an interchangeable deployment mode.
 
-```mermaid
-flowchart TB
-    subgraph Surfaces["Composition and declaration surfaces"]
-        API["apps/api — HTTP routes + composition root"]
-        MCP["apps/mcp — MCP tools"]
-        Plugins["plugins/* — System Plugin projects"]
-    end
-    subgraph Policy["Policy (high-level, depends on ports only)"]
-        App["grafy_core/application\nSavedGraphService · CollaborationService\nIdentityService · ModuleLibraryService · TemplateService"]
-        Runtime["grafy_core/runtime\nNodeRuntime · InputMaterializer · OutputPersister"]
-    end
-    subgraph Domain["Domain + ports"]
-        DomainAgg["grafy_core/domain\nsaved_graphs · collaboration · identity · modules"]
-        Ports["grafy_core/ports\nnarrow per-aggregate Protocol ports"]
-    end
-    subgraph Adapters["Infrastructure adapters (low-level)"]
-        Persistence["grafy_persistence\nSql*Repository · SqlAlchemyUnitOfWork"]
-        Storage["grafy_storage\nLocalFileObjectStore · S3ObjectStore"]
-        SDKs["plugin SDK adapters\nOpenAI · Tesseract · GDAL · SQLAlchemy"]
-    end
+## HTTP, authentication, and collaboration
 
-    API --> App
-    API --> Runtime
-    MCP --> App
-    Plugins --> Ports
-    Plugins --> DomainAgg
-    App --> Ports
-    App --> DomainAgg
-    Runtime --> Ports
-    Ports --> DomainAgg
-    Persistence --> Ports
-    Storage --> Ports
-    SDKs --> Ports
+`v1/routes/<feature>/views.py` owns request handling and HTTP error translation.
+Route-local models describe transport. Route files need not contain application
+services merely to satisfy a directory template.
 
-    style Persistence fill:#f4f4f4,stroke:#999
-    style Storage fill:#f4f4f4,stroke:#999
-    style SDKs fill:#f4f4f4,stroke:#999
-```
+Authentication's cookie, OIDC, PAT, and abuse-handling code remains under
+`v1/routes/auth`. Workspace transport models belong to `v1/routes/workspaces`;
+legacy auth imports remain explicit compatibility aliases. Core identity policy
+and transaction-local workspace authorization live in `grafy_core.application.identity`.
+Graph workflows authorize through that shared policy, including ordered checks
+for cross-workspace copies.
 
-Rule: **dependency arrows point inward toward the domain.** No port, domain, or
-application module imports a concrete infrastructure type (`SqlAlchemy*`,
-`LocalFileObjectStore`, SDK clients). All concrete construction happens in
-composition roots (`apps/api/src/grafy_api/main.py` and
-`services/composition.py`).
+Core `CollaborationService` owns head commands and checkpoints. Shared
+`application/graph_creation.py` stages the saved graph, revision, head, and initial
+checkpoint for creation workflows. Saved graphs, Modules, and Templates retain
+their own workflows and identities.
 
----
+`grafy_api.realtime` owns the room hub and post-commit publishing. The publisher
+receives its dependencies instead of finding request resources. HTTP/WebSocket
+adapters remain under collaboration routes.
 
-## 3. Composition root and application assembly
+`graph_contracts.py` owns graph transport compatibility. Legacy heads expose
+flattened nodes/edges/presentation and the `plugin_release` alias. The opt-in
+`GET /v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document` exposes
+collaboration metadata plus canonical `SavedGraphDocument`, whose node field is
+`plugin_release_pin`. Existing command/checkpoint responses and room protocol v1
+retain the legacy head shape. See the [migration decision](../plans/backend-cleanup/graph-transport-migration.md).
 
-The FastAPI app is built in `apps/api/src/grafy_api/main.py`. During lifespan
-it constructs every service from concrete adapters, binds them to
-`app.state`, and tears them down once.
+## MCP
 
-```mermaid
-flowchart TB
-    Settings["Settings\n(env + .env)"] --> Database["create_database\ngrafy_persistence.database"]
-    Settings --> StorageFactory["configured_file_storage\ngrafy_api.storage"]
-    Settings --> OwnerLease["ApiOwnerLease\nsingle-owner lock"]
+API-owned `mcp/mount.py` authenticates workspace-bound PAT requests and binds a
+request-scoped caller. `mcp/operations.py` implements the operations interface
+used by the independent MCP package. MCP does not import API routes, persistence,
+object storage, or Plugin implementations. Token scope and current workspace
+membership both constrain access.
 
-    Database --> Db["Database\nengine + async_sessionmaker"]
-    Db --> SavedGraphs["SavedGraphService"]
-    Db --> ModuleLib["ModuleLibraryService"]
-    Db --> Templates["TemplateService"]
-    Db --> Collab["CollaborationService"]
-    Db --> NodeSecrets["NodeSecretService"]
-    Db --> UoW["SqlAlchemyUnitOfWork"]
+## Builtins, Plugin releases, and catalog
 
-    HostManifest["Exact System deployment manifest"] --> HostVerify["Verify installed bytes\n+ exact release bindings"]
-    HostVerify --> Registry["PluginRegistry\nModule boundaries + declared System"]
-    Registry --> Components["build_workbench_components\nservices/composition.py"]
-    UoW --> Releases["PluginReleaseService"]
-    Releases --> Components
-    Components --> Admission["ReleaseExecutionAdmission"]
+Builtins are application code. They execute in process and identify by builtin
+kind and deployment build digest. They have no Plugin release pin. Published
+Plugins execute in isolated workers; System and Workspace describe installation
+scope, not different execution mechanisms.
 
-    StorageFactory --> Storage["FileStoragePort"]
-    Components --> AppResources["AppResources\napp.state.resources"]
+`plugins/publication` owns source handling, authoring, verification sandboxing,
+OCI publication, and publication orchestration. `plugins/profiles.py` owns runtime
+profile definitions. `plugins/runtime` owns exact-release admission, Docker
+invocation, artifact staging, sandbox settings, and egress policy. The standalone
+egress broker is packaged separately from API.
 
-    Identity["IdentityService"] --> Auth["AuthService"]
-    Auth --> AppIdentity["AppIdentity\napp.state.identity"]
-```
-
-**Key construction points** (all in `apps/api`):
-
-- **API lifespan** (`main.py`) always registers the host-owned Module boundary
-  operators. If `GRAFY_SYSTEM_PLUGIN_DEPLOYMENT_MANIFEST` is configured, it
-  verifies the declared installed distribution bytes and exact release bindings,
-  imports only those declared targets, installs them, and freezes the registry.
-  With no manifest it freezes a Module-only registry; there is no package scan or
-  host fallback.
-- **`build_workbench_components`** (`services/composition.py`) is the workbench
-  composition root: it builds resolvers/writers from the registry, the
-  `NodeRuntime`, compiler, one caller-owned `ReleaseExecutionAdmission`, the
-  in-process and retained-OCI adapters, and the run/execution/artifact/
-  materialization services.
-- **`app.state`** holds two dataclasses — `AppIdentity` (auth) and
-  `AppResources` (workbench services) — fetched via `get_identity(app)` and
-  `get_resources(app)`.
-
----
-
-## 4. HTTP request lifecycle (REST)
-
-A typical `/v1` request flows through middleware, the route handler, an
-application service, and finally a persistence unit-of-work.
-
-```mermaid
-sequenceDiagram
-    actor C as Client (Web / Agent)
-    participant MW as Middleware (CORS, abuse cookie)
-    participant R as Route handler (v1/routes/*/views.py)
-    participant Svc as Application service (core/application)
-    participant Port as Domain port (core/ports)
-    participant UoW as SqlAlchemyUnitOfWork
-    participant DB as SQLite / PostgreSQL
-
-    C->>MW: HTTP request
-    MW->>R: validated request (FastAPI routing)
-    R->>Svc: call service method
-    Svc->>Port: authorize / capability check
-    Port->>UoW: open transaction (context manager)
-    UoW->>DB: read/write via repository
-    DB-->>UoW: rows
-    UoW-->>Port: aggregate returned
-    Port-->>Svc: result
-    Svc-->>R: response model
-    R-->>MW: JSON response
-    MW-->>C: HTTP response
-```
-
-Exception handling is centralized: `NotFoundError` → 404,
-`CapabilityDeniedError` → 403, `UserDisabledError` → 401,
-`IdentityInvariantError` → 409, and `RequestValidationError` is special-cased for
-the OIDC login/callback flows (abuse control + rate limiting).
-
----
-
-## 5. MCP dependency flow
-
-`apps/mcp` is deliberately independent: it imports no FastAPI routes,
-persistence, storage, or plugin implementations. The API process mounts it at
-`/mcp` and injects a **request-scoped** caller binding.
-
-```mermaid
-flowchart TB
-    Agent["MCP client (PAT bearer)"] --> Mount["create_mounted_mcp_app\napps/api/mcp/mount.py"]
-    Mount --> PatMW["_McpPatMiddleware\nrequire_mcp_access"]
-    PatMW --> Auth["AuthService\nworkspace-bound PAT validation"]
-    Auth --> Caller["McpCallerContext\n(user_id, workspace_id, scopes)"]
-    Caller --> Bind["bind_mcp_request\nContextVar binding"]
-    Bind --> MCP["grafy_mcp server\nFastMCP tools"]
-    MCP --> Ops["ApiGraphWorkspaceOperations\napps/api/mcp/operations.py"]
-    Ops --> App["app.state resources\nSavedGraphService · CollaborationService · registry"]
-```
-
-- **PAT scoping:** effective permission is `token scope ∩ current membership`.
-- **Stateless:** each request binds a fresh caller context; the `Authorization`
-  header is never retained in process-global state.
-- **Boundary rule:** `grafy_mcp` never imports FastAPI routes, persistence,
-  storage, or plugin implementations; it talks only through
-  `GraphWorkspaceOperations` provided by the API package.
-
----
-
-## 6. Plugin release and catalog dependency flow
-
-The effective Workspace catalog is assembled from persisted exact selections:
-global System releases, releases owned by the requested Workspace, and
-published Modules as a separate entry kind. Serialized release contracts are
-the catalog authority. The frozen `PluginRegistry` owns loaded host runtime
-implementations only; it is not the complete catalog.
-
-```mermaid
-flowchart TB
-    Platform["One-shot platform publisher"] --> System["Selected System releases\nglobal"]
-    Workspace["Workspace owner / reviewed agent"] --> WorkspaceReleases["Selected Workspace releases\nowner only"]
-    System --> Catalog["Effective Workspace catalog"]
-    WorkspaceReleases --> Catalog
-    Modules["Published Modules\nentry_kind=module"] --> Catalog
-    Catalog --> Pin["Exact {scope, slug, revision} pin"]
-    Pin --> Admission["ReleaseExecutionAdmission"]
-    Admission --> Host["Current bound System\nin-process adapter"]
-    Admission --> OCI["Retained OCI\nisolated adapter"]
-```
-
-**Declaration path** — each `Plugin` project declares:
-- `node(...)` / `function_node(...)` → `NodeRegistration`
-- `register_artifact_type(...)` → `ArtifactTypeSpec`
-- `register_resolver(...)` / `register_writer(...)` → runtime factories
-
-Publication freezes those declarations into an immutable serialized contract.
-Artifact conversions are a separate deployment-owned map in
-`grafy_core.canonical_conversions`; the compiler resolves exact edge keys only
-from that immutable map. Release-declared conversion references are publishable
-only when their key, version, endpoints, and title exactly match a canonical
-entry, and the effective catalog exposes each canonical conversion once rather
-than assigning it to a Plugin release.
-Workspace publication is owner-authorized and isolated-only. System staging is
-a separate platform/CI authority, runs candidate verification in a one-shot
-publisher sandbox, retains OCI for every release, and never implies promotion.
-Catalog and compilation pass selection and exact revocation facts to the same
-deployment admission object. Deprecated and withdrawn families stay visible
-but are disabled for new insertion; retained exact pins may still run. Revoked
-exact releases remain identifiable but are denied with reason `revoked`.
-
-The generic host package scanner and legacy origin compatibility fields have
-been removed. Exact deployment bindings and the retained isolated runtime are
-the only Plugin execution identities. See [Slice 12](../plans/workspace-plugins/12-compatibility-cutover.md)
-and [ADR 0004](../adr/0004-unify-system-and-workspace-plugin-releases.md).
-
----
-
-## 7. Graph execution dependency flow
-
-Execution is a pipeline: **preflight → exact resolution and admission → compile
-→ run through the selected adapter → persist**.
+Historical deployment manifests, bindings, and loader implementations live under
+`plugins/compatibility`. Root-level historical module names are aliases for
+supported operator imports. They are not active graph runtime dependencies.
+Persistence-specific System cutover and baseline operations live in
+`grafy_persistence.system_cutover` and `system_baseline`.
 
 ```mermaid
 flowchart LR
-    Run["RunGraph"] --> Preflight["GraphRunPreflight\nvalidate graph + registry"]
-    Run --> Compiler["GraphCompiler\nresolve exact releases + compile plan"]
-    Compiler --> Admission["ReleaseExecutionAdmission"]
-    Admission --> Host["Bound System host adapter"]
-    Admission --> OCI["Retained OCI adapter"]
-    Run --> Engine["GraphExecutionEngine\nin-process"]
-    Engine --> Coordinator["GraphExecutionCoordinator"]
-    Coordinator --> NodeExec["NodeExecutionService"]
-    NodeExec --> Runtime["NodeRuntime"]
-    Runtime --> Materializer["InputMaterializer\n(resolvers)"]
-    Runtime --> Persister["OutputPersister\n(writers)"]
-    Runtime --> Cache["PersistentInvocationCache"]
-    NodeExec --> Secrets["NodeSecretResolverPort"]
-    Compiler --> Catalog["ModuleLibraryService\ncanonical module resolution"]
-    Catalog --> Registry["PluginRegistry"]
-    Coordinator --> History["ExecutionHistoryService"]
-    Engine --> Manager["RunExecutionManager\ninterrupt / lifecycle"]
+    Source[Plugin source] --> Publication[Publication and sandbox verification]
+    Publication --> Release[Immutable release plus installation]
+    Release --> Catalog[Workspace catalog and selection]
+    Release --> Admission[Current admission and revocation]
+    Admission --> Guest[Isolated Plugin runtime]
 ```
 
-**Node execution steps:**
-1. `InputMaterializer` resolves each input `ArtifactRef` to a Python value using
-   the resolver registrations contributed by the exact loaded System Plugins.
-2. `NodeRuntime` runs the node `run(context, config, inputs)` and checks the
-   invocation cache policy.
-3. `OutputPersister` writes produced artifacts via registered `ArtifactOutputWriter`
-   instances.
-4. `PersistentInvocationCache` stores content-addressed invocation results.
+`grafy_api.catalog.CatalogSnapshot` owns catalog assembly from builtin declarations,
+exact release facts, selection/revocation state, and Module library results.
+Release, installation, and selection remain separate concepts.
+`InstalledPluginRelease` exposes its release and installation explicitly.
+`PluginRegistry` retains immutable family declarations and lookup indexes.
+Canonical artifact conversions remain deployment-owned in core; release metadata
+must agree with those conversion contracts.
 
-**Execution engine** (satisfies `GraphExecutionEngine`):
-- `InlineExecutionEngine` — runs in-process; MAP items run concurrently,
-  bounded by `map_max_concurrency` (default 4).
+## Graph execution
 
----
+`grafy_api.execution` owns preparation, compilation, scheduling, cancellation,
+queue lifecycle, history, materialization, and node execution. HTTP endpoints and
+`RunResultPresenter` remain under execution routes. The route model module keeps
+compatibility aliases for durable requests and events. See the
+[execution ownership reference](../../apps/api/src/grafy_api/execution/README.md).
 
-## 8. Persistence architecture
+Preflight resolves immutable exact-release contracts for reuse during compilation.
+Selection and revocation are mutable: compilation reads current admission facts
+rather than caching them in that immutable preparation map. Saved-graph and
+nested-Module paths share request conversions while selecting their own topology.
 
-`grafy_persistence` implements every core port with a `Sql*Repository` and
-exposes a unit-of-work facade. Alembic (`infra/db/migrations`) is the **only**
-schema authority; SQLAlchemy ORM mappings (`orm.py`) are derived from the
-`schema.py` table definitions.
-
-```mermaid
-flowchart TB
-    subgraph CorePorts["grafy_core/ports"]
-        P1["SavedGraphRepositoryPort"]
-        P2["CollaborationRepositoryPort"]
-        P3["IdentityRepositoryPort"]
-        P4["ExecutionHistoryRepositoryPort"]
-        P5["InvocationCacheRepositoryPort"]
-        P6["NodeSecretRepositoryPort"]
-        P7["ModuleLibraryRepositoryPort"]
-        P8["StagedUploadRepositoryPort"]
-        P9["TemplateRepositoryPort"]
-    end
-    subgraph Adapters["grafy_persistence"]
-        R["adapters/repositories.py\nSqlSavedGraphRepository · SqlCollaborationRepository\nSqlIdentityRepository · Sql* ... (12 classes)"]
-        UOW["unit_of_work.py\nSqlAlchemyUnitOfWork\nSqlAlchemySavedGraphUnitOfWork"]
-        DB["database.py\ncreate_database"]
-        ORM["orm.py + schema.py\nstart_mappers"]
-    end
-    subgraph DBs["Databases"]
-        SQLite["SQLite (sqlite+aiosqlite)"]
-        PG["PostgreSQL"]
-    end
-
-    P1 --> R
-    P2 --> R
-    P3 --> R
-    P4 --> R
-    P5 --> R
-    P6 --> R
-    P7 --> R
-    P8 --> R
-    P9 --> R
-    R --> UOW
-    UOW --> DB
-    DB --> SQLite
-    DB --> PG
-    DB --> ORM
-```
-
-**Unit-of-work pattern:** `SqlAlchemyUnitOfWork` is an async context manager that
-opens an `AsyncSession`, exposes the repositories its caller needs, commits on
-success, and rolls back on failure. `SqlAlchemySavedGraphUnitOfWork` additionally
-exposes the saved-graph repositories required by `SavedGraphService`.
-
----
-
-## 9. Object storage dependency flow
-
-`grafy_storage` exposes the `FileStoragePort` from core and provides two
-adapters selected by `storage_backend` in settings (`local` | `s3`).
+`GraphExecutionCoordinator` schedules graph work; `NodeExecutionService` executes
+nodes; core `NodeRuntime` owns node-level materialization, invocation, and output
+persistence. These are different responsibilities. Edge projection reads artifact
+rows through the core artifact unit-of-work port, then preserves exact-reference
+checks, projection, conversion order, and provenance. It does not use the HTTP
+artifact reader.
 
 ```mermaid
 flowchart LR
-    Core["FileStoragePort\ngrafy_core/ports/storage.py"] --> Factory["configured_file_storage\ngrafy_api/storage.py"]
-    Factory --> Local["LocalFileObjectStore\nlocal FS root"]
-    Factory --> S3["S3ObjectStore\nS3-compatible (MinIO/AWS)"]
-    Local --> FS["filesystem"]
-    S3 --> Endpoint["S3 endpoint"]
+    Request[Run request] --> Prepare[Preflight and compiler]
+    Prepare --> Coordinator[Graph coordinator]
+    Coordinator --> Node[Node execution]
+    Node --> Builtin[Core node runtime]
+    Node --> Plugin[Isolated Plugin invocation]
 ```
 
-Artifacts and uploads are written through `FileStoragePort`, never through a
-concrete store. API startup and publication CLI share `configured_file_storage`,
-which selects the adapter from settings. The public `grafy_storage.create_file_storage`
-and `grafy_storage.factory.create_file_storage` imports remain available for package
-callers; application composition no longer routes through that compatibility factory.
+The core persistent invocation-cache adapter shares cache semantics with the node
+runtime. Queued recovery depends on stable request serialization. MAP ordering,
+cancellation, nested execution, and materialization each have behavioral tests.
+The System revocation fence covers durable queue admission; transient execution
+fencing and active execution/revocation races remain open in the cleanup plan.
 
----
+## Artifact contracts, reads, and infrastructure
 
-## 10. Deployment / infrastructure
+`grafy_api.artifact_availability` resolves exact references and batches storage
+presence checks for application workflows. Each operation loads fresh state.
+Availability is weaker than cache content-integrity validation; do not substitute
+one for the other. HTTP summaries, content responses, GIS tile/render handling,
+and the WMS client remain in the artifact transport service.
 
-`infra/docker/compose.yaml` orchestrates the production topology: an nginx
-gateway, the API container, the web container, and a shared volume. Keycloak
-provides OIDC.
+Core owns producer-neutral stored contracts, including spatial payloads, styles,
+map references, and feature metadata. GIS public aliases reuse those contracts.
+API models retain explicit compatibility differences where required response
+fields or historical reader acceptance differ from producer validation. GDAL,
+provider calls, and raw raster upload inputs remain in GIS.
 
-```mermaid
-flowchart TB
-    User["Browser"] --> Gateway["nginx gateway\ngateway/nginx.conf"]
-    User --> Web["Next.js web\nweb.Dockerfile"]
-    Gateway --> API["FastAPI API\napi.Dockerfile"]
-    Web --> API
-    API --> DB["SQLite / PostgreSQL\n/data/workbench"]
-    API --> Keycloak["Keycloak\nOIDC issuer"]
-    API --> StorageBackend["local objects | S3"]
-```
+Core `spatial_storage` shares feature-page reconstruction and canonical byte/hash
+validation. `stored_models` shares typed stored-model reads. Format-specific table
+and collection readers retain their own manifest/chunk semantics.
 
-**Collaboration assumption:** the API runs **one Uvicorn process with one worker**
-(`WEB_CONCURRENCY: "1"`), acquires an exclusive workspace lock at startup
-(`GRAFY_REQUIRE_SINGLE_API_OWNER=true`), and relies on the graph-room hub for
-in-process WebSocket collaboration.
+`grafy_api.node_secrets` and `staged_uploads` own their application workflows.
+Storage adapters only implement object IO. Sensitive capabilities and secret
+resolution must remain explicit at those workflow boundaries.
 
----
+## Persistence and deployment
 
-## 11. Structural diagram: application services
+`grafy_persistence.adapters.repositories` and `grafy_persistence.schema` are
+packages grouped into identity, graphs, artifacts, execution, plugins, and library.
+`schema/base.py` owns shared metadata; the schema package loads the tables, and
+`orm.py` maps them. `column_types.py` owns shared Pydantic/enum SQL conversion.
+Alembic revisions under `infra/db/migrations` govern deployed schema changes.
 
-The application layer is one cohesive service per aggregate/actor.
+Transaction adapters open task-local sessions and expose the repositories required
+by each port. Writes commit explicitly. Context exit rolls back on error and
+closes the session; it does not implicitly commit success. Core in-memory runtime
+adapters preserve task isolation, cloning, and rollback for supported local use.
 
-```mermaid
-classDiagram
-    class SavedGraphService {
-        create()
-        get(graph_id)
-        list_revisions()
-        list_accessible(actor)
-        create_folder()
-        list_folders()
-    }
-    class CollaborationService {
-        bootstrap_graph()
-        accept_command()
-        checkpoint()
-        replace_complete_document()
-        copy_exact_head()
-        delete_graph()
-    }
-    class IdentityService {
-        list_workspaces()
-        create_personal_access_token()
-        provision_oidc_identity()
-        authorize()
-    }
-    class ModuleLibraryService {
-        list_library()
-        publish_release()
-        deprecate()
-        import_release()
-        catalog_definitions()
-    }
-    class TemplateService {
-    }
-    class AuthService {
-        require_mcp_access()
-        allow_login_start()
-        replace_login_transaction()
-    }
-    class NodeSecretService {
-        resolve_secret()
-    }
-    class PluginRegistry {
-        node_registration(operator_id, version)
-        build_node(operator_id, version)
-    }
+Docker definitions under `infra/docker` compose the gateway, API, web, and optional
+PostgreSQL, Keycloak, and Plugin runtime services. Local and S3 object stores are
+alternative adapters. Plugin egress has its own executable and Docker definition;
+it does not require importing the API application.
 
-    SavedGraphService --> CollaborationService
-    CollaborationService --> SavedGraphService
-    CollaborationService --> ModuleLibraryService
-    SavedGraphService --> IdentityService
-    ModuleLibraryService --> IdentityService
-    AuthService --> IdentityService
-    NodeSecretService --> PluginRegistry
-```
+## Enforcement and verification
 
----
+`tests/unit/architecture/test_import_boundaries.py` enforces package dependency
+rules and compatibility export identity. Execution and Plugin runtime scans
+resolve absolute and relative Python imports, forbid HTTP route/framework imports
+and historical host loaders, and keep Plugin hosting independent of graph
+execution. Shared application owner checks cover realtime, graph contracts,
+artifact availability, node secrets, and staged uploads. Static checks do not
+claim to sandbox arbitrary dynamic imports.
 
-## 12. Runtime structural diagram
+Behavior lives in `tests/unit/api`, `tests/unit/core`, `tests/unit/client`, and the
+feature suites under `tests/integration`. Frontend tests are colocated with their
+TypeScript consumers. Schema comparison, generated client consistency, and
+extracted-wheel checks protect contracts that directory checks cannot prove.
 
-```mermaid
-classDiagram
-    class NodeRuntime {
-        run(context, config, inputs)
-    }
-    class InputMaterializer {
-        resolve inputs
-    }
-    class OutputPersister {
-        persist outputs
-    }
-    class ResolverRegistry {
-        resolvers
-    }
-    class ArtifactWriterRegistry {
-        writers
-    }
-    class PersistentInvocationCache {
-        get/put content-addressed
-    }
-
-    NodeRuntime --> InputMaterializer
-    NodeRuntime --> OutputPersister
-    NodeRuntime --> PersistentInvocationCache
-    InputMaterializer --> ResolverRegistry
-    OutputPersister --> ArtifactWriterRegistry
-```
-
----
-
-## 13. Dependency rules (enforcement)
-
-These are the import constraints the codebase is designed around; new code should
-preserve them.
-
-```mermaid
-flowchart LR
-    subgraph Allowed["Allowed: policy → ports/domain"]
-        API["apps/api"] --> Core["core/application · core/ports · core/domain"]
-        MCP["apps/mcp"] --> Ops["GraphWorkspaceOperations (API-provided)"]
-    end
-    subgraph Forbidden["Forbidden: policy → concrete infra"]
-        App["application / runtime"] -. "✗" .-> Sql["SqlAlchemy*"]
-        App -. "✗" .-> Storage["LocalFileObjectStore / S3ObjectStore"]
-        App -. "✗" .-> SDK["OpenAI SDK"]
-        Core -. "✗" .-> FastAPI["FastAPI routes"]
-    end
-```
-
-- **Core never imports FastAPI, SQLAlchemy, storage stores, or SDK clients.**
-- **`grafy_mcp` never imports FastAPI routes, persistence, storage, or plugin
-  implementations.**
-- **Concrete construction lives only in composition roots** (`main.py`,
-  `composition.py`, `factory.py`).
-- **Ports are narrow and per-aggregate** (ISP); `UnitOfWorkPort` facades expose
-  only the repositories the caller needs.
-- **Plugins are the extension mechanism** (OCP): new nodes/artifact types are
-  added by installing a plugin, not by modifying core.
-
----
-
-## 14. Test coverage map
-
-Tests live under `tests/` and are colocated with the units they protect.
-See `pytest.ini` and `pyproject.toml` for the strict-basedpyright + ruff + pytest
-toolchain.
-
-| Area | Location | What it protects |
-| --- | --- | --- |
-| Unit | `tests/unit` | Domain aggregates, ports, runtime, plugin registry. |
-| API | `apps/api` (pytest) | Route handlers, auth, collaboration, execution. |
-| Integration | `tests/` | Repository/UoW adapters, storage, end-to-end HTTP. |
-
----
-
-## 15. References
-
-- `CONTEXT.md` — product vocabulary and active scope.
-- `docs/workbench-interaction-plan.md` — interaction and runtime decisions.
-- `docs/adr/0002-server-authoritative-workbench-collaboration.md` — collaboration authority.
-- `docs/adr/0003-authenticate-users-and-scope-collaboration-to-workspaces.md` — auth/tenancy.
-- `docs/design/authentication-and-workspace-tenancy.md` — identity & tenancy design.
-- `SOLID_REVIEW.md` — SOLID audit of the backend scope.
+Remaining work and per-batch evidence live in the
+[backend cleanup checklist](../plans/backend-cleanup/README.md). Graph transport
+migration, transient revocation fencing, and final broad verification remain open;
+this reference records current ownership, not completion of those tasks.

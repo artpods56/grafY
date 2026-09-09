@@ -138,8 +138,8 @@ Keep unrelated worktrees untouched. Each completed batch needs a commit and veri
 
 ## Architecture contract and completion gates
 
-- [ ] Replace tests enforcing route-folder service placement with dependency rules for application/runtime, HTTP transport, and ADR 0007 hosting.
-- [ ] Update stale backend architecture reference as actual ownership changes land.
+- [x] Replace tests enforcing route-folder service placement with dependency rules for application/runtime, HTTP transport, and ADR 0007 hosting.
+- [x] Update stale backend architecture reference as actual ownership changes land; revised for current owners and explicit remaining migration work.
 - [ ] Preserve real distinctions: release/installation/selection, Module/Template, coordinator/node/scalar runtime, raw/validated cache, Local/S3, and host/guest validation.
 - [ ] For every audit item, inspect final source and relevant behavioral evidence before checking completion.
 - [ ] Complete broad regression and packaging checks with every remaining limitation recorded. No whole-goal completion while any required item is unresolved.
@@ -935,3 +935,16 @@ flowchart LR
     Projection --> Commands[Canonical room command payloads]
     Projection --> Alias[Legacy head pin alias]
 ```
+
+
+### Runtime artifact transaction dependency and architecture contract
+
+- Removed `EdgeValueResolver`'s dependency on the HTTP `ArtifactService`. Composition passes the existing core artifact `UnitOfWorkPort`; projection opens the same transaction and reads the same workspace/artifact key directly. Missing-source diagnostics, exact-reference validation, projection/conversion order, and provenance are unchanged. Runtime tests now use real transactions without constructing a WMS-capable HTTP reader. [R01: Direct Ownership] [R09: Narrow IO Boundaries]
+- Replaced the route-folder service-placement assertion with dependency checks. Execution and Plugin runtime reject route/framework imports and historical host loaders, including compatibility aliases. Plugin hosting cannot import graph execution. The scanner resolves absolute, relative, and from-parent import forms; eight cases exercise those forms. Shared application checks reuse that scanner and include artifact availability.
+- Proved the new runtime dependency check fails on the committed pre-change HTTP artifact import. This prevents the earlier false confidence from checking only imports of the execution route folder. Static checks do not claim to detect arbitrary dynamic loading. [R43: Tests Are Behavioral Contracts]
+- Rewrote the backend architecture reference against current package ownership. Corrected the obsolete in-process Plugin path, reversed core-to-adapter import arrows, obsolete monolithic SQL file paths, and the incorrect automatic-commit description. It now distinguishes builtins, isolated Plugins, compatibility tools, explicit transaction commits, canonical/legacy graph transport, and outstanding revocation work. All reference links resolve.
+- API/runtime/architecture plus arithmetic artifact integration regression passed 580 tests. Targeted edge-runtime and architecture typing report zero errors; changed-file Ruff and diff checks pass. The initial run found one remaining old test constructor; it was updated before the passing run. [R20: Verify After Signature Changes]
+- Built and extracted the API wheel. Importing the edge runtime does not load the artifact HTTP service; constructing the app produces the exact checked-in OpenAPI.
+- Proposed architecture-test rule: enforce dependency direction and supported compatibility contracts, not mandatory `services.py` placement. Cover relative and parent-module imports so moving syntax cannot bypass a dependency check. [R23: Maintain The Rules]
+- Evidence: `/tmp/grafy-runtime-boundaries-baseline.log`, `/tmp/grafy-runtime-boundaries-regression.log`, `/tmp/grafy-runtime-boundaries-types.log`, `/tmp/grafy-runtime-boundaries-detection.log`, and `/tmp/grafy-runtime-boundaries-build.log`.
+- The architecture placement/reference substeps are complete. Full completion still requires transient execution/revocation fencing, graph transport migration, and the remaining final source/regression audit.

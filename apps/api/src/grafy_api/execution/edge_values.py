@@ -13,6 +13,7 @@ from grafy_core.artifacts import (
 from grafy_core.conversions import ArtifactConversion
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.nodes import NodeExecutionContext
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import (
     ArtifactWriteContext,
@@ -20,7 +21,6 @@ from grafy_core.runtime.persistence import (
 )
 from grafy_core.runtime.resolvers import ResolverRegistry
 
-from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.execution.errors import GraphExecutionError
 from grafy_api.execution.models import (
     CompiledEdge,
@@ -36,11 +36,11 @@ class EdgeValueResolver:
         *,
         resolvers: ResolverRegistry,
         writers: ArtifactWriterRegistry,
-        artifacts: ArtifactService,
+        unit_of_work: UnitOfWorkPort,
     ) -> None:
         self._resolvers = resolvers
         self._writers = writers
-        self._artifacts = artifacts
+        self._unit_of_work = unit_of_work
 
     async def assemble_inputs(
         self,
@@ -171,7 +171,8 @@ class EdgeValueResolver:
         projection = edge.projection
         if projection is None:
             raise GraphExecutionError("A compiled projection is required")
-        artifact = await self._artifacts.get(workspace_id, ref.artifact_id)
+        async with self._unit_of_work as unit_of_work:
+            artifact = await unit_of_work.artifacts.get(workspace_id, ref.artifact_id)
         if artifact is None:
             raise GraphExecutionError(
                 f"Cannot project missing source artifact {ref.artifact_id} for "

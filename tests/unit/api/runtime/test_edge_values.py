@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -33,9 +32,7 @@ from grafy_core.runtime.persistence import (
     ArtifactWriterRegistry,
 )
 from grafy_core.runtime.resolvers import Resolver, ResolverRegistry
-from grafy_storage import LocalFileObjectStore
 
-from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.execution.requests import (
     ArtifactConversionRequest,
     FieldProjectionRequest,
@@ -43,7 +40,6 @@ from grafy_api.execution.requests import (
     RunInputPlugRequest,
     RunNodeRequest,
 )
-from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.execution.edge_values import EdgeValueResolver
 from grafy_api.execution.errors import GraphExecutionError
 from grafy_api.execution.models import (
@@ -78,8 +74,7 @@ FAILING_INTEGER_TO_TEXT = ArtifactConversion(
 
 def _edge_value_resolver(
     unit_of_work: InMemoryUnitOfWork,
-    tmp_path: Path,
-) -> tuple[EdgeValueResolver, ArtifactService]:
+) -> EdgeValueResolver:
     resolvers = ResolverRegistry(
         [
             cast(Resolver[object], IntegerValueResolver(uow=unit_of_work)),
@@ -98,20 +93,10 @@ def _edge_value_resolver(
             ),
         ]
     )
-    artifacts = ArtifactService(
-        unit_of_work,
-        LocalFileObjectStore(tmp_path / "objects"),
-        availability=ArtifactAvailability(
-            unit_of_work, LocalFileObjectStore(tmp_path / "objects")
-        ),
-    )
-    return (
-        EdgeValueResolver(
-            resolvers=resolvers,
-            writers=writers,
-            artifacts=artifacts,
-        ),
-        artifacts,
+    return EdgeValueResolver(
+        resolvers=resolvers,
+        writers=writers,
+        unit_of_work=unit_of_work,
     )
 
 
@@ -134,11 +119,9 @@ def _compiled_replace(invocation: NodeInvocation) -> CompiledNode:
 
 
 @pytest.mark.asyncio
-async def test_instance_plugs_follow_declared_order_and_ignore_other_targets(
-    tmp_path: Path,
-) -> None:
+async def test_instance_plugs_follow_declared_order_and_ignore_other_targets() -> None:
     unit_of_work = InMemoryUnitOfWork()
-    edge_values, _artifacts = _edge_value_resolver(unit_of_work, tmp_path)
+    edge_values = _edge_value_resolver(unit_of_work)
     first_ref = ArtifactRef.from_key(artifact_id=uuid4(), key=TEXT_VALUE.key)
     second_ref = ArtifactRef.from_key(artifact_id=uuid4(), key=TEXT_VALUE.key)
     unrelated_ref = ArtifactRef.from_key(artifact_id=uuid4(), key=TEXT_VALUE.key)
@@ -210,11 +193,9 @@ async def test_instance_plugs_follow_declared_order_and_ignore_other_targets(
 
 
 @pytest.mark.asyncio
-async def test_projection_precedes_conversion_and_preserves_sequence_context(
-    tmp_path: Path,
-) -> None:
+async def test_projection_precedes_conversion_and_preserves_sequence_context() -> None:
     unit_of_work = InMemoryUnitOfWork()
-    edge_values, artifacts = _edge_value_resolver(unit_of_work, tmp_path)
+    edge_values = _edge_value_resolver(unit_of_work)
     first_source = ArtifactObject(
         workspace_id=WORKSPACE_ID,
         artifact_type=SOURCE_RESPONSE.id,
@@ -294,17 +275,19 @@ async def test_projection_precedes_conversion_and_preserves_sequence_context(
     assert isinstance(projected_sequence_id, str)
     assert UUID(projected_sequence_id) != source_sequence.sequence_id
 
-    final_artifact = await artifacts.get(
-        WORKSPACE_ID,
-        converted.item_refs[0].artifact_id,
-    )
+    async with unit_of_work as transaction:
+        final_artifact = await transaction.artifacts.get(
+            WORKSPACE_ID,
+            converted.item_refs[0].artifact_id,
+        )
     assert final_artifact is not None
     projected_artifact_id = final_artifact.metadata["source_artifact_id"]
     assert isinstance(projected_artifact_id, str)
-    projected_artifact = await artifacts.get(
-        WORKSPACE_ID,
-        UUID(projected_artifact_id),
-    )
+    async with unit_of_work as transaction:
+        projected_artifact = await transaction.artifacts.get(
+            WORKSPACE_ID,
+            UUID(projected_artifact_id),
+        )
     assert projected_artifact is not None
     assert projected_artifact.id != first_source.id
     assert projected_artifact.metadata["source_artifact_id"] == str(first_source.id)
@@ -331,11 +314,9 @@ async def test_projection_precedes_conversion_and_preserves_sequence_context(
 
 
 @pytest.mark.asyncio
-async def test_conversion_failure_identifies_step_item_artifact_and_edge(
-    tmp_path: Path,
-) -> None:
+async def test_conversion_failure_identifies_step_item_artifact_and_edge() -> None:
     unit_of_work = InMemoryUnitOfWork()
-    edge_values, _artifacts = _edge_value_resolver(unit_of_work, tmp_path)
+    edge_values = _edge_value_resolver(unit_of_work)
     source = ArtifactObject(
         workspace_id=WORKSPACE_ID,
         artifact_type=INTEGER_VALUE.key.id,

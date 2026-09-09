@@ -37,8 +37,9 @@ aliases, validation, and serialized values. The HTTP models module re-exports th
 same request and event classes for existing Python clients; internal execution
 code imports them directly from this package.
 
-Remaining dependencies are explicit. Materialization uses the application-owned
-`ArtifactAvailability`; HTTP presentation still uses the artifact route reader.
+Remaining dependencies are explicit. Edge projection reads through the core artifact
+unit-of-work port. Materialization uses the application-owned `ArtifactAvailability`;
+HTTP presentation still uses the artifact route reader.
 Module lookup uses `ModuleLibraryService` directly, and the manager still
 publishes through the collaboration hub. Their ownership and shared
 transport-model cleanup remain separate audit items.

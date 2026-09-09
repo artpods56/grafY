@@ -83,7 +83,6 @@ from grafy_core.domain.plugin_host_bindings import (
     SystemHostPluginBinding,
 )
 from tests.support.system_plugins import build_explicit_plugin_registry
-from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.execution.requests import (
     FieldProjectionRequest,
     RunEdgeRequest,
@@ -1547,15 +1546,6 @@ async def test_host_node_output_feeds_pinned_workspace_plugin_in_same_graph(
     )
     writer_registry = ArtifactWriterRegistry([TextValueOutputWriter(uow=unit_of_work)])
     resolver_registry = ResolverRegistry([TextValueResolver(uow=unit_of_work)])
-    artifacts = ArtifactService(
-        unit_of_work,
-        storage,
-        artifact_types={
-            (spec.key.id, spec.key.schema_version): spec
-            for spec in registry.artifact_types
-        },
-        availability=ArtifactAvailability(unit_of_work, storage),
-    )
     coordinator = GraphExecutionCoordinator(
         node_execution=NodeExecutionService(
             runtime=NodeRuntime(
@@ -1565,7 +1555,7 @@ async def test_host_node_output_feeds_pinned_workspace_plugin_in_same_graph(
             edge_values=EdgeValueResolver(
                 resolvers=resolver_registry,
                 writers=writer_registry,
-                artifacts=artifacts,
+                unit_of_work=unit_of_work,
             ),
             node_secrets=UnavailableNodeSecretResolver(),
         )

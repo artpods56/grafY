@@ -195,7 +195,7 @@ def build_workbench_components(
     edge_values = EdgeValueResolver(
         resolvers=resolver_registry,
         writers=writer_registry,
-        artifacts=artifacts,
+        unit_of_work=resolved_unit_of_work,
     )
     runtime = NodeRuntime(
         materializer=InputMaterializer(resolver_registry),

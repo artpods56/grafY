@@ -1,8 +1,11 @@
 import ast
+from importlib.util import resolve_name
 from hashlib import sha256
 from pathlib import Path
 import tomllib
 from typing import cast
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -49,59 +52,59 @@ FORBIDDEN_API_PLUGIN_IMPORTS = (
     "grafy_plugin_sql",
 )
 LEGACY_NAMESPACE = "proto" + "type"
-API_ROUTE_AREAS = (
-    "artifacts",
-    "catalog",
-    "executions",
-    "node_secrets",
-    "saved_graphs",
-    "uploads",
-    "auth",
-    "workspaces",
-    "collaboration",
-)
-API_SERVICE_AREAS = (
-    "artifacts",
-    "executions",
-)
-API_ROUTE_STANDARD_FILES = (
-    "__init__.py",
-    "dependencies.py",
-    "models.py",
-    "views.py",
-)
 
 
-def test_api_routes_are_organized_as_capability_slices() -> None:
-    routes_root = REPO_ROOT / "apps/api/src/grafy_api/v1/routes"
+def _imported_modules(source: str, package: str) -> list[str]:
+    modules: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if node.level:
+                module = resolve_name("." * node.level + module, package)
+            modules.append(module)
+            modules.extend(f"{module}.{alias.name}" for alias in node.names)
+    return modules
 
-    assert {path.name for path in routes_root.glob("*.py")} == {"__init__.py"}
-    for area in API_ROUTE_AREAS[:6]:
-        area_root = routes_root / area
-        assert area_root.is_dir()
-        for module in API_ROUTE_STANDARD_FILES:
-            assert (area_root / module).is_file()
-    assert {path.name for path in (routes_root / "auth").glob("*.py")} == {
-        "__init__.py",
-        "abuse.py",
-        "dependencies.py",
-        "models.py",
-        "services.py",
-        "views.py",
-    }
-    assert {path.name for path in (routes_root / "workspaces").glob("*.py")} == {
-        "__init__.py",
-        "models.py",
-        "views.py",
-    }
-    assert {path.name for path in (routes_root / "collaboration").glob("*.py")} == {
-        "__init__.py",
-        "dependencies.py",
-        "models.py",
-        "views.py",
-    }
-    for area in API_SERVICE_AREAS:
-        assert (routes_root / area / "services.py").is_file()
+
+@pytest.mark.parametrize(
+    ("source", "package", "expected"),
+    [
+        (
+            "import grafy_api.v1.routes as routes",
+            "grafy_api.execution",
+            "grafy_api.v1.routes",
+        ),
+        (
+            "from grafy_api.v1 import routes",
+            "grafy_api.execution",
+            "grafy_api.v1.routes",
+        ),
+        ("from ..v1 import routes", "grafy_api.execution", "grafy_api.v1.routes"),
+        ("from .. import v1", "grafy_api.execution", "grafy_api.v1"),
+        (
+            "from ...v1.routes import artifacts",
+            "grafy_api.plugins.runtime",
+            "grafy_api.v1.routes.artifacts",
+        ),
+        (
+            "from ..compatibility import loader",
+            "grafy_api.plugins.runtime",
+            "grafy_api.plugins.compatibility.loader",
+        ),
+        (
+            "from . import views",
+            "grafy_api.v1.routes.artifacts",
+            "grafy_api.v1.routes.artifacts.views",
+        ),
+        ("from fastapi import Depends", "grafy_api.execution", "fastapi"),
+    ],
+)
+def test_import_boundary_scan_resolves_python_import_forms(
+    source: str, package: str, expected: str
+) -> None:
+    assert expected in _imported_modules(source, package)
 
 
 def test_optional_plugin_dependencies_are_not_owned_by_host_projects() -> None:
@@ -306,24 +309,30 @@ def test_host_eligible_plugins_carry_their_exact_build_backend() -> None:
         )
 
 
-def test_execution_and_plugin_hosting_do_not_import_execution_routes() -> None:
+def test_execution_and_plugin_hosting_do_not_import_http_or_legacy_hosting() -> None:
     api_root = REPO_ROOT / "apps/api/src/grafy_api"
-    for package in (api_root / "execution", api_root / "plugins/runtime"):
-        for path in package.rglob("*.py"):
-            for node in ast.walk(ast.parse(path.read_text())):
-                imported = []
-                if isinstance(node, ast.ImportFrom) and node.module:
-                    imported.append(node.module)
-                elif isinstance(node, ast.Import):
-                    imported.extend(alias.name for alias in node.names)
-                for module in imported:
-                    assert not module.startswith("grafy_api.v1.routes.executions"), (
-                        f"{path.relative_to(REPO_ROOT)} imports its HTTP transport: {module}"
-                    )
-                    if package.name == "runtime":
-                        assert not module.startswith("grafy_api.execution"), (
-                            f"{path.relative_to(REPO_ROOT)} couples Plugin hosting to graph execution: {module}"
-                        )
+    offenders: list[str] = []
+    for owner in (api_root / "execution", api_root / "plugins/runtime"):
+        forbidden = [
+            "grafy_api.v1.routes",
+            "grafy_api.plugins.compatibility",
+            "grafy_api.system_plugin_loader",
+            "grafy_api.system_plugin_deployment",
+            "grafy_api.system_host_bindings",
+            "fastapi",
+            "starlette",
+        ]
+        if owner.name == "runtime":
+            forbidden.append("grafy_api.execution")
+        for path in owner.rglob("*.py"):
+            package = ".".join(path.parent.relative_to(api_root.parent).parts)
+            for module in _imported_modules(path.read_text(), package):
+                if any(
+                    module == name or module.startswith(name + ".")
+                    for name in forbidden
+                ):
+                    offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+    assert offenders == []
 
 
 def test_execution_http_models_preserve_public_request_and_event_identity() -> None:
@@ -346,30 +355,25 @@ def test_application_owners_do_not_depend_on_route_modules() -> None:
     paths = [
         *(api_root / "realtime").glob("*.py"),
         api_root / "graph_contracts.py",
+        api_root / "artifact_availability.py",
         api_root / "node_secrets.py",
         api_root / "staged_uploads.py",
     ]
     offenders: list[str] = []
     for path in paths:
-        for node in ast.walk(ast.parse(path.read_text())):
-            modules: list[str] = []
-            if isinstance(node, ast.ImportFrom) and node.module:
-                modules.append(node.module)
-                if node.module == "grafy_api.v1" and any(
-                    alias.name == "routes" for alias in node.names
-                ):
-                    offenders.append(str(path.relative_to(REPO_ROOT)))
-            elif isinstance(node, ast.Import):
-                modules.extend(alias.name for alias in node.names)
-            for module in modules:
-                if module == "grafy_api.v1.routes" or module.startswith(
-                    "grafy_api.v1.routes."
-                ):
-                    offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
-                if path.name == "publish.py" and module == "grafy_api.app_state":
-                    offenders.append(
-                        f"{path.relative_to(REPO_ROOT)}: request resource lookup"
-                    )
+        package = ".".join(path.parent.relative_to(api_root.parent).parts)
+        for module in _imported_modules(path.read_text(), package):
+            if module == "grafy_api.v1.routes" or module.startswith(
+                "grafy_api.v1.routes."
+            ):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+            if path.name == "publish.py" and (
+                module == "grafy_api.app_state"
+                or module.startswith("grafy_api.app_state.")
+            ):
+                offenders.append(
+                    f"{path.relative_to(REPO_ROOT)}: request resource lookup"
+                )
     assert offenders == []
 
 
