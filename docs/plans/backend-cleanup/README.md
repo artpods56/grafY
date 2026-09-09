@@ -1071,3 +1071,10 @@ The final evidence review is tracked in [final-audit.md](final-audit.md). Produc
 - Broad integration run: 328 passed, one exact-OpenAPI test failed. Fixed the missing canonical-head route expectation and two assertions proven stale against base `2013e7f`; all five OpenAPI tests pass on rerun. Existing schemas are unchanged. [R43: Tests Are Behavioral Contracts]
 - Fresh disposable PostgreSQL/SQLite fence and execution-cleanup verification: 66 passed. Container cleanup completed. Two known native macOS fork-crash files were excluded from broad integration; a readiness test emitted an aiosqlite shutdown warning. Full details and remaining gates are recorded in the final audit.
 - Whole-goal completion remains open for browser runtime verification and final packaging/platform/contract reconciliation.
+
+
+## Running-browser graph verification, 2026-09-09
+
+The production frontend passed a real API/WebSocket smoke test with isolated SQLite state. Created and saved a text graph, added a viewer and preview link, verified uncheckpointed hydration and two-tab room replay, then checkpointed and reloaded. UI/API assertions confirmed the configuration and presentation survived and that canonical/saved documents matched at revision 2, sequence/checkpoint sequence 8. The reloaded page had no console errors. The dedicated browser and temporary servers were stopped, and authentication state was removed. Details and screenshot location are in `final-audit.md`.
+
+Browser verification is complete. Overall completion remains open for the final packaging/CLI and optional/platform verification reconciliation.

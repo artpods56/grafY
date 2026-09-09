@@ -23,7 +23,7 @@ Persistence skips are not passes. Dedicated PostgreSQL/concurrency evidence from
 | 5. Execution ownership | Compilation, manager, coordinator, node execution, history, materialization and requests live in `grafy_api/execution`. Persistent invocation cache lives in core runtime. Architecture tests enforce route/framework independence and public request/event identity. | Execution unit tests and architecture checks pass; recent graph/module integration batch passed 696 tests before this audit. | Ownership verified; final execution integration/packaging gate remains open. |
 | 6. Execution preparation | `GraphPreflight.validate` resolves exact releases into a per-run map, rejects missing secret context before saved revision lookup, validates submitted topology, and passes the map to compilation through `GraphRunContext`. Both saved and nested-module requests use `RunNodeRequest.from_saved_node`. | Fresh preflight/compiler unit tests pass. Source order was inspected, not inferred from filenames. | Source and unit behavior verified; include execution integration in final gate. |
 | 7. Catalog | Route gathers `ModuleLibraryService.catalog_definitions` and one release catalog result, then serializes a validated `CatalogSnapshot`. SQL catalog query joins selection/release/installation/revocation in one operation. Application snapshot owns readiness and composition. | Readiness/catalog and architecture unit tests pass. | Ownership and query source reviewed; final legacy-symbol scan and catalog integration remain open. |
-| 8. Graph contracts | Canonical `SavedGraphDocument` is used by collaboration domain/application and frontend shared head state. `CollaborativeHeadResponse.from_head` is the backend legacy flattening/pin adapter. HTTP and room outputs call it. Shared domain rules preserve legacy aliases; acceptance differences and retained inline checks are documented. | 607 frontend tests and production build; 696 backend integration/unit tests; exact OpenAPI and generated-client comparisons; 96 tests with asserted extracted-wheel imports. Current unit suite also includes 43 transport contracts. | Implementation evidence verified. Browser runtime check remains open. Retained legacy schema declarations are an explicit compatibility choice, not a claim that v1 has been retired. |
+| 8. Graph contracts | Canonical `SavedGraphDocument` is used by collaboration domain/application and frontend shared head state. `CollaborativeHeadResponse.from_head` is the backend legacy flattening/pin adapter. HTTP and room outputs call it. Shared domain rules preserve legacy aliases; acceptance differences and retained inline checks are documented. | 607 frontend tests and production build; 696 backend integration/unit tests; exact OpenAPI and generated-client comparisons; 96 tests with asserted extracted-wheel imports. Current unit suite also includes 43 transport contracts. | Implementation evidence verified. Browser runtime check passed in the production-build smoke below. Retained legacy schema declarations are an explicit compatibility choice, not a claim that v1 has been retired. |
 | 9. Artifact availability | `ArtifactAvailability.load` deduplicates IDs and loads rows with `get_many`. Batch resolution checks exact identity and memoizes format-specific accessibility. Materialization uses that batch. `PersistentInvocationCache` separately checks hashes and collection integrity, removing stale generations conditionally. | Availability and invocation-cache unit tests pass. Source inspection confirms accessibility has not replaced stronger cache validation. | Source and unit behavior verified; include artifact integration in final gate. |
 | 10. Spatial contracts | `spatial_contracts.py` owns persisted models used by API and GIS. `spatial_storage.load_feature_collection` reconstructs one complete features collection and checks logical byte length/hash. Both API artifact service and GIS persistence call it with their own payload/metadata types. Deployment-specific readers remain with their callers. | Fresh spatial contract unit tests verify producer/reader differences, legacy payloads, geometry and bounds. | Source and unit behavior verified; artifact/GIS integration remains in the broad integration gate. |
 | 11. Persistence | `column_types.py` has typed Pydantic JSON and string-enum implementations, while UTC datetime and artifact-output serializers remain specialized. Schema and repositories have matching feature owners and one metadata bootstrap. `_hydrate_executions` batches composite identities, orders nodes by position and preserves input record order for queue/list/interruption callers. | Fresh persistence suite: 199 passed, 41 optional cases skipped. | Source and SQLite behavior verified; PostgreSQL evidence reconciliation remains open. |
@@ -38,7 +38,7 @@ Source paths above are relative to their owning package under `apps/api/src/graf
 - Source review for findings 10–14 is complete. Keep verification gaps in the table open until the corresponding integration or packaging evidence is inspected.
 - Inspect preserved release/installation/selection, Module/Template, coordinator/node/scalar, raw/validated cache, Local/S3 and host/guest boundaries.
 - Complete broad integration and packaging checks, including the relevant PostgreSQL and Docker evidence; record every exclusion or baseline failure.
-- Verify the migrated frontend flow in a running browser.
+- The migrated frontend flow passed the running-browser verification recorded below.
 - Reconcile architecture documentation and all explicit original-audit requirements with final source, then check the overall completion gates only if each is proven.
 
 
@@ -57,3 +57,28 @@ The broad integration suite ran with two previously verified native macOS fork-c
 - The general persistence run's 41 skipped cases remain visible. This dedicated run supplies the relevant fence/cleanup PostgreSQL cases; older optional persistence cases still need final gate classification.
 
 Remaining work is runtime browser verification, final packaging/CLI and supported-platform coverage reconciliation, and the final preserved-boundary gate. Source review now covers all 14 findings. No whole-goal completion is claimed.
+
+
+## Production frontend browser verification, 2026-09-09
+
+Ran the cleanup worktree's production Next build against a real local API and an isolated temporary SQLite database. A loopback proxy forwarded HTTP and WebSocket traffic. Seeded test users authenticated through normal session cookies loaded from a protected temporary browser-state file. No authentication bypass or production source modification was used.
+
+Playwright drove the visible UI:
+
+1. Created a graph with a built-in Text input node and saved revision 1.
+2. Edited its configuration, added an Artifact Viewer and dragged a preview connection from the text output to the viewer.
+3. Opened a second tab. It hydrated the uncheckpointed text, viewer and link. Edited from that tab and observed the update arrive in the first tab through room replay.
+4. Asserted with authenticated API reads that the live sequence was 7 while the checkpoint sequence was 1, and that the saved document still contained the original text. The live head contained one viewer and one link.
+5. Saved from the UI and reloaded. Deterministic Playwright assertions checked the text value, viewer count, preview link and disabled Saved button. Authenticated browser-request assertions checked equality of canonical head and saved documents, saved revision 2, and matching sequence/checkpoint sequence 8.
+
+The reloaded page had zero console errors or warnings. The initial unauthenticated page, before loading the test session, returned the expected session 401 and an unconfigured-OIDC login response; those setup responses were not part of the authenticated flow. The CLI assertion result was:
+
+```json
+{"browserAssertions":"passed","sequence":8,"checkpointSequence":8,"revision":2,"viewers":1,"links":1}
+```
+
+Inspected the screenshot at local artifact `output/playwright/final-graph-round-trip.png`. It shows the saved text node, connected Artifact Viewer and Saved state. This browser pass exercises built-in node configuration and presentation transport; exact Plugin pin variants remain covered by the transport and room tests.
+
+Closed only the dedicated Playwright session and stopped its API/frontend/proxy supervisor. All children exited and the protected browser-state file was removed. The disposable database and non-secret logs remain under `/tmp/grafy-final-browser-9pdzueir` as local evidence. No main-checkout database or running app was used.
+
+The browser verification gate is complete. Final packaging/CLI and platform/optional-test classification remain open.
