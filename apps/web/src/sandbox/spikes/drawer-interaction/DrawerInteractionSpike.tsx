@@ -39,6 +39,13 @@ import {
 } from "@/features/workbench/canvas/nodes/CanvasNodeChrome";
 import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
 import {
+  DEFAULT_CANVAS_GRID_SETTINGS,
+  shouldSnapPosition,
+  shouldSnapSize,
+  snapLength,
+  snapPosition,
+} from "@/features/workbench/canvas/grid-layout";
+import {
   WORKFLOW_EDGE_TYPE,
   type WorkflowEdgeData,
 } from "@/features/workbench/canvas/types";
@@ -55,6 +62,9 @@ import {
 
 const CARD_NODE_TYPE = "sandboxDrawerCard";
 const DISPLAY_NODE_TYPE = "sandboxArtifactDisplay";
+
+/** A card dropped on empty canvas is a grid cell block, like every other card. */
+const PLACED_MIN_SIZE = 56;
 
 const VARIANTS = [
   {
@@ -760,7 +770,41 @@ export function DrawerInteractionSpike() {
 
   const onNodesChange = React.useCallback(
     (changes: NodeChange<SpikeNode>[]) => {
-      setNodes((current) => applyNodeChanges(changes, current));
+      const cellSize = DEFAULT_CANVAS_GRID_SETTINGS.cellSize;
+      const settled = changes.map((change) => {
+        if (
+          change.type === "position" &&
+          change.position &&
+          shouldSnapPosition(DEFAULT_CANVAS_GRID_SETTINGS, {
+            dragging: change.dragging === true,
+            bypass: false,
+          })
+        ) {
+          return {
+            ...change,
+            position: snapPosition(change.position, cellSize),
+          };
+        }
+        if (
+          change.type === "dimensions" &&
+          change.dimensions &&
+          shouldSnapSize(DEFAULT_CANVAS_GRID_SETTINGS, {
+            drafting: change.resizing === true,
+            bypass: false,
+          })
+        ) {
+          const { width, height } = change.dimensions;
+          return {
+            ...change,
+            dimensions: {
+              width: snapLength(width, cellSize, PLACED_MIN_SIZE),
+              height: snapLength(height, cellSize, PLACED_MIN_SIZE),
+            },
+          };
+        }
+        return change;
+      });
+      setNodes((current) => applyNodeChanges(settled, current));
     },
     [],
   );
@@ -987,7 +1031,10 @@ export function DrawerInteractionSpike() {
         const display: DisplayNode = {
           id: `display-${artifact.id}-${Date.now()}`,
           type: DISPLAY_NODE_TYPE,
-          position: { x: point.x - size / 2, y: point.y - size / 2 },
+          position: snapPosition(
+            { x: point.x - size / 2, y: point.y - size / 2 },
+            DEFAULT_CANVAS_GRID_SETTINGS.cellSize,
+          ),
           selected: true,
           width: size,
           height: size,
@@ -1087,7 +1134,9 @@ export function DrawerInteractionSpike() {
               >
                 <Background
                   variant={BackgroundVariant.Lines}
-                  gap={54}
+                  gap={DEFAULT_CANVAS_GRID_SETTINGS.cellSize}
+                  offset={DEFAULT_CANVAS_GRID_SETTINGS.cellSize / 2}
+                  lineWidth={1}
                   color={tokens.colorGrid}
                 />
                 <Controls showInteractive={false} />
