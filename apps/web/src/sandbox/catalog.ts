@@ -11,6 +11,12 @@ export const SPIKES = [
     summary:
       "Table row to map feature without extra ports. Four gestures for the same binding.",
   },
+  {
+    id: "drawer-interaction",
+    title: "Artifact drawer to input",
+    summary:
+      "Drag a Produced or Kept artifact onto a real port row, or onto empty canvas.",
+  },
 ] as const;
 
 export type SpikeId = (typeof SPIKES)[number]["id"];
