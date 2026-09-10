@@ -422,7 +422,7 @@ function bootState(): { nodes: SpikeNode[]; edges: SpikeEdge[] } {
 
 const s = stylex.create({
   card: {
-    minWidth: "230px",
+    minWidth: "310px",
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: tokens.colorBorder,
@@ -450,9 +450,11 @@ const s = stylex.create({
   },
   originChip: {
     display: "inline-flex",
+    flexShrink: 1,
     alignItems: "center",
     gap: "5px",
     height: "20px",
+    minWidth: 0,
     maxWidth: "150px",
     paddingInline: "7px",
     borderRadius: "9999px",
@@ -519,7 +521,7 @@ const s = stylex.create({
   },
   workbench: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) 272px",
+    gridTemplateColumns: "minmax(0, 1fr) 320px",
     height: "calc(100svh - 208px)",
     minHeight: "460px",
     borderWidth: 1,
@@ -529,26 +531,32 @@ const s = stylex.create({
     overflow: "hidden",
     backgroundColor: tokens.colorBg,
   },
+  canvasColumn: {
+    display: "flex",
+    flexDirection: "column",
+    minWidth: 0,
+    minHeight: 0,
+  },
   canvasWrap: {
     position: "relative",
+    flex: 1,
     minWidth: 0,
+    minHeight: 0,
   },
   canvas: { width: "100%", height: "100%" },
   status: {
-    position: "absolute",
-    left: "12px",
-    bottom: "12px",
-    zIndex: 6,
-    maxWidth: "min(600px, calc(100% - 24px))",
-    padding: "7px 10px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: tokens.radiusSm,
+    flexShrink: 0,
+    minHeight: "32px",
+    display: "flex",
+    alignItems: "center",
+    padding: "6px 12px",
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorBorder,
     backgroundColor: tokens.colorChrome,
     color: tokens.colorText,
     fontSize: tokens.fontSizeXs,
-    lineHeight: 1.4,
+    lineHeight: 1.45,
   },
   statusBad: { borderColor: tokens.colorDanger, color: tokens.colorDanger },
   statusGood: { borderColor: tokens.colorAccent },
@@ -629,6 +637,7 @@ const s = stylex.create({
     whiteSpace: "nowrap",
   },
   rowType: {
+    flexShrink: 0,
     color: tokens.colorMuted,
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     fontSize: "10px",
@@ -979,56 +988,57 @@ export function DrawerInteractionSpike() {
       onVariant={(id) => setVariant(id as VariantId)}
     >
       <div {...stylex.props(s.workbench)}>
-        <div
-          {...stylex.props(s.canvasWrap)}
-          onDragOver={onDragOver}
-          onDragLeave={() => setHover(null)}
-          onDrop={onDrop}
-        >
-          <div {...stylex.props(s.canvas)}>
-            <ReactFlow<SpikeNode, SpikeEdge>
-              nodes={nodes}
-              edges={edges}
-              nodeTypes={nodeTypes}
-              edgeTypes={productEdgeTypes as EdgeTypes}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onInit={(instance) => {
-                instanceRef.current = instance;
-              }}
-              onPaneClick={() =>
-                setNodes((current) => current.map((node) => ({ ...node, selected: false })))
-              }
-              fitView
-              fitViewOptions={{ padding: 0.25, maxZoom: 0.85 }}
-              minZoom={0.3}
-              maxZoom={1.6}
-              colorMode={resolved}
-              connectOnClick={false}
-              panOnScroll
-              panOnDrag={[1, 2]}
-              selectionOnDrag
-              proOptions={{ hideAttribution: true }}
-            >
-              <Background
-                variant={BackgroundVariant.Lines}
-                gap={54}
-                color={tokens.colorGrid}
-              />
-              <Controls showInteractive={false} />
-            </ReactFlow>
-          </div>
-          {hover ? (
-            <div {...stylex.props(s.hint, hover.ok ? s.statusGood : s.statusBad)}>
-              {hover.text}
+        <div {...stylex.props(s.canvasColumn)}>
+          <div
+            {...stylex.props(s.canvasWrap)}
+            onDragOver={onDragOver}
+            onDragLeave={() => setHover(null)}
+            onDrop={onDrop}
+          >
+            <div {...stylex.props(s.canvas)}>
+              <ReactFlow<SpikeNode, SpikeEdge>
+                nodes={nodes}
+                edges={edges}
+                nodeTypes={nodeTypes}
+                edgeTypes={productEdgeTypes as EdgeTypes}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onInit={(instance) => {
+                  instanceRef.current = instance;
+                }}
+                onPaneClick={() =>
+                  setNodes((current) => current.map((node) => ({ ...node, selected: false })))
+                }
+                fitView
+                fitViewOptions={{ padding: 0.25, maxZoom: 0.85 }}
+                minZoom={0.3}
+                maxZoom={1.6}
+                colorMode={resolved}
+                connectOnClick={false}
+                panOnScroll
+                panOnDrag={[1, 2]}
+                selectionOnDrag
+                proOptions={{ hideAttribution: true }}
+              >
+                <Background
+                  variant={BackgroundVariant.Lines}
+                  gap={54}
+                  color={tokens.colorGrid}
+                />
+                <Controls showInteractive={false} />
+              </ReactFlow>
             </div>
-          ) : null}
+            {hover ? (
+              <div {...stylex.props(s.hint, hover.ok ? s.statusGood : s.statusBad)}>
+                {hover.text}
+              </div>
+            ) : null}
+          </div>
           <div
             data-status={status.tone}
             {...stylex.props(
               s.status,
               status.tone === "bad" ? s.statusBad : null,
-              status.tone === "good" ? s.statusGood : null,
             )}
           >
             {status.text}
