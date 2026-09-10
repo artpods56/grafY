@@ -136,11 +136,7 @@ function DrawerCardNode({ id, data, selected }: NodeProps<CardNode>) {
     return rows;
   }, [data.plugs, data.spec.inputs]);
 
-  const rowCount = Math.max(
-    inputRows.length,
-    data.spec.outputs.length,
-    1,
-  );
+  const rowCount = Math.max(inputRows.length, data.spec.outputs.length, 1);
 
   const rows = Array.from({ length: rowCount }, (_, index) => {
     const input = inputRows[index];
@@ -175,10 +171,7 @@ function DrawerCardNode({ id, data, selected }: NodeProps<CardNode>) {
 
   return (
     <div
-      {...stylex.props(
-        s.card,
-        selected ? s.cardSelected : null,
-      )}
+      {...stylex.props(s.card, selected ? s.cardSelected : null)}
       data-testid="drawer-card"
     >
       <CanvasNodeHeader
@@ -272,7 +265,10 @@ function placedPort(artifact: DrawerArtifact): Port {
     title: "placed",
     description: null,
     direction: "output",
-    artifact_type: { id: artifact.artifactType, schema_version: artifact.schemaVersion },
+    artifact_type: {
+      id: artifact.artifactType,
+      schema_version: artifact.schemaVersion,
+    },
     artifact_type_variable: null,
     shape: "one",
     accepted_shapes: ["one"],
@@ -296,7 +292,10 @@ function handleStyleAt(top: number, color: string) {
 }
 
 function artifactFamily(artifactType: string): "image" | "table" | "text" {
-  if (artifactType.startsWith("file.png") || artifactType.startsWith("image.")) {
+  if (
+    artifactType.startsWith("file.png") ||
+    artifactType.startsWith("image.")
+  ) {
     return "image";
   }
   if (artifactType.startsWith("table.")) return "table";
@@ -307,17 +306,33 @@ function ArtifactBody({ artifact }: { artifact: DrawerArtifact }) {
   const family = artifactFamily(artifact.artifactType);
   if (family === "image") {
     return (
-      <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" width="100%" height="100%">
+      <svg
+        viewBox="0 0 100 100"
+        preserveAspectRatio="xMidYMid slice"
+        width="100%"
+        height="100%"
+      >
         <rect width="100" height="100" fill="#12212e" />
         <circle cx="68" cy="30" r="9" fill="#e6c07b" />
-        <path d="M0 76 L30 52 L52 70 L74 46 L100 68 L100 100 L0 100 Z" fill="#3f6d59" />
-        <path d="M0 88 L24 72 L48 86 L72 70 L100 84 L100 100 L0 100 Z" fill="#2c4c40" />
+        <path
+          d="M0 76 L30 52 L52 70 L74 46 L100 68 L100 100 L0 100 Z"
+          fill="#3f6d59"
+        />
+        <path
+          d="M0 88 L24 72 L48 86 L72 70 L100 84 L100 100 L0 100 Z"
+          fill="#2c4c40"
+        />
       </svg>
     );
   }
   if (family === "table") {
     return (
-      <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" width="100%" height="100%">
+      <svg
+        viewBox="0 0 100 100"
+        preserveAspectRatio="xMidYMid slice"
+        width="100%"
+        height="100%"
+      >
         <rect width="100" height="100" fill="#101a24" />
         <rect width="100" height="16" fill="#26405c" />
         {[26, 40, 54, 68, 82].map((y) => (
@@ -330,7 +345,12 @@ function ArtifactBody({ artifact }: { artifact: DrawerArtifact }) {
     );
   }
   return (
-    <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" width="100%" height="100%">
+    <svg
+      viewBox="0 0 100 100"
+      preserveAspectRatio="xMidYMid slice"
+      width="100%"
+      height="100%"
+    >
       <rect width="100" height="100" fill="#101a24" />
       {[24, 38, 52, 66, 80].map((y, index) => (
         <rect
@@ -422,7 +442,7 @@ function bootState(): { nodes: SpikeNode[]; edges: SpikeEdge[] } {
 
 const s = stylex.create({
   card: {
-    minWidth: "310px",
+    minWidth: "300px",
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: tokens.colorBorder,
@@ -444,18 +464,20 @@ const s = stylex.create({
   plugSlot: {
     position: "relative",
     display: "flex",
-    alignItems: "center",
-    gap: "6px",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    width: "100%",
+    gap: "3px",
     minWidth: 0,
+    paddingBlock: "3px",
   },
   originChip: {
     display: "inline-flex",
-    flexShrink: 1,
     alignItems: "center",
     gap: "5px",
     height: "20px",
     minWidth: 0,
-    maxWidth: "150px",
+    maxWidth: "100%",
     paddingInline: "7px",
     borderRadius: "9999px",
     backgroundColor: tokens.colorSurfaceSunken,
@@ -618,18 +640,31 @@ const s = stylex.create({
     gap: "2px",
   },
   row: {
-    display: "flex",
+    display: "grid",
+    gridTemplateColumns: "3px minmax(0, 1fr) auto",
     alignItems: "center",
-    gap: "7px",
+    columnGap: "7px",
+    rowGap: "1px",
     padding: "5px 6px",
     borderRadius: tokens.radiusSm,
     cursor: "grab",
     backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
   },
-  swatch: { width: "3px", alignSelf: "stretch", borderRadius: "9999px" },
+  swatch: {
+    width: "3px",
+    height: "100%",
+    gridRow: "1 / span 2",
+    borderRadius: "9999px",
+  },
+  rowMeta: {
+    gridColumn: "2 / span 2",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    minWidth: 0,
+  },
   rowLabel: {
     minWidth: 0,
-    flex: 1,
     overflow: "hidden",
     color: tokens.colorText,
     fontSize: tokens.fontSizeXs,
@@ -692,27 +727,50 @@ const s = stylex.create({
 export function DrawerInteractionSpike() {
   const { resolved } = useTheme();
   const [variant, setVariant] = React.useState<VariantId>("replace");
-  const [nodes, setNodes] = React.useState<SpikeNode[]>(() => bootState().nodes);
-  const [edges, setEdges] = React.useState<SpikeEdge[]>(() => bootState().edges);
-  const [kept, setKept] = React.useState<readonly DrawerArtifact[]>(KEPT_ARTIFACTS);
+  const [nodes, setNodes] = React.useState<SpikeNode[]>(
+    () => bootState().nodes,
+  );
+  const [edges, setEdges] = React.useState<SpikeEdge[]>(
+    () => bootState().edges,
+  );
+  const [kept, setKept] =
+    React.useState<readonly DrawerArtifact[]>(KEPT_ARTIFACTS);
   const [tab, setTab] = React.useState<"produced" | "kept">("produced");
-  const [naming, setNaming] = React.useState<{ id: string; value: string } | null>(null);
-  const [status, setStatus] = React.useState<{ tone: "info" | "good" | "bad"; text: string }>({
+  const [naming, setNaming] = React.useState<{
+    id: string;
+    value: string;
+  } | null>(null);
+  const [status, setStatus] = React.useState<{
+    tone: "info" | "good" | "bad";
+    text: string;
+  }>({
     tone: "info",
     text: "Drag a row from the drawer onto a port row, or onto empty canvas.",
   });
-  const [hover, setHover] = React.useState<{ text: string; ok: boolean } | null>(null);
+  const [hover, setHover] = React.useState<{
+    text: string;
+    ok: boolean;
+  } | null>(null);
   const draggingRef = React.useRef<string | null>(null);
-  const instanceRef = React.useRef<ReactFlowInstance<SpikeNode, SpikeEdge> | null>(null);
+  const instanceRef = React.useRef<ReactFlowInstance<
+    SpikeNode,
+    SpikeEdge
+  > | null>(null);
   const produced = PRODUCED_ARTIFACTS;
 
-  const onNodesChange = React.useCallback((changes: NodeChange<SpikeNode>[]) => {
-    setNodes((current) => applyNodeChanges(changes, current));
-  }, []);
+  const onNodesChange = React.useCallback(
+    (changes: NodeChange<SpikeNode>[]) => {
+      setNodes((current) => applyNodeChanges(changes, current));
+    },
+    [],
+  );
 
-  const onEdgesChange = React.useCallback((changes: EdgeChange<SpikeEdge>[]) => {
-    setEdges((current) => applyEdgeChanges(changes, current));
-  }, []);
+  const onEdgesChange = React.useCallback(
+    (changes: EdgeChange<SpikeEdge>[]) => {
+      setEdges((current) => applyEdgeChanges(changes, current));
+    },
+    [],
+  );
 
   const setBinding = React.useCallback(
     (nodeId: string, plugId: string, label: string) => {
@@ -788,7 +846,9 @@ export function DrawerInteractionSpike() {
       const raw = handle.getAttribute("data-handleid");
       const decoded = decodeHandleId(raw);
       if (!decoded || decoded.direction !== "input") return null;
-      const node = nodes.find((candidate) => candidate.id === handle.dataset.nodeid);
+      const node = nodes.find(
+        (candidate) => candidate.id === handle.dataset.nodeid,
+      );
       if (node?.type !== CARD_NODE_TYPE) return null;
       const port = node.data.spec.inputs.find(
         (candidate) => candidate.name === decoded.portName,
@@ -836,10 +896,12 @@ export function DrawerInteractionSpike() {
     ) => {
       const plugs = node.data.plugs[port.name] ?? [];
       const targetPlug = plugId ?? plugs[0] ?? newPlugId(port.name);
-      const many = port.shape === "many" || port.accepted_shapes.includes("many");
+      const many =
+        port.shape === "many" || port.accepted_shapes.includes("many");
 
       if (many) {
-        const count = plugs.length + (plugs.some((id) => !node.data.bindings[id]) ? 0 : 1);
+        const count =
+          plugs.length + (plugs.some((id) => !node.data.bindings[id]) ? 0 : 1);
         addPlug(node.id, port.name, artifact.label);
         setStatus({
           tone: "good",
@@ -906,7 +968,8 @@ export function DrawerInteractionSpike() {
   const onDrop = React.useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      const artifactId = event.dataTransfer.getData("text/plain") || draggingRef.current;
+      const artifactId =
+        event.dataTransfer.getData("text/plain") || draggingRef.current;
       draggingRef.current = null;
       setHover(null);
       const artifact = artifactId ? artifactById(artifactId) : undefined;
@@ -1007,7 +1070,9 @@ export function DrawerInteractionSpike() {
                   instanceRef.current = instance;
                 }}
                 onPaneClick={() =>
-                  setNodes((current) => current.map((node) => ({ ...node, selected: false })))
+                  setNodes((current) =>
+                    current.map((node) => ({ ...node, selected: false })),
+                  )
                 }
                 fitView
                 fitViewOptions={{ padding: 0.25, maxZoom: 0.85 }}
@@ -1029,7 +1094,9 @@ export function DrawerInteractionSpike() {
               </ReactFlow>
             </div>
             {hover ? (
-              <div {...stylex.props(s.hint, hover.ok ? s.statusGood : s.statusBad)}>
+              <div
+                {...stylex.props(s.hint, hover.ok ? s.statusGood : s.statusBad)}
+              >
                 {hover.text}
               </div>
             ) : null}
@@ -1075,7 +1142,10 @@ export function DrawerInteractionSpike() {
                   {...stylex.props(s.keepForm)}
                   onSubmit={(event) => {
                     event.preventDefault();
-                    keepArtifact(artifact, naming.value.trim() || artifact.label);
+                    keepArtifact(
+                      artifact,
+                      naming.value.trim() || artifact.label,
+                    );
                   }}
                 >
                   <input
@@ -1115,10 +1185,6 @@ export function DrawerInteractionSpike() {
                     }}
                   />
                   <span {...stylex.props(s.rowLabel)}>{artifact.label}</span>
-                  <span {...stylex.props(s.rowType)}>
-                    {artifact.artifactType}@{artifact.schemaVersion} · rev{" "}
-                    {artifact.revision}
-                  </span>
                   {artifact.stale ? (
                     <span {...stylex.props(s.stale)}>STALE</span>
                   ) : null}
@@ -1133,14 +1199,20 @@ export function DrawerInteractionSpike() {
                       Keep
                     </button>
                   ) : null}
+                  <span {...stylex.props(s.rowMeta)}>
+                    <span {...stylex.props(s.rowType)}>
+                      {artifact.artifactType}@{artifact.schemaVersion} · rev{" "}
+                      {artifact.revision}
+                    </span>
+                  </span>
                 </div>
               ),
             )}
           </div>
           <div {...stylex.props(s.drawerFoot)}>
-            An input fed by a wire shows the upstream node. An input fed by an origin shows
-            the artifact. Both use the same port row, so the difference has to come from the
-            label, a badge, or the wire style.
+            An input fed by a wire shows the upstream node. An input fed by an
+            origin shows the artifact. Both use the same port row, so the
+            difference has to come from the label, a badge, or the wire style.
           </div>
         </div>
       </div>

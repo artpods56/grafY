@@ -247,7 +247,6 @@ export const KEPT_ARTIFACTS: readonly DrawerArtifact[] = [
 export const DRAWER_ARTIFACTS: readonly DrawerArtifact[] = [
   ...PRODUCED_ARTIFACTS,
   ...KEPT_ARTIFACTS.filter(
-    (kept) =>
-      !PRODUCED_ARTIFACTS.some((produced) => produced.id === kept.id),
+    (kept) => !PRODUCED_ARTIFACTS.some((produced) => produced.id === kept.id),
   ),
 ];
