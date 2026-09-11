@@ -39,7 +39,7 @@ import {
 import { GraphRowMenu, promptGraphRename } from "./GraphRowMenu";
 import { sortGraphsByRecency } from "./WorkspaceGraphPanel";
 
-interface WorkspaceContextValue {
+export interface WorkspaceContextValue {
   workspace: Workspace;
   workspaces: readonly Workspace[];
   refreshWorkspaces: () => Promise<readonly Workspace[] | undefined>;
@@ -228,6 +228,30 @@ export function useWorkspaceContext(): WorkspaceContextValue {
       "useWorkspaceContext must be used inside a workspace route",
     );
   return context;
+}
+
+/**
+ * The same value, for a surface that must render without a workspace route.
+ * A sandbox exercises real node bodies with a stand-in workspace, and the
+ * popover degrades instead of throwing. Product routes keep using
+ * {@link useWorkspaceContext}, which still throws on a missing provider.
+ */
+export function useOptionalWorkspaceContext(): WorkspaceContextValue | null {
+  return React.useContext(WorkspaceContext);
+}
+
+export function WorkspaceContextScope({
+  value,
+  children,
+}: {
+  value: WorkspaceContextValue;
+  children: React.ReactNode;
+}) {
+  return (
+    <WorkspaceContext.Provider value={value}>
+      {children}
+    </WorkspaceContext.Provider>
+  );
 }
 
 export function WorkspaceRail({

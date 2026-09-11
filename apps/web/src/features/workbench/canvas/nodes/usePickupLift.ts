@@ -41,7 +41,9 @@ function setHeldNodeId(next: string | null) {
   heldListeners.forEach((listener) => listener());
 }
 function useHeldNodeId() {
-  return React.useSyncExternalStore(subscribeHeld, getHeldNodeId);
+  // The held node is set by a pointer gesture, so the server value is always
+  // null. Without this the node card throws while server rendering.
+  return React.useSyncExternalStore(subscribeHeld, getHeldNodeId, () => null);
 }
 
 interface PickupLiftOptions {

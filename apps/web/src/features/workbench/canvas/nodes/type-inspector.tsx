@@ -6,7 +6,7 @@ import { Popover } from "@base-ui/react/popover";
 import { ChevronRight } from "lucide-react";
 
 import { useNodeRegistry } from "@/hooks/use-api";
-import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
+import { useOptionalWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import type { Port } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { overlay } from "@/lib/stylex/overlay.stylex";
@@ -287,12 +287,15 @@ export function PortTypePopover({
   onOpenChange?: (open: boolean) => void;
   children: React.ReactNode;
 }) {
-  const { workspace } = useWorkspaceContext();
+  // Optional so a sandbox can render the real node card with no workspace
+  // route and no API. Without a workspace the registry is not fetched and the
+  // popover reports that the payload schema is unavailable.
+  const workspace = useOptionalWorkspaceContext();
   const {
     data: registry,
     error: registryError,
     isLoading: registryLoading,
-  } = useNodeRegistry(workspace.id);
+  } = useNodeRegistry(workspace?.workspace.id);
   const artifactType = resolvedPortArtifactType(port, artifactTypeBindings);
   const variable = portArtifactTypeVariable(port);
   const spec = artifactType

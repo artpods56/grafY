@@ -22,21 +22,24 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { ChevronDown, Image as ImageIcon } from "lucide-react";
 
 import { useTheme } from "@/components/theme";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import type { NodeSpec, Port } from "@/lib/api";
-import { edgeTypes as productEdgeTypes } from "@/features/workbench/canvas/WorkflowCanvas";
+import type { InputPlugInput, NodeSpec, Port } from "@/lib/api";
+import {
+  edgeTypes as productEdgeTypes,
+  nodeTypes as productNodeTypes,
+} from "@/features/workbench/canvas/WorkflowCanvas";
 import {
   connectionArtifactContractIsValid,
   decodeHandleId,
   encodeHandleId,
 } from "@/features/workbench/canvas/handles";
 import {
-  CanvasNodeHeader,
-  CanvasPortRail,
-  CanvasPortTab,
-} from "@/features/workbench/canvas/nodes/CanvasNodeChrome";
+  createWorkflowInputPlug,
+  inputPlugsForPort,
+} from "@/features/workbench/canvas/input-plugs";
 import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
 import {
   DEFAULT_CANVAS_GRID_SETTINGS,
@@ -47,20 +50,28 @@ import {
 } from "@/features/workbench/canvas/grid-layout";
 import {
   WORKFLOW_EDGE_TYPE,
+  WORKFLOW_NODE_TYPE,
+  createWorkflowNodeData,
+  portMetaForPort,
   type WorkflowEdgeData,
+  type WorkflowNodeData,
 } from "@/features/workbench/canvas/types";
+import { WorkspaceContextScope } from "@/features/workspaces/WorkspaceLayout";
 import { SandboxShell } from "../../SandboxShell";
 import {
   DRAWER_ARTIFACTS,
   IMPORT_TABLE_SPEC,
-  KEPT_ARTIFACTS,
-  PRODUCED_ARTIFACTS,
+  LIBRARY_ARTIFACTS,
+  LIBRARY_FOLDERS,
   RENDER_PAGE_SPEC,
+  RUN_BATCHES,
   SUMMARIZE_TABLES_SPEC,
+  sandboxWorkspaceContext,
   type DrawerArtifact,
+  type LibraryFolder,
+  type RunBatch,
 } from "../../fixtures/drawer";
 
-const CARD_NODE_TYPE = "sandboxDrawerCard";
 const DISPLAY_NODE_TYPE = "sandboxArtifactDisplay";
 
 /** A card dropped on empty canvas is a grid cell block, like every other card. */
@@ -81,37 +92,21 @@ const VARIANTS = [
 
 type VariantId = (typeof VARIANTS)[number]["id"];
 
-interface CardData extends Record<string, unknown> {
-  spec: NodeSpec;
-  /** Plug id to the artifact label that satisfies it. */
-  bindings: Record<string, string>;
-  /** Port name to its plug ids, in sequence order. */
-  plugs: Record<string, string[]>;
-}
-
 interface ArtifactDisplayData extends Record<string, unknown> {
   artifactId: string;
 }
 
-type CardNode = Node<CardData, typeof CARD_NODE_TYPE>;
+/**
+ * A card is a real workflow node. The spike drives the product's own node body
+ * so the drawer feeds the surface that ships, not a copy of it.
+ */
+type CardNode = Node<WorkflowNodeData, typeof WORKFLOW_NODE_TYPE>;
 type DisplayNode = Node<ArtifactDisplayData, typeof DISPLAY_NODE_TYPE>;
 type SpikeNode = CardNode | DisplayNode;
 type SpikeEdge = Edge<WorkflowEdgeData, typeof WORKFLOW_EDGE_TYPE>;
 
-let plugSeq = 0;
-
-function newPlugId(portName: string): string {
-  plugSeq += 1;
-  return `${portName}-plug-${plugSeq}`;
-}
-
 function artifactById(id: string): DrawerArtifact | undefined {
   return DRAWER_ARTIFACTS.find((artifact) => artifact.id === id);
-}
-
-function portColor(port: Port): string {
-  const id = port.artifact_type?.id;
-  return artifactTypeColor(id ?? "", tokens.colorAccent);
 }
 
 function portTypeLabel(port: Port): string {
@@ -119,152 +114,47 @@ function portTypeLabel(port: Port): string {
   return `${port.artifact_type.id}@${port.artifact_type.schema_version}`;
 }
 
-function handleIdFor(
+/** The handle the real card publishes for one input plug. */
+function plugHandleId(
+  data: WorkflowNodeData,
   port: Port,
-  plugId: string | undefined,
-  direction: "input" | "output",
+  plugId: string,
 ): string {
-  return encodeHandleId({
-    portName: port.name,
-    artifactTypeId: port.artifact_type?.id ?? "unknown",
-    schemaVersion: port.artifact_type?.schema_version ?? 1,
-    shape: port.shape,
-    direction,
-    ...(plugId ? { plugId } : {}),
-  });
-}
-
-function DrawerCardNode({ id, data, selected }: NodeProps<CardNode>) {
-  const inputRows = React.useMemo(() => {
-    const rows: { port: Port; plugId: string }[] = [];
-    for (const port of data.spec.inputs) {
-      const plugs = data.plugs[port.name]?.length
-        ? data.plugs[port.name]
-        : [newPlugId(port.name)];
-      for (const plugId of plugs) rows.push({ port, plugId });
-    }
-    return rows;
-  }, [data.plugs, data.spec.inputs]);
-
-  const rowCount = Math.max(inputRows.length, data.spec.outputs.length, 1);
-
-  const rows = Array.from({ length: rowCount }, (_, index) => {
-    const input = inputRows[index];
-    const output = data.spec.outputs[index];
-    return {
-      input: input ? (
-        <PortSlot
-          nodeId={id}
-          port={input.port}
-          plugId={input.plugId}
-          binding={data.bindings[input.plugId]}
-          sequenceIndex={
-            data.plugs[input.port.name]?.length > 1 ? index + 1 : null
-          }
-          sequenceLength={data.plugs[input.port.name]?.length ?? 0}
-        />
-      ) : undefined,
-      output: output ? (
-        <CanvasPortTab
-          nodeId={id}
-          direction="output"
-          label={output.name}
-          hint={output.shape === "many" ? "many" : undefined}
-          handleId={handleIdFor(output, undefined, "output")}
-          color={portColor(output)}
-          isConnectable
-          ariaLabel={`${output.name} output, ${portTypeLabel(output)}`}
-        />
-      ) : undefined,
-    };
-  });
-
-  return (
-    <div
-      {...stylex.props(s.card, selected ? s.cardSelected : null)}
-      data-testid="drawer-card"
-    >
-      <CanvasNodeHeader
-        title={data.spec.title}
-        selected={selected}
-        aboutLabel={`About ${data.spec.title}`}
-        aboutTitle={data.spec.title}
-        aboutDescription={data.spec.description ?? ""}
-      >
-        <span {...stylex.props(s.cardFlag)} />
-      </CanvasNodeHeader>
-      <CanvasPortRail rows={rows} />
-    </div>
+  return encodeHandleId(
+    portMetaForPort(port, port.shape, plugId, data.artifactTypeBindings),
   );
 }
 
-function PortSlot({
-  nodeId,
-  port,
-  plugId,
-  binding,
-  sequenceIndex,
-  sequenceLength,
-}: {
-  nodeId: string;
-  port: Port;
-  plugId: string;
-  binding: string | undefined;
-  sequenceIndex: number | null;
-  sequenceLength: number;
-}) {
-  return (
-    <div {...stylex.props(s.plugSlot)}>
-      <CanvasPortTab
-        nodeId={nodeId}
-        direction="input"
-        label={port.name}
-        hint={port.shape === "many" ? "many" : undefined}
-        handleId={handleIdFor(port, plugId, "input")}
-        color={portColor(port)}
-        isConnectable
-        ariaLabel={`${port.name} input, ${portTypeLabel(port)}`}
-      />
-      {binding ? (
-        <span
-          {...stylex.props(s.originChip)}
-          data-origin-for={plugId}
-          title={`Satisfied by the artifact ${binding}`}
-        >
-          {sequenceIndex ? (
-            <span {...stylex.props(s.originIndex)}>{sequenceIndex}</span>
-          ) : null}
-          <span {...stylex.props(s.originLabel)}>{binding}</span>
-        </span>
-      ) : (
-        <span {...stylex.props(s.emptyChip)}>Connect input</span>
-      )}
-      {sequenceLength > 1 ? (
-        <span {...stylex.props(s.sequenceNote)}>
-          {sequenceLength} in sequence
-        </span>
-      ) : null}
-    </div>
-  );
+/** The handle the real card publishes for a plain port. */
+function portHandleId(port: Port): string {
+  return encodeHandleId(portMetaForPort(port));
 }
 
 function ArtifactDisplayNode({ data, selected }: NodeProps<DisplayNode>) {
   const artifact = artifactById(data.artifactId);
   if (!artifact) return null;
 
+  const color = artifactTypeColor(artifact.artifactType, tokens.colorAccent);
+
   return (
-    <div {...stylex.props(s.display, selected ? s.displaySelected : null)}>
-      <NodeResizer minWidth={56} minHeight={56} isVisible={selected} />
-      <Handle
-        type="source"
-        position={Position.Right}
-        id={handleIdFor(placedPort(artifact), undefined, "output")}
-        style={handleStyleAt(10, tokens.colorAccent)}
-      />
-      <span {...stylex.props(s.displayMeta)}>
-        {artifact.label} · {artifact.artifactType}@{artifact.schemaVersion}
-      </span>
-      <ArtifactBody artifact={artifact} />
+    <div {...stylex.props(s.displayFrame)}>
+      <div {...stylex.props(s.displayLabelRow)}>
+        <span {...stylex.props(s.displayType)}>
+          <ImageIcon size={11} aria-hidden />
+          {artifactFamilyTitle(artifact.artifactType)}
+        </span>
+        <span {...stylex.props(s.displayName)}>{artifact.label}</span>
+      </div>
+      <div {...stylex.props(s.display, selected ? s.displaySelected : null)}>
+        <NodeResizer minWidth={56} minHeight={56} isVisible={selected} />
+        <Handle
+          type="source"
+          position={Position.Right}
+          id={encodeHandleId(portMetaForPort(placedPort(artifact)))}
+          style={handleStyleAt("calc(50% - 7px)", color)}
+        />
+        <ArtifactBody artifact={artifact} />
+      </div>
     </div>
   );
 }
@@ -288,10 +178,11 @@ function placedPort(artifact: DrawerArtifact): Port {
   };
 }
 
-function handleStyleAt(top: number, color: string) {
+function handleStyleAt(top: number | string, color: string) {
   const surface = tokens.colorSurface;
   return {
-    top: `${top}px`,
+    top: typeof top === "number" ? `${top}px` : top,
+    right: "-20px",
     width: "14px",
     height: "14px",
     borderRadius: "9999px",
@@ -299,6 +190,14 @@ function handleStyleAt(top: number, color: string) {
     border: "none",
     cursor: "crosshair",
   };
+}
+
+/** The label the reference puts on the canvas above the card, not inside it. */
+function artifactFamilyTitle(artifactType: string): string {
+  const family = artifactFamily(artifactType);
+  if (family === "image") return "Image";
+  if (family === "table") return "Table";
+  return "Text";
 }
 
 function artifactFamily(artifactType: string): "image" | "table" | "text" {
@@ -378,18 +277,92 @@ function ArtifactBody({ artifact }: { artifact: DrawerArtifact }) {
 }
 
 const nodeTypes = {
-  [CARD_NODE_TYPE]: DrawerCardNode,
+  ...productNodeTypes,
   [DISPLAY_NODE_TYPE]: ArtifactDisplayNode,
 } as NodeTypes;
 
-function initialPlugs(spec: NodeSpec): Record<string, string[]> {
-  const plugs: Record<string, string[]> = {};
-  for (const port of spec.inputs) {
-    if (!port.instance_plugs) continue;
-    plugs[port.name] = [newPlugId(port.name)];
-  }
-  return plugs;
+/**
+ * The card's own plugs, wired to the spike's state so the product's add and
+ * remove controls drive the same list the drawer drops into.
+ */
+function cardCallbacks(
+  addPlug: (nodeId: string, portName: string) => void,
+  removePlug: (nodeId: string, plugId: string) => void,
+): Partial<WorkflowNodeData> {
+  return {
+    onAddInputPlug: addPlug,
+    onRemoveInputPlug: removePlug,
+  };
 }
+
+type DropOutcome =
+  | { ok: false; reason: string }
+  | { ok: true; data: WorkflowNodeData; sequenceLength: number };
+
+/**
+ * Satisfy one input with an artifact.
+ *
+ * A `one` port keeps a single origin, so a second artifact replaces the first on
+ * the same row. A `many` port holds a sequence, so a drop onto a row that
+already holds an artifact appends a new row instead of overwriting it.
+ */
+function withSatisfiedPlug(
+  data: WorkflowNodeData,
+  portName: string,
+  plugId: string | undefined,
+  label: string,
+  newPlugId: string,
+): DropOutcome {
+  const port = data.spec.inputs.find(
+    (candidate) => candidate.name === portName,
+  );
+  if (!port) return { ok: false, reason: `no port named ${portName}` };
+  const many = port.shape === "many" || port.accepted_shapes.includes("many");
+  const isBound = (id: string) => Boolean(data.inputPlugBindings[id]);
+  const inputPlugs = [...data.inputPlugs];
+
+  let target = plugId
+    ? inputPlugs.find((plug) => plug.id === plugId)
+    : undefined;
+  if (target && many && isBound(target.id)) target = undefined;
+  target ??= inputPlugs.find(
+    (plug) => plug.portName === portName && !isBound(plug.id),
+  );
+  if (!target) {
+    target = { id: newPlugId, portName };
+    inputPlugs.push(target);
+  }
+
+  return {
+    ok: true,
+    sequenceLength:
+      inputPlugs.filter(
+        (plug) => plug.portName === portName && isBound(plug.id),
+      ).length + 1,
+    data: {
+      ...data,
+      inputPlugs,
+      inputPlugBindings: {
+        ...data.inputPlugBindings,
+        [target.id]: {
+          sourceLabel: label,
+          sourceShape: many ? "many" : "one",
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Stable plug ids, so the server and the client render the same rows. The
+ * product reads saved plugs from the graph document; a sandbox has no document,
+ * so it names them here instead of letting them be minted per render.
+ */
+const SANDBOX_PLUGS: Record<string, readonly InputPlugInput[]> = {
+  import: [{ id: "sandbox-import-file-1", port: "file" }],
+  summarize: [{ id: "sandbox-summarize-tables-1", port: "tables" }],
+  render: [{ id: "sandbox-render-body-1", port: "body" }],
+};
 
 function cardNode(
   id: string,
@@ -398,10 +371,10 @@ function cardNode(
 ): CardNode {
   return {
     id,
-    type: CARD_NODE_TYPE,
+    type: WORKFLOW_NODE_TYPE,
     position,
     selected: false,
-    data: { spec, bindings: {}, plugs: initialPlugs(spec) },
+    data: createWorkflowNodeData(spec, SANDBOX_PLUGS[id] ?? []),
   };
 }
 
@@ -416,12 +389,15 @@ function initialNodes(): SpikeNode[] {
 function initialEdges(nodes: readonly SpikeNode[]): SpikeEdge[] {
   const summarize = nodes.find((node) => node.id === "summarize");
   const render = nodes.find((node) => node.id === "render");
-  if (summarize?.type !== CARD_NODE_TYPE || render?.type !== CARD_NODE_TYPE) {
+  if (
+    summarize?.type !== WORKFLOW_NODE_TYPE ||
+    render?.type !== WORKFLOW_NODE_TYPE
+  ) {
     return [];
   }
   const report = summarize.data.spec.outputs[0];
   const body = render.data.spec.inputs.find((port) => port.name === "body");
-  const bodyPlug = render.data.plugs.body?.[0];
+  const bodyPlug = inputPlugsForPort(render.data.inputPlugs, "body")[0];
   if (!report || !body || !bodyPlug) return [];
 
   return [
@@ -430,8 +406,8 @@ function initialEdges(nodes: readonly SpikeNode[]): SpikeEdge[] {
       type: WORKFLOW_EDGE_TYPE,
       source: "summarize",
       target: "render",
-      sourceHandle: handleIdFor(report, undefined, "output"),
-      targetHandle: handleIdFor(body, bodyPlug, "input"),
+      sourceHandle: portHandleId(report),
+      targetHandle: plugHandleId(render.data, body, bodyPlug.id),
       data: { enabled: true, collectionMode: "direct" },
     } satisfies SpikeEdge,
   ];
@@ -451,77 +427,35 @@ function bootState(): { nodes: SpikeNode[]; edges: SpikeEdge[] } {
 }
 
 const s = stylex.create({
-  card: {
-    minWidth: "300px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: tokens.radiusMd,
-    backgroundColor: tokens.colorSurface,
-    boxShadow: tokens.shadowNode,
-    overflow: "hidden",
-  },
-  cardSelected: {
-    borderColor: tokens.colorAccent,
-  },
-  cardFlag: {
-    display: "inline-block",
-    minWidth: "8px",
-    height: "8px",
-    borderRadius: "9999px",
-    backgroundColor: "transparent",
-  },
-  plugSlot: {
+  displayFrame: {
     position: "relative",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-start",
     width: "100%",
-    gap: "3px",
-    minWidth: 0,
-    paddingBlock: "3px",
+    height: "100%",
   },
-  originChip: {
+  displayLabelRow: {
+    position: "absolute",
+    bottom: "100%",
+    left: 0,
+    right: 0,
+    marginBottom: "4px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    color: tokens.colorMuted,
+    fontSize: "11px",
+    lineHeight: 1.2,
+    pointerEvents: "none",
+  },
+  displayType: {
     display: "inline-flex",
     alignItems: "center",
-    gap: "5px",
-    height: "20px",
-    minWidth: 0,
-    maxWidth: "100%",
-    paddingInline: "7px",
-    borderRadius: "9999px",
-    backgroundColor: tokens.colorSurfaceSunken,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorAccent,
-    color: tokens.colorText,
-    fontSize: "10.5px",
-    fontWeight: 600,
+    gap: "4px",
+    flexShrink: 0,
   },
-  originIndex: {
-    color: tokens.colorAccent,
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-  },
-  originLabel: {
-    minWidth: 0,
+  displayName: {
     overflow: "hidden",
     textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  emptyChip: {
-    color: tokens.colorMuted,
-    fontSize: "10.5px",
-    fontStyle: "italic",
-    whiteSpace: "nowrap",
-  },
-  sequenceNote: {
-    position: "absolute",
-    left: "14px",
-    top: "100%",
-    color: tokens.colorMuted,
-    fontSize: "9.5px",
-    letterSpacing: "0.03em",
-    textTransform: "uppercase",
     whiteSpace: "nowrap",
   },
   display: {
@@ -540,20 +474,10 @@ const s = stylex.create({
   displaySelected: {
     outlineColor: tokens.colorAccent,
   },
-  displayMeta: {
-    position: "absolute",
-    bottom: "100%",
-    left: 0,
-    marginBottom: "3px",
-    color: tokens.colorMuted,
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: "10px",
-    whiteSpace: "nowrap",
-    pointerEvents: "none",
-  },
+
   workbench: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) 320px",
+    gridTemplateColumns: "240px minmax(0, 1fr) 280px",
     height: "calc(100svh - 208px)",
     minHeight: "460px",
     borderWidth: 1,
@@ -609,37 +533,59 @@ const s = stylex.create({
   },
   drawer: {
     display: "grid",
-    gridTemplateRows: "auto auto minmax(0, 1fr) auto",
+    gridTemplateRows: "auto minmax(0, 1fr) auto",
     minHeight: 0,
+    minWidth: 0,
     borderLeftWidth: 1,
     borderLeftStyle: "solid",
     borderLeftColor: tokens.colorBorder,
     backgroundColor: tokens.colorChrome,
   },
-  tabs: { display: "flex", gap: "4px", padding: "8px 8px 0" },
-  tab: {
-    flex: 1,
-    height: "28px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: "transparent",
-    borderRadius: tokens.radiusSm,
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
+  drawerHead: {
+    display: "grid",
+    gridTemplateColumns: "auto auto minmax(0, 1fr)",
+    alignItems: "center",
+    gap: "6px",
+    padding: "9px 10px 7px",
     color: tokens.colorMuted,
-    cursor: "pointer",
+  },
+  drawerTitle: {
+    color: tokens.colorText,
+    fontSize: tokens.fontSizeSm,
+    fontWeight: 600,
+  },
+  folder: { display: "grid", gap: "1px" },
+  group: { paddingLeft: "10px", display: "grid", gap: "1px" },
+  folderRow: {
+    display: "grid",
+    gridTemplateColumns: "auto minmax(0, 1fr) auto",
+    alignItems: "center",
+    gap: "6px",
+    padding: "4px 6px",
+    borderRadius: tokens.radiusSm,
+    color: tokens.colorMuted,
     fontSize: tokens.fontSizeXs,
   },
-  tabActive: {
-    borderColor: tokens.colorBorder,
+  batchTitle: {
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 600,
+  },
+  saved: {
+    flexShrink: 0,
+    padding: "0 5px",
+    borderRadius: "9999px",
     backgroundColor: tokens.colorSurfaceSunken,
-    color: tokens.colorText,
+    color: tokens.colorAccent,
+    fontSize: "9px",
     fontWeight: 600,
   },
   drawerNote: {
-    padding: "8px 10px 6px",
+    gridColumn: "3",
     color: tokens.colorMuted,
     fontSize: "10.5px",
-    lineHeight: 1.45,
+    lineHeight: 1.4,
+    textAlign: "right",
   },
   rows: {
     minHeight: 0,
@@ -698,7 +644,6 @@ const s = stylex.create({
     letterSpacing: "0.04em",
   },
   smallButton: {
-    height: "20px",
     paddingInline: "6px",
     borderWidth: 1,
     borderStyle: "solid",
@@ -734,18 +679,256 @@ const s = stylex.create({
   },
 });
 
+interface RowHandlers {
+  kept: readonly DrawerArtifact[];
+  naming: { id: string; value: string } | null;
+  setNaming: React.Dispatch<
+    React.SetStateAction<{ id: string; value: string } | null>
+  >;
+  onDragStart: (
+    artifact: DrawerArtifact,
+  ) => (event: React.DragEvent<HTMLDivElement>) => void;
+  onKeep: (artifact: DrawerArtifact, name: string) => void;
+}
+
+/**
+ * One artifact row. The same row serves both drawers, because the gesture is
+ * identical: drag it onto a port, or drag it onto empty canvas. The only
+ * difference is whether the run that made it can save it into the library.
+ */
+function ArtifactRow({
+  artifact,
+  saved,
+  canSave,
+  naming,
+  setNaming,
+  onDragStart,
+  onKeep,
+}: RowHandlers & {
+  artifact: DrawerArtifact;
+  saved: boolean;
+  canSave: boolean;
+}) {
+  if (naming?.id === artifact.id) {
+    return (
+      <form
+        {...stylex.props(s.keepForm)}
+        onSubmit={(event) => {
+          event.preventDefault();
+          onKeep(artifact, naming.value.trim() || artifact.label);
+        }}
+      >
+        <input
+          autoFocus
+          aria-label="Name the library copy"
+          value={naming.value}
+          onChange={(event) =>
+            setNaming({ id: artifact.id, value: event.target.value })
+          }
+          {...stylex.props(s.input)}
+        />
+        <button type="submit" {...stylex.props(s.smallButton)}>
+          Save
+        </button>
+      </form>
+    );
+  }
+
+  return (
+    <div
+      draggable
+      data-artifact-row={artifact.label}
+      data-saved={saved ? "true" : undefined}
+      onDragStart={onDragStart(artifact)}
+      {...stylex.props(s.row)}
+    >
+      <span
+        {...stylex.props(s.swatch)}
+        style={{
+          background: artifactTypeColor(
+            artifact.artifactType,
+            tokens.colorAccent,
+          ),
+        }}
+      />
+      <span {...stylex.props(s.rowLabel)}>{artifact.label}</span>
+      {saved ? <span {...stylex.props(s.saved)}>saved</span> : null}
+      {canSave ? (
+        <button
+          type="button"
+          {...stylex.props(s.smallButton)}
+          onClick={() => setNaming({ id: artifact.id, value: artifact.label })}
+        >
+          Save
+        </button>
+      ) : null}
+      <span {...stylex.props(s.rowMeta)}>
+        <span {...stylex.props(s.rowType)}>
+          {artifact.artifactType}@{artifact.schemaVersion} · rev{" "}
+          {artifact.revision}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function DrawerHead({
+  title,
+  note,
+}: {
+  title: string;
+  note: string;
+}) {
+  return (
+    <div {...stylex.props(s.drawerHead)}>
+      <span {...stylex.props(s.drawerTitle)}>{title}</span>
+      <ChevronDown size={13} aria-hidden />
+      <span {...stylex.props(s.drawerNote)}>{note}</span>
+    </div>
+  );
+}
+
+function LibraryDrawer({
+  folders,
+  ...handlers
+}: RowHandlers & { folders: readonly LibraryFolder[] }) {
+  // Saved artifacts join the folder that matches their type, so the library is
+  // the live list rather than a static tree.
+  const saved = handlers.kept.filter(
+    (entry) =>
+      !folders.some((folder) =>
+        folder.artifacts.some((artifact) => artifact.id === entry.id),
+      ),
+  );
+  const isSaved = (artifact: DrawerArtifact) =>
+    handlers.kept.some((entry) => entry.id === artifact.id);
+
+  return (
+    <aside {...stylex.props(s.drawer)} aria-label="Artifacts">
+      <DrawerHead
+        title="Artifacts"
+        note="A folder tree, so one panel shows the same shape as files on disk. This is where the brief puts the library."
+      />
+      <div {...stylex.props(s.rows)}>
+        {folders.map((folder) => (
+          <div key={folder.name} {...stylex.props(s.folder)}>
+            <div {...stylex.props(s.folderRow)}>
+              <ChevronDown
+                size={11}
+                aria-hidden
+                style={{
+                  transform: folder.open ? undefined : "rotate(-90deg)",
+                }}
+              />
+              <span {...stylex.props(s.rowLabel)}>{folder.name}</span>
+            </div>
+            {folder.open
+              ? folder.artifacts.map((artifact) => (
+                  <ArtifactRow
+                    key={artifact.id}
+                    artifact={artifact}
+                    saved={isSaved(artifact)}
+                    canSave={false}
+                    {...handlers}
+                  />
+                ))
+              : null}
+          </div>
+        ))}
+        {saved.length ? (
+          <div {...stylex.props(s.folder)}>
+            <div {...stylex.props(s.folderRow)}>
+              <ChevronDown size={11} aria-hidden />
+              <span {...stylex.props(s.rowLabel)}>saved</span>
+            </div>
+            {saved.map((artifact) => (
+              <ArtifactRow
+                key={`saved-${artifact.id}`}
+                artifact={artifact}
+                saved
+                canSave={false}
+                {...handlers}
+              />
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <div {...stylex.props(s.drawerFoot)}>
+        Workspace-owned. A graph references these, so deleting a graph never
+        deletes them. A saved copy is the same artifact in a second place, not a
+        second artifact.
+      </div>
+    </aside>
+  );
+}
+
+function RunDrawer({
+  batches,
+  ...handlers
+}: RowHandlers & { batches: readonly RunBatch[] }) {
+  const isSaved = (artifact: DrawerArtifact) =>
+    handlers.kept.some((entry) => entry.id === artifact.id);
+
+  return (
+    <aside {...stylex.props(s.drawer)} aria-label="Generated">
+      <DrawerHead
+        title="Generated"
+        note="What this graph produced, newest first, grouped by the node that made it. The brief puts the transient inbox here."
+      />
+      <div {...stylex.props(s.rows)}>
+        {batches.map((batch) => (
+          <div key={batch.heading} {...stylex.props(s.folder)}>
+            <div {...stylex.props(s.folderRow)}>
+              <span {...stylex.props(s.batchTitle)}>{batch.heading}</span>
+              <span {...stylex.props(s.rowType)}>{batch.stamp}</span>
+            </div>
+            {batch.groups.map((group) => (
+              <div key={group.node} {...stylex.props(s.group)}>
+                <div {...stylex.props(s.folderRow)}>
+                  <ChevronDown size={11} aria-hidden />
+                  <span {...stylex.props(s.rowLabel)}>{group.node}</span>
+                  <span {...stylex.props(s.rowType)}>{group.time}</span>
+                </div>
+                {group.artifacts.map((artifact) => (
+                  <ArtifactRow
+                    key={artifact.id}
+                    artifact={artifact}
+                    saved={isSaved(artifact)}
+                    canSave
+                    {...handlers}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div {...stylex.props(s.drawerFoot)}>
+        A run from yesterday stays here. An input can still take it, and the row
+        carries the revision it came from.
+      </div>
+    </aside>
+  );
+}
+
 export function DrawerInteractionSpike() {
   const { resolved } = useTheme();
   const [variant, setVariant] = React.useState<VariantId>("replace");
   const [nodes, setNodes] = React.useState<SpikeNode[]>(
     () => bootState().nodes,
   );
+  // The drop path reads the graph as it is at drop time. A drag captures its
+  // node list at drag start, and a second drop would otherwise see the first
+  // drop's stale bindings and reuse its row.
+  const nodesRef = React.useRef(nodes);
+  React.useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
   const [edges, setEdges] = React.useState<SpikeEdge[]>(
     () => bootState().edges,
   );
   const [kept, setKept] =
-    React.useState<readonly DrawerArtifact[]>(KEPT_ARTIFACTS);
-  const [tab, setTab] = React.useState<"produced" | "kept">("produced");
+    React.useState<readonly DrawerArtifact[]>(LIBRARY_ARTIFACTS);
   const [naming, setNaming] = React.useState<{
     id: string;
     value: string;
@@ -755,7 +938,7 @@ export function DrawerInteractionSpike() {
     text: string;
   }>({
     tone: "info",
-    text: "Drag a row from the drawer onto a port row, or onto empty canvas.",
+      text: "Drag a row from the library on the left, or from Generated on the right, onto a port or onto empty canvas.",
   });
   const [hover, setHover] = React.useState<{
     text: string;
@@ -766,7 +949,6 @@ export function DrawerInteractionSpike() {
     SpikeNode,
     SpikeEdge
   > | null>(null);
-  const produced = PRODUCED_ARTIFACTS;
 
   const onNodesChange = React.useCallback(
     (changes: NodeChange<SpikeNode>[]) => {
@@ -816,52 +998,88 @@ export function DrawerInteractionSpike() {
     [],
   );
 
-  const setBinding = React.useCallback(
-    (nodeId: string, plugId: string, label: string) => {
-      setNodes((current) =>
-        current.map((node) =>
-          node.id === nodeId && node.type === CARD_NODE_TYPE
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  bindings: { ...node.data.bindings, [plugId]: label },
-                },
-              }
-            : node,
-        ),
-      );
-    },
-    [],
-  );
-
-  const addPlug = React.useCallback(
-    (nodeId: string, portName: string, label: string) => {
-      setNodes((current) =>
-        current.map((node) => {
-          if (node.id !== nodeId || node.type !== CARD_NODE_TYPE) return node;
-          const plugs = node.data.plugs[portName] ?? [];
-          const empty = plugs.find((plugId) => !node.data.bindings[plugId]);
-          if (empty) {
-            return {
+  /** The card's own Add input button. Adds an empty plug, like the product. */
+  const addPlugRow = React.useCallback((nodeId: string, portName: string) => {
+    setNodes((current) =>
+      current.map((node) =>
+        node.id === nodeId && node.type === WORKFLOW_NODE_TYPE
+          ? {
               ...node,
               data: {
                 ...node.data,
-                bindings: { ...node.data.bindings, [empty]: label },
+                inputPlugs: [
+                  ...node.data.inputPlugs,
+                  createWorkflowInputPlug(portName),
+                ],
               },
-            };
-          }
-          const appended = newPlugId(portName);
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              plugs: { ...node.data.plugs, [portName]: [...plugs, appended] },
-              bindings: { ...node.data.bindings, [appended]: label },
-            },
-          };
-        }),
+            }
+          : node,
+      ),
+    );
+  }, []);
+
+  const removePlugRow = React.useCallback((nodeId: string, plugId: string) => {
+    setNodes((current) =>
+      current.map((node) => {
+        if (node.id !== nodeId || node.type !== WORKFLOW_NODE_TYPE) {
+          return node;
+        }
+        const inputPlugBindings = Object.fromEntries(
+          Object.entries(node.data.inputPlugBindings).filter(
+            ([id]) => id !== plugId,
+          ),
+        );
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            inputPlugs: node.data.inputPlugs.filter(
+              (plug) => plug.id !== plugId,
+            ),
+            inputPlugBindings,
+          },
+        };
+      }),
+    );
+  }, []);
+
+  /**
+   * Answer a drop by satisfying one input plug. A `many` port grows a new row
+   * when the dropped row already holds an artifact; a `one` port keeps a single
+   * origin on its row. A live wire on that port is disabled by the caller, never
+   * removed.
+   */
+  const satisfyPlug = React.useCallback(
+    (
+      nodeId: string,
+      portName: string,
+      plugId: string | undefined,
+      label: string,
+    ): DropOutcome => {
+      const node = nodesRef.current.find(
+        (candidate) => candidate.id === nodeId,
       );
+      if (node?.type !== WORKFLOW_NODE_TYPE) {
+        return { ok: false, reason: "unknown node" };
+      }
+      const outcome = withSatisfiedPlug(
+        node.data,
+        portName,
+        plugId,
+        label,
+        // Rows are dropped client-side only, but a React StrictMode double
+        // render would otherwise mint two ids for one row. Count rows, not time.
+        `sandbox-${nodeId}-${portName}-${node.data.inputPlugs.length}`,
+      );
+      if (!outcome.ok) return outcome;
+      setNodes((current) =>
+        current.map((candidate) =>
+          candidate.id === nodeId && candidate.type === WORKFLOW_NODE_TYPE
+            ? { ...candidate, data: outcome.data }
+            : candidate,
+        ),
+      );
+      return outcome;
     },
     [],
   );
@@ -890,17 +1108,27 @@ export function DrawerInteractionSpike() {
       const raw = handle.getAttribute("data-handleid");
       const decoded = decodeHandleId(raw);
       if (!decoded || decoded.direction !== "input") return null;
-      const node = nodes.find(
+      const node = nodesRef.current.find(
         (candidate) => candidate.id === handle.dataset.nodeid,
       );
-      if (node?.type !== CARD_NODE_TYPE) return null;
+      if (node?.type !== WORKFLOW_NODE_TYPE) return null;
       const port = node.data.spec.inputs.find(
         (candidate) => candidate.name === decoded.portName,
       );
       if (!port) return null;
-      return { node, port, plugId: decoded.plugId, handleId: raw ?? "" };
+      // React Flow writes `data-handleid` once, at mount, so it goes stale when
+      // the plug on that row is replaced. The row element is the live identity.
+      const rowPlugId = handle
+        .closest<HTMLElement>("[data-input-plug-id]")
+        ?.dataset.inputPlugId;
+      return {
+        node,
+        port,
+        plugId: rowPlugId ?? decoded.plugId,
+        handleId: raw ?? "",
+      };
     },
-    [nodes],
+    [],
   );
 
   const onDragOver = React.useCallback(
@@ -918,7 +1146,7 @@ export function DrawerInteractionSpike() {
         return;
       }
       const ok = connectionArtifactContractIsValid({
-        sourceHandle: handleIdFor(placedPort(artifact), undefined, "output"),
+        sourceHandle: encodeHandleId(portMetaForPort(placedPort(artifact))),
         targetHandle: plug.handleId,
       });
       setHover({
@@ -938,23 +1166,31 @@ export function DrawerInteractionSpike() {
       plugId: string | undefined,
       artifact: DrawerArtifact,
     ) => {
-      const plugs = node.data.plugs[port.name] ?? [];
-      const targetPlug = plugId ?? plugs[0] ?? newPlugId(port.name);
+      const live = nodesRef.current.find(
+        (candidate) => candidate.id === node.id,
+      );
+      if (live?.type !== WORKFLOW_NODE_TYPE) return;
+      node = live;
+      const plugs = inputPlugsForPort(node.data.inputPlugs, port.name);
+      const targetPlug = plugId ?? plugs[0]?.id;
       const many =
         port.shape === "many" || port.accepted_shapes.includes("many");
 
       if (many) {
-        const count =
-          plugs.length + (plugs.some((id) => !node.data.bindings[id]) ? 0 : 1);
-        addPlug(node.id, port.name, artifact.label);
+        const bound = plugs.filter(
+          (plug) => node.data.inputPlugBindings[plug.id],
+        ).length;
+        satisfyPlug(node.id, port.name, targetPlug, artifact.label);
         setStatus({
           tone: "good",
-          text: `${artifact.label} added to ${port.name}. The input now holds ${count} artifacts as one sequence, in row order.`,
+          text: `${artifact.label} added to ${port.name}. The input now holds ${bound + 1} artifacts as one sequence, in plug order.`,
         });
         return;
       }
 
-      const held = node.data.bindings[targetPlug];
+      const held = targetPlug
+        ? node.data.inputPlugBindings[targetPlug]?.sourceLabel
+        : undefined;
       const incoming = edges.find(
         (edge) =>
           edge.target === node.id &&
@@ -963,10 +1199,10 @@ export function DrawerInteractionSpike() {
       );
 
       if (!held && !incoming) {
-        setBinding(node.id, targetPlug, artifact.label);
+        satisfyPlug(node.id, port.name, targetPlug, artifact.label);
         setStatus({
           tone: "good",
-          text: `${artifact.label} now satisfies ${port.name} as an origin. The row replaces Connect input. No node was added and nothing is copied.`,
+          text: `${artifact.label} now satisfies ${port.name} as an origin. The row shows the artifact, and the handle becomes a square. No node was added and nothing is copied.`,
         });
         return;
       }
@@ -979,7 +1215,7 @@ export function DrawerInteractionSpike() {
         return;
       }
 
-      setBinding(node.id, targetPlug, artifact.label);
+      satisfyPlug(node.id, port.name, targetPlug, artifact.label);
       if (incoming) {
         setEdges((current) =>
           current.map((edge) =>
@@ -1006,7 +1242,7 @@ export function DrawerInteractionSpike() {
         text: `${artifact.label} replaced the origin ${held} on ${port.name}.`,
       });
     },
-    [addPlug, edges, setBinding, variant],
+    [edges, satisfyPlug, variant],
   );
 
   const onDrop = React.useCallback(
@@ -1053,7 +1289,7 @@ export function DrawerInteractionSpike() {
 
       if (
         !connectionArtifactContractIsValid({
-          sourceHandle: handleIdFor(placedPort(artifact), undefined, "output"),
+          sourceHandle: encodeHandleId(portMetaForPort(placedPort(artifact))),
           targetHandle: plug.handleId,
         })
       ) {
@@ -1074,197 +1310,138 @@ export function DrawerInteractionSpike() {
       if (kept.some((entry) => entry.id === artifact.id)) {
         setStatus({
           tone: "info",
-          text: `${artifact.label} is already Kept. Keeping the same artifact twice still yields one Kept artifact, because identity is the artifact reference.`,
+          text: `${artifact.label} is already in the library. Saving the same artifact twice still yields one library entry, because identity is the artifact reference.`,
         });
         return;
       }
       setKept((current) => [...current, { ...artifact, label: name }]);
       setStatus({
         tone: "good",
-        text: `${name} is now Kept. The row stays in Produced because the run still produced it. The Kept copy is Workspace-owned, so deleting this graph never deletes it.`,
+        text: `${name} is now in the library, as a copy that keeps its identity. The run row stays in the right drawer because the run still produced it.`,
       });
     },
     [kept],
   );
 
-  const rows = tab === "produced" ? produced : kept;
+  const beginDrag = React.useCallback(
+    (artifact: DrawerArtifact) => (event: React.DragEvent<HTMLDivElement>) => {
+      draggingRef.current = artifact.id;
+      event.dataTransfer.setData("text/plain", artifact.id);
+      event.dataTransfer.effectAllowed = "copy";
+    },
+    [],
+  );
+
+  const canvasNodes = React.useMemo(
+    () =>
+      nodes.map((node) =>
+        node.type === WORKFLOW_NODE_TYPE
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                ...cardCallbacks(addPlugRow, removePlugRow),
+              },
+            }
+          : node,
+      ),
+    [addPlugRow, nodes, removePlugRow],
+  );
 
   return (
-    <SandboxShell
-      title="Artifact drawer to input"
-      note={VARIANTS.find((entry) => entry.id === variant)?.note ?? ""}
-      variants={VARIANTS.map(({ id, label }) => ({ id, label }))}
-      activeVariant={variant}
-      onVariant={(id) => setVariant(id as VariantId)}
-    >
-      <div {...stylex.props(s.workbench)}>
-        <div {...stylex.props(s.canvasColumn)}>
-          <div
-            {...stylex.props(s.canvasWrap)}
-            onDragOver={onDragOver}
-            onDragLeave={() => setHover(null)}
-            onDrop={onDrop}
-          >
-            <div {...stylex.props(s.canvas)}>
-              <ReactFlow<SpikeNode, SpikeEdge>
-                nodes={nodes}
-                edges={edges}
-                nodeTypes={nodeTypes}
-                edgeTypes={productEdgeTypes as EdgeTypes}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onInit={(instance) => {
-                  instanceRef.current = instance;
-                }}
-                onPaneClick={() =>
-                  setNodes((current) =>
-                    current.map((node) => ({ ...node, selected: false })),
-                  )
-                }
-                fitView
-                fitViewOptions={{ padding: 0.25, maxZoom: 0.85 }}
-                minZoom={0.3}
-                maxZoom={1.6}
-                colorMode={resolved}
-                connectOnClick={false}
-                panOnScroll
-                panOnDrag={[1, 2]}
-                selectionOnDrag
-                proOptions={{ hideAttribution: true }}
-              >
-                <Background
-                  variant={BackgroundVariant.Lines}
-                  gap={DEFAULT_CANVAS_GRID_SETTINGS.cellSize}
-                  offset={DEFAULT_CANVAS_GRID_SETTINGS.cellSize / 2}
-                  lineWidth={1}
-                  color={tokens.colorGrid}
-                />
-                <Controls showInteractive={false} />
-              </ReactFlow>
-            </div>
-            {hover ? (
-              <div
-                {...stylex.props(s.hint, hover.ok ? s.statusGood : s.statusBad)}
-              >
-                {hover.text}
+    <WorkspaceContextScope value={sandboxWorkspaceContext()}>
+      <SandboxShell
+        title="Artifact drawer to input"
+        note={VARIANTS.find((entry) => entry.id === variant)?.note ?? ""}
+        variants={VARIANTS.map(({ id, label }) => ({ id, label }))}
+        activeVariant={variant}
+        onVariant={(id) => setVariant(id as VariantId)}
+      >
+        <div {...stylex.props(s.workbench)}>
+          <div {...stylex.props(s.canvasColumn)}>
+            <div
+              {...stylex.props(s.canvasWrap)}
+              onDragOver={onDragOver}
+              onDragLeave={() => setHover(null)}
+              onDrop={onDrop}
+            >
+              <div {...stylex.props(s.canvas)}>
+                <ReactFlow<SpikeNode, SpikeEdge>
+                  nodes={canvasNodes}
+                  edges={edges}
+                  nodeTypes={nodeTypes}
+                  edgeTypes={productEdgeTypes as EdgeTypes}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onInit={(instance) => {
+                    instanceRef.current = instance;
+                  }}
+                  onPaneClick={() =>
+                    setNodes((current) =>
+                      current.map((node) => ({ ...node, selected: false })),
+                    )
+                  }
+                  fitView
+                  fitViewOptions={{ padding: 0.25, maxZoom: 0.85 }}
+                  minZoom={0.3}
+                  maxZoom={1.6}
+                  colorMode={resolved}
+                  connectOnClick={false}
+                  panOnScroll
+                  panOnDrag={[1, 2]}
+                  selectionOnDrag
+                  proOptions={{ hideAttribution: true }}
+                >
+                  <Background
+                    variant={BackgroundVariant.Lines}
+                    gap={DEFAULT_CANVAS_GRID_SETTINGS.cellSize}
+                    offset={DEFAULT_CANVAS_GRID_SETTINGS.cellSize / 2}
+                    lineWidth={1}
+                    color={tokens.colorGrid}
+                  />
+                  <Controls showInteractive={false} />
+                </ReactFlow>
               </div>
-            ) : null}
-          </div>
-          <div
-            data-status={status.tone}
-            {...stylex.props(
-              s.status,
-              status.tone === "bad" ? s.statusBad : null,
-            )}
-          >
-            {status.text}
-          </div>
-        </div>
-
-        <div {...stylex.props(s.drawer)}>
-          <div {...stylex.props(s.tabs)}>
-            <button
-              type="button"
-              {...stylex.props(s.tab, tab === "produced" ? s.tabActive : null)}
-              onClick={() => setTab("produced")}
-            >
-              Produced · {produced.length}
-            </button>
-            <button
-              type="button"
-              {...stylex.props(s.tab, tab === "kept" ? s.tabActive : null)}
-              onClick={() => setTab("kept")}
-            >
-              Kept · {kept.length}
-            </button>
-          </div>
-          <p {...stylex.props(s.drawerNote)}>
-            {tab === "produced"
-              ? "What the last runs of this graph produced. A stale row came from an earlier run than the one on screen."
-              : "Workspace-owned artifacts. Graphs reference them, and deleting a graph never deletes them."}
-          </p>
-          <div {...stylex.props(s.rows)}>
-            {rows.map((artifact) =>
-              naming?.id === artifact.id ? (
-                <form
-                  key={`naming-${artifact.id}`}
-                  {...stylex.props(s.keepForm)}
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    keepArtifact(
-                      artifact,
-                      naming.value.trim() || artifact.label,
-                    );
-                  }}
-                >
-                  <input
-                    autoFocus
-                    value={naming.value}
-                    onChange={(event) =>
-                      setNaming({ id: artifact.id, value: event.target.value })
-                    }
-                    {...stylex.props(s.input)}
-                  />
-                  <button type="submit" {...stylex.props(s.smallButton)}>
-                    Keep
-                  </button>
-                </form>
-              ) : (
+              {hover ? (
                 <div
-                  key={`${tab}-${artifact.id}`}
-                  draggable
-                  onDragStart={(event) => {
-                    draggingRef.current = artifact.id;
-                    event.dataTransfer.setData("text/plain", artifact.id);
-                    event.dataTransfer.effectAllowed = "copy";
-                  }}
-                  onDragEnd={() => {
-                    draggingRef.current = null;
-                    setHover(null);
-                  }}
-                  {...stylex.props(s.row)}
+                  {...stylex.props(
+                    s.hint,
+                    hover.ok ? s.statusGood : s.statusBad,
+                  )}
                 >
-                  <span
-                    {...stylex.props(s.swatch)}
-                    style={{
-                      background: artifactTypeColor(
-                        artifact.artifactType,
-                        tokens.colorAccent,
-                      ),
-                    }}
-                  />
-                  <span {...stylex.props(s.rowLabel)}>{artifact.label}</span>
-                  {artifact.stale ? (
-                    <span {...stylex.props(s.stale)}>STALE</span>
-                  ) : null}
-                  {tab === "produced" ? (
-                    <button
-                      type="button"
-                      {...stylex.props(s.smallButton)}
-                      onClick={() =>
-                        setNaming({ id: artifact.id, value: artifact.label })
-                      }
-                    >
-                      Keep
-                    </button>
-                  ) : null}
-                  <span {...stylex.props(s.rowMeta)}>
-                    <span {...stylex.props(s.rowType)}>
-                      {artifact.artifactType}@{artifact.schemaVersion} · rev{" "}
-                      {artifact.revision}
-                    </span>
-                  </span>
+                  {hover.text}
                 </div>
-              ),
-            )}
+              ) : null}
+            </div>
+            <div
+              data-status={status.tone}
+              {...stylex.props(
+                s.status,
+                status.tone === "bad" ? s.statusBad : null,
+              )}
+            >
+              {status.text}
+            </div>
           </div>
-          <div {...stylex.props(s.drawerFoot)}>
-            An input fed by a wire shows the upstream node. An input fed by an
-            origin shows the artifact. Both use the same port row, so the
-            difference has to come from the label, a badge, or the wire style.
-          </div>
+
+          <LibraryDrawer
+            folders={LIBRARY_FOLDERS}
+            kept={kept}
+            naming={naming}
+            setNaming={setNaming}
+            onDragStart={beginDrag}
+            onKeep={keepArtifact}
+          />
+          <RunDrawer
+            batches={RUN_BATCHES}
+            kept={kept}
+            naming={naming}
+            setNaming={setNaming}
+            onDragStart={beginDrag}
+            onKeep={keepArtifact}
+          />
         </div>
-      </div>
-    </SandboxShell>
+      </SandboxShell>
+    </WorkspaceContextScope>
   );
 }

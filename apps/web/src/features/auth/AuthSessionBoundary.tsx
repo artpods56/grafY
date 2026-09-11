@@ -7,6 +7,7 @@ import { ThresholdStatus } from "@/components/threshold-status";
 import { deleteSession, getSession, oidcLoginUrl, safeReturnPath } from "@/lib/api/auth";
 import { ApiError, onUnauthorized } from "@/lib/api/client";
 import type { Session } from "@/lib/api/contract";
+import { sandboxSession } from "./dev-session";
 
 type AuthState =
   | { kind: "loading" }
@@ -133,7 +134,12 @@ export function useAuthSession(): AuthSessionContextValue {
 }
 
 export function AuthSessionBoundary({ children }: { children: React.ReactNode }) {
-  const [state, setState] = React.useState<AuthState>({ kind: "loading" });
+  const [state, setState] = React.useState<AuthState>(() => {
+    const devSession = sandboxSession();
+    return devSession
+      ? { kind: "authenticated", session: devSession }
+      : { kind: "loading" };
+  });
   const [cacheGeneration, setCacheGeneration] = React.useState(0);
   const logoutAttemptRef = React.useRef(0);
   const logoutInFlightRef = React.useRef(false);
@@ -158,6 +164,7 @@ export function AuthSessionBoundary({ children }: { children: React.ReactNode })
 
   React.useEffect(() => {
     const controller = new AbortController();
+    if (sandboxSession()) return () => controller.abort();
     loadSession(controller.signal);
     return () => controller.abort();
   }, [loadSession]);

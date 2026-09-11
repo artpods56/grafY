@@ -1503,7 +1503,6 @@ function InstancePlugRow({
         .join(" · ")
     : `Accepts ${acceptedShapeLabel}`;
   const accessibleLabel = `${visibleName} input ${index + 1}, accepts ${acceptedShapeLabel}`;
-  const connectionDisabled = Boolean(connection && !connection.enabled);
 
   return (
     <div
@@ -1523,8 +1522,12 @@ function InstancePlugRow({
         )}
         aria-label={accessibleLabel}
         title={`${accessibleLabel}. Connect one compatible output here.`}
-        style={handleStyle("50%", color, true)}
-      />
+        style={handleStyle(
+          "50%",
+          color,
+          true,
+          binding ? "square" : "circle",
+        )}      />
       <button
         type="button"
         aria-label={`Drag to reorder ${visibleName} input ${index + 1}`}
@@ -1572,17 +1575,9 @@ function InstancePlugRow({
         <GripVertical size={12} />
       </button>
       <span {...stylex.props(s.plugIndex)}>{index + 1}</span>
+      {/* An input fed by an origin is marked by its own handle shape, so the
+          row copy says nothing about where the value comes from. */}
       <span {...stylex.props(s.plugCopy)}>
-        <span
-          {...stylex.props(
-            s.plugSource,
-            binding ? null : s.plugSourceEmpty,
-            connectionDisabled ? s.tabDisabled : null,
-          )}
-          title={binding?.sourceLabel}
-        >
-          {binding?.sourceLabel ?? "Connect input"}
-        </span>
         <span {...stylex.props(s.plugMeta)} title={connectionMeta}>
           {connectionMeta}
         </span>
