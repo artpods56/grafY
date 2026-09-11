@@ -19,9 +19,15 @@ from grafy_api.graph_contracts import (
     SubmitGraphCommandRequest,
     UpdateSavedGraphRequest,
 )
+from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.collaboration import RenameGraphCommand
 from grafy_core.domain.identity import ActorContext
-from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_core.domain.saved_graphs import (
+    GraphPoint,
+    GraphPresentationDocument,
+    GraphPresentationViewer,
+    SavedGraphDocument,
+)
 
 from tests.support.clients import GrafyApi
 from tests.support.identity import TEST_USER_ID, WORKSPACE_ID
@@ -218,6 +224,44 @@ def test_create_accepts_the_canonical_saved_graph_document(
     assert body["document"] == document
     assert "nodes" not in body
     assert "edges" not in body
+
+
+def test_saved_graph_round_trips_an_artifact_card(
+    builtin_client: TestClient,
+) -> None:
+    reference = ArtifactRef.from_key(
+        artifact_id=UUID("00000000-0000-0000-0000-0000000000cc"),
+        key=ArtifactTypeKey("table.data", 1),
+        content_hash="d" * 64,
+    )
+    document = _graph_document().with_topology(
+        presentation=GraphPresentationDocument(
+            viewers=(
+                GraphPresentationViewer(
+                    id="artifact-viewer-card",
+                    position=GraphPoint(x=12.0, y=34.0),
+                    artifact_ref=reference,
+                ),
+            ),
+        ),
+    )
+    api = GrafyApi(builtin_client)
+    graphs = api.workspace(WORKSPACE_ID).graphs
+
+    create_response = graphs.create(
+        CreateSavedGraphRequest(name="Artifact card", document=document)
+    )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["document"]["presentation"]["viewers"][0]["artifact_ref"] == {
+        "artifact_id": "00000000-0000-0000-0000-0000000000cc",
+        "artifact_type": "table.data",
+        "schema_version": 1,
+        "content_hash": "d" * 64,
+    }
+    graph_id = UUID(created["id"])
+    assert graphs.get(graph_id).json()["document"] == created["document"]
 
 
 def test_saved_graph_crud_round_trip(builtin_client: TestClient) -> None:

@@ -15,10 +15,13 @@ from grafy_api.graph_contracts import (
     SavedGraphNodeModel,
     SavedGraphNodeLayoutModel,
 )
+from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.collaboration import CollaborativeGraphHead
 from grafy_core.domain.saved_graphs import (
     SavedGraphDocument,
+    GraphPoint,
     GraphPresentationDocument,
+    GraphPresentationViewer,
     SavedGraphEdge,
     SavedGraphNode,
     SavedGraphNodeLayout,
@@ -301,3 +304,36 @@ def test_head_adapter_preserves_metadata_and_empty_document(head: CollaborativeG
     assert "schema_version" not in payload
     assert "workspace_id" not in payload
     assert CollaborativeHeadResponse.model_validate_json(legacy.model_dump_json()) == legacy
+
+
+def test_artifact_card_reference_survives_head_transport(
+    head: CollaborativeGraphHead,
+) -> None:
+    reference = ArtifactRef.from_key(
+        artifact_id=UUID(int=77),
+        key=ArtifactTypeKey("table.data", 1),
+        content_hash="b" * 64,
+    )
+    head.document = head.document.with_topology(
+        presentation=GraphPresentationDocument(
+            viewers=(
+                GraphPresentationViewer(
+                    id="artifact-viewer-card",
+                    position=GraphPoint(x=1.0, y=2.0),
+                    artifact_ref=reference,
+                ),
+            ),
+        ),
+    )
+
+    canonical = CanonicalCollaborativeHeadResponse.from_head(head)
+    legacy = CollaborativeHeadResponse.from_head(head)
+
+    assert canonical.document.presentation.viewers[0].artifact_ref == reference
+    assert legacy.presentation.viewers[0].artifact_ref == reference
+    assert (
+        legacy.model_dump(mode="json")["presentation"]["viewers"][0][
+            "artifact_ref"
+        ]["artifact_type"]
+        == "table.data"
+    )

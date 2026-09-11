@@ -2190,6 +2190,7 @@ export interface components {
         };
         /** GraphPresentationViewer */
         readonly GraphPresentationViewer: {
+            readonly artifact_ref?: components["schemas"]["ArtifactRef"] | null;
             /** Id */
             readonly id: string;
             readonly layout?: components["schemas"]["SavedGraphNodeLayout"] | null;
@@ -2199,6 +2200,7 @@ export interface components {
         };
         /** GraphPresentationViewerModel */
         readonly GraphPresentationViewerModel: {
+            readonly artifact_ref?: components["schemas"]["ArtifactRef"] | null;
             /** Id */
             readonly id: string;
             readonly layout?: components["schemas"]["SavedGraphNodeLayoutModel"] | null;

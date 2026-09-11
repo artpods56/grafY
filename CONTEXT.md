@@ -554,6 +554,13 @@ revision, not fields inside the saved graph. Upstream output pins belong to an
 individual run request and remain transient. Drafts may be saved before they
 are executable.
 
+A presentation viewer may carry one artifact reference instead of a link to a
+node output. Such a viewer is a node-less artifact card: it presents that
+exact artifact and executes nothing. The reference is durable document state
+and is never dropped when the artifact is deleted, becomes inaccessible, or
+cannot cross a Workspace or Template boundary; the card stays and reports the
+reference as missing until the user removes the card deliberately.
+
 Saved graphs use optimistic revisions. Replacing a graph requires the revision
 last read by the caller so competing edits are reported instead of silently
 overwriting one another.
