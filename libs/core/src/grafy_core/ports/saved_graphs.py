@@ -49,7 +49,12 @@ class SavedGraphRepositoryPort(Protocol):
         graph_id: UUID,
     ) -> list[SavedGraphRevision]: ...
 
-    async def list_accessible(self, user_id: UUID) -> list[GraphBrowserItem]: ...
+    async def list_accessible(
+        self,
+        user_id: UUID,
+        *,
+        workspace_id: UUID | None = None,
+    ) -> list[GraphBrowserItem]: ...
 
     async def add_folder(self, folder: GraphFolder) -> None: ...
 

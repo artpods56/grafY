@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 
-import { useSavedGraphs } from "@/hooks/use-api";
+import { useGraphSummaryRefresh, useSavedGraphs } from "@/hooks/use-api";
 import {
   createSavedGraph,
   deleteSavedGraph,
@@ -161,8 +161,10 @@ export function useSavedGraphLifecycle({
     error: savedGraphListError,
     isLoading: savedGraphsLoading,
     isValidating: savedGraphsRefreshing,
-    mutate: mutateSavedGraphs,
   } = useSavedGraphs(workspaceId);
+  // Saving, deleting, and room rehydration must refresh every discovery
+  // surface, not just this workspace's saved-graph list.
+  const refreshGraphSummaries = useGraphSummaryRefresh();
   const [activeGraph, setActiveGraph] =
     React.useState<ActiveSavedGraph | null>(null);
   const [savedFingerprint, setSavedFingerprint] =
@@ -377,7 +379,7 @@ export function useSavedGraphLifecycle({
               : await createSavedGraph(workspaceId, submittedDraft),
           };
       if (!mountedRef.current) return;
-      void mutateSavedGraphs();
+      void refreshGraphSummaries(workspaceId);
       void refreshNodeRegistry();
       if (
         documentGenerationRef.current !== documentGeneration
@@ -457,9 +459,9 @@ export function useSavedGraphLifecycle({
     currentDraft,
     deletingGraphId,
     isExecutionRunning,
-    mutateSavedGraphs,
     nodes,
     openingGraphId,
+    refreshGraphSummaries,
     refreshNodeRegistry,
     refreshNodeSecretStatuses,
     rememberSavedDraft,
@@ -731,7 +733,7 @@ export function useSavedGraphLifecycle({
     try {
       await deleteSavedGraph(workspaceId, graph.id, expectedRevision);
       if (!mountedRef.current) return;
-      void mutateSavedGraphs();
+      void refreshGraphSummaries(workspaceId);
       void refreshNodeRegistry();
       if (
         documentGenerationRef.current !== documentGeneration
@@ -785,7 +787,7 @@ export function useSavedGraphLifecycle({
     clearGraphSecretStatuses,
     currentFingerprint,
     isDirty,
-    mutateSavedGraphs,
+    refreshGraphSummaries,
     refreshNodeRegistry,
     router,
     showBlankGraph,
@@ -811,8 +813,8 @@ export function useSavedGraphLifecycle({
     setGraphBrowserOpen(false);
   }, []);
   const refreshSavedGraphs = React.useCallback(() => {
-    void mutateSavedGraphs();
-  }, [mutateSavedGraphs]);
+    void refreshGraphSummaries(workspaceId);
+  }, [refreshGraphSummaries, workspaceId]);
   const savedGraphsError = savedGraphListError instanceof Error
     ? savedGraphListError.message
     : savedGraphListError

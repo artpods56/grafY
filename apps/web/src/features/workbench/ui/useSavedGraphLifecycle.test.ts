@@ -25,6 +25,8 @@ const savedGraphQuery = vi.hoisted(() => ({
   mutate: vi.fn(),
 }));
 
+const graphSummaryRefresh = vi.hoisted(() => vi.fn());
+
 const api = vi.hoisted(() => ({
   createSavedGraph: vi.fn(),
   deleteSavedGraph: vi.fn(),
@@ -45,6 +47,7 @@ vi.mock("@/hooks/use-api", () => ({
     isValidating: false,
     mutate: savedGraphQuery.mutate,
   }),
+  useGraphSummaryRefresh: () => graphSummaryRefresh,
 }));
 
 vi.mock("@/lib/api", () => api);
@@ -92,6 +95,7 @@ function savedGraphSummary(graph: SavedGraph): SavedGraphSummary {
     node_count: graph.document.nodes.length,
     edge_count: graph.document.edges.length,
     updated_at: graph.updated_at,
+    draft_pending: false,
   };
 }
 
@@ -717,7 +721,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
     expect(hook.result.current.activeGraph?.id).toBe(GRAPH_B_ID);
     expect(hook.result.current.graphName).toBe("Graph B");
     expect(router.replace).not.toHaveBeenCalled();
-    expect(savedGraphQuery.mutate).toHaveBeenCalledOnce();
+    expect(graphSummaryRefresh).toHaveBeenCalledWith(options.workspaceId);
     expect(options.refreshNodeRegistry).toHaveBeenCalledOnce();
   });
 
@@ -756,7 +760,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
     expect(callbacks.replaceDocument).toHaveBeenCalledTimes(
       canvasReplacementCount,
     );
-    expect(savedGraphQuery.mutate).toHaveBeenCalledOnce();
+    expect(graphSummaryRefresh).toHaveBeenCalledWith(options.workspaceId);
     expect(callbacks.refreshNodeRegistry).toHaveBeenCalledOnce();
   });
 

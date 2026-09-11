@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 
+import { graphCountLabel } from "@/features/workspaces/WorkspaceGraphPanel";
 import type { SavedGraphSummary } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
@@ -284,7 +285,7 @@ export function SavedGraphBrowser({
                   <span {...stylex.props(s.copy)}>
                     <span {...stylex.props(s.name)}>{graph.name}</span>
                     <span {...stylex.props(s.meta)}>
-                      {graph.node_count} nodes · {graph.edge_count} connections · r{graph.revision}
+                      {graphCountLabel(graph)} · r{graph.revision}
                     </span>
                   </span>
                 </button>

@@ -85,6 +85,7 @@ vi.mock("@/hooks/use-api", () => ({
     data: { graphs: testState.savedGraphs },
     mutate: vi.fn(),
   }),
+  useGraphSummaryRefresh: () => vi.fn(),
   useWorkspaces: () => ({ data: [] }),
   useMyWorkspaceInvitations: () => ({ data: [], mutate: vi.fn() }),
 }));

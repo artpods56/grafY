@@ -26,8 +26,11 @@ vi.mock("@/lib/api/client", () => ({
 }));
 
 import {
+  ALL_GRAPHS_KEY,
   type AllWorkspacesGraphsResult,
+  revalidateGraphSummaries,
   useAllWorkspacesGraphs,
+  workspaceGraphsKey,
 } from "./use-api";
 
 const personal: Workspace = {
@@ -58,6 +61,57 @@ function Harness({ workspaces }: { workspaces: readonly Workspace[] }) {
   const value = useAllWorkspacesGraphs(workspaces);
   React.useEffect(() => captureLatest(value), [value]);
   return <span>{value.graphs?.length ?? "loading"}</span>;
+}
+
+function browserGraph(
+  id: string,
+  sequence: { head_sequence: number; checkpoint_sequence: number },
+) {
+  return {
+    id,
+    location: {
+      id: personal.id,
+      slug: personal.slug,
+      name: personal.name,
+      kind: personal.kind,
+    },
+    folder: null,
+    archived: false,
+    archived_at: null,
+    starred: false,
+    last_opened_at: null,
+    updated_at: "2026-08-10T12:00:00Z",
+    draft: {
+      name: id,
+      checkpoint_revision: 1,
+      updated_at: "2026-08-10T12:00:00Z",
+      node_count: 2,
+      edge_count: 1,
+      ...sequence,
+    },
+    creator: null,
+  };
+}
+
+async function renderGraphs(workspaces: readonly Workspace[]) {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(
+      <SWRConfig
+        value={{
+          provider: () => new Map(),
+          dedupingInterval: 0,
+          revalidateOnFocus: false,
+        }}
+      >
+        <Harness workspaces={workspaces} />
+      </SWRConfig>,
+    );
+  });
+  await vi.waitFor(() => expect(latest?.graphs).not.toBeNull());
+  return root;
 }
 
 beforeEach(() => {
@@ -154,5 +208,59 @@ describe("useAllWorkspacesGraphs", () => {
     expect(apiMocks.request).not.toHaveBeenCalled();
 
     await act(async () => root.unmount());
+  });
+
+  it("labels a draft head that is ahead of the saved checkpoint", async () => {
+    apiMocks.request.mockResolvedValue({
+      graphs: [
+        browserGraph("graph-pending", {
+          head_sequence: 4,
+          checkpoint_sequence: 3,
+        }),
+        browserGraph("graph-checkpointed", {
+          head_sequence: 2,
+          checkpoint_sequence: 2,
+        }),
+      ],
+    });
+
+    const root = await renderGraphs([personal]);
+
+    expect(
+      latest?.graphs?.map((graph) => [
+        graph.name,
+        graph.draft_pending,
+        graph.revision,
+      ]),
+    ).toEqual([
+      ["graph-pending", true, 1],
+      ["graph-checkpointed", false, 1],
+    ]);
+
+    await act(async () => root.unmount());
+  });
+});
+
+describe("graph summary cache invalidation", () => {
+  it("refreshes every discovery surface affected by a workspace mutation", async () => {
+    const mutate = vi.fn().mockResolvedValue(undefined);
+
+    await revalidateGraphSummaries(mutate, personal.id);
+
+    expect(mutate.mock.calls).toEqual([
+      [workspaceGraphsKey(personal.id)],
+      [ALL_GRAPHS_KEY],
+    ]);
+    expect(workspaceGraphsKey(personal.id)).toBe(
+      "/v1/workspaces/workspace-personal/graphs",
+    );
+  });
+
+  it("refreshes the cross-workspace list when no workspace is scoped", async () => {
+    const mutate = vi.fn().mockResolvedValue(undefined);
+
+    await revalidateGraphSummaries(mutate);
+
+    expect(mutate.mock.calls).toEqual([[ALL_GRAPHS_KEY]]);
   });
 });

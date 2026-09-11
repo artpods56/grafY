@@ -2,6 +2,7 @@ import asyncio
 from typing import cast
 from uuid import UUID, uuid4
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from grafy_api.v1.models import ArtifactTypeBindingModel, ArtifactTypeKeyResponse
@@ -19,7 +20,7 @@ from grafy_api.graph_contracts import (
     SubmitGraphCommandRequest,
     UpdateSavedGraphRequest,
 )
-from grafy_core.domain.collaboration import RenameGraphCommand
+from grafy_core.domain.collaboration import RemoveNodesCommand, RenameGraphCommand
 from grafy_core.domain.identity import ActorContext
 from grafy_core.domain.saved_graphs import SavedGraphDocument
 
@@ -87,7 +88,7 @@ def _graph_document(
 ) -> SavedGraphDocument:
     effective_nodes = nodes if nodes is not None else _graph_nodes()
     effective_edges = edges if edges is not None else _graph_edges()
-    serialized_nodes = []
+    serialized_nodes: list[dict[str, object]] = []
     for node in effective_nodes:
         serialized = node.model_dump(mode="json")
         serialized["plugin_release_pin"] = serialized.pop("plugin_release")
@@ -272,20 +273,18 @@ def test_saved_graph_crud_round_trip(builtin_client: TestClient) -> None:
     assert get_response.status_code == 200
     assert get_response.json() == created
 
+    head = graphs.get_head_ok(graph_id)
     list_response = graphs.list()
     assert list_response.status_code == 200
-    assert list_response.json() == {
-        "graphs": [
-            {
-                "id": str(graph_id),
-                "name": "Parish index draft",
-                "revision": 1,
-                "node_count": 2,
-                "edge_count": 1,
-                "updated_at": created["updated_at"],
-            }
-        ]
-    }
+    listed = graphs.list_ok()
+    assert len(listed.graphs) == 1
+    summary = listed.graphs[0]
+    assert summary.id == graph_id
+    assert summary.name == "Parish index draft"
+    assert summary.revision == 1
+    assert (summary.node_count, summary.edge_count) == (2, 1)
+    assert summary.updated_at == head.updated_at
+    assert summary.draft_pending is False
 
     update_response = graphs.update(
         graph_id, _update_request("Updated draft", expected_revision=1)
@@ -301,6 +300,70 @@ def test_saved_graph_crud_round_trip(builtin_client: TestClient) -> None:
     assert delete_response.status_code == 204
     assert delete_response.content == b""
     assert graphs.get(graph_id).status_code == 404
+
+
+def test_graph_lists_agree_on_the_live_draft_head_summary(
+    builtin_client: TestClient,
+) -> None:
+    """Every discovery surface reads the draft head, and labels a pending draft."""
+
+    api = GrafyApi(builtin_client)
+    graphs = api.workspace(WORKSPACE_ID).graphs
+    created = graphs.create(_graph_request("Shared summary")).json()
+    graph_id = UUID(created["id"])
+    head = graphs.get_head_ok(graph_id)
+
+    # Remove both nodes from the live head without checkpointing, so the draft
+    # head and the saved checkpoint deliberately disagree.
+    command = graphs.submit_command_ok(
+        graph_id,
+        SubmitGraphCommandRequest(
+            command_id=uuid4(),
+            room_epoch=head.room_epoch,
+            observed_sequence=head.collaboration_sequence,
+            command=RemoveNodesCommand(node_ids=("source", "target")),
+        ),
+    )
+
+    listed = graphs.list_ok()
+    assert len(listed.graphs) == 1
+    summary = listed.graphs[0]
+    browser = api.graph_browser.list_ok().graphs[0]
+
+    # The workspace list describes the live draft head, not the stale checkpoint.
+    assert (summary.node_count, summary.edge_count) == (0, 0)
+    assert summary.updated_at == command.head.updated_at
+    assert summary.draft_pending is True
+    # The durable revision still points at the last checkpoint for lifecycle writes.
+    assert summary.revision == 1
+    assert summary.name == "Shared summary"
+
+    # Both surfaces describe the same graph the same way.
+    assert browser.id == summary.id
+    assert browser.draft.name == summary.name
+    assert (browser.draft.node_count, browser.draft.edge_count) == (
+        summary.node_count,
+        summary.edge_count,
+    )
+    assert browser.updated_at == summary.updated_at
+    assert browser.draft.updated_at == summary.updated_at
+    assert browser.draft.checkpoint_revision == summary.revision
+
+    # Checkpointing clears the pending label on both surfaces.
+    checkpoint = graphs.checkpoint_ok(
+        graph_id,
+        CheckpointGraphRequest(
+            expected_room_epoch=command.head.room_epoch,
+            expected_sequence=command.head.collaboration_sequence,
+        ),
+    )
+    after = graphs.list_ok().graphs[0]
+    assert after.draft_pending is False
+    assert after.revision == checkpoint.saved_revision
+    assert after.updated_at == checkpoint.head.updated_at
+    assert api.graph_browser.list_ok().graphs[0].draft.checkpoint_revision == (
+        checkpoint.saved_revision
+    )
 
 
 def test_create_rejects_structurally_invalid_graph(builtin_client: TestClient) -> None:
@@ -333,7 +396,7 @@ def test_create_rejects_ambiguous_conversion_fields(
     payload = _canonical_raw_graph_payload()
     document = cast(dict[str, object], payload["document"])
     edge = cast(list[dict[str, object]], document["edges"])[0]
-    edge["conversion"] = edge["conversion_path"][0]
+    edge["conversion"] = cast(list[object], edge["conversion_path"])[0]
 
     response = builtin_client.post(
         "/v1/workspaces/00000000-0000-0000-0000-000000000007/graphs", json=payload
@@ -560,7 +623,7 @@ def test_http_replace_rejects_uncheckpointed_head(
     graphs = api.workspace(WORKSPACE_ID).graphs
     created = graphs.create(_graph_request("Live draft")).json()
     graph_id = UUID(created["id"])
-    collaboration = builtin_client.app.state.resources.collaboration
+    collaboration = cast(FastAPI, builtin_client.app).state.resources.collaboration
     head = graphs.get_head_ok(graph_id)
     asyncio.run(
         collaboration.accept_command(
