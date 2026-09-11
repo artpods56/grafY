@@ -15,7 +15,7 @@ export const SPIKES = [
     id: "drawer-interaction",
     title: "Canvas with real input plugs",
     summary:
-      "A real canvas and real node cards, kept so a drag can be made to land on a live input plug.",
+      "The product canvas with real node cards, kept as a base for building an input interaction.",
   },
 ] as const;
 

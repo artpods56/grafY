@@ -110,33 +110,6 @@ export const RENDER_PAGE_SPEC: NodeSpec = {
   runnable: true,
 };
 
-/**
- * One artifact a chip can carry. Identity is the reference the product uses,
- * so the drag check reads the same contract the canvas does.
- */
-export interface SandboxArtifact {
-  id: string;
-  label: string;
-  artifactType: string;
-  schemaVersion: number;
-}
-
-function artifact(
-  id: string,
-  label: string,
-  artifactType: string,
-): SandboxArtifact {
-  return { id, label, artifactType, schemaVersion: 1 };
-}
-
-/** Two tables, so a `many` input can be shown holding a sequence. */
-export const SANDBOX_ARTIFACTS: readonly SandboxArtifact[] = [
-  artifact("art-parcels", "parcels_2026", "table.data"),
-  artifact("art-zoning", "zoning_2026", "table.data"),
-  artifact("art-summary", "summary.md", "text.markdown"),
-  artifact("art-scan", "scan.png", "file.png"),
-];
-
 export const SANDBOX_WORKSPACE: Workspace = {
   // Empty on purpose: the workspace id keys the registry fetch, and a sandbox
   // has no registry to fetch. An empty id leaves the type popover on its
