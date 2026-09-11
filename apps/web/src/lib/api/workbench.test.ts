@@ -27,9 +27,10 @@ const WORKSPACE_ID = "workspace/1";
 describe("saved graph HTTP API", () => {
   it("writes and reads one canonical document shape", async () => {
     const document = {
-      schema_version: 6 as const,
+      schema_version: 7 as const,
       nodes: [],
       edges: [],
+      origins: [],
       presentation: {
         viewers: [],
         links: [],
@@ -118,7 +119,7 @@ describe("collaboration HTTP API", () => {
             checkpoint_revision: 1,
             name: "Draft",
             updated_at: "2026-08-07T00:00:00Z",
-            document: { schema_version: 6, nodes: [], edges: [] },
+            document: { schema_version: 7, nodes: [], edges: [], origins: [] },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
@@ -182,9 +183,10 @@ describe("collaboration HTTP API", () => {
       created_at: "2026-08-07T00:00:03Z",
       updated_at: "2026-08-07T00:00:03Z",
       document: {
-        schema_version: 6,
+        schema_version: 7,
         nodes: [],
         edges: [],
+        origins: [],
       },
     } satisfies CopyExactHeadResponse;
     const fetchMock = vi

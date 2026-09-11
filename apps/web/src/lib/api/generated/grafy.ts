@@ -1131,6 +1131,15 @@ export interface components {
             readonly kind: "add_node";
             readonly node: components["schemas"]["SavedGraphNode"];
         };
+        /** AddOriginCommand */
+        readonly AddOriginCommand: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "add_origin";
+            readonly origin: components["schemas"]["SavedGraphOrigin"];
+        };
         /** ArtifactBundleContractResponse */
         readonly ArtifactBundleContractResponse: {
             /**
@@ -1375,6 +1384,8 @@ export interface components {
             readonly name: string;
             /** Nodes */
             readonly nodes: readonly components["schemas"]["SavedGraphNodeModel"][];
+            /** Origins */
+            readonly origins?: readonly components["schemas"]["SavedGraphOriginModel"][];
             readonly presentation?: components["schemas"]["GraphPresentationDocumentModel"];
             /**
              * Room Epoch
@@ -2714,6 +2725,16 @@ export interface components {
             /** Node Ids */
             readonly node_ids: readonly string[];
         };
+        /** RemoveOriginsCommand */
+        readonly RemoveOriginsCommand: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "remove_origins";
+            /** Origin Ids */
+            readonly origin_ids: readonly string[];
+        };
         /** RenameGraphCommand */
         readonly RenameGraphCommand: {
             /** Expected Name */
@@ -2964,13 +2985,18 @@ export interface components {
              * @default []
              */
             readonly nodes: readonly components["schemas"]["SavedGraphNode"][];
+            /**
+             * Origins
+             * @default []
+             */
+            readonly origins: readonly components["schemas"]["SavedGraphOrigin"][];
             readonly presentation?: components["schemas"]["GraphPresentationDocument"];
             /**
              * Schema Version
-             * @default 6
+             * @default 7
              * @constant
              */
-            readonly schema_version: 6;
+            readonly schema_version: 7;
         };
         /** SavedGraphEdge */
         readonly SavedGraphEdge: {
@@ -3137,6 +3163,42 @@ export interface components {
             readonly position: components["schemas"]["GraphPointModel"];
         };
         /**
+         * SavedGraphOrigin
+         * @description Exact artifact value held on one node input with no incoming edge.
+         */
+        readonly SavedGraphOrigin: {
+            /**
+             * Conversion Path
+             * @default []
+             */
+            readonly conversion_path: readonly components["schemas"]["SavedGraphConversion"][];
+            /** Id */
+            readonly id: string;
+            /** To Node */
+            readonly to_node: string;
+            /** To Plug */
+            readonly to_plug?: string | null;
+            /** To Port */
+            readonly to_port: string;
+            /** Value */
+            readonly value: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"];
+        };
+        /** SavedGraphOriginModel */
+        readonly SavedGraphOriginModel: {
+            /** Conversion Path */
+            readonly conversion_path?: readonly components["schemas"]["SavedGraphConversionModel"][];
+            /** Id */
+            readonly id: string;
+            /** To Node */
+            readonly to_node: string;
+            /** To Plug */
+            readonly to_plug?: string | null;
+            /** To Port */
+            readonly to_port: string;
+            /** Value */
+            readonly value: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"];
+        };
+        /**
          * SavedGraphPluginReleasePin
          * @description Exact scoped Plugin release identity pinned on one graph node.
          *
@@ -3267,7 +3329,7 @@ export interface components {
         /** SubmitGraphCommandRequest */
         readonly SubmitGraphCommandRequest: {
             /** Command */
-            readonly command: components["schemas"]["RenameGraphCommand"] | components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["UpdateNodePluginReleaseCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"];
+            readonly command: components["schemas"]["RenameGraphCommand"] | components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["UpdateNodePluginReleaseCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["AddOriginCommand"] | components["schemas"]["UpdateOriginCommand"] | components["schemas"]["RemoveOriginsCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"];
             /**
              * Command Id
              * Format: uuid
@@ -3562,6 +3624,16 @@ export interface components {
             /** Node Id */
             readonly node_id: string;
             readonly plugin_release_pin: components["schemas"]["SavedGraphPluginReleasePin"];
+        };
+        /** UpdateOriginCommand */
+        readonly UpdateOriginCommand: {
+            readonly expected_origin: components["schemas"]["SavedGraphOrigin"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "update_origin";
+            readonly origin: components["schemas"]["SavedGraphOrigin"];
         };
         /** UpdateSavedGraphRequest */
         readonly UpdateSavedGraphRequest: {

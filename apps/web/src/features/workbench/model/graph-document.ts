@@ -1,3 +1,4 @@
+import type { SavedGraphOrigin } from "@/lib/api";
 import type {
   CreateSavedGraphRequest,
   SavedGraphDocument,
@@ -16,10 +17,12 @@ export interface AuthoredGraphDocument {
   readonly name: string;
   readonly nodes: readonly SavedGraphNode[];
   readonly edges: readonly SavedGraphEdge[];
+  readonly origins: readonly SavedGraphOrigin[];
 }
 
 export type AuthoredGraphNode = SavedGraphNode;
 export type AuthoredGraphEdge = SavedGraphEdge;
+export type AuthoredGraphOrigin = SavedGraphOrigin;
 
 type SavedGraphEdgeUpdate = Partial<
   Pick<
@@ -32,6 +35,13 @@ type SavedGraphEdgeUpdate = Partial<
     | "to_plug"
     | "from_port"
     | "to_port"
+  >
+>;
+
+type SavedGraphOriginUpdate = Partial<
+  Pick<
+    AuthoredGraphOrigin,
+    "to_node" | "to_port" | "to_plug" | "value" | "conversion_path"
   >
 >;
 
@@ -126,6 +136,19 @@ export type GraphCommand =
       readonly edge_ids: readonly string[];
     }
   | {
+      readonly kind: "add_origin";
+      readonly origin: AuthoredGraphOrigin;
+    }
+  | {
+      readonly kind: "update_origin";
+      readonly origin_id: string;
+      readonly update: SavedGraphOriginUpdate;
+    }
+  | {
+      readonly kind: "remove_origins";
+      readonly origin_ids: readonly string[];
+    }
+  | {
       readonly kind: "replace_document";
       readonly document: AuthoredGraphDocument;
     };
@@ -137,6 +160,7 @@ export function authoredGraphDocument(
     name: value.name,
     nodes: value.document.nodes.map(projectSavedGraphNode),
     edges: value.document.edges.map(projectSavedGraphEdge),
+    origins: (value.document.origins ?? []).map(projectSavedGraphOrigin),
   };
 }
 
@@ -147,9 +171,10 @@ export function createSavedGraphRequest(
   return {
     name: document.name.trim(),
     document: {
-      schema_version: 6,
+      schema_version: 7,
       nodes: document.nodes.map(projectSavedGraphNode),
       edges: document.edges.map(projectSavedGraphEdge),
+      origins: (document.origins ?? []).map(projectSavedGraphOrigin),
       presentation: presentation ?? {
         viewers: [],
         links: [],
@@ -291,6 +316,51 @@ function projectSavedGraphEdgeUpdate(
   return projected;
 }
 
+export function projectSavedGraphOrigin(
+  origin: SavedGraphOrigin,
+): SavedGraphOrigin {
+  return {
+    conversion_path: (origin.conversion_path ?? []).map((conversion) => ({
+      id: conversion.id,
+      version: conversion.version,
+    })),
+    id: origin.id,
+    to_node: origin.to_node,
+    to_plug: origin.to_plug ?? null,
+    to_port: origin.to_port,
+    value: structuredClone(origin.value),
+  };
+}
+
+function projectSavedGraphOriginUpdate(
+  update: SavedGraphOriginUpdate,
+): SavedGraphOriginUpdate {
+  const projected = {} as {
+    -readonly [Key in keyof SavedGraphOriginUpdate]: SavedGraphOriginUpdate[Key];
+  };
+  if (Object.prototype.hasOwnProperty.call(update, "to_node")) {
+    projected.to_node = update.to_node;
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "to_port")) {
+    projected.to_port = update.to_port;
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "to_plug")) {
+    projected.to_plug = update.to_plug ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "value")) {
+    projected.value =
+      update.value === null || update.value === undefined
+        ? update.value
+        : structuredClone(update.value);
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "conversion_path")) {
+    projected.conversion_path = (update.conversion_path ?? []).map(
+      ({ id, version }) => ({ id, version }),
+    );
+  }
+  return projected;
+}
+
 function executionDescendants(
   document: AuthoredGraphDocument,
   roots: readonly string[],
@@ -352,13 +422,32 @@ export function executionInvalidatedNodeIds(
           .filter((edge) => command.edge_ids.includes(edge.id))
           .map((edge) => edge.to_node),
       );
-    case "remove_nodes":
+    case "add_origin":
+      return executionDescendants(document, [command.origin.to_node]);
+    case "update_origin": {
+      const origin = document.origins.find(
+        (candidate) => candidate.id === command.origin_id,
+      );
+      return origin
+        ? executionDescendants(document, [origin.to_node])
+        : new Set();
+    }
+    case "remove_origins":
       return executionDescendants(
         document,
-        document.edges
+        document.origins
+          .filter((origin) => command.origin_ids.includes(origin.id))
+          .map((origin) => origin.to_node),
+      );
+    case "remove_nodes":
+      return executionDescendants(document, [
+        ...document.edges
           .filter((edge) => command.node_ids.includes(edge.from_node))
           .map((edge) => edge.to_node),
-      );
+        ...document.origins
+          .filter((origin) => command.node_ids.includes(origin.to_node))
+          .map((origin) => origin.to_node),
+      ]);
     case "rename_graph":
     case "add_node":
     case "move_nodes":
@@ -385,6 +474,18 @@ function edgeOrThrow(
   const edge = document.edges.find((candidate) => candidate.id === edgeId);
   if (!edge) throw new Error(`Graph command targets missing edge ${edgeId}`);
   return edge;
+}
+
+function originOrThrow(
+  document: AuthoredGraphDocument,
+  originId: string,
+): AuthoredGraphOrigin {
+  const origin = document.origins.find(
+    (candidate) => candidate.id === originId,
+  );
+  if (!origin)
+    throw new Error(`Graph command targets missing origin ${originId}`);
+  return origin;
 }
 
 function updateNode(
@@ -429,6 +530,9 @@ export function applyGraphCommandNormalized(
         nodes: document.nodes.filter((node) => !removed.has(node.id)),
         edges: document.edges.filter(
           (edge) => !removed.has(edge.from_node) && !removed.has(edge.to_node),
+        ),
+        origins: document.origins.filter(
+          (origin) => !removed.has(origin.to_node),
         ),
       };
     }
@@ -492,6 +596,11 @@ export function applyGraphCommandNormalized(
             edge.to_node !== command.node_id ||
             edge.to_plug !== command.plug_id,
         ),
+        origins: next.origins.filter(
+          (origin) =>
+            origin.to_node !== command.node_id ||
+            origin.to_plug !== command.plug_id,
+        ),
       };
     }
     case "reorder_input_plug":
@@ -532,6 +641,13 @@ export function applyGraphCommandNormalized(
             edge.to_plug === null ||
             edge.to_plug === undefined ||
             retainedPlugIds.has(edge.to_plug),
+        ),
+        origins: next.origins.filter(
+          (origin) =>
+            origin.to_node !== command.node_id ||
+            origin.to_plug === null ||
+            origin.to_plug === undefined ||
+            retainedPlugIds.has(origin.to_plug),
         ),
       };
     }
@@ -582,6 +698,41 @@ export function applyGraphCommandNormalized(
       return {
         ...document,
         edges: document.edges.filter((edge) => !removed.has(edge.id)),
+      };
+    }
+    case "add_origin":
+      if (
+        document.origins.some(
+          (origin) => origin.id === command.origin.id,
+        )
+      ) {
+        throw new Error(
+          `Graph command adds duplicate origin ${command.origin.id}`,
+        );
+      }
+      return {
+        ...document,
+        origins: [
+          ...document.origins,
+          projectSavedGraphOrigin(command.origin),
+        ],
+      };
+    case "update_origin": {
+      originOrThrow(document, command.origin_id);
+      return {
+        ...document,
+        origins: document.origins.map((origin) =>
+          origin.id === command.origin_id
+            ? { ...origin, ...projectSavedGraphOriginUpdate(command.update) }
+            : origin,
+        ),
+      };
+    }
+    case "remove_origins": {
+      const removed = new Set(command.origin_ids);
+      return {
+        ...document,
+        origins: document.origins.filter((origin) => !removed.has(origin.id)),
       };
     }
     case "replace_document":

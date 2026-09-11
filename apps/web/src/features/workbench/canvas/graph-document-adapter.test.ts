@@ -56,6 +56,7 @@ function state(): WorkbenchAuthoringState {
       name: "Draft",
       nodes: [source, target],
       edges: [edge],
+      origins: [],
     })),
     nodeOverlays: {
       source: {
@@ -316,6 +317,7 @@ describe("Workbench authored document adapter", () => {
           to_node: "descendant",
         },
       ],
+      origins: [],
     };
     const initial: WorkbenchAuthoringState = {
       document: authoredGraphDocument(createSavedGraphRequest(withDescendant)),
@@ -369,6 +371,7 @@ describe("Workbench authored document adapter", () => {
           enabled: false,
         },
       ],
+      origins: [],
     };
     const initial: WorkbenchAuthoringState = {
       document: authoredGraphDocument(createSavedGraphRequest(withDisabledEdge)),
