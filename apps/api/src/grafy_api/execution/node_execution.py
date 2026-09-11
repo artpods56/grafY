@@ -219,7 +219,8 @@ class NodeExecutionService:
             )
 
         input_port = compiled_node.resolved_contracts.input_contract.ports[map_input]
-        if not isinstance(input_port.accepts, ArtifactTypeKey):
+        accepted_types = input_port.accepted_types
+        if not accepted_types:
             raise InvocationError(
                 f"Node {node.operator_id!r} MAP input {map_input!r} has an "
                 "unresolved artifact type contract"
@@ -228,10 +229,13 @@ class NodeExecutionService:
             raw_sequence.artifact_type,
             raw_sequence.schema_version,
         )
-        if sequence_key != input_port.accepts:
+        if sequence_key not in accepted_types:
+            expected = ", ".join(
+                f"{key.id}@{key.schema_version}" for key in accepted_types
+            )
             raise InvocationError(
                 f"Node {node.operator_id!r} MAP input {map_input!r} expected "
-                f"{input_port.accepts.id}@{input_port.accepts.schema_version}, got "
+                f"{expected}, got "
                 f"{sequence_key.id}@{sequence_key.schema_version}"
             )
 

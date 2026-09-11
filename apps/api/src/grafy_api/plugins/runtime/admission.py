@@ -234,19 +234,20 @@ class ReleaseExecutionAdmission:
                         f"type variable {port.artifact_type_variable!r}"
                     )
                     continue
-                key = (port.artifact_type.id, port.artifact_type.schema_version)
-                artifact_contract = artifact_contracts.get(key)
-                if artifact_contract is None:
-                    unsupported_types.add(f"{key[0]}@{key[1]} (undeclared)")
-                    continue
-                adapter = (
-                    artifact_contract.bundle.format,
-                    artifact_contract.bundle.version,
-                )
-                if adapter not in self.supported_bundle_adapters:
-                    unsupported_types.add(
-                        f"{key[0]}@{key[1]} ({adapter[0]}@{adapter[1]})"
+                for accepted in port.accepted_types:
+                    key = (accepted.id, accepted.schema_version)
+                    artifact_contract = artifact_contracts.get(key)
+                    if artifact_contract is None:
+                        unsupported_types.add(f"{key[0]}@{key[1]} (undeclared)")
+                        continue
+                    adapter = (
+                        artifact_contract.bundle.format,
+                        artifact_contract.bundle.version,
                     )
+                    if adapter not in self.supported_bundle_adapters:
+                        unsupported_types.add(
+                            f"{key[0]}@{key[1]} ({adapter[0]}@{adapter[1]})"
+                        )
         if unsupported_types:
             return ReleaseExecutionRejection(
                 reason="unsupported_artifact_type",

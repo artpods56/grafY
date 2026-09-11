@@ -1,5 +1,5 @@
 from collections import Counter, deque
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
@@ -39,6 +39,7 @@ from grafy_core.domain.plugin_selection import PluginReleaseSelection
 from grafy_core.domain.plugin_revocations import PluginReleaseRevocation
 from grafy_core.domain.saved_graphs import SavedGraphPluginReleasePin
 from grafy_core.nodes import (
+    ArtifactTypeVariable,
     Node,
     NodeContractResolutionError,
     PortShape,
@@ -795,6 +796,10 @@ def _validate_input_plugs(
             )
 
 
+def _artifact_type_keys_label(keys: Sequence[ArtifactTypeKey]) -> str:
+    return ", ".join(f"{key.id}@{key.schema_version}" for key in keys)
+
+
 def _compile_edges(
     *,
     nodes_by_id: dict[str, Node[Any, Any, Any]],
@@ -821,12 +826,19 @@ def _compile_edges(
                 f"{edge.to_node!r}.{edge.to_port!r} references unknown input "
                 f"port {edge.to_port!r} on node {edge.to_node!r}"
             )
-        target_key = target_port.accepts
-        if not isinstance(target_key, ArtifactTypeKey):
+        target_keys = target_port.accepted_types
+        if not target_keys:
+            if isinstance(target_port.accepts, ArtifactTypeVariable):
+                raise GraphExecutionError(
+                    f"Node {edge.to_node!r} input {edge.to_port!r} retained "
+                    f"unresolved artifact type variable "
+                    f"{target_port.accepts.name!r}"
+                )
             raise GraphExecutionError(
-                f"Node {edge.to_node!r} input {edge.to_port!r} retained "
-                f"unresolved artifact type variable {target_key.name!r}"
+                f"Node {edge.to_node!r} input {edge.to_port!r} declares no "
+                "accepted artifact types"
             )
+        target_label = _artifact_type_keys_label(target_keys)
 
         source_node = nodes_by_id.get(edge.from_node)
         if source_node is None:
@@ -947,7 +959,7 @@ def _compile_edges(
             effective_source_key = conversion.target
             seen_artifact_keys.add(effective_source_key)
 
-        if effective_source_key != target_key:
+        if effective_source_key not in target_keys:
             if resolved_conversions:
                 conversion_path = " -> ".join(
                     f"{conversion.key.id}@{conversion.key.version}"
@@ -959,7 +971,7 @@ def _compile_edges(
                     f"{conversion_path} as "
                     f"{effective_source_key.id}@"
                     f"{effective_source_key.schema_version}, but target expects "
-                    f"{target_key.id}@{target_key.schema_version}"
+                    f"{target_label}"
                 )
             if edge.projection is not None:
                 raise GraphExecutionError(
@@ -968,14 +980,14 @@ def _compile_edges(
                     f"{'.'.join(edge.projection.path)!r} as "
                     f"{effective_source_key.id}@"
                     f"{effective_source_key.schema_version}, but target expects "
-                    f"{target_key.id}@{target_key.schema_version}"
+                    f"{target_label}"
                 )
             raise GraphExecutionError(
                 f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
                 f"{edge.to_node!r}.{edge.to_port!r} cannot connect "
                 f"{effective_source_key.id}@"
                 f"{effective_source_key.schema_version} to "
-                f"{target_key.id}@{target_key.schema_version} "
+                f"{target_label} "
                 "without a declared field projection or conversion"
             )
 
