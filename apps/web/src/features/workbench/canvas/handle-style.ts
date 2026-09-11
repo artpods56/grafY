@@ -13,10 +13,7 @@ function markRadius(shape: PortMarkShape): string {
  * Catalog preview and canvas handles share this mark: a hollow 10px disc with
  * a 2px typed border. Sequence ports add a second concentric ring.
  */
-export function portMarkStyle(
-  color: string,
-  multiple = false,
-): CSSProperties {
+export function portMarkStyle(color: string, multiple = false): CSSProperties {
   return multiple
     ? {
         borderColor: color,

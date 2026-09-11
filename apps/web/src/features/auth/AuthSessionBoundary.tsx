@@ -4,7 +4,12 @@ import * as React from "react";
 import { SWRConfig, type Cache, type State } from "swr";
 
 import { ThresholdStatus } from "@/components/threshold-status";
-import { deleteSession, getSession, oidcLoginUrl, safeReturnPath } from "@/lib/api/auth";
+import {
+  deleteSession,
+  getSession,
+  oidcLoginUrl,
+  safeReturnPath,
+} from "@/lib/api/auth";
 import { ApiError, onUnauthorized } from "@/lib/api/client";
 import type { Session } from "@/lib/api/contract";
 import { sandboxSession } from "./dev-session";
@@ -27,7 +32,9 @@ const AuthSessionContext = React.createContext<AuthSessionContextValue | null>(
   null,
 );
 
-export function sessionFailureKind(error: unknown): "signed-out" | "unavailable" {
+export function sessionFailureKind(
+  error: unknown,
+): "signed-out" | "unavailable" {
   return error instanceof ApiError && error.status === 401
     ? "signed-out"
     : "unavailable";
@@ -74,7 +81,11 @@ function AuthFrame({
       <ThresholdStatus
         title="Sign in"
         detail="Your graphs and Team locations are available after authentication."
-        action={<button type="button" onClick={openLogin}>Continue with SSO</button>}
+        action={
+          <button type="button" onClick={openLogin}>
+            Continue with SSO
+          </button>
+        }
       />
     );
   }
@@ -83,7 +94,11 @@ function AuthFrame({
       <ThresholdStatus
         title="Your session has expired"
         detail="Sign in again to return to the same surface."
-        action={<button type="button" onClick={openLogin}>Sign in again</button>}
+        action={
+          <button type="button" onClick={openLogin}>
+            Sign in again
+          </button>
+        }
       />
     );
   }
@@ -92,7 +107,11 @@ function AuthFrame({
       <ThresholdStatus
         title="Session service unavailable"
         detail="Could not confirm your session. Check the connection and try again."
-        action={<button type="button" onClick={onRetry}>Try again</button>}
+        action={
+          <button type="button" onClick={onRetry}>
+            Try again
+          </button>
+        }
       />
     );
   }
@@ -110,7 +129,11 @@ function AuthFrame({
       <ThresholdStatus
         title="Sign out could not be completed"
         detail="The server could not revoke this session. Try again before leaving."
-        action={<button type="button" onClick={onLogout}>Try sign out again</button>}
+        action={
+          <button type="button" onClick={onLogout}>
+            Try sign out again
+          </button>
+        }
       />
     );
   }
@@ -120,7 +143,9 @@ function AuthFrame({
       key={`protected-cache-${cacheGeneration}-${state.session.id}-${state.session.user_id}`}
       value={{ provider: createProtectedSWRCache }}
     >
-      <AuthSessionContext.Provider value={{ session: state.session, logout: onLogout }}>
+      <AuthSessionContext.Provider
+        value={{ session: state.session, logout: onLogout }}
+      >
         {children}
       </AuthSessionContext.Provider>
     </SWRConfig>
@@ -129,11 +154,16 @@ function AuthFrame({
 
 export function useAuthSession(): AuthSessionContextValue {
   const context = React.useContext(AuthSessionContext);
-  if (!context) throw new Error("useAuthSession must be used inside AuthSessionBoundary");
+  if (!context)
+    throw new Error("useAuthSession must be used inside AuthSessionBoundary");
   return context;
 }
 
-export function AuthSessionBoundary({ children }: { children: React.ReactNode }) {
+export function AuthSessionBoundary({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [state, setState] = React.useState<AuthState>(() => {
     const devSession = sandboxSession();
     return devSession
@@ -145,7 +175,9 @@ export function AuthSessionBoundary({ children }: { children: React.ReactNode })
   const logoutInFlightRef = React.useRef(false);
 
   const expireSession = React.useCallback(() => {
-    setState((current) => current.kind === "authenticated" ? { kind: "expired" } : current);
+    setState((current) =>
+      current.kind === "authenticated" ? { kind: "expired" } : current,
+    );
   }, []);
 
   React.useEffect(() => onUnauthorized(expireSession), [expireSession]);
@@ -187,7 +219,8 @@ export function AuthSessionBoundary({ children }: { children: React.ReactNode })
       }
       setState({ kind: "logout-failed" });
     } finally {
-      if (attempt === logoutAttemptRef.current) logoutInFlightRef.current = false;
+      if (attempt === logoutAttemptRef.current)
+        logoutInFlightRef.current = false;
     }
   }, []);
 

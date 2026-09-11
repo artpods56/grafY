@@ -1522,12 +1522,8 @@ function InstancePlugRow({
         )}
         aria-label={accessibleLabel}
         title={`${accessibleLabel}. Connect one compatible output here.`}
-        style={handleStyle(
-          "50%",
-          color,
-          true,
-          binding ? "square" : "circle",
-        )}      />
+        style={handleStyle("50%", color, true, binding ? "square" : "circle")}
+      />
       <button
         type="button"
         aria-label={`Drag to reorder ${visibleName} input ${index + 1}`}

@@ -781,13 +781,7 @@ function ArtifactRow({
   );
 }
 
-function DrawerHead({
-  title,
-  note,
-}: {
-  title: string;
-  note: string;
-}) {
+function DrawerHead({ title, note }: { title: string; note: string }) {
   return (
     <div {...stylex.props(s.drawerHead)}>
       <span {...stylex.props(s.drawerTitle)}>{title}</span>
@@ -946,7 +940,7 @@ export function DrawerInteractionSpike() {
     text: string;
   }>({
     tone: "info",
-      text: "Drag a row from the library on the left, or from Generated on the right, onto a port or onto empty canvas.",
+    text: "Drag a row from the library on the left, or from Generated on the right, onto a port or onto empty canvas.",
   });
   const [hover, setHover] = React.useState<{
     text: string;
@@ -1097,47 +1091,43 @@ export function DrawerInteractionSpike() {
    * handles. Reading the topmost element would fail, because the edge component
    * renders a bend-handle layer above the node cards.
    */
-  const plugUnder = React.useCallback(
-    (clientX: number, clientY: number) => {
-      let best: { handle: HTMLElement; distance: number } | null = null;
-      for (const handle of document.querySelectorAll<HTMLElement>(
-        ".react-flow__handle",
-      )) {
-        const rect = handle.getBoundingClientRect();
-        const distance = Math.hypot(
-          clientX - (rect.x + rect.width / 2),
-          clientY - (rect.y + rect.height / 2),
-        );
-        if (distance > Math.max(rect.width, rect.height) / 2 + 10) continue;
-        if (!best || distance < best.distance) best = { handle, distance };
-      }
-      const handle = best?.handle;
-      if (!handle) return null;
-      const raw = handle.getAttribute("data-handleid");
-      const decoded = decodeHandleId(raw);
-      if (!decoded || decoded.direction !== "input") return null;
-      const node = nodesRef.current.find(
-        (candidate) => candidate.id === handle.dataset.nodeid,
+  const plugUnder = React.useCallback((clientX: number, clientY: number) => {
+    let best: { handle: HTMLElement; distance: number } | null = null;
+    for (const handle of document.querySelectorAll<HTMLElement>(
+      ".react-flow__handle",
+    )) {
+      const rect = handle.getBoundingClientRect();
+      const distance = Math.hypot(
+        clientX - (rect.x + rect.width / 2),
+        clientY - (rect.y + rect.height / 2),
       );
-      if (node?.type !== WORKFLOW_NODE_TYPE) return null;
-      const port = node.data.spec.inputs.find(
-        (candidate) => candidate.name === decoded.portName,
-      );
-      if (!port) return null;
-      // React Flow writes `data-handleid` once, at mount, so it goes stale when
-      // the plug on that row is replaced. The row element is the live identity.
-      const rowPlugId = handle
-        .closest<HTMLElement>("[data-input-plug-id]")
-        ?.dataset.inputPlugId;
-      return {
-        node,
-        port,
-        plugId: rowPlugId ?? decoded.plugId,
-        handleId: raw ?? "",
-      };
-    },
-    [],
-  );
+      if (distance > Math.max(rect.width, rect.height) / 2 + 10) continue;
+      if (!best || distance < best.distance) best = { handle, distance };
+    }
+    const handle = best?.handle;
+    if (!handle) return null;
+    const raw = handle.getAttribute("data-handleid");
+    const decoded = decodeHandleId(raw);
+    if (!decoded || decoded.direction !== "input") return null;
+    const node = nodesRef.current.find(
+      (candidate) => candidate.id === handle.dataset.nodeid,
+    );
+    if (node?.type !== WORKFLOW_NODE_TYPE) return null;
+    const port = node.data.spec.inputs.find(
+      (candidate) => candidate.name === decoded.portName,
+    );
+    if (!port) return null;
+    // React Flow writes `data-handleid` once, at mount, so it goes stale when
+    // the plug on that row is replaced. The row element is the live identity.
+    const rowPlugId = handle.closest<HTMLElement>("[data-input-plug-id]")
+      ?.dataset.inputPlugId;
+    return {
+      node,
+      port,
+      plugId: rowPlugId ?? decoded.plugId,
+      handleId: raw ?? "",
+    };
+  }, []);
 
   const onDragOver = React.useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
