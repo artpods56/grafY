@@ -10,10 +10,48 @@ import type { HandleFeedIntent, PortMeta } from "./types";
 export type { HandleFeedIntent };
 
 const HANDLE_FEED_PREFIX = "feed=";
+const HANDLE_ALSO_ACCEPTS_PREFIX = "also=";
 
 function encodeHandleFeedSegment(feed: HandleFeedIntent): string {
   if (feed.kind === "whole") return `${HANDLE_FEED_PREFIX}whole`;
   return `${HANDLE_FEED_PREFIX}proj/${feed.path.map(encodeURIComponent).join("/")}`;
+}
+
+/** Encode the additional accepted artifact types of one input port handle. */
+function encodeHandleAlsoAcceptsSegment(
+  accepted: readonly ArtifactTypeKey[],
+): string {
+  return `${HANDLE_ALSO_ACCEPTS_PREFIX}${accepted
+    .map((key) => encodeURIComponent(`${key.id}@${key.schema_version}`))
+    .join(",")}`;
+}
+
+function decodeHandleAlsoAcceptsSegment(
+  segment: string,
+): ArtifactTypeKey[] | null {
+  const body = segment.slice(HANDLE_ALSO_ACCEPTS_PREFIX.length);
+  if (!body) return null;
+  try {
+    return body.split(",").map((entry) => {
+      const decoded = decodeURIComponent(entry);
+      const separator = decoded.lastIndexOf("@");
+      const id = decoded.slice(0, separator);
+      const schemaVersion = Number(decoded.slice(separator + 1));
+      if (separator <= 0 || !id || !Number.isInteger(schemaVersion)) {
+        throw new Error("invalid accepted artifact type");
+      }
+      return { id, schema_version: schemaVersion };
+    });
+  } catch {
+    return null;
+  }
+}
+
+function isHandleAlsoAcceptsSegment(segment: string | undefined): boolean {
+  return (
+    typeof segment === "string" &&
+    segment.startsWith(HANDLE_ALSO_ACCEPTS_PREFIX)
+  );
 }
 
 function decodeHandleFeedSegment(segment: string): HandleFeedIntent | null {
@@ -60,6 +98,9 @@ export function encodeHandleId(port: PortMeta): string {
         port.direction,
       ];
   if (port.plugId) parts.push(port.plugId);
+  if (port.alsoAccepts?.length) {
+    parts.push(encodeHandleAlsoAcceptsSegment(port.alsoAccepts));
+  }
   if (port.feed) parts.push(encodeHandleFeedSegment(port.feed));
   return parts.join("::");
 }
@@ -80,6 +121,7 @@ interface DecodedHandleBase {
   direction: PortMeta["direction"];
   plugId?: string;
   feed?: HandleFeedIntent;
+  alsoAccepts?: ArtifactTypeKey[];
 }
 
 interface DecodedConcreteHandle extends DecodedHandleBase {
@@ -101,7 +143,7 @@ export function decodeHandleId(
 ): DecodedHandle | null {
   if (!id) return null;
   const p = id.split("::");
-  if (p.length < 5 || p.length > 7) return null;
+  if (p.length < 5 || p.length > 8) return null;
   const shape = p[3];
   const direction = p[4];
   if (shape !== "one" && shape !== "many") return null;
@@ -109,22 +151,24 @@ export function decodeHandleId(
 
   let plugId: string | undefined;
   let feed: HandleFeedIntent | undefined;
-  if (p.length === 6) {
-    if (isHandleFeedSegment(p[5])) {
-      const decodedFeed = decodeHandleFeedSegment(p[5]!);
+  let alsoAccepts: ArtifactTypeKey[] | undefined;
+  for (const segment of p.slice(5)) {
+    if (isHandleFeedSegment(segment)) {
+      if (feed) return null;
+      const decodedFeed = decodeHandleFeedSegment(segment);
       if (!decodedFeed) return null;
       feed = decodedFeed;
-    } else if (p[5]) {
-      plugId = p[5];
-    } else {
-      return null;
+      continue;
     }
-  } else if (p.length === 7) {
-    if (!p[5] || !isHandleFeedSegment(p[6])) return null;
-    const decodedFeed = decodeHandleFeedSegment(p[6]!);
-    if (!decodedFeed) return null;
-    plugId = p[5];
-    feed = decodedFeed;
+    if (isHandleAlsoAcceptsSegment(segment)) {
+      if (alsoAccepts) return null;
+      const decodedAccepted = decodeHandleAlsoAcceptsSegment(segment);
+      if (!decodedAccepted) return null;
+      alsoAccepts = decodedAccepted;
+      continue;
+    }
+    if (!segment || plugId) return null;
+    plugId = segment;
   }
 
   if (p[2] === "$generic") {
@@ -153,6 +197,7 @@ export function decodeHandleId(
     shape,
     direction,
     ...(plugId ? { plugId } : {}),
+    ...(alsoAccepts ? { alsoAccepts } : {}),
     ...(feed ? { feed } : {}),
   };
 }
@@ -172,6 +217,24 @@ export function decodedHandleArtifactType(
   };
 }
 
+/** Concrete artifact types one decoded handle accepts, primary type first. */
+export function acceptedHandleArtifactTypes(
+  handle: DecodedHandle,
+): ArtifactTypeKey[] {
+  const primary = decodedHandleArtifactType(handle);
+  if (!primary) return [];
+  return [primary, ...(handle.alsoAccepts ?? [])];
+}
+
+function handleAcceptsArtifactType(
+  handle: DecodedHandle,
+  artifactType: ArtifactTypeKey,
+): boolean {
+  return acceptedHandleArtifactTypes(handle).some(
+    (candidate) => artifactTypeKey(candidate) === artifactTypeKey(artifactType),
+  );
+}
+
 /** A connection is valid when the output and input share an artifact contract. */
 export function connectionIsValid(connection: {
   sourceHandle?: string | null;
@@ -188,7 +251,7 @@ export function connectionIsValid(connection: {
     t.direction === "input" &&
     (!sourceArtifactType ||
       !targetArtifactType ||
-      artifactTypeKey(sourceArtifactType) === artifactTypeKey(targetArtifactType)) &&
+      handleAcceptsArtifactType(t, sourceArtifactType)) &&
     s.shape === t.shape
   );
 }
@@ -207,7 +270,7 @@ export function connectionArtifactContractIsValid(connection: {
   return (
     source.direction === "output" &&
     target.direction === "input" &&
-    artifactTypeKey(sourceArtifactType) === artifactTypeKey(targetArtifactType)
+    handleAcceptsArtifactType(target, sourceArtifactType)
   );
 }
 
@@ -234,7 +297,7 @@ export function projectionCandidatesForConnection(
     !targetArtifactType ||
     source.direction !== "output" ||
     target.direction !== "input" ||
-    artifactTypeKey(sourceArtifactType) === artifactTypeKey(targetArtifactType)
+    handleAcceptsArtifactType(target, sourceArtifactType)
   ) {
     return [];
   }
@@ -245,10 +308,8 @@ export function projectionCandidatesForConnection(
   );
   if (!sourceArtifact?.field_projections) return [];
 
-  return sourceArtifact.field_projections.filter(
-    (projection) =>
-      artifactTypeKey(projection.target_artifact_type) ===
-      artifactTypeKey(targetArtifactType),
+  return sourceArtifact.field_projections.filter((projection) =>
+    handleAcceptsArtifactType(target, projection.target_artifact_type),
   );
 }
 
@@ -391,6 +452,20 @@ function shortestConversionPaths(
   // Reaching the hop bound leaves the registry search incomplete, so no route
   // is advertised instead of guessing that a longer chain is safe.
   return [];
+}
+
+function shortestConversionPathsToAny(
+  source: { id: string; schema_version: number },
+  targets: readonly { id: string; schema_version: number }[],
+  conversions: readonly ArtifactConversionSpec[],
+): ArtifactConversionSpec[][] | null {
+  const paths: ArtifactConversionSpec[][] = [];
+  for (const target of targets) {
+    const targetPaths = shortestConversionPaths(source, target, conversions);
+    if (targetPaths === null) return null;
+    paths.push(...targetPaths);
+  }
+  return paths;
 }
 
 function connectionRoute(
@@ -545,8 +620,12 @@ export function connectionRoutesFor(
   }
   if (!sourceArtifactType || !targetArtifactType) return [];
 
+  const targetArtifactTypes = acceptedHandleArtifactTypes(target);
   if (
-    artifactTypeKey(sourceArtifactType) === artifactTypeKey(targetArtifactType)
+    targetArtifactTypes.some(
+      (candidate) =>
+        artifactTypeKey(candidate) === artifactTypeKey(sourceArtifactType),
+    )
   ) {
     return [{ kind: "exact", conversionPath: [] }];
   }
@@ -555,9 +634,9 @@ export function connectionRoutesFor(
     (artifact) =>
       artifactTypeKey(artifact.key) === artifactTypeKey(sourceArtifactType),
   );
-  const wholeOutputPaths = shortestConversionPaths(
+  const wholeOutputPaths = shortestConversionPathsToAny(
     sourceArtifactType,
-    targetArtifactType,
+    targetArtifactTypes,
     conversions,
   );
   if (wholeOutputPaths === null) return [];
@@ -572,9 +651,9 @@ export function connectionRoutesFor(
       left.title.localeCompare(right.title),
   );
   for (const projection of projections) {
-    const conversionPaths = shortestConversionPaths(
+    const conversionPaths = shortestConversionPathsToAny(
       projection.target_artifact_type,
-      targetArtifactType,
+      targetArtifactTypes,
       conversions,
     );
     if (conversionPaths === null) return [];
@@ -668,10 +747,12 @@ export function connectionRouteForSelection(
   }
 
   if (
-    !artifactTypeMatches(
-      currentArtifactType,
-      targetArtifactType.id,
-      targetArtifactType.schema_version,
+    !acceptedHandleArtifactTypes(target).some((candidate) =>
+      artifactTypeMatches(
+        currentArtifactType,
+        candidate.id,
+        candidate.schema_version,
+      ),
     )
   ) {
     return null;

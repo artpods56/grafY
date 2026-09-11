@@ -27,6 +27,7 @@ class CatalogPort(ClientModel):
     direction: Literal["input", "output"]
     artifact_type: ArtifactTypeKey | None = None
     artifact_type_variable: str | None = None
+    also_accepts: tuple[ArtifactTypeKey, ...] = ()
     shape: PortShape
     accepted_shapes: tuple[PortShape, ...]
     instance_plugs: bool = False
@@ -38,6 +39,11 @@ class CatalogPort(ClientModel):
         if (self.artifact_type is None) == (self.artifact_type_variable is None):
             raise ValueError(
                 "Catalog port must declare exactly one artifact type or variable"
+            )
+        if self.also_accepts and self.artifact_type is None:
+            raise ValueError(
+                "Catalog port additional accepted artifact types require an "
+                "artifact type"
             )
         return self
 

@@ -57,6 +57,7 @@ def plugin_profile_digest(runtime_profile: str) -> str:
 
 
 _EMPTY_HTTP_EGRESS_SERIALIZATION = ',"http_egress":null'
+_EMPTY_ALSO_ACCEPTS_SERIALIZATION = ',"also_accepts":[]'
 
 
 def plugin_contract_digest(catalog: PluginCatalogManifest) -> str:
@@ -64,12 +65,15 @@ def plugin_contract_digest(catalog: PluginCatalogManifest) -> str:
 
     Absent HTTP-egress declarations are dropped before hashing so a catalog
     parsed with the newer contract fields digests identically to the bytes
-    persisted before that field existed.
+    persisted before that field existed. Absent additional accepted artifact
+    types are dropped for the same reason.
     """
 
     serialized = catalog.model_dump_json()
     if _EMPTY_HTTP_EGRESS_SERIALIZATION in serialized:
         serialized = serialized.replace(_EMPTY_HTTP_EGRESS_SERIALIZATION, "")
+    if _EMPTY_ALSO_ACCEPTS_SERIALIZATION in serialized:
+        serialized = serialized.replace(_EMPTY_ALSO_ACCEPTS_SERIALIZATION, "")
     return sha256(serialized.encode("utf-8")).hexdigest()
 
 
@@ -269,6 +273,7 @@ class PluginPortContract(PluginReleaseValue):
     direction: PluginPortDirection
     artifact_type: PluginArtifactTypeKey | None = None
     artifact_type_variable: str | None = Field(default=None, max_length=255)
+    also_accepts: tuple[PluginArtifactTypeKey, ...] = ()
     shape: PortShape
     accepted_shapes: tuple[PortShape, ...] = Field(min_length=1)
     instance_plugs: bool = False
@@ -281,7 +286,31 @@ class PluginPortContract(PluginReleaseValue):
             raise ValueError(
                 "Plugin port must declare exactly one artifact type or type variable"
             )
+        if not self.also_accepts:
+            return self
+        if self.artifact_type is None:
+            raise ValueError(
+                "Plugin port additional accepted artifact types require a primary "
+                "artifact type"
+            )
+        if self.artifact_type in self.also_accepts:
+            raise ValueError(
+                "Plugin port repeats its primary artifact type among its additional "
+                "accepted artifact types"
+            )
+        if len(set(self.also_accepts)) != len(self.also_accepts):
+            raise ValueError(
+                "Plugin port declares duplicate additional accepted artifact types"
+            )
         return self
+
+    @property
+    def accepted_types(self) -> tuple[PluginArtifactTypeKey, ...]:
+        """Concrete artifact types this port accepts, primary type first."""
+
+        if self.artifact_type is None:
+            return ()
+        return (self.artifact_type, *self.also_accepts)
 
     @classmethod
     def from_input_port(cls, port: InputPortSpec) -> Self:
@@ -300,6 +329,9 @@ class PluginPortContract(PluginReleaseValue):
             direction="input",
             artifact_type=artifact_type,
             artifact_type_variable=artifact_type_variable,
+            also_accepts=tuple(
+                PluginArtifactTypeKey.from_key(key) for key in port.also_accepts
+            ),
             shape=port.shape,
             accepted_shapes=port.accepted_shapes,
             instance_plugs=port.instance_plugs,

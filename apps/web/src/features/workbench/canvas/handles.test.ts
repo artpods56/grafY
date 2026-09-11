@@ -9,6 +9,7 @@ import {
   MAX_CONVERSION_PATH_CANDIDATES,
   MAX_CONVERSION_PATH_LENGTH,
   canonicalHandleId,
+  connectionIsValid,
   connectionRouteForSelection,
   connectionRouteSelection,
   connectionRoutesFor,
@@ -574,5 +575,94 @@ describe("conversion route discovery", () => {
     );
 
     expect(routes).toEqual([{ kind: "exact", conversionPath: [] }]);
+  });
+});
+
+describe("multi-type input ports", () => {
+  const multiTypeTarget = encodeHandleId({
+    portName: "file",
+    artifactTypeId: "file.csv",
+    schemaVersion: 1,
+    shape: "one",
+    direction: "input",
+    alsoAccepts: [{ id: "file.xlsx", schema_version: 1 }],
+  });
+
+  function source(id: string): string {
+    return encodeHandleId({
+      portName: "output",
+      artifactTypeId: id,
+      schemaVersion: 1,
+      shape: "one",
+      direction: "output",
+    });
+  }
+
+  it("round-trips the additional accepted artifact types", () => {
+    const decoded = decodeHandleId(multiTypeTarget);
+
+    expect(decoded).toMatchObject({
+      artifactTypeId: "file.csv",
+      alsoAccepts: [{ id: "file.xlsx", schema_version: 1 }],
+    });
+    expect(encodeHandleId(decoded!)).toBe(multiTypeTarget);
+  });
+
+  it("accepts an edge of either declared artifact type", () => {
+    expect(
+      connectionRoutesFor(
+        { sourceHandle: source("file.csv"), targetHandle: multiTypeTarget },
+        [],
+        [],
+      ),
+    ).toEqual([{ kind: "exact", conversionPath: [] }]);
+    expect(
+      connectionRoutesFor(
+        { sourceHandle: source("file.xlsx"), targetHandle: multiTypeTarget },
+        [],
+        [],
+      ),
+    ).toEqual([{ kind: "exact", conversionPath: [] }]);
+  });
+
+  it("refuses a third artifact type", () => {
+    expect(
+      connectionRoutesFor(
+        { sourceHandle: source("file.pdf"), targetHandle: multiTypeTarget },
+        [],
+        [],
+      ),
+    ).toEqual([]);
+  });
+
+  it("accepts a declared conversion to a member of the set", () => {
+    const pdfToXlsx = conversion(
+      "builtin.file.pdf_to_xlsx",
+      "file.pdf",
+      "file.xlsx",
+    );
+
+    expect(
+      connectionRoutesFor(
+        { sourceHandle: source("file.pdf"), targetHandle: multiTypeTarget },
+        [],
+        [pdfToXlsx],
+      ),
+    ).toEqual([{ kind: "conversion", conversionPath: [pdfToXlsx] }]);
+  });
+
+  it("validates a drag connection against any member of the set", () => {
+    expect(
+      connectionIsValid({
+        sourceHandle: source("file.xlsx"),
+        targetHandle: multiTypeTarget,
+      }),
+    ).toBe(true);
+    expect(
+      connectionIsValid({
+        sourceHandle: source("file.pdf"),
+        targetHandle: multiTypeTarget,
+      }),
+    ).toBe(false);
   });
 });

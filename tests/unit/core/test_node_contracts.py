@@ -1,8 +1,7 @@
 from typing import Annotated
 
 import pytest
-from pydantic import Field, ValidationError
-
+from grafy_core.artifact_contracts import RASTER_IMAGE, TEXT_VALUE
 from grafy_core.artifacts import (
     ArtifactRef,
     ArtifactRefSequence,
@@ -16,6 +15,7 @@ from grafy_core.nodes import (
     MAX_NODE_ERROR_MESSAGE_LENGTH,
     ArtifactTypeVariable,
     InPort,
+    InputPortSpec,
     Node,
     NodeContractError,
     NodeContractResolutionError,
@@ -26,7 +26,7 @@ from grafy_core.nodes import (
     derive_input_contract,
     resolve_node_contracts,
 )
-from grafy_core.artifact_contracts import RASTER_IMAGE
+from pydantic import Field, ValidationError
 
 
 class ExampleImage:
@@ -80,6 +80,13 @@ class InstancePlugInput(NodeInput):
     items: Annotated[
         list[ArtifactRef | ArtifactRefSequence],
         InPort(RASTER_IMAGE, variadic=True, instance_plugs=True),
+    ]
+
+
+class MultiTypeInput(NodeInput):
+    source: Annotated[
+        ExampleImage,
+        InPort(RASTER_IMAGE, also_accepts=(TEXT_VALUE,)),
     ]
 
 
@@ -176,6 +183,51 @@ def test_input_contract_supports_optional_variadic_and_structural_types() -> Non
     assert page_refs.shape is PortShape.MANY
     assert page_refs.target_type is None
     assert page_refs.preserves_ref_container is True
+
+
+def test_input_contract_derives_ordered_accepted_artifact_types() -> None:
+    port = derive_input_contract(MultiTypeInput).ports["source"]
+
+    assert port.accepts == RASTER_IMAGE.key
+    assert port.also_accepts == (TEXT_VALUE.key,)
+    assert port.accepted_types == (RASTER_IMAGE.key, TEXT_VALUE.key)
+
+
+def test_single_type_input_port_keeps_its_previous_contract() -> None:
+    port = derive_input_contract(AnnotationShapesInput).ports["page_refs"]
+
+    assert port.accepts == RASTER_IMAGE.key
+    assert port.also_accepts == ()
+    assert port.accepted_types == (RASTER_IMAGE.key,)
+
+
+def test_input_port_rejects_a_type_variable_with_additional_accepted_types() -> None:
+    with pytest.raises(
+        NodeContractError,
+        match="either an artifact type variable or additional accepted artifact types",
+    ):
+        InPort(ArtifactTypeVariable("T"), also_accepts=(TEXT_VALUE,))
+
+
+def test_input_port_rejects_repeating_its_primary_artifact_type() -> None:
+    with pytest.raises(NodeContractError, match="repeats its primary artifact type"):
+        InputPortSpec(
+            name="source",
+            accepts=RASTER_IMAGE.key,
+            also_accepts=(RASTER_IMAGE.key,),
+        )
+
+
+def test_input_port_rejects_duplicate_additional_accepted_types() -> None:
+    with pytest.raises(
+        NodeContractError,
+        match="duplicate additional accepted artifact types",
+    ):
+        InputPortSpec(
+            name="source",
+            accepts=RASTER_IMAGE.key,
+            also_accepts=(TEXT_VALUE.key, TEXT_VALUE.key),
+        )
 
 
 def test_input_contract_derives_mixed_instance_plug_shapes() -> None:

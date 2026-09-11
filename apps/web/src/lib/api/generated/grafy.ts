@@ -2644,6 +2644,8 @@ export interface components {
         readonly PortResponse: {
             /** Accepted Shapes */
             readonly accepted_shapes: readonly components["schemas"]["PortShape"][];
+            /** Also Accepts */
+            readonly also_accepts?: readonly components["schemas"]["ArtifactTypeKeyResponse"][];
             readonly artifact_type?: components["schemas"]["ArtifactTypeKeyResponse"] | null;
             /** Artifact Type Variable */
             readonly artifact_type_variable?: string | null;

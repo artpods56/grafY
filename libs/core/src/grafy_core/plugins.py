@@ -40,6 +40,7 @@ from grafy_core.domain.modules import (
     MODULE_OUTPUT_OPERATOR_ID,
 )
 from grafy_core.nodes import (
+    ArtifactTypeContract,
     ArtifactTypeVariable,
     ConfigContract,
     Node,
@@ -844,9 +845,10 @@ class PluginRegistry:
                     )
                 }
             )
-            port_contracts = [
-                ("input", port.name, port.accepts)
+            port_contracts: list[tuple[str, str, ArtifactTypeContract]] = [
+                ("input", port.name, artifact_type)
                 for port in registration.node_class.input_contract.ports.values()
+                for artifact_type in port.accepted_types
             ]
             port_contracts.extend(
                 ("output", port.name, port.produces)

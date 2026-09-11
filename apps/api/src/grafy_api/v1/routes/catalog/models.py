@@ -262,6 +262,7 @@ class PortResponse(ApiResponse):
     direction: PortDirection
     artifact_type: ArtifactTypeKeyResponse | None = None
     artifact_type_variable: ArtifactTypeVariableIdentifier | None = None
+    also_accepts: list[ArtifactTypeKeyResponse] = Field(default_factory=list)
     shape: PortShape
     accepted_shapes: list[PortShape]
     instance_plugs: bool = False
@@ -274,6 +275,10 @@ class PortResponse(ApiResponse):
             raise ValueError(
                 "Port must declare exactly one of artifact_type or "
                 "artifact_type_variable"
+            )
+        if self.also_accepts and self.artifact_type is None:
+            raise ValueError(
+                "Port additional accepted artifact types require an artifact_type"
             )
         return self
 
@@ -294,6 +299,9 @@ class PortResponse(ApiResponse):
             direction="input",
             artifact_type=artifact_type,
             artifact_type_variable=artifact_type_variable,
+            also_accepts=[
+                ArtifactTypeKeyResponse.from_key(key) for key in port.also_accepts
+            ],
             shape=port.shape,
             accepted_shapes=list(port.accepted_shapes),
             instance_plugs=port.instance_plugs,
@@ -342,6 +350,13 @@ class PortResponse(ApiResponse):
             direction=port.direction,
             artifact_type=artifact_type,
             artifact_type_variable=port.artifact_type_variable,
+            also_accepts=[
+                ArtifactTypeKeyResponse(
+                    id=key.id,
+                    schema_version=key.schema_version,
+                )
+                for key in port.also_accepts
+            ],
             shape=port.shape,
             accepted_shapes=list(port.accepted_shapes),
             instance_plugs=port.instance_plugs,

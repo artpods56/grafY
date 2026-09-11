@@ -151,6 +151,13 @@ class CollectionInput(NodeInput):
     items: Annotated[list[int], InPort(INPUT_VALUE)]
 
 
+class MultiTypeInput(NodeInput):
+    source: Annotated[
+        ArtifactRef,
+        InPort(INPUT_VALUE, also_accepts=(OTHER_VALUE,)),
+    ]
+
+
 class CollectionOutput(NodeOutput):
     total: Annotated[int, OutPort(OUTPUT_VALUE)]
 
@@ -385,6 +392,35 @@ async def test_materializer_rejects_wrong_key_empty_sequence() -> None:
                     item_refs=[],
                 )
             },
+            TEST_WORKSPACE_ID,
+        )
+
+
+@pytest.mark.asyncio
+async def test_materializer_accepts_every_declared_artifact_type() -> None:
+    materializer = InputMaterializer(ResolverRegistry())
+    contract = derive_input_contract(MultiTypeInput)
+
+    for key in (INPUT_VALUE.key, OTHER_VALUE.key):
+        ref = ArtifactRef.from_key(artifact_id=uuid4(), key=key)
+        inputs, _ = await materializer.materialize(
+            contract,
+            {"source": ref},
+            TEST_WORKSPACE_ID,
+        )
+        assert inputs.source == ref
+
+    third = ArtifactRef.from_key(
+        artifact_id=uuid4(),
+        key=ArtifactTypeKey("test.third_value", 1),
+    )
+    with pytest.raises(
+        MaterializationError,
+        match="expected test.input_value@1, test.other_value@1, got test.third_value@1",
+    ):
+        await materializer.materialize(
+            contract,
+            {"source": third},
             TEST_WORKSPACE_ID,
         )
 

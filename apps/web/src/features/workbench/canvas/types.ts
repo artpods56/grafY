@@ -120,6 +120,8 @@ interface PortMetaBase {
   plugId?: string;
   /** Connect-time only; catalog satellites. Never persisted on saved edges. */
   feed?: HandleFeedIntent;
+  /** Additional artifact types an input port accepts, after the primary one. */
+  alsoAccepts?: readonly ArtifactTypeKey[];
 }
 
 /** Metadata encoded into React Flow handle ids for typed connections. */
@@ -588,10 +590,12 @@ export function portMetaForPort(
     ...(plugId ? { plugId } : {}),
   };
   if (artifactType) {
+    const alsoAccepts = port.also_accepts ?? [];
     return {
       ...base,
       artifactTypeId: artifactType.id,
       schemaVersion: artifactType.schema_version,
+      ...(alsoAccepts.length ? { alsoAccepts } : {}),
     };
   }
 
