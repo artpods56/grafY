@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         SavedGraphDocument,
         SavedGraphEdge,
         SavedGraphNode,
+        SavedGraphOrigin,
     )
 
 
@@ -71,6 +72,23 @@ def _incoming_edge_signature(edge: "SavedGraphEdge") -> tuple[object, ...]:
     )
 
 
+def _incoming_origin_signature(origin: "SavedGraphOrigin") -> tuple[object, ...]:
+    # The value union carries no discriminator, so compare its exact JSON shape.
+    value = json.dumps(
+        origin.value.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return (
+        "origin",
+        origin.id,
+        origin.to_port,
+        origin.to_plug,
+        value,
+        tuple((step.id, step.version) for step in origin.conversion_path),
+    )
+
+
 def _incoming_edges_by_target(
     document: "SavedGraphDocument",
 ) -> dict[str, tuple[tuple[object, ...], ...]]:
@@ -82,6 +100,12 @@ def _incoming_edges_by_target(
         if not edge.enabled:
             continue
         grouped.setdefault(edge.to_node, []).append(_incoming_edge_signature(edge))
+    for origin in sorted(
+        document.origins, key=lambda origin: (origin.to_port, origin.to_plug or "")
+    ):
+        grouped.setdefault(origin.to_node, []).append(
+            _incoming_origin_signature(origin)
+        )
     return {node_id: tuple(signatures) for node_id, signatures in grouped.items()}
 
 
@@ -96,8 +120,9 @@ def materializations_for_compatible_nodes(
 
     Position, layout, and presentation may change across a saved revision without
     invalidating already materialized outputs. A change to a node's execution
-    identity or enabled inputs invalidates that node and every descendant along
-    enabled edges. Earlier revision bindings are retained unchanged.
+    identity or enabled inputs (edges and origins) invalidates that node and every
+    descendant along enabled edges. Earlier revision bindings are retained
+    unchanged.
     """
     if next_revision < 1:
         raise ValueError("Materialized output graph revision must be at least 1")

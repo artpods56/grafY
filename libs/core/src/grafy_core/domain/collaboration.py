@@ -1,11 +1,11 @@
 """Collaborative graph head, commands, receipts, and checkpoints."""
 
+import hmac
+import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
-import hmac
-import json
 from typing import Annotated, ClassVar, Literal, Self
 from uuid import UUID, uuid4
 
@@ -31,6 +31,7 @@ from grafy_core.domain.saved_graphs import (
     SavedGraphInputPlug,
     SavedGraphNode,
     SavedGraphNodeLayout,
+    SavedGraphOrigin,
     SavedGraphPluginReleasePin,
 )
 
@@ -70,6 +71,9 @@ class GraphCommandKind(StrEnum):
     ADD_EDGE = "add_edge"
     UPDATE_EDGE = "update_edge"
     REMOVE_EDGES = "remove_edges"
+    ADD_ORIGIN = "add_origin"
+    UPDATE_ORIGIN = "update_origin"
+    REMOVE_ORIGINS = "remove_origins"
     REPLACE_DOCUMENT = "replace_document"
     REPLACE_PRESENTATION = "replace_presentation"
     MOVE_ARTIFACT_VIEWERS = "move_artifact_viewers"
@@ -215,6 +219,22 @@ class RemoveEdgesCommand(CollaborationValue):
     edge_ids: tuple[str, ...] = Field(min_length=1)
 
 
+class AddOriginCommand(CollaborationValue):
+    kind: Literal[GraphCommandKind.ADD_ORIGIN] = GraphCommandKind.ADD_ORIGIN
+    origin: SavedGraphOrigin
+
+
+class UpdateOriginCommand(CollaborationValue):
+    kind: Literal[GraphCommandKind.UPDATE_ORIGIN] = GraphCommandKind.UPDATE_ORIGIN
+    origin: SavedGraphOrigin
+    expected_origin: SavedGraphOrigin
+
+
+class RemoveOriginsCommand(CollaborationValue):
+    kind: Literal[GraphCommandKind.REMOVE_ORIGINS] = GraphCommandKind.REMOVE_ORIGINS
+    origin_ids: tuple[str, ...] = Field(min_length=1)
+
+
 class ReplaceDocumentCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.REPLACE_DOCUMENT] = GraphCommandKind.REPLACE_DOCUMENT
     name: str
@@ -273,6 +293,9 @@ GraphCommand = Annotated[
     | AddEdgeCommand
     | UpdateEdgeCommand
     | RemoveEdgesCommand
+    | AddOriginCommand
+    | UpdateOriginCommand
+    | RemoveOriginsCommand
     | ReplaceDocumentCommand
     | ReplacePresentationCommand
     | MoveArtifactViewersCommand
@@ -357,6 +380,19 @@ def _edge_or_raise(document: SavedGraphDocument, edge_id: str) -> SavedGraphEdge
     raise CollaborationCommandRejectedError(
         code="missing_edge",
         message=f"Graph command targets missing edge {edge_id}",
+    )
+
+
+def _origin_or_raise(
+    document: SavedGraphDocument,
+    origin_id: str,
+) -> SavedGraphOrigin:
+    for origin in document.origins:
+        if origin.id == origin_id:
+            return origin
+    raise CollaborationCommandRejectedError(
+        code="missing_origin",
+        message=f"Graph command targets missing origin {origin_id}",
     )
 
 
@@ -501,6 +537,11 @@ def apply_graph_command(
                 edge
                 for edge in document.edges
                 if edge.from_node not in removed and edge.to_node not in removed
+            ),
+            origins=tuple(
+                origin
+                for origin in document.origins
+                if origin.to_node not in removed
             ),
             presentation=document.presentation.prune_for_removed_nodes(removed),
         )
@@ -647,6 +688,13 @@ def apply_graph_command(
                 or edge.to_plug is None
                 or edge.to_plug in retained_plug_ids
             ),
+            origins=tuple(
+                origin
+                for origin in document.origins
+                if origin.to_node != command.node_id
+                or origin.to_plug is None
+                or origin.to_plug in retained_plug_ids
+            ),
         )
 
     if isinstance(command, SetNodeArtifactTypeBindingCommand):
@@ -734,6 +782,45 @@ def apply_graph_command(
         return name, document.with_topology(
             edges=tuple(
                 edge for edge in document.edges if edge.id not in removed_edges
+            ),
+        )
+
+    if isinstance(command, AddOriginCommand):
+        if any(origin.id == command.origin.id for origin in document.origins):
+            raise CollaborationCommandRejectedError(
+                code="duplicate_origin",
+                message=f"Graph command adds duplicate origin {command.origin.id}",
+            )
+        return name, document.with_topology(
+            origins=(*document.origins, command.origin),
+        )
+
+    if isinstance(command, UpdateOriginCommand):
+        current = _origin_or_raise(document, command.origin.id)
+        if not _json_equal(
+            _model_json(current),
+            _model_json(command.expected_origin),
+        ):
+            raise _field_conflict(f"Origin {command.origin.id} changed")
+        if command.origin.id != command.expected_origin.id:
+            raise CollaborationCommandRejectedError(
+                code="invalid_origin_update",
+                message="Update origin command cannot change origin id",
+            )
+        return name, document.with_topology(
+            origins=tuple(
+                command.origin if origin.id == command.origin.id else origin
+                for origin in document.origins
+            ),
+        )
+
+    if isinstance(command, RemoveOriginsCommand):
+        removed_origins = set(command.origin_ids)
+        return name, document.with_topology(
+            origins=tuple(
+                origin
+                for origin in document.origins
+                if origin.id not in removed_origins
             ),
         )
 
@@ -931,6 +1018,7 @@ class GraphCheckpointMapping(BaseModel):
 __all__ = [
     "AddEdgeCommand",
     "AddNodeCommand",
+    "AddOriginCommand",
     "ClearNodeArtifactTypeBindingCommand",
     "CollaborationActorKind",
     "CollaborativeGraphHead",
@@ -949,6 +1037,7 @@ __all__ = [
     "MoveNodesCommand",
     "RemoveEdgesCommand",
     "RemoveNodesCommand",
+    "RemoveOriginsCommand",
     "RenameGraphCommand",
     "ReplaceDocumentCommand",
     "ReplacePresentationCommand",
@@ -959,6 +1048,7 @@ __all__ = [
     "UpdateNodeConfigurationCommand",
     "UpdateNodeLayoutCommand",
     "UpdateNodePluginReleaseCommand",
+    "UpdateOriginCommand",
     "apply_graph_command",
     "canonical_command_payload",
     "command_hmac_digest",

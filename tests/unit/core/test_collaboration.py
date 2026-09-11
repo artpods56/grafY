@@ -1,16 +1,15 @@
 from uuid import UUID, uuid4
 
 import pytest
-from pydantic import ValidationError
-
-from grafy_core.artifacts import ArtifactTypeKey
+from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.collaboration import (
+    GRAPH_COMMAND_ADAPTER,
     AddEdgeCommand,
     AddNodeCommand,
+    AddOriginCommand,
     ClearNodeArtifactTypeBindingCommand,
     CollaborativeGraphHead,
     DuplicateNodeCommand,
-    GRAPH_COMMAND_ADAPTER,
     MoveAnnotationPosition,
     MoveAnnotationsCommand,
     MoveArtifactViewerPosition,
@@ -19,6 +18,7 @@ from grafy_core.domain.collaboration import (
     MoveNodesCommand,
     RemoveEdgesCommand,
     RemoveNodesCommand,
+    RemoveOriginsCommand,
     RenameGraphCommand,
     ReplaceDocumentCommand,
     ReplacePresentationCommand,
@@ -29,6 +29,7 @@ from grafy_core.domain.collaboration import (
     UpdateNodeConfigurationCommand,
     UpdateNodeLayoutCommand,
     UpdateNodePluginReleaseCommand,
+    UpdateOriginCommand,
     apply_graph_command,
     command_hmac_digest,
     command_requires_exact_sequence,
@@ -50,8 +51,10 @@ from grafy_core.domain.saved_graphs import (
     SavedGraphInputPlug,
     SavedGraphNode,
     SavedGraphNodeLayout,
+    SavedGraphOrigin,
     SavedGraphPluginReleasePin,
 )
+from pydantic import ValidationError
 
 
 def _node(
@@ -454,6 +457,107 @@ def test_update_node_plugin_release_serializes_and_is_not_exact_sequence() -> No
         ),
     )
     assert digest != moved_digest
+
+
+def _origin(origin_id: str = "o1", *, to_node: str = "n1") -> SavedGraphOrigin:
+    return SavedGraphOrigin(
+        id=origin_id,
+        to_node=to_node,
+        to_port="value",
+        value=ArtifactRef(
+            artifact_id=UUID("00000000-0000-0000-0000-000000000501"),
+            artifact_type="image.raster",
+            schema_version=1,
+        ),
+    )
+
+
+def test_add_update_and_remove_origins() -> None:
+    document = SavedGraphDocument(nodes=(_node("n1"),))
+    origin = _origin()
+
+    _, with_origin = apply_graph_command(
+        name="Graph",
+        document=document,
+        command=AddOriginCommand(origin=origin),
+    )
+    assert with_origin.origins == (origin,)
+
+    with pytest.raises(CollaborationCommandRejectedError) as duplicate:
+        apply_graph_command(
+            name="Graph",
+            document=with_origin,
+            command=AddOriginCommand(origin=origin),
+        )
+    assert duplicate.value.error_code == "duplicate_origin"
+
+    with pytest.raises(CollaborationCommandRejectedError) as conflict:
+        apply_graph_command(
+            name="Graph",
+            document=with_origin,
+            command=UpdateOriginCommand(
+                origin=origin.model_copy(update={"to_node": "n1"}),
+                expected_origin=origin.model_copy(update={"to_port": "absent"}),
+            ),
+        )
+    assert conflict.value.error_code == "field_conflict"
+
+    repointed = origin.model_copy(update={"value": origin.value.model_copy(update={"content_hash": "b" * 64})})
+    _, updated = apply_graph_command(
+        name="Graph",
+        document=with_origin,
+        command=UpdateOriginCommand(origin=repointed, expected_origin=origin),
+    )
+    assert updated.origins == (repointed,)
+
+    _, removed = apply_graph_command(
+        name="Graph",
+        document=updated,
+        command=RemoveOriginsCommand(origin_ids=("o1", "missing")),
+    )
+    assert removed.origins == ()
+
+
+def test_remove_nodes_prunes_origins_targeting_removed_nodes() -> None:
+    document = SavedGraphDocument(
+        nodes=(_node("n1"), _node("n2")),
+        origins=(_origin(), _origin("o2", to_node="n2")),
+    )
+
+    _, remaining = apply_graph_command(
+        name="Graph",
+        document=document,
+        command=RemoveNodesCommand(node_ids=("n1",)),
+    )
+
+    assert [origin.id for origin in remaining.origins] == ["o2"]
+
+
+def test_plug_edit_prunes_origins_on_removed_plugs() -> None:
+    target = SavedGraphNode(
+        kind="builtin",
+        id="target",
+        operator_id="example.operator",
+        operator_version=1,
+        position=GraphPoint(x=0, y=0),
+        input_plugs=(SavedGraphInputPlug(id="plug-a", port="value"),),
+    )
+    origin = _origin(to_node="target").model_copy(update={"to_plug": "plug-a"})
+    document = SavedGraphDocument(nodes=(target,), origins=(origin,))
+
+    _, remaining = apply_graph_command(
+        name="Graph",
+        document=document,
+        command=UpdateNodeConfigurationAndInputPlugsCommand(
+            node_id="target",
+            config={},
+            input_plugs=(),
+            expected_config={},
+            expected_plug_ids=("plug-a",),
+        ),
+    )
+
+    assert remaining.origins == ()
 
 
 def test_add_edge_and_sanitize_copy_document() -> None:

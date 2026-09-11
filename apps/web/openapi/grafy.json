@@ -39,6 +39,25 @@
         "title": "AddNodeCommand",
         "type": "object"
       },
+      "AddOriginCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "add_origin",
+            "default": "add_origin",
+            "title": "Kind",
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/SavedGraphOrigin"
+          }
+        },
+        "required": [
+          "origin"
+        ],
+        "title": "AddOriginCommand",
+        "type": "object"
+      },
       "ArtifactBundleContractResponse": {
         "properties": {
           "format": {
@@ -660,6 +679,13 @@
               "$ref": "#/components/schemas/SavedGraphNodeModel"
             },
             "title": "Nodes",
+            "type": "array"
+          },
+          "origins": {
+            "items": {
+              "$ref": "#/components/schemas/SavedGraphOriginModel"
+            },
+            "title": "Origins",
             "type": "array"
           },
           "presentation": {
@@ -4463,6 +4489,30 @@
         "title": "RemoveNodesCommand",
         "type": "object"
       },
+      "RemoveOriginsCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "remove_origins",
+            "default": "remove_origins",
+            "title": "Kind",
+            "type": "string"
+          },
+          "origin_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Origin Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "origin_ids"
+        ],
+        "title": "RemoveOriginsCommand",
+        "type": "object"
+      },
       "RenameGraphCommand": {
         "additionalProperties": false,
         "properties": {
@@ -5168,12 +5218,20 @@
             "title": "Nodes",
             "type": "array"
           },
+          "origins": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SavedGraphOrigin"
+            },
+            "title": "Origins",
+            "type": "array"
+          },
           "presentation": {
             "$ref": "#/components/schemas/GraphPresentationDocument"
           },
           "schema_version": {
-            "const": 6,
-            "default": 6,
+            "const": 7,
+            "default": 7,
             "title": "Schema Version",
             "type": "integer"
           }
@@ -5716,6 +5774,134 @@
         "title": "SavedGraphNodeModel",
         "type": "object"
       },
+      "SavedGraphOrigin": {
+        "additionalProperties": false,
+        "description": "Exact artifact value held on one node input with no incoming edge.",
+        "properties": {
+          "conversion_path": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SavedGraphConversion"
+            },
+            "maxItems": 8,
+            "title": "Conversion Path",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "to_node": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "To Node",
+            "type": "string"
+          },
+          "to_plug": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Plug"
+          },
+          "to_port": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "To Port",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "$ref": "#/components/schemas/ArtifactRefSequence"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "id",
+          "to_node",
+          "to_port",
+          "value"
+        ],
+        "title": "SavedGraphOrigin",
+        "type": "object"
+      },
+      "SavedGraphOriginModel": {
+        "additionalProperties": false,
+        "properties": {
+          "conversion_path": {
+            "items": {
+              "$ref": "#/components/schemas/SavedGraphConversionModel"
+            },
+            "maxItems": 8,
+            "title": "Conversion Path",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "to_node": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "To Node",
+            "type": "string"
+          },
+          "to_plug": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Plug"
+          },
+          "to_port": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "To Port",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "$ref": "#/components/schemas/ArtifactRefSequence"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "id",
+          "to_node",
+          "to_port",
+          "value"
+        ],
+        "title": "SavedGraphOriginModel",
+        "type": "object"
+      },
       "SavedGraphPluginReleasePin": {
         "additionalProperties": false,
         "description": "Exact scoped Plugin release identity pinned on one graph node.\n\nThe pin is independent from the operator identity: publishing revision\nN+1 never moves a node pinned to revision N. Workspace membership for a\nWorkspace release comes from the owning graph.",
@@ -6030,6 +6216,7 @@
               "mapping": {
                 "add_edge": "#/components/schemas/AddEdgeCommand",
                 "add_node": "#/components/schemas/AddNodeCommand",
+                "add_origin": "#/components/schemas/AddOriginCommand",
                 "clear_node_artifact_type_binding": "#/components/schemas/ClearNodeArtifactTypeBindingCommand",
                 "duplicate_node": "#/components/schemas/DuplicateNodeCommand",
                 "move_annotations": "#/components/schemas/MoveAnnotationsCommand",
@@ -6037,6 +6224,7 @@
                 "move_nodes": "#/components/schemas/MoveNodesCommand",
                 "remove_edges": "#/components/schemas/RemoveEdgesCommand",
                 "remove_nodes": "#/components/schemas/RemoveNodesCommand",
+                "remove_origins": "#/components/schemas/RemoveOriginsCommand",
                 "rename_graph": "#/components/schemas/RenameGraphCommand",
                 "replace_document": "#/components/schemas/ReplaceDocumentCommand",
                 "replace_presentation": "#/components/schemas/ReplacePresentationCommand",
@@ -6046,7 +6234,8 @@
                 "update_node_configuration": "#/components/schemas/UpdateNodeConfigurationCommand",
                 "update_node_configuration_and_input_plugs": "#/components/schemas/UpdateNodeConfigurationAndInputPlugsCommand",
                 "update_node_layout": "#/components/schemas/UpdateNodeLayoutCommand",
-                "update_node_plugin_release": "#/components/schemas/UpdateNodePluginReleaseCommand"
+                "update_node_plugin_release": "#/components/schemas/UpdateNodePluginReleaseCommand",
+                "update_origin": "#/components/schemas/UpdateOriginCommand"
               },
               "propertyName": "kind"
             },
@@ -6095,6 +6284,15 @@
               },
               {
                 "$ref": "#/components/schemas/RemoveEdgesCommand"
+              },
+              {
+                "$ref": "#/components/schemas/AddOriginCommand"
+              },
+              {
+                "$ref": "#/components/schemas/UpdateOriginCommand"
+              },
+              {
+                "$ref": "#/components/schemas/RemoveOriginsCommand"
               },
               {
                 "$ref": "#/components/schemas/ReplaceDocumentCommand"
@@ -6847,6 +7045,29 @@
           "expected_plugin_release_pin"
         ],
         "title": "UpdateNodePluginReleaseCommand",
+        "type": "object"
+      },
+      "UpdateOriginCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_origin": {
+            "$ref": "#/components/schemas/SavedGraphOrigin"
+          },
+          "kind": {
+            "const": "update_origin",
+            "default": "update_origin",
+            "title": "Kind",
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/SavedGraphOrigin"
+          }
+        },
+        "required": [
+          "origin",
+          "expected_origin"
+        ],
+        "title": "UpdateOriginCommand",
         "type": "object"
       },
       "UpdateSavedGraphRequest": {

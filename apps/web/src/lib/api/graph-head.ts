@@ -4,11 +4,11 @@ import type { CollaborativeHead, LegacyCollaborativeHead } from "./contract";
 export function collaborativeHeadFromLegacy(
   head: LegacyCollaborativeHead,
 ): CollaborativeHead {
-  const { nodes, edges, presentation, ...metadata } = head;
+  const { nodes, edges, origins, presentation, ...metadata } = head;
   return {
     ...metadata,
     document: {
-      schema_version: 6,
+      schema_version: 7,
       nodes: nodes.map(({ plugin_release, ...node }) => ({
         ...node,
         artifact_type_bindings: node.artifact_type_bindings ?? [],
@@ -18,6 +18,10 @@ export function collaborativeHeadFromLegacy(
       edges: edges.map((edge) => ({
         ...edge,
         conversion_path: edge.conversion_path ?? [],
+      })),
+      origins: (origins ?? []).map((origin) => ({
+        ...origin,
+        conversion_path: origin.conversion_path ?? [],
       })),
       presentation: {
         viewers: presentation?.viewers ?? [],
