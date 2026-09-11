@@ -37,6 +37,10 @@ lint:
     uv run ruff check apps/api/src libs/client/src libs/core/src libs/persistence/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
     npm --prefix apps/web run lint
 
+# Format the web app with Prettier. See apps/web/.prettierrc.
+format:
+    npm --prefix apps/web exec prettier -- --write "src/**/*.{ts,tsx,css,md,json}"
+
 # Run Python and TypeScript type checks.
 typecheck:
     uv run --all-extras basedpyright
