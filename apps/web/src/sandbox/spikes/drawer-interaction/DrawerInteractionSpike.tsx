@@ -61,7 +61,6 @@ import { SandboxShell } from "../../SandboxShell";
 import {
   DRAWER_ARTIFACTS,
   IMPORT_TABLE_SPEC,
-  LIBRARY_ARTIFACTS,
   LIBRARY_FOLDERS,
   RENDER_PAGE_SPEC,
   RUN_BATCHES,
@@ -477,7 +476,7 @@ const s = stylex.create({
 
   workbench: {
     display: "grid",
-    gridTemplateColumns: "240px minmax(0, 1fr) 280px",
+    gridTemplateColumns: "minmax(0, 240px) minmax(0, 1fr) minmax(0, 280px)",
     height: "calc(100svh - 208px)",
     minHeight: "460px",
     borderWidth: 1,
@@ -543,10 +542,12 @@ const s = stylex.create({
   },
   drawerHead: {
     display: "grid",
-    gridTemplateColumns: "auto auto minmax(0, 1fr)",
+    gridTemplateColumns: "auto auto",
     alignItems: "center",
+    justifyContent: "start",
     gap: "6px",
-    padding: "9px 10px 7px",
+    minWidth: 0,
+    padding: "9px 10px 5px",
     color: tokens.colorMuted,
   },
   drawerTitle: {
@@ -554,13 +555,14 @@ const s = stylex.create({
     fontSize: tokens.fontSizeSm,
     fontWeight: 600,
   },
-  folder: { display: "grid", gap: "1px" },
-  group: { paddingLeft: "10px", display: "grid", gap: "1px" },
+  folder: { display: "grid", gap: "1px", minWidth: 0 },
+  group: { paddingLeft: "10px", display: "grid", gap: "1px", minWidth: 0 },
   folderRow: {
     display: "grid",
     gridTemplateColumns: "auto minmax(0, 1fr) auto",
     alignItems: "center",
     gap: "6px",
+    minWidth: 0,
     padding: "4px 6px",
     borderRadius: tokens.radiusSm,
     color: tokens.colorMuted,
@@ -581,15 +583,17 @@ const s = stylex.create({
     fontWeight: 600,
   },
   drawerNote: {
-    gridColumn: "3",
+    minWidth: 0,
+    padding: "0 10px 7px",
     color: tokens.colorMuted,
     fontSize: "10.5px",
     lineHeight: 1.4,
-    textAlign: "right",
   },
   rows: {
     minHeight: 0,
+    minWidth: 0,
     overflowY: "auto",
+    overflowX: "hidden",
     padding: "0 8px 8px",
     display: "flex",
     flexDirection: "column",
@@ -604,6 +608,9 @@ const s = stylex.create({
     padding: "5px 6px",
     borderRadius: tokens.radiusSm,
     cursor: "grab",
+    minWidth: 0,
+    maxWidth: "100%",
+    overflow: "hidden",
     backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
   },
   swatch: {
@@ -618,6 +625,7 @@ const s = stylex.create({
     alignItems: "center",
     gap: "6px",
     minWidth: 0,
+    overflow: "hidden",
   },
   rowLabel: {
     minWidth: 0,
@@ -669,6 +677,7 @@ const s = stylex.create({
     fontSize: tokens.fontSizeXs,
   },
   drawerFoot: {
+    minWidth: 0,
     padding: "8px 10px 10px",
     borderTopWidth: 1,
     borderTopStyle: "solid",
@@ -927,8 +936,7 @@ export function DrawerInteractionSpike() {
   const [edges, setEdges] = React.useState<SpikeEdge[]>(
     () => bootState().edges,
   );
-  const [kept, setKept] =
-    React.useState<readonly DrawerArtifact[]>(LIBRARY_ARTIFACTS);
+  const [kept, setKept] = React.useState<readonly DrawerArtifact[]>([]);
   const [naming, setNaming] = React.useState<{
     id: string;
     value: string;
