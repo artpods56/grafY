@@ -3192,6 +3192,189 @@
         "title": "InstantiateTemplateRequest",
         "type": "object"
       },
+      "LibraryItemResponse": {
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/ArtifactSummaryResponse"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/LibraryProvenanceResponse"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryRunResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "artifact",
+          "name",
+          "provenance"
+        ],
+        "title": "LibraryItemResponse",
+        "type": "object"
+      },
+      "LibraryListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "LibraryListResponse",
+        "type": "object"
+      },
+      "LibraryProvenanceResponse": {
+        "description": "The birth record frozen when the artifact entered the Library.",
+        "properties": {
+          "execution_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Id"
+          },
+          "graph_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph Id"
+          },
+          "graph_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph Revision"
+          },
+          "graph_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph Title"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "node_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Title"
+          },
+          "original_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename"
+          },
+          "saved_at": {
+            "format": "date-time",
+            "title": "Saved At",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "run",
+              "upload"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "saved_at"
+        ],
+        "title": "LibraryProvenanceResponse",
+        "type": "object"
+      },
+      "LibraryRunResponse": {
+        "description": "The retained run behind a run-sourced Library item.\n\nPresent only while execution history still holds the run, which is exactly\nwhen the item can link back to it.",
+        "properties": {
+          "execution_id": {
+            "format": "uuid",
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "graph_id": {
+            "format": "uuid",
+            "title": "Graph Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution_id",
+          "graph_id"
+        ],
+        "title": "LibraryRunResponse",
+        "type": "object"
+      },
       "ModuleListResponse": {
         "properties": {
           "modules": {
@@ -5036,6 +5219,61 @@
           }
         },
         "title": "SampleRequest",
+        "type": "object"
+      },
+      "SaveRunArtifactRequest": {
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "execution_id": {
+            "format": "uuid",
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "node_title": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Node Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "execution_id",
+          "node_id",
+          "node_title"
+        ],
+        "title": "SaveRunArtifactRequest",
+        "type": "object"
+      },
+      "SaveUploadedArtifactRequest": {
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "original_filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Original Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "original_filename"
+        ],
+        "title": "SaveUploadedArtifactRequest",
         "type": "object"
       },
       "SavedGraphAnnotationLayout": {
@@ -11551,6 +11789,179 @@
         "summary": "Cancel Workspace Invitation",
         "tags": [
           "workspaces"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/library/artifacts": {
+      "get": {
+        "operationId": "list_library_artifacts_v1_workspaces__workspace_id__library_artifacts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Library Artifacts",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/library/artifacts/from-run": {
+      "post": {
+        "operationId": "save_library_artifact_from_run_v1_workspaces__workspace_id__library_artifacts_from_run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveRunArtifactRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryItemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Library Artifact From Run",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/library/artifacts/from-upload": {
+      "post": {
+        "operationId": "save_library_artifact_from_upload_v1_workspaces__workspace_id__library_artifacts_from_upload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveUploadedArtifactRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryItemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Library Artifact From Upload",
+        "tags": [
+          "library"
         ]
       }
     },

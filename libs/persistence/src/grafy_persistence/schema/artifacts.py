@@ -13,7 +13,10 @@ from sqlalchemy import (
 )
 from sqlalchemy import Uuid as SaUuid
 
-from grafy_persistence.column_types import UTCDateTime
+from grafy_persistence.column_types import (
+    LibraryProvenanceType,
+    UTCDateTime,
+)
 
 from .base import metadata
 
@@ -37,6 +40,7 @@ artifact_objects = Table(
     Column("byte_size", BigInteger, nullable=True),
     Column("sha256", String(64), nullable=True),
     Column("metadata", JSON, nullable=False),
+    Column("library_provenance", LibraryProvenanceType(), nullable=True),
     UniqueConstraint("workspace_id", "id", name="uq_artifact_objects_workspace_id_id"),
     Index(
         "ix_artifact_objects_workspace_type",
