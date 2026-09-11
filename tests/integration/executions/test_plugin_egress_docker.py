@@ -154,6 +154,8 @@ def _network_egress_plugin(repository: Path, destination: Path) -> Path:
 
 import urllib.request
 
+from grafy_core.artifact_contracts import TEXT_VALUE, TextValue
+from grafy_core.artifacts import NoConfig, NodeInput, NodeOutput
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 
 
