@@ -5826,7 +5826,12 @@
       },
       "SavedGraphSummaryResponse": {
         "additionalProperties": false,
+        "description": "Authoritative summary shared by every graph discovery surface.\n\nCounts and ``updated_at`` describe the collaborative draft head (what the\ncanvas shows). ``revision`` is the durable checkpoint revision used by\nlifecycle writes, and ``draft_pending`` labels a head that is ahead of that\ncheckpoint.",
         "properties": {
+          "draft_pending": {
+            "title": "Draft Pending",
+            "type": "boolean"
+          },
           "edge_count": {
             "title": "Edge Count",
             "type": "integer"
@@ -5860,7 +5865,8 @@
           "revision",
           "node_count",
           "edge_count",
-          "updated_at"
+          "updated_at",
+          "draft_pending"
         ],
         "title": "SavedGraphSummaryResponse",
         "type": "object"

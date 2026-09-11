@@ -20,6 +20,7 @@ import {
 import {
   filterGraphsByQuery,
   graphAgeLabel,
+  graphCountLabel,
   sortGraphsByRecency,
 } from "@/features/workspaces/WorkspaceGraphPanel";
 import {
@@ -57,10 +58,7 @@ function GraphRow({
         <span className="grafy-graphs__row-meta">
           {graphAgeLabel(graph.updated_at)}
         </span>
-        <span className="grafy-graphs__row-meta">
-          {graph.node_count} {graph.node_count === 1 ? "node" : "nodes"} ·{" "}
-          {graph.edge_count} {graph.edge_count === 1 ? "edge" : "edges"}
-        </span>
+        <span className="grafy-graphs__row-meta">{graphCountLabel(graph)}</span>
         <ArrowUpRight
           className="grafy-graphs__row-arrow"
           size={15}

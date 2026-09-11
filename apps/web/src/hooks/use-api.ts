@@ -1,12 +1,14 @@
 "use client";
 
-import useSWR from "swr";
+import * as React from "react";
+import useSWR, { useSWRConfig, type ScopedMutator } from "swr";
 import {
   type GraphBrowserList,
   listWorkspaceMembers,
   listWorkspaces,
   type NodeRegistry,
   type SavedGraphList,
+  type SavedGraphSummary,
   type Workspace,
   type WorkspaceInvitation,
   type WorkspaceInvitationForRecipient,
@@ -16,7 +18,45 @@ import {
 } from "@/lib/api";
 import { request } from "@/lib/api/client";
 
-/** Keyed SWR hooks over the Grafy API (global fetcher is `apiFetcher`). */
+/**
+ * Keyed SWR hooks over the Grafy API (global fetcher is `apiFetcher`).
+ *
+ * Graph summaries come from two endpoints that share one authoritative
+ * contract: node and edge counts plus `updated_at` always describe the
+ * collaborative draft head, `revision` is the durable checkpoint revision,
+ * and `draft_pending` marks a head that is ahead of that checkpoint.
+ */
+
+/** Every graph the user can reach, across workspaces. */
+export const ALL_GRAPHS_KEY = "/v1/me/graphs";
+
+/** Saved graphs inside one workspace. */
+export function workspaceGraphsKey(workspaceId: string): string {
+  return `/v1/workspaces/${encodeURIComponent(workspaceId)}/graphs`;
+}
+
+/** Revalidate every discovery surface affected by a graph mutation. */
+export async function revalidateGraphSummaries(
+  mutate: ScopedMutator,
+  workspaceId?: string,
+): Promise<void> {
+  const keys = [
+    workspaceId ? workspaceGraphsKey(workspaceId) : null,
+    ALL_GRAPHS_KEY,
+  ];
+  await Promise.all(keys.filter((key) => key !== null).map((key) => mutate(key)));
+}
+
+/** Revalidate both graph-list caches from any component. */
+export function useGraphSummaryRefresh(): (
+  workspaceId?: string,
+) => Promise<void> {
+  const { mutate } = useSWRConfig();
+  return React.useCallback(
+    (workspaceId?: string) => revalidateGraphSummaries(mutate, workspaceId),
+    [mutate],
+  );
+}
 
 export function useNodeRegistry(workspaceId?: string) {
   return useSWR<NodeRegistry>(
@@ -28,9 +68,7 @@ export function useNodeRegistry(workspaceId?: string) {
 
 export function useSavedGraphs(workspaceId?: string) {
   return useSWR<SavedGraphList>(
-    workspaceId
-      ? `/v1/workspaces/${encodeURIComponent(workspaceId)}/graphs`
-      : null,
+    workspaceId ? workspaceGraphsKey(workspaceId) : null,
   );
 }
 
@@ -46,13 +84,7 @@ export type GraphLocation = Pick<
   "id" | "slug" | "name" | "kind"
 >;
 
-export interface LocatedGraph {
-  id: string;
-  name: string;
-  revision: number;
-  node_count: number;
-  edge_count: number;
-  updated_at: string;
+export interface LocatedGraph extends SavedGraphSummary {
   location: GraphLocation;
   folder: { id: string; name: string } | null;
   archived: boolean;
@@ -64,6 +96,8 @@ export interface AllWorkspacesGraphsResult {
   graphs: readonly LocatedGraph[] | null;
   error: Error | null;
   isLoading: boolean;
+  /** True while a revalidation is in flight over cached summaries. */
+  isRefreshing: boolean;
   retry: () => Promise<void>;
 }
 
@@ -71,7 +105,7 @@ export function useAllWorkspacesGraphs(
   workspaces: readonly Workspace[] | undefined,
 ): AllWorkspacesGraphsResult {
   const load = useSWR<GraphBrowserList>(
-    workspaces && workspaces.length > 0 ? "/v1/me/graphs" : null,
+    workspaces && workspaces.length > 0 ? ALL_GRAPHS_KEY : null,
     (path: string) => request<GraphBrowserList>("GET", path),
     { shouldRetryOnError: false },
   );
@@ -85,6 +119,8 @@ export function useAllWorkspacesGraphs(
           node_count: graph.draft.node_count,
           edge_count: graph.draft.edge_count,
           updated_at: graph.updated_at,
+          draft_pending:
+            graph.draft.head_sequence > graph.draft.checkpoint_sequence,
           location: graph.location,
           folder: graph.folder,
           archived: graph.archived,
@@ -96,6 +132,7 @@ export function useAllWorkspacesGraphs(
     graphs,
     error: load.error instanceof Error ? load.error : null,
     isLoading: Boolean(workspaces?.length) && load.isLoading,
+    isRefreshing: load.isValidating && !load.isLoading,
     retry: async () => {
       if (workspaces?.length) await load.mutate();
     },

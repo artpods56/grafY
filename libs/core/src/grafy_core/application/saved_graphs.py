@@ -82,9 +82,17 @@ class SavedGraphService:
                 raise NotFoundError("Saved graph", str(graph_id))
             return await unit_of_work.graphs.list_revisions(workspace_id, graph_id)
 
-    async def list_accessible(self, actor: ActorContext) -> list[GraphBrowserItem]:
+    async def list_accessible(
+        self,
+        actor: ActorContext,
+        *,
+        workspace_id: UUID | None = None,
+    ) -> list[GraphBrowserItem]:
         async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.graphs.list_accessible(actor.user_id)
+            return await unit_of_work.graphs.list_accessible(
+                actor.user_id,
+                workspace_id=workspace_id,
+            )
 
     async def create_folder(
         self,

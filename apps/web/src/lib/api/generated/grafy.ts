@@ -3184,8 +3184,18 @@ export interface components {
              */
             readonly updated_at: string;
         };
-        /** SavedGraphSummaryResponse */
+        /**
+         * SavedGraphSummaryResponse
+         * @description Authoritative summary shared by every graph discovery surface.
+         *
+         *     Counts and ``updated_at`` describe the collaborative draft head (what the
+         *     canvas shows). ``revision`` is the durable checkpoint revision used by
+         *     lifecycle writes, and ``draft_pending`` labels a head that is ahead of that
+         *     checkpoint.
+         */
         readonly SavedGraphSummaryResponse: {
+            /** Draft Pending */
+            readonly draft_pending: boolean;
             /** Edge Count */
             readonly edge_count: number;
             /**

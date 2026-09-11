@@ -48,6 +48,23 @@ export function graphAgeLabel(updatedAt: string, now = Date.now()): string {
   return new Date(updatedAt).toLocaleDateString();
 }
 
+/**
+ * The one node/edge summary line every graph discovery surface renders.
+ *
+ * Counts describe the collaborative draft head, so a head that is ahead of the
+ * saved checkpoint is labelled instead of being presented as saved metadata.
+ */
+export function graphCountLabel(graph: {
+  node_count: number;
+  edge_count: number;
+  draft_pending?: boolean;
+}): string {
+  const nodes = `${graph.node_count} ${graph.node_count === 1 ? "node" : "nodes"}`;
+  const edges = `${graph.edge_count} ${graph.edge_count === 1 ? "edge" : "edges"}`;
+  const summary = `${nodes} · ${edges}`;
+  return graph.draft_pending ? `${summary} · unsaved draft` : summary;
+}
+
 export function WorkspaceGraphPanel({
   workspaceId,
   workspaceSlug,
@@ -66,7 +83,8 @@ export function WorkspaceGraphPanel({
   onClose: (reason: WorkspaceGraphPanelCloseReason) => void;
 }) {
   const router = useRouter();
-  const { data, isLoading } = useSavedGraphs(workspaceId);
+  const { data, isLoading, isValidating } = useSavedGraphs(workspaceId);
+  const isRefreshing = isValidating && Boolean(data);
   const finePointer = useMediaQuery(FINE_POINTER_QUERY);
   const [query, setQuery] = React.useState("");
   const panelRef = React.useRef<HTMLDivElement | null>(null);
@@ -130,6 +148,15 @@ export function WorkspaceGraphPanel({
           {total > 0 ? (
             <span className="grafy-graph-panel__count">{total}</span>
           ) : null}
+          {isRefreshing ? (
+            <span
+              className="grafy-graph-panel__count"
+              role="status"
+              aria-live="polite"
+            >
+              Refreshing…
+            </span>
+          ) : null}
         </p>
         <button
           type="button"
@@ -175,9 +202,7 @@ export function WorkspaceGraphPanel({
               >
                 <span className="grafy-graph-panel__row-name">{graph.name}</span>
                 <span className="grafy-graph-panel__row-meta">
-                  {`${graphAgeLabel(graph.updated_at)} · ${graph.node_count} ${
-                    graph.node_count === 1 ? "node" : "nodes"
-                  }`}
+                  {`${graphAgeLabel(graph.updated_at)} · ${graphCountLabel(graph)}`}
                 </span>
               </button>
               <GraphRowMenu

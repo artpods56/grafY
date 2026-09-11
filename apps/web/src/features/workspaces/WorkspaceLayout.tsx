@@ -37,6 +37,7 @@ import {
   workbenchGraphPath,
 } from "@/features/workbench/routes";
 import {
+  useGraphSummaryRefresh,
   useMyWorkspaceInvitations,
   useSavedGraphs,
   useWorkspaces,
@@ -597,9 +598,10 @@ export function WorkspaceRail({
     selectedWorkspace,
   );
   const activeGraphId = workspaceRouteGraphId(pathname);
-  const { data: savedGraphs, mutate: mutateGraphs } = useSavedGraphs(
+  const { data: savedGraphs } = useSavedGraphs(
     activeWorkspace?.id,
   );
+  const refreshGraphSummaries = useGraphSummaryRefresh();
   const recentGraphs = React.useMemo(
     () =>
       sortGraphsByRecency(savedGraphs?.graphs ?? []).slice(
@@ -621,7 +623,7 @@ export function WorkspaceRail({
         } else {
           await renameSavedGraphRemote(activeWorkspace.id, graph, next);
         }
-        void mutateGraphs();
+        void refreshGraphSummaries(activeWorkspace.id);
       } catch (error) {
         window.alert(
           error instanceof Error
@@ -632,7 +634,7 @@ export function WorkspaceRail({
         setGraphActionBusyId(null);
       }
     },
-    [activeWorkspace, chrome, mutateGraphs],
+    [activeWorkspace, chrome, refreshGraphSummaries],
   );
 
   const deleteGraph = React.useCallback(
@@ -649,7 +651,7 @@ export function WorkspaceRail({
           );
           if (!deleted) return;
         }
-        void mutateGraphs();
+        void refreshGraphSummaries(activeWorkspace.id);
       } catch (error) {
         window.alert(
           error instanceof Error
@@ -660,7 +662,7 @@ export function WorkspaceRail({
         setGraphActionBusyId(null);
       }
     },
-    [activeWorkspace, chrome, mutateGraphs],
+    [activeWorkspace, chrome, refreshGraphSummaries],
   );
 
   return (
