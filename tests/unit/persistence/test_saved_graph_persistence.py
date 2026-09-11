@@ -8,12 +8,14 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from grafy_core.artifacts import ArtifactTypeKey
+from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.errors import ConcurrentWriteError
 from grafy_core.domain.saved_graphs import (
     GraphFolder,
     GraphOrganization,
     GraphPoint,
+    GraphPresentationDocument,
+    GraphPresentationViewer,
     SavedGraph,
     SavedGraphArtifactTypeBinding,
     SavedGraphConversion,
@@ -244,6 +246,46 @@ async def test_file_backed_sqlite_round_trips_saved_graph_in_a_fresh_session(
     assert loaded.updated_at == graph.updated_at
     assert loaded.created_at.tzinfo is UTC
     assert loaded.updated_at.tzinfo is UTC
+
+
+@pytest.mark.asyncio
+async def test_file_backed_sqlite_round_trips_an_artifact_card_reference(
+    database: Database,
+) -> None:
+    reference = ArtifactRef.from_key(
+        artifact_id=UUID("00000000-0000-0000-0000-0000000000bb"),
+        key=ArtifactTypeKey("table.data", 1),
+        content_hash="c" * 64,
+    )
+    graph = SavedGraph(
+        workspace_id=WORKSPACE_ID,
+        id=UUID("00000000-0000-0000-0000-000000000103"),
+        name="Card graph",
+        document=SavedGraphDocument(
+            presentation=GraphPresentationDocument(
+                viewers=(
+                    GraphPresentationViewer(
+                        id="artifact-viewer-card",
+                        position=GraphPoint(x=5.0, y=6.0),
+                        artifact_ref=reference,
+                    ),
+                ),
+            ),
+        ),
+        created_at=datetime(2026, 7, 14, 8, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 7, 14, 8, 30, tzinfo=UTC),
+    )
+
+    async with SqlAlchemySavedGraphUnitOfWork(database.sessions) as unit_of_work:
+        await unit_of_work.graphs.add(graph)
+        await unit_of_work.commit()
+
+    async with SqlAlchemySavedGraphUnitOfWork(database.sessions) as unit_of_work:
+        loaded = await unit_of_work.graphs.get(WORKSPACE_ID, graph.id)
+
+    assert loaded is not None
+    assert loaded.document.presentation.viewers[0].artifact_ref == reference
+    assert loaded.document.schema_version == 6
 
 
 @pytest.mark.asyncio

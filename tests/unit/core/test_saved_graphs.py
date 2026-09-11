@@ -5,18 +5,19 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from grafy_core.artifacts import ArtifactTypeKey
+from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.errors import SavedGraphRevisionConflictError
 from grafy_core.domain.plugin_releases import PluginReleaseScope
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     GraphPresentationAnnotation,
     GraphPresentationDocument,
+    GraphPresentationLink,
+    GraphPresentationViewer,
     SavedGraph,
     SavedGraphAnnotationLayout,
     SavedGraphArtifactTypeBinding,
     SavedGraphDocument,
-    SavedGraphConversion,
     SavedGraphEdge,
     SavedGraphInputPlug,
     SavedGraphNode,
@@ -212,6 +213,119 @@ def test_presentation_annotations_round_trip_and_reject_shape_text() -> None:
             position=GraphPoint(x=0.0, y=0.0),
             layout=SavedGraphAnnotationLayout(width=80, height=80),
             color="red",
+        )
+
+
+ARTIFACT_CARD_REF = ArtifactRef.from_key(
+    artifact_id=UUID("00000000-0000-0000-0000-0000000000aa"),
+    key=ArtifactTypeKey("table.data", 1),
+    content_hash="a" * 64,
+)
+
+
+def test_artifact_card_reference_round_trips_without_a_link() -> None:
+    document = SavedGraphDocument(
+        presentation=GraphPresentationDocument(
+            viewers=(
+                GraphPresentationViewer(
+                    id="artifact-viewer-card",
+                    position=GraphPoint(x=4.0, y=8.0),
+                    layout=SavedGraphNodeLayout(width=320, body_height=240),
+                    artifact_ref=ARTIFACT_CARD_REF,
+                ),
+            ),
+        ),
+    )
+
+    payload = document.model_dump(mode="json")
+
+    assert payload["schema_version"] == 6
+    assert payload["presentation"]["viewers"][0]["artifact_ref"] == {
+        "artifact_id": "00000000-0000-0000-0000-0000000000aa",
+        "artifact_type": "table.data",
+        "schema_version": 1,
+        "content_hash": "a" * 64,
+    }
+    assert SavedGraphDocument.model_validate(payload) == document
+
+
+def test_artifact_card_keeps_its_reference_when_the_artifact_is_missing() -> None:
+    # Loading a document never consults the artifact store, so a deleted or
+    # inaccessible artifact leaves the stored reference untouched.
+    document = SavedGraphDocument.model_validate(
+        {
+            "schema_version": 6,
+            "nodes": [],
+            "edges": [],
+            "presentation": {
+                "viewers": [
+                    {
+                        "id": "artifact-viewer-card",
+                        "position": {"x": 0.0, "y": 0.0},
+                        "artifact_ref": {
+                            "artifact_id": "00000000-0000-0000-0000-00000000dead",
+                            "artifact_type": "table.data",
+                            "schema_version": 1,
+                        },
+                    }
+                ]
+            },
+        }
+    )
+
+    card = document.presentation.viewers[0]
+    assert card.artifact_ref is not None
+    assert card.artifact_ref.artifact_id == UUID(
+        "00000000-0000-0000-0000-00000000dead"
+    )
+    reloaded = SavedGraphDocument.model_validate(document.model_dump(mode="json"))
+    assert reloaded.presentation.viewers[0].artifact_ref == card.artifact_ref
+
+
+def test_presentation_viewer_without_artifact_reference_reads_as_unset() -> None:
+    document = SavedGraphDocument.model_validate(
+        {
+            "schema_version": 6,
+            "nodes": [],
+            "edges": [],
+            "presentation": {
+                "viewers": [
+                    {
+                        "id": "artifact-viewer-node-output",
+                        "position": {"x": 1.0, "y": 2.0},
+                    }
+                ]
+            },
+        }
+    )
+
+    assert document.presentation.viewers[0].artifact_ref is None
+    assert (
+        document.model_dump(mode="json")["presentation"]["viewers"][0][
+            "artifact_ref"
+        ]
+        is None
+    )
+
+
+def test_artifact_card_cannot_be_a_presentation_link_target() -> None:
+    with pytest.raises(ValidationError, match="cannot target artifact card"):
+        GraphPresentationDocument(
+            viewers=(
+                GraphPresentationViewer(
+                    id="artifact-viewer-card",
+                    position=GraphPoint(x=0.0, y=0.0),
+                    artifact_ref=ARTIFACT_CARD_REF,
+                ),
+            ),
+            links=(
+                GraphPresentationLink(
+                    id="artifact-viewer-edge-1",
+                    source_node_id="source",
+                    source_port_name="result",
+                    target_viewer_id="artifact-viewer-card",
+                ),
+            ),
         )
 
 
