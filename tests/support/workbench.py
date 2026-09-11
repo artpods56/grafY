@@ -5,8 +5,8 @@ from grafy_api.v1.routes.artifacts.dependencies import artifact_service
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 from grafy_api.v1.routes.catalog.dependencies import (
     graph_module_executor,
-    plugin_release_service,
     plugin_registry,
+    plugin_release_service,
 )
 from grafy_api.v1.routes.executions.dependencies import (
     execution_admission_limiter,
@@ -15,9 +15,9 @@ from grafy_api.v1.routes.executions.dependencies import (
     run_execution_manager,
     run_result_presenter,
 )
-from grafy_api.v1.routes.uploads.dependencies import staged_upload_service
-
+from grafy_api.v1.routes.library.dependencies import library_service
 from grafy_api.v1.routes.modules.dependencies import module_library_service
+from grafy_api.v1.routes.uploads.dependencies import staged_upload_service
 
 from tests.support.identity import browser_actor_override
 from tests.testkit import AppDependency, DependencyOverride
@@ -37,6 +37,7 @@ def workbench_dependency_overrides(
         materialization_service: lambda: components.materializations,
         run_result_presenter: lambda: components.presenter,
         artifact_service: lambda: components.artifacts,
+        library_service: lambda: components.library,
         plugin_release_service: lambda: components.plugin_releases,
         graph_module_executor: lambda: components.run_graph,
         browser_actor: browser_actor_override,

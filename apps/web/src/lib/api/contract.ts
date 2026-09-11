@@ -219,3 +219,11 @@ export type PortShape = Port["shape"];
 export type RunStatus = RunResponse["status"];
 export type NodeRunStatus = RunNodeResult["status"];
 export type JsonSchema = NodeSpec["config_schema"];
+
+export type LibraryProvenance = Schemas["LibraryProvenanceResponse"];
+export type LibraryRun = Schemas["LibraryRunResponse"];
+export type LibraryItem = Schemas["LibraryItemResponse"];
+export type LibraryList = Schemas["LibraryListResponse"];
+export type SaveRunArtifactRequest = Schemas["SaveRunArtifactRequest"];
+export type SaveUploadedArtifactRequest =
+  Schemas["SaveUploadedArtifactRequest"];

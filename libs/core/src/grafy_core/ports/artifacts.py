@@ -29,6 +29,8 @@ class ArtifactRepositoryPort(Protocol):
         key: ArtifactTypeKey,
     ) -> list[ArtifactObject]: ...
 
+    async def list_library(self, workspace_id: UUID) -> list[ArtifactObject]: ...
+
 
 class UnitOfWorkPort(TransactionPort, Protocol):
     @property

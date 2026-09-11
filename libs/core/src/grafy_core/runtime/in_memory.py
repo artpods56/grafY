@@ -14,7 +14,6 @@ from typing import (
 from uuid import UUID
 
 if TYPE_CHECKING:
-    from grafy_core.domain.invocation_cache import InvocationCacheEntry
     from grafy_core.domain.execution_history import (
         GraphExecution,
         GraphExecutionCursor,
@@ -23,25 +22,26 @@ if TYPE_CHECKING:
         GraphExecutionPage,
         GraphExecutionStatus,
     )
+    from grafy_core.domain.invocation_cache import InvocationCacheEntry
     from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
     from grafy_core.domain.staged_uploads import StagedUpload
-    from grafy_core.ports.invocation_cache import InvocationCacheRepositoryPort
     from grafy_core.ports.execution_history import (
         GraphExecutionHistoryRepositoryPort,
     )
+    from grafy_core.ports.invocation_cache import InvocationCacheRepositoryPort
     from grafy_core.ports.materialized_outputs import (
         MaterializedNodeOutputsRepositoryPort,
     )
     from grafy_core.ports.staged_uploads import StagedUploadRepositoryPort
 
 from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey
-from grafy_core.ports.artifacts import ArtifactRepositoryPort, UnitOfWorkPort
-from grafy_core.domain.execution_history import TransientExecution
 from grafy_core.domain.errors import (
     CollaborationActiveExecutionError,
     NotFoundError,
     ObjectAlreadyExistsError,
 )
+from grafy_core.domain.execution_history import TransientExecution
+from grafy_core.ports.artifacts import ArtifactRepositoryPort, UnitOfWorkPort
 
 
 def _clone[T](value: T) -> T:
@@ -139,6 +139,15 @@ class InMemoryArtifactRepository(ArtifactRepositoryPort):
             if artifact.workspace_id == workspace_id
             and artifact.artifact_type == key.id
             and artifact.schema_version == key.schema_version
+        ]
+
+    @override
+    async def list_library(self, workspace_id: UUID) -> list[ArtifactObject]:
+        return [
+            artifact
+            for artifact in self._store.artifacts.values()
+            if artifact.workspace_id == workspace_id
+            and artifact.library_provenance is not None
         ]
 
 

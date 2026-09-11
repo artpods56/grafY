@@ -1,9 +1,9 @@
 from pathlib import Path
 
 from fastapi.routing import APIRoute
+from grafy_api.settings import Settings
 from pydantic import SecretStr
 
-from grafy_api.settings import Settings
 from tests.testkit import app_with_overrides, client_with_overrides, create_db_url, db
 
 
@@ -57,6 +57,9 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}",
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/opened",
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/star",
+        "/v1/workspaces/{workspace_id}/library/artifacts",
+        "/v1/workspaces/{workspace_id}/library/artifacts/from-run",
+        "/v1/workspaces/{workspace_id}/library/artifacts/from-upload",
         "/v1/workspaces/{workspace_id}/modules",
         "/v1/workspaces/{workspace_id}/modules/import",
         "/v1/workspaces/{workspace_id}/modules/publish",

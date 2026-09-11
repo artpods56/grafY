@@ -18,6 +18,7 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import {
+  Bookmark,
   Circle,
   Copy,
   Eye,
@@ -36,6 +37,7 @@ import {
 } from "lucide-react";
 
 import { ExecutionHistoryDrawer } from "./ExecutionHistoryDrawer";
+import { LibraryDrawer } from "./LibraryDrawer";
 import { GraphRoomRecoveryNotice } from "./GraphRoomRecoveryNotice";
 import { GlobalIssueToastList, type GlobalIssue } from "./GlobalIssueToastList";
 import {
@@ -546,6 +548,7 @@ function WorkbenchBody({
     React.useState<ReactFlowInstance<CanvasNode, CanvasEdge>>();
   const { workspace } = useWorkspaceContext();
   const [libraryOpen, setLibraryOpen] = React.useState(false);
+  const [libraryDrawerOpen, setLibraryDrawerOpen] = React.useState(false);
   const [contextualDiscovery, setContextualDiscovery] =
     React.useState<ContextualDiscoverySession | null>(null);
   const [workspaceLibraryOpen, setWorkspaceLibraryOpen] = React.useState(false);
@@ -4235,6 +4238,21 @@ function WorkbenchBody({
           <History size={14} />
           <span {...stylex.props(s.railLabel)}>Runs</span>
         </button>
+        <button
+          type="button"
+          aria-label="Saved artifacts"
+          title="Saved artifacts and where they came from"
+          {...stylex.props(s.railButton, libraryDrawerOpen ? s.railPrimary : null)}
+          onClick={() => {
+            closeGraphBrowser();
+            setLibraryOpen(false);
+            setGridPanelOpen(false);
+            setLibraryDrawerOpen((open) => !open);
+          }}
+        >
+          <Bookmark size={14} />
+          <span {...stylex.props(s.railLabel)}>Saved</span>
+        </button>
         <span {...stylex.props(s.railDivider)} />
         <button
           type="button"
@@ -4289,6 +4307,22 @@ function WorkbenchBody({
           isDirty={isDirty}
           returnFocusRef={executionHistoryReturnFocusRef}
           onClose={() => setExecutionHistoryTarget(null)}
+        />
+      ) : null}
+
+      {libraryDrawerOpen ? (
+        <LibraryDrawer
+          workspaceId={workspaceId}
+          onClose={() => setLibraryDrawerOpen(false)}
+          onOpenRun={(graphId, executionId) => {
+            setLibraryDrawerOpen(false);
+            if (graphId !== activeGraph?.id) {
+              openGraphInNewTab(graphId);
+              return;
+            }
+            executionHistoryReturnFocusRef.current = null;
+            setExecutionHistoryTarget({ nodeId: null, executionId });
+          }}
         />
       ) : null}
 
