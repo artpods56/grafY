@@ -1863,6 +1863,25 @@ function parseNumberTupleDraft(
   return parsedValues;
 }
 
+const INCOMPLETE_TUPLE = Symbol("incomplete-tuple");
+
+/**
+ * A required tuple cannot be authored atomically through its separate inputs,
+ * so an incomplete draft stays local to the editor instead of erasing the last
+ * valid value. Emptiness only reaches the graph when the schema allows it.
+ */
+function numberTupleCommitValue(
+  draftValues: readonly string[],
+  field: NumberTupleSchemaField,
+): number[] | null | undefined | typeof INCOMPLETE_TUPLE {
+  const parsedValues = parseNumberTupleDraft(draftValues, field.items);
+  if (parsedValues) return parsedValues;
+  if (!draftValues.every((raw) => raw === "")) return INCOMPLETE_TUPLE;
+  if (field.nullable) return null;
+  if (field.required) return INCOMPLETE_TUPLE;
+  return undefined;
+}
+
 function NumberTupleConfigField({
   field,
   value,
@@ -1939,12 +1958,11 @@ function NumberTupleConfigField({
                 setDraftValues(nextDraftValues);
                 setTouched(true);
 
-                const parsedValues = parseNumberTupleDraft(
+                const nextValue = numberTupleCommitValue(
                   nextDraftValues,
-                  field.items,
+                  field,
                 );
-                const nextValue =
-                  parsedValues ?? (field.nullable ? null : undefined);
+                if (nextValue === INCOMPLETE_TUPLE) return;
                 pendingValueSignature.current = numberTupleValueSignature(
                   nextValue,
                   itemCount,
