@@ -11,6 +11,7 @@ from pydantic import (
     model_validator,
 )
 
+from grafy_core.artifacts import ArtifactRef
 from grafy_core.conversions import MAX_ARTIFACT_CONVERSION_HOPS
 from grafy_core.domain.collaboration import (
     CollaborativeGraphHead,
@@ -139,6 +140,7 @@ class GraphPresentationViewerModel(SavedGraphApiModel):
     position: GraphPointModel
     layout: SavedGraphNodeLayoutModel | None = None
     mode: str | None = Field(default=None, max_length=255)
+    artifact_ref: ArtifactRef | None = None
 
 
 class SavedGraphAnnotationLayoutModel(SavedGraphApiModel):

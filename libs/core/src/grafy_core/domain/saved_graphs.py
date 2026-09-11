@@ -16,7 +16,7 @@ from pydantic import (
     model_validator,
 )
 
-from grafy_core.artifacts import ArtifactTypeKey
+from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.conversions import MAX_ARTIFACT_CONVERSION_HOPS
 from grafy_core.domain.errors import SavedGraphRevisionConflictError
 from grafy_core.domain.identity import WorkspaceKind
@@ -366,6 +366,10 @@ class GraphPresentationViewer(SavedGraphValue):
     position: GraphPoint
     layout: SavedGraphNodeLayout | None = None
     mode: str | None = Field(default=None, max_length=255)
+    # A node-less card: it presents one persisted artifact and executes nothing.
+    # The reference is kept even when the artifact is gone, so the card can show
+    # a missing state until the user removes it. It is never a link target.
+    artifact_ref: ArtifactRef | None = None
 
     @field_validator("id")
     @classmethod
@@ -512,6 +516,9 @@ class GraphPresentationDocument(SavedGraphValue):
         if len(viewer_ids) != len(set(viewer_ids)):
             raise ValueError("Presentation viewer ids must be unique")
         known_viewers = set(viewer_ids)
+        artifact_viewers = {
+            viewer.id for viewer in self.viewers if viewer.artifact_ref is not None
+        }
 
         link_ids = [link.id for link in self.links]
         if len(link_ids) != len(set(link_ids)):
@@ -521,6 +528,11 @@ class GraphPresentationDocument(SavedGraphValue):
             if link.target_viewer_id not in known_viewers:
                 raise ValueError(
                     f"Presentation link {link.id} references missing viewer "
+                    f"{link.target_viewer_id}"
+                )
+            if link.target_viewer_id in artifact_viewers:
+                raise ValueError(
+                    f"Presentation link {link.id} cannot target artifact card "
                     f"{link.target_viewer_id}"
                 )
             if link.target_viewer_id in linked_viewers:
