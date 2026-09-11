@@ -13,9 +13,9 @@ export const SPIKES = [
   },
   {
     id: "drawer-interaction",
-    title: "Artifact drawer to input",
+    title: "Canvas with real input plugs",
     summary:
-      "Drag a Produced or Kept artifact onto a real port row, or onto empty canvas.",
+      "A real canvas and real node cards, kept so a drag can be made to land on a live input plug.",
   },
 ] as const;
 
