@@ -11,6 +11,12 @@ export const SPIKES = [
     summary:
       "Table row to map feature without extra ports. Four gestures for the same binding.",
   },
+  {
+    id: "drawer-interaction",
+    title: "Canvas with real input plugs",
+    summary:
+      "The product canvas with real node cards, kept as a base for building an input interaction.",
+  },
 ] as const;
 
 export type SpikeId = (typeof SPIKES)[number]["id"];

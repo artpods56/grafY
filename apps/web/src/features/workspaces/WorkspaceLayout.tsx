@@ -22,16 +22,34 @@ import { useSWRConfig } from "swr";
 import { BrandIcon, BrandWordmark } from "@/components/brand";
 import { useTheme } from "@/components/theme";
 import { ThresholdStatus } from "@/components/threshold-status";
-import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAuthSession } from "@/features/auth/AuthSessionBoundary";
 import { useWorkbenchChrome } from "@/features/workbench/ui/WorkbenchChromeContext";
 import {
   NEW_GRAPH_ROUTE_ID,
   workbenchGraphPath,
 } from "@/features/workbench/routes";
-import { useMyWorkspaceInvitations, useSavedGraphs, useWorkspaces } from "@/hooks/use-api";
+import {
+  useMyWorkspaceInvitations,
+  useSavedGraphs,
+  useWorkspaces,
+} from "@/hooks/use-api";
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { acceptWorkspaceInvitation, declineWorkspaceInvitation, type SavedGraphSummary, type Session, type Workspace, type WorkspaceRole } from "@/lib/api";
+import {
+  acceptWorkspaceInvitation,
+  declineWorkspaceInvitation,
+  type SavedGraphSummary,
+  type Session,
+  type Workspace,
+  type WorkspaceRole,
+} from "@/lib/api";
 import {
   deleteSavedGraphRemote,
   renameSavedGraphRemote,
@@ -39,7 +57,7 @@ import {
 import { GraphRowMenu, promptGraphRename } from "./GraphRowMenu";
 import { sortGraphsByRecency } from "./WorkspaceGraphPanel";
 
-interface WorkspaceContextValue {
+export interface WorkspaceContextValue {
   workspace: Workspace;
   workspaces: readonly Workspace[];
   refreshWorkspaces: () => Promise<readonly Workspace[] | undefined>;
@@ -230,6 +248,30 @@ export function useWorkspaceContext(): WorkspaceContextValue {
   return context;
 }
 
+/**
+ * The same value, for a surface that must render without a workspace route.
+ * A sandbox exercises real node bodies with a stand-in workspace, and the
+ * popover degrades instead of throwing. Product routes keep using
+ * {@link useWorkspaceContext}, which still throws on a missing provider.
+ */
+export function useOptionalWorkspaceContext(): WorkspaceContextValue | null {
+  return React.useContext(WorkspaceContext);
+}
+
+export function WorkspaceContextScope({
+  value,
+  children,
+}: {
+  value: WorkspaceContextValue;
+  children: React.ReactNode;
+}) {
+  return (
+    <WorkspaceContext.Provider value={value}>
+      {children}
+    </WorkspaceContext.Provider>
+  );
+}
+
 export function WorkspaceRail({
   workspaces,
   activeSlug,
@@ -265,10 +307,18 @@ export function WorkspaceRail({
   const [previewCollapsed, setPreviewCollapsed] = React.useState<
     boolean | null
   >(null);
-  const { data: workspaceInvitations, error: invitationError, mutate: mutateInvitations } = useMyWorkspaceInvitations(session.user_id);
+  const {
+    data: workspaceInvitations,
+    error: invitationError,
+    mutate: mutateInvitations,
+  } = useMyWorkspaceInvitations(session.user_id);
   const [invitationDialogOpen, setInvitationDialogOpen] = React.useState(false);
-  const [invitationBusyId, setInvitationBusyId] = React.useState<string | null>(null);
-  const [invitationMessage, setInvitationMessage] = React.useState<string | null>(null);
+  const [invitationBusyId, setInvitationBusyId] = React.useState<string | null>(
+    null,
+  );
+  const [invitationMessage, setInvitationMessage] = React.useState<
+    string | null
+  >(null);
   const mobileMenuButtonRef = React.useRef<HTMLButtonElement>(null);
   const mobileRailRef = React.useRef<HTMLElement>(null);
   const chrome = useWorkbenchChrome();
@@ -294,11 +344,14 @@ export function WorkspaceRail({
     clearOverlayState();
   }, [clearOverlayState, pathname]);
 
-  const closeMobileNavigation = React.useCallback((restoreFocus = false) => {
-    clearOverlayState();
-    if (!restoreFocus) return;
-    window.requestAnimationFrame(() => mobileMenuButtonRef.current?.focus());
-  }, [clearOverlayState]);
+  const closeMobileNavigation = React.useCallback(
+    (restoreFocus = false) => {
+      clearOverlayState();
+      if (!restoreFocus) return;
+      window.requestAnimationFrame(() => mobileMenuButtonRef.current?.focus());
+    },
+    [clearOverlayState],
+  );
 
   const selectedWorkspace = resolveSelectedWorkspace(workspaces, activeSlug);
   const activeWorkspace = activeSlug
@@ -345,7 +398,9 @@ export function WorkspaceRail({
       setInvitationDialogOpen(false);
       router.push(`/workspaces/${encodeURIComponent(acceptedWorkspace.slug)}`);
     } catch {
-      setInvitationMessage("The invitation could not be accepted. It may have expired or changed.");
+      setInvitationMessage(
+        "The invitation could not be accepted. It may have expired or changed.",
+      );
     } finally {
       setInvitationBusyId(null);
     }
@@ -359,7 +414,9 @@ export function WorkspaceRail({
       await mutateInvitations();
       setInvitationMessage("Invitation declined.");
     } catch {
-      setInvitationMessage("The invitation could not be declined. It may have expired or changed.");
+      setInvitationMessage(
+        "The invitation could not be declined. It may have expired or changed.",
+      );
     } finally {
       setInvitationBusyId(null);
     }
@@ -528,14 +585,12 @@ export function WorkspaceRail({
   const mobileNavigationHidden = mobileViewport && !mobileOpen;
   const graphBrowserActive = Boolean(
     activeSlug &&
-      (pathname ===
-        `/workspaces/${encodeURIComponent(activeSlug)}/graphs` ||
-        pathname ===
-          `/workspaces/${encodeURIComponent(activeSlug)}/graphs/`),
+    (pathname === `/workspaces/${encodeURIComponent(activeSlug)}/graphs` ||
+      pathname === `/workspaces/${encodeURIComponent(activeSlug)}/graphs/`),
   );
   const workspaceSettingsActive = Boolean(
     activeSlug &&
-      pathname === `/workspaces/${encodeURIComponent(activeSlug)}/settings`,
+    pathname === `/workspaces/${encodeURIComponent(activeSlug)}/settings`,
   );
   const mobileContextLabel = workspaceMobileContextLabel(
     pathname,
@@ -729,36 +784,83 @@ export function WorkspaceRail({
           >
             <Mail size={15} aria-hidden="true" />
             <span>Invitations</span>
-            {workspaceInvitations?.length ? <span className="grafy-workspace-rail__badge">{workspaceInvitations.length}</span> : null}
+            {workspaceInvitations?.length ? (
+              <span className="grafy-workspace-rail__badge">
+                {workspaceInvitations.length}
+              </span>
+            ) : null}
           </button>
         </nav>
 
-        <Dialog open={invitationDialogOpen} onOpenChange={setInvitationDialogOpen}>
+        <Dialog
+          open={invitationDialogOpen}
+          onOpenChange={setInvitationDialogOpen}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Workspace invitations</DialogTitle>
-              <DialogDescription>Review invitations before joining a shared workspace.</DialogDescription>
+              <DialogDescription>
+                Review invitations before joining a shared workspace.
+              </DialogDescription>
             </DialogHeader>
             <DialogBody>
-              {invitationError ? <p className="grafy-member-message" role="status">Invitations could not be loaded.</p> : null}
-              {!workspaceInvitations ? <p className="grafy-member-empty">Loading invitations…</p> : workspaceInvitations.length === 0 ? <p className="grafy-member-empty">You have no pending invitations.</p> : (
+              {invitationError ? (
+                <p className="grafy-member-message" role="status">
+                  Invitations could not be loaded.
+                </p>
+              ) : null}
+              {!workspaceInvitations ? (
+                <p className="grafy-member-empty">Loading invitations…</p>
+              ) : workspaceInvitations.length === 0 ? (
+                <p className="grafy-member-empty">
+                  You have no pending invitations.
+                </p>
+              ) : (
                 <div className="grafy-member-list">
                   {workspaceInvitations.map((invitation) => (
-                    <div className="grafy-invitation-recipient" key={invitation.id}>
+                    <div
+                      className="grafy-invitation-recipient"
+                      key={invitation.id}
+                    >
                       <div>
                         <strong>{invitation.workspace.name}</strong>
-                        <span>Invited by {invitation.invited_by.display_name ?? invitation.invited_by.email ?? "a workspace owner"} · {invitation.role} · expires {new Date(invitation.expires_at).toLocaleDateString()}</span>
+                        <span>
+                          Invited by{" "}
+                          {invitation.invited_by.display_name ??
+                            invitation.invited_by.email ??
+                            "a workspace owner"}{" "}
+                          · {invitation.role} · expires{" "}
+                          {new Date(invitation.expires_at).toLocaleDateString()}
+                        </span>
                       </div>
                       <p>{roleDescriptionsForInvitation[invitation.role]}</p>
                       <div>
-                        <button type="button" className="grafy-workspace-button" disabled={invitationBusyId === invitation.id} onClick={() => void declineInvitation(invitation.id)}>Decline</button>
-                        <button type="button" className="grafy-workspace-button grafy-workspace-button--primary" disabled={invitationBusyId === invitation.id} onClick={() => void acceptInvitation(invitation.id)}>Accept</button>
+                        <button
+                          type="button"
+                          className="grafy-workspace-button"
+                          disabled={invitationBusyId === invitation.id}
+                          onClick={() => void declineInvitation(invitation.id)}
+                        >
+                          Decline
+                        </button>
+                        <button
+                          type="button"
+                          className="grafy-workspace-button grafy-workspace-button--primary"
+                          disabled={invitationBusyId === invitation.id}
+                          onClick={() => void acceptInvitation(invitation.id)}
+                        >
+                          Accept
+                        </button>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
-              {invitationMessage ? <p className="grafy-member-message" role="status">{invitationMessage}</p> : null}
+              {invitationMessage ? (
+                <p className="grafy-member-message" role="status">
+                  {invitationMessage}
+                </p>
+              ) : null}
             </DialogBody>
           </DialogContent>
         </Dialog>
@@ -966,7 +1068,6 @@ export function WorkspaceRail({
           onPointerCancel={onResizePointerUp}
         />
       </aside>
-
     </>
   );
 }
