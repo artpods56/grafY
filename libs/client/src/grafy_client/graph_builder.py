@@ -168,6 +168,7 @@ class GraphBuilder:
                     port.instance_plugs,
                     port.variadic,
                     port.required,
+                    port.also_accepts,
                 )
             )
         for port in node_class.output_contract.ports.values():
@@ -192,6 +193,7 @@ class GraphBuilder:
                     False,
                     False,
                     port.required,
+                    (),
                 )
             )
         catalog_ports = [
@@ -205,6 +207,7 @@ class GraphBuilder:
                 port.instance_plugs,
                 port.variadic,
                 port.required,
+                port.also_accepts,
             )
             for port in (*catalog_node.inputs, *catalog_node.outputs)
         ]

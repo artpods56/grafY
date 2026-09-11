@@ -4271,6 +4271,13 @@
             "title": "Accepted Shapes",
             "type": "array"
           },
+          "also_accepts": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactTypeKeyResponse"
+            },
+            "title": "Also Accepts",
+            "type": "array"
+          },
           "artifact_type": {
             "anyOf": [
               {
