@@ -799,6 +799,57 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/library/artifacts": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Library Artifacts */
+        readonly get: operations["list_library_artifacts_v1_workspaces__workspace_id__library_artifacts_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/library/artifacts/from-run": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Save Library Artifact From Run */
+        readonly post: operations["save_library_artifact_from_run_v1_workspaces__workspace_id__library_artifacts_from_run_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/library/artifacts/from-upload": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Save Library Artifact From Upload */
+        readonly post: operations["save_library_artifact_from_upload_v1_workspaces__workspace_id__library_artifacts_from_upload_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/members": {
         readonly parameters: {
             readonly query?: never;
@@ -2258,6 +2309,70 @@ export interface components {
             /** Name */
             readonly name: string;
         };
+        /** LibraryItemResponse */
+        readonly LibraryItemResponse: {
+            readonly artifact: components["schemas"]["ArtifactSummaryResponse"];
+            /** Name */
+            readonly name: string;
+            readonly provenance: components["schemas"]["LibraryProvenanceResponse"];
+            readonly run?: components["schemas"]["LibraryRunResponse"] | null;
+        };
+        /** LibraryListResponse */
+        readonly LibraryListResponse: {
+            /** Items */
+            readonly items: readonly components["schemas"]["LibraryItemResponse"][];
+        };
+        /**
+         * LibraryProvenanceResponse
+         * @description The birth record frozen when the artifact entered the Library.
+         */
+        readonly LibraryProvenanceResponse: {
+            /** Execution Id */
+            readonly execution_id?: string | null;
+            /** Graph Id */
+            readonly graph_id?: string | null;
+            /** Graph Revision */
+            readonly graph_revision?: number | null;
+            /** Graph Title */
+            readonly graph_title?: string | null;
+            /** Node Id */
+            readonly node_id?: string | null;
+            /** Node Title */
+            readonly node_title?: string | null;
+            /** Original Filename */
+            readonly original_filename?: string | null;
+            /**
+             * Saved At
+             * Format: date-time
+             */
+            readonly saved_at: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            readonly source: "run" | "upload";
+        };
+        /**
+         * LibraryRunResponse
+         * @description The retained run behind a run-sourced Library item.
+         *
+         *     Present only while execution history still holds the run, which is exactly
+         *     when the item can link back to it.
+         */
+        readonly LibraryRunResponse: {
+            /**
+             * Execution Id
+             * Format: uuid
+             */
+            readonly execution_id: string;
+            /** Finished At */
+            readonly finished_at?: string | null;
+            /**
+             * Graph Id
+             * Format: uuid
+             */
+            readonly graph_id: string;
+        };
         /** ModuleListResponse */
         readonly ModuleListResponse: {
             /** Modules */
@@ -3204,6 +3319,33 @@ export interface components {
              * Format: date-time
              */
             readonly updated_at: string;
+        };
+        /** SaveRunArtifactRequest */
+        readonly SaveRunArtifactRequest: {
+            /**
+             * Artifact Id
+             * Format: uuid
+             */
+            readonly artifact_id: string;
+            /**
+             * Execution Id
+             * Format: uuid
+             */
+            readonly execution_id: string;
+            /** Node Id */
+            readonly node_id: string;
+            /** Node Title */
+            readonly node_title: string;
+        };
+        /** SaveUploadedArtifactRequest */
+        readonly SaveUploadedArtifactRequest: {
+            /**
+             * Artifact Id
+             * Format: uuid
+             */
+            readonly artifact_id: string;
+            /** Original Filename */
+            readonly original_filename: string;
         };
         /** SessionResponse */
         readonly SessionResponse: {
@@ -6012,6 +6154,107 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly list_library_artifacts_v1_workspaces__workspace_id__library_artifacts_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["LibraryListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly save_library_artifact_from_run_v1_workspaces__workspace_id__library_artifacts_from_run_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SaveRunArtifactRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["LibraryItemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly save_library_artifact_from_upload_v1_workspaces__workspace_id__library_artifacts_from_upload_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SaveUploadedArtifactRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["LibraryItemResponse"];
+                };
             };
             /** @description Validation Error */
             readonly 422: {
