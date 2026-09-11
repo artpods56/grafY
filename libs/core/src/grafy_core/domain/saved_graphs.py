@@ -16,12 +16,11 @@ from pydantic import (
     model_validator,
 )
 
-from grafy_core.artifacts import ArtifactTypeKey
+from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
 from grafy_core.conversions import MAX_ARTIFACT_CONVERSION_HOPS
 from grafy_core.domain.errors import SavedGraphRevisionConflictError
 from grafy_core.domain.identity import WorkspaceKind
 from grafy_core.domain.plugin_identity import PluginReleaseScope
-
 
 GraphIdentifier = Annotated[
     str,
@@ -361,6 +360,30 @@ class SavedGraphEdge(SavedGraphValue):
     )
 
 
+class SavedGraphOrigin(SavedGraphValue):
+    """Exact artifact value held on one node input with no incoming edge."""
+
+    id: GraphIdentifier
+    to_node: GraphIdentifier
+    to_port: GraphIdentifier
+    to_plug: GraphIdentifier | None = None
+    value: ArtifactRef | ArtifactRefSequence
+    conversion_path: tuple[SavedGraphConversion, ...] = Field(
+        default=(),
+        max_length=MAX_ARTIFACT_CONVERSION_HOPS,
+    )
+
+
+def saved_graph_input_slot(
+    *,
+    to_node: str,
+    to_port: str,
+    to_plug: str | None,
+) -> tuple[str, str]:
+    """Identify one satisfiable input position for an edge or origin."""
+    return (to_node, to_plug if to_plug is not None else to_port)
+
+
 class GraphPresentationViewer(SavedGraphValue):
     id: GraphIdentifier
     position: GraphPoint
@@ -594,31 +617,40 @@ def empty_presentation() -> GraphPresentationDocument:
     return GraphPresentationDocument()
 
 
-SAVED_GRAPH_SCHEMA_VERSION = 6
+SAVED_GRAPH_SCHEMA_VERSION = 7
+
+# Version 6 documents stay readable; moving to 7 only added the optional
+# `origins` collection, which an absent field reads as empty.
+ACCEPTED_SAVED_GRAPH_SCHEMA_VERSIONS = (6, SAVED_GRAPH_SCHEMA_VERSION)
 
 
 class SavedGraphDocument(SavedGraphValue):
-    schema_version: Literal[6] = SAVED_GRAPH_SCHEMA_VERSION
+    schema_version: Literal[7] = SAVED_GRAPH_SCHEMA_VERSION
     nodes: tuple[SavedGraphNode, ...] = ()
     edges: tuple[SavedGraphEdge, ...] = ()
+    origins: tuple[SavedGraphOrigin, ...] = ()
     presentation: GraphPresentationDocument = Field(default_factory=empty_presentation)
 
     @model_validator(mode="before")
     @classmethod
-    def reject_legacy_document(cls, value: object) -> object:
+    def migrate_document_schema_version(cls, value: object) -> object:
         if not isinstance(value, Mapping):
             return value
         raw = cast(Mapping[object, object], value)
         version = raw.get("schema_version")
         if version is None:
             return value
-        if version != SAVED_GRAPH_SCHEMA_VERSION:
+        if version not in ACCEPTED_SAVED_GRAPH_SCHEMA_VERSIONS:
             raise ValueError(
                 "Saved graph document schema_version "
                 f"{version!r} is not supported; expected "
                 f"{SAVED_GRAPH_SCHEMA_VERSION}"
             )
-        return value
+        if version == SAVED_GRAPH_SCHEMA_VERSION:
+            return value
+        migrated = dict(raw)
+        migrated["schema_version"] = SAVED_GRAPH_SCHEMA_VERSION
+        return migrated
 
     @model_validator(mode="after")
     def validate_structure(self) -> Self:
@@ -629,6 +661,10 @@ class SavedGraphDocument(SavedGraphValue):
         edge_ids = [edge.id for edge in self.edges]
         if len(edge_ids) != len(set(edge_ids)):
             raise ValueError("Saved graph edge ids must be unique")
+
+        origin_ids = [origin.id for origin in self.origins]
+        if len(origin_ids) != len(set(origin_ids)):
+            raise ValueError("Saved graph origin ids must be unique")
 
         known_nodes = set(node_ids)
         plugs_by_node: dict[str, dict[str, SavedGraphInputPlug]] = {}
@@ -641,7 +677,17 @@ class SavedGraphDocument(SavedGraphValue):
             plugs_by_node[node.id] = {plug.id: plug for plug in node.input_plugs}
 
         connected_plugs: set[tuple[str, str]] = set()
+        enabled_slots: dict[tuple[str, str], str] = {}
         for edge in self.edges:
+            if edge.enabled:
+                enabled_slots.setdefault(
+                    saved_graph_input_slot(
+                        to_node=edge.to_node,
+                        to_port=edge.to_port,
+                        to_plug=edge.to_plug,
+                    ),
+                    edge.id,
+                )
             if edge.from_node not in known_nodes:
                 raise ValueError(
                     f"Saved graph edge {edge.id} references missing source node "
@@ -673,6 +719,38 @@ class SavedGraphDocument(SavedGraphValue):
                 )
             connected_plugs.add(plug_key)
 
+        for origin in self.origins:
+            if origin.to_node not in known_nodes:
+                raise ValueError(
+                    f"Saved graph origin {origin.id} references missing target node "
+                    f"{origin.to_node}"
+                )
+            if origin.to_plug is not None:
+                target_plug = plugs_by_node[origin.to_node].get(origin.to_plug)
+                if target_plug is None:
+                    raise ValueError(
+                        f"Saved graph origin {origin.id} references missing input "
+                        f"plug {origin.to_plug} on target node {origin.to_node}"
+                    )
+                if target_plug.port != origin.to_port:
+                    raise ValueError(
+                        f"Saved graph origin {origin.id} targets port "
+                        f"{origin.to_port}, but input plug {origin.to_plug} belongs "
+                        f"to port {target_plug.port}"
+                    )
+            slot = saved_graph_input_slot(
+                to_node=origin.to_node,
+                to_port=origin.to_port,
+                to_plug=origin.to_plug,
+            )
+            if slot in enabled_slots:
+                raise ValueError(
+                    f"Saved graph input {origin.to_plug or origin.to_port} on node "
+                    f"{origin.to_node} is already satisfied by edge "
+                    f"{enabled_slots[slot]}"
+                )
+            enabled_slots[slot] = origin.id
+
         for link in self.presentation.links:
             if link.source_node_id not in known_nodes:
                 raise ValueError(
@@ -686,11 +764,13 @@ class SavedGraphDocument(SavedGraphValue):
         *,
         nodes: tuple[SavedGraphNode, ...] | None = None,
         edges: tuple[SavedGraphEdge, ...] | None = None,
+        origins: tuple[SavedGraphOrigin, ...] | None = None,
         presentation: GraphPresentationDocument | None = None,
     ) -> "SavedGraphDocument":
         return SavedGraphDocument(
             nodes=self.nodes if nodes is None else nodes,
             edges=self.edges if edges is None else edges,
+            origins=self.origins if origins is None else origins,
             presentation=(self.presentation if presentation is None else presentation),
         )
 
