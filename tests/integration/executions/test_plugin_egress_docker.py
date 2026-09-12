@@ -50,6 +50,7 @@ from grafy_api.plugins.runtime.egress import (
 from grafy_api.plugins.profiles import runtime_profile
 from grafy_api.plugins.publication.oci import PluginOciImageBuilder
 from grafy_api.plugins.publication.source import PluginDirectoryPublisher
+from grafy_api.plugins.publication.workflow import require_network_contract
 from grafy_api.plugins.runtime.artifacts import ArtifactBundlePluginInvoker
 from grafy_api.plugins.runtime.docker import DockerPluginRuntime
 from grafy_api.plugins.runtime.sandbox import (
@@ -60,6 +61,7 @@ from grafy_api.plugins.runtime.sandbox import (
 
 
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000952")
+PROBE_URL = "http://example.com/"
 
 
 @dataclass
@@ -153,8 +155,23 @@ def _network_egress_plugin(repository: Path, destination: Path) -> Path:
         + """
 
 import urllib.request
+from typing import Annotated
 
+from pydantic import StrictStr
+
+from grafy_core.artifact_contracts import TEXT_VALUE, TextValue
+from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.nodes import OutPort
+from grafy_core.plugins import (
+    NodeCachePolicy,
+    NodeHttpEgressContract,
+    NodeHttpEgressInput,
+)
+
+
+class NetworkProbeConfig(NodeConfig):
+    url: StrictStr
 
 
 class NetworkProbeInput(NodeInput):
@@ -170,17 +187,17 @@ class NetworkProbeOutput(NodeOutput):
     version=1,
     title="Network probe",
     required_capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,),
+    http_egress=NodeHttpEgressContract(
+        configured_inputs=(NodeHttpEgressInput(config_field="url"),),
+    ),
     cache_policy=NodeCachePolicy.NEVER,
 )
 async def network_probe(
-    _config: NoConfig,
+    _config: NetworkProbeConfig,
     _inputs: NetworkProbeInput,
 ) -> NetworkProbeOutput:
-    try:
-        with urllib.request.urlopen("http://example.com/", timeout=10) as response:
-            body = response.read(4_096).decode("utf-8")
-    except Exception as exc:
-        body = f"{type(exc).__name__}: {exc}"
+    with urllib.request.urlopen(_config.url, timeout=10) as response:
+        body = response.read(4_096).decode("utf-8")
     return NetworkProbeOutput(text=TextValue(value=body))
 """,
         encoding="utf-8",
@@ -243,7 +260,7 @@ async def network_probe(
 
 
 @pytest.mark.asyncio
-async def test_docker_runtime_routes_historical_network_egress_through_live_broker(
+async def test_docker_runtime_routes_network_egress_through_live_broker(
     tmp_path: Path,
 ) -> None:
     if not _docker_available():
@@ -346,6 +363,9 @@ async def test_docker_runtime_routes_historical_network_egress_through_live_brok
         assert verified.capabilities.capabilities == (
             PluginRuntimeCapability.NETWORK_EGRESS,
         )
+        # The fixture must remain a release the current publication rules would
+        # accept: network.egress nodes declare where their destinations come from.
+        require_network_contract(verified.catalog)
         source_digest = sha256(verified.source_archive).hexdigest()
         contract_digest = plugin_contract_digest(verified.catalog)
         profile_digest = plugin_profile_digest(verified.runtime_profile)
@@ -359,9 +379,6 @@ async def test_docker_runtime_routes_historical_network_egress_through_live_brok
             candidate=verified,
         )
         plugin_image = f"sha256:{artifact.manifest_digest}"
-        # Construct the release directly because this fixture models a persisted
-        # historical catalog that predates HTTP egress contracts. The current
-        # publication workflow rejects a newly published equivalent.
         release_record = PluginRelease(
             slug=verified.catalog.slug,
             revision=1,
@@ -398,22 +415,21 @@ async def test_docker_runtime_routes_historical_network_egress_through_live_brok
             host="example.com",
             port=80,
         )
-        # The probe node declares NETWORK_EGRESS without an http_egress
-        # contract, so it needs a curated legacy-compatibility profile
-        # (spec §17.2) allowing its exact plain-HTTP origin.
-        legacy_egress = NetworkAccessProfile(
-            name="legacy-egress",
+        # The probe takes its origin from a node config field; the deployment's
+        # curated profile still bounds that request to this exact origin.
+        curated_egress = NetworkAccessProfile(
+            name="curated-egress",
             plane=NetworkAccessPlane.PLUGIN_EXECUTION,
             mode=NetworkProfileMode.CURATED,
             https_only=False,
             allowed_origins=(probe_destination,),
         )
         network_policy = NetworkPolicy(
-            profiles={(legacy_egress.plane, legacy_egress.name): legacy_egress},
+            profiles={(curated_egress.plane, curated_egress.name): curated_egress},
             assignments=(
                 NetworkProfileAssignment(
-                    plane=legacy_egress.plane,
-                    profile=legacy_egress.name,
+                    plane=curated_egress.plane,
+                    profile=curated_egress.name,
                     scope=PluginReleaseScope.WORKSPACE,
                     workspace_id=WORKSPACE_ID,
                     slug="notes",
@@ -459,7 +475,7 @@ async def test_docker_runtime_routes_historical_network_egress_through_live_brok
                 workspace_id=WORKSPACE_ID,
                 node_id="network-egress-probe",
             ),
-            node.config_contract.model.model_validate({}),
+            node.config_contract.model.model_validate({"url": PROBE_URL}),
             node.input_contract.model.model_validate({}),
         )
         text_ref = cast(ArtifactRef, output.__dict__["text"])
