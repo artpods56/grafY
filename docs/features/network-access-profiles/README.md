@@ -854,26 +854,11 @@ It must emit a deprecation warning that names the replacement manifest.
 
 The broker image remains pinned by immutable SHA-256 digest.
 
-### 17.2 Existing Plugin releases
+### 17.2 Pre-cutover Plugin releases
 
-Historical releases with `network.egress` but no HTTP destination declaration
-must not be assigned invented config fields.
-
-- They may run only under the legacy-curated compatibility profile or an exact
-  administrator allowlist that preserves their previous authority.
-- They are not eligible for `configured-public` based on inference from
-  operator identity or config field names.
-- Republished releases must satisfy the new explicit contract validation.
-
-New serialized contract fields require empty defaults so old manifests remain
-readable. Catalog-digest compatibility must be tested explicitly: parsing an
-old release and applying a new default must not make Grafy falsely claim that
-its historically persisted digest described different bytes. Use an explicit
-contract-version or legacy canonicalization rule when empty-field
-serialization would otherwise change the digest.
-
-This preserves exact historical facts while moving new publication to the
-safer contract.
+The cutover migration discards pre-existing Plugin release rows, so no
+compatibility obligation is owed to historical `network.egress` releases.
+Operators republish from the checked-in source and wheelhouse.
 
 ### 17.3 Graph documents and node secrets
 
@@ -1004,8 +989,6 @@ runtime.
 - [ ] Capability review shows configured fields and dynamic-destination state.
 - [ ] A Plugin cannot name or alter its assigned profile.
 - [ ] Missing or invalid profile assignments fail closed.
-- [ ] Historical releases remain runnable only through explicit legacy or
-      curated compatibility policy.
 
 ### 19.2 Configured-public execution
 
@@ -1074,7 +1057,7 @@ runtime.
 | Contract serialization | Round trip, digest changes, missing capability, missing config field, dynamic flag |
 | URL normalization | Case, trailing dot, default/explicit port, IDN policy, userinfo, malformed port, duplicate origins |
 | DNS safety | Public IPv4/IPv6, private answer, mixed answer, empty answer, timeout, rebinding-resistant numeric connect |
-| Admission | Offline, configured, curated intersection, dynamic denial, open-public grant, historical release |
+| Admission | Offline, configured, curated intersection, dynamic denial, open-public grant |
 | Preflight | Actual node config, safe errors, origin count, profile assignment changes |
 | Sandbox identity | Same/different origin, same/different profile digest, PostgreSQL coexistence |
 | Broker | Exact CONNECT match, forbidden origin, limits, cleanup, open-public resolution mode |
