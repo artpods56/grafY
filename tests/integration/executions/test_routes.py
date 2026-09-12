@@ -1,6 +1,6 @@
 import asyncio
-from io import BytesIO
 import json
+from io import BytesIO
 from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock
@@ -9,40 +9,44 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
-
-from tests.support.identity import WORKSPACE_ID, browser_actor_override
-from grafy_workbench import BUILTIN_FAMILIES
-from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
-from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
-from grafy_api.v1.routes.executions.models import (
-    RunExecutionCapacityErrorResponse,
-    RunExecutionIdempotencyConflictErrorResponse,
-    RunExecutionQueueFullErrorResponse,
-)
-from grafy_api.execution.requests import RunRequest
-from grafy_api.execution.models import GraphExecutionResult
-from grafy_api.v1.routes.executions.models import RunResponse
-from grafy_api.v1.routes.executions.services import RunResultPresenter
-from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
-from tests.support.system_plugins import (
-    TEST_SYSTEM_PLUGINS,
-    selected_system_run_node as RunNodeRequest,
-)
-from tests.support.clients import GrafyApi
-from grafy_api.v1.routes.executions.dependencies import run_execution_manager
-from grafy_api.v1.routes.executions.dependencies import execution_admission_limiter
 from grafy_api.execution.admission import (
     ExecutionAdmissionLimiter,
     RunExecutionCapacityError,
     RunExecutionQueueFullError,
 )
 from grafy_api.execution.manager import RunExecutionIdempotencyConflictError
-from grafy_api.v1.routes.uploads.models import SampleRequest
-from grafy_api.staged_uploads import StagedUploadService
+from grafy_api.execution.models import GraphExecutionResult
+from grafy_api.execution.requests import RunRequest
 from grafy_api.settings import Settings
+from grafy_api.staged_uploads import StagedUploadService
+from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
+from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
+from grafy_api.v1.routes.executions.dependencies import (
+    execution_admission_limiter,
+    run_execution_manager,
+)
+from grafy_api.v1.routes.executions.models import (
+    RunExecutionCapacityErrorResponse,
+    RunExecutionIdempotencyConflictErrorResponse,
+    RunExecutionQueueFullErrorResponse,
+    RunResponse,
+)
+from grafy_api.v1.routes.executions.services import RunResultPresenter
+from grafy_api.v1.routes.uploads.models import SampleRequest
+from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
+from grafy_core.file_contracts import BUILTIN_FILE_FORMATS
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_workbench import BUILTIN_FAMILIES
+from pydantic import SecretStr
 
+from tests.support.clients import GrafyApi
+from tests.support.identity import WORKSPACE_ID, browser_actor_override
+from tests.support.system_plugins import (
+    TEST_SYSTEM_PLUGINS,
+)
+from tests.support.system_plugins import (
+    selected_system_run_node as RunNodeRequest,
+)
 from tests.testkit import app_with_overrides, create_db_url, db
 
 
@@ -137,7 +141,7 @@ def test_node_registry_does_not_synthesize_plugins_from_runtime_registry(
     }
     assert {spec.key.id for spec in registry.artifact_types} == {
         spec.key.id for plugin in TEST_SYSTEM_PLUGINS for spec in plugin.artifact_types
-    }
+    } | {spec.key.id for spec in BUILTIN_FILE_FORMATS}
     assert {spec.key.id for spec in registry.artifact_conversions} == {
         conversion.key.id for conversion in CANONICAL_ARTIFACT_CONVERSIONS
     }

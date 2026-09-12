@@ -3,8 +3,6 @@ from typing import cast
 from uuid import UUID
 
 import pytest
-from pydantic import ValidationError
-
 from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.domain.errors import SavedGraphRevisionConflictError
 from grafy_core.domain.plugin_releases import PluginReleaseScope
@@ -16,14 +14,13 @@ from grafy_core.domain.saved_graphs import (
     SavedGraphAnnotationLayout,
     SavedGraphArtifactTypeBinding,
     SavedGraphDocument,
-    SavedGraphConversion,
     SavedGraphEdge,
     SavedGraphInputPlug,
     SavedGraphNode,
     SavedGraphNodeLayout,
     SavedGraphPluginReleasePin,
 )
-
+from pydantic import ValidationError
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 

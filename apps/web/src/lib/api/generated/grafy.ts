@@ -1273,8 +1273,11 @@ export interface components {
         /** ArtifactTypeSpecResponse */
         readonly ArtifactTypeSpecResponse: {
             readonly bundle: components["schemas"]["ArtifactBundleContractResponse"];
+            readonly confirmation_rule?: components["schemas"]["ConfirmationRuleResponse"];
             /** Export Formats */
             readonly export_formats?: readonly components["schemas"]["ArtifactExportFormatResponse"][];
+            /** Extensions */
+            readonly extensions?: readonly string[];
             /** Field Projections */
             readonly field_projections: readonly components["schemas"]["FieldProjectionResponse"][];
             readonly key: components["schemas"]["ArtifactTypeKeyResponse"];
@@ -1401,6 +1404,17 @@ export interface components {
              * Format: password
              */
             readonly value: string;
+        };
+        /** ConfirmationRuleResponse */
+        readonly ConfirmationRuleResponse: {
+            /**
+             * Rule
+             * @default none
+             * @enum {string}
+             */
+            readonly rule: "magic" | "json" | "json_document" | "none";
+            /** Signatures */
+            readonly signatures?: readonly (readonly components["schemas"]["MagicSegmentResponse"][])[];
         };
         /** CopyExactHeadRequest */
         readonly CopyExactHeadRequest: {
@@ -2257,6 +2271,13 @@ export interface components {
             readonly folder_id?: string | null;
             /** Name */
             readonly name: string;
+        };
+        /** MagicSegmentResponse */
+        readonly MagicSegmentResponse: {
+            /** Offset */
+            readonly offset: number;
+            /** Value */
+            readonly value: string;
         };
         /** ModuleListResponse */
         readonly ModuleListResponse: {
