@@ -62,6 +62,37 @@ declared references. It stages the exact referenced artifacts as read-only
 dependencies in the guest artifact store, without turning them into extra node
 ports or granting access to unrelated Workspace artifacts.
 
+### File format artifact
+
+A builtin artifact type whose id starts with `file.` and whose payload is a
+stored file. It declares the file extensions it claims and one confirmation
+rule. Only a `file.*` type may declare extensions. `file.blob@1` is the
+fallback: it claims no extension and is never chosen by extension.
+
+### File JSON artifact
+
+`file.json@1`, the generic JSON file. It claims `json` and confirms a
+confirms a top-level JSON object or array, so a JSON primitive is not a
+`file.json@1`. `file.geojson@1` keeps `geojson` and the narrower object-only
+rule, so a `.json` file never becomes GeoJSON by extension.
+
+### Confirmation rule
+
+How ingest decides that file bytes agree with a claimed format. The set is
+closed, so ingest imports no format library: `magic` matches declared
+offset-and-bytes signatures; `json` requires a JSON object; `json_document`
+requires a JSON object or array; `none` trusts the extension alone. A magic
+signature is a prefix check, not a full parse, so a truncated or corrupt file
+fails later in the visible decode or import node.
+
+### Extension claim
+
+The lowercase alphanumeric file extension a `file.*` artifact type claims: 1
+to 16 characters with no dot, no whitespace, and no leading or trailing dash.
+The deployment builds one extension table at catalog construction from the
+builtin file types plus every installed Plugin release. Two types claiming one
+extension refuse the whole installation and fail closed.
+
 ### Artifact bundle contract
 
 The provider-neutral wire and storage shape used to move one artifact value

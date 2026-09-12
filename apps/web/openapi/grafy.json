@@ -416,11 +416,21 @@
           "bundle": {
             "$ref": "#/components/schemas/ArtifactBundleContractResponse"
           },
+          "confirmation_rule": {
+            "$ref": "#/components/schemas/ConfirmationRuleResponse"
+          },
           "export_formats": {
             "items": {
               "$ref": "#/components/schemas/ArtifactExportFormatResponse"
             },
             "title": "Export Formats",
+            "type": "array"
+          },
+          "extensions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Extensions",
             "type": "array"
           },
           "field_projections": {
@@ -718,6 +728,33 @@
           "expected_graph_revision"
         ],
         "title": "ConfigureNodeSecretRequest",
+        "type": "object"
+      },
+      "ConfirmationRuleResponse": {
+        "properties": {
+          "rule": {
+            "default": "none",
+            "enum": [
+              "magic",
+              "json",
+              "json_document",
+              "none"
+            ],
+            "title": "Rule",
+            "type": "string"
+          },
+          "signatures": {
+            "items": {
+              "items": {
+                "$ref": "#/components/schemas/MagicSegmentResponse"
+              },
+              "type": "array"
+            },
+            "title": "Signatures",
+            "type": "array"
+          }
+        },
+        "title": "ConfirmationRuleResponse",
         "type": "object"
       },
       "CopyExactHeadRequest": {
@@ -3190,6 +3227,24 @@
           "name"
         ],
         "title": "InstantiateTemplateRequest",
+        "type": "object"
+      },
+      "MagicSegmentResponse": {
+        "properties": {
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "offset",
+          "value"
+        ],
+        "title": "MagicSegmentResponse",
         "type": "object"
       },
       "ModuleListResponse": {
