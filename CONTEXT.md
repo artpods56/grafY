@@ -96,6 +96,12 @@ through an import node whose delimiter and header choices the user can see and
 change.
 _Avoid_: upload artifact, source node
 
+### File JSON artifact
+
+`file.json@1` is the container for a `.json` file. Ingest confirms the bytes
+parse as a JSON object or array. It does not assert GeoJSON or SGKP shape.
+_Avoid_: json file, generic json
+
 ### Extension claim
 
 The mapping a `file.*` artifact type declares from one extension string to
@@ -105,6 +111,14 @@ extension the deployment already holds, and the deployment refuses the
 installation that would collide. A claim states which bytes belong to the format.
 Confirming those bytes is the format's own rule.
 _Avoid_: file type registration, extension mapping, upload node
+
+### Confirmation rule
+
+The closed check a file format artifact declares for its bytes: `magic`, `json`,
+`json_document`, or `none`. `json` means a JSON object, `json_document` means a
+JSON object or array, and `magic` means the bytes match a declared signature.
+Agreement is a prefix check rather than a full parse, so a truncated or corrupt
+file fails in the visible decode or import node.
 
 ### File blob artifact
 
