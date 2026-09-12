@@ -1,24 +1,23 @@
 from typing import Literal, Self, cast
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
-from pydantic.errors import PydanticInvalidForJsonSchema
-
 from grafy_core.artifacts import (
     ArtifactBundleFormat,
+    ConfirmationRule,
     MaterializedJsonType,
 )
 from grafy_core.conversions import ArtifactConversionKey
 from grafy_core.domain.module_library import (
     Module,
-    ModuleRelease,
     ModulePublicationState,
+    ModuleRelease,
 )
 from grafy_core.domain.modules import GraphModuleDefinition
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.domain.plugin_releases import (
     PluginArtifactConversionContract,
     PluginArtifactTypeContract,
+    PluginConfirmationRule,
     PluginNodeContract,
     PluginPortContract,
     PluginReleaseScope,
@@ -32,7 +31,15 @@ from grafy_core.nodes import (
 from grafy_core.operators.modules import GraphModuleNode
 from grafy_core.plugins import NodeRegistration, NodeSecretInput
 from grafy_core.ports.modules import GraphModuleExecutorPort
+from pydantic import BaseModel, Field, model_validator
+from pydantic.errors import PydanticInvalidForJsonSchema
 
+from grafy_api.catalog import (
+    GRAPH_MODULE_PLUGIN_SLUG,
+    CatalogNonRunnableReason,
+    CatalogSnapshot,
+    PluginReleaseReadiness,
+)
 from grafy_api.plugins.runtime.admission import (
     PluginNonRunnableReason,
 )
@@ -42,14 +49,6 @@ from grafy_api.v1.models import (
     ArtifactTypeVariableIdentifier,
     PluginReleasePinModel,
 )
-
-from grafy_api.catalog import (
-    GRAPH_MODULE_PLUGIN_SLUG,
-    CatalogSnapshot,
-    CatalogNonRunnableReason,
-    PluginReleaseReadiness,
-)
-
 
 PortDirection = Literal["input", "output"]
 CatalogOrigin = Literal["builtin", "plugin", "module"]
@@ -91,6 +90,29 @@ class ArtifactBundleContractResponse(ApiResponse):
     version: int = Field(ge=1, strict=True)
 
 
+class MagicSegmentResponse(ApiResponse):
+    offset: int
+    value: str
+
+
+class ConfirmationRuleResponse(ApiResponse):
+    rule: ConfirmationRule = "none"
+    signatures: list[list[MagicSegmentResponse]] = Field(default_factory=list)
+
+    @classmethod
+    def from_contract(cls, rule: PluginConfirmationRule) -> Self:
+        return cls(
+            rule=rule.rule,
+            signatures=[
+                [
+                    MagicSegmentResponse(offset=segment.offset, value=segment.value)
+                    for segment in signature.segments
+                ]
+                for signature in rule.signatures
+            ],
+        )
+
+
 class ArtifactTypeSpecResponse(ApiResponse):
     key: ArtifactTypeKeyResponse
     title: str
@@ -99,6 +121,10 @@ class ArtifactTypeSpecResponse(ApiResponse):
     materialized_json_type: MaterializedJsonType | None = None
     export_formats: list[ArtifactExportFormatResponse] = Field(
         default_factory=list,
+    )
+    extensions: list[str] = Field(default_factory=list)
+    confirmation_rule: ConfirmationRuleResponse = Field(
+        default_factory=ConfirmationRuleResponse,
     )
     bundle: ArtifactBundleContractResponse
 
@@ -123,6 +149,10 @@ class ArtifactTypeSpecResponse(ApiResponse):
                 for projection in contract.field_projections
             ],
             materialized_json_type=contract.materialized_json_type,
+            extensions=list(contract.extensions),
+            confirmation_rule=ConfirmationRuleResponse.from_contract(
+                contract.confirmation_rule
+            ),
             export_formats=[
                 ArtifactExportFormatResponse(
                     format=export_format.format,
@@ -620,7 +650,9 @@ __all__ = [
     "CatalogEntryKind",
     "CatalogOrigin",
     "CatalogNonRunnableReason",
+    "ConfirmationRuleResponse",
     "FieldProjectionResponse",
+    "MagicSegmentResponse",
     "NodeRegistryResponse",
     "NodeSecretInputResponse",
     "NodeSpecResponse",

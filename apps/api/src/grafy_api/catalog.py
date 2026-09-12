@@ -6,6 +6,7 @@ from types import MappingProxyType
 from typing import Literal
 from uuid import UUID
 
+from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
 from grafy_core.domain.module_library import Module, ModuleRelease
 from grafy_core.domain.modules import GraphModuleDefinition
@@ -21,7 +22,9 @@ from grafy_core.domain.plugin_selection import (
     PluginFamilyLifecycle,
     PluginReleaseSelection,
 )
+from grafy_core.file_contracts import BUILTIN_FILE_FORMATS, build_extension_table
 from grafy_core.plugins import InstalledPlugin, NodeRegistration, PluginRegistry
+
 from grafy_api.plugins.runtime.admission import (
     PluginNonRunnableReason,
     ReleaseExecutionAdmission,
@@ -110,6 +113,7 @@ class CatalogSnapshot:
     releases: tuple[InstalledPluginRelease, ...]
     artifact_contracts: tuple[PluginArtifactTypeContract, ...]
     conversions: tuple[PluginArtifactConversionContract, ...]
+    extension_claims: Mapping[str, ArtifactTypeKey]
     node_readiness: Mapping[tuple[str, str, int], PluginReleaseReadiness]
     release_readiness: Mapping[str, PluginReleaseReadiness]
 
@@ -325,7 +329,13 @@ class CatalogSnapshot:
 
         serialized_artifact_contracts: dict[
             tuple[str, int], PluginArtifactTypeContract
-        ] = dict(expanded_host_artifact_contracts)
+        ] = {
+            (spec.key.id, spec.key.schema_version): (
+                PluginArtifactTypeContract.from_spec(spec)
+            )
+            for spec in BUILTIN_FILE_FORMATS
+        }
+        serialized_artifact_contracts.update(expanded_host_artifact_contracts)
         for release in plugin_releases:
             for contract in (
                 *release.release.catalog.artifact_types,
@@ -349,6 +359,13 @@ class CatalogSnapshot:
                     )
                 serialized_artifact_contracts.setdefault(key, contract)
 
+        extension_claims = build_extension_table(
+            (
+                ArtifactTypeKey(contract.key.id, contract.key.schema_version),
+                contract.extensions,
+            )
+            for contract in serialized_artifact_contracts.values()
+        )
         builtin_nodes = [
             registration
             for registration in registry.nodes
@@ -372,6 +389,7 @@ class CatalogSnapshot:
             releases=tuple(plugin_releases),
             artifact_contracts=tuple(serialized_artifact_contracts.values()),
             conversions=tuple(canonical_conversion_contracts.values()),
+            extension_claims=extension_claims,
             node_readiness=MappingProxyType(node_readiness),
             release_readiness=MappingProxyType(release_readiness),
         )
