@@ -62,36 +62,72 @@ declared references. It stages the exact referenced artifacts as read-only
 dependencies in the guest artifact store, without turning them into extra node
 ports or granting access to unrelated Workspace artifacts.
 
+An artifact type is a payload contract, so two nodes that move the same payload
+share one type. A second type id for an identical contract is a catalog bug, not
+a Plugin namespace: an image Plugin that declares `photos.shot@1` over the
+`image.raster@1` payload cannot connect to nodes that expect a raster.
+Specialized types exist only where the contract differs, as `geo.raster_scan@1`
+(CRS, geotransform, bands) and `geo.map_layer@1` (a drawing recipe rather than
+pixels) do. A node does not escape this by declaring a type variable: `T`
+belongs to generic operations such as Collect, Slice, and Pick. The same holds
+for file formats: one deployment-wide type per format, so two plugins that read
+CSV share one CSV artifact type instead of each shipping their own.
+
 ### File format artifact
 
-A builtin artifact type whose id starts with `file.` and whose payload is a
-stored file. It declares the file extensions it claims and one confirmation
-rule. Only a `file.*` type may declare extensions. `file.blob@1` is the
-fallback: it claims no extension and is never chosen by extension.
+An artifact type whose id names a file container: `file.csv@1`, `file.geojson@1`,
+`file.tiff@1`. Its contract is encoded bytes plus the declared format, never an
+interpreted payload, so a `file.csv@1` artifact is not a Table artifact and a
+`file.tiff@1` artifact is not a raster. The `file.` prefix is the marker for the
+whole family: an id under `file.*` names a container and every other id names an
+interpreted payload, so the type alone says whether anything has interpreted the
+bytes yet.
+
+Ingest is extension-driven: the deployment maps a known extension to its format
+type, checks the content against it, and rejects the upload when the two
+disagree. Where content cannot confirm a format, as with CSV or plain text, the
+extension decides. One format can answer to several extension strings, so `.jpg`
+and `.jpeg` both produce `file.jpeg@1`, and `.tif` and `.tiff` both produce
+`file.tiff@1`. A plugin claims `.las` by declaring that mapping rather than by
+shipping an upload node.
+Interpretation is always a visible node, so `file.png@1` becomes
+`image.raster@1` through a decode node and `file.csv@1` becomes `table.data@1`
+through an import node whose delimiter and header choices the user can see and
+change.
+_Avoid_: upload artifact, source node
 
 ### File JSON artifact
 
-`file.json@1`, the generic JSON file. It claims `json` and confirms a
-confirms a top-level JSON object or array, so a JSON primitive is not a
-`file.json@1`. `file.geojson@1` keeps `geojson` and the narrower object-only
-rule, so a `.json` file never becomes GeoJSON by extension.
-
-### Confirmation rule
-
-How ingest decides that file bytes agree with a claimed format. The set is
-closed, so ingest imports no format library: `magic` matches declared
-offset-and-bytes signatures; `json` requires a JSON object; `json_document`
-requires a JSON object or array; `none` trusts the extension alone. A magic
-signature is a prefix check, not a full parse, so a truncated or corrupt file
-fails later in the visible decode or import node.
+`file.json@1` is the container for a `.json` file. Ingest confirms the bytes
+parse as a JSON object or array. It does not assert GeoJSON or SGKP shape.
+_Avoid_: json file, generic json
 
 ### Extension claim
 
-The lowercase alphanumeric file extension a `file.*` artifact type claims: 1
-to 16 characters with no dot, no whitespace, and no leading or trailing dash.
-The deployment builds one extension table at catalog construction from the
-builtin file types plus every installed Plugin release. Two types claiming one
-extension refuse the whole installation and fail closed.
+The mapping a `file.*` artifact type declares from one extension string to
+itself, carried in the artifact type contract and published with the type's
+release. One extension maps to exactly one format type, so a type cannot claim an
+extension the deployment already holds, and the deployment refuses the
+installation that would collide. A claim states which bytes belong to the format.
+Confirming those bytes is the format's own rule.
+_Avoid_: file type registration, extension mapping, upload node
+
+### Confirmation rule
+
+The closed check a file format artifact declares for its bytes: `magic`, `json`,
+`json_document`, or `none`. `json` means a JSON object, `json_document` means a
+JSON object or array, and `magic` means the bytes match a declared signature.
+Agreement is a prefix check rather than a full parse, so a truncated or corrupt
+file fails in the visible decode or import node.
+
+### File blob artifact
+
+The format type for bytes whose extension the deployment does not recognize:
+`file.blob@1`. It is the fallback member of the same family and carries the same
+reading, that nothing has interpreted these bytes yet. A blob has no domain
+meaning and projects no fields, and it stays the answer only until the
+deployment recognizes the format.
+_Avoid_: opaque file, raw file
 
 ### Artifact bundle contract
 
@@ -116,6 +152,23 @@ selected-subgraph request and keeps owning its projection, conversion, and
 without executing its source node. The server consumes the submitted reference
 and never performs a fuzzy "latest artifact" lookup.
 
+### Origin
+
+A node input satisfied by a direct reference to a Library artifact instead of by
+an edge from an upstream node. An origin holds the exact `ArtifactRef` or
+`ArtifactRefSequence` the user placed there, plus a declared artifact conversion
+path when the artifact's type is not already one the input accepts, and it adds
+no node to the saved graph; on a `many` port, several artifacts group into one
+sequence. It is the same reference kind a selected-subgraph pin carries, and it
+names an artifact by identity rather than searching for one. An origin and an
+enabled edge never satisfy the same input, though a disabled edge may wait beside
+one. An origin whose artifact can no longer be read stays in the saved document
+exactly as written and leaves its input unsatisfied. An origin therefore belongs
+to the Workspace that owns its artifact: copying a graph or a template into
+another Workspace drops the origin and leaves that input unsatisfied, rather than
+moving bytes across the tenancy boundary.
+_Avoid_: source node, source operator, input node
+
 ### Materialized output binding
 
 The durable record of a successful output for one exact saved graph revision,
@@ -132,6 +185,50 @@ downstream node reached through enabled edges. This holds even when the changed
 node has no materialized output of its own. Layout-only edits preserve reusable
 bindings. Invalidation leaves earlier revision bindings and execution history
 available for inspection.
+
+### Library artifact
+
+The artifact a Workspace owns, shown in the Library drawer. There is one Library
+per Workspace and every member sees it. Uploaded bytes and Run artifacts are
+both eligible. A Library artifact is Workspace-owned and independent of any
+graph: graphs reference it, and deleting a graph, a revision, or its execution
+history never deletes it. It is a retention root in its own right, so nothing
+collects it while it sits in the Library. Saving into the Library is promotion
+rather than first persist, because the artifact already exists as an upload or a
+materialized output binding before anyone saves it. Identity is the exact
+artifact reference, so saving the same artifact twice yields one Library
+artifact, and picking one never means taking the newest artifact of a matching
+type. An artifact has one placement in the Library, and moving it never changes
+its reference. Removing an artifact from the Library clears its placement and
+leaves the row and its bytes alone. Deleting a Library artifact is refused while
+any saved revision or execution history references it, and the refusal names
+those graphs. A forced delete writes a new head revision for each referencing
+graph, removes the origin from that graph, and leaves the input unsatisfied.
+_Avoid_: kept, saved asset, staged, library item, source
+
+### Library folder
+
+A named folder inside the Workspace's Library, used to organize Library
+artifacts. Folders nest, and a folder may be empty. A folder holds no payload,
+so it is not a retention root, and deleting an empty folder leaves every
+artifact and stored byte untouched. Deleting a folder that still holds artifacts
+is refused. Creating, renaming, moving, or deleting a Library folder takes the
+same capability as saving an artifact into the Library.
+_Avoid_: directory, collection
+
+### Run artifact
+
+An output one run of a graph produced, shown in the Runs drawer. The Runs drawer
+is per canvas, newest first, grouped by run and then by the node that made the
+item, and each row names the revision it came from. Run artifacts are not a
+second persist: they exist as materialized output bindings the moment their node
+succeeds, which is what incremental execution, pins, and execution history read.
+The drawer is a view of those bindings, so an item stays visible after its run
+ends, and one reaches the Library only through an explicit save. Saving a Run
+artifact into the Library adds a reference to the same identity rather than
+moving or copying it, so the row stays in Runs and the artifact then appears in
+both drawers.
+_Avoid_: produced, generated, result
 
 ### Graph execution history
 
@@ -453,9 +550,11 @@ producer-neutral meaning and be independently reusable. A builtin node must be
 broadly reusable, deterministic, dependency-light, and must not duplicate
 projection, conversion, mapping, or other edge/runtime behavior.
 Image owns the producer-neutral `image.raster@1` artifact, its storage writer,
-and deterministic import of staged image uploads. Table owns the producer-neutral
-`table.data@1` artifact: stable ordered columns with duplicate-friendly display
-titles, declared value types, and rectangular rows keyed by column id. SQL results
+and the deterministic decode that turns a `file.png@1` or `file.tiff@1` artifact
+into a raster. Table owns
+the producer-neutral `table.data@1` artifact: stable ordered columns with
+duplicate-friendly display titles, declared value types, and rectangular rows
+keyed by column id. SQL results
 embed this table and expose it through an explicit field projection; source-specific
 table interpretation remains with its producer.
 
@@ -473,9 +572,12 @@ is not a sandbox. [R45: Untrusted Query Isolation]
 
 ### Port
 
-A named node input or output that declares either one concrete artifact type or
-a named artifact-type variable, plus cardinality. Every use of the same variable
-on one node shares one concrete binding owned by that node instance. Ports may
+A named node input or output that declares one or more accepted concrete
+artifact types or a single named artifact-type variable, plus cardinality. An
+input that declares several concrete types accepts any one of them; an origin
+or edge whose artifact type is none of them is refused unless a declared
+artifact conversion reaches one of them. Every use of the same variable on one
+node shares one concrete binding owned by that node instance. Ports may
 carry one artifact, an ordered artifact sequence, or variadic incoming edges when
 explicitly declared. Port cardinality describes the value seen by one operator
 invocation; it does not decide how many times the operator runs.
@@ -574,8 +676,8 @@ artifact conversions, then `direct` or `map` collection handling.
 
 A durable workbench document containing a workflow graph plus user-authored
 canvas layout. It stores configured node identities, positions, semantic edge
-endpoints, ordered instance input plugs, node artifact-type bindings, projections,
-conversion paths, collection modes, and edge routing offsets. A generic binding
+endpoints, origins, ordered instance input plugs, node artifact-type bindings,
+projections, conversion paths, collection modes, and edge routing offsets. A generic binding
 survives even when its incident edges are temporarily removed; users reset it
 explicitly before binding the node to another artifact type. Registry metadata,
 callbacks, selection, viewport state, and execution results are derived or
