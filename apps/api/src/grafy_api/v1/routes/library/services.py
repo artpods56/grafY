@@ -1,5 +1,4 @@
 from collections.abc import Mapping
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -15,31 +14,10 @@ from grafy_core.domain.errors import NotFoundError
 from grafy_core.ports.materialized_outputs import WorkbenchUnitOfWorkPort
 
 from grafy_api.services.errors import WorkbenchOperationError
-from grafy_api.v1.routes.artifacts.models import (
-    ArtifactExportFormatResponse,
-    ArtifactSummaryResponse,
-)
 from grafy_api.v1.routes.artifacts.services import ArtifactService
 
-from .models import (
-    LibraryItemResponse,
-    LibraryProvenanceResponse,
-    LibraryRunResponse,
-)
-
-
-@dataclass(frozen=True, slots=True)
-class LibraryRun:
-    execution_id: UUID
-    graph_id: UUID
-    finished_at: datetime | None
-
-
-@dataclass(frozen=True, slots=True)
-class LibraryItem:
-    artifact: ArtifactObject
-    provenance: LibraryProvenance
-    run: LibraryRun | None
+from .items import LibraryItem, LibraryRun
+from .models import LibraryItemResponse
 
 
 def _output_artifact_ids(outputs: Mapping[str, ArtifactOutputValue]) -> set[UUID]:
@@ -230,29 +208,11 @@ class LibraryService:
         )
 
     def _present(self, item: LibraryItem) -> LibraryItemResponse:
-
-        artifact = ArtifactSummaryResponse.from_artifact(item.artifact, download_formats=[
-            ArtifactExportFormatResponse.from_export_format(export_format)
-            for export_format in self._artifacts.export_formats(item.artifact)
-        ])
-
-        return LibraryItemResponse(
-            artifact=artifact,
+        return LibraryItemResponse.from_item(
+            item,
             name=self._artifact_name(item.artifact),
-            provenance=LibraryProvenanceResponse.from_provenance(item.provenance),
-            run=(
-                None
-                if item.run is None
-                else LibraryRunResponse(
-                    execution_id=item.run.execution_id,
-                    graph_id=item.run.graph_id,
-                    finished_at=item.run.finished_at,
-                )
-            )
+            download_formats=self._artifacts.export_formats(item.artifact),
         )
 
 
-
-
-
-__all__ = ["LibraryItem", "LibraryRun", "LibraryService", "LibraryProvenance"]
+__all__ = ["LibraryService"]

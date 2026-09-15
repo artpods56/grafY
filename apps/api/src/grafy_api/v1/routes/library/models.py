@@ -1,13 +1,17 @@
 from datetime import datetime
-from typing import Annotated, Literal, Any, Self
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from grafy_api.v1.routes.library.services import LibraryItem
-from grafy_core.artifacts import LibraryProvenance
+from grafy_core.artifacts import ArtifactExportFormat, LibraryProvenance
 from pydantic import StringConstraints
 
 from grafy_api.v1.models import ApiResponse
-from grafy_api.v1.routes.artifacts.models import ArtifactSummaryResponse, ArtifactExportFormatResponse
+from grafy_api.v1.routes.artifacts.models import (
+    ArtifactExportFormatResponse,
+    ArtifactSummaryResponse,
+)
+
+from .items import LibraryItem, LibraryRun
 
 BoundedNodeId = Annotated[
     str,
@@ -58,12 +62,42 @@ class LibraryRunResponse(ApiResponse):
     graph_id: UUID
     finished_at: datetime | None = None
 
+    @classmethod
+    def from_run(cls, run: LibraryRun) -> Self:
+        return cls(
+            execution_id=run.execution_id,
+            graph_id=run.graph_id,
+            finished_at=run.finished_at,
+        )
+
 
 class LibraryItemResponse(ApiResponse):
     artifact: ArtifactSummaryResponse
     name: str
     provenance: LibraryProvenanceResponse
     run: LibraryRunResponse | None = None
+
+    @classmethod
+    def from_item(
+        cls,
+        item: LibraryItem,
+        *,
+        name: str,
+        download_formats: list[ArtifactExportFormat],
+    ) -> Self:
+        return cls(
+            artifact=ArtifactSummaryResponse.from_artifact(
+                item.artifact,
+                download_formats=[
+                    ArtifactExportFormatResponse.from_export_format(export_format)
+                    for export_format in download_formats
+                ],
+            ),
+            name=name,
+            provenance=LibraryProvenanceResponse.from_provenance(item.provenance),
+            run=None if item.run is None else LibraryRunResponse.from_run(item.run),
+        )
+
 
 class LibraryListResponse(ApiResponse):
     items: list[LibraryItemResponse]
