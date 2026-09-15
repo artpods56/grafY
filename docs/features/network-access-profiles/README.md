@@ -192,7 +192,7 @@ one-shot environment. Its canonical representation has a SHA-256 digest.
 ## 6. Product roles and authority
 
 | Actor | May request | May grant | May widen deployment policy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Plugin author or coding agent | Capabilities and destination sources in source | Nothing | No |
 | Graph author | Values for contract-declared config fields | Nothing | No |
 | Workspace owner | Publish or select a reviewed Workspace release | Only if a later deployment policy delegates a bounded choice | No |
@@ -332,7 +332,7 @@ creation. A set name never reaches the broker.
 ### 8.1 Plugin execution
 
 | Mode | Effective destinations | Risk level |
-|---|---|---|
+| --- | --- | --- |
 | `disabled` | None | Low |
 | `configured-public` | Public HTTPS origins extracted from declared config fields | Moderate |
 | `curated` | Declared origins intersected with administrator origins | Moderate |
@@ -365,7 +365,7 @@ Requirements:
 ### 8.2 Publication
 
 | Mode | Network during dependency acquisition | Tests and inspection |
-|---|---|---|
+| --- | --- | --- |
 | `offline` | None; vendored wheelhouse only | Offline |
 | `dependencies` | Deployment package-domain sets | Offline |
 | `custom-allowlist` | Package-domain sets plus exact admin origins | Offline |
@@ -402,7 +402,7 @@ HostedAgentEnvironment
 Recommended modes:
 
 | Mode | Typical purpose |
-|---|---|
+| --- | --- |
 | `offline` | Fully self-contained maintenance |
 | `dependencies` | Install from approved registries during setup |
 | `custom-allowlist` | Documentation and organization services |
@@ -765,7 +765,7 @@ that merely use Grafy's CLI against a mounted working copy.
 At minimum, expose these machine-stable reasons:
 
 | Reason | Boundary |
-|---|---|
+| --- | --- |
 | `network_profile_unassigned` | Admission |
 | `network_profile_disabled` | Admission or preflight |
 | `network_destination_undeclared` | Contract or preflight |
@@ -1052,7 +1052,7 @@ runtime.
 ## 20. Required test matrix
 
 | Area | Required coverage |
-|---|---|
+| --- | --- |
 | Profile parsing | Unknown modes, duplicate assignments, precedence, canonical digest, legacy translation |
 | Contract serialization | Round trip, digest changes, missing capability, missing config field, dynamic flag |
 | URL normalization | Case, trailing dot, default/explicit port, IDN policy, userinfo, malformed port, duplicate origins |
