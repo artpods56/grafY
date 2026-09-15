@@ -45,6 +45,7 @@ export const ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE =
 export interface ArtifactViewerNodeData extends Record<string, unknown> {
   layout: WorkflowNodeLayout | null;
   mode: string | null;
+  artifactRef?: NonNullable<GraphPresentation["viewers"]>[number]["artifact_ref"];
   outgoingFields?: string[];
   selection?: ArtifactKeySelection;
   incomingBindings?: ArtifactViewerIncomingBinding[];
@@ -151,6 +152,7 @@ export function presentationFromArtifactViewers(
       position: { x: node.position.x, y: node.position.y },
       layout: serializeNodeLayout(node.data.layout),
       mode: node.data.mode,
+      artifact_ref: node.data.artifactRef,
     })),
     links: state.edges.map((edge) => ({
       id: edge.id,
@@ -208,6 +210,7 @@ export function artifactViewersFromPresentation(
       data: {
         layout: hydrateNodeLayout(viewer.layout ?? null),
         mode: viewer.mode ?? null,
+        artifactRef: viewer.artifact_ref,
       },
     });
   }

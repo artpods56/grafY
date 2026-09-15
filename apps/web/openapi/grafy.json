@@ -3042,6 +3042,16 @@
       "GraphPresentationViewer": {
         "additionalProperties": false,
         "properties": {
+          "artifact_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "maxLength": 255,
             "minLength": 1,
@@ -3084,6 +3094,16 @@
       "GraphPresentationViewerModel": {
         "additionalProperties": false,
         "properties": {
+          "artifact_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "maxLength": 255,
             "minLength": 1,
