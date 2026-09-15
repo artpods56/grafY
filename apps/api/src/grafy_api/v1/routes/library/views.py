@@ -15,8 +15,7 @@ from .models import (
 router = APIRouter(prefix="/workspaces/{workspace_id}/library", tags=["library"])
 
 
-def _unavailable(exc: WorkbenchOperationError) -> HTTPException:
-    return HTTPException(status_code=400, detail=str(exc))
+#[TODO] we should probably check what are these services throwing and ensure that we handle these errors correctly
 
 
 @router.get("/artifacts", response_model=LibraryListResponse)
@@ -42,7 +41,7 @@ async def save_library_artifact_from_run(
             node_title=body.node_title,
         )
     except WorkbenchOperationError as exc:
-        raise _unavailable(exc) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/artifacts/from-upload", response_model=LibraryItemResponse)
