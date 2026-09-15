@@ -92,11 +92,24 @@ ArtifactTypeContract = ArtifactTypeKey | ArtifactTypeVariable
 
 @dataclass(frozen=True, slots=True)
 class InPort:
-    """Marks an input model field as an artifact port via Annotated metadata."""
+    """Marks an input model field as an artifact port via Annotated metadata.
+
+    ``accepts`` is the primary artifact type (or the single artifact type
+    variable). ``also_accepts`` adds the remaining concrete types the same input
+    accepts, so one port can take several artifact types without a type variable.
+    """
 
     accepts: ArtifactTypeSpec | ArtifactTypeContract
     variadic: bool = False
     instance_plugs: bool = False
+    also_accepts: tuple[ArtifactTypeSpec | ArtifactTypeKey, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.also_accepts and isinstance(self.accepts, ArtifactTypeVariable):
+            raise NodeContractError(
+                "An input port must declare either an artifact type variable or "
+                "additional accepted artifact types, not both"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +133,37 @@ class InputPortSpec:
     preserves_ref_container: bool = False
     allows_none: bool = False
     required: bool = True
+    also_accepts: tuple[ArtifactTypeKey, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.also_accepts:
+            return
+        if isinstance(self.accepts, ArtifactTypeVariable):
+            raise NodeContractError(
+                f"Input port {self.name!r} must declare either an artifact type "
+                "variable or additional accepted artifact types, not both"
+            )
+        if self.accepts in self.also_accepts:
+            raise NodeContractError(
+                f"Input port {self.name!r} repeats its primary artifact type "
+                "among its additional accepted artifact types"
+            )
+        if len(set(self.also_accepts)) != len(self.also_accepts):
+            raise NodeContractError(
+                f"Input port {self.name!r} declares duplicate additional accepted "
+                "artifact types"
+            )
+
+    @property
+    def accepted_types(self) -> tuple[ArtifactTypeKey, ...]:
+        """Concrete artifact types this input accepts, primary type first.
+
+        Empty for a port that declares a named artifact type variable.
+        """
+
+        if isinstance(self.accepts, ArtifactTypeVariable):
+            return ()
+        return (self.accepts, *self.also_accepts)
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,6 +294,17 @@ def _artifact_type_contract(
     return value
 
 
+def _concrete_artifact_type_key(value: object) -> ArtifactTypeKey:
+    if isinstance(value, ArtifactTypeSpec):
+        return value.key
+    if isinstance(value, ArtifactTypeKey):
+        return value
+    raise NodeContractError(
+        "Additional accepted artifact types must be concrete artifact types, got "
+        f"{type(value).__name__}"
+    )
+
+
 def derive_input_contract[T: BaseModel](model: type[T]) -> InputContract[T]:
     ports: dict[str, InputPortSpec] = {}
     for name, field in model.model_fields.items():
@@ -272,6 +327,9 @@ def derive_input_contract[T: BaseModel](model: type[T]) -> InputContract[T]:
         ports[name] = InputPortSpec(
             name=name,
             accepts=_artifact_type_contract(port.accepts),
+            also_accepts=tuple(
+                _concrete_artifact_type_key(value) for value in port.also_accepts
+            ),
             title=field.title,
             description=field.description,
             shape=shape,

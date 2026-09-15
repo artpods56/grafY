@@ -1012,13 +1012,17 @@ def _validate_request_contract(
         )
     for binding in request.inputs:
         spec = input_specs[binding.port]
-        if not isinstance(spec.accepts, ArtifactTypeKey):
+        accepted_types = spec.accepted_types
+        if not accepted_types:
             raise PluginGuestError(
                 f"Input port {binding.port!r} kept an unresolved artifact type"
             )
         if (
-            binding.artifact_type.id != spec.accepts.id
-            or binding.artifact_type.schema_version != spec.accepts.schema_version
+            ArtifactTypeKey(
+                binding.artifact_type.id,
+                binding.artifact_type.schema_version,
+            )
+            not in accepted_types
         ):
             raise PluginGuestError(
                 f"Input port {binding.port!r} artifact type does not match the "
@@ -1086,19 +1090,20 @@ def _plugin_runtime(
     resolvers = [factory(context) for factory in plugin.resolver_factories]
     resolver_keys = {(resolver.source, resolver.target) for resolver in resolvers}
     for spec in input_contract.ports.values():
-        if not isinstance(spec.accepts, ArtifactTypeKey) or spec.target_type is None:
+        if spec.target_type is None:
             continue
-        key = (spec.accepts, spec.target_type)
-        if key in resolver_keys:
-            continue
-        resolvers.append(
-            _GuestInlineResolver(
-                source=spec.accepts,
-                target=spec.target_type,
-                unit_of_work=unit_of_work,
+        for artifact_type in spec.accepted_types:
+            key = (artifact_type, spec.target_type)
+            if key in resolver_keys:
+                continue
+            resolvers.append(
+                _GuestInlineResolver(
+                    source=artifact_type,
+                    target=spec.target_type,
+                    unit_of_work=unit_of_work,
+                )
             )
-        )
-        resolver_keys.add(key)
+            resolver_keys.add(key)
 
     inline_output_keys = {
         ArtifactTypeKey(

@@ -61,7 +61,8 @@ class InputMaterializer:
                     raise MaterializationError(name, "is required")
                 continue
 
-            if not isinstance(spec.accepts, ArtifactTypeKey):
+            accepted_types = spec.accepted_types
+            if not accepted_types:
                 raise MaterializationError(
                     name,
                     "has an unresolved artifact type contract",
@@ -97,7 +98,7 @@ class InputMaterializer:
                     if isinstance(item, ArtifactRefSequence) and (
                         spec.preserves_ref_container
                     ):
-                        _validate_sequence_key(name, item, spec.accepts)
+                        _validate_sequence_key(name, item, accepted_types)
                         edges.append(list(item.item_refs))
                         continue
                     expected = (
@@ -115,7 +116,7 @@ class InputMaterializer:
                     case False, PortShape.ONE, ArtifactRef() as ref:
                         edges = [[ref]]
                     case False, PortShape.MANY, ArtifactRefSequence() as sequence:
-                        _validate_sequence_key(name, sequence, spec.accepts)
+                        _validate_sequence_key(name, sequence, accepted_types)
                         edges = [list(sequence.item_refs)]
                     case True, PortShape.ONE, list() | tuple():
                         edges = []
@@ -136,7 +137,7 @@ class InputMaterializer:
                                     f"expected one ArtifactRefSequence per incoming "
                                     f"edge, got {type(item).__name__}",
                                 )
-                            _validate_sequence_key(name, item, spec.accepts)
+                            _validate_sequence_key(name, item, accepted_types)
                             edges.append(list(item.item_refs))
                     case _:
                         expected = _EXPECTED_PORT_VALUE[(spec.variadic, spec.shape)]
@@ -150,11 +151,10 @@ class InputMaterializer:
 
             refs = tuple(ref for edge in edges for ref in edge)
             for ref in refs:
-                if ref.key() != spec.accepts:
+                if ref.key() not in accepted_types:
                     raise MaterializationError(
                         name,
-                        f"expected {spec.accepts.id}@"
-                        f"{spec.accepts.schema_version}, got "
+                        f"expected {_artifact_type_keys_label(accepted_types)}, got "
                         f"{ref.artifact_type}@{ref.schema_version}",
                     )
             if len(refs) > 0:
@@ -195,17 +195,19 @@ class InputMaterializer:
         )
 
 
+def _artifact_type_keys_label(keys: Sequence[ArtifactTypeKey]) -> str:
+    return ", ".join(f"{key.id}@{key.schema_version}" for key in keys)
+
+
 def _validate_sequence_key(
     port_name: str,
     sequence: ArtifactRefSequence,
-    expected: ArtifactTypeKey,
+    expected: Sequence[ArtifactTypeKey],
 ) -> None:
-    if sequence.artifact_type == expected.id and (
-        sequence.schema_version == expected.schema_version
-    ):
+    if ArtifactTypeKey(sequence.artifact_type, sequence.schema_version) in expected:
         return
     raise MaterializationError(
         port_name,
-        f"expected {expected.id}@{expected.schema_version}, got "
+        f"expected {_artifact_type_keys_label(expected)}, got "
         f"{sequence.artifact_type}@{sequence.schema_version}",
     )

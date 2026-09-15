@@ -1,11 +1,13 @@
+import json
+import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
+    Any,
     Literal,
     Self,
     TypeAlias,
-    Any,
-    Callable,
 )
 from uuid import UUID, uuid4
 
@@ -25,6 +27,33 @@ ArtifactBundleFormat: TypeAlias = Literal[
     "object-set",
 ]
 ArtifactReferenceShape: TypeAlias = Literal["one", "many"]
+ConfirmationRule: TypeAlias = Literal["magic", "json", "json_document", "none"]
+
+_EXTENSION_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,14}[a-z0-9])?$")
+
+
+def validate_extension_claims(
+    artifact_type_id: str,
+    extensions: tuple[str, ...],
+) -> None:
+    """Enforce the extension claim rules shared by specs and release contracts."""
+
+    if len(extensions) != len(set(extensions)):
+        raise ValueError("Artifact type extensions must be unique")
+    if artifact_type_id == "file.blob" and extensions:
+        raise ValueError("file.blob may not declare extensions")
+    if extensions and not artifact_type_id.startswith("file."):
+        raise ValueError(
+            f"Artifact type {artifact_type_id!r} may not declare extensions; "
+            "only file.* types claim extensions"
+        )
+    for extension in extensions:
+        if not _EXTENSION_PATTERN.fullmatch(extension):
+            raise ValueError(
+                f"Artifact type extension {extension!r} must be a lowercase "
+                "alphanumeric token of 1 to 16 characters without a dot, "
+                "whitespace, or a leading or trailing dash"
+            )
 
 
 class NodeConfig(BaseModel):
@@ -113,6 +142,66 @@ class ArtifactReferenceContract:
 
 
 @dataclass(frozen=True, slots=True)
+class MagicSegment:
+    """One offset-and-bytes segment that must match at the start of a file."""
+
+    offset: int
+    value: bytes
+
+    def __post_init__(self) -> None:
+        if isinstance(self.offset, bool) or self.offset < 0:
+            raise ValueError("Magic signature segment offset must not be negative")
+        if not self.value:
+            raise ValueError("Magic signature segment bytes must not be empty")
+
+    def matches(self, content: bytes) -> bool:
+        return content[self.offset : self.offset + len(self.value)] == self.value
+
+
+@dataclass(frozen=True, slots=True)
+class MagicSignature:
+    """One alternative magic signature: every segment must match."""
+
+    segments: tuple[MagicSegment, ...]
+
+    def __post_init__(self) -> None:
+        if not self.segments:
+            raise ValueError("Magic signature must contain at least one segment")
+
+    def matches(self, content: bytes) -> bool:
+        return all(segment.matches(content) for segment in self.segments)
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactConfirmationRule:
+    """How ingest confirms bytes agree with a declared file format."""
+
+    rule: ConfirmationRule = "none"
+    signatures: tuple[MagicSignature, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.rule == "magic":
+            if not self.signatures:
+                raise ValueError("A magic confirmation rule requires a signature")
+            return
+        if self.signatures:
+            raise ValueError("Only a magic confirmation rule may declare signatures")
+
+    def confirms(self, content: bytes) -> bool:
+        if self.rule == "none":
+            return True
+        if self.rule == "magic":
+            return any(signature.matches(content) for signature in self.signatures)
+        try:
+            document = json.loads(content.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        if self.rule == "json":
+            return isinstance(document, dict)
+        return isinstance(document, (dict, list))
+
+
+@dataclass(frozen=True, slots=True)
 class ArtifactTypeSpec:
     key: ArtifactTypeKey
     title: str
@@ -125,6 +214,8 @@ class ArtifactTypeSpec:
         format="inline-json",
         version=1,
     )
+    extensions: tuple[str, ...] = ()
+    confirmation_rule: ArtifactConfirmationRule = ArtifactConfirmationRule()
 
     def __post_init__(self) -> None:
         paths = [reference.path for reference in self.references]
@@ -134,6 +225,7 @@ class ArtifactTypeSpec:
             raise ValueError(
                 "Artifact references currently require the inline-json bundle"
             )
+        validate_extension_claims(self.key.id, self.extensions)
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,16 +328,29 @@ class ArtifactObject:
 if TYPE_CHECKING:
     from grafy_core.ports.artifacts import (
         ArtifactRepositoryPort as ArtifactRepositoryPort,
+    )
+    from grafy_core.ports.artifacts import (
         UnitOfWorkPort as UnitOfWorkPort,
     )
-
     from grafy_core.runtime.in_memory import (
         InMemoryArtifactRepository as InMemoryArtifactRepository,
+    )
+    from grafy_core.runtime.in_memory import (
         InMemoryDataStore as InMemoryDataStore,
+    )
+    from grafy_core.runtime.in_memory import (
         InMemoryGraphExecutionHistoryRepository as InMemoryGraphExecutionHistoryRepository,
+    )
+    from grafy_core.runtime.in_memory import (
         InMemoryInvocationCacheRepository as InMemoryInvocationCacheRepository,
+    )
+    from grafy_core.runtime.in_memory import (
         InMemoryMaterializedNodeOutputsRepository as InMemoryMaterializedNodeOutputsRepository,
+    )
+    from grafy_core.runtime.in_memory import (
         InMemoryStagedUploadRepository as InMemoryStagedUploadRepository,
+    )
+    from grafy_core.runtime.in_memory import (
         InMemoryUnitOfWork as InMemoryUnitOfWork,
     )
 
@@ -276,6 +381,7 @@ __all__ = [
     "Artifact",
     "ArtifactBundleContract",
     "ArtifactBundleFormat",
+    "ArtifactConfirmationRule",
     "ArtifactExportFormat",
     "ArtifactFieldProjection",
     "ArtifactObject",
@@ -293,7 +399,10 @@ __all__ = [
     "InMemoryMaterializedNodeOutputsRepository",
     "InMemoryStagedUploadRepository",
     "InMemoryUnitOfWork",
+    "ConfirmationRule",
     "JsonObject",
+    "MagicSegment",
+    "MagicSignature",
     "MaterializedJsonType",
     "NoConfig",
     "NodeConfig",
@@ -302,4 +411,5 @@ __all__ = [
     "UnitOfWorkPort",
     "artifact_id",
     "sequence_id",
+    "validate_extension_claims",
 ]

@@ -1282,8 +1282,11 @@ export interface components {
         /** ArtifactTypeSpecResponse */
         readonly ArtifactTypeSpecResponse: {
             readonly bundle: components["schemas"]["ArtifactBundleContractResponse"];
+            readonly confirmation_rule?: components["schemas"]["ConfirmationRuleResponse"];
             /** Export Formats */
             readonly export_formats?: readonly components["schemas"]["ArtifactExportFormatResponse"][];
+            /** Extensions */
+            readonly extensions?: readonly string[];
             /** Field Projections */
             readonly field_projections: readonly components["schemas"]["FieldProjectionResponse"][];
             readonly key: components["schemas"]["ArtifactTypeKeyResponse"];
@@ -1412,6 +1415,17 @@ export interface components {
              * Format: password
              */
             readonly value: string;
+        };
+        /** ConfirmationRuleResponse */
+        readonly ConfirmationRuleResponse: {
+            /**
+             * Rule
+             * @default none
+             * @enum {string}
+             */
+            readonly rule: "magic" | "json" | "json_document" | "none";
+            /** Signatures */
+            readonly signatures?: readonly (readonly components["schemas"]["MagicSegmentResponse"][])[];
         };
         /** CopyExactHeadRequest */
         readonly CopyExactHeadRequest: {
@@ -2269,6 +2283,13 @@ export interface components {
             /** Name */
             readonly name: string;
         };
+        /** MagicSegmentResponse */
+        readonly MagicSegmentResponse: {
+            /** Offset */
+            readonly offset: number;
+            /** Value */
+            readonly value: string;
+        };
         /** ModuleListResponse */
         readonly ModuleListResponse: {
             /** Modules */
@@ -2655,6 +2676,8 @@ export interface components {
         readonly PortResponse: {
             /** Accepted Shapes */
             readonly accepted_shapes: readonly components["schemas"]["PortShape"][];
+            /** Also Accepts */
+            readonly also_accepts?: readonly components["schemas"]["ArtifactTypeKeyResponse"][];
             readonly artifact_type?: components["schemas"]["ArtifactTypeKeyResponse"] | null;
             /** Artifact Type Variable */
             readonly artifact_type_variable?: string | null;
