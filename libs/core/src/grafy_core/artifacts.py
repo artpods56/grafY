@@ -63,7 +63,7 @@ class ArtifactFieldProjection:
     target: ArtifactTypeKey
     title: str
 
-
+#[TODO] Artifact types could be typed
 @dataclass(frozen=True, slots=True)
 class ArtifactExportFormat:
     """One downloadable rendering of an artifact type, beyond the universal JSON.
@@ -167,7 +167,7 @@ class ArtifactRef(BaseModel):
     def key(self) -> ArtifactTypeKey:
         return ArtifactTypeKey(self.artifact_type, self.schema_version)
 
-
+#[TODO] Review if this is really needed to represent a sequence of artifacts
 class ArtifactRefSequence(BaseModel):
     sequence_id: UUID = Field(default_factory=sequence_id)
     artifact_type: str
@@ -249,7 +249,7 @@ if TYPE_CHECKING:
         InMemoryUnitOfWork as InMemoryUnitOfWork,
     )
 
-
+#[TODO] Remove whatever this is, probably dead code
 def __getattr__(name: str) -> object:
     # Legacy SDK exports must be lazy: importing ports or runtime while artifact
     # models initialize re-enters the domain package through its public exports.

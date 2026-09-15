@@ -13,6 +13,7 @@ from grafy_core.domain.saved_graphs import (
     SavedGraph,
     SavedGraphAnnotationLayout,
     SavedGraphArtifactTypeBinding,
+    SavedGraphConversion,
     SavedGraphDocument,
     SavedGraphEdge,
     SavedGraphInputPlug,
