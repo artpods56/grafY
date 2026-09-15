@@ -792,39 +792,73 @@ describe("WorkflowNode compatibility rendering", () => {
   });
 });
 
+const BOUNDS_INPUT_LABELS = [
+  "Bounds: West longitude",
+  "Bounds: South latitude",
+  "Bounds: East longitude",
+  "Bounds: North latitude",
+];
+
+function nullableBoundsSpec(): NodeSpec {
+  const spec = boundsSpec();
+  const properties = (
+    spec.config_schema as { properties: Record<string, unknown> }
+  ).properties;
+  return {
+    ...spec,
+    config_schema: {
+      type: "object",
+      properties: {
+        bounds: {
+          title: "Bounds",
+          description:
+            "WGS84 bounds ordered as west longitude, south latitude, east longitude, north latitude.",
+          anyOf: [properties.bounds, { type: "null" }],
+        },
+      },
+      required: ["bounds"],
+    },
+  };
+}
+
+function renderBoundsField(
+  spec: NodeSpec,
+  config: Record<string, unknown> = {},
+) {
+  const onConfigChange = vi.fn();
+  const data = createWorkflowNodeData(spec);
+  data.config = { ...data.config, ...config };
+  data.onConfigChange = onConfigChange;
+
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  React.act(() => {
+    root.render(
+      <WorkflowNodeCard
+        {...({
+          id: "wms-layer",
+          data,
+          selected: false,
+        } as React.ComponentProps<typeof WorkflowNodeCard>)}
+      />,
+    );
+  });
+
+  const inputs = BOUNDS_INPUT_LABELS.map((label) => {
+    const input = container.querySelector<HTMLInputElement>(
+      `input[aria-label="${label}"]`,
+    );
+    expect(input).not.toBeNull();
+    return input!;
+  });
+  const committedValues = () =>
+    onConfigChange.mock.calls.map((call) => call[2]);
+  return { container, inputs, onConfigChange, committedValues, root };
+}
+
 describe("WorkflowNode fixed numeric tuple fields", () => {
   it("renders coordinate inputs and emits a complete number array", () => {
-    const onConfigChange = vi.fn();
-    const data = createWorkflowNodeData(boundsSpec());
-    data.onConfigChange = onConfigChange;
-
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    React.act(() => {
-      root.render(
-        <WorkflowNodeCard
-          {...({
-            id: "wms-layer",
-            data,
-            selected: false,
-          } as React.ComponentProps<typeof WorkflowNodeCard>)}
-        />,
-      );
-    });
-
-    const labels = [
-      "Bounds: West longitude",
-      "Bounds: South latitude",
-      "Bounds: East longitude",
-      "Bounds: North latitude",
-    ];
-    const inputs = labels.map((label) => {
-      const input = container.querySelector<HTMLInputElement>(
-        `input[aria-label="${label}"]`,
-      );
-      expect(input).not.toBeNull();
-      return input!;
-    });
+    const { inputs, onConfigChange, root } = renderBoundsField(boundsSpec());
 
     expect(inputs.map((input) => input.step)).toEqual([
       "any",
@@ -839,17 +873,9 @@ describe("WorkflowNode fixed numeric tuple fields", () => {
       ["-90", "90"],
     ]);
 
-    ["181", "49.97", "19.82", "50.03"].forEach((value, index) => {
+    ["19.75", "49.97", "19.82", "50.03"].forEach((value, index) => {
       React.act(() => enterInputValue(inputs[index]!, value));
     });
-
-    expect(onConfigChange.mock.calls.map(([, , value]) => value)).toEqual([
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-    ]);
-    React.act(() => enterInputValue(inputs[0]!, "19.75"));
 
     expect(onConfigChange).toHaveBeenLastCalledWith(
       "wms-layer",
@@ -861,6 +887,90 @@ describe("WorkflowNode fixed numeric tuple fields", () => {
         ([, , configValue]) => typeof configValue !== "string",
       ),
     ).toBe(true);
+    React.act(() => root.unmount());
+  });
+
+  it("keeps partial entry local until all four values are valid", () => {
+    const { inputs, onConfigChange, root } = renderBoundsField(boundsSpec());
+
+    ["19.75", "49.97", "19.82"].forEach((value, index) => {
+      React.act(() => enterInputValue(inputs[index]!, value));
+    });
+
+    expect(onConfigChange).not.toHaveBeenCalled();
+    expect(inputs.map((input) => input.value)).toEqual([
+      "19.75",
+      "49.97",
+      "19.82",
+      "",
+    ]);
+
+    React.act(() => enterInputValue(inputs[3]!, "50.03"));
+
+    expect(onConfigChange).toHaveBeenCalledTimes(1);
+    expect(onConfigChange).toHaveBeenCalledWith(
+      "wms-layer",
+      "bounds",
+      [19.75, 49.97, 19.82, 50.03],
+    );
+    React.act(() => root.unmount());
+  });
+
+  it("keeps the last valid tuple while a value is temporarily invalid", () => {
+    const { inputs, committedValues, root } = renderBoundsField(boundsSpec(), {
+      bounds: [19.75, 49.97, 19.82, 50.03],
+    });
+
+    React.act(() => enterInputValue(inputs[0]!, ""));
+    expect(committedValues()).toEqual([]);
+
+    React.act(() => enterInputValue(inputs[0]!, "181"));
+    expect(committedValues()).toEqual([]);
+
+    React.act(() => enterInputValue(inputs[0]!, "19.5"));
+    expect(committedValues()).toEqual([[19.5, 49.97, 19.82, 50.03]]);
+    React.act(() => root.unmount());
+  });
+
+  it("corrects one value of a complete tuple without erasing the others", () => {
+    const { inputs, committedValues, root } = renderBoundsField(boundsSpec(), {
+      bounds: [19.75, 49.97, 19.82, 50.03],
+    });
+
+    React.act(() => enterInputValue(inputs[3]!, "51.5"));
+
+    expect(committedValues()).toEqual([[19.75, 49.97, 19.82, 51.5]]);
+    React.act(() => root.unmount());
+  });
+
+  it("never commits an empty value for a required tuple", () => {
+    const { inputs, onConfigChange, root } = renderBoundsField(boundsSpec(), {
+      bounds: [19.75, 49.97, 19.82, 50.03],
+    });
+
+    inputs.forEach((input) => {
+      React.act(() => enterInputValue(input, ""));
+    });
+
+    expect(onConfigChange).not.toHaveBeenCalled();
+    expect(inputs.map((input) => input.value)).toEqual(["", "", "", ""]);
+    React.act(() => root.unmount());
+  });
+
+  it("commits an intentional all-empty clear for a nullable tuple", () => {
+    const { inputs, committedValues, root } = renderBoundsField(
+      nullableBoundsSpec(),
+      { bounds: [19.75, 49.97, 19.82, 50.03] },
+    );
+
+    React.act(() => enterInputValue(inputs[0]!, ""));
+    expect(committedValues()).toEqual([]);
+
+    [1, 2, 3].forEach((index) => {
+      React.act(() => enterInputValue(inputs[index]!, ""));
+    });
+
+    expect(committedValues()).toEqual([null]);
     React.act(() => root.unmount());
   });
 });

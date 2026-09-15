@@ -390,6 +390,7 @@ function WorkbenchBody({
         name: "Untitled workflow",
         nodes: [],
         edges: [],
+        origins: [],
       },
       nodeOverlays: {},
       error: null,
@@ -1153,6 +1154,8 @@ function WorkbenchBody({
 
   const openGraphInNewTab = React.useCallback(
     (graphId: string) => {
+      // Internal route: workbenchGraphPath() returns a same-origin path from encoded params.
+      // pi-lens-ignore: no-open-redirect
       window.open(
         workbenchGraphPath(workspaceSlug, graphId),
         "_blank",

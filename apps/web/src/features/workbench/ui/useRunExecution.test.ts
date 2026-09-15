@@ -54,7 +54,7 @@ const executionId = "00000000-0000-4000-8000-000000000001";
 const executionDraft: CreateSavedGraphRequest = {
   name: "Execution snapshot",
   document: {
-    schema_version: 6,
+    schema_version: 7,
     nodes: [{
       id: "node-1",
       kind: "builtin",
@@ -66,6 +66,7 @@ const executionDraft: CreateSavedGraphRequest = {
       position: { x: 0, y: 0 },
     }],
     edges: [],
+    origins: [],
     presentation: {
       viewers: [],
       links: [],

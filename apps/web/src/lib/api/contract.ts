@@ -141,6 +141,7 @@ export type GraphMaterializations =
 export type SavedGraphDocument = Schemas["SavedGraphDocument"];
 export type SavedGraphNode = Schemas["SavedGraphNode"];
 export type SavedGraphEdge = Schemas["SavedGraphEdge"];
+export type SavedGraphOrigin = Schemas["SavedGraphOrigin"];
 export type SavedGraphSummary =
   Schemas["SavedGraphSummaryResponse"];
 export type GraphBrowserGraph = Schemas["GraphBrowserItemResponse"];

@@ -1,10 +1,10 @@
 """Append-only Plugin releases and their catalog contracts."""
 
+import json
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from hashlib import sha256
-import json
-import re
 from typing import TYPE_CHECKING, ClassVar, Literal, Self, cast
 from uuid import UUID, uuid4
 
@@ -14,20 +14,25 @@ from pydantic.errors import PydanticInvalidForJsonSchema
 from grafy_core.artifacts import (
     ArtifactBundleContract,
     ArtifactBundleFormat,
+    ArtifactConfirmationRule,
     ArtifactReferenceContract,
     ArtifactReferenceShape,
     ArtifactTypeKey,
     ArtifactTypeSpec,
+    ConfirmationRule,
+    MagicSegment,
+    MagicSignature,
     MaterializedJsonType,
+    validate_extension_claims,
 )
 from grafy_core.conversions import ArtifactConversion, ArtifactConversionKey
+from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.domain.plugin_identity import (
-    PluginExecutionPolicy,
     PlatformPluginActor,
+    PluginExecutionPolicy,
     PluginReleaseNamespace,
     PluginReleaseScope,
 )
-from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import (
     ArtifactTypeVariable,
     InputPortSpec,
@@ -35,7 +40,6 @@ from grafy_core.nodes import (
     PortShape,
 )
 from grafy_core.plugins import NodeCachePolicy, NodeRegistration, Plugin
-
 
 if TYPE_CHECKING:
     from grafy_core.domain.plugin_installations import InstalledPluginRelease
@@ -57,6 +61,7 @@ def plugin_profile_digest(runtime_profile: str) -> str:
 
 
 _EMPTY_HTTP_EGRESS_SERIALIZATION = ',"http_egress":null'
+_EMPTY_ALSO_ACCEPTS_SERIALIZATION = ',"also_accepts":[]'
 
 
 def plugin_contract_digest(catalog: PluginCatalogManifest) -> str:
@@ -64,12 +69,15 @@ def plugin_contract_digest(catalog: PluginCatalogManifest) -> str:
 
     Absent HTTP-egress declarations are dropped before hashing so a catalog
     parsed with the newer contract fields digests identically to the bytes
-    persisted before that field existed.
+    persisted before that field existed. Absent additional accepted artifact
+    types are dropped for the same reason.
     """
 
     serialized = catalog.model_dump_json()
     if _EMPTY_HTTP_EGRESS_SERIALIZATION in serialized:
         serialized = serialized.replace(_EMPTY_HTTP_EGRESS_SERIALIZATION, "")
+    if _EMPTY_ALSO_ACCEPTS_SERIALIZATION in serialized:
+        serialized = serialized.replace(_EMPTY_ALSO_ACCEPTS_SERIALIZATION, "")
     return sha256(serialized.encode("utf-8")).hexdigest()
 
 
@@ -157,6 +165,65 @@ class PluginArtifactBundleContract(PluginReleaseValue):
         return cls(format=contract.format, version=contract.version)
 
 
+class PluginMagicSegment(PluginReleaseValue):
+    """One magic signature segment, with its bytes carried as lowercase hex."""
+
+    offset: int = Field(ge=0, strict=True)
+    value: str = Field(pattern=r"^(?:[0-9a-f]{2})+$", max_length=4_096)
+
+
+class PluginMagicSignature(PluginReleaseValue):
+    segments: tuple[PluginMagicSegment, ...] = Field(min_length=1)
+
+
+class PluginConfirmationRule(PluginReleaseValue):
+    rule: ConfirmationRule = "none"
+    signatures: tuple[PluginMagicSignature, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_signatures(self) -> Self:
+        if self.rule == "magic" and not self.signatures:
+            raise ValueError("A magic confirmation rule requires a signature")
+        if self.rule != "magic" and self.signatures:
+            raise ValueError("Only a magic confirmation rule may declare signatures")
+        return self
+
+    @classmethod
+    def from_rule(cls, rule: ArtifactConfirmationRule) -> Self:
+        return cls(
+            rule=rule.rule,
+            signatures=tuple(
+                PluginMagicSignature(
+                    segments=tuple(
+                        PluginMagicSegment(
+                            offset=segment.offset,
+                            value=segment.value.hex(),
+                        )
+                        for segment in signature.segments
+                    )
+                )
+                for signature in rule.signatures
+            ),
+        )
+
+    def to_rule(self) -> ArtifactConfirmationRule:
+        return ArtifactConfirmationRule(
+            rule=self.rule,
+            signatures=tuple(
+                MagicSignature(
+                    segments=tuple(
+                        MagicSegment(
+                            offset=segment.offset,
+                            value=bytes.fromhex(segment.value),
+                        )
+                        for segment in signature.segments
+                    )
+                )
+                for signature in self.signatures
+            ),
+        )
+
+
 class PluginArtifactReferenceContract(PluginReleaseValue):
     path: tuple[str, ...] = Field(min_length=1)
     target: PluginArtifactTypeKey
@@ -186,6 +253,13 @@ class PluginArtifactTypeContract(PluginReleaseValue):
         format="inline-json",
         version=1,
     )
+    extensions: tuple[str, ...] = ()
+    confirmation_rule: PluginConfirmationRule = PluginConfirmationRule()
+
+    @model_validator(mode="after")
+    def validate_extension_claims(self) -> Self:
+        validate_extension_claims(self.key.id, self.extensions)
+        return self
 
     @classmethod
     def from_spec(cls, spec: ArtifactTypeSpec) -> Self:
@@ -215,6 +289,8 @@ class PluginArtifactTypeContract(PluginReleaseValue):
                 for reference in spec.references
             ),
             bundle=PluginArtifactBundleContract.from_contract(spec.bundle),
+            extensions=spec.extensions,
+            confirmation_rule=PluginConfirmationRule.from_rule(spec.confirmation_rule),
         )
 
 
@@ -269,6 +345,7 @@ class PluginPortContract(PluginReleaseValue):
     direction: PluginPortDirection
     artifact_type: PluginArtifactTypeKey | None = None
     artifact_type_variable: str | None = Field(default=None, max_length=255)
+    also_accepts: tuple[PluginArtifactTypeKey, ...] = ()
     shape: PortShape
     accepted_shapes: tuple[PortShape, ...] = Field(min_length=1)
     instance_plugs: bool = False
@@ -281,7 +358,31 @@ class PluginPortContract(PluginReleaseValue):
             raise ValueError(
                 "Plugin port must declare exactly one artifact type or type variable"
             )
+        if not self.also_accepts:
+            return self
+        if self.artifact_type is None:
+            raise ValueError(
+                "Plugin port additional accepted artifact types require a primary "
+                "artifact type"
+            )
+        if self.artifact_type in self.also_accepts:
+            raise ValueError(
+                "Plugin port repeats its primary artifact type among its additional "
+                "accepted artifact types"
+            )
+        if len(set(self.also_accepts)) != len(self.also_accepts):
+            raise ValueError(
+                "Plugin port declares duplicate additional accepted artifact types"
+            )
         return self
+
+    @property
+    def accepted_types(self) -> tuple[PluginArtifactTypeKey, ...]:
+        """Concrete artifact types this port accepts, primary type first."""
+
+        if self.artifact_type is None:
+            return ()
+        return (self.artifact_type, *self.also_accepts)
 
     @classmethod
     def from_input_port(cls, port: InputPortSpec) -> Self:
@@ -300,6 +401,9 @@ class PluginPortContract(PluginReleaseValue):
             direction="input",
             artifact_type=artifact_type,
             artifact_type_variable=artifact_type_variable,
+            also_accepts=tuple(
+                PluginArtifactTypeKey.from_key(key) for key in port.also_accepts
+            ),
             shape=port.shape,
             accepted_shapes=port.accepted_shapes,
             instance_plugs=port.instance_plugs,
@@ -914,6 +1018,9 @@ def _sha256(value: str, label: str) -> str:
 __all__ = [
     "PLUGIN_INVOCATION_PROTOCOL",
     "PluginArtifactBundleContract",
+    "PluginConfirmationRule",
+    "PluginMagicSegment",
+    "PluginMagicSignature",
     "PluginArtifactReferenceContract",
     "PluginArtifactConversionContract",
     "PluginArtifactConversionKey",

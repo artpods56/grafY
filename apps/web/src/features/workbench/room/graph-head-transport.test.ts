@@ -19,7 +19,7 @@ const canonical: CollaborativeHead = {
   checkpoint_revision: 2,
   updated_at: "2026-09-09T10:00:00Z",
   document: {
-    schema_version: 6,
+    schema_version: 7,
     nodes: [{
       id: "source", kind: "plugin", operator_id: "table.read", operator_version: 1,
       plugin_release_pin: { scope: "system", slug: "tables", revision: 7 },
@@ -34,6 +34,11 @@ const canonical: CollaborativeHead = {
       to_node: "target", to_port: "rows", to_plug: "rows-1",
       enabled: true, collection_mode: "map", conversion_path: [],
       projection: { path: ["records"] }, route_offset: { x: 4, y: 5 },
+    }],
+    origins: [{
+      id: "origin-1", to_node: "target", to_port: "rows", to_plug: "rows-1",
+      value: { artifact_id: "00000000-0000-4000-8000-000000000002", artifact_type: "rows", schema_version: 1 },
+      conversion_path: [],
     }],
     presentation: {
       viewers: [{ id: "viewer-1", position: { x: 80, y: 90 }, mode: "table" }],
@@ -51,6 +56,7 @@ const legacy: LegacyCollaborativeHead = {
     ...node, plugin_release: plugin_release_pin,
   })),
   edges: canonical.document.edges,
+  origins: canonical.document.origins,
   presentation: canonical.document.presentation,
 };
 
@@ -121,12 +127,14 @@ describe("canonical collaborative head flow", () => {
         ...legacy, presentation: undefined,
         nodes: legacy.nodes.map((node) => ({ ...node, artifact_type_bindings: undefined, input_plugs: undefined })),
         edges: legacy.edges.map((edge) => ({ ...edge, conversion_path: undefined })),
+        origins: (legacy.origins ?? []).map((origin) => ({ ...origin, conversion_path: undefined })),
       },
     });
     if (room?.type !== "room.rehydrate") throw new Error("Expected a parsed v1 reset");
     expect(room.head.document.nodes[0]?.input_plugs).toEqual([]);
     expect(room.head.document.nodes[0]?.artifact_type_bindings).toEqual([]);
     expect(room.head.document.edges[0]?.conversion_path).toEqual([]);
+    expect(room.head.document.origins[0]?.conversion_path).toEqual([]);
     expect(room.head.document.presentation).toEqual({ viewers: [], links: [], bindings: [], annotations: [] });
   });
 
