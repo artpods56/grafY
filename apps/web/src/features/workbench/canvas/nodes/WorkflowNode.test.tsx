@@ -1621,3 +1621,56 @@ describe("WorkflowNode execution progress", () => {
     React.act(() => root.unmount());
   });
 });
+
+describe("WorkflowNode artifact drop rows", () => {
+  it("publishes the live identity of a plain input port row", () => {
+    const data = createWorkflowNodeData(textPipeSpec());
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    React.act(() => {
+      root.render(
+        <WorkflowNodeCard
+          {...({
+            id: "text-pipe",
+            data,
+            selected: false,
+          } as React.ComponentProps<typeof WorkflowNodeCard>)}
+        />,
+      );
+    });
+
+    const row = container.querySelector<HTMLElement>(
+      '[data-input-port-name="text"]',
+    );
+    expect(row?.dataset.inputNodeId).toBe("text-pipe");
+
+    React.act(() => root.unmount());
+  });
+
+  it("publishes plug identity on plug rows instead of the port header", () => {
+    const data = createWorkflowNodeData(artifactQuerySpec());
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    React.act(() => {
+      root.render(
+        <WorkflowNodeCard
+          {...({
+            id: "artifact-query",
+            data,
+            selected: false,
+          } as React.ComponentProps<typeof WorkflowNodeCard>)}
+        />,
+      );
+    });
+
+    expect(
+      container.querySelector('[data-input-port-name="statements"]'),
+    ).toBeNull();
+    const plugRow = container.querySelector<HTMLElement>(
+      '[data-input-plug-id][data-input-node-id="artifact-query"]',
+    );
+    expect(plugRow?.dataset.inputPlugPort).toBe("statements");
+
+    React.act(() => root.unmount());
+  });
+});

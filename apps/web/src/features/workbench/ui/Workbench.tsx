@@ -193,6 +193,7 @@ import {
   createWorkflowNodeData,
   effectivePortShape,
   imageUploads,
+  portHasInstancePlugs,
   removeImageUpload,
   resolvedPortArtifactType,
   type WorkflowEdge,
@@ -210,6 +211,13 @@ import {
   preferredWholeFeedRoute,
   routesForHandleFeed,
 } from "../model/connection-feeds";
+import {
+  artifactDropCommands,
+  artifactDropTargetFromRow,
+  isArtifactDrop,
+  readArtifactDrop,
+  type ArtifactDropTarget,
+} from "../model/artifact-drop";
 import {
   collectionModeForConnection,
   inputPlugBindingsForNode,
@@ -239,6 +247,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import {
   type ArtifactTypeKey,
   type NodeSpec,
+  type Port,
   type RunEdgeCollectionMode,
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
@@ -329,6 +338,28 @@ function useSafeAreaInsets(enabled: boolean): SafeAreaInsets {
     };
   }, [enabled]);
   return insets;
+}
+
+/** The input row under a drawer drag, read from the row element it is over. */
+function artifactDropRowAt(
+  event: React.DragEvent<HTMLElement>,
+): HTMLElement | null {
+  return event.target instanceof Element
+    ? event.target.closest<HTMLElement>("[data-input-node-id]")
+    : null;
+}
+
+/** A drop only fits a row the node actually publishes for that input slot. */
+function artifactDropTargetFitsNode(
+  target: ArtifactDropTarget,
+  data: WorkflowNodeData,
+  port: Port,
+): boolean {
+  if (!portHasInstancePlugs(port)) return target.plugId === null;
+  if (!target.plugId) return false;
+  return data.inputPlugs.some(
+    (plug) => plug.id === target.plugId && plug.portName === port.name,
+  );
 }
 
 interface PendingBoundEdge {
@@ -2480,6 +2511,52 @@ function WorkbenchBody({
     [applyAuthoringCommands],
   );
 
+  const dragOverArtifactDrop = React.useCallback(
+    (event: React.DragEvent<HTMLElement>) => {
+      if (!isArtifactDrop(event.dataTransfer)) return;
+      const row = artifactDropRowAt(event);
+      if (!row) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    [],
+  );
+
+  const dropArtifact = React.useCallback(
+    (event: React.DragEvent<HTMLElement>) => {
+      if (!isArtifactDrop(event.dataTransfer)) return;
+      const row = artifactDropRowAt(event);
+      if (!row) return;
+      event.preventDefault();
+      const payload = readArtifactDrop(event.dataTransfer);
+      const target = artifactDropTargetFromRow(row);
+      if (!payload || !target) return;
+      // Read the graph at drop time: a drag captures its state when it starts,
+      // so acting on that snapshot would miss an earlier drop.
+      const node = nodesRef.current.find(
+        (candidate) => candidate.id === target.nodeId,
+      );
+      if (!node || !workflowNodeIsSupported(node.data)) return;
+      const port = node.data.spec.inputs.find(
+        (candidate) => candidate.name === target.portName,
+      );
+      if (!port || !artifactDropTargetFitsNode(target, node.data, port)) return;
+      const commands = artifactDropCommands(
+        payload,
+        target,
+        port,
+        node.data.artifactTypeBindings,
+        {
+          edges: edgesRef.current,
+          origins: authoredDocumentRef.current.origins,
+          conversions: registry?.artifact_conversions ?? [],
+        },
+      );
+      if (commands?.length) applyAuthoringCommands(commands);
+    },
+    [applyAuthoringCommands, registry?.artifact_conversions],
+  );
+
   const addWorkflowEdge = React.useCallback(
     (
       connection: Connection,
@@ -3938,6 +4015,8 @@ function WorkbenchBody({
       <section
         {...stylex.props(s.canvas)}
         aria-label="Workflow canvas"
+        onDragOver={dragOverArtifactDrop}
+        onDrop={dropArtifact}
         onPointerMove={(event) => {
           if (!graphRoom.canPublishPresence || !flow) return;
           presenceOverCanvasRef.current = true;

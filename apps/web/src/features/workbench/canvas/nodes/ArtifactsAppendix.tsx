@@ -19,6 +19,7 @@ import {
   rendererFor,
 } from "./artifact-renderers";
 import { schemaTypeLabel } from "./type-inspector";
+import { writeArtifactDrop } from "../../model/artifact-drop";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 const EAGER_JSON_PREVIEW_BYTE_LIMIT = 512 * 1_024;
@@ -651,7 +652,13 @@ export function ArtifactPortPreview({
       `This JSON artifact is not loaded automatically (${sizeMegabytes} MB).`;
   }
   return (
-    <section {...stylex.props(s.section)}>
+    <section
+      draggable
+      onDragStart={(event) => {
+        writeArtifactDrop(event.dataTransfer, output.value);
+      }}
+      {...stylex.props(s.section)}
+    >
       <div {...stylex.props(s.headRow)}>
         <span {...stylex.props(s.headTitle)}>{output.port}</span>
         <span {...stylex.props(s.kindBadge)}>

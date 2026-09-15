@@ -358,7 +358,7 @@ function artifactTypeMatches(
   return artifactType.id === id && artifactType.schema_version === schemaVersion;
 }
 
-function artifactTypeKey(
+export function artifactTypeKey(
   artifactType: { id: string; schema_version: number },
 ): string {
   return `${artifactType.id}@${artifactType.schema_version}`;
@@ -454,7 +454,7 @@ function shortestConversionPaths(
   return [];
 }
 
-function shortestConversionPathsToAny(
+export function shortestConversionPathsToAny(
   source: { id: string; schema_version: number },
   targets: readonly { id: string; schema_version: number }[],
   conversions: readonly ArtifactConversionSpec[],
