@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from grafy_core.artifacts import LibraryProvenance
 from grafy_core.domain.artifact_outputs import (
     ArtifactOutputValue,
     artifact_outputs_from_storage,
@@ -117,4 +118,13 @@ class ArtifactOutputsType(
 
 class SavedGraphDocumentType(PydanticJSONType[SavedGraphDocument]):
     model_type = SavedGraphDocument
+    cache_ok = True
+
+
+class LibraryProvenanceType(PydanticJSONType[LibraryProvenance]):
+    # Absent provenance must be SQL NULL. The JSON impl otherwise stores Python
+    # None as the JSON literal `null`, which would make every artifact look like
+    # a Library item to `library_provenance IS NOT NULL`.
+    impl = JSON(none_as_null=True)
+    model_type = LibraryProvenance
     cache_ok = True

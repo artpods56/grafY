@@ -24,6 +24,7 @@ const document: AuthoredGraphDocument = {
     },
   ],
   edges: [],
+  origins: [],
 };
 
 const head: CollaborativeHead = {
@@ -35,9 +36,10 @@ const head: CollaborativeHead = {
   name: "Demo",
   updated_at: "2026-08-07T12:00:00Z",
   document: {
-    schema_version: 6,
+    schema_version: 7,
     nodes: document.nodes,
-    edges: []
+    edges: [],
+    origins: []
   }
 };
 
@@ -162,7 +164,7 @@ describe("room-command-bridge", () => {
     const room = toRoomGraphCommand(
       {
         kind: "replace_document",
-        document: { name: "Replacement", nodes: [scopedNode], edges: [] },
+        document: { name: "Replacement", nodes: [scopedNode], edges: [], origins: [] },
       },
       document,
     );
@@ -219,9 +221,10 @@ describe("room-command-bridge", () => {
     const room = toRoomReplaceDocumentCommand({
       name: "Replacement",
       document: {
-        schema_version: 6,
+        schema_version: 7,
         nodes: [scopedNode],
         edges: [],
+        origins: [],
         presentation: {
           viewers: [],
           links: [],
@@ -235,7 +238,7 @@ describe("room-command-bridge", () => {
       kind: "replace_document",
       name: "Replacement",
       document: {
-        schema_version: 6,
+        schema_version: 7,
         nodes: [
           {
             artifact_type_bindings: [
@@ -260,6 +263,7 @@ describe("room-command-bridge", () => {
           },
         ],
         edges: [],
+        origins: [],
         presentation: {
           viewers: [],
           links: [],
@@ -281,7 +285,7 @@ describe("room-command-bridge", () => {
           revision: 12,
         },
       },
-      { name: "Demo", nodes: [scopedNode], edges: [] },
+      { name: "Demo", nodes: [scopedNode], edges: [], origins: [] },
     );
 
     expect(room).toEqual({
@@ -341,7 +345,7 @@ describe("room-command-bridge", () => {
           revision: 12,
         },
       },
-      { name: "Demo", nodes: [scopedNode], edges: [] },
+      { name: "Demo", nodes: [scopedNode], edges: [], origins: [] },
     );
     if (!room) throw new Error("Expected Plugin upgrade command");
 
@@ -383,6 +387,84 @@ describe("room-command-bridge", () => {
     });
   });
 
+  it("maps origin commands through the room protocol in both directions", () => {
+    const origin = {
+      id: "origin-1",
+      to_node: "a",
+      to_port: "input",
+      to_plug: null,
+      value: {
+        artifact_id: "00000000-0000-4000-8000-000000000001",
+        artifact_type: "scalar.text",
+        schema_version: 1,
+      },
+      conversion_path: [],
+    };
+    const withOrigin = { ...document, origins: [origin] };
+
+    expect(toRoomGraphCommand({ kind: "add_origin", origin }, document)).toEqual({
+      kind: "add_origin",
+      origin,
+    });
+    expect(toLocalGraphCommand({ kind: "add_origin", origin })).toEqual({
+      kind: "add_origin",
+      origin,
+    });
+    expect(
+      toRoomGraphCommand(
+        {
+          kind: "update_origin",
+          origin_id: "origin-1",
+          update: { to_plug: "plug-1" },
+        },
+        withOrigin,
+      ),
+    ).toEqual({
+      kind: "update_origin",
+      expected_origin: origin,
+      origin: { ...origin, to_plug: "plug-1" },
+    });
+    expect(
+      toLocalGraphCommand({
+        kind: "update_origin",
+        expected_origin: origin,
+        origin: { ...origin, to_port: "other" },
+      }),
+    ).toEqual({
+      kind: "update_origin",
+      origin_id: "origin-1",
+      update: {
+        to_node: "a",
+        to_port: "other",
+        to_plug: null,
+        value: origin.value,
+        conversion_path: [],
+      },
+    });
+    expect(
+      toRoomGraphCommand(
+        {
+          kind: "update_origin",
+          origin_id: "missing-origin",
+          update: { to_port: "other" },
+        },
+        document,
+      ),
+    ).toBeNull();
+    expect(
+      toRoomGraphCommand(
+        { kind: "remove_origins", origin_ids: ["origin-1"] },
+        withOrigin,
+      ),
+    ).toEqual({ kind: "remove_origins", origin_ids: ["origin-1"] });
+    expect(
+      toLocalGraphCommand({
+        kind: "remove_origins",
+        origin_ids: ["origin-1"],
+      }),
+    ).toEqual({ kind: "remove_origins", origin_ids: ["origin-1"] });
+  });
+
   it("applies accepted move_nodes onto the collaborative head", () => {
     const next = applyRoomCommandToHead(
       head,
@@ -403,9 +485,10 @@ describe("room-command-bridge", () => {
         kind: "replace_document",
         name: "Replaced",
         document: {
-          schema_version: 6,
+          schema_version: 7,
           nodes: [],
           edges: [],
+          origins: [],
         },
       },
       5,

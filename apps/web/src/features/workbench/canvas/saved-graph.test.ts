@@ -118,7 +118,8 @@ function graphWithEdge(
     created_at: "2026-07-15T12:00:00Z",
     updated_at: "2026-07-15T12:00:00Z",
     document: {
-      schema_version: 6,
+      schema_version: 7,
+      origins: [],
       nodes: [
         {
           id: "source-node",
@@ -663,7 +664,8 @@ function graphWithCollectPlugs(): SavedGraph {
     created_at: "2026-07-15T12:00:00Z",
     updated_at: "2026-07-15T12:00:00Z",
     document: {
-      schema_version: 6,
+      schema_version: 7,
+      origins: [],
       nodes: [
         {
           id: "source-node",
@@ -815,7 +817,8 @@ function graphWithGenericCollectBinding(): SavedGraph {
     created_at: "2026-07-15T12:00:00Z",
     updated_at: "2026-07-15T12:00:00Z",
     document: {
-      schema_version: 6,
+      schema_version: 7,
+      origins: [],
       nodes: [
         {
           id: "source-node",
@@ -1027,7 +1030,8 @@ describe("saved graph module nodes", () => {
       created_at: "2026-07-16T12:00:00Z",
       updated_at: "2026-07-16T12:00:00Z",
       document: {
-        schema_version: 6,
+        schema_version: 7,
+        origins: [],
         nodes: [
           {
             id: "images",

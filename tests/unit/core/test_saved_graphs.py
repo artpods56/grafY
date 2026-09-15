@@ -5,7 +5,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
+from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
 from grafy_core.domain.errors import SavedGraphRevisionConflictError
 from grafy_core.domain.plugin_releases import PluginReleaseScope
 from grafy_core.domain.saved_graphs import (
@@ -17,14 +17,15 @@ from grafy_core.domain.saved_graphs import (
     SavedGraph,
     SavedGraphAnnotationLayout,
     SavedGraphArtifactTypeBinding,
+    SavedGraphConversion,
     SavedGraphDocument,
     SavedGraphEdge,
     SavedGraphInputPlug,
     SavedGraphNode,
     SavedGraphNodeLayout,
+    SavedGraphOrigin,
     SavedGraphPluginReleasePin,
 )
-
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -63,6 +64,26 @@ def _edge(
         from_port="result",
         to_node=to_node,
         to_port="value",
+    )
+
+
+def _origin(
+    origin_id: str = "origin",
+    *,
+    to_node: str = "target",
+    to_port: str = "value",
+    to_plug: str | None = None,
+) -> SavedGraphOrigin:
+    return SavedGraphOrigin(
+        id=origin_id,
+        to_node=to_node,
+        to_port=to_port,
+        to_plug=to_plug,
+        value=ArtifactRef(
+            artifact_id=UUID("00000000-0000-0000-0000-000000000401"),
+            artifact_type="image.raster",
+            schema_version=1,
+        ),
     )
 
 
@@ -123,7 +144,7 @@ def test_saved_graph_document_requires_current_schema_version() -> None:
         )
     )
 
-    assert document.schema_version == 6
+    assert document.schema_version == 7
     assert document.nodes[0].artifact_type_binding_map() == {
         "T": ArtifactTypeKey("example.value", 2)
     }
@@ -239,7 +260,7 @@ def test_artifact_card_reference_round_trips_without_a_link() -> None:
 
     payload = document.model_dump(mode="json")
 
-    assert payload["schema_version"] == 6
+    assert payload["schema_version"] == 7
     assert payload["presentation"]["viewers"][0]["artifact_ref"] == {
         "artifact_id": "00000000-0000-0000-0000-0000000000aa",
         "artifact_type": "table.data",
@@ -540,6 +561,146 @@ def test_saved_graph_document_rejects_edges_to_missing_nodes(
         SavedGraphDocument(
             nodes=(_node("source"), _node("target")),
             edges=(edge,),
+        )
+
+
+def test_saved_graph_document_reads_version_six_with_empty_origins() -> None:
+    document = SavedGraphDocument.model_validate(
+        {
+            "schema_version": 6,
+            "nodes": [_node("source").model_dump(mode="json")],
+            "edges": [],
+        }
+    )
+
+    assert document.schema_version == 7
+    assert document.origins == ()
+
+
+def test_saved_graph_origin_round_trips_an_exact_reference() -> None:
+    origin = _origin().model_copy(
+        update={"conversion_path": (SavedGraphConversion(id="as-text", version=1),)}
+    )
+    document = SavedGraphDocument(
+        nodes=(_node("target"),),
+        origins=(origin,),
+    )
+
+    payload = document.model_dump(mode="json")
+
+    assert payload["origins"][0]["value"]["artifact_type"] == "image.raster"
+    assert payload["origins"][0]["conversion_path"] == [
+        {"id": "as-text", "version": 1}
+    ]
+    assert SavedGraphDocument.model_validate(payload).origins[0].value == origin.value
+
+
+def test_saved_graph_origin_accepts_an_artifact_ref_sequence() -> None:
+    sequence = ArtifactRefSequence(
+        artifact_type="image.raster",
+        schema_version=1,
+        item_refs=[
+            ArtifactRef(
+                artifact_id=UUID("00000000-0000-0000-0000-000000000401"),
+                artifact_type="image.raster",
+                schema_version=1,
+            )
+        ],
+    )
+
+    origin = SavedGraphOrigin(
+        id="origin",
+        to_node="target",
+        to_port="value",
+        value=sequence,
+    )
+
+    assert isinstance(origin.value, ArtifactRefSequence)
+
+
+def test_saved_graph_document_requires_unique_origin_ids() -> None:
+    with pytest.raises(ValidationError, match="origin ids must be unique"):
+        SavedGraphDocument(
+            nodes=(_node("target"),),
+            origins=(_origin(), _origin()),
+        )
+
+
+def test_saved_graph_document_requires_origins_to_reference_existing_nodes() -> None:
+    with pytest.raises(ValidationError, match="missing target node absent"):
+        SavedGraphDocument(
+            nodes=(_node("target"),),
+            origins=(_origin(to_node="absent"),),
+        )
+
+
+def test_saved_graph_document_requires_origin_plug_to_exist_and_match_port() -> None:
+    target = _node(
+        "target",
+        input_plugs=(SavedGraphInputPlug(id="item", port="items"),),
+    )
+
+    with pytest.raises(ValidationError, match="missing input plug absent"):
+        SavedGraphDocument(
+            nodes=(target,),
+            origins=(_origin(to_port="items", to_plug="absent"),),
+        )
+
+    with pytest.raises(ValidationError, match="belongs to port items"):
+        SavedGraphDocument(
+            nodes=(target,),
+            origins=(_origin(to_port="value", to_plug="item"),),
+        )
+
+
+def test_saved_graph_document_allows_one_origin_per_input_slot() -> None:
+    target = _node(
+        "target",
+        input_plugs=(SavedGraphInputPlug(id="item", port="items"),),
+    )
+    origin = _origin(to_port="items", to_plug="item")
+
+    document = SavedGraphDocument(nodes=(target,), origins=(origin,))
+
+    assert document.origins == (origin,)
+
+    with pytest.raises(ValidationError, match="already satisfied"):
+        SavedGraphDocument(
+            nodes=(target,),
+            origins=(origin, origin.model_copy(update={"id": "second"})),
+        )
+
+
+def test_saved_graph_document_origin_conflicts_with_enabled_edge_only() -> None:
+    target = _node(
+        "target",
+        input_plugs=(SavedGraphInputPlug(id="item", port="items"),),
+    )
+    origin = _origin(to_port="items", to_plug="item")
+    edge = _edge("plugged").model_copy(
+        update={"to_port": "items", "to_plug": "item"}
+    )
+
+    disabled_edge_document = SavedGraphDocument(
+        nodes=(_node("source"), target),
+        edges=(edge.model_copy(update={"enabled": False}),),
+        origins=(origin,),
+    )
+    assert disabled_edge_document.origins == (origin,)
+
+    with pytest.raises(ValidationError, match="already satisfied"):
+        SavedGraphDocument(
+            nodes=(_node("source"), target),
+            edges=(edge,),
+            origins=(origin,),
+        )
+
+
+def test_saved_graph_document_rejects_two_origins_on_one_unplugged_port() -> None:
+    with pytest.raises(ValidationError, match="already satisfied"):
+        SavedGraphDocument(
+            nodes=(_node("target"),),
+            origins=(_origin("first"), _origin("second")),
         )
 
 

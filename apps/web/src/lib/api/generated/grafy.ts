@@ -799,6 +799,57 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/library/artifacts": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Library Artifacts */
+        readonly get: operations["list_library_artifacts_v1_workspaces__workspace_id__library_artifacts_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/library/artifacts/from-run": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Save Library Artifact From Run */
+        readonly post: operations["save_library_artifact_from_run_v1_workspaces__workspace_id__library_artifacts_from_run_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/library/artifacts/from-upload": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Save Library Artifact From Upload */
+        readonly post: operations["save_library_artifact_from_upload_v1_workspaces__workspace_id__library_artifacts_from_upload_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/members": {
         readonly parameters: {
             readonly query?: never;
@@ -1131,6 +1182,15 @@ export interface components {
             readonly kind: "add_node";
             readonly node: components["schemas"]["SavedGraphNode"];
         };
+        /** AddOriginCommand */
+        readonly AddOriginCommand: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "add_origin";
+            readonly origin: components["schemas"]["SavedGraphOrigin"];
+        };
         /** ArtifactBundleContractResponse */
         readonly ArtifactBundleContractResponse: {
             /**
@@ -1273,8 +1333,11 @@ export interface components {
         /** ArtifactTypeSpecResponse */
         readonly ArtifactTypeSpecResponse: {
             readonly bundle: components["schemas"]["ArtifactBundleContractResponse"];
+            readonly confirmation_rule?: components["schemas"]["ConfirmationRuleResponse"];
             /** Export Formats */
             readonly export_formats?: readonly components["schemas"]["ArtifactExportFormatResponse"][];
+            /** Extensions */
+            readonly extensions?: readonly string[];
             /** Field Projections */
             readonly field_projections: readonly components["schemas"]["FieldProjectionResponse"][];
             readonly key: components["schemas"]["ArtifactTypeKeyResponse"];
@@ -1375,6 +1438,8 @@ export interface components {
             readonly name: string;
             /** Nodes */
             readonly nodes: readonly components["schemas"]["SavedGraphNodeModel"][];
+            /** Origins */
+            readonly origins?: readonly components["schemas"]["SavedGraphOriginModel"][];
             readonly presentation?: components["schemas"]["GraphPresentationDocumentModel"];
             /**
              * Room Epoch
@@ -1401,6 +1466,17 @@ export interface components {
              * Format: password
              */
             readonly value: string;
+        };
+        /** ConfirmationRuleResponse */
+        readonly ConfirmationRuleResponse: {
+            /**
+             * Rule
+             * @default none
+             * @enum {string}
+             */
+            readonly rule: "magic" | "json" | "json_document" | "none";
+            /** Signatures */
+            readonly signatures?: readonly (readonly components["schemas"]["MagicSegmentResponse"][])[];
         };
         /** CopyExactHeadRequest */
         readonly CopyExactHeadRequest: {
@@ -2260,6 +2336,77 @@ export interface components {
             /** Name */
             readonly name: string;
         };
+        /** LibraryItemResponse */
+        readonly LibraryItemResponse: {
+            readonly artifact: components["schemas"]["ArtifactSummaryResponse"];
+            /** Name */
+            readonly name: string;
+            readonly provenance: components["schemas"]["LibraryProvenanceResponse"];
+            readonly run?: components["schemas"]["LibraryRunResponse"] | null;
+        };
+        /** LibraryListResponse */
+        readonly LibraryListResponse: {
+            /** Items */
+            readonly items: readonly components["schemas"]["LibraryItemResponse"][];
+        };
+        /**
+         * LibraryProvenanceResponse
+         * @description The birth record frozen when the artifact entered the Library.
+         */
+        readonly LibraryProvenanceResponse: {
+            /** Execution Id */
+            readonly execution_id?: string | null;
+            /** Graph Id */
+            readonly graph_id?: string | null;
+            /** Graph Revision */
+            readonly graph_revision?: number | null;
+            /** Graph Title */
+            readonly graph_title?: string | null;
+            /** Node Id */
+            readonly node_id?: string | null;
+            /** Node Title */
+            readonly node_title?: string | null;
+            /** Original Filename */
+            readonly original_filename?: string | null;
+            /**
+             * Saved At
+             * Format: date-time
+             */
+            readonly saved_at: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            readonly source: "run" | "upload";
+        };
+        /**
+         * LibraryRunResponse
+         * @description The retained run behind a run-sourced Library item.
+         *
+         *     Present only while execution history still holds the run, which is exactly
+         *     when the item can link back to it.
+         */
+        readonly LibraryRunResponse: {
+            /**
+             * Execution Id
+             * Format: uuid
+             */
+            readonly execution_id: string;
+            /** Finished At */
+            readonly finished_at?: string | null;
+            /**
+             * Graph Id
+             * Format: uuid
+             */
+            readonly graph_id: string;
+        };
+        /** MagicSegmentResponse */
+        readonly MagicSegmentResponse: {
+            /** Offset */
+            readonly offset: number;
+            /** Value */
+            readonly value: string;
+        };
         /** ModuleListResponse */
         readonly ModuleListResponse: {
             /** Modules */
@@ -2646,6 +2793,8 @@ export interface components {
         readonly PortResponse: {
             /** Accepted Shapes */
             readonly accepted_shapes: readonly components["schemas"]["PortShape"][];
+            /** Also Accepts */
+            readonly also_accepts?: readonly components["schemas"]["ArtifactTypeKeyResponse"][];
             readonly artifact_type?: components["schemas"]["ArtifactTypeKeyResponse"] | null;
             /** Artifact Type Variable */
             readonly artifact_type_variable?: string | null;
@@ -2715,6 +2864,16 @@ export interface components {
             readonly kind: "remove_nodes";
             /** Node Ids */
             readonly node_ids: readonly string[];
+        };
+        /** RemoveOriginsCommand */
+        readonly RemoveOriginsCommand: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "remove_origins";
+            /** Origin Ids */
+            readonly origin_ids: readonly string[];
         };
         /** RenameGraphCommand */
         readonly RenameGraphCommand: {
@@ -2966,13 +3125,18 @@ export interface components {
              * @default []
              */
             readonly nodes: readonly components["schemas"]["SavedGraphNode"][];
+            /**
+             * Origins
+             * @default []
+             */
+            readonly origins: readonly components["schemas"]["SavedGraphOrigin"][];
             readonly presentation?: components["schemas"]["GraphPresentationDocument"];
             /**
              * Schema Version
-             * @default 6
+             * @default 7
              * @constant
              */
-            readonly schema_version: 6;
+            readonly schema_version: 7;
         };
         /** SavedGraphEdge */
         readonly SavedGraphEdge: {
@@ -3139,6 +3303,42 @@ export interface components {
             readonly position: components["schemas"]["GraphPointModel"];
         };
         /**
+         * SavedGraphOrigin
+         * @description Exact artifact value held on one node input with no incoming edge.
+         */
+        readonly SavedGraphOrigin: {
+            /**
+             * Conversion Path
+             * @default []
+             */
+            readonly conversion_path: readonly components["schemas"]["SavedGraphConversion"][];
+            /** Id */
+            readonly id: string;
+            /** To Node */
+            readonly to_node: string;
+            /** To Plug */
+            readonly to_plug?: string | null;
+            /** To Port */
+            readonly to_port: string;
+            /** Value */
+            readonly value: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"];
+        };
+        /** SavedGraphOriginModel */
+        readonly SavedGraphOriginModel: {
+            /** Conversion Path */
+            readonly conversion_path?: readonly components["schemas"]["SavedGraphConversionModel"][];
+            /** Id */
+            readonly id: string;
+            /** To Node */
+            readonly to_node: string;
+            /** To Plug */
+            readonly to_plug?: string | null;
+            /** To Port */
+            readonly to_port: string;
+            /** Value */
+            readonly value: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"];
+        };
+        /**
          * SavedGraphPluginReleasePin
          * @description Exact scoped Plugin release identity pinned on one graph node.
          *
@@ -3207,6 +3407,33 @@ export interface components {
              */
             readonly updated_at: string;
         };
+        /** SaveRunArtifactRequest */
+        readonly SaveRunArtifactRequest: {
+            /**
+             * Artifact Id
+             * Format: uuid
+             */
+            readonly artifact_id: string;
+            /**
+             * Execution Id
+             * Format: uuid
+             */
+            readonly execution_id: string;
+            /** Node Id */
+            readonly node_id: string;
+            /** Node Title */
+            readonly node_title: string;
+        };
+        /** SaveUploadedArtifactRequest */
+        readonly SaveUploadedArtifactRequest: {
+            /**
+             * Artifact Id
+             * Format: uuid
+             */
+            readonly artifact_id: string;
+            /** Original Filename */
+            readonly original_filename: string;
+        };
         /** SessionResponse */
         readonly SessionResponse: {
             /**
@@ -3269,7 +3496,7 @@ export interface components {
         /** SubmitGraphCommandRequest */
         readonly SubmitGraphCommandRequest: {
             /** Command */
-            readonly command: components["schemas"]["RenameGraphCommand"] | components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["UpdateNodePluginReleaseCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"];
+            readonly command: components["schemas"]["RenameGraphCommand"] | components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["UpdateNodePluginReleaseCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["AddOriginCommand"] | components["schemas"]["UpdateOriginCommand"] | components["schemas"]["RemoveOriginsCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"];
             /**
              * Command Id
              * Format: uuid
@@ -3564,6 +3791,16 @@ export interface components {
             /** Node Id */
             readonly node_id: string;
             readonly plugin_release_pin: components["schemas"]["SavedGraphPluginReleasePin"];
+        };
+        /** UpdateOriginCommand */
+        readonly UpdateOriginCommand: {
+            readonly expected_origin: components["schemas"]["SavedGraphOrigin"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "update_origin";
+            readonly origin: components["schemas"]["SavedGraphOrigin"];
         };
         /** UpdateSavedGraphRequest */
         readonly UpdateSavedGraphRequest: {
@@ -6014,6 +6251,107 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly list_library_artifacts_v1_workspaces__workspace_id__library_artifacts_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["LibraryListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly save_library_artifact_from_run_v1_workspaces__workspace_id__library_artifacts_from_run_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SaveRunArtifactRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["LibraryItemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly save_library_artifact_from_upload_v1_workspaces__workspace_id__library_artifacts_from_upload_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SaveUploadedArtifactRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["LibraryItemResponse"];
+                };
             };
             /** @description Validation Error */
             readonly 422: {

@@ -1,15 +1,17 @@
 from collections.abc import Collection
 from typing import override
 from uuid import UUID
+
+from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey
+from grafy_core.domain.staged_uploads import StagedUpload
+from grafy_core.ports.artifacts import ArtifactRepositoryPort
+from grafy_core.ports.staged_uploads import StagedUploadRepositoryPort
 from sqlalchemy import (
     delete,
     select,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey
-from grafy_core.ports.artifacts import ArtifactRepositoryPort
-from grafy_core.domain.staged_uploads import StagedUpload
-from grafy_core.ports.staged_uploads import StagedUploadRepositoryPort
+
 from grafy_persistence import schema
 
 
@@ -71,6 +73,18 @@ class SqlArtifactRepository(ArtifactRepositoryPort):
                 schema.artifact_objects.c.artifact_type == key.id,
                 schema.artifact_objects.c.schema_version == key.schema_version,
                 schema.artifact_objects.c.workspace_id == workspace_id,
+            )
+            .order_by(schema.artifact_objects.c.id.asc())
+        )
+        return list(result)
+
+    @override
+    async def list_library(self, workspace_id: UUID) -> list[ArtifactObject]:
+        result = await self._session.scalars(
+            select(ArtifactObject)
+            .where(
+                schema.artifact_objects.c.workspace_id == workspace_id,
+                schema.artifact_objects.c.library_provenance.is_not(None),
             )
             .order_by(schema.artifact_objects.c.id.asc())
         )

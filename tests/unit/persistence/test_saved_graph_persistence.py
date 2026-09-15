@@ -23,15 +23,14 @@ from grafy_core.domain.saved_graphs import (
     SavedGraphEdge,
     SavedGraphInputPlug,
     SavedGraphNode,
+    SavedGraphOrigin,
     SavedGraphProjection,
     SavedGraphRevision,
     UserGraphState,
 )
-
 from grafy_persistence.database import Database, create_database
 from grafy_persistence.orm import metadata
 from grafy_persistence.unit_of_work import SqlAlchemySavedGraphUnitOfWork
-
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000001")
 OTHER_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000002")
@@ -112,6 +111,21 @@ def _document(label: str = "draft") -> SavedGraphDocument:
                     ),
                 ),
                 route_offset=GraphPoint(x=4.0, y=-8.0),
+            ),
+        ),
+        origins=(
+            SavedGraphOrigin(
+                id="target-fallback",
+                to_node="target",
+                to_port="fallback",
+                value=ArtifactRef(
+                    artifact_id=UUID("00000000-0000-0000-0000-0000000000a1"),
+                    artifact_type="scalar.text",
+                    schema_version=1,
+                ),
+                conversion_path=(
+                    SavedGraphConversion(id="example.text.normalize", version=2),
+                ),
             ),
         ),
     )
@@ -285,7 +299,7 @@ async def test_file_backed_sqlite_round_trips_an_artifact_card_reference(
 
     assert loaded is not None
     assert loaded.document.presentation.viewers[0].artifact_ref == reference
-    assert loaded.document.schema_version == 6
+    assert loaded.document.schema_version == 7
 
 
 @pytest.mark.asyncio
@@ -350,7 +364,7 @@ async def test_sql_json_loads_then_updates_current_documents_in_a_fresh_session(
     async with SqlAlchemySavedGraphUnitOfWork(database.sessions) as unit_of_work:
         loaded = await unit_of_work.graphs.get(WORKSPACE_ID, graph_id)
         assert loaded is not None
-        assert loaded.document.schema_version == 6
+        assert loaded.document.schema_version == 7
         assert loaded.document.edges[0].conversion_path == (
             SavedGraphConversion(id="example.text.normalize", version=2),
         )
@@ -383,7 +397,7 @@ async def test_sql_json_loads_then_updates_current_documents_in_a_fresh_session(
         )
     assert isinstance(raw_document, str)
     stored_document = json.loads(raw_document)
-    assert stored_document["schema_version"] == 6
+    assert stored_document["schema_version"] == 7
     assert "conversion" not in stored_document["edges"][0]
     assert stored_document["edges"][0]["conversion_path"] == [
         {"id": "example.text.normalize", "version": 2}
@@ -395,7 +409,7 @@ async def test_sql_json_loads_then_updates_current_documents_in_a_fresh_session(
     assert reloaded is not None
     assert reloaded.name == "Updated graph"
     assert reloaded.revision == 2
-    assert reloaded.document.schema_version == 6
+    assert reloaded.document.schema_version == 7
     assert reloaded.document.nodes[1].artifact_type_binding_map() == {
         "T": ArtifactTypeKey("scalar.text", 1)
     }

@@ -1,7 +1,15 @@
 from typing import Annotated, ClassVar, override
 
 import pytest
-
+from grafy_client import (
+    CatalogConversion,
+    CatalogConversionKey,
+    CatalogNode,
+    CatalogPort,
+    GraphBuilder,
+    GraphBuilderError,
+    NodeCatalog,
+)
 from grafy_core.artifacts import (
     ArtifactRef,
     ArtifactRefSequence,
@@ -25,17 +33,6 @@ from grafy_core.nodes import (
     OutPort,
     PortShape,
 )
-
-from grafy_client import (
-    CatalogConversion,
-    CatalogConversionKey,
-    CatalogNode,
-    CatalogPort,
-    GraphBuilder,
-    GraphBuilderError,
-    NodeCatalog,
-)
-
 
 TEXT = ArtifactTypeKey("scalar.text", 1)
 MARKDOWN = ArtifactTypeKey("text.markdown", 1)
@@ -294,7 +291,7 @@ def test_builder_adds_typed_builtin_node_without_a_plugin_pin() -> None:
 
     assert text.node_id == "node-0001-text-input"
     assert document.model_dump(mode="json") == {
-        "schema_version": 6,
+        "schema_version": 7,
         "nodes": [
             {
                 "kind": "builtin",
@@ -310,6 +307,7 @@ def test_builder_adds_typed_builtin_node_without_a_plugin_pin() -> None:
             }
         ],
         "edges": [],
+        "origins": [],
         "presentation": {
             "viewers": [],
             "links": [],

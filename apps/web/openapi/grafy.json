@@ -39,6 +39,25 @@
         "title": "AddNodeCommand",
         "type": "object"
       },
+      "AddOriginCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "add_origin",
+            "default": "add_origin",
+            "title": "Kind",
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/SavedGraphOrigin"
+          }
+        },
+        "required": [
+          "origin"
+        ],
+        "title": "AddOriginCommand",
+        "type": "object"
+      },
       "ArtifactBundleContractResponse": {
         "properties": {
           "format": {
@@ -416,11 +435,21 @@
           "bundle": {
             "$ref": "#/components/schemas/ArtifactBundleContractResponse"
           },
+          "confirmation_rule": {
+            "$ref": "#/components/schemas/ConfirmationRuleResponse"
+          },
           "export_formats": {
             "items": {
               "$ref": "#/components/schemas/ArtifactExportFormatResponse"
             },
             "title": "Export Formats",
+            "type": "array"
+          },
+          "extensions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Extensions",
             "type": "array"
           },
           "field_projections": {
@@ -662,6 +691,13 @@
             "title": "Nodes",
             "type": "array"
           },
+          "origins": {
+            "items": {
+              "$ref": "#/components/schemas/SavedGraphOriginModel"
+            },
+            "title": "Origins",
+            "type": "array"
+          },
           "presentation": {
             "$ref": "#/components/schemas/GraphPresentationDocumentModel"
           },
@@ -718,6 +754,33 @@
           "expected_graph_revision"
         ],
         "title": "ConfigureNodeSecretRequest",
+        "type": "object"
+      },
+      "ConfirmationRuleResponse": {
+        "properties": {
+          "rule": {
+            "default": "none",
+            "enum": [
+              "magic",
+              "json",
+              "json_document",
+              "none"
+            ],
+            "title": "Rule",
+            "type": "string"
+          },
+          "signatures": {
+            "items": {
+              "items": {
+                "$ref": "#/components/schemas/MagicSegmentResponse"
+              },
+              "type": "array"
+            },
+            "title": "Signatures",
+            "type": "array"
+          }
+        },
+        "title": "ConfirmationRuleResponse",
         "type": "object"
       },
       "CopyExactHeadRequest": {
@@ -3212,6 +3275,207 @@
         "title": "InstantiateTemplateRequest",
         "type": "object"
       },
+      "LibraryItemResponse": {
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/ArtifactSummaryResponse"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/LibraryProvenanceResponse"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryRunResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "artifact",
+          "name",
+          "provenance"
+        ],
+        "title": "LibraryItemResponse",
+        "type": "object"
+      },
+      "LibraryListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "LibraryListResponse",
+        "type": "object"
+      },
+      "LibraryProvenanceResponse": {
+        "description": "The birth record frozen when the artifact entered the Library.",
+        "properties": {
+          "execution_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Id"
+          },
+          "graph_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph Id"
+          },
+          "graph_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph Revision"
+          },
+          "graph_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph Title"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "node_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Title"
+          },
+          "original_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename"
+          },
+          "saved_at": {
+            "format": "date-time",
+            "title": "Saved At",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "run",
+              "upload"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "saved_at"
+        ],
+        "title": "LibraryProvenanceResponse",
+        "type": "object"
+      },
+      "LibraryRunResponse": {
+        "description": "The retained run behind a run-sourced Library item.\n\nPresent only while execution history still holds the run, which is exactly\nwhen the item can link back to it.",
+        "properties": {
+          "execution_id": {
+            "format": "uuid",
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "graph_id": {
+            "format": "uuid",
+            "title": "Graph Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution_id",
+          "graph_id"
+        ],
+        "title": "LibraryRunResponse",
+        "type": "object"
+      },
+      "MagicSegmentResponse": {
+        "properties": {
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "offset",
+          "value"
+        ],
+        "title": "MagicSegmentResponse",
+        "type": "object"
+      },
       "ModuleListResponse": {
         "properties": {
           "modules": {
@@ -4291,6 +4555,13 @@
             "title": "Accepted Shapes",
             "type": "array"
           },
+          "also_accepts": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactTypeKeyResponse"
+            },
+            "title": "Also Accepts",
+            "type": "array"
+          },
           "artifact_type": {
             "anyOf": [
               {
@@ -4481,6 +4752,30 @@
           "node_ids"
         ],
         "title": "RemoveNodesCommand",
+        "type": "object"
+      },
+      "RemoveOriginsCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "remove_origins",
+            "default": "remove_origins",
+            "title": "Kind",
+            "type": "string"
+          },
+          "origin_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Origin Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "origin_ids"
+        ],
+        "title": "RemoveOriginsCommand",
         "type": "object"
       },
       "RenameGraphCommand": {
@@ -5058,6 +5353,61 @@
         "title": "SampleRequest",
         "type": "object"
       },
+      "SaveRunArtifactRequest": {
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "execution_id": {
+            "format": "uuid",
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "node_title": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Node Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "execution_id",
+          "node_id",
+          "node_title"
+        ],
+        "title": "SaveRunArtifactRequest",
+        "type": "object"
+      },
+      "SaveUploadedArtifactRequest": {
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "original_filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Original Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "original_filename"
+        ],
+        "title": "SaveUploadedArtifactRequest",
+        "type": "object"
+      },
       "SavedGraphAnnotationLayout": {
         "additionalProperties": false,
         "description": "Axis-aligned size for a presentation annotation on the canvas.",
@@ -5188,12 +5538,20 @@
             "title": "Nodes",
             "type": "array"
           },
+          "origins": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SavedGraphOrigin"
+            },
+            "title": "Origins",
+            "type": "array"
+          },
           "presentation": {
             "$ref": "#/components/schemas/GraphPresentationDocument"
           },
           "schema_version": {
-            "const": 6,
-            "default": 6,
+            "const": 7,
+            "default": 7,
             "title": "Schema Version",
             "type": "integer"
           }
@@ -5736,6 +6094,134 @@
         "title": "SavedGraphNodeModel",
         "type": "object"
       },
+      "SavedGraphOrigin": {
+        "additionalProperties": false,
+        "description": "Exact artifact value held on one node input with no incoming edge.",
+        "properties": {
+          "conversion_path": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SavedGraphConversion"
+            },
+            "maxItems": 8,
+            "title": "Conversion Path",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "to_node": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "To Node",
+            "type": "string"
+          },
+          "to_plug": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Plug"
+          },
+          "to_port": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "To Port",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "$ref": "#/components/schemas/ArtifactRefSequence"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "id",
+          "to_node",
+          "to_port",
+          "value"
+        ],
+        "title": "SavedGraphOrigin",
+        "type": "object"
+      },
+      "SavedGraphOriginModel": {
+        "additionalProperties": false,
+        "properties": {
+          "conversion_path": {
+            "items": {
+              "$ref": "#/components/schemas/SavedGraphConversionModel"
+            },
+            "maxItems": 8,
+            "title": "Conversion Path",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "to_node": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "To Node",
+            "type": "string"
+          },
+          "to_plug": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Plug"
+          },
+          "to_port": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "To Port",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "$ref": "#/components/schemas/ArtifactRefSequence"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "id",
+          "to_node",
+          "to_port",
+          "value"
+        ],
+        "title": "SavedGraphOriginModel",
+        "type": "object"
+      },
       "SavedGraphPluginReleasePin": {
         "additionalProperties": false,
         "description": "Exact scoped Plugin release identity pinned on one graph node.\n\nThe pin is independent from the operator identity: publishing revision\nN+1 never moves a node pinned to revision N. Workspace membership for a\nWorkspace release comes from the owning graph.",
@@ -6050,6 +6536,7 @@
               "mapping": {
                 "add_edge": "#/components/schemas/AddEdgeCommand",
                 "add_node": "#/components/schemas/AddNodeCommand",
+                "add_origin": "#/components/schemas/AddOriginCommand",
                 "clear_node_artifact_type_binding": "#/components/schemas/ClearNodeArtifactTypeBindingCommand",
                 "duplicate_node": "#/components/schemas/DuplicateNodeCommand",
                 "move_annotations": "#/components/schemas/MoveAnnotationsCommand",
@@ -6057,6 +6544,7 @@
                 "move_nodes": "#/components/schemas/MoveNodesCommand",
                 "remove_edges": "#/components/schemas/RemoveEdgesCommand",
                 "remove_nodes": "#/components/schemas/RemoveNodesCommand",
+                "remove_origins": "#/components/schemas/RemoveOriginsCommand",
                 "rename_graph": "#/components/schemas/RenameGraphCommand",
                 "replace_document": "#/components/schemas/ReplaceDocumentCommand",
                 "replace_presentation": "#/components/schemas/ReplacePresentationCommand",
@@ -6066,7 +6554,8 @@
                 "update_node_configuration": "#/components/schemas/UpdateNodeConfigurationCommand",
                 "update_node_configuration_and_input_plugs": "#/components/schemas/UpdateNodeConfigurationAndInputPlugsCommand",
                 "update_node_layout": "#/components/schemas/UpdateNodeLayoutCommand",
-                "update_node_plugin_release": "#/components/schemas/UpdateNodePluginReleaseCommand"
+                "update_node_plugin_release": "#/components/schemas/UpdateNodePluginReleaseCommand",
+                "update_origin": "#/components/schemas/UpdateOriginCommand"
               },
               "propertyName": "kind"
             },
@@ -6115,6 +6604,15 @@
               },
               {
                 "$ref": "#/components/schemas/RemoveEdgesCommand"
+              },
+              {
+                "$ref": "#/components/schemas/AddOriginCommand"
+              },
+              {
+                "$ref": "#/components/schemas/UpdateOriginCommand"
+              },
+              {
+                "$ref": "#/components/schemas/RemoveOriginsCommand"
               },
               {
                 "$ref": "#/components/schemas/ReplaceDocumentCommand"
@@ -6867,6 +7365,29 @@
           "expected_plugin_release_pin"
         ],
         "title": "UpdateNodePluginReleaseCommand",
+        "type": "object"
+      },
+      "UpdateOriginCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_origin": {
+            "$ref": "#/components/schemas/SavedGraphOrigin"
+          },
+          "kind": {
+            "const": "update_origin",
+            "default": "update_origin",
+            "title": "Kind",
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/SavedGraphOrigin"
+          }
+        },
+        "required": [
+          "origin",
+          "expected_origin"
+        ],
+        "title": "UpdateOriginCommand",
         "type": "object"
       },
       "UpdateSavedGraphRequest": {
@@ -11571,6 +12092,179 @@
         "summary": "Cancel Workspace Invitation",
         "tags": [
           "workspaces"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/library/artifacts": {
+      "get": {
+        "operationId": "list_library_artifacts_v1_workspaces__workspace_id__library_artifacts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Library Artifacts",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/library/artifacts/from-run": {
+      "post": {
+        "operationId": "save_library_artifact_from_run_v1_workspaces__workspace_id__library_artifacts_from_run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveRunArtifactRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryItemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Library Artifact From Run",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/library/artifacts/from-upload": {
+      "post": {
+        "operationId": "save_library_artifact_from_upload_v1_workspaces__workspace_id__library_artifacts_from_upload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveUploadedArtifactRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryItemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Library Artifact From Upload",
+        "tags": [
+          "library"
         ]
       }
     },

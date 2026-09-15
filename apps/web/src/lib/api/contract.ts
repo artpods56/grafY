@@ -141,6 +141,7 @@ export type GraphMaterializations =
 export type SavedGraphDocument = Schemas["SavedGraphDocument"];
 export type SavedGraphNode = Schemas["SavedGraphNode"];
 export type SavedGraphEdge = Schemas["SavedGraphEdge"];
+export type SavedGraphOrigin = Schemas["SavedGraphOrigin"];
 export type SavedGraphSummary =
   Schemas["SavedGraphSummaryResponse"];
 export type GraphBrowserGraph = Schemas["GraphBrowserItemResponse"];
@@ -219,3 +220,11 @@ export type PortShape = Port["shape"];
 export type RunStatus = RunResponse["status"];
 export type NodeRunStatus = RunNodeResult["status"];
 export type JsonSchema = NodeSpec["config_schema"];
+
+export type LibraryProvenance = Schemas["LibraryProvenanceResponse"];
+export type LibraryRun = Schemas["LibraryRunResponse"];
+export type LibraryItem = Schemas["LibraryItemResponse"];
+export type LibraryList = Schemas["LibraryListResponse"];
+export type SaveRunArtifactRequest = Schemas["SaveRunArtifactRequest"];
+export type SaveUploadedArtifactRequest =
+  Schemas["SaveUploadedArtifactRequest"];
