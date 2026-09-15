@@ -229,7 +229,7 @@ def _required_text(value: str, *, label: str, max_length: int) -> str:
         )
     return text
 
-
+#[TODO] from_run and from_upload apply validation but it should be moved to the field definitions so its also applied on direct object construction
 class LibraryProvenance(BaseModel):
     """Birth record written once when an artifact enters a Workspace Library.
 

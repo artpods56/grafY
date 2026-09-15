@@ -1,12 +1,13 @@
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Any, Self
 from uuid import UUID
 
+from grafy_api.v1.routes.library.services import LibraryItem
 from grafy_core.artifacts import LibraryProvenance
 from pydantic import StringConstraints
 
 from grafy_api.v1.models import ApiResponse
-from grafy_api.v1.routes.artifacts.models import ArtifactSummaryResponse
+from grafy_api.v1.routes.artifacts.models import ArtifactSummaryResponse, ArtifactExportFormatResponse
 
 BoundedNodeId = Annotated[
     str,
@@ -63,7 +64,6 @@ class LibraryItemResponse(ApiResponse):
     name: str
     provenance: LibraryProvenanceResponse
     run: LibraryRunResponse | None = None
-
 
 class LibraryListResponse(ApiResponse):
     items: list[LibraryItemResponse]

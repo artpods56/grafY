@@ -12,7 +12,6 @@ from grafy_core.artifacts import (
 )
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.errors import NotFoundError
-from grafy_core.domain.execution_history import GraphExecutionDetail
 from grafy_core.ports.materialized_outputs import WorkbenchUnitOfWorkPort
 
 from grafy_api.services.errors import WorkbenchOperationError
@@ -73,6 +72,19 @@ class LibraryService:
         self._artifact_types = artifact_types
         self._saved_graphs = saved_graphs
 
+    def _artifact_name(self, artifact: ArtifactObject) -> str:
+        for key in ("download_name", "source_name"):
+            value = artifact.metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        spec = self._artifact_types.get(
+            (artifact.artifact_type, artifact.schema_version)
+        )
+        if spec is not None:
+            return spec.title
+        return f"{artifact.artifact_type}@{artifact.schema_version}"
+
+    #[TODO] performance is shit here because of the run lookups, think how we can track whats the provenance of an artifact easier
     async def list_items(self, workspace_id: UUID) -> list[LibraryItemResponse]:
         items: list[LibraryItem] = []
         async with self._unit_of_work as unit_of_work:
@@ -94,8 +106,9 @@ class LibraryService:
         )
         return [self._present(item) for item in items]
 
+    #[TODO] do we really need this?
+    @staticmethod
     async def _retained_run(
-        self,
         unit_of_work: WorkbenchUnitOfWorkPort,
         artifact: ArtifactObject,
         provenance: LibraryProvenance,
@@ -123,7 +136,15 @@ class LibraryService:
         node_id: str,
         node_title: str,
     ) -> LibraryItemResponse:
-        detail = await self._load_execution(workspace_id, execution_id)
+
+        async with self._unit_of_work as unit_of_work:
+            detail = await unit_of_work.execution_history.get(
+                workspace_id,
+                execution_id,
+            )
+        if detail is None:
+            raise NotFoundError("Graph execution", str(execution_id))
+
         node_result = next(
             (result for result in detail.node_results if result.node_id == node_id),
             None,
@@ -137,7 +158,13 @@ class LibraryService:
                 f"Artifact {artifact_id} is not an output of node {node_id!r} "
                 f"in execution {execution_id}"
             )
-        graph_title = await self._graph_title(workspace_id, detail.execution.graph_id)
+        if self._saved_graphs is None:
+            raise RuntimeError(
+                "Saved graph context is not configured for Library provenance"
+            )
+        graph = await self._saved_graphs.get(workspace_id, detail.execution.graph_id)
+        graph_title = graph.name
+
         provenance = LibraryProvenance.from_run(
             saved_at=datetime.now(UTC),
             graph_id=detail.execution.graph_id,
@@ -171,6 +198,7 @@ class LibraryService:
         )
         return await self._record(workspace_id, artifact_id, provenance, None)
 
+    #[TODO] theres something wrong with the check being made in this uow, theres a race condition on two concurent saves
     async def _record(
         self,
         workspace_id: UUID,
@@ -201,31 +229,15 @@ class LibraryService:
             LibraryItem(artifact=artifact, provenance=provenance, run=run)
         )
 
-    async def _load_execution(
-        self,
-        workspace_id: UUID,
-        execution_id: UUID,
-    ) -> GraphExecutionDetail:
-        async with self._unit_of_work as unit_of_work:
-            detail = await unit_of_work.execution_history.get(
-                workspace_id,
-                execution_id,
-            )
-        if detail is None:
-            raise NotFoundError("Graph execution", str(execution_id))
-        return detail
-
-    async def _graph_title(self, workspace_id: UUID, graph_id: UUID) -> str:
-        if self._saved_graphs is None:
-            raise RuntimeError(
-                "Saved graph context is not configured for Library provenance"
-            )
-        graph = await self._saved_graphs.get(workspace_id, graph_id)
-        return graph.name
-
     def _present(self, item: LibraryItem) -> LibraryItemResponse:
+
+        artifact = ArtifactSummaryResponse.from_artifact(item.artifact, download_formats=[
+            ArtifactExportFormatResponse.from_export_format(export_format)
+            for export_format in self._artifacts.export_formats(item.artifact)
+        ])
+
         return LibraryItemResponse(
-            artifact=self._artifact_summary(item.artifact),
+            artifact=artifact,
             name=self._artifact_name(item.artifact),
             provenance=LibraryProvenanceResponse.from_provenance(item.provenance),
             run=(
@@ -236,36 +248,11 @@ class LibraryService:
                     graph_id=item.run.graph_id,
                     finished_at=item.run.finished_at,
                 )
-            ),
+            )
         )
 
-    def _artifact_summary(self, artifact: ArtifactObject) -> ArtifactSummaryResponse:
-        return ArtifactSummaryResponse(
-            artifact_id=artifact.id,
-            artifact_type=artifact.artifact_type,
-            schema_version=artifact.schema_version,
-            content_type=artifact.content_type,
-            byte_size=artifact.byte_size,
-            sha256=artifact.sha256,
-            content_url=f"./artifacts/{artifact.id}/content",
-            download_formats=[
-                ArtifactExportFormatResponse.from_export_format(export_format)
-                for export_format in self._artifacts.export_formats(artifact)
-            ],
-            metadata=artifact.metadata,
-        )
-
-    def _artifact_name(self, artifact: ArtifactObject) -> str:
-        for key in ("download_name", "source_name"):
-            value = artifact.metadata.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        spec = self._artifact_types.get(
-            (artifact.artifact_type, artifact.schema_version)
-        )
-        if spec is not None:
-            return spec.title
-        return f"{artifact.artifact_type}@{artifact.schema_version}"
 
 
-__all__ = ["LibraryItem", "LibraryRun", "LibraryService"]
+
+
+__all__ = ["LibraryItem", "LibraryRun", "LibraryService", "LibraryProvenance"]
