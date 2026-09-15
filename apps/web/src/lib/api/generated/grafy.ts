@@ -2291,10 +2291,14 @@ export interface components {
         };
         /** ImageUploadItemResponse */
         readonly ImageUploadItemResponse: {
+            /** Artifact Type */
+            readonly artifact_type?: string | null;
             /** Byte Size */
             readonly byte_size: number;
             /** Filename */
             readonly filename: string;
+            /** Notice */
+            readonly notice?: string | null;
             /** Upload Key */
             readonly upload_key: string;
         };

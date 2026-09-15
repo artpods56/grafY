@@ -1,21 +1,26 @@
 from uuid import UUID
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-
 from grafy_core.domain.identity import WorkspaceCapability
 
 from grafy_api.services.errors import WorkbenchOperationError
+from grafy_api.staged_uploads import (
+    FileFormatMismatchError,
+    StagedUploadTooLargeError,
+)
 from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
 
 from .dependencies import StagedUploadDependency
 from .models import ImageUploadItemResponse, SampleRequest
-from grafy_api.staged_uploads import StagedUploadTooLargeError
-
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workbench"])
 
 
-@router.post("/uploads", response_model=ImageUploadItemResponse)
+@router.post(
+    "/uploads",
+    response_model=ImageUploadItemResponse,
+    response_model_exclude_none=True,
+)
 async def upload_file(
     workspace_id: UUID,
     service: StagedUploadDependency,
@@ -25,20 +30,29 @@ async def upload_file(
     if not file.filename:
         raise HTTPException(status_code=422, detail="Upload filename is required")
     try:
-        item = await service.save_upload(
+        result = await service.save_upload(
             workspace_id=workspace_id,
             created_by_user_id=access.actor.user_id,
             filename=file.filename,
             stream=file.file,
         )
-        return ImageUploadItemResponse.from_item(item)
+        return ImageUploadItemResponse.from_result(result)
     except StagedUploadTooLargeError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except FileFormatMismatchError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "file_format_mismatch", "message": str(exc)},
+        ) from exc
     except WorkbenchOperationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.post("/samples", response_model=list[ImageUploadItemResponse])
+@router.post(
+    "/samples",
+    response_model=list[ImageUploadItemResponse],
+    response_model_exclude_none=True,
+)
 async def create_samples(
     workspace_id: UUID,
     request: SampleRequest,

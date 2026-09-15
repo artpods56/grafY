@@ -12,6 +12,7 @@ from grafy_core.canonical_conversions import (
     CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,
     CanonicalArtifactConversionMap,
 )
+from grafy_core.file_contracts import BUILTIN_FILE_FORMATS, build_extension_table
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.materialized_outputs import WorkbenchUnitOfWorkPort
 from grafy_core.ports.node_secrets import (
@@ -117,12 +118,28 @@ def build_workbench_components(
     )
     uploads_dir = resolved_workspace / "uploads"
     resolved_unit_of_work = unit_of_work or InMemoryUnitOfWork()
+    resolved_storage = storage or LocalFileObjectStore(resolved_workspace / "objects")
+    artifact_types = {
+        (spec.key.id, spec.key.schema_version): spec
+        for spec in (*BUILTIN_FILE_FORMATS, *plugin_registry.artifact_types)
+    }
+    extension_claims = build_extension_table(
+        (spec.key, spec.extensions) for spec in artifact_types.values()
+    )
+    # ponytail: this is the static deployment set. Workspace Plugin release
+    # artifact types live in per-workspace DB state, so an extension only a
+    # release claims resolves to a blob until ingest reads the CatalogSnapshot.
     uploads = StagedUploadService(
         uploads_dir,
         unit_of_work_factory=lambda: resolved_unit_of_work,
+        artifact_unit_of_work=resolved_unit_of_work,
+        storage=resolved_storage,
+        artifact_types=artifact_types,
+        extension_claims=extension_claims,
+        artifact_bucket=bucket,
+        artifact_storage_backend=storage_backend,
         max_upload_bytes=staged_upload_max_bytes,
     )
-    resolved_storage = storage or LocalFileObjectStore(resolved_workspace / "objects")
     resolved_node_secrets = node_secrets or UnavailableNodeSecretResolver()
     plugin_context = PluginRuntimeContext(
         workspace=resolved_workspace,
@@ -142,10 +159,6 @@ def build_workbench_components(
     )
 
     availability = ArtifactAvailability(resolved_unit_of_work, resolved_storage)
-    artifact_types = {
-        (spec.key.id, spec.key.schema_version): spec
-        for spec in plugin_registry.artifact_types
-    }
     artifacts = ArtifactService(
         resolved_unit_of_work,
         resolved_storage,

@@ -389,12 +389,13 @@ async def test_upload_from_relative_workspace_returns_opaque_upload_key(
     workspace_id = UUID("00000000-0000-0000-0000-000000000007")
     user_id = UUID("00000000-0000-0000-0000-000000000001")
 
-    item = await service.save_upload(
+    result = await service.save_upload(
         workspace_id=workspace_id,
         created_by_user_id=user_id,
         filename="page.png",
         stream=BytesIO(b"image-bytes"),
     )
+    item = result.upload
 
     assert "/" not in item.upload_key
     assert "\\" not in item.upload_key
@@ -413,27 +414,30 @@ async def test_upload_from_relative_workspace_returns_opaque_upload_key(
     assert stored.created_by_user_id == user_id
 
 
-def test_upload_endpoint_streams_an_opaque_file(
+def test_upload_endpoint_streams_bytes_to_the_staging_directory(
     builtin_client: TestClient,
     tmp_path: Path,
 ) -> None:
     api = GrafyApi(builtin_client)
+    content = b"II*\x00geotiff-bytes"
     response = api.workspace(WORKSPACE_ID).uploads.upload(
         "historical-map.tif",
-        b"geotiff-bytes",
+        content,
         content_type="image/tiff",
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["filename"] == "historical-map.tif"
-    assert payload["byte_size"] == len(b"geotiff-bytes")
+    assert payload["byte_size"] == len(content)
     assert payload["upload_key"].endswith("-historical-map.tif")
+    assert payload["artifact_type"] == "file.tiff@1"
+    assert "notice" not in payload
     staged_path = (
         tmp_path / "workbench" / "uploads" / str(WORKSPACE_ID) / payload["upload_key"]
     )
     assert staged_path.is_file()
-    assert staged_path.read_bytes() == b"geotiff-bytes"
+    assert staged_path.read_bytes() == content
 
 
 def test_image_upload_materializes_sample_images(

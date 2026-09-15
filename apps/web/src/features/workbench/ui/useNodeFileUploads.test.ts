@@ -60,6 +60,8 @@ function uploadResponse(): UploadResponse {
     byte_size: 48,
     filename: "layer.geojson",
     upload_key: "uploads/layer.geojson",
+    artifact_type: "file.geojson@1",
+    notice: null,
   };
 }
 
@@ -143,7 +145,15 @@ describe("useNodeFileUploads", () => {
           kind: "update_node_configuration",
           node_id: "node-1",
           field: "uploads",
-          value: [upload],
+          // Ingest metadata stays out of the node config, which the upload
+          // operator validates with extra="forbid".
+          value: [
+            {
+              byte_size: 48,
+              filename: "layer.geojson",
+              upload_key: "uploads/layer.geojson",
+            },
+          ],
         },
       ],
       { isUploadCompletion: true },

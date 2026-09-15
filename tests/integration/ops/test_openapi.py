@@ -389,6 +389,14 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
                 "title": "Byte Size",
                 "type": "integer",
             },
+            "artifact_type": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "title": "Artifact Type",
+            },
+            "notice": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "title": "Notice",
+            },
         },
         "required": ["upload_key", "filename", "byte_size"],
         "title": "ImageUploadItemResponse",

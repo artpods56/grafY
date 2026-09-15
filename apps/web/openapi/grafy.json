@@ -3158,6 +3158,17 @@
       },
       "ImageUploadItemResponse": {
         "properties": {
+          "artifact_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Type"
+          },
           "byte_size": {
             "title": "Byte Size",
             "type": "integer"
@@ -3165,6 +3176,17 @@
           "filename": {
             "title": "Filename",
             "type": "string"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice"
           },
           "upload_key": {
             "title": "Upload Key",
