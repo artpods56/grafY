@@ -1104,7 +1104,6 @@ Existing suites to extend include:
 - `tests/unit/api/test_plugin_publishing.py`
 - `tests/unit/api/test_plugin_oci.py`
 - `tests/unit/api/test_plugin_authoring.py`
-- `tests/integration/executions/test_plugin_egress_docker.py`
 - `tests/unit/plugins/test_openai_compatible_node.py`
 - `tests/unit/plugins/test_openai_compatible_provider.py`
 - `tests/unit/plugins/test_gis_plugin.py`
