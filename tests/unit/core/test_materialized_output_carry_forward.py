@@ -2,7 +2,6 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
-
 from grafy_core.artifacts import ArtifactRef
 from grafy_core.domain.materialized_outputs import (
     MaterializedNodeOutputs,
@@ -16,9 +15,9 @@ from grafy_core.domain.saved_graphs import (
     SavedGraphInputPlug,
     SavedGraphNode,
     SavedGraphNodeLayout,
+    SavedGraphOrigin,
     SavedGraphProjection,
 )
-
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")
 GRAPH_ID = UUID("00000000-0000-0000-0000-000000000101")
@@ -47,6 +46,23 @@ def _edge(edge_id: str, source: str, target: str) -> SavedGraphEdge:
         from_port="result",
         to_node=target,
         to_port="value",
+    )
+
+
+def _origin(
+    origin_id: str = "origin",
+    *,
+    artifact_id: str = "00000000-0000-0000-0000-000000000401",
+) -> SavedGraphOrigin:
+    return SavedGraphOrigin(
+        id=origin_id,
+        to_node="target",
+        to_port="value",
+        value=ArtifactRef(
+            artifact_id=UUID(artifact_id),
+            artifact_type="scalar.integer",
+            schema_version=1,
+        ),
     )
 
 
@@ -273,6 +289,72 @@ def test_changed_input_invalidates_target_and_descendants(
     )
 
     assert {item.node_id for item in carried} == {"source", "other"}
+
+
+def test_placing_an_origin_invalidates_target_and_descendants() -> None:
+    nodes = (_node("target"), _node("downstream"), _node("unrelated"))
+    downstream_edge = _edge("e2", "target", "downstream")
+    previous = SavedGraphDocument(nodes=nodes, edges=(downstream_edge,))
+    next_document = SavedGraphDocument(
+        nodes=nodes,
+        edges=(downstream_edge,),
+        origins=(_origin(),),
+    )
+
+    carried = materializations_for_compatible_nodes(
+        previous_document=previous,
+        next_document=next_document,
+        previous_materializations=[_materialization(node.id) for node in nodes],
+        next_revision=2,
+    )
+
+    assert [item.node_id for item in carried] == ["unrelated"]
+
+
+@pytest.mark.parametrize(
+    "changed_origin",
+    [
+        pytest.param(None, id="removed"),
+        pytest.param(
+            _origin(artifact_id="00000000-0000-0000-0000-000000000402"),
+            id="replaced-value",
+        ),
+        pytest.param(
+            _origin().model_copy(
+                update={
+                    "conversion_path": (
+                        SavedGraphConversion(id="as-text", version=1),
+                    )
+                }
+            ),
+            id="conversion",
+        ),
+    ],
+)
+def test_changing_an_origin_invalidates_target_and_descendants(
+    changed_origin: SavedGraphOrigin | None,
+) -> None:
+    nodes = (_node("target"), _node("downstream"), _node("unrelated"))
+    downstream_edge = _edge("e2", "target", "downstream")
+    previous = SavedGraphDocument(
+        nodes=nodes,
+        edges=(downstream_edge,),
+        origins=(_origin(),),
+    )
+    next_document = SavedGraphDocument(
+        nodes=nodes,
+        edges=(downstream_edge,),
+        origins=() if changed_origin is None else (changed_origin,),
+    )
+
+    carried = materializations_for_compatible_nodes(
+        previous_document=previous,
+        next_document=next_document,
+        previous_materializations=[_materialization(node.id) for node in nodes],
+        next_revision=2,
+    )
+
+    assert [item.node_id for item in carried] == ["unrelated"]
 
 
 def test_disabled_edge_does_not_propagate_invalidation() -> None:

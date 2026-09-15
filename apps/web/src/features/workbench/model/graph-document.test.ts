@@ -41,6 +41,7 @@ function document(): AuthoredGraphDocument {
     name: "Draft",
     nodes: [node("source"), node("target")],
     edges: [edge],
+    origins: [],
   }));
 }
 
@@ -52,9 +53,10 @@ describe("authored graph document", () => {
     expect(request).toEqual({
       name: value.name,
       document: {
-        schema_version: 6,
+        schema_version: 7,
         nodes: value.nodes,
         edges: value.edges,
+        origins: [],
         presentation: {
           viewers: [],
           links: [],
@@ -75,7 +77,7 @@ describe("authored graph document", () => {
     const input: CreateSavedGraphRequest = {
       name: "Operator-agnostic graph",
       document: {
-        schema_version: 6,
+        schema_version: 7,
         nodes: [
           {
             id: "legacy-node",
@@ -124,6 +126,7 @@ describe("authored graph document", () => {
             route_offset: { x: 18, y: -6 },
           },
         ],
+        origins: [],
         presentation: {
           viewers: [],
           links: [],
@@ -138,7 +141,7 @@ describe("authored graph document", () => {
     expect(createSavedGraphRequest(canonical)).toEqual({
       name: "Operator-agnostic graph",
       document: {
-        schema_version: 6,
+        schema_version: 7,
         nodes: [
         {
           id: "legacy-node",
@@ -188,6 +191,7 @@ describe("authored graph document", () => {
           route_offset: { x: 18, y: -6 },
         },
         ],
+        origins: [],
         presentation: {
           viewers: [],
           links: [],
@@ -231,13 +235,14 @@ describe("authored graph document", () => {
     const input: CreateSavedGraphRequest = {
       name: "Adversarial graph",
       document: {
-        schema_version: 6,
+        schema_version: 7,
         nodes: [
           runtimeNode as unknown as SavedGraphDocument["nodes"][number],
         ],
         edges: [
           runtimeEdge as unknown as SavedGraphDocument["edges"][number],
         ],
+        origins: [],
         presentation: {
           viewers: [],
           links: [],
@@ -549,6 +554,112 @@ describe("authored graph document", () => {
     });
   });
 
+  it("adds, updates, and removes an origin through typed semantic commands", () => {
+    const added = applyGraphCommand(document(), {
+      kind: "add_origin",
+      origin: {
+        id: "origin-1",
+        to_node: "target",
+        to_port: "input",
+        to_plug: null,
+        value: {
+          artifact_id: "00000000-0000-4000-8000-000000000001",
+          artifact_type: "scalar.text",
+          schema_version: 1,
+        },
+        conversion_path: [],
+      },
+    });
+
+    expect(added.origins).toEqual([
+      {
+        id: "origin-1",
+        to_node: "target",
+        to_port: "input",
+        to_plug: null,
+        value: {
+          artifact_id: "00000000-0000-4000-8000-000000000001",
+          artifact_type: "scalar.text",
+          schema_version: 1,
+        },
+        conversion_path: [],
+      },
+    ]);
+
+    const updated = applyGraphCommand(added, {
+      kind: "update_origin",
+      origin_id: "origin-1",
+      update: { conversion_path: [{ id: "text.normalize", version: 2 }] },
+    });
+
+    expect(updated.origins[0]?.conversion_path).toEqual([
+      { id: "text.normalize", version: 2 },
+    ]);
+
+    const removed = applyGraphCommand(updated, {
+      kind: "remove_origins",
+      origin_ids: ["origin-1"],
+    });
+
+    expect(removed.origins).toEqual([]);
+  });
+
+  it("prunes origins that target a removed node", () => {
+    const withOrigin = applyGraphCommand(document(), {
+      kind: "add_origin",
+      origin: {
+        id: "origin-1",
+        to_node: "target",
+        to_port: "input",
+        to_plug: null,
+        value: {
+          artifact_id: "00000000-0000-4000-8000-000000000001",
+          artifact_type: "scalar.text",
+          schema_version: 1,
+        },
+        conversion_path: [],
+      },
+    });
+
+    const result = applyGraphCommand(withOrigin, {
+      kind: "remove_nodes",
+      node_ids: ["target"],
+    });
+
+    expect(result.origins).toEqual([]);
+  });
+
+  it("rejects origin commands that target a missing or duplicate origin", () => {
+    expect(() =>
+      applyGraphCommand(document(), {
+        kind: "update_origin",
+        origin_id: "missing-origin",
+        update: { to_port: "other" },
+      }),
+    ).toThrow("missing origin missing-origin");
+
+    const origin = {
+      id: "origin-1",
+      to_node: "target",
+      to_port: "input",
+      to_plug: null,
+      value: {
+        artifact_id: "00000000-0000-4000-8000-000000000001",
+        artifact_type: "scalar.text",
+        schema_version: 1,
+      },
+      conversion_path: [],
+    };
+    const withOrigin = applyGraphCommand(document(), {
+      kind: "add_origin",
+      origin,
+    });
+
+    expect(() =>
+      applyGraphCommand(withOrigin, { kind: "add_origin", origin }),
+    ).toThrow("duplicate origin origin-1");
+  });
+
   it("moves only the selected exact Plugin release pin", () => {
     const original = authoredGraphDocument(createSavedGraphRequest({
       name: "Pinned Plugins",
@@ -571,6 +682,7 @@ describe("authored graph document", () => {
         },
       ],
       edges: [edge],
+      origins: [],
     }));
 
     const upgraded = applyGraphCommand(original, {

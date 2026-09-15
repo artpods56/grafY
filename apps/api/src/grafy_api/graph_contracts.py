@@ -2,6 +2,31 @@ from datetime import datetime
 from typing import Annotated, ClassVar, Literal, Self
 from uuid import UUID
 
+from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
+from grafy_core.conversions import MAX_ARTIFACT_CONVERSION_HOPS
+from grafy_core.domain.collaboration import (
+    CollaborativeGraphHead,
+    CommandReceiptOutcome,
+    GraphCommand,
+    GraphCommandReceipt,
+)
+from grafy_core.domain.identity import WorkspaceKind
+from grafy_core.domain.saved_graphs import (
+    DEFAULT_ANNOTATION_COLOR,
+    GRAPH_LAYOUT_DIMENSION_MAX,
+    AnnotationColor,
+    AnnotationKind,
+    GraphBrowserItem,
+    GraphFolder,
+    GraphIdentifier,
+    GraphOrganization,
+    SavedGraph,
+    SavedGraphDocument,
+    UserGraphState,
+    normalize_saved_graph_edge_conversion,
+    validate_graph_layout_dimensions,
+    validate_graph_node_release_pin,
+)
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -11,36 +36,10 @@ from pydantic import (
     model_validator,
 )
 
-from grafy_core.conversions import MAX_ARTIFACT_CONVERSION_HOPS
-from grafy_core.domain.collaboration import (
-    CollaborativeGraphHead,
-    CommandReceiptOutcome,
-    GraphCommand,
-    GraphCommandReceipt,
-)
-from grafy_core.domain.saved_graphs import (
-    AnnotationColor,
-    AnnotationKind,
-    GraphIdentifier,
-    GRAPH_LAYOUT_DIMENSION_MAX,
-    validate_graph_layout_dimensions,
-    validate_graph_node_release_pin,
-    DEFAULT_ANNOTATION_COLOR,
-    GraphBrowserItem,
-    GraphFolder,
-    GraphOrganization,
-    SavedGraph,
-    SavedGraphDocument,
-    UserGraphState,
-    normalize_saved_graph_edge_conversion,
-)
-from grafy_core.domain.identity import WorkspaceKind
-
 from grafy_api.v1.models import (
     ArtifactTypeBindingModel,
     PluginReleasePinModel,
 )
-
 
 Identifier = GraphIdentifier
 
@@ -130,6 +129,18 @@ class SavedGraphEdgeModel(SavedGraphApiModel):
 
     normalize_singular_conversion = model_validator(mode="before")(
         normalize_saved_graph_edge_conversion
+    )
+
+
+class SavedGraphOriginModel(SavedGraphApiModel):
+    id: Identifier
+    to_node: Identifier
+    to_port: Identifier
+    to_plug: Identifier | None = None
+    value: ArtifactRef | ArtifactRefSequence
+    conversion_path: list[SavedGraphConversionModel] = Field(
+        default_factory=list,
+        max_length=MAX_ARTIFACT_CONVERSION_HOPS,
     )
 
 
@@ -444,6 +455,7 @@ class CollaborativeHeadResponse(SavedGraphApiModel):
     updated_at: datetime
     nodes: list[SavedGraphNodeModel]
     edges: list[SavedGraphEdgeModel]
+    origins: list[SavedGraphOriginModel] = Field(default_factory=list)
     presentation: GraphPresentationDocumentModel = Field(
         default_factory=GraphPresentationDocumentModel,
     )
