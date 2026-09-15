@@ -61,10 +61,6 @@ check: test lint typecheck contract build
 smoke:
     uv run --extra ocr python scripts/smoke_workbench.py
 
-# Run the disposable live HTTP/PAT multimodal graph contract.
-e2e-live:
-    uv run python scripts/e2e/run_live.py
-
 # Upgrade the database to the latest migration.
 db-upgrade:
     uv run --no-dev alembic upgrade head

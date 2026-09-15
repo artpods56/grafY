@@ -252,7 +252,10 @@ export function useSavedGraphLifecycle({
   const showBlankGraph = React.useCallback(() => {
     documentGenerationRef.current += 1;
     openRequestRef.current?.abort();
-    replaceDocument({ name: NEW_GRAPH_NAME, nodes: [], edges: [] }, []);
+    replaceDocument(
+      { name: NEW_GRAPH_NAME, nodes: [], edges: [], origins: [] },
+      [],
+    );
     clearGraphSecretStatuses();
     setActiveGraph(null);
     setSavedFingerprint(null);
@@ -490,6 +493,7 @@ export function useSavedGraphLifecycle({
       name: NEW_GRAPH_NAME,
       nodes: [],
       edges: [],
+      origins: [],
     }, []);
     replacePresentation("", emptyGraphPresentation());
   }, [

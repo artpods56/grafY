@@ -2,27 +2,28 @@
 
 from datetime import UTC, datetime
 from types import MappingProxyType
-from uuid import UUID
 from typing import Literal
+from uuid import UUID
 
 import pytest
-from pydantic import ValidationError
-
 from grafy_api.graph_contracts import (
     CanonicalCollaborativeHeadResponse,
     CollaborativeHeadResponse,
     SavedGraphEdgeModel,
-    SavedGraphNodeModel,
     SavedGraphNodeLayoutModel,
+    SavedGraphNodeModel,
+    SavedGraphOriginModel,
 )
 from grafy_core.domain.collaboration import CollaborativeGraphHead
 from grafy_core.domain.saved_graphs import (
-    SavedGraphDocument,
     GraphPresentationDocument,
+    SavedGraphDocument,
     SavedGraphEdge,
     SavedGraphNode,
     SavedGraphNodeLayout,
+    SavedGraphOrigin,
 )
+from pydantic import ValidationError
 
 
 @pytest.fixture
@@ -285,16 +286,81 @@ def test_node_models_require_release_pins_only_for_plugins(
             model.model_validate(payload)
 
 
+def test_origin_conversion_retains_exact_value_and_conversion_path(
+    head: CollaborativeGraphHead,
+) -> None:
+    payload = {
+        "id": "origin",
+        "to_node": "target",
+        "to_port": "input",
+        "to_plug": "plug",
+        "value": {
+            "artifact_id": "00000000-0000-0000-0000-0000000000a1",
+            "artifact_type": "scalar.text",
+            "schema_version": 1,
+            "content_hash": None,
+        },
+        "conversion_path": [{"id": "one", "version": 1}, {"id": "two", "version": 2}],
+    }
+    origin = SavedGraphOrigin.model_validate(payload)
+    head.document = SavedGraphDocument(
+        nodes=head.document.nodes,
+        origins=(origin,),
+    )
+
+    wire = CollaborativeHeadResponse.from_head(head).origins[0]
+
+    assert wire.model_dump(mode="json") == payload
+    assert SavedGraphOriginModel.model_validate(payload).model_dump(mode="json") == payload
+
+
+def test_origin_conversion_retains_an_artifact_ref_sequence(
+    head: CollaborativeGraphHead,
+) -> None:
+    payload: dict[str, object] = {
+        "id": "origin",
+        "to_node": "target",
+        "to_port": "input",
+        "value": {
+            "sequence_id": "00000000-0000-0000-0000-0000000000b1",
+            "artifact_type": "scalar.text",
+            "schema_version": 1,
+            "item_refs": [
+                {
+                    "artifact_id": "00000000-0000-0000-0000-0000000000a1",
+                    "artifact_type": "scalar.text",
+                    "schema_version": 1,
+                    "content_hash": None,
+                }
+            ],
+            "ordered": True,
+            "index_key": "order_index",
+            "metadata": {},
+        },
+    }
+    head.document = SavedGraphDocument(
+        nodes=head.document.nodes,
+        origins=(SavedGraphOrigin.model_validate(payload),),
+    )
+
+    wire = CollaborativeHeadResponse.from_head(head).origins[0]
+
+    assert wire.value.model_dump(mode="json") == payload["value"]
+
+
 def test_head_adapter_preserves_metadata_and_empty_document(head: CollaborativeGraphHead) -> None:
     head.document = SavedGraphDocument()
     canonical = CanonicalCollaborativeHeadResponse.from_head(head)
     legacy = CollaborativeHeadResponse.from_head(head)
-    assert legacy.model_dump(exclude={"nodes", "edges", "presentation"}) == canonical.model_dump(exclude={"document"})
+    assert legacy.model_dump(
+        exclude={"nodes", "edges", "origins", "presentation"}
+    ) == canonical.model_dump(exclude={"document"})
     assert legacy.collaboration_sequence == 8
     assert legacy.checkpoint_sequence == 3
     assert legacy.checkpoint_revision == 2
     assert legacy.nodes == []
     assert legacy.edges == []
+    assert legacy.origins == []
     assert legacy.presentation.model_dump(mode="json") == {"viewers": [], "links": [], "bindings": [], "annotations": []}
     payload = legacy.model_dump(mode="json")
     assert "document" not in payload

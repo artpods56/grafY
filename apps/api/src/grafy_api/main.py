@@ -6,49 +6,53 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-
-from grafy_api.health import HealthResponse, health, readiness
 from grafy_core.application.collaboration import CollaborationService
+from grafy_core.application.identity import IdentityService
 from grafy_core.application.modules import ModuleLibraryService
 from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.application.templates import TemplateService
-from grafy_core.application.identity import IdentityService
-from grafy_workbench import BuiltinNodeCatalog
-
 from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import (
     SqlAlchemySavedGraphUnitOfWork,
     SqlAlchemyUnitOfWork,
 )
+from grafy_workbench import BuiltinNodeCatalog
+
 from grafy_api.app_state import AppIdentity, AppResources, get_identity
 from grafy_api.diagnostics import configure_diagnostics
+from grafy_api.health import HealthResponse, health, readiness
 from grafy_api.http_errors import register_http_error_handlers
+from grafy_api.node_secrets import NodeSecretService
 from grafy_api.plugins.profiles import runtime_profile
+from grafy_api.plugins.runtime.docker import DockerPluginRuntime
+from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.services.composition import build_workbench_components
 from grafy_api.settings import Settings, get_settings
 from grafy_api.single_owner import ApiOwnerLease
 from grafy_api.storage import configured_file_storage
+from grafy_api.v1.routes.artifacts.views import router as artifacts_router
 from grafy_api.v1.routes.auth.services import AuthService
 from grafy_api.v1.routes.auth.views import router as auth_router
-from grafy_api.v1.routes.artifacts.views import router as artifacts_router
 from grafy_api.v1.routes.catalog.views import router as catalog_router
-from grafy_api.v1.routes.modules.views import router as modules_router
-from grafy_api.v1.routes.templates.views import router as templates_router
-from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.v1.routes.collaboration.views import router as collaboration_router
 from grafy_api.v1.routes.executions.views import router as executions_router
-from grafy_api.plugins.runtime.docker import DockerPluginRuntime
-from grafy_api.node_secrets import NodeSecretService
+from grafy_api.v1.routes.library.views import router as library_router
+from grafy_api.v1.routes.modules.views import router as modules_router
 from grafy_api.v1.routes.node_secrets.views import router as node_secrets_router
 from grafy_api.v1.routes.saved_graphs.views import (
     browser_router as graph_browser_router,
+)
+from grafy_api.v1.routes.saved_graphs.views import (
     folder_router as graph_folders_router,
+)
+from grafy_api.v1.routes.saved_graphs.views import (
     router as saved_graphs_router,
 )
+from grafy_api.v1.routes.templates.views import router as templates_router
 from grafy_api.v1.routes.uploads.views import router as uploads_router
-from grafy_api.v1.routes.workspaces.views import me_router, router as workspaces_router
-
+from grafy_api.v1.routes.workspaces.views import me_router
+from grafy_api.v1.routes.workspaces.views import router as workspaces_router
 
 logger = logging.getLogger(__name__)
 
@@ -359,6 +363,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(uploads_router, prefix="/v1")
     application.include_router(executions_router, prefix="/v1")
     application.include_router(artifacts_router, prefix="/v1")
+    application.include_router(library_router, prefix="/v1")
     return application
 
 

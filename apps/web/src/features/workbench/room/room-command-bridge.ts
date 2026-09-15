@@ -11,6 +11,7 @@ import {
   createSavedGraphRequest,
   projectSavedGraphNode,
   projectSavedGraphEdge,
+  projectSavedGraphOrigin,
   type AuthoredGraphDocument,
   type GraphCommand,
 } from "../model/graph-document";
@@ -31,9 +32,10 @@ export function toRoomReplaceDocumentCommand(
     kind: "replace_document",
     name: document.name,
     document: {
-      schema_version: 6,
+      schema_version: 7,
       nodes: document.nodes.map(projectSavedGraphNode),
       edges: document.edges.map(projectSavedGraphEdge),
+      origins: document.origins.map(projectSavedGraphOrigin),
       presentation: {
         annotations: [...(presentation.annotations ?? [])],
         bindings: [...(presentation.bindings ?? [])],
@@ -74,6 +76,16 @@ export function toRoomGraphCommand(
       return asRoom({
         kind: "remove_edges",
         edge_ids: [...command.edge_ids],
+      });
+    case "add_origin":
+      return {
+        kind: "add_origin",
+        origin: projectSavedGraphOrigin(command.origin),
+      };
+    case "remove_origins":
+      return asRoom({
+        kind: "remove_origins",
+        origin_ids: [...command.origin_ids],
       });
     case "rename_graph":
       return asRoom({
@@ -183,6 +195,17 @@ export function toRoomGraphCommand(
         kind: "update_edge",
         expected_edge: projectSavedGraphEdge(edge),
         edge: projectSavedGraphEdge({ ...edge, ...command.update }),
+      };
+    }
+    case "update_origin": {
+      const origin = document.origins.find(
+        (candidate) => candidate.id === command.origin_id,
+      );
+      if (!origin) return null;
+      return {
+        kind: "update_origin",
+        expected_origin: projectSavedGraphOrigin(origin),
+        origin: projectSavedGraphOrigin({ ...origin, ...command.update }),
       };
     }
     case "replace_document": {
@@ -304,6 +327,22 @@ export function toLocalGraphCommand(
           route_offset: command.edge.route_offset,
         },
       };
+    case "add_origin":
+      return { kind: "add_origin", origin: command.origin };
+    case "update_origin":
+      return {
+        kind: "update_origin",
+        origin_id: command.origin.id,
+        update: {
+          to_node: command.origin.to_node,
+          to_port: command.origin.to_port,
+          to_plug: command.origin.to_plug,
+          value: command.origin.value,
+          conversion_path: command.origin.conversion_path,
+        },
+      };
+    case "remove_origins":
+      return { kind: "remove_origins", origin_ids: command.origin_ids };
     case "replace_document":
       return {
         kind: "replace_document",
@@ -346,9 +385,10 @@ export function applyRoomCommandToHead(
       ...head,
       name: command.name,
       document: {
-        schema_version: 6,
+        schema_version: 7,
         nodes: command.document.nodes.map(projectSavedGraphNode),
         edges: command.document.edges,
+        origins: command.document.origins,
         presentation: command.document.presentation ?? emptyGraphPresentation(),
       },
       collaboration_sequence: sequence,

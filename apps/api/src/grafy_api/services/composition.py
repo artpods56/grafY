@@ -5,7 +5,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.application.modules import ModuleLibraryService
 from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
@@ -21,38 +20,39 @@ from grafy_core.ports.node_secrets import (
 )
 from grafy_core.ports.storage import FileStoragePort
 from grafy_core.runtime.execution import NodeRuntime
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import (
     ArtifactWriterRegistry,
     OutputPersister,
 )
+from grafy_core.runtime.persistent_invocation_cache import PersistentInvocationCache
 from grafy_core.runtime.resolvers import ResolverRegistry
 from grafy_storage import LocalFileObjectStore
 
-from grafy_api.plugins.runtime.admission import (
-    ReleaseExecutionAdmission,
-)
-from grafy_api.plugins.runtime.network_policy import NetworkPolicy
-from grafy_api.v1.routes.artifacts.services import ArtifactService
-from grafy_api.realtime.hub import GraphRoomHub
+from grafy_api.artifact_availability import ArtifactAvailability
+from grafy_api.execution.admission import ExecutionAdmissionLimiter
 from grafy_api.execution.compiler import GraphCompiler
 from grafy_api.execution.coordinator import GraphExecutionCoordinator
 from grafy_api.execution.edge_values import EdgeValueResolver
-from grafy_core.runtime.persistent_invocation_cache import PersistentInvocationCache
+from grafy_api.execution.history import ExecutionHistoryService
 from grafy_api.execution.manager import RunExecutionManager
+from grafy_api.execution.materializations import MaterializationService
 from grafy_api.execution.node_execution import NodeExecutionService
-from grafy_api.plugins.runtime.artifacts import ArtifactBundlePluginInvoker
-from grafy_api.plugins.runtime.docker import DockerPluginRuntime
-from grafy_api.execution.admission import ExecutionAdmissionLimiter
 from grafy_api.execution.preflight import GraphRunPreflight
 from grafy_api.execution.run_graph import RunGraph
-from grafy_api.execution.history import ExecutionHistoryService
-from grafy_api.execution.materializations import MaterializationService
-from grafy_api.artifact_availability import ArtifactAvailability
-from grafy_api.v1.routes.executions.services import RunResultPresenter
+from grafy_api.plugins.runtime.admission import (
+    ReleaseExecutionAdmission,
+)
+from grafy_api.plugins.runtime.artifacts import ArtifactBundlePluginInvoker
+from grafy_api.plugins.runtime.docker import DockerPluginRuntime
+from grafy_api.plugins.runtime.network_policy import NetworkPolicy
+from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES
 from grafy_api.staged_uploads import StagedUploadService
-
+from grafy_api.v1.routes.artifacts.services import ArtifactService
+from grafy_api.v1.routes.executions.services import RunResultPresenter
+from grafy_api.v1.routes.library.services import LibraryService
 
 _WORKBENCH_BUCKET = "workbench-artifacts"
 
@@ -70,6 +70,7 @@ class WorkbenchComponents:
     materializations: MaterializationService
     presenter: RunResultPresenter
     artifacts: ArtifactService
+    library: LibraryService
     plugin_invoker: ArtifactBundlePluginInvoker | None
     plugin_runtime: DockerPluginRuntime | None
     release_admission: ReleaseExecutionAdmission | None
@@ -141,14 +142,15 @@ def build_workbench_components(
     )
 
     availability = ArtifactAvailability(resolved_unit_of_work, resolved_storage)
+    artifact_types = {
+        (spec.key.id, spec.key.schema_version): spec
+        for spec in plugin_registry.artifact_types
+    }
     artifacts = ArtifactService(
         resolved_unit_of_work,
         resolved_storage,
         availability=availability,
-        artifact_types={
-            (spec.key.id, spec.key.schema_version): spec
-            for spec in plugin_registry.artifact_types
-        },
+        artifact_types=artifact_types,
     )
     materializations = MaterializationService(
         resolved_unit_of_work,
@@ -156,6 +158,12 @@ def build_workbench_components(
         saved_graphs,
     )
     presenter = RunResultPresenter(artifacts, availability)
+    library = LibraryService(
+        resolved_unit_of_work,
+        artifacts,
+        artifact_types=artifact_types,
+        saved_graphs=saved_graphs,
+    )
     plugin_invoker = None
     artifact_plugin_invoker = None
     release_admission: ReleaseExecutionAdmission | None = None
@@ -252,6 +260,7 @@ def build_workbench_components(
         materializations=materializations,
         presenter=presenter,
         artifacts=artifacts,
+        library=library,
         plugin_invoker=artifact_plugin_invoker,
         plugin_runtime=plugin_runtime,
         release_admission=release_admission,

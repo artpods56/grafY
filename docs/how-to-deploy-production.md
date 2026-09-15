@@ -145,7 +145,7 @@ from the defaults above.
 
 The current `.github/workflows/ci.yml` is the release gate. It applies every
 Alembic migration to PostgreSQL, runs backend tests, checks Python and web code,
-builds the production web application, and runs the disposable live HTTP test.
+builds the production web application and runs the automated test suites.
 The workflow runs for pull requests and pushes to `main`.
 
 Keep production deployment separate from CI until the host has a dedicated

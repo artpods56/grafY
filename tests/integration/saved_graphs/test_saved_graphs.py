@@ -4,8 +4,6 @@ from uuid import UUID, uuid4
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-from grafy_api.v1.models import ArtifactTypeBindingModel, ArtifactTypeKeyResponse
 from grafy_api.graph_contracts import (
     CheckpointGraphRequest,
     CopyExactHeadRequest,
@@ -20,6 +18,7 @@ from grafy_api.graph_contracts import (
     SubmitGraphCommandRequest,
     UpdateSavedGraphRequest,
 )
+from grafy_api.v1.models import ArtifactTypeBindingModel, ArtifactTypeKeyResponse
 from grafy_core.domain.collaboration import RemoveNodesCommand, RenameGraphCommand
 from grafy_core.domain.identity import ActorContext
 from grafy_core.domain.saved_graphs import SavedGraphDocument
@@ -191,9 +190,10 @@ def _canonical_raw_graph_payload(name: str = "Draft graph") -> dict[str, object]
     return {
         "name": payload.pop("name"),
         "document": {
-            "schema_version": 6,
+            "schema_version": 7,
             "nodes": payload.pop("nodes"),
             "edges": payload.pop("edges"),
+            "origins": [],
             "presentation": payload.pop("presentation"),
         },
     }
@@ -232,7 +232,7 @@ def test_saved_graph_crud_round_trip(builtin_client: TestClient) -> None:
     assert created["name"] == "Parish index draft"
     assert created["revision"] == 1
     document = created["document"]
-    assert document["schema_version"] == 6
+    assert document["schema_version"] == 7
     assert len(document["nodes"]) == 2
     assert len(document["edges"]) == 1
     assert document["nodes"][0]["input_plugs"] == []

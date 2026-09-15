@@ -74,9 +74,10 @@ function savedGraph(
     created_at: "2026-07-17T12:00:00Z",
     updated_at: "2026-07-17T12:00:00Z",
     document: {
-      schema_version: 6,
+      schema_version: 7,
       nodes: [],
       edges: [],
+      origins: [],
       presentation: {
         viewers: [],
         links: [],
@@ -121,18 +122,21 @@ function lifecycleOptions(
     name: "Untitled workflow",
     nodes: [],
     edges: [],
+    origins: [],
   },
 ): { options: LifecycleOptions; callbacks: LifecycleCallbacks } {
   const document = {
     name: initialDocument.name,
     nodes: initialDocument.nodes,
     edges: initialDocument.edges,
+    origins: initialDocument.origins,
   };
   const callbacks = {
     replaceDocument: vi.fn((nextDocument: LifecycleOptions["document"]) => {
       document.name = nextDocument.name;
       document.nodes = nextDocument.nodes;
       document.edges = nextDocument.edges;
+      document.origins = nextDocument.origins;
     }),
     replacePresentation: vi.fn(),
     refreshNodeSecretStatuses,
@@ -229,6 +233,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
       name: "Dragged graph",
       nodes: [node],
       edges: [],
+      origins: [],
     };
     api.createSavedGraph.mockResolvedValue(graph);
     api.getSavedGraph.mockResolvedValue(graph);
@@ -317,7 +322,8 @@ describe("useSavedGraphLifecycle document ownership", () => {
       name: "Live room edit",
       updated_at: "2026-08-13T12:00:00Z",
       document: {
-        schema_version: 6,
+        schema_version: 7,
+        origins: [],
         nodes: [{
             ...checkpointNode,
           input_plugs: [],
@@ -366,7 +372,8 @@ describe("useSavedGraphLifecycle document ownership", () => {
       name: "Checkpoint",
       updated_at: "2026-08-13T12:00:00Z",
       document: {
-        schema_version: 6,
+        schema_version: 7,
+        origins: [],
         nodes: [],
         edges: []
       }
@@ -441,7 +448,8 @@ describe("useSavedGraphLifecycle document ownership", () => {
         name: "Checkpoint",
         updated_at: "2026-08-13T12:00:00Z",
         document: {
-          schema_version: 6,
+          schema_version: 7,
+          origins: [],
           nodes: [checkpointedNode],
           edges: []
         }
@@ -504,7 +512,8 @@ describe("useSavedGraphLifecycle document ownership", () => {
       name: "Peer presentation",
       updated_at: "2026-08-13T12:00:00Z",
       document: {
-        schema_version: 6,
+        schema_version: 7,
+        origins: [],
         nodes: [],
         edges: [],
         presentation: peerPresentation
@@ -524,7 +533,8 @@ describe("useSavedGraphLifecycle document ownership", () => {
         name: "Checkpoint",
         updated_at: "2026-08-13T12:00:00Z",
         document: {
-          schema_version: 6,
+          schema_version: 7,
+          origins: [],
           nodes: [],
           edges: []
         }

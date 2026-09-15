@@ -1,15 +1,18 @@
+import json
+import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import (
     TYPE_CHECKING,
+    Any,
     Literal,
     Self,
     TypeAlias,
-    Any,
-    Callable,
 )
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 if TYPE_CHECKING:
     from grafy_core.plugins import PluginRuntimeContext
@@ -25,6 +28,33 @@ ArtifactBundleFormat: TypeAlias = Literal[
     "object-set",
 ]
 ArtifactReferenceShape: TypeAlias = Literal["one", "many"]
+ConfirmationRule: TypeAlias = Literal["magic", "json", "json_document", "none"]
+
+_EXTENSION_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,14}[a-z0-9])?$")
+
+
+def validate_extension_claims(
+    artifact_type_id: str,
+    extensions: tuple[str, ...],
+) -> None:
+    """Enforce the extension claim rules shared by specs and release contracts."""
+
+    if len(extensions) != len(set(extensions)):
+        raise ValueError("Artifact type extensions must be unique")
+    if artifact_type_id == "file.blob" and extensions:
+        raise ValueError("file.blob may not declare extensions")
+    if extensions and not artifact_type_id.startswith("file."):
+        raise ValueError(
+            f"Artifact type {artifact_type_id!r} may not declare extensions; "
+            "only file.* types claim extensions"
+        )
+    for extension in extensions:
+        if not _EXTENSION_PATTERN.fullmatch(extension):
+            raise ValueError(
+                f"Artifact type extension {extension!r} must be a lowercase "
+                "alphanumeric token of 1 to 16 characters without a dot, "
+                "whitespace, or a leading or trailing dash"
+            )
 
 
 class NodeConfig(BaseModel):
@@ -63,7 +93,7 @@ class ArtifactFieldProjection:
     target: ArtifactTypeKey
     title: str
 
-
+#[TODO] Artifact types could be typed
 @dataclass(frozen=True, slots=True)
 class ArtifactExportFormat:
     """One downloadable rendering of an artifact type, beyond the universal JSON.
@@ -113,6 +143,66 @@ class ArtifactReferenceContract:
 
 
 @dataclass(frozen=True, slots=True)
+class MagicSegment:
+    """One offset-and-bytes segment that must match at the start of a file."""
+
+    offset: int
+    value: bytes
+
+    def __post_init__(self) -> None:
+        if isinstance(self.offset, bool) or self.offset < 0:
+            raise ValueError("Magic signature segment offset must not be negative")
+        if not self.value:
+            raise ValueError("Magic signature segment bytes must not be empty")
+
+    def matches(self, content: bytes) -> bool:
+        return content[self.offset : self.offset + len(self.value)] == self.value
+
+
+@dataclass(frozen=True, slots=True)
+class MagicSignature:
+    """One alternative magic signature: every segment must match."""
+
+    segments: tuple[MagicSegment, ...]
+
+    def __post_init__(self) -> None:
+        if not self.segments:
+            raise ValueError("Magic signature must contain at least one segment")
+
+    def matches(self, content: bytes) -> bool:
+        return all(segment.matches(content) for segment in self.segments)
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactConfirmationRule:
+    """How ingest confirms bytes agree with a declared file format."""
+
+    rule: ConfirmationRule = "none"
+    signatures: tuple[MagicSignature, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.rule == "magic":
+            if not self.signatures:
+                raise ValueError("A magic confirmation rule requires a signature")
+            return
+        if self.signatures:
+            raise ValueError("Only a magic confirmation rule may declare signatures")
+
+    def confirms(self, content: bytes) -> bool:
+        if self.rule == "none":
+            return True
+        if self.rule == "magic":
+            return any(signature.matches(content) for signature in self.signatures)
+        try:
+            document = json.loads(content.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        if self.rule == "json":
+            return isinstance(document, dict)
+        return isinstance(document, (dict, list))
+
+
+@dataclass(frozen=True, slots=True)
 class ArtifactTypeSpec:
     key: ArtifactTypeKey
     title: str
@@ -125,6 +215,8 @@ class ArtifactTypeSpec:
         format="inline-json",
         version=1,
     )
+    extensions: tuple[str, ...] = ()
+    confirmation_rule: ArtifactConfirmationRule = ArtifactConfirmationRule()
 
     def __post_init__(self) -> None:
         paths = [reference.path for reference in self.references]
@@ -134,6 +226,7 @@ class ArtifactTypeSpec:
             raise ValueError(
                 "Artifact references currently require the inline-json bundle"
             )
+        validate_extension_claims(self.key.id, self.extensions)
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,7 +260,7 @@ class ArtifactRef(BaseModel):
     def key(self) -> ArtifactTypeKey:
         return ArtifactTypeKey(self.artifact_type, self.schema_version)
 
-
+#[TODO] Review if this is really needed to represent a sequence of artifacts
 class ArtifactRefSequence(BaseModel):
     sequence_id: UUID = Field(default_factory=sequence_id)
     artifact_type: str
@@ -210,6 +303,144 @@ class ArtifactRefSequence(BaseModel):
         return self
 
 
+type LibrarySource = Literal["run", "upload"]
+
+_GRAPH_TITLE_MAX_LENGTH = 160
+_NODE_TITLE_MAX_LENGTH = 160
+_NODE_ID_MAX_LENGTH = 255
+_FILENAME_MAX_LENGTH = 255
+
+
+def _required_text(value: str, *, label: str, max_length: int) -> str:
+    text = value.strip()
+    if text == "":
+        raise ValueError(f"Library provenance {label} must not be blank")
+    if len(text) > max_length:
+        raise ValueError(
+            f"Library provenance {label} must be at most {max_length} characters"
+        )
+    return text
+
+#[TODO] from_run and from_upload apply validation but it should be moved to the field definitions so its also applied on direct object construction
+class LibraryProvenance(BaseModel):
+    """Birth record written once when an artifact enters a Workspace Library.
+
+    The run facts are a snapshot of the save gesture: the graph and node titles
+    are frozen here so later renames, replacements, or deletions of the source
+    never rewrite this row. Nothing in the record is resolved live.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: LibrarySource
+    saved_at: datetime
+    graph_id: UUID | None = None
+    graph_title: str | None = None
+    node_id: str | None = None
+    node_title: str | None = None
+    graph_revision: int | None = None
+    execution_id: UUID | None = None
+    original_filename: str | None = None
+
+    @field_validator("saved_at")
+    @classmethod
+    def require_aware_saved_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("Library provenance save time must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def validate_source_shape(self) -> Self:
+        if self.source == "run":
+            missing = [
+                label
+                for label, value in (
+                    ("graph id", self.graph_id),
+                    ("graph title", self.graph_title),
+                    ("node id", self.node_id),
+                    ("node title", self.node_title),
+                    ("graph revision", self.graph_revision),
+                    ("execution id", self.execution_id),
+                )
+                if value is None
+            ]
+            if missing:
+                raise ValueError(
+                    "A run Library provenance requires " + ", ".join(missing)
+                )
+            if self.graph_revision is not None and self.graph_revision < 1:
+                raise ValueError("Library provenance graph revision must be positive")
+            if self.original_filename is not None:
+                raise ValueError(
+                    "A run Library provenance cannot carry an uploaded filename"
+                )
+            return self
+        if self.original_filename is None:
+            raise ValueError("An uploaded Library provenance requires a filename")
+        if any(
+            value is not None
+            for value in (
+                self.graph_id,
+                self.graph_title,
+                self.node_id,
+                self.node_title,
+                self.graph_revision,
+                self.execution_id,
+            )
+        ):
+            raise ValueError(
+                "An uploaded Library provenance cannot carry run facts"
+            )
+        return self
+
+    @classmethod
+    def from_run(
+        cls,
+        *,
+        saved_at: datetime,
+        graph_id: UUID,
+        graph_title: str,
+        node_id: str,
+        node_title: str,
+        graph_revision: int,
+        execution_id: UUID,
+    ) -> Self:
+        return cls(
+            source="run",
+            saved_at=saved_at,
+            graph_id=graph_id,
+            graph_title=_required_text(
+                graph_title,
+                label="graph title",
+                max_length=_GRAPH_TITLE_MAX_LENGTH,
+            ),
+            node_id=_required_text(
+                node_id,
+                label="node id",
+                max_length=_NODE_ID_MAX_LENGTH,
+            ),
+            node_title=_required_text(
+                node_title,
+                label="node title",
+                max_length=_NODE_TITLE_MAX_LENGTH,
+            ),
+            graph_revision=graph_revision,
+            execution_id=execution_id,
+        )
+
+    @classmethod
+    def from_upload(cls, *, saved_at: datetime, original_filename: str) -> Self:
+        return cls(
+            source="upload",
+            saved_at=saved_at,
+            original_filename=_required_text(
+                original_filename,
+                label="original filename",
+                max_length=_FILENAME_MAX_LENGTH,
+            ),
+        )
+
+
 @dataclass
 class ArtifactObject:
     workspace_id: UUID
@@ -224,6 +455,7 @@ class ArtifactObject:
     byte_size: int | None = None
     sha256: str | None = None
     metadata: JsonObject = field(default_factory=dict)
+    library_provenance: LibraryProvenance | None = None
 
     def ref(self) -> ArtifactRef:
         return ArtifactRef.from_key(
@@ -236,20 +468,33 @@ class ArtifactObject:
 if TYPE_CHECKING:
     from grafy_core.ports.artifacts import (
         ArtifactRepositoryPort as ArtifactRepositoryPort,
+    )
+    from grafy_core.ports.artifacts import (
         UnitOfWorkPort as UnitOfWorkPort,
     )
-
     from grafy_core.runtime.in_memory import (
         InMemoryArtifactRepository as InMemoryArtifactRepository,
+    )
+    from grafy_core.runtime.in_memory import (
         InMemoryDataStore as InMemoryDataStore,
+    )
+    from grafy_core.runtime.in_memory import (
         InMemoryGraphExecutionHistoryRepository as InMemoryGraphExecutionHistoryRepository,
+    )
+    from grafy_core.runtime.in_memory import (
         InMemoryInvocationCacheRepository as InMemoryInvocationCacheRepository,
+    )
+    from grafy_core.runtime.in_memory import (
         InMemoryMaterializedNodeOutputsRepository as InMemoryMaterializedNodeOutputsRepository,
+    )
+    from grafy_core.runtime.in_memory import (
         InMemoryStagedUploadRepository as InMemoryStagedUploadRepository,
+    )
+    from grafy_core.runtime.in_memory import (
         InMemoryUnitOfWork as InMemoryUnitOfWork,
     )
 
-
+#[TODO] Remove whatever this is, probably dead code
 def __getattr__(name: str) -> object:
     # Legacy SDK exports must be lazy: importing ports or runtime while artifact
     # models initialize re-enters the domain package through its public exports.
@@ -276,6 +521,7 @@ __all__ = [
     "Artifact",
     "ArtifactBundleContract",
     "ArtifactBundleFormat",
+    "ArtifactConfirmationRule",
     "ArtifactExportFormat",
     "ArtifactFieldProjection",
     "ArtifactObject",
@@ -293,7 +539,10 @@ __all__ = [
     "InMemoryMaterializedNodeOutputsRepository",
     "InMemoryStagedUploadRepository",
     "InMemoryUnitOfWork",
+    "ConfirmationRule",
     "JsonObject",
+    "MagicSegment",
+    "MagicSignature",
     "MaterializedJsonType",
     "NoConfig",
     "NodeConfig",
@@ -302,4 +551,5 @@ __all__ = [
     "UnitOfWorkPort",
     "artifact_id",
     "sequence_id",
+    "validate_extension_claims",
 ]
