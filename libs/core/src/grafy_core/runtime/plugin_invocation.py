@@ -409,6 +409,12 @@ def _accepts_of(
     return artifact_type_bindings.get(variable, ArtifactTypeVariable(variable))
 
 
+def _also_accepts_of(port: PluginPortContract) -> tuple[ArtifactTypeKey, ...]:
+    return tuple(
+        ArtifactTypeKey(key.id, key.schema_version) for key in port.also_accepts
+    )
+
+
 def _input_model_for(
     contract: PluginNodeContract,
     artifact_type_bindings: Mapping[str, ArtifactTypeKey],
@@ -416,22 +422,25 @@ def _input_model_for(
     fields: dict[str, tuple[object, object]] = {}
     for port in contract.inputs:
         accepts = _accepts_of(port, artifact_type_bindings)
+        also_accepts = _also_accepts_of(port)
         description = port.description
         if port.instance_plugs:
             annotation = list[ArtifactRef | ArtifactRefSequence]
-            meta = InPort(accepts, variadic=True, instance_plugs=True)
+            meta = InPort(
+                accepts,
+                variadic=True,
+                instance_plugs=True,
+                also_accepts=also_accepts,
+            )
         elif port.variadic:
             item_annotation = (
                 ArtifactRefSequence if port.shape == "many" else ArtifactRef
             )
             annotation = list[item_annotation]  # type: ignore[valid-type]
-            meta = InPort(accepts, variadic=True)
-        elif port.shape == "many":
-            annotation = ArtifactRefSequence
-            meta = InPort(accepts)
+            meta = InPort(accepts, variadic=True, also_accepts=also_accepts)
         else:
-            annotation = ArtifactRef
-            meta = InPort(accepts)
+            annotation = ArtifactRefSequence if port.shape == "many" else ArtifactRef
+            meta = InPort(accepts, also_accepts=also_accepts)
         if port.required:
             fields[port.name] = (
                 Annotated[annotation, meta],  # type: ignore[valid-type]
