@@ -3,13 +3,12 @@ from uuid import UUID
 
 from grafy_api.v1.routes.uploads.models import (
     ImageUploadItemResponse,
-    SampleRequest,
     UploadTargetResponse,
 )
 from httpx import Response
 from starlette.testclient import TestClient
 
-from tests.support.clients._http import _expect, _parse, _parse_list, _request
+from tests.support.clients._http import _expect, _parse
 
 
 class UploadsApi:
@@ -144,25 +143,3 @@ class UploadsApi:
             ),
         )
 
-    def create_samples(
-        self,
-        payload: SampleRequest,
-        *,
-        headers: Mapping[str, str] | None = None,
-    ) -> Response:
-        return _request(
-            self._client,
-            "POST",
-            f"/v1/workspaces/{self._workspace_id}/samples",
-            payload=payload,
-            headers=headers,
-        )
-
-    def create_samples_ok(
-        self,
-        payload: SampleRequest,
-        *,
-        headers: Mapping[str, str] | None = None,
-    ) -> list[ImageUploadItemResponse]:
-        response = _expect(self.create_samples(payload, headers=headers), 200)
-        return _parse_list(ImageUploadItemResponse, response)

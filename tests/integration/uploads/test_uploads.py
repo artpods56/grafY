@@ -24,7 +24,6 @@ from grafy_api.uploads import (
     UploadTransportUnsupportedError,
 )
 from grafy_api.v1.routes.uploads.dependencies import upload_service
-from grafy_api.v1.routes.uploads.models import SampleRequest
 from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey
 from grafy_core.domain.uploads import Upload, UploadStatus
 from grafy_core.file_contracts import (
@@ -545,21 +544,6 @@ def test_upload_endpoint_shows_the_blob_informational_line(
 
     assert body.artifact_type == "file.blob@1"
     assert body.notice == "Format not recognized, stored as a blob."
-
-
-def test_image_upload_materializes_sample_images(
-    builtin_client: TestClient,
-) -> None:
-    uploads = GrafyApi(builtin_client).workspace(WORKSPACE_ID).uploads
-
-    items = uploads.create_samples_ok(SampleRequest(count=2))
-
-    assert [item.artifact_type for item in items] == ["file.png@1", "file.png@1"]
-    assert [item.filename for item in items] == [
-        "sample-page-1.png",
-        "sample-page-2.png",
-    ]
-    assert all(item.byte_size > 0 for item in items)
 
 
 def test_upload_endpoint_requires_content_only_on_the_local_backend(

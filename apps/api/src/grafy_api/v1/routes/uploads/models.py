@@ -11,10 +11,6 @@ from grafy_api.v1.models import ApiResponse
 BLOB_UPLOAD_NOTICE = "Format not recognized, stored as a blob."
 
 
-class SampleRequest(BaseModel):
-    count: int = Field(default=2, ge=1, le=8)
-
-
 class CreateUploadRequest(BaseModel):
     """Reserve one upload before the bytes leave the client."""
 
@@ -66,6 +62,5 @@ __all__ = [
     "BLOB_UPLOAD_NOTICE",
     "CreateUploadRequest",
     "ImageUploadItemResponse",
-    "SampleRequest",
     "UploadTargetResponse",
 ]

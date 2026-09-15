@@ -31,7 +31,6 @@ from grafy_api.v1.routes.executions.models import (
     RunResponse,
 )
 from grafy_api.v1.routes.executions.services import RunResultPresenter
-from grafy_api.v1.routes.uploads.models import SampleRequest
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
 from grafy_core.file_contracts import BUILTIN_FILE_FORMATS
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
@@ -48,6 +47,8 @@ from tests.support.system_plugins import (
     selected_system_run_node as RunNodeRequest,
 )
 from tests.testkit import app_with_overrides, create_db_url, db
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\nstaged payload"
 
 
 def _parse_sse_events(body: str) -> list[dict[str, object]]:
@@ -443,23 +444,27 @@ def test_upload_endpoint_streams_bytes_into_the_object_store(
     assert stored_path.read_bytes() == content
 
 
-def test_image_upload_materializes_sample_images(
+def test_image_upload_materializes_uploaded_images(
     builtin_client: TestClient,
 ) -> None:
     api = GrafyApi(builtin_client)
-    sample_response = api.workspace(WORKSPACE_ID).uploads.create_samples(
-        SampleRequest(count=2)
-    )
-    assert sample_response.status_code == 200
     # The node config keeps only the identity of each upload, exactly like the
     # workbench client does before writing operator config.
+    items = [
+        api.workspace(WORKSPACE_ID).uploads.upload_ok(
+            f"scan-{index}.png",
+            PNG_BYTES,
+            content_type="image/png",
+        )
+        for index in range(1, 3)
+    ]
     uploads = [
         {
-            "upload_key": item["upload_key"],
-            "filename": item["filename"],
-            "byte_size": item["byte_size"],
+            "upload_key": item.upload_key,
+            "filename": item.filename,
+            "byte_size": item.byte_size,
         }
-        for item in sample_response.json()
+        for item in items
     ]
 
     executions = api.workspace(WORKSPACE_ID).executions

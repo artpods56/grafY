@@ -10,7 +10,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from io import BytesIO
 from mimetypes import guess_type
 from pathlib import Path
 from typing import Protocol, cast, final, runtime_checkable
@@ -26,8 +25,6 @@ from grafy_core.ports.storage import (
 )
 from grafy_core.ports.uploads import UploadUnitOfWorkPort
 from grafy_core.runtime.upload_reader import require_ready_upload
-from PIL import Image as ImageModule
-from PIL import ImageDraw
 from starlette.concurrency import run_in_threadpool
 
 from grafy_api.services.errors import WorkbenchOperationError
@@ -35,11 +32,6 @@ from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES
 
 _READ_CHUNK_BYTES = 1024 * 1024
 _FILENAME_MAX_LENGTH = 255
-_SAMPLE_PAGE_TEXTS = (
-    "PAGE {index}\nParochia Sancti Floriani\nAnno Domini 1846",
-    "PAGE {index}\nBaptisatorum liber\nVilla Nova, folio {index}",
-    "PAGE {index}\nIndex nominum\nSeries continua",
-)
 
 
 class UploadTooLargeError(WorkbenchOperationError):
@@ -139,17 +131,6 @@ def _sha256_stream(stream: FileStreamProtocol) -> str:
     while chunk := stream.read(_READ_CHUNK_BYTES):
         digest.update(chunk)
     return digest.hexdigest()
-
-
-def _render_sample_page(index: int) -> bytes:
-    text = _SAMPLE_PAGE_TEXTS[index % len(_SAMPLE_PAGE_TEXTS)].format(index=index + 1)
-    image = ImageModule.new("RGB", (420, 300), color="#f5f0e6")
-    draw = ImageDraw.Draw(image)
-    draw.rectangle((12, 12, 407, 287), outline="#b9ad98")
-    draw.multiline_text((36, 48), text, fill="#463c2e", spacing=14)
-    buffer = BytesIO()
-    image.save(buffer, format="PNG")
-    return buffer.getvalue()
 
 
 class UploadService:
@@ -330,41 +311,6 @@ class UploadService:
             await unit_of_work.artifacts.add(artifact)
             await unit_of_work.commit()
         return UploadResult(upload=current, artifact_type=key)
-
-    async def create_sample_images(
-        self,
-        *,
-        workspace_id: UUID,
-        created_by_user_id: UUID | None,
-        count: int,
-    ) -> list[UploadResult]:
-        results: list[UploadResult] = []
-        for index in range(count):
-            content = await run_in_threadpool(_render_sample_page, index)
-            filename = f"sample-page-{index + 1}.png"
-            target = await self.create_upload(
-                workspace_id=workspace_id,
-                created_by_user_id=created_by_user_id,
-                filename=filename,
-                byte_size=len(content),
-                content_type="image/png",
-            )
-            _ = await self._storage.save(
-                SaveFileCommand(
-                    bucket=self._bucket,
-                    path=self._object_key(target.upload_id),
-                    stream=BytesIO(content),
-                    content_type="image/png",
-                    metadata={"original_filename": filename},
-                )
-            )
-            results.append(
-                await self.complete_upload(
-                    workspace_id=workspace_id,
-                    upload_id=target.upload_id,
-                )
-            )
-        return results
 
     async def cleanup_abandoned(
         self,

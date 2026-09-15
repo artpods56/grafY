@@ -378,7 +378,7 @@ remain UUIDs, but a UUID never substitutes for workspace authorization.
 | Node catalog, including graph modules | `/v1/workspaces/{workspace_id}/nodes` |
 | Graph CRUD/history/materializations/secrets | `/v1/workspaces/{workspace_id}/graphs/...` |
 | Diagnostic run and retained executions | `/v1/workspaces/{workspace_id}/runs` and `/executions/...` |
-| Uploads and samples | `/v1/workspaces/{workspace_id}/uploads` and `/samples` |
+| Uploads | `/v1/workspaces/{workspace_id}/uploads` |
 | Artifact content/query/render | `/v1/workspaces/{workspace_id}/artifacts/...` |
 | Graph room | `WS /v1/workspaces/{workspace_id}/graphs/{graph_id}/room` |
 | Streamable HTTP MCP | `/mcp` mounted under the FastAPI authority |

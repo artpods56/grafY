@@ -1056,23 +1056,6 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/v1/workspaces/{workspace_id}/samples": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Create Samples */
-        readonly post: operations["create_samples_v1_workspaces__workspace_id__samples_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
     readonly "/v1/workspaces/{workspace_id}/templates": {
         readonly parameters: {
             readonly query?: never;
@@ -3112,14 +3095,6 @@ export interface components {
              * @enum {string}
              */
             readonly status: "succeeded" | "failed";
-        };
-        /** SampleRequest */
-        readonly SampleRequest: {
-            /**
-             * Count
-             * @default 2
-             */
-            readonly count: number;
         };
         /**
          * SavedGraphAnnotationLayout
@@ -6886,41 +6861,6 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["RunExecutionCapacityErrorResponse"];
-                };
-            };
-        };
-    };
-    readonly create_samples_v1_workspaces__workspace_id__samples_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["SampleRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": readonly components["schemas"]["ImageUploadItemResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

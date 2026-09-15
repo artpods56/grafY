@@ -17,7 +17,6 @@ from .dependencies import UploadDependency
 from .models import (
     CreateUploadRequest,
     ImageUploadItemResponse,
-    SampleRequest,
     UploadTargetResponse,
 )
 
@@ -118,25 +117,6 @@ async def complete_upload(
     except WorkbenchOperationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return ImageUploadItemResponse.from_result(result)
-
-
-@router.post(
-    "/samples",
-    response_model=list[ImageUploadItemResponse],
-    response_model_exclude_none=True,
-)
-async def create_samples(
-    workspace_id: UUID,
-    request: SampleRequest,
-    service: UploadDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
-) -> list[ImageUploadItemResponse]:
-    items = await service.create_sample_images(
-        workspace_id=workspace_id,
-        created_by_user_id=access.actor.user_id,
-        count=request.count,
-    )
-    return [ImageUploadItemResponse.from_result(item) for item in items]
 
 
 __all__ = ["router"]

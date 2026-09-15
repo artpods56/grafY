@@ -26,7 +26,6 @@ from grafy_api.graph_contracts import (
     SubmitGraphCommandRequest,
     UpdateSavedGraphRequest,
 )
-from grafy_api.v1.routes.uploads.models import SampleRequest
 from grafy_core.application.identity import IdentityService
 from grafy_core.artifacts import ArtifactObject
 from grafy_core.domain.collaboration import RenameGraphCommand
@@ -526,13 +525,6 @@ async def test_non_member_cannot_read_or_write_other_workspace_by_uuid(
                 ),
                 context="upload",
             )
-            _assert_not_found(
-                workspace_b.uploads.create_samples(
-                    SampleRequest(count=1),
-                    headers=_csrf_headers(owner_a_issued),
-                ),
-                context="samples",
-            )
             _assert_not_found(workspace_b.list_members(), context="list members")
             _assert_not_found(
                 workspace_b.create_invitation(
@@ -682,13 +674,6 @@ async def test_viewer_can_read_but_cannot_mutate_execute_or_manage_secrets(
                     headers=_csrf_headers(viewer_a_issued),
                 ),
                 context="viewer upload",
-            )
-            _assert_forbidden(
-                workspace_a.uploads.create_samples(
-                    SampleRequest(count=1),
-                    headers=_csrf_headers(viewer_a_issued),
-                ),
-                context="viewer samples",
             )
             _assert_forbidden(
                 workspace_a.create_invitation(

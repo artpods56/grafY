@@ -5382,19 +5382,6 @@
         "title": "RunResponse",
         "type": "object"
       },
-      "SampleRequest": {
-        "properties": {
-          "count": {
-            "default": 2,
-            "maximum": 8.0,
-            "minimum": 1.0,
-            "title": "Count",
-            "type": "integer"
-          }
-        },
-        "title": "SampleRequest",
-        "type": "object"
-      },
       "SaveRunArtifactRequest": {
         "properties": {
           "artifact_id": {
@@ -13151,71 +13138,6 @@
         "summary": "Run Graph",
         "tags": [
           "executions"
-        ]
-      }
-    },
-    "/v1/workspaces/{workspace_id}/samples": {
-      "post": {
-        "operationId": "create_samples_v1_workspaces__workspace_id__samples_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SampleRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ImageUploadItemResponse"
-                  },
-                  "title": "Response Create Samples V1 Workspaces  Workspace Id  Samples Post",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "APIKeyCookie": []
-          },
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Create Samples",
-        "tags": [
-          "workbench"
         ]
       }
     },
