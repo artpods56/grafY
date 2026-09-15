@@ -1,5 +1,5 @@
 import { collaborativeHeadFromLegacy } from "./graph-head";
-import { API_BASE, request } from "./client";
+import { API_BASE, ApiError, putUploadBytes, request } from "./client";
 import type {
   AppliedNodeSecret,
   ApplyNodeSecretRequest,
@@ -30,6 +30,7 @@ import type {
   TablePage,
   TableSchema,
   UploadResponse,
+  UploadTarget,
   UpdateSavedGraphRequest,
 } from "./contract";
 
@@ -450,12 +451,28 @@ export async function uploadFile(
   file: File,
   signal?: AbortSignal,
 ): Promise<UploadResponse> {
-  const body = new FormData();
-  body.append("file", file, file.name);
-  return request<UploadResponse>("POST", `/v1/workspaces/${encodeURIComponent(workspaceId)}/uploads`, {
-    body,
-    signal,
-  });
+  const target = await request<UploadTarget>(
+    "POST",
+    `/v1/workspaces/${encodeURIComponent(workspaceId)}/uploads`,
+    {
+      body: {
+        filename: file.name,
+        byte_size: file.size,
+        content_type: file.type || null,
+      },
+      signal,
+    },
+  );
+  const targetUrl = artifactContentUrl(workspaceId, target.url);
+  if (!targetUrl) {
+    throw new ApiError(500, "The upload target URL was empty.");
+  }
+  await putUploadBytes(targetUrl, file, file.type, signal);
+  return request<UploadResponse>(
+    "POST",
+    `/v1/workspaces/${encodeURIComponent(workspaceId)}/uploads/${encodeURIComponent(target.upload_id)}/complete`,
+    { signal },
+  );
 }
 
 export function runGraph(workspaceId: string, requestBody: RunRequest) {

@@ -50,16 +50,20 @@ function workflowNode(id = "node-1"): WorkflowNode {
 }
 
 function geoJsonFile(): File {
-  return new File(['{"type": "FeatureCollection", "features": []}'], "layer.geojson", {
-    type: "application/geo+json",
-  });
+  return new File(
+    ['{"type": "FeatureCollection", "features": []}'],
+    "layer.geojson",
+    {
+      type: "application/geo+json",
+    },
+  );
 }
 
 function uploadResponse(): UploadResponse {
   return {
     byte_size: 48,
     filename: "layer.geojson",
-    upload_key: "uploads/layer.geojson",
+    upload_key: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
     artifact_type: "file.geojson@1",
     notice: null,
   };
@@ -131,7 +135,9 @@ describe("useNodeFileUploads", () => {
       handlePromise = begin();
     });
     expect(hook.result.current.uploading).toBe(true);
-    expect(hook.result.current.nodes[0].data.execution.status).toBe("uploading");
+    expect(hook.result.current.nodes[0].data.execution.status).toBe(
+      "uploading",
+    );
     expect(applyAuthoringCommands).not.toHaveBeenCalled();
 
     await React.act(async () => {
@@ -151,7 +157,7 @@ describe("useNodeFileUploads", () => {
             {
               byte_size: 48,
               filename: "layer.geojson",
-              upload_key: "uploads/layer.geojson",
+              upload_key: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
             },
           ],
         },

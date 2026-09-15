@@ -1152,8 +1152,42 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
-        /** Upload File */
-        readonly post: operations["upload_file_v1_workspaces__workspace_id__uploads_post"];
+        /** Create Upload */
+        readonly post: operations["create_upload_v1_workspaces__workspace_id__uploads_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/uploads/{upload_id}/complete": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Complete Upload */
+        readonly post: operations["complete_upload_v1_workspaces__workspace_id__uploads__upload_id__complete_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/uploads/{upload_id}/content": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /** Receive Upload Content */
+        readonly put: operations["receive_upload_content_v1_workspaces__workspace_id__uploads__upload_id__content_put"];
+        readonly post?: never;
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1355,11 +1389,6 @@ export interface components {
             /** Folder Id */
             readonly folder_id: string | null;
         };
-        /** Body_upload_file_v1_workspaces__workspace_id__uploads_post */
-        readonly Body_upload_file_v1_workspaces__workspace_id__uploads_post: {
-            /** File */
-            readonly file: string;
-        };
         /**
          * CanonicalCollaborativeHeadResponse
          * @description Collaboration metadata paired with the canonical saved graph document.
@@ -1524,6 +1553,18 @@ export interface components {
             readonly source_graph_id: string;
             /** Source Revision */
             readonly source_revision: number;
+        };
+        /**
+         * CreateUploadRequest
+         * @description Reserve one upload before the bytes leave the client.
+         */
+        readonly CreateUploadRequest: {
+            /** Byte Size */
+            readonly byte_size: number;
+            /** Content Type */
+            readonly content_type?: string | null;
+            /** Filename */
+            readonly filename: string;
         };
         /** DuplicateNodeCommand */
         readonly DuplicateNodeCommand: {
@@ -3820,6 +3861,20 @@ export interface components {
             readonly description?: string | null;
             /** Name */
             readonly name: string;
+        };
+        /** UploadTargetResponse */
+        readonly UploadTargetResponse: {
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            readonly expires_at: string;
+            /** Method */
+            readonly method: string;
+            /** Upload Id */
+            readonly upload_id: string;
+            /** Url */
+            readonly url: string;
         };
         /** UserGraphStateResponse */
         readonly UserGraphStateResponse: {
@@ -7075,7 +7130,7 @@ export interface operations {
             };
         };
     };
-    readonly upload_file_v1_workspaces__workspace_id__uploads_post: {
+    readonly create_upload_v1_workspaces__workspace_id__uploads_post: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -7086,9 +7141,41 @@ export interface operations {
         };
         readonly requestBody: {
             readonly content: {
-                readonly "multipart/form-data": components["schemas"]["Body_upload_file_v1_workspaces__workspace_id__uploads_post"];
+                readonly "application/json": components["schemas"]["CreateUploadRequest"];
             };
         };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["UploadTargetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly complete_upload_v1_workspaces__workspace_id__uploads__upload_id__complete_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly upload_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
         readonly responses: {
             /** @description Successful Response */
             readonly 200: {
@@ -7098,6 +7185,36 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["ImageUploadItemResponse"];
                 };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly receive_upload_content_v1_workspaces__workspace_id__uploads__upload_id__content_put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly upload_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 204: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             readonly 422: {

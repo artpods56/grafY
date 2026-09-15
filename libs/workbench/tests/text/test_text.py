@@ -3,16 +3,25 @@ from typing import cast
 from uuid import UUID
 
 import pytest
-from pydantic import ValidationError
-
-from grafy_core.artifacts import ArtifactRef, NoConfig
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.artifact_contracts import (
     TEXT_VALUE,
     TextValue,
     TextValuePayload,
 )
+from grafy_core.artifacts import ArtifactRef, NoConfig
 from grafy_core.nodes import NodeExecutionContext, PortShape
+from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
+from grafy_core.ports.storage import FileStoragePort
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_core.runtime.invocation import (
+    InvocationMode,
+    map_input_candidates,
+    supported_invocation_modes,
+)
+from grafy_core.runtime.materialization import MaterializationProvenance
+from grafy_core.runtime.persistence import ArtifactWriteContext
+from pydantic import ValidationError
+
 from grafy_workbench.text.nodes import (
     MARKDOWN,
     TEXT,
@@ -34,16 +43,6 @@ from grafy_workbench.text.nodes import (
     TextValueOutputWriter,
     TextValueResolver,
 )
-from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
-from grafy_core.ports.storage import FileStoragePort
-from grafy_core.runtime.invocation import (
-    InvocationMode,
-    map_input_candidates,
-    supported_invocation_modes,
-)
-from grafy_core.runtime.materialization import MaterializationProvenance
-from grafy_core.runtime.persistence import ArtifactWriteContext
-
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -184,7 +183,6 @@ async def test_markdown_inline_factories_round_trip_typed_payload(
     uow = InMemoryUnitOfWork()
     context = PluginRuntimeContext(
         workspace=tmp_path,
-        uploads_dir=tmp_path / "uploads",
         storage=cast(FileStoragePort, object()),
         uow=uow,
         bucket="artifacts",

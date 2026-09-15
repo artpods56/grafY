@@ -1,13 +1,10 @@
 from contextvars import ContextVar
 from dataclasses import dataclass
 from types import TracebackType
-from typing import override, Self
+from typing import Self, override
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm.exc import StaleDataError
-
-from grafy_core.ports.artifacts import ArtifactRepositoryPort
 from grafy_core.domain.errors import ConcurrentWriteError
+from grafy_core.ports.artifacts import ArtifactRepositoryPort
 from grafy_core.ports.collaboration import (
     CollaborationRepositoryPort,
     CollaborationUnitOfWorkPort,
@@ -16,23 +13,23 @@ from grafy_core.ports.execution_history import (
     ExecutionHistoryUnitOfWorkPort,
     GraphExecutionHistoryRepositoryPort,
 )
-from grafy_core.ports.invocation_cache import InvocationCacheRepositoryPort
 from grafy_core.ports.identity import (
     IdentityRepositoryPort,
     IdentityUnitOfWorkPort,
     SecurityAuditRepositoryPort,
 )
+from grafy_core.ports.invocation_cache import InvocationCacheRepositoryPort
 from grafy_core.ports.materialized_outputs import (
     MaterializedNodeOutputsRepositoryPort,
     WorkbenchUnitOfWorkPort,
 )
-from grafy_core.ports.node_secrets import (
-    NodeSecretRepositoryPort,
-    NodeSecretUnitOfWorkPort,
-)
 from grafy_core.ports.module_library import (
     ModuleLibraryRepositoryPort,
     ModuleLibraryUnitOfWorkPort,
+)
+from grafy_core.ports.node_secrets import (
+    NodeSecretRepositoryPort,
+    NodeSecretUnitOfWorkPort,
 )
 from grafy_core.ports.plugin_releases import (
     PluginReleaseRepositoryPort,
@@ -42,11 +39,13 @@ from grafy_core.ports.saved_graphs import (
     SavedGraphRepositoryPort,
     SavedGraphUnitOfWorkPort,
 )
-from grafy_core.ports.staged_uploads import (
-    StagedUploadRepositoryPort,
-    StagedUploadUnitOfWorkPort,
-)
 from grafy_core.ports.templates import TemplateRepositoryPort, TemplateUnitOfWorkPort
+from grafy_core.ports.uploads import (
+    UploadRepositoryPort,
+    UploadUnitOfWorkPort,
+)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm.exc import StaleDataError
 
 from grafy_persistence.adapters.repositories import (
     SqlArtifactRepository,
@@ -60,8 +59,8 @@ from grafy_persistence.adapters.repositories import (
     SqlPluginReleaseRepository,
     SqlSavedGraphRepository,
     SqlSecurityAuditRepository,
-    SqlStagedUploadRepository,
     SqlTemplateRepository,
+    SqlUploadRepository,
 )
 
 
@@ -76,7 +75,7 @@ class _SqlAlchemyUnitOfWorkState:
     execution_history: GraphExecutionHistoryRepositoryPort
     identity: IdentityRepositoryPort
     security_audit: SecurityAuditRepositoryPort
-    staged_uploads: StagedUploadRepositoryPort
+    uploads: UploadRepositoryPort
     collaboration: CollaborationRepositoryPort
     modules: ModuleLibraryRepositoryPort
     plugin_releases: PluginReleaseRepositoryPort
@@ -89,7 +88,7 @@ class SqlAlchemyUnitOfWork(
     NodeSecretUnitOfWorkPort,
     ExecutionHistoryUnitOfWorkPort,
     IdentityUnitOfWorkPort,
-    StagedUploadUnitOfWorkPort,
+    UploadUnitOfWorkPort,
     CollaborationUnitOfWorkPort,
     ModuleLibraryUnitOfWorkPort,
     PluginReleaseUnitOfWorkPort,
@@ -154,8 +153,8 @@ class SqlAlchemyUnitOfWork(
 
     @property
     @override
-    def staged_uploads(self) -> StagedUploadRepositoryPort:
-        return self._entered_state().staged_uploads
+    def uploads(self) -> UploadRepositoryPort:
+        return self._entered_state().uploads
 
     @property
     @override
@@ -193,7 +192,7 @@ class SqlAlchemyUnitOfWork(
                 execution_history=SqlGraphExecutionHistoryRepository(session),
                 identity=SqlIdentityRepository(session),
                 security_audit=SqlSecurityAuditRepository(session),
-                staged_uploads=SqlStagedUploadRepository(session),
+                uploads=SqlUploadRepository(session),
                 collaboration=SqlCollaborationRepository(session),
                 modules=SqlModuleLibraryRepository(session),
                 plugin_releases=SqlPluginReleaseRepository(session),

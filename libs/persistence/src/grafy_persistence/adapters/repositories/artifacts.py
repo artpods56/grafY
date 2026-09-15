@@ -1,12 +1,14 @@
 from collections.abc import Collection
-from typing import override
+from datetime import datetime
+from typing import cast, override
 from uuid import UUID
 
 from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey
-from grafy_core.domain.staged_uploads import StagedUpload
+from grafy_core.domain.uploads import Upload, UploadStatus
 from grafy_core.ports.artifacts import ArtifactRepositoryPort
-from grafy_core.ports.staged_uploads import StagedUploadRepositoryPort
+from grafy_core.ports.uploads import UploadRepositoryPort
 from sqlalchemy import (
+    CursorResult,
     delete,
     select,
 )
@@ -91,39 +93,64 @@ class SqlArtifactRepository(ArtifactRepositoryPort):
         return list(result)
 
 
-class SqlStagedUploadRepository(StagedUploadRepositoryPort):
+class SqlUploadRepository(UploadRepositoryPort):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
     @override
-    async def add(self, upload: StagedUpload) -> None:
+    async def add(self, upload: Upload) -> None:
         self._session.add(upload)
 
     @override
     async def get(
         self,
         workspace_id: UUID,
-        upload_key: str,
-    ) -> StagedUpload | None:
-        return await self._session.get(StagedUpload, (workspace_id, upload_key))
+        upload_id: UUID,
+    ) -> Upload | None:
+        return await self._session.get(Upload, (workspace_id, upload_id))
 
     @override
-    async def list_for_workspace(self, workspace_id: UUID) -> list[StagedUpload]:
+    async def list_for_workspace(self, workspace_id: UUID) -> list[Upload]:
         result = await self._session.scalars(
-            select(StagedUpload)
-            .where(schema.staged_uploads.c.workspace_id == workspace_id)
+            select(Upload)
+            .where(schema.uploads.c.workspace_id == workspace_id)
             .order_by(
-                schema.staged_uploads.c.created_at.asc(),
-                schema.staged_uploads.c.upload_key.asc(),
+                schema.uploads.c.created_at.asc(),
+                schema.uploads.c.upload_id.asc(),
             )
         )
         return list(result)
 
     @override
-    async def remove(self, workspace_id: UUID, upload_key: str) -> None:
-        await self._session.execute(
-            delete(schema.staged_uploads).where(
-                schema.staged_uploads.c.workspace_id == workspace_id,
-                schema.staged_uploads.c.upload_key == upload_key,
+    async def list_abandoned_before(
+        self,
+        before: datetime,
+        *,
+        limit: int = 500,
+    ) -> list[Upload]:
+        result = await self._session.scalars(
+            select(Upload)
+            .where(
+                schema.uploads.c.created_at < before,
+                schema.uploads.c.status.in_(
+                    (UploadStatus.PENDING, UploadStatus.FAILED, UploadStatus.EXPIRED)
+                ),
             )
+            .order_by(schema.uploads.c.created_at.asc())
+            .limit(limit)
         )
+        return list(result)
+
+    @override
+    async def discard(self, workspace_id: UUID, upload_id: UUID) -> bool:
+        result = cast(
+            CursorResult[tuple[object, ...]],
+            await self._session.execute(
+                delete(schema.uploads).where(
+                    schema.uploads.c.workspace_id == workspace_id,
+                    schema.uploads.c.upload_id == upload_id,
+                    schema.uploads.c.status != UploadStatus.READY,
+                )
+            ),
+        )
+        return result.rowcount > 0

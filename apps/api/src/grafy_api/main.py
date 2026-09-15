@@ -233,24 +233,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await collaboration.verify_every_graph_has_head()
                 app.state.resources = resources
 
-                async def cleanup_expired_auth_data() -> None:
+                async def cleanup_expired_state() -> None:
+                    # One maintenance interval for every periodic sweep.
+                    cleanups = (
+                        (
+                            "auth_cleanup_failed",
+                            "cleanup_expired",
+                            auth_service.cleanup_expired,
+                        ),
+                        (
+                            "upload_cleanup_failed",
+                            "cleanup_abandoned",
+                            components.uploads.cleanup_abandoned,
+                        ),
+                    )
                     while True:
                         await asyncio.sleep(
                             resolved_settings.auth_cleanup_interval_seconds
                         )
-                        try:
-                            await auth_service.cleanup_expired()
-                        except asyncio.CancelledError:
-                            raise
-                        except Exception as error:
-                            logger.warning(
-                                "auth_cleanup_failed operation=cleanup_expired "
-                                "error_class=%s",
-                                type(error).__name__,
-                            )
-                            continue
+                        for event, operation, cleanup in cleanups:
+                            try:
+                                _ = await cleanup()
+                            except asyncio.CancelledError:
+                                raise
+                            except Exception as error:
+                                logger.warning(
+                                    "%s operation=%s error_class=%s",
+                                    event,
+                                    operation,
+                                    type(error).__name__,
+                                )
 
-                cleanup_task = asyncio.create_task(cleanup_expired_auth_data())
+                cleanup_task = asyncio.create_task(cleanup_expired_state())
                 try:
                     yield
                 finally:

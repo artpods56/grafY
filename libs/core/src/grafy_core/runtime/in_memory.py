@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     )
     from grafy_core.domain.invocation_cache import InvocationCacheEntry
     from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
-    from grafy_core.domain.staged_uploads import StagedUpload
+    from grafy_core.domain.uploads import Upload
     from grafy_core.ports.execution_history import (
         GraphExecutionHistoryRepositoryPort,
     )
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from grafy_core.ports.materialized_outputs import (
         MaterializedNodeOutputsRepositoryPort,
     )
-    from grafy_core.ports.staged_uploads import StagedUploadRepositoryPort
+    from grafy_core.ports.uploads import UploadRepositoryPort
 
 from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey
 from grafy_core.domain.errors import (
@@ -41,6 +41,7 @@ from grafy_core.domain.errors import (
     ObjectAlreadyExistsError,
 )
 from grafy_core.domain.execution_history import TransientExecution
+from grafy_core.domain.uploads import UploadStatus
 from grafy_core.ports.artifacts import ArtifactRepositoryPort, UnitOfWorkPort
 
 
@@ -50,26 +51,39 @@ def _clone[T](value: T) -> T:
 
 @dataclass(slots=True)
 class InMemoryDataStore:
-    transient_executions: dict[UUID, TransientExecution] = field(default_factory=dict)
-    artifacts: dict[UUID, ArtifactObject] = field(default_factory=dict)
+    transient_executions: dict[UUID, TransientExecution] = field(
+        default_factory=dict[UUID, TransientExecution]
+    )
+    artifacts: dict[UUID, ArtifactObject] = field(
+        default_factory=dict[UUID, ArtifactObject]
+    )
     materialized_outputs: dict[
         tuple[UUID, UUID, int, str],
         "MaterializedNodeOutputs",
-    ] = field(default_factory=dict)
-    invocation_cache: dict[tuple[UUID, str], "InvocationCacheEntry"] = field(
-        default_factory=dict
+    ] = field(
+        default_factory=dict[tuple[UUID, UUID, int, str], "MaterializedNodeOutputs"]
     )
-    staged_uploads: dict[tuple[UUID, str], "StagedUpload"] = field(default_factory=dict)
+    invocation_cache: dict[tuple[UUID, str], "InvocationCacheEntry"] = field(
+        default_factory=dict[tuple[UUID, str], "InvocationCacheEntry"]
+    )
+    uploads: dict[tuple[UUID, UUID], "Upload"] = field(
+        default_factory=dict[tuple[UUID, UUID], "Upload"]
+    )
     graph_executions: dict[
         UUID,
         "GraphExecution",
-    ] = field(default_factory=dict)
+    ] = field(default_factory=dict[UUID, "GraphExecution"])
     # One row per requested node: stable request position plus the optional
     # terminal result recorded at most once.
     graph_execution_nodes: dict[
         tuple[UUID, UUID, str],
         tuple[int, "GraphExecutionNodeResult | None"],
-    ] = field(default_factory=dict)
+    ] = field(
+        default_factory=dict[
+            tuple[UUID, UUID, str],
+            tuple[int, "GraphExecutionNodeResult | None"],
+        ]
+    )
 
     def clone(self) -> Self:
         return _clone(self)
@@ -79,7 +93,7 @@ class InMemoryDataStore:
         self.artifacts = _clone(other.artifacts)
         self.materialized_outputs = _clone(other.materialized_outputs)
         self.invocation_cache = _clone(other.invocation_cache)
-        self.staged_uploads = _clone(other.staged_uploads)
+        self.uploads = _clone(other.uploads)
         self.graph_executions = _clone(other.graph_executions)
         self.graph_execution_nodes = _clone(other.graph_execution_nodes)
 
@@ -548,39 +562,53 @@ class InMemoryGraphExecutionHistoryRepository:
 
 
 @final
-class InMemoryStagedUploadRepository:
+class InMemoryUploadRepository:
     def __init__(self, store: InMemoryDataStore) -> None:
         self._store = store
 
-    async def add(self, upload: "StagedUpload") -> None:
-        key = (upload.workspace_id, upload.upload_key)
-        if key in self._store.staged_uploads:
+    async def add(self, upload: "Upload") -> None:
+        key = (upload.workspace_id, upload.upload_id)
+        if key in self._store.uploads:
             raise ObjectAlreadyExistsError(
-                f"Staged upload already exists: {upload.workspace_id}/{upload.upload_key}"
+                f"Upload already exists: {upload.workspace_id}/{upload.upload_id}"
             )
-        self._store.staged_uploads[key] = _clone(upload)
+        self._store.uploads[key] = _clone(upload)
 
-    async def get(
-        self,
-        workspace_id: UUID,
-        upload_key: str,
-    ) -> "StagedUpload | None":
-        upload = self._store.staged_uploads.get((workspace_id, upload_key))
-        if upload is None:
-            return None
-        return _clone(upload)
+    async def get(self, workspace_id: UUID, upload_id: UUID) -> "Upload | None":
+        # Uploads are mutable lifecycle rows: callers advance them by mutating
+        # the row this transaction loaded and committing. ``commit`` publishes
+        # a copy, and a rollback discards the change.
+        return self._store.uploads.get((workspace_id, upload_id))
 
-    async def list_for_workspace(self, workspace_id: UUID) -> list["StagedUpload"]:
+    async def list_for_workspace(self, workspace_id: UUID) -> list["Upload"]:
         uploads = [
             _clone(upload)
-            for (stored_workspace_id, _), upload in self._store.staged_uploads.items()
+            for (stored_workspace_id, _), upload in self._store.uploads.items()
             if stored_workspace_id == workspace_id
         ]
-        uploads.sort(key=lambda upload: (upload.created_at, upload.upload_key))
+        uploads.sort(key=lambda upload: (upload.created_at, str(upload.upload_id)))
         return uploads
 
-    async def remove(self, workspace_id: UUID, upload_key: str) -> None:
-        self._store.staged_uploads.pop((workspace_id, upload_key), None)
+    async def list_abandoned_before(
+        self,
+        before: datetime,
+        *,
+        limit: int = 500,
+    ) -> list["Upload"]:
+        abandoned = [
+            _clone(upload)
+            for upload in self._store.uploads.values()
+            if upload.status is not UploadStatus.READY and upload.created_at < before
+        ]
+        abandoned.sort(key=lambda upload: (upload.created_at, str(upload.upload_id)))
+        return abandoned[:limit]
+
+    async def discard(self, workspace_id: UUID, upload_id: UUID) -> bool:
+        upload = self._store.uploads.get((workspace_id, upload_id))
+        if upload is None or upload.status is UploadStatus.READY:
+            return False
+        del self._store.uploads[(workspace_id, upload_id)]
+        return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -589,7 +617,7 @@ class _InMemoryUnitOfWorkState:
     artifacts: ArtifactRepositoryPort
     materialized_outputs: "MaterializedNodeOutputsRepositoryPort"
     invocation_cache: "InvocationCacheRepositoryPort"
-    staged_uploads: "StagedUploadRepositoryPort"
+    uploads: "UploadRepositoryPort"
     execution_history: "GraphExecutionHistoryRepositoryPort"
 
 
@@ -618,8 +646,8 @@ class InMemoryUnitOfWork(UnitOfWorkPort):
         return self._entered_state().invocation_cache
 
     @property
-    def staged_uploads(self) -> "StagedUploadRepositoryPort":
-        return self._entered_state().staged_uploads
+    def uploads(self) -> "UploadRepositoryPort":
+        return self._entered_state().uploads
 
     @property
     def execution_history(self) -> "GraphExecutionHistoryRepositoryPort":
@@ -641,7 +669,7 @@ class InMemoryUnitOfWork(UnitOfWorkPort):
                         working_store
                     ),
                     invocation_cache=InMemoryInvocationCacheRepository(working_store),
-                    staged_uploads=InMemoryStagedUploadRepository(working_store),
+                    uploads=InMemoryUploadRepository(working_store),
                     execution_history=InMemoryGraphExecutionHistoryRepository(
                         working_store
                     ),

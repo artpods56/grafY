@@ -5,8 +5,10 @@ from types import ModuleType
 from unittest.mock import Mock
 from uuid import UUID
 
+import grafy_core.runtime.plugin_guest as plugin_guest_module
 import pytest
-
+from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactTypeKey, NodeInput
+from grafy_core.domain.plugin_identity import PluginReleaseScope
 from grafy_core.domain.plugin_releases import (
     PluginArtifactBundleContract,
     PluginArtifactTypeKey,
@@ -14,20 +16,9 @@ from grafy_core.domain.plugin_releases import (
     plugin_contract_digest,
     plugin_protocol_digest,
 )
-from grafy_core.domain.plugin_identity import PluginReleaseScope
-from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactTypeKey, NodeInput
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.nodes import InputContract, InputPortSpec
 from grafy_core.ports.storage import SaveFileCommand
-from grafy_core.runtime.plugin_guest import (
-    PluginGuestError,
-    _GuestBundleStorage,
-    _stage_input_artifacts,
-    _stage_uploaded_files,
-    _write_output_bundles,
-    load_guest_plugin,
-)
-from grafy_core.runtime.plugin_loader import PluginGuestLoaderManifest
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.object_set_bundle import (
     PORTABLE_BUNDLE_METADATA_KEY,
     PortableArtifactBundleMetadata,
@@ -38,6 +29,15 @@ from grafy_core.runtime.object_set_bundle import (
     write_object_set_bundle,
 )
 from grafy_core.runtime.persistence import PersistedNodeOutput
+from grafy_core.runtime.plugin_guest import (
+    PluginGuestError,
+    _GuestBundleStorage,
+    _stage_input_artifacts,
+    _stage_uploaded_files,
+    _write_output_bundles,
+    load_guest_plugin,
+)
+from grafy_core.runtime.plugin_loader import PluginGuestLoaderManifest
 from grafy_core.runtime.plugin_protocol import (
     PluginInputArtifactBundle,
     PluginInputArtifactDependency,
@@ -49,10 +49,8 @@ from grafy_core.runtime.plugin_protocol import (
     PluginOutputDeclaration,
     PluginStagedUploadBinding,
 )
-from grafy_core.staged_upload_paths import resolve_persisted_staged_upload_path
+from grafy_core.runtime.upload_reader import BundleUploadReader
 from grafy_workbench.text import TEXT
-
-import grafy_core.runtime.plugin_guest as plugin_guest_module
 
 
 class _GuestObjectInput(NodeInput):
@@ -552,12 +550,13 @@ async def test_guest_object_set_codec_restores_and_rewrites_exact_file_set(
 
 
 @pytest.mark.asyncio
-async def test_guest_staged_upload_repository_exposes_only_digest_bound_file(
+async def test_guest_upload_reader_exposes_only_the_validated_bundle_file(
     tmp_path: Path,
 ) -> None:
     workspace_id = UUID("00000000-0000-4000-8000-000000000503")
+    upload_id = UUID("00000000-0000-4000-8000-000000000504")
     content = b"authorized upload"
-    relative_path = f"uploads/{workspace_id}/upload-01"
+    relative_path = f"uploads/{workspace_id}/{upload_id}"
     path = tmp_path / relative_path
     path.parent.mkdir(parents=True)
     path.write_bytes(content)
@@ -583,7 +582,7 @@ async def test_guest_staged_upload_repository_exposes_only_digest_bound_file(
         staged_uploads=(
             PluginStagedUploadBinding(
                 config_field="uploads",
-                upload_key="upload-01",
+                upload_key=str(upload_id),
                 original_filename="source.csv",
                 byte_count=len(content),
                 content_sha256=sha256(content).hexdigest(),
@@ -595,11 +594,11 @@ async def test_guest_staged_upload_repository_exposes_only_digest_bound_file(
     unit_of_work = InMemoryUnitOfWork()
 
     await _stage_uploaded_files(tmp_path, request, unit_of_work)
-    resolved = await resolve_persisted_staged_upload_path(
-        tmp_path / "uploads",
-        unit_of_work,
-        workspace_id=workspace_id,
-        upload_key="upload-01",
-    )
+    reader = BundleUploadReader(tmp_path / "uploads", unit_of_work)
 
-    assert resolved.read_bytes() == content
+    assert await reader.read(workspace_id, upload_id) == content
+    with pytest.raises(FileNotFoundError):
+        await reader.read(
+            workspace_id,
+            UUID("00000000-0000-4000-8000-000000000599"),
+        )

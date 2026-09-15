@@ -371,28 +371,88 @@ describe("GIS artifact API", () => {
 });
 
 describe("file upload API", () => {
-  it("streams the selected file as multipart form data", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(
-      JSON.stringify({ uploads: [] }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    ));
+  const target = {
+    upload_id: "3f1a2b4c-5d6e-4f70-8192-a3b4c5d6e7f8",
+    url: "/v1/workspaces/workspace%2F1/uploads/3f1a2b4c-5d6e-4f70-8192-a3b4c5d6e7f8/content",
+    method: "PUT",
+    expires_at: "2026-09-15T19:40:00Z",
+  };
+  const completed = {
+    upload_key: target.upload_id,
+    filename: "scan.tif",
+    byte_size: 3,
+    artifact_type: "file.tiff@1",
+    notice: null,
+  };
+
+  function jsonResponse(payload: unknown, status = 200): Response {
+    return new Response(JSON.stringify(payload), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  it("reserves, sends the bytes to the target, then completes", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(target, 201))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse(completed));
     vi.stubGlobal("fetch", fetchMock);
+    const file = new File([new Uint8Array([1, 2, 3])], "scan.tif", {
+      type: "image/tiff",
+    });
+
+    const item = await uploadFile(WORKSPACE_ID, file);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const [reserveUrl, reserveInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(reserveUrl).toBe("/api/v1/workspaces/workspace%2F1/uploads");
+    expect(reserveInit.method).toBe("POST");
+    expect(JSON.parse(reserveInit.body as string)).toEqual({
+      filename: "scan.tif",
+      byte_size: 3,
+      content_type: "image/tiff",
+    });
+
+    const [putUrl, putInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(putUrl).toBe(
+      "/api/v1/workspaces/workspace%2F1/uploads/3f1a2b4c-5d6e-4f70-8192-a3b4c5d6e7f8/content",
+    );
+    expect(putInit.method).toBe("PUT");
+    expect(putInit.body).toBe(file);
+    expect((putInit.headers as Record<string, string>)["Content-Type"]).toBe("image/tiff");
+
+    const [completeUrl, completeInit] = fetchMock.mock.calls[2] as [string, RequestInit];
+    expect(completeUrl).toBe(
+      "/api/v1/workspaces/workspace%2F1/uploads/3f1a2b4c-5d6e-4f70-8192-a3b4c5d6e7f8/complete",
+    );    expect(completeInit.method).toBe("POST");
+    expect(item).toEqual(completed);
+  });
+
+  it("sends the bytes to a signed URL without session credentials", async () => {
+    const signed = {
+      ...target,
+      url: "https://bucket.s3.example/objects/3f1a2b4c?X-Amz-Signature=abc",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(signed, 201))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(jsonResponse(completed));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", { cookie: "grafy_csrf=csrf-token" });
     const file = new File([new Uint8Array([1, 2, 3])], "scan.tif", {
       type: "image/tiff",
     });
 
     await uploadFile(WORKSPACE_ID, file);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/api/v1/workspaces/workspace%2F1/uploads");
-    expect(init.method).toBe("POST");
-    expect(init.headers).toEqual({ Accept: "application/json" });
-    expect(init.body).toBeInstanceOf(FormData);
-    const uploaded = (init.body as FormData).get("file") as File;
-    expect(uploaded.name).toBe("scan.tif");
-    expect(uploaded.type).toBe("image/tiff");
-    expect(uploaded.size).toBe(3);
+    const [putUrl, putInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(putUrl).toBe(signed.url);
+    expect(putInit.credentials).toBe("omit");
+    expect((putInit.headers as Record<string, string>)["X-CSRF-Token"]).toBeUndefined();
+    expect(putInit.body).toBe(file);
   });
 });
 

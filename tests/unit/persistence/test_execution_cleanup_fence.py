@@ -3,8 +3,6 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
-from sqlalchemy import select, update
-
 from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.execution.compiler import GraphCompiler
 from grafy_api.execution.coordinator import GraphExecutionCoordinator
@@ -17,8 +15,8 @@ from grafy_api.execution.preflight import GraphRunPreflight
 from grafy_api.execution.requests import RunRequest
 from grafy_api.execution.run_graph import RunGraph
 from grafy_api.plugins.runtime.sandbox import (
-    PluginSandboxScopeId,
     PluginSandboxCleanupError,
+    PluginSandboxScopeId,
 )
 from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
@@ -37,24 +35,30 @@ from grafy_core.runtime.persistence import ArtifactWriterRegistry, OutputPersist
 from grafy_core.runtime.resolvers import ResolverRegistry
 from grafy_persistence import schema
 from grafy_persistence.database import Database
-from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_persistence.system_cutover import (
     SystemBaselineCutoverService,
-    SystemCutoverCommand,
     SystemCutoverBlockedError,
+    SystemCutoverCommand,
+)
+from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
+from grafy_storage import LocalFileObjectStore
+from sqlalchemy import select, update
+
+from tests.unit.persistence.test_system_cutover import (
+    GRAPH_ID,
+    NOW,
+    WORKSPACE_ID,
+    cutover_rollback_unit,
+    system_cutover_baseline,
+)
+from tests.unit.persistence.test_system_cutover import (
+    cutover_database as _cutover_database_fixture,
 )
 from tests.unit.persistence.test_transient_execution_revocation import (
     execution_database as _execution_database_fixture,
-    fence_database as _fence_database_fixture,
 )
-from grafy_storage import LocalFileObjectStore
-from tests.unit.persistence.test_system_cutover import (
-    cutover_database as _cutover_database_fixture,
-    GRAPH_ID,
-    WORKSPACE_ID,
-    NOW,
-    system_cutover_baseline,
-    cutover_rollback_unit,
+from tests.unit.persistence.test_transient_execution_revocation import (
+    fence_database as _fence_database_fixture,
 )
 
 cutover_database = _cutover_database_fixture
@@ -131,7 +135,6 @@ async def test_cleanup_confirmation_controls_execution_maintenance_fence(
             plugin_registry=registry,
             plugin_context=PluginRuntimeContext(
                 workspace=tmp_path,
-                uploads_dir=tmp_path / "uploads",
                 storage=storage,
                 uow=uow,
                 bucket="plugins",

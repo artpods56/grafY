@@ -1,12 +1,11 @@
 import ast
-from importlib.util import resolve_name
 from hashlib import sha256
+from importlib.util import resolve_name
 from pathlib import Path
-import tomllib
 from typing import cast
 
 import pytest
-
+import tomllib
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -357,7 +356,7 @@ def test_application_owners_do_not_depend_on_route_modules() -> None:
         api_root / "graph_contracts.py",
         api_root / "artifact_availability.py",
         api_root / "node_secrets.py",
-        api_root / "staged_uploads.py",
+        api_root / "uploads.py",
     ]
     offenders: list[str] = []
     for path in paths:
@@ -406,6 +405,8 @@ def test_baseline_compatibility_exports_preserve_shared_contract_identity() -> N
     from grafy_api import system_host_bindings, system_plugin_inventory
     from grafy_core.domain import (
         plugin_host_bindings,
+    )
+    from grafy_core.domain import (
         system_plugin_inventory as inventory_contracts,
     )
     from grafy_persistence.system_baseline import SystemBaselineManifestGenerator

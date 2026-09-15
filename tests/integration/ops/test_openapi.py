@@ -74,6 +74,8 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "/v1/workspaces/{workspace_id}/runs",
         "/v1/workspaces/{workspace_id}/samples",
         "/v1/workspaces/{workspace_id}/uploads",
+        "/v1/workspaces/{workspace_id}/uploads/{upload_id}/content",
+        "/v1/workspaces/{workspace_id}/uploads/{upload_id}/complete",
         "/v1/auth/oidc/login",
         "/v1/auth/oidc/callback",
         "/v1/auth/session",

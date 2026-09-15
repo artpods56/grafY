@@ -1,17 +1,15 @@
-import tomllib
 from io import BytesIO
 from pathlib import Path
 
+import tomllib
+from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
+from grafy_core.ports.storage import SaveFileCommand, StoredFile, StoredObjectInfo
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_core.runtime.persistence import InlineModelOutputWriter
+from grafy_core.runtime.resolvers import InlineModelResolver
 from grafy_core.table_contracts import (
     TABLE_DATA,
 )
-from grafy_workbench.table import TABLES
-from grafy_workbench.table.persistence import TableArtifactResolver, TableArtifactWriter
-from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
-from grafy_core.ports.storage import SaveFileCommand, StoredFile, StoredObjectInfo
-from grafy_core.runtime.persistence import InlineModelOutputWriter
-from grafy_core.runtime.resolvers import InlineModelResolver
 from grafy_plugin_sql import SQL
 from grafy_plugin_sql.artifacts import SQL_RESULT, SQL_STATEMENT
 from grafy_plugin_sql.models import SqlResult, SqlStatement
@@ -20,6 +18,8 @@ from grafy_plugin_sql.nodes import (
     QueryArtifactTablesNode,
     RawSqlStatementNode,
 )
+from grafy_workbench.table import TABLES
+from grafy_workbench.table.persistence import TableArtifactResolver, TableArtifactWriter
 
 
 class EmptyStorage:
@@ -64,7 +64,6 @@ def test_sql_plugin_declares_complete_runtime_contributions(tmp_path: Path) -> N
     registry.freeze()
     context = PluginRuntimeContext(
         workspace=tmp_path,
-        uploads_dir=tmp_path / "uploads",
         storage=EmptyStorage(),
         uow=InMemoryUnitOfWork(),
         bucket="artifacts",

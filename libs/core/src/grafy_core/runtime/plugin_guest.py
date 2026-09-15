@@ -3,12 +3,12 @@
 import asyncio
 import json
 import sys
-from hashlib import sha256
-from io import BytesIO
-from importlib import import_module
-from pathlib import Path
-from pathlib import PurePosixPath
 from collections.abc import Mapping
+from datetime import UTC, datetime
+from hashlib import sha256
+from importlib import import_module
+from io import BytesIO
+from pathlib import Path, PurePosixPath
 from typing import Any, cast, final, override
 from uuid import UUID
 
@@ -21,19 +21,17 @@ from grafy_core.artifacts import (
     ArtifactTypeKey,
     JsonObject,
 )
-from grafy_core.ports.artifacts import UnitOfWorkPort
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_core.domain.node_secrets import (
+    JsonValue,
+    node_secret_dependency_sha256,
+)
 from grafy_core.domain.plugin_releases import (
     PLUGIN_INVOCATION_PROTOCOL,
     PluginCatalogManifest,
     plugin_contract_digest,
     plugin_protocol_digest,
 )
-from grafy_core.domain.node_secrets import (
-    JsonValue,
-    node_secret_dependency_sha256,
-)
-from grafy_core.domain.staged_uploads import StagedUpload
+from grafy_core.domain.uploads import Upload, UploadStatus
 from grafy_core.nodes import (
     InputContract,
     Node,
@@ -43,6 +41,8 @@ from grafy_core.nodes import (
     resolve_node_contracts,
 )
 from grafy_core.plugins import Plugin, PluginRuntimeContext, PluginUnitOfWorkPort
+from grafy_core.ports.artifacts import UnitOfWorkPort
+from grafy_core.ports.node_secrets import NodeSecretUnavailableError
 from grafy_core.ports.storage import (
     FileStoragePort,
     FileStreamProtocol,
@@ -50,12 +50,8 @@ from grafy_core.ports.storage import (
     StoredFile,
     StoredObjectInfo,
 )
-from grafy_core.ports.node_secrets import NodeSecretUnavailableError
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import InputMaterializer, MaterializationError
-from grafy_core.runtime.plugin_loader import (
-    PluginGuestLoaderManifest,
-    split_plugin_loader_target,
-)
 from grafy_core.runtime.object_set_bundle import (
     ObjectSetBundleError,
     load_object_set_bundle,
@@ -69,6 +65,10 @@ from grafy_core.runtime.persistence import (
     ArtifactWriterRegistry,
     OutputPersister,
     PersistedNodeOutput,
+)
+from grafy_core.runtime.plugin_loader import (
+    PluginGuestLoaderManifest,
+    split_plugin_loader_target,
 )
 from grafy_core.runtime.plugin_protocol import (
     MAX_PLUGIN_PROGRESS_BYTES,
@@ -91,6 +91,7 @@ from grafy_core.runtime.table_bundle import (
     load_table_bundle_with_manifest,
     write_table_bundle,
 )
+from grafy_core.runtime.upload_reader import BundleUploadReader
 from grafy_core.table_contracts import Table
 
 
@@ -167,52 +168,6 @@ class _GuestProgressReporter:
             return
         self._events.append(event)
         self._byte_count += event_bytes
-
-
-@final
-class _UnavailableGuestStorage(FileStoragePort):
-    """Fail closed if an inline-only invocation asks for durable storage."""
-
-    @override
-    async def save(self, command: SaveFileCommand) -> StoredFile:
-        del command
-        raise PluginGuestError("Guest durable storage is unavailable")
-
-    @override
-    async def move(
-        self,
-        bucket: str,
-        source_path: str,
-        destination_path: str,
-    ) -> None:
-        del bucket, source_path, destination_path
-        raise PluginGuestError("Guest durable storage is unavailable")
-
-    @override
-    async def load(self, bucket: str, path: str) -> FileStreamProtocol:
-        del bucket, path
-        raise PluginGuestError("Guest durable storage is unavailable")
-
-    @override
-    async def stat(self, bucket: str, path: str) -> StoredObjectInfo | None:
-        del bucket, path
-        raise PluginGuestError("Guest durable storage is unavailable")
-
-    @override
-    async def load_range(
-        self,
-        bucket: str,
-        path: str,
-        start: int,
-        end_exclusive: int,
-    ) -> bytes:
-        del bucket, path, start, end_exclusive
-        raise PluginGuestError("Guest durable storage is unavailable")
-
-    @override
-    async def delete(self, bucket: str, path: str) -> None:
-        del bucket, path
-        raise PluginGuestError("Guest durable storage is unavailable")
 
 
 @final
@@ -615,7 +570,12 @@ def _read_bundle(
         raise PluginGuestError(
             f"Plugin bundle {relative_path!r} digest does not match its manifest"
         )
-    value = json.loads(content)
+    try:
+        value = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise PluginGuestError(
+            f"Plugin bundle {relative_path!r} must contain valid JSON"
+        ) from exc
     if not isinstance(value, dict):
         raise PluginGuestError(
             f"Plugin bundle {relative_path!r} must contain one JSON object"
@@ -958,12 +918,18 @@ async def _stage_uploaded_files(
             raise PluginGuestError("Staged uploads exceed the input byte limit")
     async with unit_of_work as entered:
         for binding in request.staged_uploads:
-            await entered.staged_uploads.add(
-                StagedUpload(
+            await entered.uploads.add(
+                Upload(
                     workspace_id=request.workspace_id,
-                    upload_key=binding.upload_key,
+                    upload_id=UUID(binding.upload_key),
                     original_filename=binding.original_filename,
-                    byte_size=binding.byte_count,
+                    bucket="guest-bundle",
+                    object_key=binding.relative_path,
+                    expected_size=binding.byte_count,
+                    status=UploadStatus.READY,
+                    actual_size=binding.byte_count,
+                    sha256=binding.content_sha256,
+                    completed_at=datetime.now(UTC),
                 )
             )
         await entered.commit()
@@ -1415,11 +1381,11 @@ async def execute_plugin_invocation(
         bundle_storage = _GuestBundleStorage(root, request)
         plugin_context = PluginRuntimeContext(
             workspace=root,
-            uploads_dir=root / "uploads",
             storage=bundle_storage,
             uow=cast(PluginUnitOfWorkPort, unit_of_work),
             bucket="guest-outputs",
             storage_backend="guest-bundle",
+            uploads=BundleUploadReader(root / "uploads", unit_of_work),
             node_secrets=_GuestNodeSecretResolver(root, request),
         )
         node = _build_node(plugin, request, plugin_context)

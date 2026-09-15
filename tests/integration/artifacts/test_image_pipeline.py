@@ -1,16 +1,14 @@
+from io import BytesIO
 from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from PIL import Image
-
-from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
-from grafy_core.domain.staged_uploads import StagedUpload
-from grafy_core.nodes import NodeExecutionContext
 from grafy_core.artifact_contracts import RASTER_IMAGE, RasterImageContent
+from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
+from grafy_core.nodes import NodeExecutionContext
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.runtime.execution import NodeRuntime
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import (
     InputMaterializer,
     MaterializationProvenance,
@@ -22,6 +20,11 @@ from grafy_core.runtime.persistence import (
     PersistedNodeOutput,
 )
 from grafy_core.runtime.resolvers import ResolverRegistry
+from grafy_plugin_ocr.artifacts import OCR_PAGE_RESULT
+from grafy_plugin_ocr.persistence import OcrPageResultOutputWriter
+from grafy_plugin_ocr.resolvers import PilImageResolver
+from grafy_plugin_ocr.tesseract import FakeOcrEngine, TesseractOcrNode
+from grafy_storage import LocalFileObjectStore
 from grafy_workbench.image import IMAGES
 from grafy_workbench.image.nodes import (
     ImageUploadError,
@@ -29,65 +32,43 @@ from grafy_workbench.image.nodes import (
     UploadImagesNode,
 )
 from grafy_workbench.sequence.nodes import CollectNode
-from grafy_plugin_ocr.artifacts import OCR_PAGE_RESULT
-from grafy_plugin_ocr.persistence import OcrPageResultOutputWriter
-from grafy_plugin_ocr.resolvers import PilImageResolver
-from grafy_plugin_ocr.tesseract import FakeOcrEngine, TesseractOcrNode
-from grafy_storage import LocalFileObjectStore
+from PIL import Image
 
+from tests.support.uploads import bundle_upload_reader, seed_ready_upload
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
 
 def write_png(path: Path, size: tuple[int, int]) -> None:
-    image = Image.new("RGB", size, color="white")
-    image.save(path, format="PNG")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(_png_bytes(size))
 
 
-async def seed_staged_upload(
-    unit_of_work: InMemoryUnitOfWork,
-    *,
-    workspace_id: UUID,
-    upload_key: str,
-    filename: str,
-    byte_size: int,
-) -> None:
-    async with unit_of_work as entered:
-        await entered.staged_uploads.add(
-            StagedUpload(
-                workspace_id=workspace_id,
-                upload_key=upload_key,
-                original_filename=filename,
-                byte_size=byte_size,
-            )
-        )
-        await entered.commit()
+def _png_bytes(size: tuple[int, int]) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", size, color="white").save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 @pytest.mark.asyncio
 async def test_runtime_chains_image_collect_and_ocr_writers(tmp_path: Path) -> None:
     staging_root = tmp_path / "uploads"
-    workspace_uploads = staging_root / str(TEST_WORKSPACE_ID)
-    workspace_uploads.mkdir(parents=True)
-    first = workspace_uploads / "page-001.png"
-    second = workspace_uploads / "page-002.png"
-    write_png(first, (3, 2))
-    write_png(second, (5, 4))
-
     uow = InMemoryUnitOfWork()
-    await seed_staged_upload(
+    first_content = _png_bytes((3, 2))
+    second_content = _png_bytes((5, 4))
+    first_id = await seed_ready_upload(
         uow,
+        uploads_dir=staging_root,
         workspace_id=TEST_WORKSPACE_ID,
-        upload_key=first.name,
+        content=first_content,
         filename="page-001.png",
-        byte_size=first.stat().st_size,
     )
-    await seed_staged_upload(
+    second_id = await seed_ready_upload(
         uow,
+        uploads_dir=staging_root,
         workspace_id=TEST_WORKSPACE_ID,
-        upload_key=second.name,
+        content=second_content,
         filename="page-002.png",
-        byte_size=second.stat().st_size,
     )
     storage = LocalFileObjectStore(tmp_path / "object-store")
     runtime = NodeRuntime(
@@ -109,7 +90,7 @@ async def test_runtime_chains_image_collect_and_ocr_writers(tmp_path: Path) -> N
     )
 
     upload_output = await runtime.run_node(
-        UploadImagesNode(uploads_dir=staging_root, unit_of_work=uow),
+        UploadImagesNode(bundle_upload_reader(uow, uploads_dir=staging_root)),
         NodeExecutionContext(
             workspace_id=TEST_WORKSPACE_ID,
             node_id="image_upload_1",
@@ -118,14 +99,14 @@ async def test_runtime_chains_image_collect_and_ocr_writers(tmp_path: Path) -> N
         config={
             "uploads": [
                 {
-                    "upload_key": second.name,
+                    "upload_key": str(second_id),
                     "filename": "page-002.png",
-                    "byte_size": second.stat().st_size,
+                    "byte_size": len(second_content),
                 },
                 {
-                    "upload_key": first.name,
+                    "upload_key": str(first_id),
                     "filename": "page-001.png",
-                    "byte_size": first.stat().st_size,
+                    "byte_size": len(first_content),
                 },
             ],
         },
@@ -221,15 +202,16 @@ async def test_ocr_many_input_requires_artifact_ref_sequence() -> None:
 
 
 @pytest.mark.asyncio
-async def test_upload_rejects_keys_outside_the_upload_root(tmp_path: Path) -> None:
+async def test_upload_rejects_keys_that_are_not_upload_identifiers(
+    tmp_path: Path,
+) -> None:
     uploads_dir = tmp_path / "uploads"
     uploads_dir.mkdir()
     node = UploadImagesNode(
-        uploads_dir=uploads_dir,
-        unit_of_work=InMemoryUnitOfWork(),
+        bundle_upload_reader(InMemoryUnitOfWork(), uploads_dir=uploads_dir)
     )
 
-    with pytest.raises(ImageUploadError, match="opaque relative name"):
+    with pytest.raises(ImageUploadError, match="not a known upload identifier"):
         await node.run(
             NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="upload"),
             node.config_contract.model.model_validate(
@@ -252,12 +234,12 @@ async def test_upload_fails_closed_when_file_exists_without_db_row(
     tmp_path: Path,
 ) -> None:
     uploads_dir = tmp_path / "uploads"
-    staged = uploads_dir / str(TEST_WORKSPACE_ID) / "page.png"
+    absent_id = uuid4()
+    staged = uploads_dir / str(TEST_WORKSPACE_ID) / str(absent_id)
     staged.parent.mkdir(parents=True)
     write_png(staged, (2, 2))
     node = UploadImagesNode(
-        uploads_dir=uploads_dir,
-        unit_of_work=InMemoryUnitOfWork(),
+        bundle_upload_reader(InMemoryUnitOfWork(), uploads_dir=uploads_dir)
     )
 
     with pytest.raises(ImageUploadError, match="was not found in workspace"):
@@ -267,7 +249,7 @@ async def test_upload_fails_closed_when_file_exists_without_db_row(
                 {
                     "uploads": [
                         {
-                            "upload_key": "page.png",
+                            "upload_key": str(absent_id),
                             "filename": "page.png",
                             "byte_size": staged.stat().st_size,
                         }
@@ -282,18 +264,16 @@ async def test_upload_fails_closed_when_file_exists_without_db_row(
 async def test_upload_fails_closed_for_row_in_another_workspace(tmp_path: Path) -> None:
     uploads_dir = tmp_path / "uploads"
     other_workspace = UUID("00000000-0000-0000-0000-000000000902")
-    staged = uploads_dir / str(TEST_WORKSPACE_ID) / "page.png"
-    staged.parent.mkdir(parents=True)
-    write_png(staged, (2, 2))
+    content = _png_bytes((2, 2))
     uow = InMemoryUnitOfWork()
-    await seed_staged_upload(
+    foreign_id = await seed_ready_upload(
         uow,
+        uploads_dir=uploads_dir,
         workspace_id=other_workspace,
-        upload_key="page.png",
+        content=content,
         filename="page.png",
-        byte_size=staged.stat().st_size,
     )
-    node = UploadImagesNode(uploads_dir=uploads_dir, unit_of_work=uow)
+    node = UploadImagesNode(bundle_upload_reader(uow, uploads_dir=uploads_dir))
 
     with pytest.raises(ImageUploadError, match="was not found in workspace"):
         await node.run(
@@ -302,9 +282,9 @@ async def test_upload_fails_closed_for_row_in_another_workspace(tmp_path: Path) 
                 {
                     "uploads": [
                         {
-                            "upload_key": "page.png",
+                            "upload_key": str(foreign_id),
                             "filename": "page.png",
-                            "byte_size": staged.stat().st_size,
+                            "byte_size": len(content),
                         }
                     ]
                 }
@@ -358,7 +338,6 @@ def test_image_plugin_owns_the_raster_type_and_writer(tmp_path: Path) -> None:
     registry.install(IMAGES)
     context = PluginRuntimeContext(
         workspace=tmp_path,
-        uploads_dir=tmp_path / "uploads",
         storage=LocalFileObjectStore(tmp_path / "objects"),
         uow=InMemoryUnitOfWork(),
         bucket="artifacts",

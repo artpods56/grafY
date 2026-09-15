@@ -136,6 +136,38 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * Send raw bytes to an upload target the API handed back.
+ *
+ * A target this API owns is served from its own origin, so it needs the
+ * session cookie and the CSRF token the rest of the app already sends. A
+ * signed object-storage URL is cross-origin and self-authorizing; sending
+ * credentials to it would leak the session and fail the signature check.
+ */
+export async function putUploadBytes(
+  resolvedUrl: string,
+  bytes: BodyInit,
+  contentType: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const apiOwned = resolvedUrl.startsWith("/");
+  const csrfToken = apiOwned ? readBrowserCookie("grafy_csrf") : undefined;
+  const headers: Record<string, string> = {};
+  if (contentType) headers["Content-Type"] = contentType;
+  if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+
+  const response = await fetch(resolvedUrl, {
+    method: "PUT",
+    headers,
+    body: bytes,
+    credentials: apiOwned ? "same-origin" : "omit",
+    signal,
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, await responseErrorDetail(response, csrfToken));
+  }
+}
+
 export async function request<T>(
   method: string,
   path: string,

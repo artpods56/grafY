@@ -9,6 +9,22 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Annotated, Literal, Self, cast, final, override
 
+from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
+from grafy_core.plugins import NodeCachePolicy, NodeStagedUploadInput
+from grafy_core.ports.uploads import UploadReaderPort
+from grafy_core.runtime.upload_reader import (
+    UploadBytesUnavailableError,
+    read_confirmed_upload,
+)
+from grafy_core.table_contracts import (
+    TABLE_DATA,
+    Table,
+    TableColumn,
+    TableValue,
+    TableValueType,
+)
 from openpyxl import load_workbook
 from pydantic import (
     BaseModel,
@@ -23,20 +39,6 @@ from pydantic import (
 )
 from rapidfuzz import fuzz
 from unidecode import unidecode
-
-from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
-from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
-from grafy_core.plugins import NodeCachePolicy, NodeStagedUploadInput
-from grafy_core.ports.staged_uploads import StagedUploadUnitOfWorkPort
-from grafy_core.staged_upload_paths import resolve_persisted_staged_upload_path
-from grafy_core.table_contracts import (
-    TABLE_DATA,
-    Table,
-    TableColumn,
-    TableValue,
-    TableValueType,
-)
 
 from grafy_workbench.table.declaration import TABLES
 
@@ -251,8 +253,7 @@ def _xlsx_matrix(
     version=1,
     title="Import table file",
     factory=lambda context: TableFileImportNode(
-        uploads_dir=context.uploads_dir,
-        unit_of_work=context.uow,
+        uploads=context.upload_reader,
     ),
     staged_upload_inputs=(NodeStagedUploadInput(config_field="uploads"),),
     required_capabilities=(PluginRuntimeCapability.STAGED_UPLOADS,),
@@ -264,14 +265,8 @@ class TableFileImportNode(
 ):
     """Import a staged CSV or XLSX file as a table artifact."""
 
-    def __init__(
-        self,
-        *,
-        uploads_dir: Path,
-        unit_of_work: StagedUploadUnitOfWorkPort,
-    ) -> None:
-        self._uploads_dir = uploads_dir.expanduser().resolve()
-        self._unit_of_work = unit_of_work
+    def __init__(self, *, uploads: UploadReaderPort) -> None:
+        self._uploads = uploads
 
     @override
     async def run(
@@ -283,25 +278,15 @@ class TableFileImportNode(
     ) -> TableFileImportOutput:
         upload = config.uploads[0]
         try:
-            path = await resolve_persisted_staged_upload_path(
-                self._uploads_dir,
-                self._unit_of_work,
+            content = await read_confirmed_upload(
+                self._uploads,
                 workspace_id=context.workspace_id,
                 upload_key=upload.upload_key,
+                byte_size=upload.byte_size,
+                label="Staged table upload",
             )
-        except (ValueError, FileNotFoundError) as exc:
+        except UploadBytesUnavailableError as exc:
             raise TableFileImportError(str(exc)) from exc
-        try:
-            content = path.read_bytes()
-        except OSError as exc:
-            raise TableFileImportError(
-                f"Failed to read staged table upload {upload.upload_key!r} from {path}"
-            ) from exc
-        if len(content) != upload.byte_size:
-            raise TableFileImportError(
-                f"Staged table upload {upload.upload_key!r} changed size: "
-                f"expected {upload.byte_size}, got {len(content)}"
-            )
 
         suffix = Path(upload.filename).suffix.casefold()
         if suffix == ".csv":

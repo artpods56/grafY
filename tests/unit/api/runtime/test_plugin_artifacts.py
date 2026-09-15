@@ -1,55 +1,59 @@
 import asyncio
-from io import BytesIO
 import json
 import sys
-from dataclasses import replace
-from hashlib import sha256
-from pathlib import Path
 from collections.abc import Mapping
+from dataclasses import replace
+from datetime import UTC, datetime
+from hashlib import sha256
+from io import BytesIO
+from pathlib import Path
 from typing import Annotated, Literal, override
 from uuid import UUID, uuid4
 
 import pytest
-from pydantic import SecretStr
-
+from grafy_api.plugins.runtime.artifacts import (
+    ArtifactBundlePluginInvoker,
+    PluginGuestRunError,
+    PluginGuestRunner,
+    SubprocessPluginGuestRunner,
+)
 from grafy_core.artifact_contracts import RASTER_IMAGE, TEXT_VALUE
 from grafy_core.artifacts import (
     ArtifactBundleContract,
     ArtifactObject,
     ArtifactRef,
-    ArtifactTypeSpec,
     ArtifactTypeKey,
+    ArtifactTypeSpec,
     JsonObject,
     NoConfig,
     NodeInput,
     NodeOutput,
 )
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_core.domain.node_secrets import JsonValue, node_secret_dependency_sha256
+from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.domain.plugin_installations import (
+    InstalledPluginRelease,
+    PluginInstallation,
+)
 from grafy_core.domain.plugin_releases import (
     PluginArtifactTypeContract,
     PluginArtifactTypeKey,
     PluginCapabilityManifest,
     PluginCatalogManifest,
+    PluginExecutionPolicy,
     PluginNodeContract,
     PluginPortContract,
     PluginRelease,
     PluginReleaseIdentity,
     PluginReleaseNamespace,
     PluginReleaseScope,
-    PluginExecutionPolicy,
     PluginSecretInputContract,
     PluginStagedUploadInputContract,
     plugin_contract_digest,
     plugin_profile_digest,
     plugin_protocol_digest,
 )
-from grafy_core.domain.plugin_installations import (
-    InstalledPluginRelease,
-    PluginInstallation,
-)
-from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.domain.node_secrets import JsonValue, node_secret_dependency_sha256
-from grafy_core.domain.staged_uploads import StagedUpload
+from grafy_core.domain.uploads import Upload, UploadStatus
 from grafy_core.nodes import (
     InPort,
     Node,
@@ -59,23 +63,18 @@ from grafy_core.nodes import (
     UserFacingNodeError,
 )
 from grafy_core.plugins import Plugin, PluginUnitOfWorkPort
-from grafy_core.prompt_contracts import (
-    PROMPT_MESSAGE,
-    PromptMessage,
-    PromptMessageRole,
-)
-from grafy_core.table_contracts import (
-    TABLE_DATA,
-    Table,
-    TableColumn,
-    TableValueType,
-)
 from grafy_core.ports.storage import (
     FileStreamProtocol,
     SaveFileCommand,
     StoredFile,
     StoredObjectInfo,
 )
+from grafy_core.prompt_contracts import (
+    PROMPT_MESSAGE,
+    PromptMessage,
+    PromptMessageRole,
+)
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.object_set_bundle import (
     PORTABLE_BUNDLE_METADATA_KEY,
@@ -83,13 +82,13 @@ from grafy_core.runtime.object_set_bundle import (
     PortableArtifactFile,
     PortableMetadataReference,
 )
-from grafy_core.runtime.persistence import ArtifactWriteContext
-from grafy_core.runtime.persistence import InlineModelOutputWriter
+from grafy_core.runtime.persistence import ArtifactWriteContext, InlineModelOutputWriter
 from grafy_core.runtime.plugin_guest import execute_plugin_invocation
 from grafy_core.runtime.plugin_invocation import (
     PluginInvocationError,
     PluginInvocationRequest,
 )
+from grafy_core.runtime.plugin_loader import PluginGuestLoaderManifest
 from grafy_core.runtime.plugin_protocol import (
     PluginFailureCode,
     PluginFailureEnvelope,
@@ -101,22 +100,20 @@ from grafy_core.runtime.plugin_protocol import (
     PluginOutputBinding,
     PluginProgressEvent,
 )
-from grafy_core.runtime.plugin_loader import PluginGuestLoaderManifest
 from grafy_core.runtime.resolvers import InlineModelResolver
 from grafy_core.runtime.table_bundle import (
     load_table_bundle,
     write_table_bundle,
 )
+from grafy_core.table_contracts import (
+    TABLE_DATA,
+    Table,
+    TableColumn,
+    TableValueType,
+)
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.table.persistence import TableArtifactResolver, TableArtifactWriter
-
-from grafy_api.plugins.runtime.artifacts import (
-    ArtifactBundlePluginInvoker,
-    PluginGuestRunError,
-    PluginGuestRunner,
-    SubprocessPluginGuestRunner,
-)
-
+from pydantic import SecretStr
 
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000401")
 
@@ -1122,20 +1119,33 @@ async def test_staged_upload_is_authorized_digest_bound_and_read_only(
 ) -> None:
     unit_of_work = InMemoryUnitOfWork()
     input_ref = await _seed_inline_artifact(unit_of_work)
-    upload_key = "upload-01"
+    upload_id = UUID("00000000-0000-0000-0000-0000000000f1")
+    upload_key = str(upload_id)
     filename = "source.csv"
     content = b"name\nAda\n"
-    uploads_dir = tmp_path / "uploads"
-    workspace_uploads = uploads_dir / str(WORKSPACE_ID)
-    workspace_uploads.mkdir(parents=True)
-    (workspace_uploads / upload_key).write_bytes(content)
+    storage = LocalFileObjectStore(tmp_path / "objects")
+    stored = await storage.save(
+        SaveFileCommand(
+            bucket="artifacts",
+            path=f"objects/{upload_id}",
+            stream=BytesIO(content),
+            content_type="text/csv",
+            metadata={"sha256": sha256(content).hexdigest()},
+        )
+    )
     async with unit_of_work as entered:
-        await entered.staged_uploads.add(
-            StagedUpload(
+        await entered.uploads.add(
+            Upload(
                 workspace_id=WORKSPACE_ID,
-                upload_key=upload_key,
+                upload_id=upload_id,
                 original_filename=filename,
-                byte_size=len(content),
+                bucket=stored.bucket,
+                object_key=stored.path,
+                expected_size=len(content),
+                status=UploadStatus.READY,
+                actual_size=len(content),
+                sha256=stored.sha256,
+                completed_at=datetime.now(UTC),
             )
         )
         await entered.commit()
@@ -1144,7 +1154,7 @@ async def test_staged_upload_is_authorized_digest_bound_and_read_only(
         unit_of_work=unit_of_work,
         runner=runner,
         scratch_root=tmp_path / "scratch",
-        uploads_dir=uploads_dir,
+        storage=storage,
     )
 
     await invoker.invoke(

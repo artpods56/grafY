@@ -1,9 +1,11 @@
 import asyncio
+from datetime import timedelta
 from hashlib import sha256
 from tempfile import SpooledTemporaryFile
 from typing import TYPE_CHECKING, cast, final, override
 from urllib.parse import urlsplit
 
+from obstore import sign_async
 from obstore.exceptions import AlreadyExistsError
 from obstore.store import S3Store
 
@@ -120,6 +122,23 @@ class S3ObjectStore(FileStoragePort):
     @override
     async def delete(self, bucket: str, path: str) -> None:
         await self._store_for(bucket).delete_async(path)
+
+    async def create_presigned_upload(
+        self,
+        bucket: str,
+        path: str,
+        *,
+        expires_in: timedelta,
+    ) -> str:
+        """Sign a direct client PUT for one server-chosen object key."""
+
+        signed = await sign_async(
+            self._store_for(bucket),
+            "PUT",
+            path,
+            expires_in,
+        )
+        return signed
 
     def _save_sync(self, command: SaveFileCommand) -> StoredFile:
         digest = sha256()

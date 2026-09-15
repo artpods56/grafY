@@ -4,13 +4,11 @@ from typing import cast
 from uuid import UUID
 
 import pytest
-from pydantic import ValidationError
-
 from grafy_core.artifacts import ArtifactTypeKey
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.nodes import NodeExecutionContext, PortShape
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.storage import FileStoragePort
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import (
     InputMaterializer,
     MaterializationProvenance,
@@ -22,6 +20,8 @@ from grafy_core.schema_contracts import (
     parse_json_schema,
     validate_json_schema_value,
 )
+from pydantic import ValidationError
+
 from grafy_workbench.schema import SCHEMAS
 from grafy_workbench.schema.nodes import (
     JsonSchemaBuilderConfig,
@@ -30,7 +30,6 @@ from grafy_workbench.schema.nodes import (
     SchemaFieldKind,
     SchemaSequenceItemKind,
 )
-
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -332,7 +331,6 @@ async def test_schema_artifact_factories_and_typed_instance_plugs_round_trip(
     uow = InMemoryUnitOfWork()
     context = PluginRuntimeContext(
         workspace=tmp_path,
-        uploads_dir=tmp_path / "uploads",
         storage=cast(FileStoragePort, object()),
         uow=uow,
         bucket="artifacts",

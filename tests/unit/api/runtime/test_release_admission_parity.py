@@ -4,49 +4,46 @@ from typing import Never
 from uuid import UUID
 
 import pytest
-
+from grafy_api.catalog import CatalogSnapshot
+from grafy_api.execution.compiler import GraphCompiler
+from grafy_api.execution.errors import GraphExecutionError
+from grafy_api.execution.requests import (
+    RunNodeRequest,
+    RunRequest,
+)
+from grafy_api.plugins.runtime.admission import ReleaseExecutionAdmission
+from grafy_api.v1.models import PluginReleasePinModel
+from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
+from grafy_core.application.modules import ModuleLibraryService
 from grafy_core.artifact_contracts import TEXT_VALUE
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY
 from grafy_core.domain.modules import GraphModuleDefinition
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.domain.plugin_installations import (
+    InstalledPluginRelease,
+    PluginInstallation,
+)
 from grafy_core.domain.plugin_releases import (
     PluginArtifactTypeContract,
     PluginArtifactTypeKey,
     PluginCapabilityManifest,
     PluginCatalogManifest,
+    PluginExecutionPolicy,
     PluginNodeContract,
     PluginPortContract,
     PluginRelease,
     PluginReleaseNamespace,
     PluginReleaseScope,
-    PluginExecutionPolicy,
     PluginRuntimeArtifact,
     plugin_contract_digest,
     plugin_profile_digest,
     plugin_protocol_digest,
 )
-from grafy_core.domain.plugin_installations import (
-    InstalledPluginRelease,
-    PluginInstallation,
-)
 from grafy_core.nodes import NodeExecutionContext, PortShape
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.modules import GraphModuleExecutionResult
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_storage import LocalFileObjectStore
-
-from grafy_api.catalog import CatalogSnapshot
-from grafy_api.plugins.runtime.admission import ReleaseExecutionAdmission
-from grafy_api.v1.models import PluginReleasePinModel
-from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
-from grafy_core.application.modules import ModuleLibraryService
-from grafy_api.execution.requests import (
-    RunNodeRequest,
-    RunRequest,
-)
-from grafy_api.execution.compiler import GraphCompiler
-from grafy_api.execution.errors import GraphExecutionError
-
 
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000971")
 TEXT_KEY = PluginArtifactTypeKey(id="scalar.text", schema_version=1)
@@ -206,7 +203,6 @@ def _compiler(
     registry = PluginRegistry()
     context = PluginRuntimeContext(
         workspace=tmp_path,
-        uploads_dir=tmp_path / "uploads",
         storage=LocalFileObjectStore(tmp_path / "objects"),
         uow=InMemoryUnitOfWork(),
         bucket="artifacts",

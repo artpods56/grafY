@@ -1,14 +1,14 @@
-import tomllib
 from pathlib import Path
 
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+import tomllib
 from grafy_core.artifact_contracts import RASTER_IMAGE
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_plugin_ocr import OCR
-from grafy_workbench.image import IMAGES
 from grafy_plugin_ocr.artifacts import OCR_PAGE_RESULT
 from grafy_plugin_ocr.resolvers import PilImageResolver
 from grafy_storage import LocalFileObjectStore
+from grafy_workbench.image import IMAGES
 
 
 def test_ocr_plugin_declares_complete_runtime_contributions(tmp_path: Path) -> None:
@@ -17,7 +17,6 @@ def test_ocr_plugin_declares_complete_runtime_contributions(tmp_path: Path) -> N
     registry.install(OCR)
     context = PluginRuntimeContext(
         workspace=tmp_path,
-        uploads_dir=tmp_path / "uploads",
         storage=LocalFileObjectStore(tmp_path / "objects"),
         uow=InMemoryUnitOfWork(),
         bucket="artifacts",

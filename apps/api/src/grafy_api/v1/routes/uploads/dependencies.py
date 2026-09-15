@@ -3,18 +3,17 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from grafy_api.app_state import get_resources
+from grafy_api.uploads import UploadService
 
-from grafy_api.staged_uploads import StagedUploadService
 
-
-def staged_upload_service(request: Request) -> StagedUploadService:
+def upload_service(request: Request) -> UploadService:
     return get_resources(request.app).workbench.uploads
 
 
-StagedUploadDependency = Annotated[
-    StagedUploadService,
-    Depends(staged_upload_service),
+UploadDependency = Annotated[
+    UploadService,
+    Depends(upload_service),
 ]
 
 
-__all__ = ["StagedUploadDependency", "staged_upload_service"]
+__all__ = ["UploadDependency", "upload_service"]
