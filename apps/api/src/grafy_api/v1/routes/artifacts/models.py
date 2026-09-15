@@ -15,7 +15,7 @@ from pydantic import (
     model_validator,
 )
 
-from grafy_core.artifacts import ArtifactExportFormat, JsonObject
+from grafy_core.artifacts import ArtifactExportFormat, JsonObject, ArtifactObject
 from grafy_core.spatial_contracts import (
     GeoPropertyValueType as GeoPropertyValueType,
     GeoVectorStyle as StoredGeoVectorStyle,
@@ -66,6 +66,20 @@ class ArtifactSummaryResponse(ApiResponse):
         default_factory=list,
     )
     metadata: dict[str, object] = Field(default_factory=dict)
+
+    @classmethod
+    def from_artifact(cls, artifact: ArtifactObject, *, download_formats: list[ArtifactExportFormatResponse]) -> Self:
+        return cls(
+            artifact_id=artifact.id,
+            artifact_type=artifact.artifact_type,
+            schema_version=artifact.schema_version,
+            content_type=artifact.content_type,
+            byte_size=artifact.byte_size,
+            sha256=artifact.sha256,
+            content_url=f"./artifacts/{artifact.id}/content",
+            download_formats=download_formats,
+            metadata=artifact.metadata,
+        )
 
 
 class WorkbenchErrorResponse(ApiResponse):

@@ -82,7 +82,7 @@ def test_fresh_postgresql_database_upgrades_to_head(
         _, revision, workspace_count = asyncio.run(
             _postgresql_migration_state(database_url)
         )
-        assert revision == "0027_transient_executions"
+        assert revision == "0028_library_provenance"
         assert workspace_count == 0
         command.check(config)
 

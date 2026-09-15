@@ -2,6 +2,7 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -11,7 +12,7 @@ from typing import (
 )
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 if TYPE_CHECKING:
     from grafy_core.plugins import PluginRuntimeContext
@@ -302,6 +303,144 @@ class ArtifactRefSequence(BaseModel):
         return self
 
 
+type LibrarySource = Literal["run", "upload"]
+
+_GRAPH_TITLE_MAX_LENGTH = 160
+_NODE_TITLE_MAX_LENGTH = 160
+_NODE_ID_MAX_LENGTH = 255
+_FILENAME_MAX_LENGTH = 255
+
+
+def _required_text(value: str, *, label: str, max_length: int) -> str:
+    text = value.strip()
+    if text == "":
+        raise ValueError(f"Library provenance {label} must not be blank")
+    if len(text) > max_length:
+        raise ValueError(
+            f"Library provenance {label} must be at most {max_length} characters"
+        )
+    return text
+
+#[TODO] from_run and from_upload apply validation but it should be moved to the field definitions so its also applied on direct object construction
+class LibraryProvenance(BaseModel):
+    """Birth record written once when an artifact enters a Workspace Library.
+
+    The run facts are a snapshot of the save gesture: the graph and node titles
+    are frozen here so later renames, replacements, or deletions of the source
+    never rewrite this row. Nothing in the record is resolved live.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: LibrarySource
+    saved_at: datetime
+    graph_id: UUID | None = None
+    graph_title: str | None = None
+    node_id: str | None = None
+    node_title: str | None = None
+    graph_revision: int | None = None
+    execution_id: UUID | None = None
+    original_filename: str | None = None
+
+    @field_validator("saved_at")
+    @classmethod
+    def require_aware_saved_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("Library provenance save time must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def validate_source_shape(self) -> Self:
+        if self.source == "run":
+            missing = [
+                label
+                for label, value in (
+                    ("graph id", self.graph_id),
+                    ("graph title", self.graph_title),
+                    ("node id", self.node_id),
+                    ("node title", self.node_title),
+                    ("graph revision", self.graph_revision),
+                    ("execution id", self.execution_id),
+                )
+                if value is None
+            ]
+            if missing:
+                raise ValueError(
+                    "A run Library provenance requires " + ", ".join(missing)
+                )
+            if self.graph_revision is not None and self.graph_revision < 1:
+                raise ValueError("Library provenance graph revision must be positive")
+            if self.original_filename is not None:
+                raise ValueError(
+                    "A run Library provenance cannot carry an uploaded filename"
+                )
+            return self
+        if self.original_filename is None:
+            raise ValueError("An uploaded Library provenance requires a filename")
+        if any(
+            value is not None
+            for value in (
+                self.graph_id,
+                self.graph_title,
+                self.node_id,
+                self.node_title,
+                self.graph_revision,
+                self.execution_id,
+            )
+        ):
+            raise ValueError(
+                "An uploaded Library provenance cannot carry run facts"
+            )
+        return self
+
+    @classmethod
+    def from_run(
+        cls,
+        *,
+        saved_at: datetime,
+        graph_id: UUID,
+        graph_title: str,
+        node_id: str,
+        node_title: str,
+        graph_revision: int,
+        execution_id: UUID,
+    ) -> Self:
+        return cls(
+            source="run",
+            saved_at=saved_at,
+            graph_id=graph_id,
+            graph_title=_required_text(
+                graph_title,
+                label="graph title",
+                max_length=_GRAPH_TITLE_MAX_LENGTH,
+            ),
+            node_id=_required_text(
+                node_id,
+                label="node id",
+                max_length=_NODE_ID_MAX_LENGTH,
+            ),
+            node_title=_required_text(
+                node_title,
+                label="node title",
+                max_length=_NODE_TITLE_MAX_LENGTH,
+            ),
+            graph_revision=graph_revision,
+            execution_id=execution_id,
+        )
+
+    @classmethod
+    def from_upload(cls, *, saved_at: datetime, original_filename: str) -> Self:
+        return cls(
+            source="upload",
+            saved_at=saved_at,
+            original_filename=_required_text(
+                original_filename,
+                label="original filename",
+                max_length=_FILENAME_MAX_LENGTH,
+            ),
+        )
+
+
 @dataclass
 class ArtifactObject:
     workspace_id: UUID
@@ -316,6 +455,7 @@ class ArtifactObject:
     byte_size: int | None = None
     sha256: str | None = None
     metadata: JsonObject = field(default_factory=dict)
+    library_provenance: LibraryProvenance | None = None
 
     def ref(self) -> ArtifactRef:
         return ArtifactRef.from_key(
