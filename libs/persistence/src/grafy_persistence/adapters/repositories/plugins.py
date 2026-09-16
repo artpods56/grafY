@@ -259,6 +259,33 @@ class SqlPluginReleaseRepository(PluginReleaseRepositoryPort):
         return list(result)
 
     @override
+    async def list_selected_workspace_catalogs(self) -> list[PluginCatalogManifest]:
+        releases = schema.plugin_releases
+        selections = schema.plugin_release_selections
+        installations = schema.plugin_installations
+        result = await self._session.scalars(
+            select(releases.c.catalog)
+            .select_from(selections)
+            .join(releases, selections.c.selected_release_id == releases.c.id)
+            .join(
+                installations,
+                and_(
+                    installations.c.release_id == releases.c.id,
+                    installations.c.scope == selections.c.scope,
+                    installations.c.workspace_id.is_not_distinct_from(
+                        selections.c.workspace_id
+                    ),
+                ),
+            )
+            .where(selections.c.scope == PluginReleaseScope.WORKSPACE)
+            .order_by(
+                selections.c.workspace_id.asc(),
+                releases.c.slug.asc(),
+            )
+        )
+        return list(result)
+
+    @override
     async def list_catalogs(
         self,
         namespace: PluginReleaseNamespace,

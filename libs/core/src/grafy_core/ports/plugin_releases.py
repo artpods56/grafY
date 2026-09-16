@@ -85,6 +85,10 @@ class PluginReleaseRepositoryPort(Protocol):
         """Read System and Workspace selections with exact admission state."""
         ...
 
+    async def list_selected_workspace_catalogs(self) -> list[PluginCatalogManifest]:
+        """Read the selected Workspace release catalog of every Workspace."""
+        ...
+
     async def list_current(
         self,
         namespace: PluginReleaseNamespace,
