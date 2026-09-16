@@ -25,11 +25,16 @@ def stored_contract_digest_before_canonicalization(
     return sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def with_stored_contract_digest(
+def persisted_row_with_digest(
     release: InstalledPluginRelease,
     contract_digest: str,
 ) -> InstalledPluginRelease:
-    """Reshape a release the way a row persisted with that digest looks."""
+    """Reshape a release the way a stored row carrying that digest looks.
+
+    The descriptor digest is left unset so the release re-derives it: the
+    fixture release chained its descriptor digest to the canonical contract
+    digest, and that chain cannot verify once the stored digest is swapped in.
+    """
 
     return InstalledPluginRelease(
         release=replace(

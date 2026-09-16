@@ -41,8 +41,8 @@ from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_plugin_llm import LLM
 from tests.support.identity import create_schema
 from tests.support.plugin_contract_digests import (
+    persisted_row_with_digest,
     stored_contract_digest_before_canonicalization,
-    with_stored_contract_digest,
 )
 
 
@@ -320,7 +320,7 @@ async def test_builder_accepts_a_release_stored_before_canonicalization(
     release = _release(inventory, 1)
     stored = stored_contract_digest_before_canonicalization(release.release.catalog)
     assert stored != plugin_contract_digest(release.release.catalog)
-    await _persist_release(database, with_stored_contract_digest(release, stored))
+    await _persist_release(database, persisted_row_with_digest(release, stored))
 
     manifest = await SystemPluginDeploymentManifestBuilder(database.sessions).build(
         inventory,

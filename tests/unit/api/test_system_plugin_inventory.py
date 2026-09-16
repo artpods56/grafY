@@ -61,8 +61,8 @@ from grafy_plugin_llm import LLM
 from grafy_plugin_ocr import OCR
 from grafy_plugin_sql import SQL
 from tests.support.plugin_contract_digests import (
+    persisted_row_with_digest,
     stored_contract_digest_before_canonicalization,
-    with_stored_contract_digest,
 )
 
 
@@ -481,7 +481,7 @@ async def test_generator_accepts_releases_stored_before_canonicalization() -> No
                 release.release.catalog
             )
             assert stored != plugin_contract_digest(release.release.catalog)
-            releases[entry.slug] = with_stored_contract_digest(release, stored)
+            releases[entry.slug] = persisted_row_with_digest(release, stored)
         async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
             for entry in inventory.plugins:
                 release = releases[entry.slug]
