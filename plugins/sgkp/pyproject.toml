@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grafy-plugin-sgkp"
+version = "0.1.0"
+description = "SGKP gazetteer reference-type repair for Grafy"
+readme = "README.md"
+requires-python = "==3.14.*"
+dependencies = [
+    "grafy-core==0.1.0",
+    "openai>=2.0.0",
+    "pydantic",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+]
+
+[tool.uv.sources]
+grafy-core = { path = "wheels/grafy_core-0.1.0-py3-none-any.whl" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.grafy.plugin]
+loader-target = "grafy_plugin.plugin:PLUGIN"
+
+[tool.basedpyright]
+extends = "../../pyproject.toml"
+venvPath = "."
+venv = ".venv"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+grafy_plugin = ["py.typed"]
