@@ -226,6 +226,11 @@ class NodeExecutionContext:
     invocation_path: tuple[int, ...] = ()
     module_path: tuple[str, ...] = ()
     node_path: tuple[str, ...] = ()
+    artifact_type_bindings: Mapping[str, ArtifactTypeKey] = dataclass_field(
+        default_factory=dict[str, ArtifactTypeKey],
+        repr=False,
+        compare=False,
+    )
     progress_reporter: NodeProgressReporter | None = dataclass_field(
         default=None,
         repr=False,

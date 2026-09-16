@@ -20,6 +20,7 @@ import {
 } from "./artifact-renderers";
 import { schemaTypeLabel } from "./type-inspector";
 import { writeArtifactDrop } from "../../model/artifact-drop";
+import { BLOB_ARTIFACT_NOTICE, isBlobArtifact } from "../../model/blob-notice";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 const EAGER_JSON_PREVIEW_BYTE_LIMIT = 512 * 1_024;
@@ -697,6 +698,11 @@ export function ArtifactPortPreview({
           </div>
         ) : null}
       </div>
+      {isBlobArtifact(active) ? (
+        <span role="status" {...stylex.props(s.notice)}>
+          {BLOB_ARTIFACT_NOTICE}
+        </span>
+      ) : null}
       {!fieldControlledByEdge && fields.length ? (
         <select
           aria-label="Project artifacts onto a field"

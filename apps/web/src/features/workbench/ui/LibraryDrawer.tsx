@@ -7,6 +7,7 @@ import { ArrowUpRight, Library, LoaderCircle, X } from "lucide-react";
 
 import { listLibraryArtifacts, type LibraryItem } from "@/lib/api";
 import { writeArtifactDrop } from "../model/artifact-drop";
+import { BLOB_ARTIFACT_NOTICE, isBlobArtifact } from "../model/blob-notice";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
@@ -235,6 +236,11 @@ export function LibraryDrawer({
             >
               <span {...stylex.props(s.name)}>{item.name}</span>
               <span {...stylex.props(s.line)}>{provenanceLine(item)}</span>
+              {isBlobArtifact(item.artifact) ? (
+                <span role="status" {...stylex.props(s.line)}>
+                  {BLOB_ARTIFACT_NOTICE}
+                </span>
+              ) : null}
             </button>
           ))
         )}

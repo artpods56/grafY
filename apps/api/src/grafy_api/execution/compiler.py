@@ -161,7 +161,11 @@ class GraphCompiler:
             if registration.plugin_slug != "graph.module"
         )
         self._artifact_types = {
-            artifact_type.key for artifact_type in plugin_registry.artifact_types
+            artifact_type.key
+            for artifact_type in (
+                *plugin_registry.artifact_types,
+                *plugin_registry.artifact_type_dependencies,
+            )
         }
         self._declared_artifact_contracts = {
             artifact_type.key: PluginArtifactTypeContract.from_spec(artifact_type)

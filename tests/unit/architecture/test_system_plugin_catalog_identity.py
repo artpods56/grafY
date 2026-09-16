@@ -13,6 +13,7 @@ from grafy_core.domain.plugin_releases import (
 from grafy_core.plugins import Plugin
 from grafy_workbench.arithmetic import ARITHMETIC
 from grafy_plugin_gis import GIS
+from grafy_workbench.file import FILES
 from grafy_workbench.image import IMAGES
 from grafy_plugin_llm import LLM
 from grafy_plugin_ocr import OCR
@@ -31,6 +32,7 @@ SYSTEM_PLUGINS = (
     TEXT,
     SCHEMAS,
     TABLES,
+    FILES,
     GIS,
     LLM,
     OCR,
@@ -43,6 +45,7 @@ EXPECTED_SYSTEM_PLUGIN_SLUGS = (
     "text",
     "schema",
     "table",
+    "file",
     "external.gis",
     "external.llm",
     "external.ocr",

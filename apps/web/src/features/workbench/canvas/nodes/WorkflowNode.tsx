@@ -355,6 +355,20 @@ const s = stylex.create({
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     fontWeight: 500,
   },
+  bindType: {
+    minWidth: 0,
+    flex: 1,
+    paddingInline: "4px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: "5px",
+    backgroundColor: tokens.colorSurface,
+    color: tokens.colorTextEmphasis,
+    cursor: "pointer",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    fontSize: "10px",
+  },
   resetType: {
     minHeight: "22px",
     display: "inline-flex",
@@ -1748,6 +1762,10 @@ function GenericArtifactTypeState({
 }) {
   const variables = declaredArtifactTypeVariables(data.spec);
   if (!variables.length) return null;
+  const bindableArtifactTypes = data.bindableArtifactTypes ?? [];
+  const picksType =
+    data.onBindArtifactTypeBinding !== undefined &&
+    bindableArtifactTypes.length > 0;
 
   return (
     <div {...stylex.props(s.genericTypes)} aria-label="Generic artifact types">
@@ -1772,15 +1790,52 @@ function GenericArtifactTypeState({
                   : undefined
               }
             />
-            <span
-              title={`${variable}: ${label}`}
-              {...stylex.props(
-                s.genericTypeCopy,
-                artifactType ? s.genericTypeBound : null,
-              )}
-            >
-              {label}
-            </span>
+            {picksType ? (
+              <select
+                disabled={!resettable}
+                aria-label={`Bind artifact type ${variable}`}
+                title={
+                  resettable
+                    ? `Bind ${variable} to an artifact type`
+                    : "Disconnect this node before changing its type"
+                }
+                {...nodeInteractionProps(stylex.props(s.bindType))}
+                value={
+                  artifactType
+                    ? `${artifactType.id}@${artifactType.schema_version}`
+                    : ""
+                }
+                onChange={(event) => {
+                  const choice = event.currentTarget.value;
+                  if (!choice) return;
+                  const separator = choice.lastIndexOf("@");
+                  data.onBindArtifactTypeBinding?.(id, variable, {
+                    id: choice.slice(0, separator),
+                    schema_version: Number(choice.slice(separator + 1)),
+                  });
+                }}
+              >
+                <option value="">Any artifact · binds on connect</option>
+                {bindableArtifactTypes.map((type) => (
+                  <option
+                    key={`${type.id}@${type.schema_version}`}
+                    value={`${type.id}@${type.schema_version}`}
+                  >
+                    {`${type.id}@${type.schema_version}`}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span
+                title={`${variable}: ${label}`}
+                {...stylex.props(
+                  s.genericTypeCopy,
+                  artifactType ? s.genericTypeBound : null,
+                )}
+              >
+                {label}
+              </span>
+            )}
             {artifactType ? (
               <button
                 type="button"

@@ -472,6 +472,38 @@ function chatCompletionSpec(): NodeSpec {
   };
 }
 
+function sequenceCollectSpec(): NodeSpec {
+  return {
+    operator_id: "sequence.collect",
+    operator_version: 1,
+    plugin_slug: "sequence",
+    origin: "builtin",
+    title: "Collect",
+    description: "Collects one artifact type.",
+    catalog_visible: true,
+    runnable: true,
+    config_schema: {},
+    input_schema: {},
+    output_schema: {},
+    inputs: [
+      {
+        name: "items",
+        title: "Items",
+        description: null,
+        direction: "input",
+        artifact_type: null,
+        artifact_type_variable: "T",
+        shape: "many",
+        accepted_shapes: ["many"],
+        instance_plugs: true,
+        variadic: false,
+        required: true,
+      },
+    ],
+    outputs: [],
+  };
+}
+
 function renderNode(
   id: string,
   data: ReturnType<typeof createWorkflowNodeData>,
@@ -1672,5 +1704,53 @@ describe("WorkflowNode artifact drop rows", () => {
     expect(plugRow?.dataset.inputPlugPort).toBe("statements");
 
     React.act(() => root.unmount());
+  });
+});
+
+describe("WorkflowNode artifact type binding", () => {
+  it("binds an artifact type variable from the node card instead of connect only", () => {
+    const onBindArtifactTypeBinding = vi.fn();
+    const data = {
+      ...createWorkflowNodeData(sequenceCollectSpec()),
+      onBindArtifactTypeBinding,
+      bindableArtifactTypes: [
+        { id: "file.jpeg", schema_version: 1 },
+        { id: "file.png", schema_version: 1 },
+      ],
+    };
+    const { container } = renderNode("collect", data);
+
+    const select = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Bind artifact type T"]',
+    );
+    expect(select).not.toBeNull();
+    expect(select?.disabled).toBe(false);
+    expect([...select!.options].map((option) => option.textContent)).toEqual([
+      "Any artifact · binds on connect",
+      "file.jpeg@1",
+      "file.png@1",
+    ]);
+
+    React.act(() => {
+      select!.value = "file.jpeg@1";
+      select!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(onBindArtifactTypeBinding).toHaveBeenCalledWith("collect", "T", {
+      id: "file.jpeg",
+      schema_version: 1,
+    });
+  });
+
+  it("keeps the static type row when no binding options are supplied", () => {
+    const { container } = renderNode(
+      "collect",
+      createWorkflowNodeData(sequenceCollectSpec()),
+    );
+
+    expect(
+      container.querySelector('select[aria-label="Bind artifact type T"]'),
+    ).toBeNull();
+    expect(container.textContent).toContain("Any artifact · binds on connect");
   });
 });

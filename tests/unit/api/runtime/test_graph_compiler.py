@@ -291,6 +291,91 @@ async def test_compiler_derives_map_invocation_from_the_incoming_edge(
 
 
 @pytest.mark.asyncio
+async def test_compiler_binds_a_variable_to_a_dependency_artifact_type(
+    tmp_path: Path,
+) -> None:
+    png_ref = ArtifactRef.from_key(
+        artifact_id=uuid4(),
+        key=ArtifactTypeKey("file.png", 1),
+    )
+    request = RunRequest(
+        nodes=[
+            RunNodeRequest(
+                kind="builtin",
+                id="collect",
+                operator_id="sequence.collect",
+                operator_version=1,
+                input_plugs=[RunInputPlugRequest(id="item", port="items")],
+                artifact_type_bindings=[
+                    ArtifactTypeBindingModel(
+                        variable="T",
+                        artifact_type=ArtifactTypeKeyResponse(
+                            id="file.png",
+                            schema_version=1,
+                        ),
+                    )
+                ],
+            )
+        ],
+        origins=[
+            RunOriginRequest(
+                to_node="collect",
+                to_port="items",
+                to_plug="item",
+                value=png_ref,
+            )
+        ],
+    )
+
+    compiled = await _compiler(tmp_path).compile(
+        _pin_system_plugins(request),
+        _UnusedModuleExecutor(),
+        workspace_id=WORKSPACE_ID,
+    )
+
+    collect = compiled.nodes[0]
+    produced = collect.resolved_contracts.output_contract.ports["items"].produces
+    assert produced == ArtifactTypeKey("file.png", 1)
+
+
+@pytest.mark.asyncio
+async def test_compiler_rejects_a_blob_origin_on_a_typed_file_port(
+    tmp_path: Path,
+) -> None:
+    blob_ref = ArtifactRef.from_key(
+        artifact_id=uuid4(),
+        key=ArtifactTypeKey("file.blob", 1),
+    )
+    request = RunRequest(
+        nodes=[
+            RunNodeRequest(
+                kind="builtin",
+                id="decode",
+                operator_id="image.decode",
+                operator_version=1,
+            )
+        ],
+        origins=[
+            RunOriginRequest(
+                to_node="decode",
+                to_port="files",
+                value=blob_ref,
+            )
+        ],
+    )
+
+    with pytest.raises(
+        GraphExecutionError,
+        match=r"Origin 'decode'\.'files' cannot connect file\.blob@1",
+    ):
+        await _compiler(tmp_path).compile(
+            _pin_system_plugins(request),
+            _UnusedModuleExecutor(),
+            workspace_id=WORKSPACE_ID,
+        )
+
+
+@pytest.mark.asyncio
 async def test_compiler_accepts_an_external_edge_only_with_its_exact_pin(
     tmp_path: Path,
 ) -> None:

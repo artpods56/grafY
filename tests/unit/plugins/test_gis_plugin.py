@@ -12,6 +12,7 @@ import httpx
 import pytest
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeSpec
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.file_contracts import BLOB_FILE
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.plugins import (
     NodeHttpEgressInput,
@@ -240,6 +241,15 @@ def test_gis_registers_exact_sources_lightweight_layers_and_documents() -> None:
         "gis.features.to_table", 1
     ).node_class.output_contract.ports["table"]
     assert feature_table_output.produces == TABLE_DATA.key
+    accepted_by_typed_importers = (
+        registry.node_registration("gis.geojson.parse", 1)
+        .node_class.input_contract.ports["file"]
+        .accepted_types,
+        registry.node_registration("gis.raster_scan.import", 1)
+        .node_class.input_contract.ports["file"]
+        .accepted_types,
+    )
+    assert all(BLOB_FILE.key not in accepted for accepted in accepted_by_typed_importers)
 
 
 def test_wfs_import_declares_its_configured_http_egress_contract() -> None:

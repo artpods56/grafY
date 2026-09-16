@@ -159,6 +159,7 @@ def build_workbench_components(
             storage=resolved_storage,
             unit_of_work_factory=lambda: resolved_unit_of_work,
         ),
+        artifact_types=tuple(artifact_types.values()),
         node_secrets=resolved_node_secrets,
     )
 

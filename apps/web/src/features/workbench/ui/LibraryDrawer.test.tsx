@@ -59,6 +59,22 @@ const UPLOAD_ITEM: LibraryItem = {
   run: null,
 };
 
+const BLOB_ITEM: LibraryItem = {
+  artifact: {
+    artifact_id: "artifact-blob",
+    artifact_type: "file.blob",
+    schema_version: 1,
+    content_type: "application/octet-stream",
+  },
+  name: "scan.unknown",
+  provenance: {
+    source: "upload",
+    saved_at: "2026-09-11T12:00:00Z",
+    original_filename: "scan.unknown",
+  },
+  run: null,
+};
+
 describe("LibraryDrawer", () => {
   const roots: ReturnType<typeof createRoot>[] = [];
   let workspaceCounter = 0;
@@ -145,6 +161,14 @@ describe("LibraryDrawer", () => {
         .click();
     });
     expect(container.textContent).not.toContain("Open in execution history");
+  });
+
+  it("keeps the ingest notice on a blob row", async () => {
+    const { container } = await render([BLOB_ITEM]);
+
+    expect(container.textContent).toContain(
+      "Format not recognized, stored as a blob.",
+    );
   });
 
   it("says the Library is empty before anything is saved", async () => {

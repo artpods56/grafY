@@ -11,6 +11,7 @@ from grafy_core.plugins import (
 )
 
 from grafy_workbench.arithmetic import ARITHMETIC
+from grafy_workbench.file import FILES
 from grafy_workbench.image import IMAGES
 from grafy_workbench.schema import SCHEMAS
 from grafy_workbench.sequence import SEQUENCES
@@ -25,6 +26,7 @@ BUILTIN_FAMILIES: tuple[Plugin, ...] = (
     TEXT,
     SCHEMAS,
     TABLES,
+    FILES,
 )
 
 MODULE_BOUNDARY_OPERATOR_IDS = frozenset(
