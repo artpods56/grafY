@@ -16,4 +16,5 @@ def test_image_plugin_preserves_catalog_identity_and_freezes() -> None:
     assert RASTER_IMAGE.bundle.version == 1
     assert {(node.operator_id, node.operator_version) for node in manifest.nodes} == {
         ("image.upload", 1),
+        ("image.decode", 1),
     }
