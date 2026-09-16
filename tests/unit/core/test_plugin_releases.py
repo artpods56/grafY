@@ -881,7 +881,7 @@ def test_contract_digest_ignores_every_empty_defaulting_catalog_field() -> None:
 
     catalog = _contract_catalog()
     assert plugin_contract_digest(catalog) == (
-        "4531883a81e55e8bcce716b48d31e62b096d7e8b43993f50bbf0f16dbc80b377"
+        "bf0f88ca0e58a97c880e05b958ff649a5bb19b1a903d42a767708f3c8eb6a4c8"
     )
     # A model the pinned catalog never instantiates cannot fail the pin, so a
     # new empty default classified ``keep`` on it would stay green while every
@@ -895,12 +895,13 @@ def test_contract_digest_accepts_releases_persisted_before_canonicalization() ->
     catalog = _contract_catalog()
     stored = stored_contract_digest_before_canonicalization(catalog)
     assert stored != plugin_contract_digest(catalog)
-    # Literal produced by the ``plugin_contract_digest`` of a9037727, the commit
-    # this branch repairs, so the oracle is tied to the implementation that wrote
-    # those rows instead of agreeing with a copy of its own fragments. Recompute
-    # it when the fixture catalog changes.
+    # Recomputed when the staged-upload declaration left the contract, so this
+    # literal is no longer the output a9037727 wrote for this fixture: the
+    # catalog it hashed still carried that field. It pins the shim's current
+    # output so unintended canonicalization drift still fails. Recompute it when
+    # the fixture catalog changes.
     assert stored == (
-        "86f63659d2f0b590cda937e7962f691ca8fdee28eed305ae85fa1da37ac83ffc"
+        "a2e7e4e5e7f0f1cd7e5e4735775c657d3edf0274f7bfefe118c9196c63661292"
     )
 
     assert plugin_contract_digest_matches(catalog, plugin_contract_digest(catalog))

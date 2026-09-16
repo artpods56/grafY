@@ -514,16 +514,6 @@ class PluginSecretInputContract(PluginReleaseValue):
     description: str | None = Field(default=None, max_length=4_000)
 
 
-class PluginStagedUploadInputContract(PluginReleaseValue):
-    """One config field whose upload keys a release asked the host to stage."""
-
-    config_field: str = Field(
-        pattern=r"^[a-z][a-z0-9_]*$",
-        min_length=1,
-        max_length=255,
-    )
-
-
 class PluginNodeHttpEgressContract(PluginReleaseValue):
     """Immutable declaration of one node's network.egress destination sources."""
 
@@ -561,10 +551,6 @@ class PluginNodeContract(PluginReleaseValue):
     inputs: tuple[PluginPortContract, ...]
     outputs: tuple[PluginPortContract, ...]
     secret_inputs: tuple[PluginSecretInputContract, ...] = ()
-    # Tombstone: no registration declares staged uploads any more, but persisted
-    # catalogs serialize this key and its ``keep`` digest role covers releases
-    # published while declarations were live, so dropping it invalidates them.
-    staged_upload_inputs: tuple[PluginStagedUploadInputContract, ...] = ()
     required_capabilities: tuple[PluginRuntimeCapability, ...] = ()
     cache_policy: NodeCachePolicy = NodeCachePolicy.NEVER
     http_egress: PluginNodeHttpEgressContract | None = None
@@ -805,7 +791,6 @@ PLUGIN_CONTRACT_DIGEST_FIELD_ROLES: Mapping[
     },
     PluginNodeContract: {
         "secret_inputs": "keep",
-        "staged_upload_inputs": "keep",
         "required_capabilities": "keep",
         "cache_policy": "keep",
         "http_egress": "omit",
