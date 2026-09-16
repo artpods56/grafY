@@ -17,7 +17,7 @@ from grafy_api.v1.routes.executions.dependencies import (
 )
 from grafy_api.v1.routes.library.dependencies import library_service
 from grafy_api.v1.routes.modules.dependencies import module_library_service
-from grafy_api.v1.routes.uploads.dependencies import staged_upload_service
+from grafy_api.v1.routes.uploads.dependencies import upload_service
 
 from tests.support.identity import browser_actor_override
 from tests.testkit import AppDependency, DependencyOverride
@@ -30,7 +30,7 @@ def workbench_dependency_overrides(
 
     overrides: dict[AppDependency, DependencyOverride] = {
         plugin_registry: lambda: components.plugin_registry,
-        staged_upload_service: lambda: components.uploads,
+        upload_service: lambda: components.uploads,
         execution_admission_limiter: lambda: components.execution_admission,
         run_execution_manager: lambda: components.execution_manager,
         execution_history_service: lambda: components.execution_history,

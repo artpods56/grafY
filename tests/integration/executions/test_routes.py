@@ -1,6 +1,5 @@
 import asyncio
 import json
-from io import BytesIO
 from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock
@@ -18,7 +17,7 @@ from grafy_api.execution.manager import RunExecutionIdempotencyConflictError
 from grafy_api.execution.models import GraphExecutionResult
 from grafy_api.execution.requests import RunRequest
 from grafy_api.settings import Settings
-from grafy_api.staged_uploads import StagedUploadService
+from grafy_api.uploads import UploadService, UploadServiceConfig
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
 from grafy_api.v1.routes.executions.dependencies import (
@@ -32,10 +31,10 @@ from grafy_api.v1.routes.executions.models import (
     RunResponse,
 )
 from grafy_api.v1.routes.executions.services import RunResultPresenter
-from grafy_api.v1.routes.uploads.models import SampleRequest
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
 from grafy_core.file_contracts import BUILTIN_FILE_FORMATS
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_storage import LocalFileObjectStore
 from grafy_workbench import BUILTIN_FAMILIES
 from pydantic import SecretStr
 
@@ -48,6 +47,8 @@ from tests.support.system_plugins import (
     selected_system_run_node as RunNodeRequest,
 )
 from tests.testkit import app_with_overrides, create_db_url, db
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\nstaged payload"
 
 
 def _parse_sse_events(body: str) -> list[dict[str, object]]:
@@ -382,69 +383,90 @@ async def test_upload_from_relative_workspace_returns_opaque_upload_key(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     unit_of_work = InMemoryUnitOfWork()
-    service = StagedUploadService(
-        Path("relative-workbench/uploads"),
+    service = UploadService.from_config(
+        UploadServiceConfig(),
+        storage=LocalFileObjectStore(Path("relative-workbench/objects")),
         unit_of_work_factory=lambda: unit_of_work,
+        artifact_types={},
+        extension_claims={},
+        bucket="artifacts",
+        storage_backend="local",
     )
     workspace_id = UUID("00000000-0000-0000-0000-000000000007")
     user_id = UUID("00000000-0000-0000-0000-000000000001")
+    content = b"image-bytes"
 
-    item = await service.save_upload(
+    target = await service.create_upload(
         workspace_id=workspace_id,
         created_by_user_id=user_id,
         filename="page.png",
-        stream=BytesIO(b"image-bytes"),
+        byte_size=len(content),
     )
+    upload_key = str(target.upload_id)
 
-    assert "/" not in item.upload_key
-    assert "\\" not in item.upload_key
-    assert item.upload_key.endswith("-page.png")
-    assert item.original_filename == "page.png"
-    assert item.byte_size == len(b"image-bytes")
-    staged_path = (
-        Path("relative-workbench/uploads") / str(workspace_id) / item.upload_key
-    )
-    assert staged_path.is_file()
-    assert staged_path.read_bytes() == b"image-bytes"
+    assert UUID(upload_key) == target.upload_id
+    assert "/" not in upload_key
+    assert "\\" not in upload_key
+    assert "page.png" not in upload_key
     async with unit_of_work as entered:
-        stored = await entered.staged_uploads.get(workspace_id, item.upload_key)
+        stored = await entered.uploads.get(workspace_id, target.upload_id)
     assert stored is not None
     assert stored.original_filename == "page.png"
     assert stored.created_by_user_id == user_id
+    assert stored.object_key == f"objects/{upload_key}"
 
 
-def test_upload_endpoint_streams_an_opaque_file(
+def test_upload_endpoint_streams_bytes_into_the_object_store(
     builtin_client: TestClient,
     tmp_path: Path,
 ) -> None:
     api = GrafyApi(builtin_client)
-    response = api.workspace(WORKSPACE_ID).uploads.upload(
+    content = b"II*\x00geotiff-bytes"
+    item = api.workspace(WORKSPACE_ID).uploads.upload_ok(
         "historical-map.tif",
-        b"geotiff-bytes",
+        content,
         content_type="image/tiff",
     )
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["filename"] == "historical-map.tif"
-    assert payload["byte_size"] == len(b"geotiff-bytes")
-    assert payload["upload_key"].endswith("-historical-map.tif")
-    staged_path = (
-        tmp_path / "workbench" / "uploads" / str(WORKSPACE_ID) / payload["upload_key"]
+    assert item.filename == "historical-map.tif"
+    assert item.byte_size == len(content)
+    assert UUID(item.upload_key)
+    assert item.artifact_type == "file.tiff@1"
+    assert item.notice is None
+    stored_path = (
+        tmp_path
+        / "workbench"
+        / "objects"
+        / "workbench-artifacts"
+        / "objects"
+        / item.upload_key
     )
-    assert staged_path.is_file()
-    assert staged_path.read_bytes() == b"geotiff-bytes"
+    assert stored_path.is_file()
+    assert stored_path.read_bytes() == content
 
 
-def test_image_upload_materializes_sample_images(
+def test_image_upload_materializes_uploaded_images(
     builtin_client: TestClient,
 ) -> None:
     api = GrafyApi(builtin_client)
-    sample_response = api.workspace(WORKSPACE_ID).uploads.create_samples(
-        SampleRequest(count=2)
-    )
-    assert sample_response.status_code == 200
-    uploads = sample_response.json()
+    # The node config keeps only the identity of each upload, exactly like the
+    # workbench client does before writing operator config.
+    items = [
+        api.workspace(WORKSPACE_ID).uploads.upload_ok(
+            f"scan-{index}.png",
+            PNG_BYTES,
+            content_type="image/png",
+        )
+        for index in range(1, 3)
+    ]
+    uploads = [
+        {
+            "upload_key": item.upload_key,
+            "filename": item.filename,
+            "byte_size": item.byte_size,
+        }
+        for item in items
+    ]
 
     executions = api.workspace(WORKSPACE_ID).executions
     result = executions.run_ok(

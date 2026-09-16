@@ -7,34 +7,29 @@ from pathlib import Path
 from typing import cast
 from uuid import UUID, uuid4
 
-import httpx
 import grafy_plugin_gis.wfs as wfs_module
+import httpx
 import pytest
-from pydantic import ValidationError
-
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeSpec
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
-from grafy_core.domain.staged_uploads import StagedUpload
+from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import NodeExecutionContext
-from grafy_core.table_contracts import (
-    TABLE_DATA,
-    Table,
-    TableColumn,
-    TableValueType,
-)
-from grafy_workbench.table import TABLES
 from grafy_core.plugins import (
     NodeHttpEgressInput,
     PluginRegistry,
 )
-from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.object_set_bundle import (
     PORTABLE_BUNDLE_METADATA_KEY,
     PortableArtifactBundleMetadata,
 )
 from grafy_core.runtime.persistence import ArtifactWriteContext
-from grafy_storage import LocalFileObjectStore
+from grafy_core.table_contracts import (
+    TABLE_DATA,
+    Table,
+    TableColumn,
+    TableValueType,
+)
 from grafy_plugin_gis.artifacts import (
     GEO_FEATURE_COLLECTION,
     GEO_MAP_DOCUMENT,
@@ -53,6 +48,7 @@ from grafy_plugin_gis.models import (
     VectorProjectionMetadata,
 )
 from grafy_plugin_gis.nodes import (
+    WFS_IMPORT_MAX_FEATURES,
     ComposeMapConfig,
     ComposeMapInput,
     GeoFeaturesToTableConfig,
@@ -77,7 +73,6 @@ from grafy_plugin_gis.nodes import (
     VectorLayerInput,
     WfsImportConfig,
     WfsImportInput,
-    WFS_IMPORT_MAX_FEATURES,
     WmsLayerConfig,
     WmsLayerInput,
     build_raster_layer,
@@ -87,15 +82,19 @@ from grafy_plugin_gis.nodes import (
     geo_features_to_table,
     table_to_geo_features,
 )
-from grafy_plugin_gis.plugin import GIS
 from grafy_plugin_gis.persistence import (
     FeatureCollectionOutputWriter,
     FeatureCollectionResolver,
     RasterScanOutputWriter,
     RasterScanResolver,
 )
+from grafy_plugin_gis.plugin import GIS
 from grafy_plugin_gis.wfs import WfsClient, WfsImportError
+from grafy_storage import LocalFileObjectStore
+from grafy_workbench.table import TABLES
+from pydantic import ValidationError
 
+from tests.support.uploads import bundle_upload_reader, seed_ready_upload
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -129,16 +128,7 @@ async def seed_staged_upload(
     filename: str,
     byte_size: int,
 ) -> None:
-    async with unit_of_work as entered:
-        await entered.staged_uploads.add(
-            StagedUpload(
-                workspace_id=workspace_id,
-                upload_key=upload_key,
-                original_filename=filename,
-                byte_size=byte_size,
-            )
-        )
-        await entered.commit()
+    del unit_of_work, workspace_id, upload_key, filename, byte_size
 
 
 async def import_geojson(
@@ -147,24 +137,22 @@ async def import_geojson(
     filename: str,
     content: bytes,
 ) -> GeoFeatureCollection:
-    workspace_uploads = uploads_dir / str(TEST_WORKSPACE_ID)
-    workspace_uploads.mkdir(parents=True, exist_ok=True)
-    upload_key = f"staged-{filename}"
-    (workspace_uploads / upload_key).write_bytes(content)
     uow = InMemoryUnitOfWork()
-    await seed_staged_upload(
+    upload_id = await seed_ready_upload(
         uow,
+        uploads_dir=uploads_dir,
         workspace_id=TEST_WORKSPACE_ID,
-        upload_key=upload_key,
+        content=content,
         filename=filename,
-        byte_size=len(content),
     )
-    result = await ImportGeoJsonNode(uploads_dir, unit_of_work=uow).run(
+    result = await ImportGeoJsonNode(
+        bundle_upload_reader(uow, uploads_dir=uploads_dir)
+    ).run(
         NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="import"),
         GeoJsonUploadConfig(
             uploads=[
                 GeoJsonUploadItem(
-                    upload_key=upload_key,
+                    upload_key=str(upload_id),
                     filename=filename,
                     byte_size=len(content),
                 )
@@ -526,22 +514,22 @@ async def test_geojson_upload_validates_exact_wgs84_source(tmp_path: Path) -> No
 @pytest.mark.asyncio
 async def test_geojson_upload_fails_closed_without_db_row(tmp_path: Path) -> None:
     uploads_dir = tmp_path / "uploads"
-    workspace_uploads = uploads_dir / str(TEST_WORKSPACE_ID)
-    workspace_uploads.mkdir(parents=True)
+    absent_id = uuid4()
     content = feature_collection((13.405, 52.52))
-    upload_key = "orphan.geojson"
-    (workspace_uploads / upload_key).write_bytes(content)
+    staged = uploads_dir / str(TEST_WORKSPACE_ID) / str(absent_id)
+    staged.parent.mkdir(parents=True)
+    staged.write_bytes(content)
+    node = ImportGeoJsonNode(
+        bundle_upload_reader(InMemoryUnitOfWork(), uploads_dir=uploads_dir)
+    )
 
     with pytest.raises(GeoJsonUploadError, match="was not found in workspace"):
-        await ImportGeoJsonNode(
-            uploads_dir,
-            unit_of_work=InMemoryUnitOfWork(),
-        ).run(
+        await node.run(
             NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="import"),
             GeoJsonUploadConfig(
                 uploads=[
                     GeoJsonUploadItem(
-                        upload_key=upload_key,
+                        upload_key=str(absent_id),
                         filename="orphan.geojson",
                         byte_size=len(content),
                     )
@@ -1143,22 +1131,22 @@ async def test_geotiff_upload_and_raster_persistence_produce_cog_and_xyz_tiles(
     workspace_uploads = uploads / str(TEST_WORKSPACE_ID)
     workspace_uploads.mkdir(parents=True)
     source_content = write_geotiff(workspace_uploads / "source.tif")
-    staged_path = workspace_uploads / "staged-raster"
-    staged_path.write_bytes(source_content)
     unit_of_work = InMemoryUnitOfWork()
-    await seed_staged_upload(
+    upload_id = await seed_ready_upload(
         unit_of_work,
+        uploads_dir=uploads,
         workspace_id=TEST_WORKSPACE_ID,
-        upload_key="staged-raster",
+        content=source_content,
         filename="historical-map.tif",
-        byte_size=len(source_content),
     )
-    upload = await ImportGeoTiffNode(uploads, unit_of_work=unit_of_work).run(
+    upload = await ImportGeoTiffNode(
+        bundle_upload_reader(unit_of_work, uploads_dir=uploads)
+    ).run(
         NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="upload"),
         GeoTiffUploadConfig(
             uploads=[
                 GeoTiffUploadItem(
-                    upload_key="staged-raster",
+                    upload_key=str(upload_id),
                     filename="historical-map.tif",
                     byte_size=len(source_content),
                 )

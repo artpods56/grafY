@@ -177,7 +177,9 @@ export type InstantiateTemplateRequest =
 export type TemplateInstantiationResponse =
   Schemas["TemplateInstantiationResponse"];
 export type UploadResponse =
-  paths["/v1/workspaces/{workspace_id}/uploads"]["post"]["responses"][200]["content"]["application/json"];
+  Schemas["ImageUploadItemResponse"];
+export type UploadTarget =
+  Schemas["UploadTargetResponse"];
 export type RunScopeInput = Schemas["GraphExecutionScope"];
 export type RunRequest =
   paths["/v1/workspaces/{workspace_id}/runs"]["post"]["requestBody"]["content"]["application/json"];

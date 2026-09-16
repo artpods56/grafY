@@ -1,17 +1,15 @@
 from uuid import UUID
 
 import pytest
-
 from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactTypeKey
+from grafy_core.domain.errors import ObjectAlreadyExistsError
+from grafy_core.domain.invocation_cache import InvocationCacheEntry
+from grafy_core.domain.uploads import Upload
 from grafy_core.runtime.in_memory import (
     InMemoryDataStore,
     InMemoryInvocationCacheRepository,
     InMemoryUnitOfWork,
 )
-from grafy_core.domain.invocation_cache import InvocationCacheEntry
-from grafy_core.domain.errors import ObjectAlreadyExistsError
-from grafy_core.domain.staged_uploads import StagedUpload
-
 
 WORKSPACE_ONE = UUID("00000000-0000-0000-0000-000000000101")
 WORKSPACE_TWO = UUID("00000000-0000-0000-0000-000000000102")
@@ -94,33 +92,50 @@ async def test_in_memory_artifacts_require_matching_workspace_identity() -> None
         assert await entered.artifacts.get(WORKSPACE_ONE, artifact_id) == first
 
 
-def test_staged_upload_rejects_unbounded_or_negative_metadata() -> None:
-    with pytest.raises(ValueError, match="byte size"):
-        StagedUpload(
+def test_upload_rejects_unbounded_or_negative_metadata() -> None:
+    with pytest.raises(ValueError, match="expected size"):
+        Upload(
             workspace_id=WORKSPACE_ONE,
-            upload_key="key",
+            upload_id=UUID(int=1),
             original_filename="input.csv",
-            byte_size=-1,
+            bucket="artifacts",
+            object_key="objects/one",
+            expected_size=-1,
         )
     with pytest.raises(ValueError, match="at most 255"):
-        StagedUpload(
+        Upload(
             workspace_id=WORKSPACE_ONE,
-            upload_key="key",
+            upload_id=UUID(int=1),
             original_filename="x" * 256,
-            byte_size=0,
+            bucket="artifacts",
+            object_key="objects/one",
+            expected_size=0,
         )
-    for invalid_key in ("", ".", "..", "../escape", r"..\escape", "\x00key"):
-        with pytest.raises(ValueError, match="non-path opaque"):
-            StagedUpload(
-                workspace_id=WORKSPACE_ONE,
-                upload_key=invalid_key,
-                original_filename="input.csv",
-                byte_size=0,
-            )
-    with pytest.raises(ValueError, match="at most 1024"):
-        StagedUpload(
+    with pytest.raises(ValueError, match="object key must not be blank"):
+        Upload(
             workspace_id=WORKSPACE_ONE,
-            upload_key="x" * 1025,
+            upload_id=UUID(int=1),
             original_filename="input.csv",
-            byte_size=0,
+            bucket="artifacts",
+            object_key="",
+            expected_size=0,
+        )
+    with pytest.raises(ValueError, match="at most 1024"):
+        Upload(
+            workspace_id=WORKSPACE_ONE,
+            upload_id=UUID(int=1),
+            original_filename="input.csv",
+            bucket="artifacts",
+            object_key="x" * 1025,
+            expected_size=0,
+        )
+    with pytest.raises(ValueError, match="digest must be 64 characters"):
+        Upload(
+            workspace_id=WORKSPACE_ONE,
+            upload_id=UUID(int=1),
+            original_filename="input.csv",
+            bucket="artifacts",
+            object_key="objects/one",
+            expected_size=0,
+            sha256="short",
         )

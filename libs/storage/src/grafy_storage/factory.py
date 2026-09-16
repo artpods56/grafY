@@ -15,6 +15,7 @@ def create_file_storage(
     backend: StorageBackend,
     local_root: Path,
     s3_endpoint_url: str | None = None,
+    s3_signing_endpoint_url: str | None = None,
     s3_region: str = "us-east-1",
     s3_access_key_id: str | None = None,
     s3_secret_access_key: str | None = None,
@@ -28,4 +29,5 @@ def create_file_storage(
         access_key_id=s3_access_key_id,
         secret_access_key=s3_secret_access_key,
         force_path_style=s3_force_path_style,
+        signing_endpoint_url=s3_signing_endpoint_url,
     )

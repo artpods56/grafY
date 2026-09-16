@@ -3,6 +3,38 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Self, cast, final, override
 
+from grafy_core.artifacts import (
+    ArtifactRef,
+    ArtifactRefSequence,
+    JsonObject,
+    NodeConfig,
+    NodeInput,
+    NodeOutput,
+)
+from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.file_artifacts import load_file_artifact
+from grafy_core.file_contracts import GEOJSON_FILE, JSON_FILE, TIFF_FILE
+from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
+from grafy_core.plugins import (
+    NodeCachePolicy,
+    NodeHttpEgressContract,
+    NodeHttpEgressInput,
+    NodeStagedUploadInput,
+)
+from grafy_core.ports.artifacts import UnitOfWorkPort
+from grafy_core.ports.storage import FileStoragePort
+from grafy_core.ports.uploads import UploadReaderPort
+from grafy_core.runtime.upload_reader import (
+    UploadBytesUnavailableError,
+    read_confirmed_upload,
+)
+from grafy_core.table_contracts import (
+    TABLE_DATA,
+    Table,
+    TableColumn,
+    TableValue,
+    TableValueType,
+)
 from pydantic import (
     AnyHttpUrl,
     BaseModel,
@@ -14,38 +46,14 @@ from pydantic import (
     model_validator,
 )
 from pyproj import CRS, Transformer
-from shapely import from_geojson  # pyright: ignore[reportUnknownVariableType]
-from shapely import from_wkt  # pyright: ignore[reportUnknownVariableType]
-from shapely import to_geojson  # pyright: ignore[reportUnknownVariableType]
-from shapely import to_wkt  # pyright: ignore[reportUnknownVariableType]
+from shapely import (
+    from_geojson,  # pyright: ignore[reportUnknownVariableType]
+    from_wkt,  # pyright: ignore[reportUnknownVariableType]
+    to_geojson,  # pyright: ignore[reportUnknownVariableType]
+    to_wkt,  # pyright: ignore[reportUnknownVariableType]
+)
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform
-
-from grafy_core.artifacts import (
-    ArtifactRef,
-    ArtifactRefSequence,
-    JsonObject,
-    NodeConfig,
-    NodeInput,
-    NodeOutput,
-)
-from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
-from grafy_core.table_contracts import (
-    TABLE_DATA,
-    Table,
-    TableColumn,
-    TableValue,
-    TableValueType,
-)
-from grafy_core.plugins import (
-    NodeCachePolicy,
-    NodeHttpEgressContract,
-    NodeHttpEgressInput,
-    NodeStagedUploadInput,
-)
-from grafy_core.ports.staged_uploads import StagedUploadUnitOfWorkPort
-from grafy_core.staged_upload_paths import resolve_persisted_staged_upload_path
 
 from grafy_plugin_gis.artifacts import (
     GEO_FEATURE_COLLECTION,
@@ -77,7 +85,6 @@ from grafy_plugin_gis.wfs import (
     WfsClient,
 )
 
-
 _parse_wkt = cast(Callable[[str], BaseGeometry], from_wkt)
 _parse_geojson = cast(Callable[[str], BaseGeometry], from_geojson)
 _serialize_geojson = cast(Callable[[BaseGeometry], str], to_geojson)
@@ -86,6 +93,14 @@ _parse_crs = cast(Callable[[str], CRS], CRS.from_user_input)
 
 
 class GeoJsonUploadError(RuntimeError):
+    pass
+
+
+class GeoJsonParseError(RuntimeError):
+    pass
+
+
+class GeoRasterScanImportError(RuntimeError):
     pass
 
 
@@ -463,8 +478,7 @@ class GeoJsonUploadOutput(NodeOutput):
     version=1,
     title="Import GeoJSON",
     factory=lambda context: ImportGeoJsonNode(
-        uploads_dir=context.uploads_dir,
-        unit_of_work=context.uow,
+        uploads=context.upload_reader,
     ),
     staged_upload_inputs=(NodeStagedUploadInput(config_field="uploads"),),
     required_capabilities=(PluginRuntimeCapability.STAGED_UPLOADS,),
@@ -475,13 +489,8 @@ class ImportGeoJsonNode(
 ):
     """Imports one staged WGS84 GeoJSON FeatureCollection."""
 
-    def __init__(
-        self,
-        uploads_dir: Path,
-        unit_of_work: StagedUploadUnitOfWorkPort,
-    ) -> None:
-        self._uploads_dir = uploads_dir.expanduser().resolve()
-        self._unit_of_work = unit_of_work
+    def __init__(self, uploads: UploadReaderPort) -> None:
+        self._uploads = uploads
 
     @override
     async def run(
@@ -493,25 +502,15 @@ class ImportGeoJsonNode(
     ) -> GeoJsonUploadOutput:
         upload = config.uploads[0]
         try:
-            path = await resolve_persisted_staged_upload_path(
-                self._uploads_dir,
-                self._unit_of_work,
+            content = await read_confirmed_upload(
+                self._uploads,
                 workspace_id=context.workspace_id,
                 upload_key=upload.upload_key,
+                byte_size=upload.byte_size,
+                label="Staged GeoJSON upload",
             )
-        except (ValueError, FileNotFoundError) as exc:
+        except UploadBytesUnavailableError as exc:
             raise GeoJsonUploadError(str(exc)) from exc
-        try:
-            content = path.read_bytes()
-        except OSError as exc:
-            raise GeoJsonUploadError(
-                f"Failed to read staged GeoJSON upload {upload.upload_key!r} from {path}"
-            ) from exc
-        if len(content) != upload.byte_size:
-            raise GeoJsonUploadError(
-                f"Staged GeoJSON upload {upload.upload_key!r} changed size: expected "
-                f"{upload.byte_size}, got {len(content)}"
-            )
         try:
             features = GeoFeatureCollection.from_geojson_bytes(content, upload.filename)
         except ValueError as exc:
@@ -545,8 +544,7 @@ class GeoTiffUploadOutput(NodeOutput):
     version=1,
     title="Import georeferenced GeoTIFF",
     factory=lambda context: ImportGeoTiffNode(
-        uploads_dir=context.uploads_dir,
-        unit_of_work=context.uow,
+        uploads=context.upload_reader,
     ),
     staged_upload_inputs=(NodeStagedUploadInput(config_field="uploads"),),
     required_capabilities=(
@@ -558,13 +556,8 @@ class GeoTiffUploadOutput(NodeOutput):
 class ImportGeoTiffNode(
     Node[GeoTiffUploadConfig, GeoTiffUploadInput, GeoTiffUploadOutput]
 ):
-    def __init__(
-        self,
-        uploads_dir: Path,
-        unit_of_work: StagedUploadUnitOfWorkPort,
-    ) -> None:
-        self._uploads_dir = uploads_dir.expanduser().resolve()
-        self._unit_of_work = unit_of_work
+    def __init__(self, uploads: UploadReaderPort) -> None:
+        self._uploads = uploads
 
     @override
     async def run(
@@ -580,25 +573,15 @@ class ImportGeoTiffNode(
                 f"GeoTIFF upload {upload.upload_key!r} filename must end in .tif or .tiff"
             )
         try:
-            path = await resolve_persisted_staged_upload_path(
-                self._uploads_dir,
-                self._unit_of_work,
+            content = await read_confirmed_upload(
+                self._uploads,
                 workspace_id=context.workspace_id,
                 upload_key=upload.upload_key,
+                byte_size=upload.byte_size,
+                label="Staged GeoTIFF upload",
             )
-        except (ValueError, FileNotFoundError) as exc:
+        except UploadBytesUnavailableError as exc:
             raise GeoTiffUploadError(str(exc)) from exc
-        try:
-            content = path.read_bytes()
-        except OSError as exc:
-            raise GeoTiffUploadError(
-                f"Failed to read staged GeoTIFF upload {upload.upload_key!r} from {path}"
-            ) from exc
-        if len(content) != upload.byte_size:
-            raise GeoTiffUploadError(
-                f"Staged GeoTIFF upload {upload.upload_key!r} changed size: expected "
-                f"{upload.byte_size}, got {len(content)}"
-            )
         source_name = config.source_name or upload.filename
         return GeoTiffUploadOutput(
             raster=GeoRasterScan(
@@ -607,6 +590,146 @@ class ImportGeoTiffNode(
                 source_name=source_name,
             )
         )
+
+
+class GeoJsonParseInput(NodeInput):
+    file: Annotated[
+        ArtifactRef,
+        InPort(GEOJSON_FILE, also_accepts=(JSON_FILE,)),
+        Field(description="GeoJSON document artifact to parse."),
+    ]
+
+
+class GeoJsonParseOutput(NodeOutput):
+    features: Annotated[
+        GeoFeatureCollection,
+        OutPort(GEO_FEATURE_COLLECTION),
+        Field(description="Validated exact WGS84 GeoJSON FeatureCollection."),
+    ]
+
+
+@GIS.node(
+    operator_id="gis.geojson.parse",
+    version=1,
+    title="Parse GeoJSON",
+    factory=lambda context: ParseGeoJsonNode(
+        storage=context.storage,
+        uow=context.uow,
+    ),
+)
+@final
+class ParseGeoJsonNode(Node[NodeConfig, GeoJsonParseInput, GeoJsonParseOutput]):
+    """Parse one persisted GeoJSON document into an exact WGS84 collection."""
+
+    def __init__(self, *, storage: FileStoragePort, uow: UnitOfWorkPort) -> None:
+        self._storage = storage
+        self._uow = uow
+
+    @override
+    async def run(
+        self,
+        context: NodeExecutionContext,
+        _config: NodeConfig,
+        inputs: GeoJsonParseInput,
+        /,
+    ) -> GeoJsonParseOutput:
+        ref = inputs.file
+        file = await load_file_artifact(
+            storage=self._storage,
+            uow=self._uow,
+            workspace_id=context.workspace_id,
+            ref=ref,
+        )
+        source_name = file.original_filename or str(ref.artifact_id)
+        try:
+            features = GeoFeatureCollection.from_geojson_bytes(
+                file.content,
+                source_name,
+            )
+        except ValueError as exc:
+            raise GeoJsonParseError(str(exc)) from exc
+        return GeoJsonParseOutput(features=features)
+
+
+class GeoRasterScanImportConfig(NodeConfig):
+    source_name: StrictStr = Field(
+        min_length=1,
+        max_length=1_024,
+        description="Display name of the georeferenced raster scan.",
+    )
+
+    @field_validator("source_name")
+    @classmethod
+    def validate_source_name(cls, value: str) -> str:
+        if value != value.strip():
+            raise ValueError("source_name must not have surrounding whitespace")
+        return value
+
+
+class GeoRasterScanImportInput(NodeInput):
+    file: Annotated[
+        ArtifactRef,
+        InPort(TIFF_FILE),
+        Field(description="Georeferenced TIFF file artifact to import."),
+    ]
+
+
+class GeoRasterScanImportOutput(NodeOutput):
+    raster: Annotated[
+        GeoRasterScan,
+        OutPort(GEO_RASTER_SCAN),
+        Field(description="Georeferenced raster normalized to COG during persistence."),
+    ]
+
+
+@GIS.node(
+    operator_id="gis.raster_scan.import",
+    version=1,
+    title="Import raster scan",
+    factory=lambda context: ImportRasterScanNode(
+        storage=context.storage,
+        uow=context.uow,
+    ),
+    required_capabilities=(PluginRuntimeCapability.NATIVE_GDAL,),
+)
+@final
+class ImportRasterScanNode(
+    Node[GeoRasterScanImportConfig, GeoRasterScanImportInput, GeoRasterScanImportOutput]
+):
+    """Import one persisted GeoTIFF file artifact as a georeferenced scan."""
+
+    def __init__(self, *, storage: FileStoragePort, uow: UnitOfWorkPort) -> None:
+        self._storage = storage
+        self._uow = uow
+
+    @override
+    async def run(
+        self,
+        context: NodeExecutionContext,
+        config: GeoRasterScanImportConfig,
+        inputs: GeoRasterScanImportInput,
+        /,
+    ) -> GeoRasterScanImportOutput:
+        ref = inputs.file
+        file = await load_file_artifact(
+            storage=self._storage,
+            uow=self._uow,
+            workspace_id=context.workspace_id,
+            ref=ref,
+        )
+        try:
+            return GeoRasterScanImportOutput(
+                raster=GeoRasterScan(
+                    content=file.content,
+                    filename=file.original_filename or config.source_name,
+                    source_name=config.source_name,
+                )
+            )
+        except ValueError as exc:
+            raise GeoRasterScanImportError(
+                f"GeoTIFF artifact {ref.artifact_id} cannot be imported as raster "
+                f"scan {config.source_name!r}: {exc}"
+            ) from exc
 
 
 class WfsImportConfig(NodeConfig):
@@ -928,6 +1051,9 @@ __all__ = [
     "ComposeMapConfig",
     "ComposeMapInput",
     "ComposeMapOutput",
+    "GeoJsonParseError",
+    "GeoJsonParseInput",
+    "GeoJsonParseOutput",
     "GeoJsonUploadConfig",
     "GeoJsonUploadError",
     "GeoJsonUploadInput",
@@ -936,14 +1062,20 @@ __all__ = [
     "GeoTiffUploadError",
     "GeoTiffUploadInput",
     "GeoTiffUploadItem",
+    "GeoRasterScanImportConfig",
+    "GeoRasterScanImportError",
+    "GeoRasterScanImportInput",
+    "GeoRasterScanImportOutput",
     "GeoFeaturesToTableConfig",
     "GeoFeaturesToTableError",
     "GeoFeaturesToTableInput",
     "GeoFeaturesToTableOutput",
     "ImportGeoJsonNode",
     "ImportGeoTiffNode",
+    "ImportRasterScanNode",
     "ImportWfsNode",
     "MapLayerOutput",
+    "ParseGeoJsonNode",
     "RasterLayerConfig",
     "RasterLayerInput",
     "TableToGeoFeaturesConfig",

@@ -127,6 +127,9 @@ class FakeStorage:
         self.load_calls.append((bucket, path))
         return BytesIO(self.files[(bucket, path)])
 
+    async def open_chunks(self, bucket: str, path: str):
+        return await self.load(bucket, path)
+
     async def stat(self, bucket: str, path: str) -> StoredObjectInfo | None:
         content = self.files.get((bucket, path))
         if content is None:

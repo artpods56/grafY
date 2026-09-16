@@ -1,6 +1,8 @@
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import ValidationError
+
 from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.collaboration import (
     GRAPH_COMMAND_ADAPTER,
@@ -54,7 +56,6 @@ from grafy_core.domain.saved_graphs import (
     SavedGraphOrigin,
     SavedGraphPluginReleasePin,
 )
-from pydantic import ValidationError
 
 
 def _node(
@@ -600,6 +601,30 @@ def test_add_edge_and_sanitize_copy_document() -> None:
     with pytest.raises(CollaborationCommandRejectedError) as exc:
         sanitize_document_for_cross_workspace_copy(module_document)
     assert exc.value.error_code == "foreign_module_reference"
+
+
+def test_cross_workspace_copy_keeps_an_unsatisfied_artifact_card_reference() -> (
+    None
+):
+    reference = ArtifactRef.from_key(
+        artifact_id=uuid4(),
+        key=ArtifactTypeKey("table.data", 1),
+    )
+    document = SavedGraphDocument(
+        presentation=GraphPresentationDocument(
+            viewers=(
+                GraphPresentationViewer(
+                    id="artifact-viewer-card",
+                    position=GraphPoint(x=1, y=2),
+                    artifact_ref=reference,
+                ),
+            ),
+        ),
+    )
+
+    copied = sanitize_document_for_cross_workspace_copy(document)
+
+    assert copied.presentation.viewers[0].artifact_ref == reference
 
 
 def test_cross_workspace_copy_preserves_system_pins_and_rejects_workspace_pins() -> (

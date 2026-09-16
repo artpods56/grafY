@@ -12,6 +12,30 @@ import {
 import type { ArtifactViewerBinding } from "./artifact-interactions";
 
 describe("shared presentation", () => {
+  it("keeps a node-less artifact card reference through canvas load and save", () => {
+    const reference = {
+      artifact_id: "00000000-0000-0000-0000-0000000000bb",
+      artifact_type: "table.data",
+      schema_version: 1,
+      content_hash: "c".repeat(64),
+    };
+    const loaded = artifactViewersFromPresentation("graph-1", {
+      viewers: [{
+        id: "artifact-card",
+        position: { x: 40, y: 80 },
+        artifact_ref: reference,
+      }],
+      links: [],
+      bindings: [],
+      annotations: [],
+    });
+    const saved = presentationFromArtifactViewers(loaded);
+
+    expect(saved.viewers).toHaveLength(1);
+    expect(saved.viewers?.[0]?.artifact_ref).toEqual(reference);
+    expect(saved.links).toEqual([]);
+  });
+
   it("round-trips geometry and semantic source identity without runtime payload", () => {
     const nodes: ArtifactViewerNode[] = [
       {

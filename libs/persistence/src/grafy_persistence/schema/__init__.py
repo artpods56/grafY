@@ -13,9 +13,7 @@ from grafy_persistence.column_types import (
 from .artifacts import (
     artifact_objects as artifact_objects,
 )
-from .artifacts import (
-    staged_uploads as staged_uploads,
-)
+from .uploads import uploads as uploads
 from .base import NAMING_CONVENTION as NAMING_CONVENTION
 from .base import metadata as metadata
 from .execution import (

@@ -488,10 +488,10 @@ if TYPE_CHECKING:
         InMemoryMaterializedNodeOutputsRepository as InMemoryMaterializedNodeOutputsRepository,
     )
     from grafy_core.runtime.in_memory import (
-        InMemoryStagedUploadRepository as InMemoryStagedUploadRepository,
+        InMemoryUnitOfWork as InMemoryUnitOfWork,
     )
     from grafy_core.runtime.in_memory import (
-        InMemoryUnitOfWork as InMemoryUnitOfWork,
+        InMemoryUploadRepository as InMemoryUploadRepository,
     )
 
 #[TODO] Remove whatever this is, probably dead code
@@ -508,7 +508,7 @@ def __getattr__(name: str) -> object:
         "InMemoryGraphExecutionHistoryRepository",
         "InMemoryInvocationCacheRepository",
         "InMemoryMaterializedNodeOutputsRepository",
-        "InMemoryStagedUploadRepository",
+        "InMemoryUploadRepository",
         "InMemoryUnitOfWork",
     }:
         from grafy_core.runtime import in_memory
@@ -537,7 +537,7 @@ __all__ = [
     "InMemoryGraphExecutionHistoryRepository",
     "InMemoryInvocationCacheRepository",
     "InMemoryMaterializedNodeOutputsRepository",
-    "InMemoryStagedUploadRepository",
+    "InMemoryUploadRepository",
     "InMemoryUnitOfWork",
     "ConfirmationRule",
     "JsonObject",

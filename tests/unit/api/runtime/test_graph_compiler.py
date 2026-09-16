@@ -4,22 +4,11 @@ from typing import Never
 from uuid import UUID, uuid4
 
 import pytest
-
-from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
-from grafy_core.artifact_contracts import INTEGER_VALUE, TEXT_VALUE
-from grafy_core.canonical_conversions import (
-    CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,
-    CanonicalArtifactConversionMap,
+from grafy_api.execution.compiler import (
+    GraphCompiler,
+    _topological_order,
 )
-from grafy_core.conversions import ArtifactConversion, ArtifactConversionKey
-from grafy_core.domain.modules import GraphModuleDefinition
-from grafy_core.nodes import NodeExecutionContext
-from grafy_core.plugins import Plugin, PluginRegistry, PluginRuntimeContext
-from grafy_core.ports.modules import GraphModuleExecutionResult
-from grafy_core.runtime.invocation import InvocationMode
-from grafy_storage import LocalFileObjectStore
-
+from grafy_api.execution.errors import GraphExecutionError
 from grafy_api.execution.requests import (
     ArtifactConversionRequest,
     PinnedOutputRequest,
@@ -29,10 +18,20 @@ from grafy_api.execution.requests import (
     RunOriginRequest,
     RunRequest,
 )
+from grafy_api.plugins.runtime.admission import ReleaseExecutionAdmission
 from grafy_api.v1.models import (
     ArtifactTypeBindingModel,
     ArtifactTypeKeyResponse,
 )
+from grafy_core.application.modules import ModuleLibraryService
+from grafy_core.artifact_contracts import INTEGER_VALUE, TEXT_VALUE
+from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
+from grafy_core.canonical_conversions import (
+    CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,
+    CanonicalArtifactConversionMap,
+)
+from grafy_core.conversions import ArtifactConversion, ArtifactConversionKey
+from grafy_core.domain.modules import GraphModuleDefinition
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     SavedGraph,
@@ -42,20 +41,19 @@ from grafy_core.domain.saved_graphs import (
     SavedGraphNode,
     SavedGraphOrigin,
 )
+from grafy_core.nodes import NodeExecutionContext
+from grafy_core.plugins import Plugin, PluginRegistry, PluginRuntimeContext
+from grafy_core.ports.modules import GraphModuleExecutionResult
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_core.runtime.invocation import InvocationMode
+from grafy_storage import LocalFileObjectStore
+
 from tests.support.system_plugins import (
     TEST_BUILD_DIGEST,
     TEST_SYSTEM_PLUGINS,
     build_explicit_plugin_registry,
     build_selected_system_plugin_deployment,
 )
-from grafy_core.application.modules import ModuleLibraryService
-from grafy_api.plugins.runtime.admission import ReleaseExecutionAdmission
-from grafy_api.execution.compiler import (
-    GraphCompiler,
-    _topological_order,
-)
-from grafy_api.execution.errors import GraphExecutionError
-
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")
 SYSTEM_DEPLOYMENT = build_selected_system_plugin_deployment()
@@ -106,7 +104,6 @@ def _compiler(
     uploads_dir.mkdir(parents=True)
     plugin_context = PluginRuntimeContext(
         workspace=workspace,
-        uploads_dir=uploads_dir,
         storage=LocalFileObjectStore(workspace / "objects"),
         uow=unit_of_work,
         bucket="test-artifacts",

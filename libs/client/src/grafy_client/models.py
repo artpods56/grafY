@@ -2,14 +2,13 @@ from datetime import datetime
 from typing import ClassVar, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-
 from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.domain.saved_graphs import (
     SavedGraphDocument,
     SavedGraphPluginReleasePin,
 )
 from grafy_core.nodes import PortShape
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ClientModel(BaseModel):
@@ -115,6 +114,8 @@ class UploadItem(ClientModel):
     upload_key: str
     filename: str
     byte_size: int
+    artifact_type: str | None = None
+    notice: str | None = None
 
 
 class NodeSecretStatus(ClientModel):

@@ -108,9 +108,9 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
         (
             "/v1/workspaces/{workspace_id}/uploads",
             "post",
-            ("multipart/form-data", "Body_upload_file_v1_workspaces__workspace_id__uploads_post"),
-            "200",
-            "ImageUploadItemResponse",
+            ("application/json", "CreateUploadRequest"),
+            "201",
+            "UploadTargetResponse",
         ),
         (
             "/v1/workspaces/{workspace_id}/graphs",
@@ -163,9 +163,13 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
         ...,
     ] = (
         (
-            "Body_upload_file_v1_workspaces__workspace_id__uploads_post",
-            {"file": ("string", None)},
-            frozenset({"file"}),
+            "CreateUploadRequest",
+            {
+                "filename": ("string", None),
+                "byte_size": ("integer",),
+                "content_type": ("union", ("null",), ("string", None)),
+            },
+            frozenset({"filename", "byte_size"}),
         ),
         (
             "CreateSavedGraphRequest",

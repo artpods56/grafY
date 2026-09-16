@@ -1,12 +1,10 @@
 from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
-from uuid import UUID
 from typing import Annotated, cast, override
+from uuid import UUID
 
 import pytest
-from pydantic import BaseModel, ConfigDict
-
 from grafy_core.artifacts import (
     ArtifactFieldProjection,
     ArtifactTypeKey,
@@ -17,7 +15,6 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.conversions import (
     ArtifactConversion,
     ArtifactConversionKey,
@@ -41,11 +38,12 @@ from grafy_core.plugins import (
     PluginRuntimeContext,
     UnknownOperatorError,
 )
-from grafy_core.runtime.resolvers import InlineModelResolver
-from grafy_core.runtime.persistence import InlineModelOutputWriter
 from grafy_core.ports.node_secrets import NodeSecretUnavailableError
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_core.runtime.persistence import InlineModelOutputWriter
+from grafy_core.runtime.resolvers import InlineModelResolver
 from grafy_storage import LocalFileObjectStore
-
+from pydantic import BaseModel, ConfigDict
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -227,7 +225,6 @@ class ProjectionPayload(BaseModel):
 def runtime_context(tmp_path: Path) -> PluginRuntimeContext:
     return PluginRuntimeContext(
         workspace=tmp_path,
-        uploads_dir=tmp_path / "uploads",
         storage=LocalFileObjectStore(tmp_path / "objects"),
         uow=InMemoryUnitOfWork(),
         bucket="test-artifacts",

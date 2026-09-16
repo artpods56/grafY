@@ -51,7 +51,7 @@ def _ephemeral_build_digest() -> str:
         _EPHEMERAL_BUILD_DIGEST = secrets.token_hex(32)
     return _EPHEMERAL_BUILD_DIGEST
 
-
+# [TODO] split settings by responsibility
 class Settings(BaseSettings):
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env",
@@ -165,10 +165,22 @@ class Settings(BaseSettings):
         le=STAGED_UPLOAD_HARD_MAX_BYTES,
     )
     s3_endpoint_url: str | None = None
+    # Browser-facing S3/MinIO hostname used only when signing upload targets.
+    # Internal object IO keeps ``s3_endpoint_url`` so signatures do not need
+    # post-hoc hostname rewriting.
+    s3_signing_endpoint_url: str | None = None
     s3_region: str = Field(default="us-east-1", min_length=1)
     s3_access_key_id: SecretStr | None = None
     s3_secret_access_key: SecretStr | None = None
     s3_force_path_style: bool = False
+    # Longest time a reserved upload may remain pending before expiration.
+    upload_lifetime_seconds: int = Field(default=24 * 60 * 60, ge=60, le=7 * 24 * 60 * 60)
+    # Lifetime of one signed or API-owned upload target.
+    upload_target_ttl_seconds: int = Field(default=15 * 60, ge=30, le=60 * 60)
+    # Bound on receiving one upload body (local route and MinIO/proxy path).
+    # Cleanup retains terminal rows until this window after target expiry so a
+    # late in-flight PUT cannot recreate bytes after tracking is gone.
+    upload_receive_timeout_seconds: int = Field(default=30 * 60, ge=30, le=6 * 60 * 60)
     credential_encryption_key: SecretStr | None = None
     command_hmac_key: SecretStr | None = None
     command_hmac_key_version: int = Field(default=1, ge=1)

@@ -31,6 +31,7 @@ from grafy_api.services.composition import build_workbench_components
 from grafy_api.settings import Settings, get_settings
 from grafy_api.single_owner import ApiOwnerLease
 from grafy_api.storage import configured_file_storage
+from grafy_api.uploads import UploadServiceConfig
 from grafy_api.v1.routes.artifacts.views import router as artifacts_router
 from grafy_api.v1.routes.auth.services import AuthService
 from grafy_api.v1.routes.auth.views import router as auth_router
@@ -171,7 +172,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ),
                 storage_backend=resolved_settings.storage_backend,
                 bucket=resolved_settings.storage_bucket,
-                staged_upload_max_bytes=resolved_settings.staged_upload_max_bytes,
+                upload_config=UploadServiceConfig.from_settings(resolved_settings),
                 saved_graphs=saved_graphs,
                 module_library=module_library,
                 plugin_releases=plugin_releases,
@@ -233,24 +234,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await collaboration.verify_every_graph_has_head()
                 app.state.resources = resources
 
-                async def cleanup_expired_auth_data() -> None:
+                async def cleanup_expired_state() -> None:
+                    # One maintenance interval for every periodic sweep.
+                    cleanups = (
+                        (
+                            "auth_cleanup_failed",
+                            "cleanup_expired",
+                            auth_service.cleanup_expired,
+                        ),
+                        (
+                            "upload_cleanup_failed",
+                            "cleanup_abandoned",
+                            components.uploads.cleanup_abandoned,
+                        ),
+                    )
                     while True:
                         await asyncio.sleep(
                             resolved_settings.auth_cleanup_interval_seconds
                         )
-                        try:
-                            await auth_service.cleanup_expired()
-                        except asyncio.CancelledError:
-                            raise
-                        except Exception as error:
-                            logger.warning(
-                                "auth_cleanup_failed operation=cleanup_expired "
-                                "error_class=%s",
-                                type(error).__name__,
-                            )
-                            continue
+                        for event, operation, cleanup in cleanups:
+                            try:
+                                _ = await cleanup()
+                            except asyncio.CancelledError:
+                                raise
+                            except Exception as error:
+                                logger.warning(
+                                    "%s operation=%s error_class=%s",
+                                    event,
+                                    operation,
+                                    type(error).__name__,
+                                )
 
-                cleanup_task = asyncio.create_task(cleanup_expired_auth_data())
+                cleanup_task = asyncio.create_task(cleanup_expired_state())
                 try:
                     yield
                 finally:

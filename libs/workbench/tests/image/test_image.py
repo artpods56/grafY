@@ -1,12 +1,9 @@
 from hashlib import sha256
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
-
 from grafy_core.artifact_contracts import RASTER_IMAGE, RasterImageContent
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
-from grafy_core.domain.staged_uploads import StagedUpload
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.storage import (
@@ -15,8 +12,10 @@ from grafy_core.ports.storage import (
     StoredFile,
     StoredObjectInfo,
 )
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext
+
 from grafy_workbench.image import IMAGES
 from grafy_workbench.image.nodes import (
     ImageUploadError,
@@ -24,6 +23,7 @@ from grafy_workbench.image.nodes import (
     UploadImagesNode,
 )
 
+from tests.support.uploads import bundle_upload_reader, seed_ready_upload
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -60,6 +60,9 @@ class RecordingFileStorage:
     async def load(self, bucket: str, path: str) -> FileStreamProtocol:
         raise AssertionError(f"Unexpected load from {bucket}/{path}")
 
+    async def open_chunks(self, bucket: str, path: str) -> FileStreamProtocol:
+        return await self.load(bucket, path)
+
     async def stat(self, bucket: str, path: str) -> StoredObjectInfo | None:
         raise AssertionError(f"Unexpected stat for {bucket}/{path}")
 
@@ -78,61 +81,43 @@ class RecordingFileStorage:
         raise AssertionError(f"Unexpected delete for {bucket}/{path}")
 
 
-async def seed_staged_upload(
-    unit_of_work: InMemoryUnitOfWork,
-    *,
-    workspace_id: UUID,
-    upload_key: str,
-    filename: str,
-    byte_size: int,
-) -> None:
-    async with unit_of_work as entered:
-        await entered.staged_uploads.add(
-            StagedUpload(
-                workspace_id=workspace_id,
-                upload_key=upload_key,
-                original_filename=filename,
-                byte_size=byte_size,
-            )
-        )
-        await entered.commit()
-
-
 @pytest.mark.asyncio
 async def test_upload_preserves_order_content_and_declared_filenames(
     tmp_path: Path,
 ) -> None:
     uploads_dir = tmp_path / "uploads"
-    workspace_dir = uploads_dir / str(TEST_WORKSPACE_ID)
-    workspace_dir.mkdir(parents=True)
-    first = workspace_dir / "first.png"
-    second = workspace_dir / "second.jpg"
-    first.write_bytes(b"first-image")
-    second.write_bytes(b"second-image")
     uow = InMemoryUnitOfWork()
-    for path in (first, second):
-        await seed_staged_upload(
-            uow,
-            workspace_id=TEST_WORKSPACE_ID,
-            upload_key=path.name,
-            filename=path.name,
-            byte_size=path.stat().st_size,
-        )
+    first_id = await seed_ready_upload(
+        uow,
+        uploads_dir=uploads_dir,
+        workspace_id=TEST_WORKSPACE_ID,
+        content=b"first-image",
+        filename="first.png",
+    )
+    second_id = await seed_ready_upload(
+        uow,
+        uploads_dir=uploads_dir,
+        workspace_id=TEST_WORKSPACE_ID,
+        content=b"second-image",
+        filename="second.jpg",
+    )
 
-    output = await UploadImagesNode(uploads_dir=uploads_dir, unit_of_work=uow).run(
+    output = await UploadImagesNode(
+        bundle_upload_reader(uow, uploads_dir=uploads_dir)
+    ).run(
         NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="upload"),
         UploadImagesNode.config_contract.model.model_validate(
             {
                 "uploads": [
                     {
-                        "upload_key": second.name,
+                        "upload_key": str(second_id),
                         "filename": "page-002.jpg",
-                        "byte_size": second.stat().st_size,
+                        "byte_size": len(b"second-image"),
                     },
                     {
-                        "upload_key": first.name,
+                        "upload_key": str(first_id),
                         "filename": "page-001.png",
-                        "byte_size": first.stat().st_size,
+                        "byte_size": len(b"first-image"),
                     },
                 ]
             }
@@ -155,15 +140,15 @@ async def test_upload_preserves_order_content_and_declared_filenames(
 
 
 @pytest.mark.asyncio
-async def test_upload_rejects_keys_outside_the_upload_root(tmp_path: Path) -> None:
+async def test_upload_rejects_keys_that_are_not_upload_identifiers(
+    tmp_path: Path,
+) -> None:
     uploads_dir = tmp_path / "uploads"
     uploads_dir.mkdir()
-    node = UploadImagesNode(
-        uploads_dir=uploads_dir,
-        unit_of_work=InMemoryUnitOfWork(),
-    )
+    uow = InMemoryUnitOfWork()
+    node = UploadImagesNode(bundle_upload_reader(uow, uploads_dir=uploads_dir))
 
-    with pytest.raises(ImageUploadError, match="opaque relative name"):
+    with pytest.raises(ImageUploadError, match="not a known upload identifier"):
         await node.run(
             NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="upload"),
             node.config_contract.model.model_validate(
@@ -186,12 +171,13 @@ async def test_upload_fails_closed_when_file_exists_without_db_row(
     tmp_path: Path,
 ) -> None:
     uploads_dir = tmp_path / "uploads"
-    staged = uploads_dir / str(TEST_WORKSPACE_ID) / "page.png"
-    staged.parent.mkdir(parents=True)
+    upload_id = uuid4()
+    workspace_dir = uploads_dir / str(TEST_WORKSPACE_ID)
+    workspace_dir.mkdir(parents=True)
+    staged = workspace_dir / str(upload_id)
     staged.write_bytes(b"image")
     node = UploadImagesNode(
-        uploads_dir=uploads_dir,
-        unit_of_work=InMemoryUnitOfWork(),
+        bundle_upload_reader(InMemoryUnitOfWork(), uploads_dir=uploads_dir)
     )
 
     with pytest.raises(ImageUploadError, match="was not found in workspace"):
@@ -201,7 +187,7 @@ async def test_upload_fails_closed_when_file_exists_without_db_row(
                 {
                     "uploads": [
                         {
-                            "upload_key": "page.png",
+                            "upload_key": str(upload_id),
                             "filename": "page.png",
                             "byte_size": staged.stat().st_size,
                         }
@@ -217,29 +203,26 @@ async def test_upload_fails_closed_for_row_in_another_workspace(
     tmp_path: Path,
 ) -> None:
     uploads_dir = tmp_path / "uploads"
-    staged = uploads_dir / str(TEST_WORKSPACE_ID) / "page.png"
-    staged.parent.mkdir(parents=True)
-    staged.write_bytes(b"image")
     other_workspace = UUID("00000000-0000-0000-0000-000000000902")
     uow = InMemoryUnitOfWork()
-    await seed_staged_upload(
+    upload_id = await seed_ready_upload(
         uow,
+        uploads_dir=uploads_dir,
         workspace_id=other_workspace,
-        upload_key="page.png",
+        content=b"image",
         filename="page.png",
-        byte_size=staged.stat().st_size,
     )
 
     with pytest.raises(ImageUploadError, match="was not found in workspace"):
-        await UploadImagesNode(uploads_dir=uploads_dir, unit_of_work=uow).run(
+        await UploadImagesNode(bundle_upload_reader(uow, uploads_dir=uploads_dir)).run(
             NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="upload"),
             UploadImagesNode.config_contract.model.model_validate(
                 {
                     "uploads": [
                         {
-                            "upload_key": "page.png",
+                            "upload_key": str(upload_id),
                             "filename": "page.png",
-                            "byte_size": staged.stat().st_size,
+                            "byte_size": len(b"image"),
                         }
                     ]
                 }
@@ -305,7 +288,6 @@ def test_image_plugin_owns_the_raster_type_and_writer(tmp_path: Path) -> None:
     registry.install(IMAGES)
     context = PluginRuntimeContext(
         workspace=tmp_path,
-        uploads_dir=tmp_path / "uploads",
         storage=RecordingFileStorage(),
         uow=InMemoryUnitOfWork(),
         bucket="artifacts",

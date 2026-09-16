@@ -20,6 +20,9 @@ def configured_file_storage(settings: Settings) -> FileStoragePort:
     s3_endpoint_url = settings.s3_endpoint_url
     if s3_endpoint_url == "":
         s3_endpoint_url = None
+    s3_signing_endpoint_url = settings.s3_signing_endpoint_url
+    if s3_signing_endpoint_url == "":
+        s3_signing_endpoint_url = None
     if settings.storage_backend == "local":
         return LocalFileObjectStore(settings.workspace / "objects")
     return S3ObjectStore(
@@ -28,6 +31,7 @@ def configured_file_storage(settings: Settings) -> FileStoragePort:
         access_key_id=s3_access_key_id,
         secret_access_key=s3_secret_access_key,
         force_path_style=settings.s3_force_path_style,
+        signing_endpoint_url=s3_signing_endpoint_url,
     )
 
 

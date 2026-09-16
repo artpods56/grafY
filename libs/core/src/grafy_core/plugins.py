@@ -1,9 +1,9 @@
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from inspect import Parameter, getdoc, iscoroutinefunction, signature
 from pathlib import Path
-import re
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -16,6 +16,7 @@ from typing import (
 )
 
 from grafy_core.artifacts import (
+    Artifact,
     ArtifactFieldProjection,
     ArtifactTypeKey,
     ArtifactTypeSpec,
@@ -24,21 +25,19 @@ from grafy_core.artifacts import (
     NodeConfig,
     NodeInput,
     NodeOutput,
-    Artifact,
 )
-from grafy_core.ports.artifacts import UnitOfWorkPort
+from grafy_core.callable_nodes import callable_node_class
 from grafy_core.conversions import (
     ArtifactConversion,
     ArtifactConversionKey,
     conversion_runtime_types_are_compatible,
 )
-from grafy_core.callable_nodes import callable_node_class
-from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.domain.modules import (
     MODULE_BOUNDARY_OPERATOR_VERSION,
     MODULE_INPUT_OPERATOR_ID,
     MODULE_OUTPUT_OPERATOR_ID,
 )
+from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import (
     ArtifactTypeContract,
     ArtifactTypeVariable,
@@ -48,12 +47,16 @@ from grafy_core.nodes import (
     derive_input_contract,
     derive_output_contract,
 )
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.node_secrets import (
     NodeSecretResolverPort,
     UnavailableNodeSecretResolver,
 )
-from grafy_core.ports.staged_uploads import StagedUploadRepositoryPort
 from grafy_core.ports.storage import FileStoragePort
+from grafy_core.ports.uploads import (
+    UploadReaderPort,
+    UploadRepositoryPort,
+)
 
 if TYPE_CHECKING:
     from grafy_core.runtime.persistence import ArtifactOutputWriter
@@ -73,20 +76,28 @@ class PluginUnitOfWorkPort(UnitOfWorkPort, Protocol):
     """Workbench UoW surface available to plugin factories at runtime."""
 
     @property
-    def staged_uploads(self) -> StagedUploadRepositoryPort: ...
+    def uploads(self) -> UploadRepositoryPort: ...
 
 
 @dataclass(frozen=True, slots=True)
 class PluginRuntimeContext:
     workspace: Path
-    uploads_dir: Path
     storage: FileStoragePort
     uow: PluginUnitOfWorkPort
     bucket: str
     storage_backend: str = "local"
+    uploads: UploadReaderPort | None = None
     node_secrets: NodeSecretResolverPort = field(
         default_factory=UnavailableNodeSecretResolver
     )
+
+    @property
+    def upload_reader(self) -> UploadReaderPort:
+        """The upload reader every runtime that declares uploads must wire."""
+
+        if self.uploads is None:
+            raise RuntimeError("This Plugin runtime was built without an upload reader")
+        return self.uploads
 
 
 @dataclass(frozen=True, slots=True)

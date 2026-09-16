@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { uploadFile } from "@/lib/api";
+import type { ImageUploadItem } from "@/lib/api";
 import type { NodeExecution, WorkflowEdge } from "../canvas/types";
 import { nodeAndDescendantIds } from "../model/graph-authoring";
 import type { GraphCommand } from "../model/graph-document";
@@ -81,8 +82,19 @@ export function useNodeFileUploads({
       );
       setRunError(null);
       try {
-        const uploads = await Promise.all(
+        const responses = await Promise.all(
           files.map((file) => uploadFile(workspaceId, file)),
+        );
+        // The upload response also carries ingest metadata (the resolved
+        // artifact type and any blob notice). The node config keeps only the
+        // staged-upload fields its operator declares, which are validated with
+        // extra="forbid".
+        const uploads: ImageUploadItem[] = responses.map(
+          ({ upload_key, filename, byte_size }) => ({
+            upload_key,
+            filename,
+            byte_size,
+          }),
         );
         // The in-flight upload is what pauses local authoring; its own
         // completion is exempt from that pause so the result commits and the

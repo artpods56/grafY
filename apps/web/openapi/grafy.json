@@ -58,6 +58,49 @@
         "title": "AddOriginCommand",
         "type": "object"
       },
+      "ApiUploadTargetResponse": {
+        "description": "Upload target owned by this API; send session credentials and CSRF.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "kind": {
+            "const": "api",
+            "default": "api",
+            "title": "Kind",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "upload_id": {
+            "title": "Upload Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "url",
+          "method",
+          "expires_at"
+        ],
+        "title": "ApiUploadTargetResponse",
+        "type": "object"
+      },
       "ArtifactBundleContractResponse": {
         "properties": {
           "format": {
@@ -519,20 +562,6 @@
         "title": "AssignGraphFolderRequest",
         "type": "object"
       },
-      "Body_upload_file_v1_workspaces__workspace_id__uploads_post": {
-        "properties": {
-          "file": {
-            "contentMediaType": "application/octet-stream",
-            "title": "File",
-            "type": "string"
-          }
-        },
-        "required": [
-          "file"
-        ],
-        "title": "Body_upload_file_v1_workspaces__workspace_id__uploads_post",
-        "type": "object"
-      },
       "CanonicalCollaborativeHeadResponse": {
         "additionalProperties": false,
         "description": "Collaboration metadata paired with the canonical saved graph document.",
@@ -892,6 +921,40 @@
           "name"
         ],
         "title": "CreateTemplateRequest",
+        "type": "object"
+      },
+      "CreateUploadRequest": {
+        "description": "Reserve one upload before the bytes leave the client.",
+        "properties": {
+          "byte_size": {
+            "minimum": 0.0,
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "byte_size"
+        ],
+        "title": "CreateUploadRequest",
         "type": "object"
       },
       "DuplicateNodeCommand": {
@@ -3042,6 +3105,16 @@
       "GraphPresentationViewer": {
         "additionalProperties": false,
         "properties": {
+          "artifact_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "maxLength": 255,
             "minLength": 1,
@@ -3084,6 +3157,16 @@
       "GraphPresentationViewerModel": {
         "additionalProperties": false,
         "properties": {
+          "artifact_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "maxLength": 255,
             "minLength": 1,
@@ -3138,6 +3221,17 @@
       },
       "ImageUploadItemResponse": {
         "properties": {
+          "artifact_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Type"
+          },
           "byte_size": {
             "title": "Byte Size",
             "type": "integer"
@@ -3145,6 +3239,17 @@
           "filename": {
             "title": "Filename",
             "type": "string"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice"
           },
           "upload_key": {
             "title": "Upload Key",
@@ -5378,19 +5483,6 @@
         "title": "RunResponse",
         "type": "object"
       },
-      "SampleRequest": {
-        "properties": {
-          "count": {
-            "default": 2,
-            "maximum": 8.0,
-            "minimum": 1.0,
-            "title": "Count",
-            "type": "integer"
-          }
-        },
-        "title": "SampleRequest",
-        "type": "object"
-      },
       "SaveRunArtifactRequest": {
         "properties": {
           "artifact_id": {
@@ -6566,6 +6658,50 @@
         "title": "SetNodeInputPlugsCommand",
         "type": "object"
       },
+      "StorageUploadTargetResponse": {
+        "description": "Signed object-storage target; send only the required signed headers.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "kind": {
+            "const": "storage",
+            "default": "storage",
+            "title": "Kind",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "upload_id": {
+            "title": "Upload Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "url",
+          "method",
+          "expires_at",
+          "headers"
+        ],
+        "title": "StorageUploadTargetResponse",
+        "type": "object"
+      },
       "SubmitGraphCommandRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7480,6 +7616,25 @@
         ],
         "title": "UpdateTemplateMetadataRequest",
         "type": "object"
+      },
+      "UploadTargetResponse": {
+        "description": "Discriminated upload target returned by reserve.",
+        "discriminator": {
+          "mapping": {
+            "api": "#/components/schemas/ApiUploadTargetResponse",
+            "storage": "#/components/schemas/StorageUploadTargetResponse"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ApiUploadTargetResponse"
+          },
+          {
+            "$ref": "#/components/schemas/StorageUploadTargetResponse"
+          }
+        ],
+        "title": "UploadTargetResponse"
       },
       "UserGraphStateResponse": {
         "additionalProperties": false,
@@ -13121,71 +13276,6 @@
         ]
       }
     },
-    "/v1/workspaces/{workspace_id}/samples": {
-      "post": {
-        "operationId": "create_samples_v1_workspaces__workspace_id__samples_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SampleRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ImageUploadItemResponse"
-                  },
-                  "title": "Response Create Samples V1 Workspaces  Workspace Id  Samples Post",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "APIKeyCookie": []
-          },
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Create Samples",
-        "tags": [
-          "workbench"
-        ]
-      }
-    },
     "/v1/workspaces/{workspace_id}/templates": {
       "get": {
         "operationId": "list_templates_v1_workspaces__workspace_id__templates_get",
@@ -13587,7 +13677,7 @@
     },
     "/v1/workspaces/{workspace_id}/uploads": {
       "post": {
-        "operationId": "upload_file_v1_workspaces__workspace_id__uploads_post",
+        "operationId": "create_upload_v1_workspaces__workspace_id__uploads_post",
         "parameters": [
           {
             "in": "path",
@@ -13602,14 +13692,75 @@
         ],
         "requestBody": {
           "content": {
-            "multipart/form-data": {
+            "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Body_upload_file_v1_workspaces__workspace_id__uploads_post"
+                "$ref": "#/components/schemas/CreateUploadRequest"
               }
             }
           },
           "required": true
         },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadTargetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Upload",
+        "tags": [
+          "workbench"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/uploads/{upload_id}/complete": {
+      "post": {
+        "operationId": "complete_upload_v1_workspaces__workspace_id__uploads__upload_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "upload_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Upload Id",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -13640,7 +13791,61 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Upload File",
+        "summary": "Complete Upload",
+        "tags": [
+          "workbench"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/uploads/{upload_id}/content": {
+      "put": {
+        "operationId": "receive_upload_content_v1_workspaces__workspace_id__uploads__upload_id__content_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "upload_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Upload Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Receive Upload Content",
         "tags": [
           "workbench"
         ]

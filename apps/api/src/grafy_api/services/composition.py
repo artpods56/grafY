@@ -12,6 +12,7 @@ from grafy_core.canonical_conversions import (
     CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,
     CanonicalArtifactConversionMap,
 )
+from grafy_core.file_contracts import BUILTIN_FILE_FORMATS, build_extension_table
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.materialized_outputs import WorkbenchUnitOfWorkPort
 from grafy_core.ports.node_secrets import (
@@ -48,8 +49,12 @@ from grafy_api.plugins.runtime.artifacts import ArtifactBundlePluginInvoker
 from grafy_api.plugins.runtime.docker import DockerPluginRuntime
 from grafy_api.plugins.runtime.network_policy import NetworkPolicy
 from grafy_api.realtime.hub import GraphRoomHub
-from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES
-from grafy_api.staged_uploads import StagedUploadService
+from grafy_api.uploads import (
+    StorageUploadReader,
+    UploadService,
+    UploadServiceConfig,
+)
+from grafy_core.ports.storage import PresigningStorage
 from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.v1.routes.executions.services import RunResultPresenter
 from grafy_api.v1.routes.library.services import LibraryService
@@ -60,7 +65,8 @@ _WORKBENCH_BUCKET = "workbench-artifacts"
 @dataclass(frozen=True, slots=True)
 class WorkbenchComponents:
     plugin_registry: PluginRegistry
-    uploads: StagedUploadService
+    upload_config: UploadServiceConfig
+    uploads: UploadService
     module_library: ModuleLibraryService | None
     plugin_releases: PluginReleaseService | None
     run_graph: RunGraph
@@ -89,7 +95,7 @@ def build_workbench_components(
     storage: FileStoragePort | None = None,
     storage_backend: str = "local",
     bucket: str = _WORKBENCH_BUCKET,
-    staged_upload_max_bytes: int = STAGED_UPLOAD_HARD_MAX_BYTES,
+    upload_config: UploadServiceConfig | None = None,
     saved_graphs: SavedGraphService | None = None,
     module_library: ModuleLibraryService | None = None,
     plugin_releases: PluginReleaseService | None = None,
@@ -115,22 +121,44 @@ def build_workbench_components(
         .expanduser()
         .resolve()
     )
-    uploads_dir = resolved_workspace / "uploads"
     resolved_unit_of_work = unit_of_work or InMemoryUnitOfWork()
-    uploads = StagedUploadService(
-        uploads_dir,
-        unit_of_work_factory=lambda: resolved_unit_of_work,
-        max_upload_bytes=staged_upload_max_bytes,
-    )
     resolved_storage = storage or LocalFileObjectStore(resolved_workspace / "objects")
+    artifact_types = {
+        (spec.key.id, spec.key.schema_version): spec
+        for spec in (*BUILTIN_FILE_FORMATS, *plugin_registry.artifact_types)
+    }
+    extension_claims = build_extension_table(
+        (spec.key, spec.extensions) for spec in artifact_types.values()
+    )
+    # ponytail: this is the static deployment set. Workspace Plugin release
+    # artifact types live in per-workspace DB state, so an extension only a
+    # release claims resolves to a blob until ingest reads the CatalogSnapshot.
+    resolved_upload_config = upload_config or UploadServiceConfig()
+    uploads = UploadService.from_config(
+        resolved_upload_config,
+        storage=resolved_storage,
+        unit_of_work_factory=lambda: resolved_unit_of_work,
+        presigning=(
+            resolved_storage
+            if isinstance(resolved_storage, PresigningStorage)
+            else None
+        ),
+        artifact_types=artifact_types,
+        extension_claims=extension_claims,
+        bucket=bucket,
+        storage_backend=storage_backend,
+    )
     resolved_node_secrets = node_secrets or UnavailableNodeSecretResolver()
     plugin_context = PluginRuntimeContext(
         workspace=resolved_workspace,
-        uploads_dir=uploads_dir,
         storage=resolved_storage,
         uow=resolved_unit_of_work,
         bucket=bucket,
         storage_backend=storage_backend,
+        uploads=StorageUploadReader(
+            storage=resolved_storage,
+            unit_of_work_factory=lambda: resolved_unit_of_work,
+        ),
         node_secrets=resolved_node_secrets,
     )
 
@@ -142,10 +170,6 @@ def build_workbench_components(
     )
 
     availability = ArtifactAvailability(resolved_unit_of_work, resolved_storage)
-    artifact_types = {
-        (spec.key.id, spec.key.schema_version): spec
-        for spec in plugin_registry.artifact_types
-    }
     artifacts = ArtifactService(
         resolved_unit_of_work,
         resolved_storage,
@@ -186,7 +210,6 @@ def build_workbench_components(
                     plugin_invocation_wall_time_seconds_by_slug
                 ),
                 node_secrets=resolved_node_secrets,
-                uploads_dir=uploads_dir,
             )
             plugin_invoker = artifact_plugin_invoker
             release_admission = plugin_runtime.release_admission
@@ -250,6 +273,7 @@ def build_workbench_components(
     )
     return WorkbenchComponents(
         plugin_registry=plugin_registry,
+        upload_config=resolved_upload_config,
         uploads=uploads,
         module_library=module_library,
         plugin_releases=plugin_releases,

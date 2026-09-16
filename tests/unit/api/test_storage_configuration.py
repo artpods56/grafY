@@ -53,4 +53,5 @@ def test_configured_s3_storage_preserves_credential_normalization(blank: bool) -
         access_key_id=None if blank else "access",
         secret_access_key=None if blank else " secret ",
         force_path_style=True,
+        signing_endpoint_url=None,
     )
