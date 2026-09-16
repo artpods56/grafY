@@ -35,6 +35,9 @@ class EmptyStorage:
     async def load(self, bucket: str, path: str) -> BytesIO:
         raise AssertionError(f"Unexpected load from {bucket}/{path}")
 
+    async def open_chunks(self, bucket: str, path: str) -> BytesIO:
+        return await self.load(bucket, path)
+
     async def stat(self, bucket: str, path: str) -> StoredObjectInfo | None:
         raise AssertionError(f"Unexpected stat for {bucket}/{path}")
 

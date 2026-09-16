@@ -372,10 +372,12 @@ describe("GIS artifact API", () => {
 
 describe("file upload API", () => {
   const target = {
+    kind: "api" as const,
     upload_id: "3f1a2b4c-5d6e-4f70-8192-a3b4c5d6e7f8",
     url: "/v1/workspaces/workspace%2F1/uploads/3f1a2b4c-5d6e-4f70-8192-a3b4c5d6e7f8/content",
     method: "PUT",
     expires_at: "2026-09-15T19:40:00Z",
+    headers: {},
   };
   const completed = {
     upload_key: target.upload_id,
@@ -421,19 +423,25 @@ describe("file upload API", () => {
     );
     expect(putInit.method).toBe("PUT");
     expect(putInit.body).toBe(file);
+    expect(putInit.credentials).toBe("same-origin");
     expect((putInit.headers as Record<string, string>)["Content-Type"]).toBe("image/tiff");
 
     const [completeUrl, completeInit] = fetchMock.mock.calls[2] as [string, RequestInit];
     expect(completeUrl).toBe(
       "/api/v1/workspaces/workspace%2F1/uploads/3f1a2b4c-5d6e-4f70-8192-a3b4c5d6e7f8/complete",
-    );    expect(completeInit.method).toBe("POST");
+    );
+    expect(completeInit.method).toBe("POST");
     expect(item).toEqual(completed);
   });
 
-  it("sends the bytes to a signed URL without session credentials", async () => {
+  it("sends the bytes to a same-origin storage target without session credentials", async () => {
     const signed = {
-      ...target,
-      url: "https://bucket.s3.example/objects/3f1a2b4c?X-Amz-Signature=abc",
+      kind: "storage" as const,
+      upload_id: target.upload_id,
+      url: "https://example.test/objects/3f1a2b4c?X-Amz-Signature=abc",
+      method: "PUT",
+      expires_at: target.expires_at,
+      headers: { "If-None-Match": "*" },
     };
     const fetchMock = vi
       .fn()
@@ -452,6 +460,7 @@ describe("file upload API", () => {
     expect(putUrl).toBe(signed.url);
     expect(putInit.credentials).toBe("omit");
     expect((putInit.headers as Record<string, string>)["X-CSRF-Token"]).toBeUndefined();
+    expect((putInit.headers as Record<string, string>)["If-None-Match"]).toBe("*");
     expect(putInit.body).toBe(file);
   });
 });

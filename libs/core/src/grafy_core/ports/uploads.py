@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from grafy_core.domain.uploads import Upload
+from grafy_core.domain.uploads import Upload, UploadStatus
 from grafy_core.ports.artifacts import ArtifactRepositoryPort
 from grafy_core.ports.transactions import TransactionPort
 
@@ -11,13 +11,20 @@ class UploadNotReadyError(RuntimeError):
     """An upload has no confirmed bytes yet and cannot be read."""
 
 
+class UploadFinalizeFields(Protocol):
+    actual_size: int
+    sha256: str
+    artifact_type: str
+    artifact_schema_version: int
+    artifact_id: UUID
+    completed_at: datetime
+
+
 class UploadRepositoryPort(Protocol):
     """Lifecycle rows for client uploads.
 
-    ``get`` returns the row owned by the current transaction rather than a
-    detached copy, so callers advance an upload by mutating it and committing.
-    Both adapters honour that, keeping completion and failure marking on one
-    code path.
+    Callers advance state through conditional transitions rather than loading a
+    mutable row and committing. Each transition reports whether it won.
     """
 
     async def add(self, upload: Upload) -> None: ...
@@ -26,20 +33,53 @@ class UploadRepositoryPort(Protocol):
 
     async def list_for_workspace(self, workspace_id: UUID) -> list[Upload]: ...
 
-    async def list_abandoned_before(
+    async def finalize_if_pending(
         self,
-        before: datetime,
+        workspace_id: UUID,
+        upload_id: UUID,
         *,
-        limit: int = 500,
-    ) -> list[Upload]: ...
+        actual_size: int,
+        sha256: str,
+        artifact_type: str,
+        artifact_schema_version: int,
+        artifact_id: UUID,
+        completed_at: datetime,
+        not_older_than: datetime,
+    ) -> Upload | None:
+        """``PENDING → READY`` only when still pending and unexpired.
 
-    async def discard(self, workspace_id: UUID, upload_id: UUID) -> bool:
-        """Delete one upload only while it is still unpromoted.
-
-        Returns whether the row was removed. Cleanup uses this to decide
-        whether the stored bytes are safe to delete: a concurrent completion
-        that promoted the upload wins the race, and its bytes survive.
+        Returns the finalized row when this caller wins, otherwise ``None``.
         """
+
+        ...
+
+    async def mark_terminal_if_pending(
+        self,
+        workspace_id: UUID,
+        upload_id: UUID,
+        *,
+        status: UploadStatus,
+    ) -> Upload | None:
+        """``PENDING → FAILED|EXPIRED`` only when still pending.
+
+        Returns the updated row when this caller wins, otherwise ``None``.
+        """
+
+        ...
+
+    async def list_cleanup_candidates(
+        self,
+        *,
+        pending_before: datetime,
+        terminal_before: datetime,
+        limit: int = 500,
+    ) -> list[Upload]:
+        """Pending rows past ``pending_before`` plus terminal rows past grace."""
+
+        ...
+
+    async def delete_terminal(self, workspace_id: UUID, upload_id: UUID) -> bool:
+        """Delete one ``FAILED`` or ``EXPIRED`` tracking row after object cleanup."""
 
         ...
 

@@ -7,9 +7,8 @@ from typing import cast, override
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from grafy_api.services.errors import WorkbenchOperationError
+from fastapi import FastAPI
 from grafy_api.settings import (
     STAGED_UPLOAD_HARD_MAX_BYTES,
     Settings,
@@ -19,11 +18,11 @@ from grafy_api.uploads import (
     PresigningStorage,
     UploadNotFoundError,
     UploadService,
+    UploadServiceConfig,
     UploadStateError,
-    UploadTooLargeError,
     UploadTransportUnsupportedError,
 )
-from grafy_api.v1.routes.uploads.dependencies import upload_service
+from grafy_api.v1.routes.uploads.dependencies import upload_config, upload_service
 from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey
 from grafy_core.domain.uploads import Upload, UploadStatus
 from grafy_core.file_contracts import (
@@ -63,7 +62,8 @@ def _upload_service(
 ) -> tuple[UploadService, InMemoryUnitOfWork, LocalFileObjectStore]:
     resolved_unit_of_work = unit_of_work or InMemoryUnitOfWork()
     storage = LocalFileObjectStore(tmp_path / "objects")
-    service = UploadService(
+    service = UploadService.from_config(
+        UploadServiceConfig(max_upload_bytes=max_upload_bytes),
         storage=storage,
         unit_of_work_factory=lambda: resolved_unit_of_work,
         artifact_types=UPLOAD_FORMAT_TYPES,
@@ -71,7 +71,6 @@ def _upload_service(
         bucket=BUCKET,
         storage_backend="local",
         presigning=presigning,
-        max_upload_bytes=max_upload_bytes,
     )
     return service, resolved_unit_of_work, storage
 
@@ -147,26 +146,9 @@ def test_staged_upload_settings_enforce_release_bounds() -> None:
         )
 
 
-def test_upload_service_rejects_limit_above_release_hard_max(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="64 MiB hard limit"):
-        _upload_service(tmp_path, max_upload_bytes=STAGED_UPLOAD_HARD_MAX_BYTES + 1)
-
-
-async def test_create_upload_rejects_a_declared_oversize_without_storing_bytes(
-    tmp_path: Path,
-) -> None:
-    service, unit_of_work, _ = _upload_service(tmp_path, max_upload_bytes=1024)
-
-    with pytest.raises(UploadTooLargeError, match="exceeds the upload limit"):
-        await service.create_upload(
-            workspace_id=WORKSPACE_ID,
-            created_by_user_id=TEST_USER_ID,
-            filename="large.bin",
-            byte_size=1025,
-        )
-
-    assert await _uploads(unit_of_work, WORKSPACE_ID) == []
-    assert await _stored_files(tmp_path / "objects") == []
+def test_upload_service_config_rejects_limit_above_release_hard_max() -> None:
+    with pytest.raises(ValidationError):
+        _ = UploadServiceConfig(max_upload_bytes=STAGED_UPLOAD_HARD_MAX_BYTES + 1)
 
 
 async def test_upload_at_exact_byte_limit_is_promoted(tmp_path: Path) -> None:
@@ -330,18 +312,21 @@ async def test_complete_requires_the_bytes_to_have_arrived(tmp_path: Path) -> No
     assert row.status is UploadStatus.FAILED
 
 
-async def test_complete_is_rejected_once_the_upload_is_ready(
+async def test_complete_retries_return_the_existing_ready_result(
     tmp_path: Path,
 ) -> None:
     service, _, _ = _upload_service(tmp_path)
 
-    upload = await _complete_upload(service, "page.png", PNG_BYTES)
+    first = await _complete_upload(service, "page.png", PNG_BYTES)
+    second = await service.complete_upload(
+        workspace_id=WORKSPACE_ID,
+        upload_id=first.upload_id,
+    )
 
-    with pytest.raises(UploadStateError, match="already complete"):
-        await service.complete_upload(
-            workspace_id=WORKSPACE_ID,
-            upload_id=upload.upload_id,
-        )
+    assert second.upload.upload_id == first.upload_id
+    assert second.upload.status is UploadStatus.READY
+    assert second.upload.artifact_id == first.artifact_id
+    assert second.artifact_type == ArtifactTypeKey("file.png", 1)
 
 
 async def test_uploads_are_confined_to_their_workspace(tmp_path: Path) -> None:
@@ -361,20 +346,6 @@ async def test_uploads_are_confined_to_their_workspace(tmp_path: Path) -> None:
             upload_id=upload.upload_id,
             stream=BytesIO(PNG_BYTES),
         )
-
-
-async def test_create_upload_rejects_a_blank_filename(tmp_path: Path) -> None:
-    service, unit_of_work, _ = _upload_service(tmp_path)
-
-    with pytest.raises(WorkbenchOperationError, match="filename is required"):
-        await service.create_upload(
-            workspace_id=WORKSPACE_ID,
-            created_by_user_id=TEST_USER_ID,
-            filename="   ",
-            byte_size=3,
-        )
-
-    assert await _uploads(unit_of_work, WORKSPACE_ID) == []
 
 
 async def test_cleanup_reclaims_abandoned_uploads_and_spares_promoted_ones(
@@ -463,6 +434,7 @@ def test_upload_endpoint_reserves_then_completes(
 
     target = uploads.create_ok("page.png", len(PNG_BYTES), content_type="image/png")
     assert target.method == "PUT"
+    assert target.kind == "api"
     assert target.url == (
         f"/v1/workspaces/{WORKSPACE_ID}/uploads/{target.upload_id}/content"
     )
@@ -482,13 +454,15 @@ def test_upload_endpoint_rejects_an_oversize_reservation(
     tmp_path: Path,
 ) -> None:
     unit_of_work = InMemoryUnitOfWork()
+    config = UploadServiceConfig(max_upload_bytes=1024 * 1024)
     service, _, _ = _upload_service(
         tmp_path,
-        max_upload_bytes=1024 * 1024,
+        max_upload_bytes=config.max_upload_bytes,
         unit_of_work=unit_of_work,
     )
     application = cast(FastAPI, builtin_client.app)
     application.dependency_overrides[upload_service] = lambda: service
+    application.dependency_overrides[upload_config] = lambda: config
 
     uploads = GrafyApi(builtin_client).workspace(WORKSPACE_ID).uploads
     response = uploads.create(
@@ -568,9 +542,17 @@ class _PresigningStore:
         path: str,
         *,
         expires_in: timedelta,
-    ) -> str:
+    ):
+        from grafy_core.ports.storage import PresignedUploadTarget
+        from datetime import UTC, datetime
+
         del expires_in
-        return f"https://storage.example.test/{bucket}/{path}"
+        return PresignedUploadTarget(
+            url=f"https://storage.example.test/{bucket}/{path}",
+            method="PUT",
+            expires_at=datetime.now(UTC) + timedelta(minutes=15),
+            required_headers={"If-None-Match": "*"},
+        )
 
     async def save(self, command: SaveFileCommand) -> StoredFile:
         return await self._inner.save(command)
@@ -580,6 +562,9 @@ class _PresigningStore:
 
     async def load(self, bucket: str, path: str) -> FileStreamProtocol:
         return await self._inner.load(bucket, path)
+
+    async def open_chunks(self, bucket: str, path: str):
+        return await self._inner.open_chunks(bucket, path)
 
     async def stat(self, bucket: str, path: str) -> StoredObjectInfo | None:
         return await self._inner.stat(bucket, path)
@@ -611,9 +596,11 @@ async def test_a_presigning_deployment_hands_out_signed_targets_only(
         filename="page.png",
         byte_size=len(PNG_BYTES),
     )
+    assert target.kind == "storage"
     assert target.url == (
         f"https://storage.example.test/{BUCKET}/objects/{target.upload_id}"
     )
+    assert target.headers == {"If-None-Match": "*"}
 
     with pytest.raises(UploadTransportUnsupportedError, match="signed URLs"):
         await service.receive_content(

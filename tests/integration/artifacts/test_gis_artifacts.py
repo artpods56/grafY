@@ -117,6 +117,9 @@ class TrackingStorage(FileStoragePort):
         self.loaded_paths.append(path)
         return await self._storage.load(bucket, path)
 
+    async def open_chunks(self, bucket: str, path: str):
+        return await self.load(bucket, path)
+
     async def stat(self, bucket: str, path: str) -> StoredObjectInfo | None:
         return await self._storage.stat(bucket, path)
 

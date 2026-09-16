@@ -1,14 +1,20 @@
 from collections.abc import Mapping
+from typing import TypeAlias
 from uuid import UUID
 
 from grafy_api.v1.routes.uploads.models import (
+    ApiUploadTargetResponse,
     ImageUploadItemResponse,
-    UploadTargetResponse,
+    StorageUploadTargetResponse,
 )
 from httpx import Response
+from pydantic import TypeAdapter
 from starlette.testclient import TestClient
 
 from tests.support.clients._http import _expect, _parse
+
+UploadTargetResponse: TypeAlias = ApiUploadTargetResponse | StorageUploadTargetResponse
+_TARGET_ADAPTER = TypeAdapter(UploadTargetResponse)
 
 
 class UploadsApi:
@@ -48,8 +54,7 @@ class UploadsApi:
         content_type: str | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> UploadTargetResponse:
-        return _parse(
-            UploadTargetResponse,
+        return _TARGET_ADAPTER.validate_python(
             _expect(
                 self.create(
                     filename,
@@ -58,7 +63,7 @@ class UploadsApi:
                     headers=headers,
                 ),
                 201,
-            ),
+            ).json()
         )
 
     def put_content(
@@ -70,11 +75,14 @@ class UploadsApi:
     ) -> Response:
         """Send the bytes straight to the target the API handed back."""
 
+        merged = dict(target.headers)
+        if headers is not None:
+            merged.update(headers)
         return self._client.request(
             target.method,
             target.url,
             content=data,
-            headers=headers,
+            headers=merged or None,
         )
 
     def complete(
@@ -121,7 +129,7 @@ class UploadsApi:
         )
         if reserved.status_code >= 400:
             return reserved
-        target = _parse(UploadTargetResponse, reserved)
+        target = _TARGET_ADAPTER.validate_python(reserved.json())
         sent = self.put_content(target, data, headers=headers)
         if sent.status_code >= 400:
             return sent
@@ -142,4 +150,3 @@ class UploadsApi:
                 200,
             ),
         )
-

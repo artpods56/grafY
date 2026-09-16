@@ -139,34 +139,57 @@ interface RequestOptions {
 /**
  * Send raw bytes to an upload target the API handed back.
  *
- * A target this API owns is served from its own origin, so it needs the
- * session cookie and the CSRF token the rest of the app already sends. A
- * signed object-storage URL is cross-origin and self-authorizing; sending
- * credentials to it would leak the session and fail the signature check.
+ * `kind: "api"` targets are owned by this origin: send the session cookie and
+ * CSRF token. `kind: "storage"` targets are self-authorizing signed URLs: send
+ * only the required signed headers, even when the hostname is same-origin.
  */
 export async function putUploadBytes(
-  resolvedUrl: string,
+  target: {
+    kind: "api" | "storage";
+    url: string;
+    headers?: Readonly<Record<string, string>>;
+  },
   bytes: BodyInit,
   contentType: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  const apiOwned = resolvedUrl.startsWith("/");
-  const csrfToken = apiOwned ? readBrowserCookie("grafy_csrf") : undefined;
-  const headers: Record<string, string> = {};
-  if (contentType) headers["Content-Type"] = contentType;
-  if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+  const headers: Record<string, string> = {
+    ...(target.headers ?? {}),
+  };
+  if (contentType && headers["Content-Type"] === undefined) {
+    headers["Content-Type"] = contentType;
+  }
 
-  const response = await fetch(resolvedUrl, {
+  if (target.kind === "api") {
+    const csrfToken = readBrowserCookie("grafy_csrf");
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+    const response = await fetch(target.url, {
+      method: "PUT",
+      headers,
+      body: bytes,
+      credentials: "same-origin",
+      signal,
+      redirect: "error",
+    });
+    if (!response.ok) {
+      throw new ApiError(response.status, await responseErrorDetail(response, csrfToken));
+    }
+    return;
+  }
+
+  const response = await fetch(target.url, {
     method: "PUT",
     headers,
     body: bytes,
-    credentials: apiOwned ? "same-origin" : "omit",
+    credentials: "omit",
     signal,
+    redirect: "error",
   });
   if (!response.ok) {
-    throw new ApiError(response.status, await responseErrorDetail(response, csrfToken));
+    throw new ApiError(response.status, await responseErrorDetail(response, undefined));
   }
 }
+
 
 export async function request<T>(
   method: string,

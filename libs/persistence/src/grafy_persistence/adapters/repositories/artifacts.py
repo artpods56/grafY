@@ -9,8 +9,11 @@ from grafy_core.ports.artifacts import ArtifactRepositoryPort
 from grafy_core.ports.uploads import UploadRepositoryPort
 from sqlalchemy import (
     CursorResult,
+    and_,
     delete,
+    or_,
     select,
+    update,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -122,19 +125,97 @@ class SqlUploadRepository(UploadRepositoryPort):
         return list(result)
 
     @override
-    async def list_abandoned_before(
+    async def finalize_if_pending(
         self,
-        before: datetime,
+        workspace_id: UUID,
+        upload_id: UUID,
         *,
+        actual_size: int,
+        sha256: str,
+        artifact_type: str,
+        artifact_schema_version: int,
+        artifact_id: UUID,
+        completed_at: datetime,
+        not_older_than: datetime,
+    ) -> Upload | None:
+        result = cast(
+            CursorResult[tuple[object, ...]],
+            await self._session.execute(
+                update(schema.uploads)
+                .where(
+                    schema.uploads.c.workspace_id == workspace_id,
+                    schema.uploads.c.upload_id == upload_id,
+                    schema.uploads.c.status == UploadStatus.PENDING,
+                    schema.uploads.c.created_at >= not_older_than,
+                )
+                .values(
+                    status=UploadStatus.READY,
+                    actual_size=actual_size,
+                    sha256=sha256,
+                    artifact_type=artifact_type,
+                    artifact_schema_version=artifact_schema_version,
+                    artifact_id=artifact_id,
+                    completed_at=completed_at,
+                )
+            ),
+        )
+        if result.rowcount != 1:
+            return None
+        self._session.expire_all()
+        return await self.get(workspace_id, upload_id)
+
+    @override
+    async def mark_terminal_if_pending(
+        self,
+        workspace_id: UUID,
+        upload_id: UUID,
+        *,
+        status: UploadStatus,
+    ) -> Upload | None:
+        if status not in {UploadStatus.FAILED, UploadStatus.EXPIRED}:
+            raise ValueError(
+                f"Upload terminal transition requires failed or expired; got {status}"
+            )
+        result = cast(
+            CursorResult[tuple[object, ...]],
+            await self._session.execute(
+                update(schema.uploads)
+                .where(
+                    schema.uploads.c.workspace_id == workspace_id,
+                    schema.uploads.c.upload_id == upload_id,
+                    schema.uploads.c.status == UploadStatus.PENDING,
+                )
+                .values(status=status)
+            ),
+        )
+        if result.rowcount != 1:
+            return None
+        self._session.expire_all()
+        return await self.get(workspace_id, upload_id)
+
+    @override
+    async def list_cleanup_candidates(
+        self,
+        *,
+        pending_before: datetime,
+        terminal_before: datetime,
         limit: int = 500,
     ) -> list[Upload]:
         result = await self._session.scalars(
             select(Upload)
             .where(
-                schema.uploads.c.created_at < before,
-                schema.uploads.c.status.in_(
-                    (UploadStatus.PENDING, UploadStatus.FAILED, UploadStatus.EXPIRED)
-                ),
+                or_(
+                    and_(
+                        schema.uploads.c.status == UploadStatus.PENDING,
+                        schema.uploads.c.created_at < pending_before,
+                    ),
+                    and_(
+                        schema.uploads.c.status.in_(
+                            (UploadStatus.FAILED, UploadStatus.EXPIRED)
+                        ),
+                        schema.uploads.c.created_at < terminal_before,
+                    ),
+                )
             )
             .order_by(schema.uploads.c.created_at.asc())
             .limit(limit)
@@ -142,14 +223,16 @@ class SqlUploadRepository(UploadRepositoryPort):
         return list(result)
 
     @override
-    async def discard(self, workspace_id: UUID, upload_id: UUID) -> bool:
+    async def delete_terminal(self, workspace_id: UUID, upload_id: UUID) -> bool:
         result = cast(
             CursorResult[tuple[object, ...]],
             await self._session.execute(
                 delete(schema.uploads).where(
                     schema.uploads.c.workspace_id == workspace_id,
                     schema.uploads.c.upload_id == upload_id,
-                    schema.uploads.c.status != UploadStatus.READY,
+                    schema.uploads.c.status.in_(
+                        (UploadStatus.FAILED, UploadStatus.EXPIRED)
+                    ),
                 )
             ),
         )

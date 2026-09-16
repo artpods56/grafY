@@ -14,7 +14,8 @@ class UploadStatus(StrEnum):
     ``PENDING`` uploads have a row and a target object key but no confirmed
     bytes. ``READY`` uploads passed completion validation and own a stored
     object. ``FAILED`` and ``EXPIRED`` uploads are terminal and only await
-    cleanup.
+    cleanup. Transitions are terminal except ``PENDING`` advancing to one of
+    the other states.
     """
 
     PENDING = "pending"
@@ -29,7 +30,9 @@ class Upload:
 
     ``upload_id`` is the client-facing opaque identifier. ``object_key`` is
     chosen by the server and is never derived from ``original_filename``; the
-    filename is display metadata.
+    filename is display metadata. A ``READY`` upload records the artifact it
+    created so retrying completion can return the same result without
+    re-inspecting bytes against a changed registration set.
     """
 
     workspace_id: UUID
@@ -44,6 +47,8 @@ class Upload:
     actual_size: int | None = None
     sha256: str | None = None
     artifact_type: str | None = None
+    artifact_schema_version: int | None = None
+    artifact_id: UUID | None = None
     created_at: datetime = field(default_factory=_utc_now)
     completed_at: datetime | None = None
 
@@ -66,13 +71,26 @@ class Upload:
             raise ValueError("Upload actual size must not be negative")
         if self.sha256 is not None and len(self.sha256) != 64:
             raise ValueError("Upload digest must be 64 characters")
+        if self.artifact_schema_version is not None and self.artifact_schema_version < 1:
+            raise ValueError("Upload artifact schema version must be positive")
         if self.created_at.tzinfo is None:
             raise ValueError("Upload timestamp must be timezone-aware")
         if self.completed_at is not None and self.completed_at.tzinfo is None:
             raise ValueError("Upload completion timestamp must be timezone-aware")
-        if self.status is UploadStatus.READY and self.completed_at is None:
-            raise ValueError("A ready upload requires a completion timestamp")
-
-    @property
-    def is_expired(self) -> bool:
-        return self.status is UploadStatus.EXPIRED
+        if self.status is UploadStatus.READY:
+            if self.completed_at is None:
+                raise ValueError("A ready upload requires a completion timestamp")
+            if self.actual_size is None:
+                raise ValueError("A ready upload requires an actual size")
+            if self.sha256 is None:
+                raise ValueError("A ready upload requires a digest")
+            # Ingest completion records the resulting artifact so retries can
+            # return the same response. Guest-bundle staging may omit those
+            # fields because it never creates an ArtifactObject.
+            if self.artifact_id is not None:
+                if self.artifact_type is None:
+                    raise ValueError("A ready upload with an artifact id requires an artifact type")
+                if self.artifact_schema_version is None:
+                    raise ValueError(
+                        "A ready upload with an artifact id requires an artifact schema version"
+                    )

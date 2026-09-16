@@ -11,6 +11,7 @@ dependencies = [
     "grafy-persistence",
     "grafy-workbench",
     "grafy-storage",
+    "grafy-shared",
 ]
 
 [project.optional-dependencies]
@@ -29,6 +30,7 @@ members = [
     "libs/persistence",
     "libs/storage",
     "libs/workbench",
+    "libs/shared",
     "apps/api",
     "apps/plugin-egress-broker",
 ]
@@ -48,6 +50,7 @@ grafy-core = { workspace = true }
 grafy-persistence = { workspace = true }
 grafy-storage = { workspace = true }
 grafy-workbench = { workspace = true }
+grafy-shared = { workspace = true }
 grafy-plugin-llm = { path = "plugins/llm" }
 grafy-plugin-ocr = { path = "plugins/ocr" }
 grafy-plugin-gis = { path = "plugins/gis" }
@@ -76,6 +79,7 @@ include = [
     "libs/persistence/*",
     "libs/storage/*",
     "libs/workbench/*",
+    "libs/shared/*",
     "plugins/llm/*",
     "plugins/ocr/*",
     "plugins/gis/*",
@@ -99,6 +103,7 @@ executionEnvironments = [
         "libs/persistence/src",
         "libs/storage/src",
         "libs/workbench/src",
+        "libs/shared/src",
         "plugins/llm/src",
         "plugins/ocr/src",
         "plugins/gis/src",

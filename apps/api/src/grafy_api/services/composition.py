@@ -49,12 +49,12 @@ from grafy_api.plugins.runtime.artifacts import ArtifactBundlePluginInvoker
 from grafy_api.plugins.runtime.docker import DockerPluginRuntime
 from grafy_api.plugins.runtime.network_policy import NetworkPolicy
 from grafy_api.realtime.hub import GraphRoomHub
-from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES
 from grafy_api.uploads import (
-    PresigningStorage,
     StorageUploadReader,
     UploadService,
+    UploadServiceConfig,
 )
+from grafy_core.ports.storage import PresigningStorage
 from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.v1.routes.executions.services import RunResultPresenter
 from grafy_api.v1.routes.library.services import LibraryService
@@ -65,6 +65,7 @@ _WORKBENCH_BUCKET = "workbench-artifacts"
 @dataclass(frozen=True, slots=True)
 class WorkbenchComponents:
     plugin_registry: PluginRegistry
+    upload_config: UploadServiceConfig
     uploads: UploadService
     module_library: ModuleLibraryService | None
     plugin_releases: PluginReleaseService | None
@@ -94,7 +95,7 @@ def build_workbench_components(
     storage: FileStoragePort | None = None,
     storage_backend: str = "local",
     bucket: str = _WORKBENCH_BUCKET,
-    staged_upload_max_bytes: int = STAGED_UPLOAD_HARD_MAX_BYTES,
+    upload_config: UploadServiceConfig | None = None,
     saved_graphs: SavedGraphService | None = None,
     module_library: ModuleLibraryService | None = None,
     plugin_releases: PluginReleaseService | None = None,
@@ -132,7 +133,9 @@ def build_workbench_components(
     # ponytail: this is the static deployment set. Workspace Plugin release
     # artifact types live in per-workspace DB state, so an extension only a
     # release claims resolves to a blob until ingest reads the CatalogSnapshot.
-    uploads = UploadService(
+    resolved_upload_config = upload_config or UploadServiceConfig()
+    uploads = UploadService.from_config(
+        resolved_upload_config,
         storage=resolved_storage,
         unit_of_work_factory=lambda: resolved_unit_of_work,
         presigning=(
@@ -144,7 +147,6 @@ def build_workbench_components(
         extension_claims=extension_claims,
         bucket=bucket,
         storage_backend=storage_backend,
-        max_upload_bytes=staged_upload_max_bytes,
     )
     resolved_node_secrets = node_secrets or UnavailableNodeSecretResolver()
     plugin_context = PluginRuntimeContext(
@@ -271,6 +273,7 @@ def build_workbench_components(
     )
     return WorkbenchComponents(
         plugin_registry=plugin_registry,
+        upload_config=resolved_upload_config,
         uploads=uploads,
         module_library=module_library,
         plugin_releases=plugin_releases,

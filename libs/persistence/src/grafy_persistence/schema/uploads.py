@@ -5,6 +5,7 @@ from sqlalchemy import (
     Column,
     ForeignKeyConstraint,
     Index,
+    Integer,
     String,
     Table,
 )
@@ -43,6 +44,8 @@ uploads = Table(
     Column("actual_size", BigInteger, nullable=True),
     Column("sha256", String(64), nullable=True),
     Column("artifact_type", String(255), nullable=True),
+    Column("artifact_schema_version", Integer, nullable=True),
+    Column("artifact_id", SaUuid(as_uuid=True), nullable=True),
     Column("created_at", UTCDateTime(), nullable=False),
     Column("completed_at", UTCDateTime(), nullable=True),
     ForeignKeyConstraint(
@@ -81,8 +84,21 @@ uploads = Table(
         name="ck_uploads_artifact_type_bounded",
     ),
     CheckConstraint(
+        "artifact_schema_version IS NULL OR artifact_schema_version >= 1",
+        name="ck_uploads_artifact_schema_version_positive",
+    ),
+    CheckConstraint(
         "status <> 'ready' OR (completed_at IS NOT NULL AND actual_size IS NOT NULL)",
         name="ck_uploads_ready_is_complete",
+    ),
+    CheckConstraint(
+        "status <> 'ready' OR ("
+        "artifact_type IS NOT NULL AND "
+        "artifact_schema_version IS NOT NULL AND "
+        "artifact_id IS NOT NULL AND "
+        "sha256 IS NOT NULL"
+        ")",
+        name="ck_uploads_ready_has_artifact",
     ),
     Index("ix_uploads_status_created_at", "status", "created_at"),
 )

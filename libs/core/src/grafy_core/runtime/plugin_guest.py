@@ -44,6 +44,7 @@ from grafy_core.plugins import Plugin, PluginRuntimeContext, PluginUnitOfWorkPor
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.node_secrets import NodeSecretUnavailableError
 from grafy_core.ports.storage import (
+    ChunkReader,
     FileStoragePort,
     FileStreamProtocol,
     SaveFileCommand,
@@ -310,6 +311,10 @@ class _GuestBundleStorage(FileStoragePort):
         return cast(FileStreamProtocol, BytesIO(self._content(bucket, path)))
 
     @override
+    async def open_chunks(self, bucket: str, path: str) -> ChunkReader:
+        return _BytesChunkReader(self._content(bucket, path))
+
+    @override
     async def stat(self, bucket: str, path: str) -> StoredObjectInfo | None:
         if bucket == "guest-inputs" and path in self._input_objects:
             return StoredObjectInfo(
@@ -353,6 +358,18 @@ class _GuestBundleStorage(FileStoragePort):
         if bucket != "guest-outputs":
             raise PluginGuestError("Guest storage delete requires guest-outputs")
         self._output_objects.pop(path, None)
+
+
+@final
+class _BytesChunkReader:
+    def __init__(self, content: bytes) -> None:
+        self._stream = BytesIO(content)
+
+    def read(self, size: int = -1, /) -> bytes:
+        return self._stream.read(size)
+
+    def close(self) -> None:
+        self._stream.close()
 
 
 @final

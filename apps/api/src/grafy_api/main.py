@@ -31,6 +31,7 @@ from grafy_api.services.composition import build_workbench_components
 from grafy_api.settings import Settings, get_settings
 from grafy_api.single_owner import ApiOwnerLease
 from grafy_api.storage import configured_file_storage
+from grafy_api.uploads import UploadServiceConfig
 from grafy_api.v1.routes.artifacts.views import router as artifacts_router
 from grafy_api.v1.routes.auth.services import AuthService
 from grafy_api.v1.routes.auth.views import router as auth_router
@@ -171,7 +172,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ),
                 storage_backend=resolved_settings.storage_backend,
                 bucket=resolved_settings.storage_bucket,
-                staged_upload_max_bytes=resolved_settings.staged_upload_max_bytes,
+                upload_config=UploadServiceConfig.from_settings(resolved_settings),
                 saved_graphs=saved_graphs,
                 module_library=module_library,
                 plugin_releases=plugin_releases,

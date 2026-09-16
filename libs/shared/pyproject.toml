@@ -3,13 +3,11 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "grafy-storage"
+name = "grafy-shared"
 version = "0.1.0"
 requires-python = "==3.14.*"
 dependencies = [
-    "botocore>=1.43.95",
     "grafy-core",
-    "obstore>=0.9.3",
 ]
 
 [tool.uv.sources]

@@ -6,32 +6,73 @@ receives a short-lived target; the bytes then travel straight to object storage
 only step that inspects content, and it streams.
 """
 
+from __future__ import annotations
+
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from hashlib import sha256
 from mimetypes import guess_type
-from pathlib import Path
-from typing import Protocol, cast, final, runtime_checkable
+from typing import Literal, Protocol, Self, final
 from uuid import UUID, uuid4
 
+from pydantic import BaseModel, Field, model_validator
 from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey, ArtifactTypeSpec
 from grafy_core.domain.uploads import Upload, UploadStatus
-from grafy_core.file_contracts import BLOB_FILE
 from grafy_core.ports.storage import (
     FileStoragePort,
-    FileStreamProtocol,
+    PresignedUploadTarget,
+    PresigningStorage,
+    ReadableStream,
     SaveFileCommand,
 )
 from grafy_core.ports.uploads import UploadUnitOfWorkPort
 from grafy_core.runtime.upload_reader import require_ready_upload
+from grafy_storage.adapters.local import LocalFileObjectStore
 from starlette.concurrency import run_in_threadpool
 
 from grafy_api.services.errors import WorkbenchOperationError
-from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES
+from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES, Settings
+from grafy_api.upload_inspection import (
+    FileFormatMismatchError,
+    UploadInspectionError,
+    inspect_upload_async,
+)
 
-_READ_CHUNK_BYTES = 1024 * 1024
-_FILENAME_MAX_LENGTH = 255
+logger = logging.getLogger(__name__)
+
+
+class UploadServiceConfig(BaseModel):
+    """Deployment knobs for upload reserve / receive / cleanup."""
+
+    max_upload_bytes: int = Field(
+        default=STAGED_UPLOAD_HARD_MAX_BYTES,
+        ge=1,
+        le=STAGED_UPLOAD_HARD_MAX_BYTES,
+    )
+    upload_lifetime: timedelta = Field(default=timedelta(hours=24))
+    upload_target_ttl: timedelta = Field(default=timedelta(minutes=15))
+    upload_receive_timeout: timedelta = Field(default=timedelta(minutes=30))
+    upload_route_prefix: str = "/v1"
+
+    @model_validator(mode="after")
+    def validate_relationships(self) -> Self:
+        if self.upload_lifetime <= self.upload_target_ttl:
+            raise ValueError("Upload lifetime must exceed its target lifetime")
+        if self.upload_receive_timeout <= timedelta(0):
+            raise ValueError("Upload receive timeout must be positive")
+        return self
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> Self:
+        return cls(
+            max_upload_bytes=settings.staged_upload_max_bytes,
+            upload_lifetime=timedelta(seconds=settings.upload_lifetime_seconds),
+            upload_target_ttl=timedelta(seconds=settings.upload_target_ttl_seconds),
+            upload_receive_timeout=timedelta(
+                seconds=settings.upload_receive_timeout_seconds
+            ),
+        )
 
 
 class UploadTooLargeError(WorkbenchOperationError):
@@ -54,16 +95,6 @@ class UploadTransportUnsupportedError(WorkbenchOperationError):
     """This deployment does not accept upload bytes through the API."""
 
 
-class FileFormatMismatchError(WorkbenchOperationError):
-    """A known extension's bytes disagree with the format that extension names."""
-
-    def __init__(self, filename: str, expected: str) -> None:
-        super().__init__(
-            f"{filename!r} does not look like a {expected} file. "
-            "Rename it or convert it, then try again."
-        )
-
-
 @dataclass(frozen=True, slots=True)
 class UploadTarget:
     """Where a client should send the bytes of one reserved upload."""
@@ -72,6 +103,24 @@ class UploadTarget:
     url: str
     method: str
     expires_at: datetime
+    kind: Literal["api", "storage"]
+    headers: Mapping[str, str]
+
+    def __repr__(self) -> str:
+        headers = (
+            "{}"
+            if not self.headers
+            else "{"
+            + ", ".join(f"{name}=<redacted>" for name in sorted(self.headers))
+            + "}"
+        )
+        url = self.url if self.kind == "api" else "<redacted>"
+        return (
+            "UploadTarget("
+            f"upload_id={self.upload_id!r}, url={url}, method={self.method!r}, "
+            f"expires_at={self.expires_at!r}, kind={self.kind!r}, "
+            f"headers={headers})"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,26 +132,9 @@ class UploadResult:
 
 
 class ByteReader(Protocol):
-    """The only stream shape receiving upload bytes needs.
-
-    ``read`` is position-only to match both ``BinaryIO`` and
-    ``SpooledTemporaryFile``, the two readers this seam accepts.
-    """
+    """The only stream shape receiving upload bytes needs."""
 
     def read(self, size: int = -1, /) -> bytes: ...
-
-
-@runtime_checkable
-class PresigningStorage(Protocol):
-    """Object storage that can sign a direct client PUT."""
-
-    async def create_presigned_upload(
-        self,
-        bucket: str,
-        path: str,
-        *,
-        expires_in: timedelta,
-    ) -> str: ...
 
 
 @final
@@ -115,7 +147,7 @@ class _LimitedReader:
         self._label = label
         self._byte_count = 0
 
-    def read(self, size: int = -1) -> bytes:
+    def read(self, size: int = -1, /) -> bytes:
         chunk = self._stream.read(size)
         self._byte_count += len(chunk)
         if self._byte_count > self._max_bytes:
@@ -126,18 +158,35 @@ class _LimitedReader:
         return chunk
 
 
-def _sha256_stream(stream: FileStreamProtocol) -> str:
-    digest = sha256()
-    while chunk := stream.read(_READ_CHUNK_BYTES):
-        digest.update(chunk)
-    return digest.hexdigest()
-
-
 class UploadService:
     """Reserve, validate, and promote uploaded files without a queue."""
 
     def __init__(
         self,
+        *,
+        config: UploadServiceConfig,
+        storage: FileStoragePort,
+        unit_of_work_factory: Callable[[], UploadUnitOfWorkPort],
+        artifact_types: Mapping[tuple[str, int], ArtifactTypeSpec],
+        extension_claims: Mapping[str, ArtifactTypeKey],
+        bucket: str,
+        storage_backend: str,
+        presigning: PresigningStorage | None = None,
+    ) -> None:
+        self._config = config
+        self._storage = storage
+        self._unit_of_work_factory = unit_of_work_factory
+        self._artifact_types = artifact_types
+        self._extension_claims = extension_claims
+        self._bucket = bucket
+        self._storage_backend = storage_backend
+        self._presigning = presigning
+        self._upload_route_prefix = config.upload_route_prefix.rstrip("/")
+
+    @classmethod
+    def from_config(
+        cls,
+        config: UploadServiceConfig,
         *,
         storage: FileStoragePort,
         unit_of_work_factory: Callable[[], UploadUnitOfWorkPort],
@@ -146,34 +195,27 @@ class UploadService:
         bucket: str,
         storage_backend: str,
         presigning: PresigningStorage | None = None,
-        upload_route_prefix: str = "/v1",
-        upload_lifetime: timedelta = timedelta(hours=24),
-        upload_target_ttl: timedelta = timedelta(minutes=15),
-        max_upload_bytes: int = STAGED_UPLOAD_HARD_MAX_BYTES,
-    ) -> None:
-        if max_upload_bytes < 1:
-            raise ValueError("Upload byte limit must be positive")
-        if max_upload_bytes > STAGED_UPLOAD_HARD_MAX_BYTES:
-            raise ValueError("Upload byte limit must not exceed the 64 MiB hard limit")
-        if upload_lifetime <= upload_target_ttl:
-            raise ValueError("Upload lifetime must exceed its target lifetime")
-        self._storage = storage
-        self._unit_of_work_factory = unit_of_work_factory
-        self._artifact_types = artifact_types
-        self._extension_claims = extension_claims
-        self._bucket = bucket
-        self._storage_backend = storage_backend
-        self._presigning = presigning
-        self._upload_route_prefix = upload_route_prefix.rstrip("/")
-        self._upload_lifetime = upload_lifetime
-        self._upload_target_ttl = upload_target_ttl
-        self._max_upload_bytes = max_upload_bytes
+    ) -> Self:
+        return cls(
+            config=config,
+            storage=storage,
+            unit_of_work_factory=unit_of_work_factory,
+            artifact_types=artifact_types,
+            extension_claims=extension_claims,
+            bucket=bucket,
+            storage_backend=storage_backend,
+            presigning=presigning,
+        )
 
     @property
     def accepts_direct_upload(self) -> bool:
         """Whether this deployment receives bytes on its own content route."""
 
         return self._presigning is None
+
+    @property
+    def max_upload_bytes(self) -> int:
+        return self._config.max_upload_bytes
 
     async def create_upload(
         self,
@@ -184,40 +226,48 @@ class UploadService:
         byte_size: int,
         content_type: str | None = None,
     ) -> UploadTarget:
-        original_filename = filename.strip()
-        if original_filename == "":
-            raise WorkbenchOperationError("Upload filename is required")
-        if len(original_filename) > _FILENAME_MAX_LENGTH:
-            raise WorkbenchOperationError(
-                f"Upload filename must be at most {_FILENAME_MAX_LENGTH} characters"
-            )
-        if byte_size < 0:
-            raise WorkbenchOperationError("Upload byte size must not be negative")
-        if byte_size > self._max_upload_bytes:
-            raise UploadTooLargeError(
-                f"Upload {original_filename!r} exceeds the upload limit of "
-                f"{self._max_upload_bytes} bytes"
-            )
         upload_id = uuid4()
         record = Upload(
             workspace_id=workspace_id,
             upload_id=upload_id,
-            original_filename=original_filename,
+            original_filename=filename,
             bucket=self._bucket,
             object_key=self._object_key(upload_id),
             expected_size=byte_size,
-            content_type=(content_type or guess_type(original_filename)[0])
+            content_type=(content_type or guess_type(filename)[0])
             or "application/octet-stream",
             created_by_user_id=created_by_user_id,
         )
         async with self._unit_of_work_factory() as unit_of_work:
             await unit_of_work.uploads.add(record)
             await unit_of_work.commit()
+
+        expires_at = record.created_at + self._config.upload_target_ttl
+        if self._presigning is None:
+            return UploadTarget(
+                upload_id=upload_id,
+                url=(
+                    f"{self._upload_route_prefix}/workspaces/{record.workspace_id}"
+                    f"/uploads/{record.upload_id}/content"
+                ),
+                method="PUT",
+                expires_at=expires_at,
+                kind="api",
+                headers={},
+            )
+
+        signed = await self._presigning.create_presigned_upload(
+            record.bucket,
+            record.object_key,
+            expires_in=self._config.upload_target_ttl,
+        )
         return UploadTarget(
             upload_id=upload_id,
-            url=await self._upload_target_url(record),
-            method="PUT",
-            expires_at=record.created_at + self._upload_target_ttl,
+            url=signed.url,
+            method=signed.method,
+            expires_at=signed.expires_at,
+            kind="storage",
+            headers=dict(signed.required_headers),
         )
 
     async def receive_content(
@@ -225,7 +275,7 @@ class UploadService:
         *,
         workspace_id: UUID,
         upload_id: UUID,
-        stream: ByteReader,
+        stream: ReadableStream,
     ) -> None:
         """Store bytes a client sent to this API's own content route."""
 
@@ -237,12 +287,10 @@ class UploadService:
         command = SaveFileCommand(
             bucket=record.bucket,
             path=record.object_key,
-            stream=cast_object(
-                _LimitedReader(
-                    stream,
-                    self._max_upload_bytes,
-                    record.original_filename,
-                )
+            stream=_LimitedReader(
+                stream,
+                self._config.max_upload_bytes,
+                record.original_filename,
             ),
             content_type=record.content_type or "application/octet-stream",
             metadata={"original_filename": record.original_filename},
@@ -250,7 +298,8 @@ class UploadService:
         try:
             _ = await self._storage.save(command)
         except UploadTooLargeError:
-            await self._storage.delete(record.bucket, record.object_key)
+            # Local create-only writes clean their own temps. Do not delete the
+            # destination: another writer may have published successfully.
             raise
 
     async def complete_upload(
@@ -259,31 +308,57 @@ class UploadService:
         workspace_id: UUID,
         upload_id: UUID,
     ) -> UploadResult:
-        record = await self._require_pending(workspace_id, upload_id)
+        record = await self._load_upload(workspace_id, upload_id)
+        if record.status is UploadStatus.READY:
+            return self._result_from_ready(record)
+        if record.status is not UploadStatus.PENDING:
+            raise UploadStateError(
+                f"Upload {upload_id} is {record.status.value} and cannot be used"
+            )
+        if self._is_past_lifetime(record):
+            await self._mark_terminal(record, UploadStatus.EXPIRED)
+            raise UploadExpiredError(
+                f"Upload {record.original_filename!r} expired before it was used"
+            )
+
         stored = await self._storage.stat(record.bucket, record.object_key)
         if stored is None:
-            await self._mark_failed(record)
+            await self._mark_terminal(record, UploadStatus.FAILED)
             raise UploadStateError(
                 f"Upload {record.original_filename!r} has no stored bytes"
             )
-        if stored.byte_size > self._max_upload_bytes:
-            await self._mark_failed(record)
+        if stored.byte_size > self._config.max_upload_bytes:
+            await self._mark_terminal(record, UploadStatus.FAILED)
             raise UploadTooLargeError(
                 f"Upload {record.original_filename!r} exceeds the upload limit of "
-                f"{self._max_upload_bytes} bytes"
+                f"{self._config.max_upload_bytes} bytes"
             )
-        if stored.byte_size != record.expected_size:
-            await self._mark_failed(record)
-            raise UploadStateError(
-                f"Upload {record.original_filename!r} declared "
-                f"{record.expected_size} bytes but {stored.byte_size} were stored"
-            )
+
         try:
-            key = await self._resolve_artifact_type(record)
-        except WorkbenchOperationError:
-            await self._mark_failed(record)
+            inspection = await inspect_upload_async(
+                storage=self._storage,
+                bucket=record.bucket,
+                object_key=record.object_key,
+                original_filename=record.original_filename,
+                expected_size=record.expected_size,
+                max_upload_bytes=self._config.max_upload_bytes,
+                artifact_types=self._artifact_types,
+                extension_claims=self._extension_claims,
+                declared_byte_size=stored.byte_size,
+            )
+        except FileFormatMismatchError:
+            await self._mark_terminal(record, UploadStatus.FAILED)
             raise
-        digest = await self._digest(record)
+        except UploadInspectionError as exc:
+            await self._mark_terminal(record, UploadStatus.FAILED)
+            message = str(exc)
+            if "exceeds the upload limit" in message:
+                raise UploadTooLargeError(message) from exc
+            if "declared" in message and "were stored" in message:
+                raise UploadStateError(message) from exc
+            raise UploadStateError(message) from exc
+
+        key = inspection.artifact_type
         artifact = ArtifactObject(
             workspace_id=workspace_id,
             artifact_type=key.id,
@@ -292,25 +367,43 @@ class UploadService:
             storage_backend=self._storage_backend,
             bucket=record.bucket,
             object_key=record.object_key,
-            byte_size=stored.byte_size,
-            sha256=digest,
+            byte_size=inspection.byte_size,
+            sha256=inspection.sha256,
             metadata={"original_filename": record.original_filename},
         )
         completed_at = datetime.now(UTC)
+        not_older_than = datetime.now(UTC) - self._config.upload_lifetime
         async with self._unit_of_work_factory() as unit_of_work:
-            current = await unit_of_work.uploads.get(workspace_id, upload_id)
-            if current is None or current.status is not UploadStatus.PENDING:
-                raise UploadStateError(
-                    f"Upload {record.original_filename!r} is no longer pending"
-                )
-            current.status = UploadStatus.READY
-            current.actual_size = stored.byte_size
-            current.sha256 = digest
-            current.artifact_type = key.id
-            current.completed_at = completed_at
+            # Insert the artifact first so the upload row's foreign key is valid
+            # in the same transaction. A losing finalize rolls both writes back.
             await unit_of_work.artifacts.add(artifact)
-            await unit_of_work.commit()
-        return UploadResult(upload=current, artifact_type=key)
+            finalized = await unit_of_work.uploads.finalize_if_pending(
+                workspace_id,
+                upload_id,
+                actual_size=inspection.byte_size,
+                sha256=inspection.sha256,
+                artifact_type=key.id,
+                artifact_schema_version=key.schema_version,
+                artifact_id=artifact.id,
+                completed_at=completed_at,
+                not_older_than=not_older_than,
+            )
+            if finalized is not None:
+                await unit_of_work.commit()
+                return UploadResult(upload=finalized, artifact_type=key)
+
+            current = await unit_of_work.uploads.get(workspace_id, upload_id)
+            await unit_of_work.rollback()
+
+        if current is not None and current.status is UploadStatus.READY:
+            return self._result_from_ready(current)
+        if current is not None and current.status is UploadStatus.EXPIRED:
+            raise UploadExpiredError(
+                f"Upload {record.original_filename!r} expired before it was used"
+            )
+        raise UploadStateError(
+            f"Upload {record.original_filename!r} is no longer pending"
+        )
 
     async def cleanup_abandoned(
         self,
@@ -318,139 +411,145 @@ class UploadService:
         older_than: timedelta | None = None,
         limit: int = 500,
     ) -> int:
-        """Delete abandoned uploads and their stored bytes.
+        """Expire abandoned uploads and retry deletion of terminal tracking rows.
 
-        Idempotent and safe to re-run, including from several workers: an
-        upload promoted while this runs keeps its row and its bytes.
+        Storage IO runs outside database transactions. A failed object delete
+        keeps the terminal row so a later sweep can retry. READY uploads are
+        never deleted.
         """
 
         resolved_older_than = (
-            self._upload_lifetime if older_than is None else older_than
+            self._config.upload_lifetime if older_than is None else older_than
         )
-        cutoff = datetime.now(UTC) - resolved_older_than
+        now = datetime.now(UTC)
+        pending_before = now - resolved_older_than
+        # Retain terminal rows until the signed target and any in-flight receive
+        # window have both elapsed, so a late PUT cannot recreate orphan bytes.
+        # An explicit shorter ``older_than`` (tests/maintenance) may tighten that
+        # grace so reclaim stays useful when the caller asks for immediate sweep.
+        deletion_grace = self._config.upload_target_ttl + self._config.upload_receive_timeout
+        if older_than is not None and older_than < deletion_grace:
+            deletion_grace = older_than
+        terminal_before = now - deletion_grace
         async with self._unit_of_work_factory() as unit_of_work:
-            abandoned = await unit_of_work.uploads.list_abandoned_before(
-                cutoff,
+            candidates = await unit_of_work.uploads.list_cleanup_candidates(
+                pending_before=pending_before,
+                terminal_before=terminal_before,
                 limit=limit,
             )
+
         discarded = 0
-        for record in abandoned:
-            async with self._unit_of_work_factory() as unit_of_work:
-                removed = await unit_of_work.uploads.discard(
+        for record in candidates:
+            try:
+                terminal = record
+                if record.status is UploadStatus.PENDING:
+                    marked = await self._mark_terminal(record, UploadStatus.EXPIRED)
+                    if marked is None:
+                        continue
+                    terminal = marked
+                if terminal.status is UploadStatus.READY:
+                    continue
+                if terminal.created_at >= terminal_before:
+                    continue
+                await self._delete_stored_object(terminal)
+                async with self._unit_of_work_factory() as unit_of_work:
+                    removed = await unit_of_work.uploads.delete_terminal(
+                        terminal.workspace_id,
+                        terminal.upload_id,
+                    )
+                    await unit_of_work.commit()
+                if removed:
+                    discarded += 1
+            except Exception as error:
+                logger.warning(
+                    "upload_cleanup_failed operation=cleanup_abandoned "
+                    "workspace_id=%s upload_id=%s error_class=%s",
                     record.workspace_id,
                     record.upload_id,
+                    type(error).__name__,
                 )
-                await unit_of_work.commit()
-            if not removed:
                 continue
-            await self._storage.delete(record.bucket, record.object_key)
-            discarded += 1
+
+        if isinstance(self._storage, LocalFileObjectStore):
+            _ = self._storage.cleanup_stale_temp_files(
+                older_than=self._config.upload_receive_timeout,
+                now=now,
+            )
         return discarded
 
-    async def _upload_target_url(self, record: Upload) -> str:
-        if self._presigning is None:
-            return (
-                f"{self._upload_route_prefix}/workspaces/{record.workspace_id}"
-                f"/uploads/{record.upload_id}/content"
-            )
-        return await self._presigning.create_presigned_upload(
-            record.bucket,
-            record.object_key,
-            expires_in=self._upload_target_ttl,
-        )
-
-    async def _require_pending(self, workspace_id: UUID, upload_id: UUID) -> Upload:
+    async def _load_upload(self, workspace_id: UUID, upload_id: UUID) -> Upload:
         async with self._unit_of_work_factory() as unit_of_work:
             record = await unit_of_work.uploads.get(workspace_id, upload_id)
         if record is None:
             raise UploadNotFoundError(
                 f"Upload {upload_id} was not found in workspace {workspace_id}"
             )
+        return record
+
+    async def _require_pending(self, workspace_id: UUID, upload_id: UUID) -> Upload:
+        record = await self._load_upload(workspace_id, upload_id)
         if record.status is UploadStatus.READY:
             raise UploadStateError(f"Upload {upload_id} is already complete")
         if record.status is not UploadStatus.PENDING:
             raise UploadStateError(
                 f"Upload {upload_id} is {record.status.value} and cannot be used"
             )
-        if datetime.now(UTC) - record.created_at > self._upload_lifetime:
-            await self._mark_failed(record, status=UploadStatus.EXPIRED)
+        if self._is_past_lifetime(record):
+            await self._mark_terminal(record, UploadStatus.EXPIRED)
+            raise UploadExpiredError(
+                f"Upload {record.original_filename!r} expired before it was used"
+            )
+        if datetime.now(UTC) > record.created_at + self._config.upload_target_ttl:
             raise UploadExpiredError(
                 f"Upload {record.original_filename!r} expired before it was used"
             )
         return record
 
-    async def _mark_failed(
+    def _is_past_lifetime(self, record: Upload) -> bool:
+        return datetime.now(UTC) - record.created_at > self._config.upload_lifetime
+
+    async def _mark_terminal(
         self,
         record: Upload,
-        *,
-        status: UploadStatus = UploadStatus.FAILED,
-    ) -> None:
+        status: UploadStatus,
+    ) -> Upload | None:
         async with self._unit_of_work_factory() as unit_of_work:
-            current = await unit_of_work.uploads.get(
+            updated = await unit_of_work.uploads.mark_terminal_if_pending(
                 record.workspace_id,
                 record.upload_id,
+                status=status,
             )
-            if current is None or current.status is not UploadStatus.PENDING:
-                return
-            current.status = status
-            await unit_of_work.commit()
+            if updated is not None:
+                await unit_of_work.commit()
+            else:
+                await unit_of_work.rollback()
+            return updated
 
-    async def _digest(self, record: Upload) -> str:
-        stream = await self._storage.load(record.bucket, record.object_key)
+    async def _delete_stored_object(self, record: Upload) -> None:
         try:
-            return await run_in_threadpool(_sha256_stream, stream)
-        finally:
-            stream.close()
+            await self._storage.delete(record.bucket, record.object_key)
+        except FileNotFoundError:
+            return
 
-    async def _resolve_artifact_type(self, record: Upload) -> ArtifactTypeKey:
-        extension = Path(record.original_filename).suffix[1:].casefold()
-        key = self._extension_claims.get(extension)
-        if key is None:
-            return BLOB_FILE.key
-        spec = self._artifact_types.get((key.id, key.schema_version))
-        if spec is None:
-            raise WorkbenchOperationError(
-                f"Upload extension {extension!r} maps to artifact type "
-                f"{key.id}@{key.schema_version}, which this deployment does "
-                "not declare"
+    def _result_from_ready(self, record: Upload) -> UploadResult:
+        if (
+            record.artifact_type is None
+            or record.artifact_schema_version is None
+            or record.artifact_id is None
+        ):
+            raise UploadStateError(
+                f"Upload {record.upload_id} is ready without an artifact association"
             )
-        if not await self._confirms(spec, record):
-            expected = key.id.removeprefix("file.").upper()
-            raise FileFormatMismatchError(record.original_filename, expected)
-        return key
-
-    async def _confirms(self, spec: ArtifactTypeSpec, record: Upload) -> bool:
-        rule = spec.confirmation_rule
-        if rule.rule == "none":
-            return True
-        if rule.rule == "magic":
-            prefix_bytes = max(
-                segment.offset + len(segment.value)
-                for signature in rule.signatures
-                for segment in signature.segments
-            )
-            content = await self._storage.load_range(
-                record.bucket,
-                record.object_key,
-                0,
-                prefix_bytes,
-            )
-            return rule.confirms(content)
-        stream = await self._storage.load(record.bucket, record.object_key)
-        try:
-            content = await run_in_threadpool(stream.read)
-        finally:
-            stream.close()
-        return rule.confirms(content)
+        return UploadResult(
+            upload=record,
+            artifact_type=ArtifactTypeKey(
+                record.artifact_type,
+                record.artifact_schema_version,
+            ),
+        )
 
     def _object_key(self, upload_id: UUID) -> str:
         return f"objects/{upload_id}"
-
-
-def cast_object(value: object) -> FileStreamProtocol:
-    """Present a duck-typed reader as the storage port's stream type."""
-
-    return cast(FileStreamProtocol, value)
 
 
 @final
@@ -472,7 +571,7 @@ class StorageUploadReader:
             workspace_id,
             upload_id,
         )
-        stream = await self._storage.load(record.bucket, record.object_key)
+        stream = await self._storage.open_chunks(record.bucket, record.object_key)
         try:
             return await run_in_threadpool(stream.read)
         finally:
@@ -482,12 +581,14 @@ class StorageUploadReader:
 __all__ = [
     "ByteReader",
     "FileFormatMismatchError",
+    "PresignedUploadTarget",
     "PresigningStorage",
     "StorageUploadReader",
     "UploadExpiredError",
     "UploadNotFoundError",
     "UploadResult",
     "UploadService",
+    "UploadServiceConfig",
     "UploadStateError",
     "UploadTarget",
     "UploadTooLargeError",

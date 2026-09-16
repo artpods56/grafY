@@ -17,7 +17,7 @@ from grafy_api.execution.manager import RunExecutionIdempotencyConflictError
 from grafy_api.execution.models import GraphExecutionResult
 from grafy_api.execution.requests import RunRequest
 from grafy_api.settings import Settings
-from grafy_api.uploads import UploadService
+from grafy_api.uploads import UploadService, UploadServiceConfig
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
 from grafy_api.v1.routes.executions.dependencies import (
@@ -383,7 +383,8 @@ async def test_upload_from_relative_workspace_returns_opaque_upload_key(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     unit_of_work = InMemoryUnitOfWork()
-    service = UploadService(
+    service = UploadService.from_config(
+        UploadServiceConfig(),
         storage=LocalFileObjectStore(Path("relative-workbench/objects")),
         unit_of_work_factory=lambda: unit_of_work,
         artifact_types={},

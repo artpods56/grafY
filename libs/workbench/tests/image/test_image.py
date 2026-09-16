@@ -60,6 +60,9 @@ class RecordingFileStorage:
     async def load(self, bucket: str, path: str) -> FileStreamProtocol:
         raise AssertionError(f"Unexpected load from {bucket}/{path}")
 
+    async def open_chunks(self, bucket: str, path: str) -> FileStreamProtocol:
+        return await self.load(bucket, path)
+
     async def stat(self, bucket: str, path: str) -> StoredObjectInfo | None:
         raise AssertionError(f"Unexpected stat for {bucket}/{path}")
 

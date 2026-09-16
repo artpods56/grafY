@@ -58,6 +58,49 @@
         "title": "AddOriginCommand",
         "type": "object"
       },
+      "ApiUploadTargetResponse": {
+        "description": "Upload target owned by this API; send session credentials and CSRF.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "kind": {
+            "const": "api",
+            "default": "api",
+            "title": "Kind",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "upload_id": {
+            "title": "Upload Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "url",
+          "method",
+          "expires_at"
+        ],
+        "title": "ApiUploadTargetResponse",
+        "type": "object"
+      },
       "ArtifactBundleContractResponse": {
         "properties": {
           "format": {
@@ -6557,6 +6600,50 @@
         "title": "SetNodeInputPlugsCommand",
         "type": "object"
       },
+      "StorageUploadTargetResponse": {
+        "description": "Signed object-storage target; send only the required signed headers.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "kind": {
+            "const": "storage",
+            "default": "storage",
+            "title": "Kind",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "upload_id": {
+            "title": "Upload Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "url",
+          "method",
+          "expires_at",
+          "headers"
+        ],
+        "title": "StorageUploadTargetResponse",
+        "type": "object"
+      },
       "SubmitGraphCommandRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7473,33 +7560,23 @@
         "type": "object"
       },
       "UploadTargetResponse": {
-        "properties": {
-          "expires_at": {
-            "format": "date-time",
-            "title": "Expires At",
-            "type": "string"
+        "description": "Discriminated upload target returned by reserve.",
+        "discriminator": {
+          "mapping": {
+            "api": "#/components/schemas/ApiUploadTargetResponse",
+            "storage": "#/components/schemas/StorageUploadTargetResponse"
           },
-          "method": {
-            "title": "Method",
-            "type": "string"
-          },
-          "upload_id": {
-            "title": "Upload Id",
-            "type": "string"
-          },
-          "url": {
-            "title": "Url",
-            "type": "string"
-          }
+          "propertyName": "kind"
         },
-        "required": [
-          "upload_id",
-          "url",
-          "method",
-          "expires_at"
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ApiUploadTargetResponse"
+          },
+          {
+            "$ref": "#/components/schemas/StorageUploadTargetResponse"
+          }
         ],
-        "title": "UploadTargetResponse",
-        "type": "object"
+        "title": "UploadTargetResponse"
       },
       "UserGraphStateResponse": {
         "additionalProperties": false,

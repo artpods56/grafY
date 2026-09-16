@@ -90,6 +90,9 @@ class FakeFileObjectStore:
     async def load(self, bucket: str, path: str) -> BytesIO:
         return BytesIO(self._path(bucket, path).read_bytes())
 
+    async def open_chunks(self, bucket: str, path: str):
+        return await self.load(bucket, path)
+
     async def stat(self, bucket: str, path: str) -> StoredObjectInfo | None:
         object_path = self._path(bucket, path)
         if not object_path.is_file():
@@ -763,6 +766,9 @@ class AsyncStatOnlyStorage:
         file_path = self._root / bucket / path
         if not file_path.is_file():
             return None
+
+    async def open_chunks(self, bucket: str, path: str):
+        return await self.load(bucket, path)
         return StoredObjectInfo(
             bucket=bucket,
             path=path,

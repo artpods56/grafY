@@ -1208,6 +1208,32 @@ export interface components {
             readonly kind: "add_origin";
             readonly origin: components["schemas"]["SavedGraphOrigin"];
         };
+        /**
+         * ApiUploadTargetResponse
+         * @description Upload target owned by this API; send session credentials and CSRF.
+         */
+        readonly ApiUploadTargetResponse: {
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            readonly expires_at: string;
+            /** Headers */
+            readonly headers?: {
+                readonly [key: string]: string;
+            };
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "api";
+            /** Method */
+            readonly method: string;
+            /** Upload Id */
+            readonly upload_id: string;
+            /** Url */
+            readonly url: string;
+        };
         /** ArtifactBundleContractResponse */
         readonly ArtifactBundleContractResponse: {
             /**
@@ -3513,6 +3539,32 @@ export interface components {
             /** Node Id */
             readonly node_id: string;
         };
+        /**
+         * StorageUploadTargetResponse
+         * @description Signed object-storage target; send only the required signed headers.
+         */
+        readonly StorageUploadTargetResponse: {
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            readonly expires_at: string;
+            /** Headers */
+            readonly headers: {
+                readonly [key: string]: string;
+            };
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "storage";
+            /** Method */
+            readonly method: string;
+            /** Upload Id */
+            readonly upload_id: string;
+            /** Url */
+            readonly url: string;
+        };
         /** SubmitGraphCommandRequest */
         readonly SubmitGraphCommandRequest: {
             /** Command */
@@ -3837,20 +3889,11 @@ export interface components {
             /** Name */
             readonly name: string;
         };
-        /** UploadTargetResponse */
-        readonly UploadTargetResponse: {
-            /**
-             * Expires At
-             * Format: date-time
-             */
-            readonly expires_at: string;
-            /** Method */
-            readonly method: string;
-            /** Upload Id */
-            readonly upload_id: string;
-            /** Url */
-            readonly url: string;
-        };
+        /**
+         * UploadTargetResponse
+         * @description Discriminated upload target returned by reserve.
+         */
+        readonly UploadTargetResponse: components["schemas"]["ApiUploadTargetResponse"] | components["schemas"]["StorageUploadTargetResponse"];
         /** UserGraphStateResponse */
         readonly UserGraphStateResponse: {
             /** Last Opened At */

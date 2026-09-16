@@ -1241,6 +1241,9 @@ class FailingTableManifestStorage:
     async def load(self, bucket: str, path: str) -> FileStreamProtocol:
         return await self._delegate.load(bucket, path)
 
+    async def open_chunks(self, bucket: str, path: str):
+        return await self.load(bucket, path)
+
     async def stat(self, bucket: str, path: str) -> StoredObjectInfo | None:
         return await self._delegate.stat(bucket, path)
 
@@ -1280,6 +1283,9 @@ class FailingSecondOutputStorage:
 
     async def load(self, bucket: str, path: str) -> FileStreamProtocol:
         return await self._delegate.load(bucket, path)
+
+    async def open_chunks(self, bucket: str, path: str):
+        return await self.load(bucket, path)
 
     async def stat(self, bucket: str, path: str) -> StoredObjectInfo | None:
         return await self._delegate.stat(bucket, path)

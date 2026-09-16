@@ -93,6 +93,15 @@ class NotFoundError(GrafyCoreError):
     def diagnostic_context(self) -> Mapping[str, object]:
         return {"resource": self.resource}
 
+class ValidationError(GrafyCoreError):
+    "Raised during validation."
+
+    failure_spec = FailureSpec(
+        code="validation.error",
+        kind=FailureKind.VALIDATION,
+        public_message="Validation error",
+    )
+
 
 class ObjectAlreadyExistsError(GrafyCoreError):
     """Raised when an object already exists in the storage backend."""

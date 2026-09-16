@@ -463,16 +463,40 @@ export async function uploadFile(
       signal,
     },
   );
-  const targetUrl = artifactContentUrl(workspaceId, target.url);
-  if (!targetUrl) {
-    throw new ApiError(500, "The upload target URL was empty.");
-  }
-  await putUploadBytes(targetUrl, file, file.type, signal);
+  const resolved = resolveUploadTargetUrl(target);
+  await putUploadBytes(
+    {
+      kind: target.kind,
+      url: resolved,
+      headers: target.headers ?? {},
+    },
+    file,
+    file.type,
+    signal,
+  );
   return request<UploadResponse>(
     "POST",
     `/v1/workspaces/${encodeURIComponent(workspaceId)}/uploads/${encodeURIComponent(target.upload_id)}/complete`,
     { signal },
   );
+}
+
+/**
+ * Resolve an upload target URL without rewriting signed storage URLs.
+ *
+ * API targets may be relative `/v1/...` paths. Storage targets must already be
+ * absolute http(s) URLs; unexpected shapes are rejected rather than rewritten.
+ */
+export function resolveUploadTargetUrl(target: UploadTarget): string {
+  if (target.kind === "api") {
+    if (target.url.startsWith("/v1/")) return `${API_BASE}${target.url}`;
+    if (target.url.startsWith("/api/")) return target.url;
+    throw new ApiError(500, "The API upload target URL was not a recognized path.");
+  }
+  if (!/^https?:\/\//i.test(target.url)) {
+    throw new ApiError(500, "The storage upload target URL must be absolute.");
+  }
+  return target.url;
 }
 
 export function runGraph(workspaceId: string, requestBody: RunRequest) {
