@@ -26,7 +26,12 @@ from grafy_core.file_contracts import (
     CSV_FILE,
     JPEG_FILE,
 )
-from grafy_core.nodes import ArtifactTypeVariable, NodeExecutionContext
+from grafy_core.nodes import (
+    ArtifactTypeVariable,
+    NodeContractResolutionError,
+    NodeExecutionContext,
+    resolve_node_contracts,
+)
 from grafy_core.plugins import PluginRegistry
 from grafy_core.ports.storage import SaveFileCommand
 from grafy_core.runtime.execution import NodeRunError, NodeRuntime
@@ -194,17 +199,21 @@ async def test_interpret_trusts_a_format_whose_rule_cannot_confirm_bytes(
 
 
 @pytest.mark.asyncio
-async def test_interpret_refuses_a_format_the_extension_table_never_claimed(
+async def test_interpret_refuses_an_illegal_format_before_the_node_runs(
     tmp_path: Path,
 ) -> None:
+    """A blob or a payload type is refused at contract resolution, not later."""
+
     storage = LocalFileObjectStore(tmp_path / "objects")
     uow = InMemoryUnitOfWork()
     blob = await seed_blob_artifact(storage, uow, content=JPEG_BYTES)
 
-    with pytest.raises(NodeRunError, match="not a claimed file format"):
-        _ = await run_interpret(storage, uow, blob, (BLOB_FILE,))
-    with pytest.raises(NodeRunError, match="not a claimed file format"):
-        _ = await run_interpret(storage, uow, blob, (RASTER_IMAGE,))
+    for spec in (BLOB_FILE, RASTER_IMAGE):
+        with pytest.raises(
+            NodeContractResolutionError,
+            match=f"cannot use {spec.key.id}@{spec.key.schema_version} as its format",
+        ):
+            _ = await run_interpret(storage, uow, blob, (spec,))
 
 
 @pytest.mark.asyncio
@@ -215,6 +224,31 @@ async def test_interpret_without_a_bound_format_fails_closed(tmp_path: Path) -> 
 
     with pytest.raises(ValueError, match="bindings: format"):
         _ = await run_interpret(storage, uow, blob, ())
+
+
+def test_interpret_resolves_a_claimed_format_and_refuses_the_rest(
+    tmp_path: Path,
+) -> None:
+    node = interpret_node(
+        LocalFileObjectStore(tmp_path / "objects"),
+        InMemoryUnitOfWork(),
+    )
+
+    for key in (BLOB_FILE.key, RASTER_IMAGE.key):
+        with pytest.raises(
+            NodeContractResolutionError,
+            match=f"cannot use {key.id}@{key.schema_version}",
+        ):
+            _ = resolve_node_contracts(
+                node,
+                {FORMAT_ARTIFACT_TYPE_VARIABLE: key},
+            )
+
+    resolved = resolve_node_contracts(
+        node,
+        {FORMAT_ARTIFACT_TYPE_VARIABLE: JPEG_FILE.key},
+    )
+    assert resolved.output_contract.ports["file"].produces == JPEG_FILE.key
 
 
 def test_interpret_declares_an_explicit_format_output_and_a_blob_input() -> None:

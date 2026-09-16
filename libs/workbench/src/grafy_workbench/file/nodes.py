@@ -29,6 +29,7 @@ from grafy_core.nodes import (
     ArtifactTypeVariable,
     InPort,
     Node,
+    NodeContractResolutionError,
     NodeExecutionContext,
     OutPort,
     UserFacingNodeError,
@@ -41,6 +42,12 @@ from grafy_workbench.file.declaration import FILES
 
 
 FORMAT_ARTIFACT_TYPE_VARIABLE = "format"
+
+
+def _is_claimed_format(key: ArtifactTypeKey) -> bool:
+    """A claimed ``file.*`` format: never the blob fallback, never a payload."""
+
+    return key.id.startswith("file.") and key.id != BLOB_FILE.key.id
 
 
 class InterpretFileInput(NodeInput):
@@ -74,7 +81,7 @@ def _chosen_file_format(
         raise UserFacingNodeError(
             f"Interpret file does not know artifact type {key.id}@{key.schema_version}"
         )
-    if not spec.extensions:
+    if not _is_claimed_format(key) or not spec.extensions:
         raise UserFacingNodeError(
             f"{key.id}@{key.schema_version} is not a claimed file format; choose a "
             "file.* type the deployment recognizes."
@@ -112,6 +119,21 @@ class InterpretFileNode(Node[NodeConfig, InterpretFileInput, InterpretFileOutput
         self._bucket = bucket
         self._storage_backend = storage_backend
         self._artifact_types = {spec.key: spec for spec in artifact_types}
+
+    @classmethod
+    @override
+    def validate_artifact_type_bindings(
+        cls,
+        bindings: Mapping[str, ArtifactTypeKey],
+    ) -> None:
+        key = bindings.get(FORMAT_ARTIFACT_TYPE_VARIABLE)
+        if key is None or _is_claimed_format(key):
+            return
+        raise NodeContractResolutionError(
+            f"Interpret file cannot use {key.id}@{key.schema_version} as its "
+            f"format: bind {FORMAT_ARTIFACT_TYPE_VARIABLE!r} to a claimed file.* "
+            f"type other than {BLOB_FILE.key.id}"
+        )
 
     @override
     async def run(

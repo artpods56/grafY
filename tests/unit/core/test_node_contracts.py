@@ -1,4 +1,5 @@
-from typing import Annotated
+from collections.abc import Mapping
+from typing import Annotated, override
 
 import pytest
 from grafy_core.artifact_contracts import RASTER_IMAGE, TEXT_VALUE
@@ -131,6 +132,23 @@ class GenericNode(Node[NoConfig, GenericInput, GenericOutput]):
     ) -> GenericOutput:
         del inputs
         raise NotImplementedError
+
+
+class ClaimedFormatNode(GenericNode):
+    operator_id = "example.claimed_format"
+
+    @classmethod
+    @override
+    def validate_artifact_type_bindings(
+        cls,
+        bindings: Mapping[str, ArtifactTypeKey],
+    ) -> None:
+        key = bindings.get("T")
+        if key is not None and key.id == "file.blob":
+            raise NodeContractResolutionError(
+                f"Node {cls.operator_id!r} cannot bind {key.id}@"
+                f"{key.schema_version} as T"
+            )
 
 
 def test_node_contracts_derive_shape_and_resolver_target_from_annotations() -> None:
@@ -314,3 +332,17 @@ def test_generic_node_contract_rejects_contextual_binding_errors(
 def test_artifact_type_variable_rejects_noncanonical_names(name: str) -> None:
     with pytest.raises(ValueError, match="Artifact type variable name"):
         ArtifactTypeVariable(name)
+
+
+def test_node_contract_resolution_consults_the_binding_validation_hook() -> None:
+    blob = ArtifactTypeKey("file.blob", 1)
+    jpeg = ArtifactTypeKey("file.jpeg", 1)
+
+    with pytest.raises(
+        NodeContractResolutionError,
+        match="cannot bind file.blob@1 as T",
+    ):
+        resolve_node_contracts(ClaimedFormatNode(), {"T": blob})
+
+    resolved = resolve_node_contracts(ClaimedFormatNode(), {"T": jpeg})
+    assert resolved.output_contract.ports["items"].produces == jpeg

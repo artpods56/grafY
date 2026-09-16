@@ -376,6 +376,52 @@ async def test_compiler_rejects_a_blob_origin_on_a_typed_file_port(
 
 
 @pytest.mark.asyncio
+async def test_compiler_refuses_a_blob_format_on_the_interpret_node(
+    tmp_path: Path,
+) -> None:
+    blob_ref = ArtifactRef.from_key(
+        artifact_id=uuid4(),
+        key=ArtifactTypeKey("file.blob", 1),
+    )
+    request = RunRequest(
+        nodes=[
+            RunNodeRequest(
+                kind="builtin",
+                id="interpret",
+                operator_id="file.interpret",
+                operator_version=1,
+                artifact_type_bindings=[
+                    ArtifactTypeBindingModel(
+                        variable="format",
+                        artifact_type=ArtifactTypeKeyResponse(
+                            id="file.blob",
+                            schema_version=1,
+                        ),
+                    )
+                ],
+            )
+        ],
+        origins=[
+            RunOriginRequest(
+                to_node="interpret",
+                to_port="file",
+                value=blob_ref,
+            )
+        ],
+    )
+
+    with pytest.raises(
+        GraphExecutionError,
+        match=r"invalid artifact type bindings.*cannot use file\.blob@1",
+    ):
+        await _compiler(tmp_path).compile(
+            _pin_system_plugins(request),
+            _UnusedModuleExecutor(),
+            workspace_id=WORKSPACE_ID,
+        )
+
+
+@pytest.mark.asyncio
 async def test_compiler_accepts_an_external_edge_only_with_its_exact_pin(
     tmp_path: Path,
 ) -> None:

@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 
 import { createUuid } from "@/features/workbench/model/uuid";
+import { artifactTypeVariableOptions } from "@/features/workbench/model/claimed-formats";
 import type { Port } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { CanvasNodeHeader, nodeChrome } from "./CanvasNodeChrome";
@@ -1763,14 +1764,18 @@ function GenericArtifactTypeState({
   const variables = declaredArtifactTypeVariables(data.spec);
   if (!variables.length) return null;
   const bindableArtifactTypes = data.bindableArtifactTypes ?? [];
-  const picksType =
-    data.onBindArtifactTypeBinding !== undefined &&
-    bindableArtifactTypes.length > 0;
 
   return (
     <div {...stylex.props(s.genericTypes)} aria-label="Generic artifact types">
       {variables.map((variable) => {
         const artifactType = data.artifactTypeBindings[variable];
+        const options = artifactTypeVariableOptions(
+          data.spec.operator_id,
+          variable,
+          bindableArtifactTypes,
+        );
+        const picksType =
+          data.onBindArtifactTypeBinding !== undefined && options.length > 0;
         const label = artifactType
           ? `${artifactType.id}@${artifactType.schema_version}`
           : "Any artifact · binds on connect";
@@ -1816,7 +1821,7 @@ function GenericArtifactTypeState({
                 }}
               >
                 <option value="">Any artifact · binds on connect</option>
-                {bindableArtifactTypes.map((type) => (
+                {options.map((type) => (
                   <option
                     key={`${type.id}@${type.schema_version}`}
                     value={`${type.id}@${type.schema_version}`}

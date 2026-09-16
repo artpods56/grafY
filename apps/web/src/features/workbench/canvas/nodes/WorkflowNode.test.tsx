@@ -504,6 +504,52 @@ function sequenceCollectSpec(): NodeSpec {
   };
 }
 
+function fileInterpretSpec(): NodeSpec {
+  return {
+    operator_id: "file.interpret",
+    operator_version: 1,
+    plugin_slug: "file",
+    origin: "builtin",
+    title: "Interpret file",
+    description: "Claims blob bytes as one chosen file format.",
+    catalog_visible: true,
+    runnable: true,
+    config_schema: {},
+    input_schema: {},
+    output_schema: {},
+    inputs: [
+      {
+        name: "file",
+        title: "File",
+        description: null,
+        direction: "input",
+        artifact_type: { id: "file.blob", schema_version: 1 },
+        artifact_type_variable: null,
+        shape: "one",
+        accepted_shapes: ["one"],
+        instance_plugs: false,
+        variadic: false,
+        required: true,
+      },
+    ],
+    outputs: [
+      {
+        name: "file",
+        title: "File",
+        description: null,
+        direction: "output",
+        artifact_type: null,
+        artifact_type_variable: "format",
+        shape: "one",
+        accepted_shapes: ["one"],
+        instance_plugs: false,
+        variadic: false,
+        required: true,
+      },
+    ],
+  };
+}
+
 function renderNode(
   id: string,
   data: ReturnType<typeof createWorkflowNodeData>,
@@ -1716,6 +1762,7 @@ describe("WorkflowNode artifact type binding", () => {
       bindableArtifactTypes: [
         { id: "file.jpeg", schema_version: 1 },
         { id: "file.png", schema_version: 1 },
+        { id: "image.raster", schema_version: 1 },
       ],
     };
     const { container } = renderNode("collect", data);
@@ -1729,6 +1776,7 @@ describe("WorkflowNode artifact type binding", () => {
       "Any artifact · binds on connect",
       "file.jpeg@1",
       "file.png@1",
+      "image.raster@1",
     ]);
 
     React.act(() => {
@@ -1740,6 +1788,32 @@ describe("WorkflowNode artifact type binding", () => {
       id: "file.jpeg",
       schema_version: 1,
     });
+  });
+
+  it("offers only claimed file formats as the interpret node's format", () => {
+    const data = {
+      ...createWorkflowNodeData(fileInterpretSpec()),
+      onBindArtifactTypeBinding: vi.fn(),
+      bindableArtifactTypes: [
+        { id: "file.blob", schema_version: 1 },
+        { id: "file.jpeg", schema_version: 1 },
+        { id: "file.png", schema_version: 1 },
+        { id: "image.raster", schema_version: 1 },
+        { id: "table.data", schema_version: 1 },
+      ],
+    };
+    const { container } = renderNode("interpret", data);
+
+    const select = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Bind artifact type format"]',
+    );
+
+    expect(select).not.toBeNull();
+    expect([...select!.options].map((option) => option.value)).toEqual([
+      "",
+      "file.jpeg@1",
+      "file.png@1",
+    ]);
   });
 
   it("keeps the static type row when no binding options are supplied", () => {
