@@ -23,6 +23,7 @@ from grafy_core.artifacts import (
 from grafy_core.conversions import ArtifactConversion, ArtifactConversionKey
 from grafy_core.canonical_conversions import INTEGER_TO_TEXT
 from grafy_core.domain.plugin_releases import (
+    PLUGIN_CONTRACT_DIGEST_FIELD_ROLES,
     PluginArtifactBundleContract,
     PluginArtifactConversionContract,
     PluginArtifactConversionKey,
@@ -878,8 +879,6 @@ def test_contract_digest_ignores_every_empty_defaulting_catalog_field() -> None:
     after deciding that role.
     """
 
-    from grafy_core.domain.plugin_releases import PLUGIN_CONTRACT_DIGEST_FIELD_ROLES
-
     catalog = _contract_catalog()
     assert plugin_contract_digest(catalog) == (
         "4531883a81e55e8bcce716b48d31e62b096d7e8b43993f50bbf0f16dbc80b377"
@@ -941,8 +940,6 @@ def _catalog_contract_models() -> set[type[BaseModel]]:
 
 
 def test_contract_digest_classifies_every_defaulted_catalog_field() -> None:
-    from grafy_core.domain.plugin_releases import PLUGIN_CONTRACT_DIGEST_FIELD_ROLES
-
     classified = {
         (model.__name__, name)
         for model, roles in PLUGIN_CONTRACT_DIGEST_FIELD_ROLES.items()
