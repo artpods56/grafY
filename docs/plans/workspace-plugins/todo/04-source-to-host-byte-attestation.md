@@ -146,9 +146,8 @@ uv run basedpyright \
 - Focused tests, Ruff, type checking, and `git diff --check` pass.
 - Implementation evidence is appended below.
 
-Current implementations live under `grafy_api.plugins.compatibility`; old module
-paths retain public re-exports. Historical evidence below keeps the paths used by
-those original runs.
+Current implementations live under `grafy_api.plugins.compatibility`.
+Historical evidence below keeps the paths used by those original runs.
 
 ## Implementation evidence
 
