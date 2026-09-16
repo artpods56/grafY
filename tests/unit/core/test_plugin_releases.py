@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import replace
 from hashlib import sha256
 from typing import Annotated, cast, get_args
@@ -33,11 +34,13 @@ from grafy_core.domain.plugin_releases import (
     PluginConfirmationRule,
     PluginExecutionPolicy,
     PluginNodeContract,
+    PluginNodeHttpEgressContract,
     PluginPortContract,
     PluginRelease,
     PluginReleaseError,
     PluginReleaseScope,
     PluginRuntimeArtifact,
+    PluginSecretInputContract,
     plugin_contract_digest,
     plugin_contract_digest_matches,
     plugin_profile_digest,
@@ -757,7 +760,13 @@ def _contract_catalog(
     extensions: tuple[str, ...] = (),
     confirmation_rule: PluginConfirmationRule = PluginConfirmationRule(),
 ) -> PluginCatalogManifest:
-    """Catalog whose artifact type and port serialize every defaulted field."""
+    """Catalog that instantiates every contract model with defaulted fields.
+
+    The second node carries a declared HTTP egress contract and a secret input,
+    so ``PluginNodeHttpEgressContract`` and ``PluginSecretInputContract`` are
+    part of the hashed bytes. Without them a new empty default classified
+    ``keep`` on either model would leave the pinned digest green.
+    """
 
     key = PluginArtifactTypeKey(id="file.png", schema_version=1)
     port = PluginPortContract(
@@ -789,6 +798,25 @@ def _contract_catalog(
                 output_schema={"type": "object"},
                 inputs=(port,),
                 outputs=(),
+            ),
+            PluginNodeContract(
+                operator_id="test.notes.fetch",
+                operator_version=1,
+                title="Fetch",
+                description="Fetch one URL.",
+                config_schema={"type": "object"},
+                input_schema={"type": "object"},
+                output_schema={"type": "object"},
+                inputs=(port,),
+                outputs=(),
+                secret_inputs=(
+                    PluginSecretInputContract(name="api_key", title="API key"),
+                ),
+                required_capabilities=(
+                    PluginRuntimeCapability.NETWORK_EGRESS,
+                    PluginRuntimeCapability.NODE_SECRETS,
+                ),
+                http_egress=PluginNodeHttpEgressContract(),
             ),
         ),
     )
@@ -824,6 +852,23 @@ def test_contract_digest_changes_when_a_confirmation_rule_is_declared() -> None:
     ) != plugin_contract_digest(_contract_catalog())
 
 
+def _catalog_contract_instances(catalog: BaseModel) -> set[type[BaseModel]]:
+    """Every Pydantic model instantiated inside a catalog contract."""
+
+    instances: set[type[BaseModel]] = set()
+    pending: list[object] = [catalog]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, BaseModel):
+            instances.add(type(value))
+            pending.extend(getattr(value, name) for name in type(value).model_fields)
+        elif isinstance(value, (tuple, list)):
+            pending.extend(cast(Sequence[object], value))
+        elif isinstance(value, dict):
+            pending.extend(cast(dict[str, object], value).values())
+    return instances
+
+
 def test_contract_digest_ignores_every_empty_defaulting_catalog_field() -> None:
     """Pin the digest of the catalog whose defaulted fields are all empty.
 
@@ -833,8 +878,17 @@ def test_contract_digest_ignores_every_empty_defaulting_catalog_field() -> None:
     after deciding that role.
     """
 
-    assert plugin_contract_digest(_contract_catalog()) == (
-        "68bae8517e3c59d2034ffb07d7c0abb7715599c1f5ea7e2735cd93e0c754bbea"
+    from grafy_core.domain.plugin_releases import PLUGIN_CONTRACT_DIGEST_FIELD_ROLES
+
+    catalog = _contract_catalog()
+    assert plugin_contract_digest(catalog) == (
+        "4531883a81e55e8bcce716b48d31e62b096d7e8b43993f50bbf0f16dbc80b377"
+    )
+    # A model the pinned catalog never instantiates cannot fail the pin, so a
+    # new empty default classified ``keep`` on it would stay green while every
+    # row persisted before that field failed verification.
+    assert _catalog_contract_instances(catalog) >= set(
+        PLUGIN_CONTRACT_DIGEST_FIELD_ROLES
     )
 
 
@@ -847,9 +901,17 @@ def test_contract_digest_accepts_releases_persisted_before_canonicalization() ->
     assert plugin_contract_digest_matches(catalog, stored)
     assert not plugin_contract_digest_matches(catalog, "0" * 64)
 
+    capabilities = PluginCapabilityManifest(
+        capabilities=(
+            PluginRuntimeCapability.NETWORK_EGRESS,
+            PluginRuntimeCapability.NODE_SECRETS,
+        )
+    )
     release = replace(
         _release(),
         catalog=catalog,
+        capabilities=capabilities,
+        capability_digest=capabilities.digest,
         contract_digest=stored,
         descriptor_digest=None,
     )

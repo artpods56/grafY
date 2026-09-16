@@ -77,14 +77,16 @@ The immutable objects form a one-way chain: working copy → source archive +
 source digest → inspected contract + contract digest → OCI image + image digest
 → release descriptor referencing those digests.
 
-The contract digest covers declared contract bytes only. A field that holds the
-empty value it was declared with leaves the digest, so a catalog parsed with
-fields added after the bytes were persisted digests the same as those bytes.
-`PLUGIN_CONTRACT_DIGEST_FIELD_ROLES` in `grafy_core.domain.plugin_releases`
-classifies every defaulted contract field, and the classification test fails
+The contract digest covers declared contract bytes only. Every defaulted
+contract field is classified `omit` or `keep` in
+`PLUGIN_CONTRACT_DIGEST_FIELD_ROLES` in
+`grafy_core.domain.plugin_releases`. An `omit` field leaves the digest while it
+holds the empty value it was declared with, so a catalog parsed with those
+fields added after the bytes were persisted digests the same as those bytes; a
+`keep` field stays serialized at its default. The classification test fails
 when a defaulted field is added without a role. Declared extension claims and
-non-default confirmation rules stay in the digest. Releases published before the
-empty defaults were dropped keep their own digest form, which
+non-default confirmation rules stay in the digest. Releases published before
+the empty defaults were dropped keep their own digest form, which
 `plugin_contract_digest_matches` still accepts. The guest image hashes with the
 SDK wheel vendored in its own lock, so that wheel carries the same
 canonicalization as the host.

@@ -103,11 +103,13 @@ def _contract_digest_exclusions_for_value(value: object) -> IncEx | None:
 def plugin_contract_digest(catalog: PluginCatalogManifest) -> str:
     """Digest of the serialized catalog contract.
 
-    Fields whose declared default is an empty value leave the digest, so a
-    catalog parsed with newer contract fields digests identically to the bytes
-    persisted before those fields existed. A declared extension claim or a
-    confirmation rule other than ``none`` stays in the digest. The field roles
-    live in ``PLUGIN_CONTRACT_DIGEST_FIELD_ROLES`` beside the contract models.
+    A field classified ``omit`` in ``PLUGIN_CONTRACT_DIGEST_FIELD_ROLES``
+    leaves the digest while it holds the empty value it was declared with, so a
+    catalog parsed with those fields added later digests identically to the
+    bytes persisted before they existed. Every other defaulted field is
+    classified ``keep`` and stays serialized at its default, which keeps a
+    declared extension claim or a confirmation rule other than ``none`` in the
+    digest. The field roles live beside the contract models.
     """
 
     serialized = catalog.model_dump_json(
