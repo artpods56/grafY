@@ -14,7 +14,7 @@ from grafy_core.domain.identity import (
 )
 from grafy_persistence.database import create_database
 from grafy_persistence.orm import metadata
-from grafy_persistence.unit_of_work import SqlAlchemySavedGraphUnitOfWork
+from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 
@@ -72,7 +72,7 @@ async def create_schema(database_url: str) -> None:
     try:
         async with database.engine.begin() as connection:
             await connection.run_sync(metadata.create_all)
-        async with SqlAlchemySavedGraphUnitOfWork(database.sessions) as unit_of_work:
+        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
             await unit_of_work.identity.add_user(
                 User(
                     id=TEST_USER_ID,

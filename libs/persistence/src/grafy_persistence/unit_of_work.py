@@ -245,7 +245,3 @@ class SqlAlchemyUnitOfWork(
     @classmethod
     def from_factory(cls, session_factory: async_sessionmaker[AsyncSession]) -> Self:
         return cls(session_factory)
-
-
-# Existing callers use the narrower historical name for saved-graph operations.
-SqlAlchemySavedGraphUnitOfWork = SqlAlchemyUnitOfWork

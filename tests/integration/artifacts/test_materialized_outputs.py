@@ -19,10 +19,7 @@ from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.domain.saved_graphs import SavedGraphDocument
 from grafy_persistence import schema
 from grafy_persistence.database import create_database
-from grafy_persistence.unit_of_work import (
-    SqlAlchemySavedGraphUnitOfWork,
-    SqlAlchemyUnitOfWork,
-)
+from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_storage import LocalFileObjectStore
 
 from grafy_api.services.composition import build_workbench_components
@@ -167,7 +164,7 @@ def _durable_client(fixture: DurableApiFixture) -> Iterator[TestClient]:
     database = create_database(fixture.database_url)
     deployment = fixture.deployment
     saved_graphs = SavedGraphService(
-        lambda: SqlAlchemySavedGraphUnitOfWork(database.sessions),
+        lambda: SqlAlchemyUnitOfWork(database.sessions),
         deployment.registry,
     )
     storage = LocalFileObjectStore(fixture.settings.workspace / "objects")

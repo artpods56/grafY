@@ -659,8 +659,3 @@ function portsCanConnect(
     ).length > 0
   );
 }
-
-/** @deprecated Prefer buildCatalogFilters / catalogNodesForFilter. */
-export type NodeGoalCategoryId = CatalogFilterId;
-/** @deprecated Prefer CatalogFilter. */
-export type NodeGoalCategory = CatalogFilter;
