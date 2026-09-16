@@ -284,12 +284,8 @@ export function projectionCandidatesForConnection(
 ): FieldProjection[] {
   const source = decodeHandleId(connection.sourceHandle);
   const target = decodeHandleId(connection.targetHandle);
-  const sourceArtifactType = source
-    ? decodedHandleArtifactType(source)
-    : null;
-  const targetArtifactType = target
-    ? decodedHandleArtifactType(target)
-    : null;
+  const sourceArtifactType = source ? decodedHandleArtifactType(source) : null;
+  const targetArtifactType = target ? decodedHandleArtifactType(target) : null;
   if (
     !source ||
     !target ||
@@ -314,22 +310,24 @@ export function projectionCandidatesForConnection(
 }
 
 export type ConnectionRoute =
-  | ({ kind: "exact"; conversionPath: readonly ArtifactConversionSpec[] } &
-      ConnectionRouteBinding)
-  | {
+  | ({
+      kind: "exact";
+      conversionPath: readonly ArtifactConversionSpec[];
+    } & ConnectionRouteBinding)
+  | ({
       kind: "projection";
       projection: FieldProjection;
       conversionPath: readonly ArtifactConversionSpec[];
-    } & ConnectionRouteBinding
-  | {
+    } & ConnectionRouteBinding)
+  | ({
       kind: "conversion";
       conversionPath: readonly ArtifactConversionSpec[];
-    } & ConnectionRouteBinding
-  | {
+    } & ConnectionRouteBinding)
+  | ({
       kind: "projection-conversion";
       projection: FieldProjection;
       conversionPath: readonly ArtifactConversionSpec[];
-    } & ConnectionRouteBinding;
+    } & ConnectionRouteBinding);
 
 export interface ConnectionArtifactTypeBinding {
   endpoint: "source" | "target";
@@ -355,12 +353,15 @@ function artifactTypeMatches(
   id: string,
   schemaVersion: number,
 ): boolean {
-  return artifactType.id === id && artifactType.schema_version === schemaVersion;
+  return (
+    artifactType.id === id && artifactType.schema_version === schemaVersion
+  );
 }
 
-export function artifactTypeKey(
-  artifactType: { id: string; schema_version: number },
-): string {
+export function artifactTypeKey(artifactType: {
+  id: string;
+  schema_version: number;
+}): string {
   return `${artifactType.id}@${artifactType.schema_version}`;
 }
 
@@ -418,8 +419,9 @@ function shortestConversionPaths(
     const completed: ArtifactConversionSpec[][] = [];
     const nextFrontier: typeof frontier = [];
     for (const state of frontier) {
-      for (const conversion of
-        conversionsBySource.get(artifactTypeKey(state.artifactType)) ?? []) {
+      for (const conversion of conversionsBySource.get(
+        artifactTypeKey(state.artifactType),
+      ) ?? []) {
         const nextArtifactType = conversion.target_artifact_type;
         const nextArtifactTypeKey = artifactTypeKey(nextArtifactType);
         if (state.visitedArtifactTypes.has(nextArtifactTypeKey)) continue;
@@ -524,7 +526,8 @@ function genericTargetRoutesFrom(
   ];
   for (const targetArtifactType of sortedConversionTargetTypes(conversions)) {
     if (
-      artifactTypeKey(sourceArtifactType) === artifactTypeKey(targetArtifactType)
+      artifactTypeKey(sourceArtifactType) ===
+      artifactTypeKey(targetArtifactType)
     ) {
       continue;
     }
@@ -609,8 +612,7 @@ export function connectionRoutesFor(
       );
       if (
         projectionRoutes === null ||
-        routes.length + projectionRoutes.length >
-          MAX_CONVERSION_PATH_CANDIDATES
+        routes.length + projectionRoutes.length > MAX_CONVERSION_PATH_CANDIDATES
       ) {
         return [];
       }
@@ -684,12 +686,8 @@ export function connectionRouteForSelection(
 ): ConnectionRoute | null {
   const source = decodeHandleId(connection.sourceHandle);
   const target = decodeHandleId(connection.targetHandle);
-  const sourceArtifactType = source
-    ? decodedHandleArtifactType(source)
-    : null;
-  const targetArtifactType = target
-    ? decodedHandleArtifactType(target)
-    : null;
+  const sourceArtifactType = source ? decodedHandleArtifactType(source) : null;
+  const targetArtifactType = target ? decodedHandleArtifactType(target) : null;
   if (
     !source ||
     !target ||
@@ -711,8 +709,7 @@ export function connectionRouteForSelection(
         (candidate) =>
           candidate.path.length === selection.projection?.path.length &&
           candidate.path.every(
-            (segment, index) =>
-              segment === selection.projection?.path[index],
+            (segment, index) => segment === selection.projection?.path[index],
           ),
       )
     : undefined;
@@ -782,10 +779,10 @@ export function connectionRouteMatchesSelection(
   const projectionMatches = candidate.projection
     ? Boolean(
         selection.projection &&
-          candidate.projection.path.length === selection.projection.path.length &&
-          candidate.projection.path.every(
-            (segment, index) => segment === selection.projection?.path[index],
-          ),
+        candidate.projection.path.length === selection.projection.path.length &&
+        candidate.projection.path.every(
+          (segment, index) => segment === selection.projection?.path[index],
+        ),
       )
     : selection.projection === undefined;
   const conversionPathMatches =

@@ -677,7 +677,9 @@ function WorkbenchBody({
   const applyAuthoringCommands = React.useCallback(
     (commands: readonly GraphCommand[], options?: AuthoringCommandOptions) => {
       if (!commands.length) return;
-      if (shouldBlockAuthoringCommand(localAuthoringEnabledRef.current, options)) {
+      if (
+        shouldBlockAuthoringCommand(localAuthoringEnabledRef.current, options)
+      ) {
         setRunError(localAuthoringBlockedMessageRef.current);
         return;
       }
@@ -1841,9 +1843,7 @@ function WorkbenchBody({
   const localAuthoringEnabled =
     !graphOperationBusy &&
     (activeGraph
-      ? canEditGraph &&
-        graphOperationsTrusted &&
-        graphRoom.canSubmitCommands
+      ? canEditGraph && graphOperationsTrusted && graphRoom.canSubmitCommands
       : initialGraphId === null && canCreateGraph);
   const localAuthoringBlockedMessage = !(activeGraph
     ? canEditGraph
@@ -2862,11 +2862,7 @@ function WorkbenchBody({
       }) ?? { x: 600, y: 280 };
       const data = attachNodeCallbacks(createWorkflowNodeData(spec));
       applyAuthoringCommands([
-        addNodeCommand(
-          id,
-          data,
-          { x: center.x - 140, y: center.y - 110 },
-        ),
+        addNodeCommand(id, data, { x: center.x - 140, y: center.y - 110 }),
       ]);
       setSelectedNodeIdSet(new Set([id]));
       setSelectedEdgeIdSet(new Set());
@@ -3023,16 +3019,12 @@ function WorkbenchBody({
           };
       const edgeId = `edge-${createUuid()}`;
       const selection = connectionRouteSelection(choice.route);
-      const nodeCommand = addNodeCommand(
-        id,
-        data,
-        {
-          x: contextualDiscovery.flowPosition.x,
-          y:
-            contextualDiscovery.flowPosition.y -
-            DEFAULT_NODE_PLACEMENT_HEIGHT / 2,
-        },
-      );
+      const nodeCommand = addNodeCommand(id, data, {
+        x: contextualDiscovery.flowPosition.x,
+        y:
+          contextualDiscovery.flowPosition.y -
+          DEFAULT_NODE_PLACEMENT_HEIGHT / 2,
+      });
 
       const edgeCommand = addEdgeCommand(
         edgeConnection,
@@ -3050,10 +3042,7 @@ function WorkbenchBody({
         edgeId,
       );
 
-      applyAuthoringCommands([
-        nodeCommand,
-        edgeCommand,
-      ]);
+      applyAuthoringCommands([nodeCommand, edgeCommand]);
       setSelectedNodeIdSet(new Set([id]));
       setSelectedEdgeIdSet(new Set());
       setContextualDiscovery(null);
@@ -4085,8 +4074,8 @@ function WorkbenchBody({
                   !graphOperationsTrusted
                     ? "Run is unavailable until the displayed graph is current"
                     : selectedNodesAreRunnable
-                    ? "Run only the selected nodes; latest accessible upstream outputs are pinned"
-                    : "Unavailable or invalid selected nodes cannot run"
+                      ? "Run only the selected nodes; latest accessible upstream outputs are pinned"
+                      : "Unavailable or invalid selected nodes cannot run"
                 }
                 {...stylex.props(s.toolButton, s.primaryButton)}
                 onClick={() => void runWorkflow("selected")}
@@ -4105,8 +4094,8 @@ function WorkbenchBody({
                   !graphOperationsTrusted
                     ? "Run is unavailable until the displayed graph is current"
                     : selectedWithDependenciesAreRunnable
-                    ? `Run the selection and every upstream dependency (${selectedWithDependenciesCount} total)`
-                    : "Unavailable or invalid upstream dependencies cannot run"
+                      ? `Run the selection and every upstream dependency (${selectedWithDependenciesCount} total)`
+                      : "Unavailable or invalid upstream dependencies cannot run"
                 }
                 {...stylex.props(s.toolButton)}
                 onClick={() => void runWorkflow("selected-with-dependencies")}
@@ -4187,7 +4176,7 @@ function WorkbenchBody({
               ? "Stop the current execution before opening Module setup"
               : !graphOperationsTrusted
                 ? "Module setup is unavailable until the displayed graph is current"
-              : "Set up and publish this graph as a Module"
+                : "Set up and publish this graph as a Module"
           }
           disabled={running || !graphOperationsTrusted}
           {...stylex.props(s.railButton)}
@@ -4324,7 +4313,10 @@ function WorkbenchBody({
           type="button"
           aria-label="Saved artifacts"
           title="Saved artifacts and where they came from"
-          {...stylex.props(s.railButton, libraryDrawerOpen ? s.railPrimary : null)}
+          {...stylex.props(
+            s.railButton,
+            libraryDrawerOpen ? s.railPrimary : null,
+          )}
           onClick={() => {
             closeGraphBrowser();
             setLibraryOpen(false);
