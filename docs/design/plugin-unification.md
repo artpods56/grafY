@@ -77,6 +77,16 @@ The immutable objects form a one-way chain: working copy → source archive +
 source digest → inspected contract + contract digest → OCI image + image digest
 → release descriptor referencing those digests.
 
+The contract digest covers declared contract bytes only. A field that holds the
+empty value it was declared with leaves the digest, so a catalog parsed with
+fields added after the bytes were persisted digests the same as those bytes.
+`PLUGIN_CONTRACT_DIGEST_FIELD_ROLES` in `grafy_core.domain.plugin_releases`
+classifies every defaulted contract field, and the classification test fails
+when a defaulted field is added without a role. Declared extension claims and
+non-default confirmation rules stay in the digest. Releases published before the
+empty defaults were dropped keep their own digest form, which
+`plugin_contract_digest_matches` still accepts.
+
 6. Overlays the current release in `GET /v1/workspaces/{id}/nodes`, including
    Plugin-owned artifact types and function-node contracts.
 

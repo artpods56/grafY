@@ -9,7 +9,7 @@ from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.domain.plugin_releases import (
     PluginCatalogManifest,
     PluginReleaseScope,
-    plugin_contract_digest,
+    plugin_contract_digest_matches,
 )
 
 
@@ -51,7 +51,7 @@ class SystemHostPluginBinding(BaseModel):
     def validate_catalog_identity(self) -> Self:
         if self.catalog.slug != self.slug:
             raise ValueError("System host binding slug must match its catalog")
-        if plugin_contract_digest(self.catalog) != self.contract_digest:
+        if not plugin_contract_digest_matches(self.catalog, self.contract_digest):
             raise ValueError(
                 "System host binding contract digest must match its catalog"
             )

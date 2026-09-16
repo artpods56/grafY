@@ -9,7 +9,7 @@ from grafy_core.domain.plugin_releases import (
     PluginExecutionPolicy,
     PluginRelease,
     PluginReleaseScope,
-    plugin_contract_digest,
+    plugin_contract_digest_matches,
 )
 from grafy_core.domain.system_plugin_inventory import (
     SystemPluginInventory,
@@ -234,9 +234,8 @@ class SystemBaselineManifestGenerator:
             raise SystemPluginInventoryError(
                 f"Selected System release {entry.slug!r} catalog slug does not match"
             )
-        if (
-            plugin_contract_digest(release.release.catalog)
-            != release.release.contract_digest
+        if not plugin_contract_digest_matches(
+            release.release.catalog, release.release.contract_digest
         ):
             raise SystemPluginInventoryError(
                 f"Selected System release {entry.slug!r} contract digest does not "
