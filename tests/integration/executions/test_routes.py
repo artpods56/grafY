@@ -43,12 +43,7 @@ from tests.support.identity import WORKSPACE_ID, browser_actor_override
 from tests.support.system_plugins import (
     TEST_SYSTEM_PLUGINS,
 )
-from tests.support.system_plugins import (
-    selected_system_run_node as RunNodeRequest,
-)
 from tests.testkit import app_with_overrides, create_db_url, db
-
-PNG_BYTES = b"\x89PNG\r\n\x1a\nstaged payload"
 
 
 def _parse_sse_events(body: str) -> list[dict[str, object]]:
@@ -443,59 +438,6 @@ def test_upload_endpoint_streams_bytes_into_the_object_store(
     )
     assert stored_path.is_file()
     assert stored_path.read_bytes() == content
-
-
-def test_image_upload_materializes_uploaded_images(
-    builtin_client: TestClient,
-) -> None:
-    api = GrafyApi(builtin_client)
-    # The node config keeps only the identity of each upload, exactly like the
-    # workbench client does before writing operator config.
-    items = [
-        api.workspace(WORKSPACE_ID).uploads.upload_ok(
-            f"scan-{index}.png",
-            PNG_BYTES,
-            content_type="image/png",
-        )
-        for index in range(1, 3)
-    ]
-    uploads = [
-        {
-            "upload_key": item.upload_key,
-            "filename": item.filename,
-            "byte_size": item.byte_size,
-        }
-        for item in items
-    ]
-
-    executions = api.workspace(WORKSPACE_ID).executions
-    result = executions.run_ok(
-        RunRequest(
-            nodes=[
-                RunNodeRequest(
-                    kind="builtin",
-                    id="upload",
-                    operator_id="image.upload",
-                    operator_version=1,
-                    config={"uploads": uploads},
-                ),
-            ],
-            edges=[],
-        )
-    )
-
-    assert result.status == "succeeded"
-    upload_run = result.node_runs[0]
-    assert upload_run.status == "succeeded"
-    assert upload_run.outputs[0].port == "images"
-    assert len(upload_run.outputs[0].artifacts) == 2
-
-    content_response = builtin_client.get(
-        f"/v1/workspaces/00000000-0000-0000-0000-000000000007/artifacts/{upload_run.outputs[0].artifacts[0].artifact_id}/content"
-    )
-    assert content_response.status_code == 200
-    assert content_response.headers["content-type"] == "image/png"
-    assert content_response.content.startswith(b"\x89PNG")
 
 
 @pytest.mark.parametrize("presentation_fails", [False, True])

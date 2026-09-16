@@ -388,7 +388,7 @@ function CollapsedFootprint({
     );
   }
 
-  const executionIsActive = execution.status === "uploading" ||
+  const executionIsActive =
     execution.status === "queued" ||
     execution.status === "running" ||
     execution.status === "cancelling";

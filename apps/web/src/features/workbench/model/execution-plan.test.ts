@@ -452,42 +452,6 @@ describe("execution validation", () => {
     });
   });
 
-  it("reports an empty image upload before required-input failures", () => {
-    const missingInput = workflowNode(
-      "missing-input",
-      nodeSpec("missing-input", [port("input", "input")]),
-    );
-    const upload = workflowNode(
-      "upload",
-      nodeSpec("image.upload", [], [port("images", "output")], "Images"),
-      { config: { uploads: [] } },
-    );
-
-    expect(
-      executionValidationIssue("all", [missingInput, upload], []),
-    ).toEqual({
-      nodeId: "upload",
-      message: "Choose images for Images before running.",
-    });
-  });
-
-  it.each([
-    ["gis.geojson.upload", "GeoJSON", "Choose a GeoJSON file"],
-    ["gis.geotiff.upload", "Historical scan", "Choose a GeoTIFF file"],
-    ["table.file.import", "Source table", "Choose a CSV or XLSX file"],
-  ])("reports an empty %s upload", (operatorId, title, expectedMessage) => {
-    const upload = workflowNode(
-      "upload",
-      nodeSpec(operatorId, [], [port("result", "output")], title),
-      { config: { uploads: [] } },
-    );
-
-    expect(executionValidationIssue("all", [upload], [])).toEqual({
-      nodeId: "upload",
-      message: `${expectedMessage} for ${title} before running.`,
-    });
-  });
-
   it("reports the first missing required input with its node context", () => {
     const target = workflowNode(
       "target",

@@ -1,25 +1,11 @@
-"""Inventory file loading and compatibility exports for shared contracts."""
+"""Inventory file loading for the checked-in System Plugin set."""
 
 import tomllib
 from pathlib import Path
 
 from grafy_core.domain.system_plugin_inventory import (
-    SYSTEM_PLUGIN_SLUGS as SYSTEM_PLUGIN_SLUGS,
-)
-from grafy_core.domain.system_plugin_inventory import (
-    SystemPluginIdentityPrefix as SystemPluginIdentityPrefix,
-)
-from grafy_core.domain.system_plugin_inventory import (
-    SystemPluginInventory as SystemPluginInventory,
-)
-from grafy_core.domain.system_plugin_inventory import (
-    SystemPluginInventoryEntry as SystemPluginInventoryEntry,
-)
-from grafy_core.domain.system_plugin_inventory import (
-    SystemPluginInventoryError as SystemPluginInventoryError,
-)
-from grafy_persistence.system_baseline import (
-    SystemBaselineManifestGenerator as SystemBaselineManifestGenerator,
+    SystemPluginInventory,
+    SystemPluginInventoryError,
 )
 from pydantic import (
     ValidationError,
@@ -44,10 +30,5 @@ def load_system_plugin_inventory(path: Path) -> SystemPluginInventory:
 
 __all__ = [
     "CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH",
-    "SYSTEM_PLUGIN_SLUGS",
-    "SystemBaselineManifestGenerator",
-    "SystemPluginInventory",
-    "SystemPluginInventoryEntry",
-    "SystemPluginInventoryError",
     "load_system_plugin_inventory",
 ]

@@ -315,9 +315,6 @@ def test_execution_and_plugin_hosting_do_not_import_http_or_legacy_hosting() -> 
         forbidden = [
             "grafy_api.v1.routes",
             "grafy_api.plugins.compatibility",
-            "grafy_api.system_plugin_loader",
-            "grafy_api.system_plugin_deployment",
-            "grafy_api.system_host_bindings",
             "fastapi",
             "starlette",
         ]
@@ -408,43 +405,15 @@ def test_workspace_transport_compatibility_exports_preserve_model_identity() -> 
 
 
 def test_baseline_compatibility_exports_preserve_shared_contract_identity() -> None:
-    from grafy_api import system_host_bindings, system_plugin_inventory
-    from grafy_core.domain import (
-        plugin_host_bindings,
-    )
+    from grafy_api import system_plugin_inventory
     from grafy_core.domain import (
         system_plugin_inventory as inventory_contracts,
     )
-    from grafy_persistence.system_baseline import SystemBaselineManifestGenerator
 
-    for name in ("LoadedSystemPlugin", "SystemHostPluginBinding"):
-        assert getattr(system_host_bindings, name) is getattr(
-            plugin_host_bindings, name
-        )
     for name in (
         "SystemPluginInventory",
-        "SystemPluginInventoryEntry",
         "SystemPluginInventoryError",
     ):
         assert getattr(system_plugin_inventory, name) is getattr(
             inventory_contracts, name
         )
-    assert (
-        system_plugin_inventory.SystemBaselineManifestGenerator
-        is SystemBaselineManifestGenerator
-    )
-
-
-def test_historical_host_exports_resolve_to_compatibility_implementations() -> None:
-    from importlib import import_module
-
-    for old_name, owner in (
-        ("system_plugin_loader", "loader"),
-        ("system_plugin_deployment", "deployment"),
-        ("system_host_bindings", "bindings"),
-    ):
-        legacy = import_module(f"grafy_api.{old_name}")
-        implementation = import_module(f"grafy_api.plugins.compatibility.{owner}")
-        assert legacy.__all__ == implementation.__all__
-        for name in legacy.__all__:
-            assert getattr(legacy, name) is getattr(implementation, name)

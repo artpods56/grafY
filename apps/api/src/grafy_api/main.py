@@ -13,10 +13,7 @@ from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.application.templates import TemplateService
 from grafy_persistence.database import create_database
-from grafy_persistence.unit_of_work import (
-    SqlAlchemySavedGraphUnitOfWork,
-    SqlAlchemyUnitOfWork,
-)
+from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_workbench import BuiltinNodeCatalog
 
 from grafy_api.app_state import AppIdentity, AppResources, get_identity
@@ -81,7 +78,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             registry = builtin_catalog.registry
             storage = configured_file_storage(resolved_settings)
             saved_graphs = SavedGraphService(
-                lambda: SqlAlchemySavedGraphUnitOfWork(database.sessions),
+                lambda: SqlAlchemyUnitOfWork(database.sessions),
                 registry,
             )
             module_library = ModuleLibraryService(

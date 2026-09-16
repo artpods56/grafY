@@ -14,10 +14,8 @@ import pytest
 from grafy_core.artifact_contracts import RASTER_IMAGE, RasterImageContent
 from grafy_core.artifacts import (
     ArtifactObject,
-    ArtifactRef,
     ArtifactRefSequence,
     ArtifactTypeSpec,
-    JsonObject,
 )
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.file_artifacts import FileArtifactError
@@ -34,7 +32,6 @@ from grafy_core.file_contracts import (
 )
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.plugins import PluginRegistry
-from grafy_core.ports.storage import SaveFileCommand
 from grafy_core.runtime.execution import NodeRuntime
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import InputMaterializer
@@ -73,6 +70,8 @@ from grafy_workbench.table.nodes import (
     TableImportInput,
 )
 from openpyxl import Workbook
+
+from tests.support.file_artifacts import seed_file_artifact
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000930")
 
@@ -114,47 +113,6 @@ def workbook_bytes(
     return buffer.getvalue()
 
 
-async def seed_file_artifact(
-    storage: LocalFileObjectStore,
-    uow: InMemoryUnitOfWork,
-    *,
-    spec: ArtifactTypeSpec,
-    content: bytes,
-    original_filename: str | None = None,
-    content_type: str = "application/octet-stream",
-) -> ArtifactRef:
-    """Persist the artifact and bytes ingest would have written for this format."""
-
-    stored = await storage.save(
-        SaveFileCommand(
-            bucket="artifacts",
-            path=f"files/{spec.key.id}/{sha256(content).hexdigest()}",
-            stream=BytesIO(content),
-            content_type=content_type,
-            metadata={},
-            allow_overwrite=True,
-        )
-    )
-    metadata: JsonObject = {}
-    if original_filename is not None:
-        metadata["original_filename"] = original_filename
-    artifact = ArtifactObject(
-        workspace_id=TEST_WORKSPACE_ID,
-        artifact_type=spec.key.id,
-        schema_version=spec.key.schema_version,
-        content_type=content_type,
-        bucket=stored.bucket,
-        object_key=stored.path,
-        byte_size=stored.byte_size,
-        sha256=stored.sha256,
-        metadata=metadata,
-    )
-    async with uow as entered:
-        await entered.artifacts.add(artifact)
-        await entered.commit()
-    return artifact.ref()
-
-
 def node_context() -> NodeExecutionContext:
     return NodeExecutionContext(
         workspace_id=TEST_WORKSPACE_ID,
@@ -171,6 +129,7 @@ async def test_image_decode_decodes_the_whole_ordered_batch_through_the_runtime(
     first = await seed_file_artifact(
         storage,
         uow,
+        workspace_id=TEST_WORKSPACE_ID,
         spec=PNG_FILE,
         content=b"\x89PNG\r\n\x1a\nfirst",
         original_filename="page-001.png",
@@ -178,6 +137,7 @@ async def test_image_decode_decodes_the_whole_ordered_batch_through_the_runtime(
     second = await seed_file_artifact(
         storage,
         uow,
+        workspace_id=TEST_WORKSPACE_ID,
         spec=PNG_FILE,
         content=b"\x89PNG\r\n\x1a\nsecond",
         original_filename="page-002.png",
@@ -240,7 +200,9 @@ async def test_image_decode_maps_each_accepted_container_to_its_content_type(
 ) -> None:
     storage = LocalFileObjectStore(tmp_path / "objects")
     uow = InMemoryUnitOfWork()
-    ref = await seed_file_artifact(storage, uow, spec=spec, content=b"image-bytes")
+    ref = await seed_file_artifact(
+        storage, uow, workspace_id=TEST_WORKSPACE_ID, spec=spec, content=b"image-bytes"
+    )
     node = DecodeImagesNode(storage=storage, uow=uow)
 
     output = await node.run(
@@ -266,6 +228,7 @@ async def test_table_import_dispatches_on_the_declared_format_not_the_filename(
     csv_ref = await seed_file_artifact(
         storage,
         uow,
+        workspace_id=TEST_WORKSPACE_ID,
         spec=CSV_FILE,
         content=b"name,population\nBelynichi,10\n",
         original_filename="places.xlsx",
@@ -273,6 +236,7 @@ async def test_table_import_dispatches_on_the_declared_format_not_the_filename(
     xlsx_ref = await seed_file_artifact(
         storage,
         uow,
+        workspace_id=TEST_WORKSPACE_ID,
         spec=XLSX_FILE,
         content=workbook_bytes(
             sheets={"Places": [["name", "population"], ["Belynichi", 10]]},
@@ -318,6 +282,7 @@ async def test_table_import_applies_delimiter_header_and_empty_row_parameters(
     ref = await seed_file_artifact(
         storage,
         uow,
+        workspace_id=TEST_WORKSPACE_ID,
         spec=CSV_FILE,
         content=b"Places of the region\nname;population\nBelynichi;10\n;\n",
     )
@@ -362,6 +327,7 @@ async def test_table_import_selects_the_named_sheet_and_rejects_a_zip_without_on
     ref = await seed_file_artifact(
         storage,
         uow,
+        workspace_id=TEST_WORKSPACE_ID,
         spec=XLSX_FILE,
         content=workbook_bytes(
             sheets={
@@ -374,6 +340,7 @@ async def test_table_import_selects_the_named_sheet_and_rejects_a_zip_without_on
     broken_ref = await seed_file_artifact(
         storage,
         uow,
+        workspace_id=TEST_WORKSPACE_ID,
         spec=XLSX_FILE,
         content=b"PK\x03\x04not-a-workbook",
     )
@@ -416,6 +383,7 @@ async def test_geojson_parse_accepts_both_declared_container_types(
     geojson_ref = await seed_file_artifact(
         storage,
         uow,
+        workspace_id=TEST_WORKSPACE_ID,
         spec=GEOJSON_FILE,
         content=feature_collection_bytes((13.405, 52.52), (2.3522, 48.8566)),
         original_filename="cities.geojson",
@@ -423,6 +391,7 @@ async def test_geojson_parse_accepts_both_declared_container_types(
     json_ref = await seed_file_artifact(
         storage,
         uow,
+        workspace_id=TEST_WORKSPACE_ID,
         spec=JSON_FILE,
         content=feature_collection_bytes((13.405, 52.52)),
         original_filename="cities.json",
@@ -455,6 +424,7 @@ async def test_geojson_parse_validates_the_document_shape_at_run_time(
     array_ref = await seed_file_artifact(
         storage,
         uow,
+        workspace_id=TEST_WORKSPACE_ID,
         spec=JSON_FILE,
         content=b"[1, 2, 3]",
         original_filename="numbers.json",
@@ -462,6 +432,7 @@ async def test_geojson_parse_validates_the_document_shape_at_run_time(
     projected_ref = await seed_file_artifact(
         storage,
         uow,
+        workspace_id=TEST_WORKSPACE_ID,
         spec=GEOJSON_FILE,
         content=feature_collection_bytes((4_000_000.0, 5_000_000.0)),
         original_filename="projected.geojson",
@@ -491,6 +462,7 @@ async def test_raster_scan_import_names_the_source_and_keeps_the_original_filena
     named_ref = await seed_file_artifact(
         storage,
         uow,
+        workspace_id=TEST_WORKSPACE_ID,
         spec=TIFF_FILE,
         content=b"II*\x00geotiff-bytes",
         original_filename="scan.tif",
@@ -498,6 +470,7 @@ async def test_raster_scan_import_names_the_source_and_keeps_the_original_filena
     unnamed_ref = await seed_file_artifact(
         storage,
         uow,
+        workspace_id=TEST_WORKSPACE_ID,
         spec=TIFF_FILE,
         content=b"II*\x00geotiff-bytes-again",
     )

@@ -159,7 +159,6 @@ function lifecycleOptions(
       document,
       nodes: [],
       isExecutionRunning: () => false,
-      uploading: false,
       replaceDocument: callbacks.replaceDocument,
       replacePresentation: callbacks.replacePresentation,
       updateDocumentName,

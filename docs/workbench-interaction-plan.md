@@ -410,7 +410,7 @@ to remain the one representation-change boundary. [R01: Direct Ownership]
 - Count, Slice, and Pick item work over the same bound homogeneous sequence
   contract without introducing artifact-specific variants.
 - The Image family owns the producer-neutral `image.raster@1` contract and
-  `image.upload@1`; legacy Sources operator and artifact identities are rejected
+  `image.decode@1`; legacy Sources operator and artifact identities are rejected
   explicitly rather than silently rewritten.
 
 **Completed browser verification (2026-07-15).**

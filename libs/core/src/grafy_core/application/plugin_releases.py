@@ -1,12 +1,13 @@
 """Publish, select, and resolve immutable scoped Plugin releases."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from hashlib import sha256
 from io import BytesIO
 from uuid import UUID
 
 from grafy_core.application.identity import authorize_workspace
+from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
 from grafy_core.domain.plugin_catalog import PluginCatalogRelease
 from grafy_core.domain.errors import (
@@ -44,6 +45,11 @@ from grafy_core.domain.plugin_revocations import (
     PluginReleaseRevocation,
     PluginReleaseRevocationError,
     PluginReleaseRevocationReason,
+)
+from grafy_core.file_contracts import (
+    BUILTIN_FILE_FORMATS,
+    ExtensionClaimCollisionError,
+    build_extension_table,
 )
 from grafy_core.ports.plugin_releases import PluginReleaseUnitOfWorkPort
 from grafy_core.ports.storage import FileStoragePort, SaveFileCommand
@@ -83,6 +89,35 @@ def require_workspace_catalog_authority(catalog: PluginCatalogManifest) -> None:
             f"Workspace Plugin {catalog.slug!r} owned {identity_kind} "
             f"{identity!r} must use one of the family namespaces {prefixes!r}"
         )
+
+
+def _require_no_extension_claim_collision(
+    catalog: PluginCatalogManifest,
+    installed_catalogs: Iterable[PluginCatalogManifest],
+) -> None:
+    """Refuse an installation whose extension claim the deployment already holds.
+
+    A release carries no scope, so a collision means something only against the
+    set a deployment has installed. The builtin file formats are part of every
+    deployment's table, and each installed catalog contributes its owned types
+    and its exact dependencies.
+    """
+
+    claims: list[tuple[ArtifactTypeKey, tuple[str, ...]]] = [
+        (spec.key, spec.extensions) for spec in BUILTIN_FILE_FORMATS
+    ]
+    for installed in (*installed_catalogs, catalog):
+        claims.extend(
+            (
+                ArtifactTypeKey(contract.key.id, contract.key.schema_version),
+                contract.extensions,
+            )
+            for contract in (
+                *installed.artifact_types,
+                *installed.artifact_type_dependencies,
+            )
+        )
+    _ = build_extension_table(claims)
 
 
 def require_canonical_conversion_references(
@@ -309,6 +344,14 @@ class PluginReleaseService:
             )
             if release is None:
                 raise NotFoundError("System Plugin release", f"{slug}@{revision}")
+            _require_no_extension_claim_collision(
+                release.release.catalog,
+                await self._effective_catalogs(
+                    unit_of_work,
+                    namespace,
+                    slug=slug,
+                ),
+            )
             selection = await unit_of_work.plugin_releases.get_selection(
                 namespace,
                 slug,
@@ -502,6 +545,21 @@ class PluginReleaseService:
                 release.revision,
             )
             if installed is None:
+                if select_release:
+                    try:
+                        _require_no_extension_claim_collision(
+                            catalog,
+                            await self._effective_catalogs(
+                                unit_of_work,
+                                namespace,
+                                slug=catalog.slug,
+                            ),
+                        )
+                    except ExtensionClaimCollisionError:
+                        # ADR 0005: the immutable release still publishes; only
+                        # the installation that would collide is refused.
+                        await unit_of_work.commit()
+                        raise
                 installation = PluginInstallation.from_release(
                     release,
                     namespace=namespace,
@@ -537,6 +595,35 @@ class PluginReleaseService:
                         )
             await unit_of_work.commit()
             return installed
+
+    async def _effective_catalogs(
+        self,
+        unit_of_work: PluginReleaseUnitOfWorkPort,
+        namespace: PluginReleaseNamespace,
+        *,
+        slug: str,
+    ) -> list[PluginCatalogManifest]:
+        """Selected catalogs a new installation in this scope sits beside.
+
+        The candidate's own family is excluded because its selection is what
+        the installation replaces.
+        """
+
+        if namespace.scope is PluginReleaseScope.WORKSPACE:
+            assert namespace.workspace_id is not None
+            visible = await unit_of_work.plugin_releases.list_catalog(
+                namespace.workspace_id
+            )
+            installed = [entry.release.release.catalog for entry in visible]
+        else:
+            current = await unit_of_work.plugin_releases.list_current(namespace)
+            installed = [release.release.catalog for release in current]
+            # A System release is visible in every Workspace, so every selected
+            # Workspace release is part of the catalog it enters.
+            installed.extend(
+                await unit_of_work.plugin_releases.list_selected_workspace_catalogs()
+            )
+        return [catalog for catalog in installed if catalog.slug != slug]
 
     @staticmethod
     def _require_no_cross_scope_identity_collisions(

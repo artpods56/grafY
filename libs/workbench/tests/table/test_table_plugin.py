@@ -13,7 +13,6 @@ def test_table_plugin_preserves_catalog_identity_and_freezes() -> None:
     assert TABLES.slug == "table"
     assert {artifact.key for artifact in TABLES.artifact_types} == {TABLE_DATA.key}
     assert {(node.operator_id, node.operator_version) for node in manifest.nodes} == {
-        ("table.file.import", 1),
         ("table.import", 1),
         ("table.fuzzy_match", 1),
         ("table.text.normalize", 1),

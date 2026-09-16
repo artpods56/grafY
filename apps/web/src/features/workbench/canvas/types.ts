@@ -4,7 +4,6 @@ import type {
   ArtifactConversionInput,
   ArtifactConversionPathInput,
   ArtifactTypeKey,
-  ImageUploadItem,
   InputPlugInput,
   NodeSpec,
   PluginReleasePin,
@@ -148,13 +147,10 @@ export interface WorkflowArtifactTypeBindingInput {
   artifact_type: ArtifactTypeKey;
 }
 
-export type WorkflowNodeConfig = Record<string, unknown> & {
-  uploads?: ImageUploadItem[];
-};
+export type WorkflowNodeConfig = Record<string, unknown>;
 
 export type NodeExecutionStatus =
   | "idle"
-  | "uploading"
   | "queued"
   | "running"
   | "cancelling"
@@ -240,11 +236,9 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   historyContext: WorkflowNodeHistoryContext | null;
   /** Ephemeral collaborator selection tint; never persisted. */
   remoteSelectionColor?: string | null;
-  onImagesSelected?: (nodeId: string, files: File[]) => void;
   onConfigChange?: (nodeId: string, name: string, value: unknown) => void;
   onLayoutChange?: (nodeId: string, layout: WorkflowNodeLayout | null) => void;
   onRemoveNode?: (nodeId: string) => void;
-  onRemoveImageUpload?: (nodeId: string, index: number) => void;
   onAddInputPlug?: (nodeId: string, portName: string) => void;
   onRemoveInputPlug?: (nodeId: string, plugId: string) => void;
   onReorderInputPlug?: (
@@ -295,10 +289,6 @@ export interface WorkflowNodeData extends Record<string, unknown> {
 
 export const WORKFLOW_NODE_TYPE = "grafyWorkflowNode";
 export const WORKFLOW_EDGE_TYPE = "grafyWorkflowEdge";
-export const IMAGE_UPLOAD_OPERATOR_ID = "image.upload";
-export const TABLE_FILE_IMPORT_OPERATOR_ID = "table.file.import";
-export const GEOJSON_UPLOAD_OPERATOR_ID = "gis.geojson.upload";
-export const GEOTIFF_UPLOAD_OPERATOR_ID = "gis.geotiff.upload";
 export const GIS_COMPOSE_MAP_OPERATOR_ID = "gis.map.compose";
 export const GIS_VECTOR_LAYER_OPERATOR_ID = "gis.map.vector_layer";
 
@@ -319,13 +309,6 @@ export function compatibilityHandleId(
     encodeURIComponent(endpoint.portName),
     plugId,
   ].join("::");
-}
-
-export function isFileUploadOperator(operatorId: string): boolean {
-  return operatorId === IMAGE_UPLOAD_OPERATOR_ID ||
-    operatorId === TABLE_FILE_IMPORT_OPERATOR_ID ||
-    operatorId === GEOJSON_UPLOAD_OPERATOR_ID ||
-    operatorId === GEOTIFF_UPLOAD_OPERATOR_ID;
 }
 
 export function defaultNodeLayout(spec: NodeSpec): WorkflowNodeLayout | null {
@@ -357,9 +340,6 @@ export function defaultNodeConfig(
     }
   }
 
-  if (isFileUploadOperator(spec.operator_id)) {
-    config.uploads = [];
-  }
   return config;
 }
 
@@ -528,38 +508,6 @@ export function bindArtifactTypeVariable(
   };
 }
 
-export function imageUploads(data: WorkflowNodeData): ImageUploadItem[] {
-  return Array.isArray(data.config.uploads) ? data.config.uploads : [];
-}
-
-export function replaceImageUploads(
-  data: WorkflowNodeData,
-  uploads: readonly ImageUploadItem[],
-): WorkflowNodeData {
-  return {
-    ...data,
-    config: {
-      ...data.config,
-      uploads: [...uploads],
-    },
-  };
-}
-
-export function removeImageUpload(
-  data: WorkflowNodeData,
-  index: number,
-): WorkflowNodeData {
-  return {
-    ...data,
-    config: {
-      ...data.config,
-      uploads: imageUploads(data).filter(
-        (_, itemIndex) => itemIndex !== index,
-      ),
-    },
-  };
-}
-
 export function updateNodeRun(
   data: WorkflowNodeData,
   run: RunNodeResult | null,
@@ -670,10 +618,4 @@ export function portCountLabel(spec: NodeSpec): string {
 
 export function groupLabel(group: string): string {
   return group.charAt(0).toUpperCase() + group.slice(1);
-}
-
-export function imageUploadSizeLabel(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} kB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

@@ -6,22 +6,15 @@ from decimal import Decimal
 from enum import StrEnum
 from hashlib import sha256
 from io import BytesIO, StringIO
-from pathlib import Path
 from typing import Annotated, Literal, Self, cast, final, override
 
 from grafy_core.artifacts import ArtifactRef, NodeConfig, NodeInput, NodeOutput
-from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.file_artifacts import load_file_artifact
 from grafy_core.file_contracts import CSV_FILE, XLSX_FILE
 from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
-from grafy_core.plugins import NodeCachePolicy, NodeStagedUploadInput
+from grafy_core.plugins import NodeCachePolicy
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.storage import FileStoragePort
-from grafy_core.ports.uploads import UploadReaderPort
-from grafy_core.runtime.upload_reader import (
-    UploadBytesUnavailableError,
-    read_confirmed_upload,
-)
 from grafy_core.table_contracts import (
     TABLE_DATA,
     Table,
@@ -31,8 +24,6 @@ from grafy_core.table_contracts import (
 )
 from openpyxl import load_workbook
 from pydantic import (
-    BaseModel,
-    ConfigDict,
     Field,
     StrictBool,
     StrictFloat,
@@ -49,59 +40,6 @@ from grafy_workbench.table.declaration import TABLES
 
 class TableFileImportError(RuntimeError):
     pass
-
-
-class TableFileUploadItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    upload_key: StrictStr = Field(min_length=1)
-    filename: StrictStr = Field(min_length=1, max_length=1_024)
-    byte_size: StrictInt = Field(ge=1)
-
-
-class TableFileImportConfig(NodeConfig):
-    uploads: list[TableFileUploadItem] = Field(
-        min_length=1,
-        max_length=1,
-        description="One staged CSV or XLSX file.",
-    )
-    sheet_name: StrictStr | None = Field(
-        default=None,
-        min_length=1,
-        max_length=255,
-        description="XLSX worksheet name. Leave empty to use the active sheet.",
-    )
-    header_row: StrictInt = Field(
-        default=1,
-        ge=1,
-        description="One-based row containing column titles.",
-    )
-    delimiter: StrictStr | None = Field(
-        default=None,
-        min_length=1,
-        max_length=1,
-        description="CSV delimiter. Leave empty to detect it from the file.",
-    )
-    skip_empty_rows: StrictBool = True
-
-    @field_validator("sheet_name")
-    @classmethod
-    def validate_sheet_name(cls, value: str | None) -> str | None:
-        if value is not None and value != value.strip():
-            raise ValueError("sheet_name must not have surrounding whitespace")
-        return value
-
-
-class TableFileImportInput(NodeInput):
-    pass
-
-
-class TableFileImportOutput(NodeOutput):
-    table: Annotated[
-        Table,
-        OutPort(TABLE_DATA),
-        Field(description="Table imported from the selected worksheet or CSV file."),
-    ]
 
 
 def _table_value(value: object) -> TableValue:
@@ -248,64 +186,6 @@ def _xlsx_matrix(
         ]
     finally:
         workbook.close()
-
-
-@TABLES.node(
-    operator_id="table.file.import",
-    version=1,
-    title="Import table file",
-    factory=lambda context: TableFileImportNode(
-        uploads=context.upload_reader,
-    ),
-    staged_upload_inputs=(NodeStagedUploadInput(config_field="uploads"),),
-    required_capabilities=(PluginRuntimeCapability.STAGED_UPLOADS,),
-    cache_policy=NodeCachePolicy.NEVER,
-)
-@final
-class TableFileImportNode(
-    Node[TableFileImportConfig, TableFileImportInput, TableFileImportOutput]
-):
-    """Import a staged CSV or XLSX file as a table artifact."""
-
-    def __init__(self, *, uploads: UploadReaderPort) -> None:
-        self._uploads = uploads
-
-    @override
-    async def run(
-        self,
-        context: NodeExecutionContext,
-        config: TableFileImportConfig,
-        _inputs: TableFileImportInput,
-        /,
-    ) -> TableFileImportOutput:
-        upload = config.uploads[0]
-        try:
-            content = await read_confirmed_upload(
-                self._uploads,
-                workspace_id=context.workspace_id,
-                upload_key=upload.upload_key,
-                byte_size=upload.byte_size,
-                label="Staged table upload",
-            )
-        except UploadBytesUnavailableError as exc:
-            raise TableFileImportError(str(exc)) from exc
-
-        suffix = Path(upload.filename).suffix.casefold()
-        if suffix == ".csv":
-            matrix = _csv_matrix(content, config.delimiter)
-        elif suffix == ".xlsx":
-            matrix = _xlsx_matrix(content, sheet_name=config.sheet_name)
-        else:
-            raise TableFileImportError(
-                f"Table upload {upload.filename!r} must end in .csv or .xlsx"
-            )
-        return TableFileImportOutput(
-            table=_table_from_matrix(
-                matrix,
-                header_row=config.header_row,
-                skip_empty_rows=config.skip_empty_rows,
-            )
-        )
 
 
 class TableImportConfig(NodeConfig):
@@ -1033,12 +913,7 @@ __all__ = [
     "FuzzyMatchScorer",
     "ImportTableNode",
     "NormalizeTableTextNode",
-    "TableFileImportConfig",
     "TableFileImportError",
-    "TableFileImportInput",
-    "TableFileImportNode",
-    "TableFileImportOutput",
-    "TableFileUploadItem",
     "TableFuzzyMatchConfig",
     "TableFuzzyMatchError",
     "TableFuzzyMatchInput",

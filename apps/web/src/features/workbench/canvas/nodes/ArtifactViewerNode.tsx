@@ -158,7 +158,6 @@ export default function ArtifactViewerNodeCard({
       : `${incomingEdge.source} → ${feedLabel}`
     : null;
   const sourceIsBusy =
-    sourceNode?.data.execution.status === "uploading" ||
     sourceNode?.data.execution.status === "queued" ||
     sourceNode?.data.execution.status === "running" ||
     sourceNode?.data.execution.status === "cancelling";

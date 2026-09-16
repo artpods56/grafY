@@ -15,7 +15,7 @@ from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY
 from grafy_workbench.table.persistence import TableArtifactWriter
 from grafy_persistence.database import create_database
-from grafy_persistence.unit_of_work import SqlAlchemySavedGraphUnitOfWork
+from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 from grafy_api.services.composition import (
     WorkbenchComponents,
@@ -46,7 +46,7 @@ def builtin_client(tmp_path: Path) -> Iterator[TestClient]:
     registry = deployment.registry
     saved_graph_database = create_database(database_url)
     saved_graphs = SavedGraphService(
-        lambda: SqlAlchemySavedGraphUnitOfWork(saved_graph_database.sessions),
+        lambda: SqlAlchemyUnitOfWork(saved_graph_database.sessions),
         registry,
     )
     components = build_workbench_components(

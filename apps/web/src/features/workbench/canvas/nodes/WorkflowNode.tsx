@@ -24,7 +24,6 @@ import {
   RotateCcw,
   TriangleAlert,
   Trash2,
-  Upload,
   X,
 } from "lucide-react";
 
@@ -83,18 +82,12 @@ import {
   type ArtifactQueryRelation,
 } from "../query-artifact-tables";
 import {
-  TABLE_FILE_IMPORT_OPERATOR_ID,
-  GEOJSON_UPLOAD_OPERATOR_ID,
-  GEOTIFF_UPLOAD_OPERATOR_ID,
   GIS_VECTOR_LAYER_OPERATOR_ID,
   WORKFLOW_NODE_TYPE,
   acceptedPortShapes,
   compatibilityHandleId,
   declaredArtifactTypeVariables,
   effectivePortShape,
-  imageUploadSizeLabel,
-  imageUploads,
-  isFileUploadOperator,
   portHasInstancePlugs,
   portMetaForPort,
   resolvedPortArtifactType,
@@ -124,9 +117,6 @@ import { PortTypePopover } from "./type-inspector";
 import { VectorLayerStyleBody } from "./VectorLayerStyleBody";
 
 type WorkflowNode = Node<WorkflowNodeData, typeof WORKFLOW_NODE_TYPE>;
-
-const ACCEPTED_IMAGE_TYPES =
-  ".png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp,image/png,image/jpeg,image/webp,image/tiff,image/bmp";
 
 const s = stylex.create({
   compatibilityIcon: {
@@ -624,82 +614,6 @@ const s = stylex.create({
     minHeight: 0,
     display: "flex",
     flexDirection: "column",
-  },
-  upload: {
-    width: "100%",
-    minHeight: "34px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "7px",
-    borderWidth: 0,
-    borderRadius: tokens.radiusMd,
-    backgroundColor: {
-      default: tokens.colorSurfaceMuted,
-      ":hover": tokens.colorHover,
-    },
-    color: tokens.colorTextEmphasis,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeSm,
-    fontWeight: 600,
-  },
-  hiddenInput: {
-    position: "absolute",
-    width: "1px",
-    height: "1px",
-    overflow: "hidden",
-    clip: "rect(0 0 0 0)",
-    whiteSpace: "nowrap",
-  },
-  fileList: {
-    maxHeight: "132px",
-    display: "grid",
-    gap: "5px",
-    overflowY: "auto",
-  },
-  fileRow: {
-    minWidth: 0,
-    display: "grid",
-    gridTemplateColumns: "18px minmax(0,1fr) auto 22px",
-    alignItems: "center",
-    gap: "6px",
-    minHeight: "28px",
-    paddingInline: "10px 4px",
-    borderRadius: tokens.radiusMd,
-    backgroundColor: tokens.colorSurfaceMuted,
-  },
-  fileIndex: {
-    color: tokens.colorSubtle,
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: tokens.fontSizeXs,
-  },
-  fileName: {
-    overflow: "hidden",
-    color: tokens.colorTextEmphasis,
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 550,
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  fileSize: { color: tokens.colorSubtle, fontSize: tokens.fontSizeXs },
-  fileRemove: {
-    width: "22px",
-    height: "22px",
-    display: "grid",
-    placeItems: "center",
-    borderWidth: 0,
-    borderRadius: "6px",
-    backgroundColor: {
-      default: tokens.colorSurfaceMuted,
-      ":hover": tokens.colorDangerHover,
-    },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorDanger },
-    cursor: "pointer",
-  },
-  moreFiles: {
-    color: tokens.colorSubtle,
-    fontSize: tokens.fontSizeXs,
-    lineHeight: 1.45,
   },
   field: { display: "grid", alignContent: "start", gap: "4px" },
   tupleField: {
@@ -2418,100 +2332,6 @@ function SecretInputField({
   );
 }
 
-function FileUploadBody({ id, data }: { id: string; data: WorkflowNodeData }) {
-  const uploads = imageUploads(data);
-  const inputRef = React.useRef<HTMLInputElement>(null);
-  const isGeoJson = data.spec.operator_id === GEOJSON_UPLOAD_OPERATOR_ID;
-  const isGeoTiff = data.spec.operator_id === GEOTIFF_UPLOAD_OPERATOR_ID;
-  const isTableFile = data.spec.operator_id === TABLE_FILE_IMPORT_OPERATOR_ID;
-  const isSingleFile = isGeoJson || isGeoTiff || isTableFile;
-  const acceptedTypes = isGeoJson
-    ? ".geojson,.json,application/geo+json,application/json"
-    : isGeoTiff
-      ? ".tif,.tiff,image/tiff,application/geotiff"
-      : isTableFile
-        ? ".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        : ACCEPTED_IMAGE_TYPES;
-
-  return (
-    <div {...stylex.props(s.body)}>
-      <input
-        ref={inputRef}
-        type="file"
-        multiple={!isSingleFile}
-        accept={acceptedTypes}
-        {...nodeInteractionProps(stylex.props(s.hiddenInput))}
-        onChange={(event) => {
-          const files = Array.from(event.currentTarget.files ?? []);
-          event.currentTarget.value = "";
-          if (files.length) data.onImagesSelected?.(id, files);
-        }}
-      />
-      {uploads.length ? (
-        <div {...nodeInteractionProps(stylex.props(s.fileList))}>
-          {uploads.map((upload, index) => (
-            <div
-              key={`${upload.upload_key}-${index}`}
-              {...stylex.props(s.fileRow)}
-            >
-              <span {...stylex.props(s.fileIndex)}>
-                {String(index + 1).padStart(2, "0")}
-              </span>
-              <span {...stylex.props(s.fileName)}>{upload.filename}</span>
-              <span {...stylex.props(s.fileSize)}>
-                {imageUploadSizeLabel(upload.byte_size)}
-              </span>
-              <button
-                type="button"
-                aria-label={`Remove ${upload.filename}`}
-                title={`Remove ${upload.filename}`}
-                {...nodeInteractionProps(stylex.props(s.fileRemove))}
-                onClick={() => data.onRemoveImageUpload?.(id, index)}
-              >
-                <Trash2 size={10} />
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p {...stylex.props(s.moreFiles)}>
-          {isGeoJson
-            ? "GeoJSON FeatureCollection · WGS84 longitude/latitude"
-            : isGeoTiff
-              ? "Georeferenced GeoTIFF or Cloud Optimized GeoTIFF"
-              : isTableFile
-                ? "UTF-8 CSV or Excel workbook"
-                : "PNG, JPEG, WebP, TIFF or BMP · ordered as selected"}
-        </p>
-      )}
-      <button
-        type="button"
-        {...nodeInteractionProps(stylex.props(s.upload))}
-        onClick={() => inputRef.current?.click()}
-      >
-        {data.execution.status === "uploading" ? (
-          <LoaderCircle size={12} {...stylex.props(s.spinner)} />
-        ) : (
-          <Upload size={12} />
-        )}
-        {data.execution.status === "uploading"
-          ? "Uploading…"
-          : uploads.length
-            ? isSingleFile
-              ? "Replace file"
-              : "Replace images"
-            : isGeoJson
-              ? "Choose GeoJSON"
-              : isGeoTiff
-                ? "Choose GeoTIFF"
-                : isTableFile
-                  ? "Choose CSV or XLSX"
-                  : "Choose images"}
-      </button>
-    </div>
-  );
-}
-
 const SCHEMA_FIELD_KIND_LABELS: Record<SchemaFieldKind, string> = {
   string: "Text",
   integer: "Integer",
@@ -3399,7 +3219,6 @@ function NodeHeader({
   const executionLabel =
     data.execution.status === "idle" ? null : data.execution.status;
   const executionIsBusy =
-    data.execution.status === "uploading" ||
     data.execution.status === "running" ||
     data.execution.status === "cancelling";
 
@@ -3751,7 +3570,6 @@ function SupportedWorkflowNodeCard({
 }: NodeProps<WorkflowNode>) {
   const fields = schemaFields(data.spec.config_schema);
   const secretInputs = nodeSecretInputs(data.spec);
-  const isFileUpload = isFileUploadOperator(data.spec.operator_id);
   const isSchemaBuilder = data.spec.operator_id === SCHEMA_BUILDER_OPERATOR_ID;
   const isArtifactQuery = data.spec.operator_id === ARTIFACT_QUERY_OPERATOR_ID;
   const isVectorLayer = data.spec.operator_id === GIS_VECTOR_LAYER_OPERATOR_ID;
@@ -3905,20 +3723,6 @@ function SupportedWorkflowNodeCard({
         <SchemaBuilderBody id={id} data={data} />
       ) : isArtifactQuery ? (
         <ArtifactQueryTablesBody id={id} data={data} />
-      ) : isFileUpload ? (
-        <>
-          {hasConfig ? (
-            <GenericBody
-              id={id}
-              data={data}
-              bodyHeight={bodyHeight}
-              layout={layout}
-              onLayoutDraft={setDraftLayout}
-              onLayoutCommit={commitLayout}
-            />
-          ) : null}
-          <FileUploadBody id={id} data={data} />
-        </>
       ) : isVectorLayer ? (
         <>
           <GenericBody
@@ -3943,8 +3747,7 @@ function SupportedWorkflowNodeCard({
       ) : (
         <div {...stylex.props(s.spacer)} aria-hidden />
       )}
-      {!isFileUpload &&
-      !isSchemaBuilder &&
+      {!isSchemaBuilder &&
       !isArtifactQuery &&
       !hasConfig &&
       !hasExecutionError &&

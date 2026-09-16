@@ -3,12 +3,7 @@ import type { Node } from "@xyflow/react";
 import { decodeHandleId } from "../canvas/handles";
 import { inputPlugsForPort } from "../canvas/input-plugs";
 import {
-  GEOTIFF_UPLOAD_OPERATOR_ID,
-  IMAGE_UPLOAD_OPERATOR_ID,
-  TABLE_FILE_IMPORT_OPERATOR_ID,
-  isFileUploadOperator,
   WORKFLOW_NODE_TYPE,
-  imageUploads,
   portHasInstancePlugs,
   serializeRunNode,
   serializeWorkflowEdgeTransport,
@@ -262,36 +257,6 @@ export function executionValidationIssue(
       nodeId: incompatibleEdge.target,
       message:
         `Cannot run connection ${incompatibleEdge.id}: ${incompatibleEdge.data?.compatibilityIssues?.join(" ")}`,
-    };
-  }
-
-  const imageUploadWithoutImages = executionNodes.find(
-    (node) =>
-      isFileUploadOperator(node.data.spec.operator_id) &&
-      !imageUploads(node.data).length,
-  );
-  if (imageUploadWithoutImages) {
-    let message =
-      `Choose a GeoJSON file for ${imageUploadWithoutImages.data.spec.title} before running.`;
-    if (
-      imageUploadWithoutImages.data.spec.operator_id === IMAGE_UPLOAD_OPERATOR_ID
-    ) {
-      message =
-        `Choose images for ${imageUploadWithoutImages.data.spec.title} before running.`;
-    } else if (
-      imageUploadWithoutImages.data.spec.operator_id === GEOTIFF_UPLOAD_OPERATOR_ID
-    ) {
-      message =
-        `Choose a GeoTIFF file for ${imageUploadWithoutImages.data.spec.title} before running.`;
-    } else if (
-      imageUploadWithoutImages.data.spec.operator_id === TABLE_FILE_IMPORT_OPERATOR_ID
-    ) {
-      message =
-        `Choose a CSV or XLSX file for ${imageUploadWithoutImages.data.spec.title} before running.`;
-    }
-    return {
-      nodeId: imageUploadWithoutImages.id,
-      message,
     };
   }
 
