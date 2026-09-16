@@ -87,7 +87,10 @@ fields added after the bytes were persisted digests the same as those bytes; a
 when a defaulted field is added without a role. Declared extension claims and
 non-default confirmation rules stay in the digest. Releases published before
 the empty defaults were dropped keep their own digest form, which
-`plugin_contract_digest_matches` still accepts. The guest image hashes with the
+`plugin_contract_digest_matches` still accepts. That set is closed: exactly two
+digests of one catalog verify, and a later canonicalization change migrates the
+stored form instead of adding a third. A catalog therefore carries the digest of
+the window it was published in. The guest image hashes with the
 SDK wheel vendored in its own lock, so that wheel carries the same
 canonicalization as the host.
 
