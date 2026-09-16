@@ -4,8 +4,6 @@ from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import event, select, update
-
 from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.execution.admission import ExecutionAdmissionLimiter
 from grafy_api.execution.compiler import GraphCompiler
@@ -16,23 +14,26 @@ from grafy_api.execution.manager import RunExecutionManager
 from grafy_api.execution.materializations import MaterializationService
 from grafy_api.execution.node_execution import NodeExecutionService
 from grafy_api.execution.preflight import GraphRunContext, GraphRunPreflight
-from grafy_api.execution.requests import RunRequest, RunNodeRequest
+from grafy_api.execution.requests import RunNodeRequest, RunRequest
 from grafy_api.execution.run_graph import RunGraph
 from grafy_api.plugins.runtime.admission import ReleaseExecutionAdmission
 from grafy_api.plugins.runtime.sandbox import PluginSandboxScopeId
 from grafy_api.v1.models import PluginReleasePinModel
 from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.v1.routes.executions.services import RunResultPresenter
+
 # FastAPI constructs the access parameter annotation through a dependency factory.
-from grafy_api.v1.routes.executions.views import run_graph  # pyright: ignore[reportUnknownVariableType]
+from grafy_api.v1.routes.executions.views import (
+    run_graph,  # pyright: ignore[reportUnknownVariableType]
+)
+from grafy_core.application.plugin_releases import PluginReleaseService
+from grafy_core.domain.execution_history import ActiveGraphExecution
 from grafy_core.domain.identity import (
     ActorContext,
     WorkspaceAccess,
     WorkspaceMembership,
     WorkspaceRole,
 )
-from grafy_core.application.plugin_releases import PluginReleaseService
-from grafy_core.domain.execution_history import ActiveGraphExecution
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.domain.plugin_releases import PlatformPluginActor, PluginReleaseScope
 from grafy_core.domain.plugin_revocations import (
@@ -54,12 +55,15 @@ from grafy_persistence.adapters.repositories import SqlPluginReleaseRepository
 from grafy_persistence.database import Database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_storage import LocalFileObjectStore
+from sqlalchemy import event, select, update
+
+from tests.unit.persistence.test_system_cutover import (
+    NOW,
+    WORKSPACE_ID,
+)
 from tests.unit.persistence.test_system_cutover import (
     cutover_database as _cutover_database_fixture,
-    WORKSPACE_ID,
-    NOW,
 )
-
 from tests.unit.persistence.test_transient_fence_ordering import (
     fence_database as _fence_database_fixture,
 )
@@ -154,7 +158,6 @@ async def test_transient_run_and_system_revocation_obey_the_durable_fence(
         plugin_registry=registry,
         plugin_context=PluginRuntimeContext(
             workspace=tmp_path,
-            uploads_dir=tmp_path / "uploads",
             storage=storage,
             uow=uow,
             bucket="plugins",

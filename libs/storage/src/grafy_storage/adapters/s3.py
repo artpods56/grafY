@@ -1,16 +1,22 @@
 import asyncio
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from tempfile import SpooledTemporaryFile
 from typing import TYPE_CHECKING, cast, final, override
 from urllib.parse import urlsplit
 
+import botocore.session
+from botocore.client import BaseClient, Config
 from obstore.exceptions import AlreadyExistsError
 from obstore.store import S3Store
 
 from grafy_core.domain.errors import ObjectAlreadyExistsError
 from grafy_core.ports.storage import (
+    ChunkReader,
     FileStoragePort,
     FileStreamProtocol,
+    PresignedUploadTarget,
     SaveFileCommand,
     StoredFile,
     StoredObjectInfo,
@@ -18,6 +24,9 @@ from grafy_core.ports.storage import (
 
 if TYPE_CHECKING:
     from obstore.store import ClientConfig, S3Config
+
+_IF_NONE_MATCH = "*"
+_REQUIRED_UPLOAD_HEADERS = {"If-None-Match": _IF_NONE_MATCH}
 
 
 @final
@@ -29,8 +38,20 @@ class S3ObjectStore(FileStoragePort):
         access_key_id: str | None,
         secret_access_key: str | None,
         force_path_style: bool,
+        *,
+        signing_endpoint_url: str | None = None,
     ) -> None:
         self._stores: dict[str, S3Store] = {}
+        self._region = region
+        self._access_key_id = access_key_id
+        self._secret_access_key = secret_access_key
+        self._force_path_style = force_path_style
+        self._endpoint_url = endpoint_url
+        self._signing_endpoint_url = (
+            signing_endpoint_url
+            if signing_endpoint_url not in (None, "")
+            else endpoint_url
+        )
         self._config: S3Config = {
             "region": region,
             "virtual_hosted_style_request": not force_path_style,
@@ -47,6 +68,7 @@ class S3ObjectStore(FileStoragePort):
             if endpoint_url is not None and urlsplit(endpoint_url).scheme == "http"
             else None
         )
+        self._signer_client: BaseClient | None = None
 
     @override
     async def save(self, command: SaveFileCommand) -> StoredFile:
@@ -59,6 +81,20 @@ class S3ObjectStore(FileStoragePort):
     @override
     async def load(self, bucket: str, path: str) -> FileStreamProtocol:
         return await asyncio.to_thread(self._load_sync, bucket, path)
+
+    @override
+    async def open_chunks(self, bucket: str, path: str) -> ChunkReader:
+        try:
+            result = await self._store_for(bucket).get_async(path)
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                f"Stored object does not exist: {bucket}/{path}"
+            ) from exc
+        except Exception as exc:
+            raise RuntimeError(
+                f"Could not open stored object chunks: {bucket}/{path}"
+            ) from exc
+        return _S3ChunkReader(result)
 
     @override
     async def stat(self, bucket: str, path: str) -> StoredObjectInfo | None:
@@ -120,6 +156,69 @@ class S3ObjectStore(FileStoragePort):
     @override
     async def delete(self, bucket: str, path: str) -> None:
         await self._store_for(bucket).delete_async(path)
+
+    async def create_presigned_upload(
+        self,
+        bucket: str,
+        path: str,
+        *,
+        expires_in: timedelta,
+    ) -> PresignedUploadTarget:
+        """Sign a create-only client PUT whose condition is part of the signature."""
+
+        if expires_in <= timedelta(0):
+            raise ValueError("Presigned upload lifetime must be positive")
+        expires_seconds = int(expires_in.total_seconds())
+        if expires_seconds < 1:
+            raise ValueError("Presigned upload lifetime must be at least one second")
+
+        url = await asyncio.to_thread(
+            self._sign_conditional_put,
+            bucket,
+            path,
+            expires_seconds,
+        )
+        return PresignedUploadTarget(
+            url=url,
+            method="PUT",
+            expires_at=datetime.now(UTC) + expires_in,
+            required_headers=dict(_REQUIRED_UPLOAD_HEADERS),
+        )
+
+    def _sign_conditional_put(
+        self,
+        bucket: str,
+        path: str,
+        expires_seconds: int,
+    ) -> str:
+        client = self._botocore_signer()
+        return client.generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": bucket,
+                "Key": path,
+                "IfNoneMatch": _IF_NONE_MATCH,
+            },
+            ExpiresIn=expires_seconds,
+            HttpMethod="PUT",
+        )
+
+    def _botocore_signer(self) -> BaseClient:
+        if self._signer_client is not None:
+            return self._signer_client
+        session = botocore.session.get_session()
+        self._signer_client = session.create_client(
+            "s3",
+            region_name=self._region,
+            endpoint_url=self._signing_endpoint_url,
+            aws_access_key_id=self._access_key_id,
+            aws_secret_access_key=self._secret_access_key,
+            config=Config(
+                signature_version="s3v4",
+                s3={"addressing_style": "path" if self._force_path_style else "auto"},
+            ),
+        )
+        return self._signer_client
 
     def _save_sync(self, command: SaveFileCommand) -> StoredFile:
         digest = sha256()
@@ -198,3 +297,44 @@ class S3ObjectStore(FileStoragePort):
                 client_options=self._client_options,
             )
         return self._stores[bucket]
+
+
+@final
+class _S3ChunkReader:
+    def __init__(self, result: object) -> None:
+        self._result = result
+        stream = getattr(result, "stream")(1024 * 1024)
+        self._chunks: Iterator[object] = iter(stream)
+        self._pending = b""
+        self._closed = False
+
+    def read(self, size: int = -1, /) -> bytes:
+        if self._closed:
+            raise ValueError("I/O operation on closed chunk reader")
+        if size == 0:
+            return b""
+        if size < 0:
+            parts = [self._pending]
+            self._pending = b""
+            for chunk in self._chunks:
+                parts.append(bytes(chunk))
+            return b"".join(parts)
+
+        while len(self._pending) < size:
+            try:
+                chunk = next(self._chunks)
+            except StopIteration:
+                break
+            self._pending += bytes(chunk)
+        out = self._pending[:size]
+        self._pending = self._pending[size:]
+        return out
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._pending = b""
+        closer = getattr(self._result, "close", None)
+        if callable(closer):
+            closer()

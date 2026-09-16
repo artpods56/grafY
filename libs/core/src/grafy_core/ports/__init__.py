@@ -35,9 +35,9 @@ from grafy_core.ports.collaboration import (
     CollaborationRepositoryPort,
     CollaborationUnitOfWorkPort,
 )
-from grafy_core.ports.staged_uploads import (
-    StagedUploadRepositoryPort,
-    StagedUploadUnitOfWorkPort,
+from grafy_core.ports.uploads import (
+    UploadRepositoryPort,
+    UploadUnitOfWorkPort,
 )
 from grafy_core.ports.templates import TemplateRepositoryPort, TemplateUnitOfWorkPort
 
@@ -65,8 +65,8 @@ __all__ = [
     "StoredFile",
     "StoredObjectInfo",
     "UnavailableNodeSecretResolver",
-    "StagedUploadRepositoryPort",
-    "StagedUploadUnitOfWorkPort",
+    "UploadRepositoryPort",
+    "UploadUnitOfWorkPort",
     "TemplateRepositoryPort",
     "TemplateUnitOfWorkPort",
 ]

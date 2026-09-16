@@ -24,6 +24,7 @@ dependencies = [
     "structlog>=25.5.0",
     "truststore>=0.10.4",
     "uvicorn[standard]>=0.38.0",
+    "ijson>=3.5.1",
 ]
 
 [project.scripts]

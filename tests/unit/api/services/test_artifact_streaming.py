@@ -53,6 +53,9 @@ class TrackingStorage:
         self.load_calls += 1
         return self.stream
 
+    async def open_chunks(self, bucket: str, path: str):
+        return await self.load(bucket, path)
+
 
 async def _consume(content: ArtifactContentRead) -> bytes:
     return b"".join([chunk async for chunk in content.chunks()])

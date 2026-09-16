@@ -1,21 +1,21 @@
-import tomllib
 from io import BytesIO
 from pathlib import Path
 
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
-from grafy_workbench.arithmetic import ARITHMETIC
-from grafy_workbench.image import IMAGES
-from grafy_workbench.schema import SCHEMAS
-from grafy_workbench.sequence import SEQUENCES
-from grafy_workbench.text import TEXT
+import tomllib
 from grafy_core.artifact_contracts import TEXT_VALUE
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.storage import SaveFileCommand, StoredFile, StoredObjectInfo
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.persistence import InlineModelOutputWriter
 from grafy_core.runtime.resolvers import InlineModelResolver
 from grafy_plugin_llm import LLM
 from grafy_plugin_llm.artifacts import COMPLETION, CompletionPayload
 from grafy_plugin_llm.openai_compatible import OpenAICompatibleNode
+from grafy_workbench.arithmetic import ARITHMETIC
+from grafy_workbench.image import IMAGES
+from grafy_workbench.schema import SCHEMAS
+from grafy_workbench.sequence import SEQUENCES
+from grafy_workbench.text import TEXT
 
 
 class EmptyStorage:
@@ -34,6 +34,9 @@ class EmptyStorage:
 
     async def load(self, bucket: str, path: str) -> BytesIO:
         raise AssertionError(f"Unexpected load from {bucket}/{path}")
+
+    async def open_chunks(self, bucket: str, path: str) -> BytesIO:
+        return await self.load(bucket, path)
 
     async def stat(self, bucket: str, path: str) -> StoredObjectInfo | None:
         raise AssertionError(f"Unexpected stat for {bucket}/{path}")
@@ -60,7 +63,6 @@ def test_llm_plugin_declares_complete_runtime_contributions(tmp_path: Path) -> N
     registry.install(LLM)
     context = PluginRuntimeContext(
         workspace=tmp_path,
-        uploads_dir=tmp_path / "uploads",
         storage=EmptyStorage(),
         uow=InMemoryUnitOfWork(),
         bucket="artifacts",

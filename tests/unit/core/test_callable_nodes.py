@@ -1,13 +1,11 @@
 import asyncio
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Callable, Generator, Mapping
 from pathlib import Path
 from threading import get_ident
-from typing import Annotated, AsyncIterator, Callable, Generator, cast
+from typing import Annotated, cast
 from uuid import UUID
 
 import pytest
-from pydantic import BaseModel, Field, ValidationError
-
 from grafy_core.artifact_contracts import INTEGER_VALUE, TEXT_VALUE
 from grafy_core.artifacts import (
     ArtifactTypeKey,
@@ -28,7 +26,7 @@ from grafy_core.plugins import (
     PluginRuntimeContext,
 )
 from grafy_storage import LocalFileObjectStore
-
+from pydantic import BaseModel, Field, ValidationError
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000941")
 CUSTOM_VALUE = ArtifactTypeSpec(
@@ -60,7 +58,6 @@ class RecordingProgressReporter:
 def runtime_context(tmp_path: Path) -> PluginRuntimeContext:
     return PluginRuntimeContext(
         workspace=tmp_path,
-        uploads_dir=tmp_path / "uploads",
         storage=LocalFileObjectStore(tmp_path / "objects"),
         uow=InMemoryUnitOfWork(),
         bucket="test-artifacts",

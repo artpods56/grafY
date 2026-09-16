@@ -7,8 +7,17 @@ from typing import Annotated, Literal, cast, override
 from uuid import UUID, uuid4
 
 import pytest
-from pydantic import SecretStr
-
+from grafy_api.execution.coordinator import GraphExecutionCoordinator
+from grafy_api.execution.edge_values import EdgeValueResolver
+from grafy_api.execution.models import (
+    CompiledGraph,
+    CompiledNode,
+    GraphExecutionResult,
+    PreparedGraphExecution,
+)
+from grafy_api.execution.node_execution import NodeExecutionService
+from grafy_api.execution.requests import RunNodeRequest
+from grafy_api.plugins.runtime.artifacts import ArtifactBundlePluginInvoker
 from grafy_core.artifact_contracts import TEXT_VALUE
 from grafy_core.artifacts import (
     ArtifactObject,
@@ -17,10 +26,13 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.invocation_cache import InvocationCacheEntry
 from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.domain.plugin_installations import (
+    InstalledPluginRelease,
+    PluginInstallation,
+)
 from grafy_core.domain.plugin_releases import (
     PluginCapabilityManifest,
     PluginCatalogManifest,
@@ -34,10 +46,6 @@ from grafy_core.domain.plugin_releases import (
     plugin_contract_digest,
     plugin_profile_digest,
     plugin_protocol_digest,
-)
-from grafy_core.domain.plugin_installations import (
-    InstalledPluginRelease,
-    PluginInstallation,
 )
 from grafy_core.nodes import (
     InPort,
@@ -55,6 +63,7 @@ from grafy_core.plugins import (
 )
 from grafy_core.ports.node_secrets import UnavailableNodeSecretResolver
 from grafy_core.runtime.execution import NodeRunError, NodeRuntime
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.invocation import NodeInvocation
 from grafy_core.runtime.invocation_cache import InvocationCachePort
 from grafy_core.runtime.materialization import InputMaterializer
@@ -68,8 +77,8 @@ from grafy_core.runtime.plugin_invocation import (
     PluginInvocationError,
     PluginInvocationRequest,
     PluginInvocationResult,
-    PluginReleaseNodeConfig,
     PluginReleaseNode,
+    PluginReleaseNodeConfig,
 )
 from grafy_core.runtime.plugin_loader import PluginGuestLoaderManifest
 from grafy_core.runtime.plugin_protocol import (
@@ -77,21 +86,9 @@ from grafy_core.runtime.plugin_protocol import (
     PluginInvocationLimits,
 )
 from grafy_core.runtime.resolvers import ResolverRegistry
-from grafy_workbench.text.nodes import TextValueOutputWriter, TextValueResolver
 from grafy_storage import LocalFileObjectStore
-
-from grafy_api.execution.requests import RunNodeRequest
-from grafy_api.execution.coordinator import GraphExecutionCoordinator
-from grafy_api.execution.edge_values import EdgeValueResolver
-from grafy_api.execution.models import (
-    CompiledGraph,
-    CompiledNode,
-    GraphExecutionResult,
-    PreparedGraphExecution,
-)
-from grafy_api.execution.node_execution import NodeExecutionService
-from grafy_api.plugins.runtime.artifacts import ArtifactBundlePluginInvoker
-
+from grafy_workbench.text.nodes import TextValueOutputWriter, TextValueResolver
+from pydantic import SecretStr
 
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000972")
 INPUT_ID = UUID("00000000-0000-4000-8000-000000000973")
@@ -428,7 +425,6 @@ async def test_same_exact_system_release_has_output_progress_cache_and_provenanc
     registry.install(PARITY_PLUGIN)
     host_context = PluginRuntimeContext(
         workspace=tmp_path / "host",
-        uploads_dir=tmp_path / "host" / "uploads",
         storage=LocalFileObjectStore(tmp_path / "host" / "objects"),
         uow=host_uow,
         bucket="artifacts",
@@ -546,7 +542,6 @@ async def test_same_exact_system_release_has_failure_and_cancellation_parity(
         contract.operator_version,
         PluginRuntimeContext(
             workspace=tmp_path / "host",
-            uploads_dir=tmp_path / "host" / "uploads",
             storage=LocalFileObjectStore(tmp_path / "host" / "objects"),
             uow=host_uow,
             bucket="artifacts",
@@ -689,7 +684,6 @@ async def test_same_exact_system_release_has_graph_result_failure_code_parity(
         contract.operator_version,
         PluginRuntimeContext(
             workspace=tmp_path / "host",
-            uploads_dir=tmp_path / "host" / "uploads",
             storage=LocalFileObjectStore(tmp_path / "host" / "objects"),
             uow=host_uow,
             bucket="artifacts",

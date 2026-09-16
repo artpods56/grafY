@@ -1,33 +1,30 @@
 import asyncio
-import json
 import importlib
+import json
 import os
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from alembic import command
-from alembic.config import Config
 import pytest
 import sqlalchemy as sa
-from sqlalchemy import Column, Integer, MetaData, Table, create_engine, inspect, text
-from sqlalchemy.engine import Connection, Row
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.schema import CreateIndex, CreateTable
-from sqlalchemy.sql.schema import SchemaItem
-from sqlalchemy.dialects import postgresql
-from sqlalchemy.dialects import sqlite
-
+from alembic import command
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from grafy_api.settings import get_settings
 from grafy_persistence.schema import (
     plugin_installations,
     plugin_release_selections,
     plugin_releases,
-    staged_uploads,
 )
-
+from sqlalchemy import Column, Integer, MetaData, Table, create_engine, inspect, text
+from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.engine import Connection, Row
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.schema import CreateIndex, CreateTable
+from sqlalchemy.sql.schema import SchemaItem
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
@@ -82,7 +79,9 @@ def test_fresh_postgresql_database_upgrades_to_head(
         _, revision, workspace_count = asyncio.run(
             _postgresql_migration_state(database_url)
         )
-        assert revision == "0028_library_provenance"
+        heads = ScriptDirectory.from_config(config).get_heads()
+        assert len(heads) == 1
+        assert revision == heads[0]
         assert workspace_count == 0
         command.check(config)
 
@@ -116,11 +115,25 @@ def test_tenant_rebuild_uses_postgresql_temporary_constraint_names() -> None:
     table.primary_key.name = temporary_name
     ddl = str(CreateTable(table).compile(dialect=postgresql.dialect()))
     assert "CONSTRAINT tmp_0008u_pk_saved_graphs PRIMARY KEY" in ddl
+    sqlite_connection = type("Connection", (), {"dialect": sqlite.dialect()})()
     sqlite_upload_ddl = str(
-        CreateTable(staged_uploads).compile(dialect=sqlite.dialect())
+        CreateTable(
+            Table(
+                "staged_uploads",
+                MetaData(),
+                *migration._staged_upload_constraints(sqlite_connection),
+            )
+        ).compile(dialect=sqlite.dialect())
     )
+    postgresql_connection = type("Connection", (), {"dialect": postgresql.dialect()})()
     postgres_upload_ddl = str(
-        CreateTable(staged_uploads).compile(dialect=postgresql.dialect())
+        CreateTable(
+            Table(
+                "staged_uploads",
+                MetaData(),
+                *migration._staged_upload_constraints(postgresql_connection),
+            )
+        ).compile(dialect=postgresql.dialect())
     )
     assert "instr(upload_key, char(92)) = 0" in sqlite_upload_ddl
     assert "position(chr(92) in upload_key) = 0" in postgres_upload_ddl
@@ -160,7 +173,9 @@ def test_all_0008_upgrade_and_downgrade_tables_compile_for_postgresql() -> None:
         def exec_driver_sql(self, statement: str) -> None:
             del statement
 
-    setattr(migration, "op", CaptureOperations())
+    # ModuleType carries no typed `op`, so direct assignment fails the type
+    # checker; B010 is suppressed because there is no safe attribute access here.
+    setattr(migration, "op", CaptureOperations())  # noqa: B010
     connection = PostgresqlConnection()
     migration._create_tenant_tables(connection)
     migration._create_staged_upload_table(connection)
@@ -378,13 +393,16 @@ def test_alembic_migration_upgrades_downgrades_and_has_no_schema_drift(
             "security_audit_events",
             "saved_graphs",
             "saved_graph_revisions",
-            "staged_uploads",
+            "uploads",
             "user_graph_states",
             "templates",
         }
-        assert connection.execute(
-            text("SELECT COUNT(*) FROM workspaces WHERE slug = 'local'")
-        ).scalar_one() == 0
+        assert (
+            connection.execute(
+                text("SELECT COUNT(*) FROM workspaces WHERE slug = 'local'")
+            ).scalar_one()
+            == 0
+        )
     command.check(config)
 
     command.downgrade(config, "base")
@@ -426,13 +444,16 @@ def test_alembic_migration_upgrades_downgrades_and_has_no_schema_drift(
             "security_audit_events",
             "saved_graphs",
             "saved_graph_revisions",
-            "staged_uploads",
+            "uploads",
             "user_graph_states",
             "templates",
         }
-        assert connection.execute(
-            text("SELECT COUNT(*) FROM workspaces WHERE slug = 'local'")
-        ).scalar_one() == 0
+        assert (
+            connection.execute(
+                text("SELECT COUNT(*) FROM workspaces WHERE slug = 'local'")
+            ).scalar_one()
+            == 0
+        )
 
     get_settings.cache_clear()
 
@@ -556,9 +577,7 @@ def test_remove_local_workspace_renames_owned_tenant_and_preserves_data(
     with create_engine(f"sqlite:///{database_path}").connect() as connection:
         workspace = (
             connection.execute(
-                text(
-                    "SELECT slug, name, kind FROM workspaces WHERE id = :local_id"
-                ),
+                text("SELECT slug, name, kind FROM workspaces WHERE id = :local_id"),
                 {"local_id": local_id},
             )
             .mappings()
@@ -569,23 +588,27 @@ def test_remove_local_workspace_renames_owned_tenant_and_preserves_data(
             "name": "Migrated workspace",
             "kind": "shared",
         }
-        assert connection.execute(
-            text("SELECT workspace_id FROM graph_folders WHERE id = :folder_id"),
-            {"folder_id": folder_id},
-        ).scalar_one() == local_id
-        assert "oidc_bootstrap_owner_mappings" not in inspect(
-            connection
-        ).get_table_names()
+        assert (
+            connection.execute(
+                text("SELECT workspace_id FROM graph_folders WHERE id = :folder_id"),
+                {"folder_id": folder_id},
+            ).scalar_one()
+            == local_id
+        )
+        assert (
+            "oidc_bootstrap_owner_mappings" not in inspect(connection).get_table_names()
+        )
 
     command.downgrade(config, "0021_plugin_release_revocations")
     with create_engine(f"sqlite:///{database_path}").connect() as connection:
-        assert connection.execute(
-            text("SELECT slug FROM workspaces WHERE id = :local_id"),
-            {"local_id": local_id},
-        ).scalar_one() == "local"
-        assert "oidc_bootstrap_owner_mappings" in inspect(
-            connection
-        ).get_table_names()
+        assert (
+            connection.execute(
+                text("SELECT slug FROM workspaces WHERE id = :local_id"),
+                {"local_id": local_id},
+            ).scalar_one()
+            == "local"
+        )
+        assert "oidc_bootstrap_owner_mappings" in inspect(connection).get_table_names()
     get_settings.cache_clear()
 
 
@@ -623,13 +646,14 @@ def test_remove_local_workspace_refuses_unowned_tenant_data(
     ):
         command.upgrade(config, "head")
     with create_engine(f"sqlite:///{database_path}").connect() as connection:
-        assert connection.execute(
-            text("SELECT slug FROM workspaces WHERE id = :local_id"),
-            {"local_id": local_id},
-        ).scalar_one() == "local"
-        assert "oidc_bootstrap_owner_mappings" in inspect(
-            connection
-        ).get_table_names()
+        assert (
+            connection.execute(
+                text("SELECT slug FROM workspaces WHERE id = :local_id"),
+                {"local_id": local_id},
+            ).scalar_one()
+            == "local"
+        )
+        assert "oidc_bootstrap_owner_mappings" in inspect(connection).get_table_names()
     get_settings.cache_clear()
 
 
@@ -2039,10 +2063,7 @@ def _assert_0020_downgrade_refused_leaves_schema_unchanged(
         "uq_plugin_release_selections_workspace_slug",
     }
     table_sql = connection.execute(
-        text(
-            "SELECT sql FROM sqlite_master "
-            "WHERE name = 'plugin_release_selections'"
-        )
+        text("SELECT sql FROM sqlite_master WHERE name = 'plugin_release_selections'")
     ).scalar_one()
     assert (
         "ck_plugin_release_selections_plugin_release_selection_lifecycle" in table_sql
@@ -2140,9 +2161,7 @@ def test_0020_downgrade_refuses_mutated_selection_lifecycle(
     monkeypatch: pytest.MonkeyPatch,
     lifecycle: str,
 ) -> None:
-    database_path = (
-        tmp_path / f"{lifecycle}-downgrade" / "migrated.sqlite3"
-    )
+    database_path = tmp_path / f"{lifecycle}-downgrade" / "migrated.sqlite3"
     monkeypatch.setenv("GRAFY_DATABASE_URL", f"sqlite+aiosqlite:///{database_path}")
     get_settings.cache_clear()
     config = Config(REPOSITORY_ROOT / "alembic.ini")
@@ -2299,19 +2318,23 @@ def test_0021_adds_empty_exact_revocations_without_release_schema_drift(
     config = Config(REPOSITORY_ROOT / "alembic.ini")
     command.upgrade(config, "0020_plugin_release_selections")
     with create_engine(f"sqlite:///{database_path}").connect() as connection:
+        primary_keys = set(
+            inspect(connection).get_pk_constraint("plugin_releases")[
+                "constrained_columns"
+            ]
+            or ()
+        )
         release_columns = [
             (
                 column["name"],
                 str(column["type"]),
                 column["nullable"],
                 column["default"],
-                column["primary_key"],
+                column["name"] in primary_keys,
             )
             for column in inspect(connection).get_columns("plugin_releases")
         ]
-        assert "plugin_release_revocations" not in inspect(
-            connection
-        ).get_table_names()
+        assert "plugin_release_revocations" not in inspect(connection).get_table_names()
 
     command.upgrade(config, "0021_plugin_release_revocations")
     with create_engine(f"sqlite:///{database_path}").connect() as connection:
@@ -2322,7 +2345,7 @@ def test_0021_adds_empty_exact_revocations_without_release_schema_drift(
                 str(column["type"]),
                 column["nullable"],
                 column["default"],
-                column["primary_key"],
+                column["name"] in primary_keys,
             )
             for column in inspector.get_columns("plugin_releases")
         ] == release_columns
@@ -2346,31 +2369,30 @@ def test_0021_adds_empty_exact_revocations_without_release_schema_drift(
         ] == ["release_id"]
         release_foreign_key = next(
             foreign_key
-            for foreign_key in inspector.get_foreign_keys(
-                "plugin_release_revocations"
-            )
+            for foreign_key in inspector.get_foreign_keys("plugin_release_revocations")
             if foreign_key["constrained_columns"] == ["release_id"]
         )
         assert release_foreign_key["referred_table"] == "plugin_releases"
-        assert release_foreign_key["options"]["ondelete"] == "RESTRICT"
-        assert connection.execute(
-            text("SELECT COUNT(*) FROM plugin_release_revocations")
-        ).scalar_one() == 0
+        assert (release_foreign_key.get("options") or {}).get("ondelete") == "RESTRICT"
+        assert (
+            connection.execute(
+                text("SELECT COUNT(*) FROM plugin_release_revocations")
+            ).scalar_one()
+            == 0
+        )
     command.upgrade(config, "head")
     command.check(config)
 
     command.downgrade(config, "0020_plugin_release_selections")
     with create_engine(f"sqlite:///{database_path}").connect() as connection:
-        assert "plugin_release_revocations" not in inspect(
-            connection
-        ).get_table_names()
+        assert "plugin_release_revocations" not in inspect(connection).get_table_names()
         assert [
             (
                 column["name"],
                 str(column["type"]),
                 column["nullable"],
                 column["default"],
-                column["primary_key"],
+                column["name"] in primary_keys,
             )
             for column in inspect(connection).get_columns("plugin_releases")
         ] == release_columns
@@ -2433,9 +2455,12 @@ def test_0021_downgrade_refuses_to_discard_revocation_provenance(
     with pytest.raises(RuntimeError, match="revocations would be lost"):
         command.downgrade(config, "0020_plugin_release_selections")
     with create_engine(f"sqlite:///{database_path}").begin() as connection:
-        assert connection.execute(
-            text("SELECT COUNT(*) FROM plugin_release_revocations")
-        ).scalar_one() == 1
+        assert (
+            connection.execute(
+                text("SELECT COUNT(*) FROM plugin_release_revocations")
+            ).scalar_one()
+            == 1
+        )
         connection.execute(text("DELETE FROM plugin_release_revocations"))
     command.downgrade(config, "0020_plugin_release_selections")
     get_settings.cache_clear()
@@ -2549,15 +2574,18 @@ def test_0026_wipes_graph_plugin_data_and_drops_installation_distribution(
         }
         assert "distribution" not in columns
         table_sql = connection.execute(
-            text(
-                "SELECT sql FROM sqlite_master WHERE name = 'plugin_installations'"
-            )
+            text("SELECT sql FROM sqlite_master WHERE name = 'plugin_installations'")
         ).scalar_one()
         assert "bundled" not in table_sql
         assert "isolated-only" in table_sql
-        assert connection.execute(text("SELECT COUNT(*) FROM saved_graphs")).scalar_one() == 0
         assert (
-            connection.execute(text("SELECT COUNT(*) FROM plugin_releases")).scalar_one()
+            connection.execute(text("SELECT COUNT(*) FROM saved_graphs")).scalar_one()
+            == 0
+        )
+        assert (
+            connection.execute(
+                text("SELECT COUNT(*) FROM plugin_releases")
+            ).scalar_one()
             == 0
         )
         assert (
@@ -2568,10 +2596,13 @@ def test_0026_wipes_graph_plugin_data_and_drops_installation_distribution(
         )
         assert connection.execute(text("SELECT COUNT(*) FROM users")).scalar_one() == 1
         assert (
-            connection.execute(text("SELECT COUNT(*) FROM workspaces")).scalar_one() == 1
+            connection.execute(text("SELECT COUNT(*) FROM workspaces")).scalar_one()
+            == 1
         )
         assert (
-            connection.execute(text("SELECT COUNT(*) FROM artifact_objects")).scalar_one()
+            connection.execute(
+                text("SELECT COUNT(*) FROM artifact_objects")
+            ).scalar_one()
             == 1
         )
 
@@ -2584,10 +2615,15 @@ def test_0026_wipes_graph_plugin_data_and_drops_installation_distribution(
         assert "distribution" in columns
         assert connection.execute(text("SELECT COUNT(*) FROM users")).scalar_one() == 1
         assert (
-            connection.execute(text("SELECT COUNT(*) FROM artifact_objects")).scalar_one()
+            connection.execute(
+                text("SELECT COUNT(*) FROM artifact_objects")
+            ).scalar_one()
             == 1
         )
-        assert connection.execute(text("SELECT COUNT(*) FROM saved_graphs")).scalar_one() == 0
+        assert (
+            connection.execute(text("SELECT COUNT(*) FROM saved_graphs")).scalar_one()
+            == 0
+        )
     get_settings.cache_clear()
 
 

@@ -1,10 +1,14 @@
 from pathlib import Path
 from typing import cast
 
-from pydantic import BaseModel, ConfigDict, StrictInt
-
+from grafy_api.services.composition import build_workbench_components
+from grafy_api.uploads import StorageUploadReader
 from grafy_core.artifacts import ArtifactTypeKey, ArtifactTypeSpec, JsonObject
+from grafy_core.plugins import Plugin, PluginRuntimeContext
+from grafy_core.ports.uploads import UploadReaderPort
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_core.runtime.resolvers import InlineModelResolver
+from grafy_storage import LocalFileObjectStore
 from grafy_workbench.arithmetic.nodes import (
     INTEGER_VALUE,
     IntegerValueOutputWriter,
@@ -15,11 +19,8 @@ from grafy_workbench.text.nodes import (
     TextValueOutputWriter,
     TextValueResolver,
 )
-from grafy_core.plugins import Plugin, PluginRuntimeContext
-from grafy_core.runtime.resolvers import InlineModelResolver
-from grafy_storage import LocalFileObjectStore
+from pydantic import BaseModel, ConfigDict, StrictInt
 
-from grafy_api.services.composition import build_workbench_components
 from tests.support.system_plugins import (
     TEST_SYSTEM_PLUGINS,
     build_explicit_plugin_registry,
@@ -45,7 +46,6 @@ def test_builtin_scalar_runtime_contributions_come_from_plugin_registry(
     registry = build_explicit_plugin_registry()
     context = PluginRuntimeContext(
         workspace=tmp_path,
-        uploads_dir=tmp_path / "uploads",
         storage=LocalFileObjectStore(tmp_path / "objects"),
         uow=InMemoryUnitOfWork(),
         bucket="artifacts",
@@ -64,16 +64,17 @@ def test_builtin_scalar_runtime_contributions_come_from_plugin_registry(
     assert isinstance(writers[TEXT_VALUE.key], TextValueOutputWriter)
 
 
-def test_plugin_factories_receive_an_existing_upload_directory(tmp_path: Path) -> None:
-    observed_upload_directories: list[Path] = []
+def test_plugin_factories_receive_a_storage_backed_upload_reader(
+    tmp_path: Path,
+) -> None:
+    observed_upload_readers: list[UploadReaderPort] = []
     plugin = Plugin(slug="test.composition", title="Composition test")
     plugin.register_artifact_type(COMPOSITION_ARTIFACT)
 
     def resolver_factory(
         context: PluginRuntimeContext,
     ) -> InlineModelResolver[CompositionPayload]:
-        assert context.uploads_dir.is_dir()
-        observed_upload_directories.append(context.uploads_dir)
+        observed_upload_readers.append(context.upload_reader)
         return InlineModelResolver(
             source=COMPOSITION_ARTIFACT.key,
             target=CompositionPayload,
@@ -90,6 +91,5 @@ def test_plugin_factories_receive_an_existing_upload_directory(tmp_path: Path) -
         workspace=tmp_path / "workbench",
     )
 
-    assert observed_upload_directories == [
-        (tmp_path / "workbench" / "uploads").resolve()
-    ]
+    assert len(observed_upload_readers) == 1
+    assert isinstance(observed_upload_readers[0], StorageUploadReader)

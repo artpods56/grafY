@@ -1,5 +1,5 @@
 import { collaborativeHeadFromLegacy } from "./graph-head";
-import { API_BASE, request } from "./client";
+import { API_BASE, ApiError, putUploadBytes, request } from "./client";
 import type {
   AppliedNodeSecret,
   ApplyNodeSecretRequest,
@@ -30,6 +30,7 @@ import type {
   TablePage,
   TableSchema,
   UploadResponse,
+  UploadTarget,
   UpdateSavedGraphRequest,
 } from "./contract";
 
@@ -450,12 +451,52 @@ export async function uploadFile(
   file: File,
   signal?: AbortSignal,
 ): Promise<UploadResponse> {
-  const body = new FormData();
-  body.append("file", file, file.name);
-  return request<UploadResponse>("POST", `/v1/workspaces/${encodeURIComponent(workspaceId)}/uploads`, {
-    body,
+  const target = await request<UploadTarget>(
+    "POST",
+    `/v1/workspaces/${encodeURIComponent(workspaceId)}/uploads`,
+    {
+      body: {
+        filename: file.name,
+        byte_size: file.size,
+        content_type: file.type || null,
+      },
+      signal,
+    },
+  );
+  const resolved = resolveUploadTargetUrl(target);
+  await putUploadBytes(
+    {
+      kind: target.kind,
+      url: resolved,
+      headers: target.headers ?? {},
+    },
+    file,
+    file.type,
     signal,
-  });
+  );
+  return request<UploadResponse>(
+    "POST",
+    `/v1/workspaces/${encodeURIComponent(workspaceId)}/uploads/${encodeURIComponent(target.upload_id)}/complete`,
+    { signal },
+  );
+}
+
+/**
+ * Resolve an upload target URL without rewriting signed storage URLs.
+ *
+ * API targets may be relative `/v1/...` paths. Storage targets must already be
+ * absolute http(s) URLs; unexpected shapes are rejected rather than rewritten.
+ */
+export function resolveUploadTargetUrl(target: UploadTarget): string {
+  if (target.kind === "api") {
+    if (target.url.startsWith("/v1/")) return `${API_BASE}${target.url}`;
+    if (target.url.startsWith("/api/")) return target.url;
+    throw new ApiError(500, "The API upload target URL was not a recognized path.");
+  }
+  if (!/^https?:\/\//i.test(target.url)) {
+    throw new ApiError(500, "The storage upload target URL must be absolute.");
+  }
+  return target.url;
 }
 
 export function runGraph(workspaceId: string, requestBody: RunRequest) {

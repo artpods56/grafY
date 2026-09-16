@@ -6,16 +6,50 @@ from typing import Never, cast
 from uuid import UUID, uuid4
 
 import pytest
-from pydantic import ValidationError
-
+from grafy_api.artifact_availability import ArtifactAvailability
+from grafy_api.execution.compiler import GraphCompiler
+from grafy_api.execution.coordinator import GraphExecutionCoordinator
+from grafy_api.execution.edge_values import EdgeValueResolver
+from grafy_api.execution.errors import GraphExecutionError
+from grafy_api.execution.materializations import MaterializationService
+from grafy_api.execution.models import PreparedGraphExecution
+from grafy_api.execution.node_execution import NodeExecutionService
+from grafy_api.execution.preflight import GraphRunPreflight
+from grafy_api.execution.requests import (
+    FieldProjectionRequest,
+    RunEdgeRequest,
+    RunNodeRequest,
+    RunRequest,
+)
+from grafy_api.execution.run_graph import RunGraph
+from grafy_api.plugins.compatibility.bindings import (
+    SystemHostBindingError,
+    validate_system_host_bindings,
+)
+from grafy_api.plugins.runtime.admission import (
+    PluginNonRunnableReason,
+    ReleaseExecutionAdmission,
+    ReleaseExecutionRejection,
+    ReleaseExecutionRoute,
+)
+from grafy_api.v1.models import PluginReleasePinModel
+from grafy_core.application.modules import ModuleLibraryService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.artifacts import ArtifactFieldProjection, ArtifactRef, ArtifactTypeKey
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY
 from grafy_core.domain.modules import (
     MODULE_INPUT_OPERATOR_ID,
     MODULE_OUTPUT_OPERATOR_ID,
     GraphModuleDefinition,
+)
+from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.domain.plugin_host_bindings import (
+    LoadedSystemPlugin,
+    SystemHostPluginBinding,
+)
+from grafy_core.domain.plugin_installations import (
+    InstalledPluginRelease,
+    PluginInstallation,
 )
 from grafy_core.domain.plugin_releases import (
     PluginArtifactTypeContract,
@@ -37,27 +71,21 @@ from grafy_core.domain.plugin_releases import (
     plugin_profile_digest,
     plugin_protocol_digest,
 )
-from grafy_core.domain.plugin_installations import (
-    InstalledPluginRelease,
-    PluginInstallation,
-)
-from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.domain.plugin_selection import (
-    PluginFamilyLifecycle,
-    PluginReleaseSelection,
-)
 from grafy_core.domain.plugin_revocations import (
     PluginReleaseRevocation,
     PluginReleaseRevocationReason,
 )
+from grafy_core.domain.plugin_selection import (
+    PluginFamilyLifecycle,
+    PluginReleaseSelection,
+)
 from grafy_core.nodes import NodeExecutionContext, PortShape
-from grafy_workbench.text import TEXT as TEXT_PLUGIN
-from grafy_workbench.text.nodes import TextValueOutputWriter, TextValueResolver
 from grafy_core.plugins import PluginRuntimeContext
-from grafy_core.ports.node_secrets import UnavailableNodeSecretResolver
 from grafy_core.ports.modules import GraphModuleExecutionResult
-from grafy_core.runtime.invocation import InvocationMode
+from grafy_core.ports.node_secrets import UnavailableNodeSecretResolver
 from grafy_core.runtime.execution import NodeRuntime
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_core.runtime.invocation import InvocationMode
 from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import ArtifactWriterRegistry, OutputPersister
 from grafy_core.runtime.plugin_invocation import (
@@ -67,41 +95,11 @@ from grafy_core.runtime.plugin_invocation import (
 )
 from grafy_core.runtime.resolvers import ResolverRegistry
 from grafy_storage import LocalFileObjectStore
+from grafy_workbench.text import TEXT as TEXT_PLUGIN
+from grafy_workbench.text.nodes import TextValueOutputWriter, TextValueResolver
+from pydantic import ValidationError
 
-from grafy_api.plugins.runtime.admission import (
-    PluginNonRunnableReason,
-    ReleaseExecutionAdmission,
-    ReleaseExecutionRejection,
-    ReleaseExecutionRoute,
-)
-from grafy_api.plugins.compatibility.bindings import (
-    SystemHostBindingError,
-    validate_system_host_bindings,
-)
-from grafy_core.domain.plugin_host_bindings import (
-    LoadedSystemPlugin,
-    SystemHostPluginBinding,
-)
 from tests.support.system_plugins import build_explicit_plugin_registry
-from grafy_api.execution.requests import (
-    FieldProjectionRequest,
-    RunEdgeRequest,
-    RunNodeRequest,
-    RunRequest,
-)
-from grafy_api.execution.coordinator import GraphExecutionCoordinator
-from grafy_core.application.modules import ModuleLibraryService
-from grafy_api.v1.models import PluginReleasePinModel
-from grafy_api.execution.preflight import GraphRunPreflight
-from grafy_api.execution.run_graph import RunGraph
-from grafy_api.execution.materializations import MaterializationService
-from grafy_api.artifact_availability import ArtifactAvailability
-from grafy_api.execution.compiler import GraphCompiler
-from grafy_api.execution.errors import GraphExecutionError
-from grafy_api.execution.edge_values import EdgeValueResolver
-from grafy_api.execution.models import PreparedGraphExecution
-from grafy_api.execution.node_execution import NodeExecutionService
-
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000871")
 OTHER_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000872")
@@ -389,10 +387,8 @@ def _compiler(
     registry = build_explicit_plugin_registry()
     unit_of_work = InMemoryUnitOfWork()
     workbench = Path("/tmp/grafy-plugin-pin-tests")
-    uploads_dir = workbench / "uploads"
     plugin_context = PluginRuntimeContext(
         workspace=workbench,
-        uploads_dir=uploads_dir,
         storage=LocalFileObjectStore(workbench / "objects"),
         uow=unit_of_work,
         bucket="test-artifacts",
@@ -429,11 +425,11 @@ def _echo_run_request(
     pin_revision: int,
 ) -> RunRequest:
     """One pinned echo node fed by a pinned upstream output edge."""
-    from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
     from grafy_api.execution.requests import (
         PinnedOutputRequest,
         RunEdgeRequest,
     )
+    from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 
     return RunRequest(
         nodes=[
@@ -1246,11 +1242,11 @@ async def test_pinned_plugin_participates_in_ordinary_map_semantics() -> None:
         system_release,
         selection=selection,
     )
-    from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
     from grafy_api.execution.requests import (
         PinnedOutputRequest,
         RunEdgeRequest,
     )
+    from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 
     source = RunNodeRequest(
         kind="builtin",
@@ -1384,13 +1380,13 @@ async def test_release_node_executes_with_caching_disabled_and_refs_untouched() 
     """An EXACT-style release path still runs fail-closed without invocation
     caching, and host-minted output refs pass through the persister."""
 
-    from grafy_core.artifacts import ArtifactTypeSpec
-    from grafy_core.plugins import NodeCachePolicy, NodeRegistration
-    from grafy_core.runtime.invocation_cache import InvocationCachePort
     from grafy_api.execution.models import (
         CompiledGraph,
         CompiledNode,
     )
+    from grafy_core.artifacts import ArtifactTypeSpec
+    from grafy_core.plugins import NodeCachePolicy, NodeRegistration
+    from grafy_core.runtime.invocation_cache import InvocationCachePort
 
     value_key = ArtifactTypeKey(TEXT.id, TEXT.schema_version)
     outgoing = ArtifactRef.from_key(artifact_id=uuid4(), key=value_key)
@@ -1485,7 +1481,6 @@ async def test_host_node_output_feeds_pinned_workspace_plugin_in_same_graph(
     registry = build_explicit_plugin_registry()
     plugin_context = PluginRuntimeContext(
         workspace=tmp_path,
-        uploads_dir=tmp_path / "uploads",
         storage=storage,
         uow=unit_of_work,
         bucket="test-artifacts",

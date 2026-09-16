@@ -1,7 +1,6 @@
 from hashlib import sha256
 from io import BytesIO
 from mimetypes import guess_type
-from pathlib import Path
 from typing import Annotated, final, override
 
 from grafy_core.artifact_contracts import (
@@ -30,13 +29,16 @@ from grafy_core.file_contracts import (
 from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
 from grafy_core.plugins import NodeStagedUploadInput
 from grafy_core.ports.artifacts import UnitOfWorkPort
-from grafy_core.ports.staged_uploads import StagedUploadUnitOfWorkPort
 from grafy_core.ports.storage import FileMetadata, FileStoragePort, SaveFileCommand
+from grafy_core.ports.uploads import UploadReaderPort
 from grafy_core.runtime.persistence import (
     ArtifactOutputWriter,
     ArtifactWriteContext,
 )
-from grafy_core.staged_upload_paths import resolve_persisted_staged_upload_path
+from grafy_core.runtime.upload_reader import (
+    UploadBytesUnavailableError,
+    read_confirmed_upload,
+)
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 
 from grafy_workbench.image.declaration import IMAGES
@@ -195,8 +197,7 @@ class ImageUploadOutput(NodeOutput):
     version=1,
     title="Upload images",
     factory=lambda context: UploadImagesNode(
-        uploads_dir=context.uploads_dir,
-        unit_of_work=context.uow,
+        uploads=context.upload_reader,
     ),
     staged_upload_inputs=(NodeStagedUploadInput(config_field="uploads"),),
     required_capabilities=(PluginRuntimeCapability.STAGED_UPLOADS,),
@@ -205,13 +206,8 @@ class ImageUploadOutput(NodeOutput):
 class UploadImagesNode(Node[ImageUploadConfig, ImageUploadInput, ImageUploadOutput]):
     """Imports staged image uploads as an ordered raster image sequence."""
 
-    def __init__(
-        self,
-        uploads_dir: Path,
-        unit_of_work: StagedUploadUnitOfWorkPort,
-    ) -> None:
-        self._uploads_dir = uploads_dir.expanduser().resolve()
-        self._unit_of_work = unit_of_work
+    def __init__(self, uploads: UploadReaderPort) -> None:
+        self._uploads = uploads
 
     @override
     async def run(
@@ -224,27 +220,15 @@ class UploadImagesNode(Node[ImageUploadConfig, ImageUploadInput, ImageUploadOutp
         images: list[RasterImageContent] = []
         for upload in config.uploads:
             try:
-                path = await resolve_persisted_staged_upload_path(
-                    self._uploads_dir,
-                    self._unit_of_work,
+                content = await read_confirmed_upload(
+                    self._uploads,
                     workspace_id=context.workspace_id,
                     upload_key=upload.upload_key,
+                    byte_size=upload.byte_size,
+                    label="Staged image upload",
                 )
-            except (ValueError, FileNotFoundError) as exc:
+            except UploadBytesUnavailableError as exc:
                 raise ImageUploadError(str(exc)) from exc
-            try:
-                content = path.read_bytes()
-            except OSError as exc:
-                raise ImageUploadError(
-                    f"Failed to read staged image upload {upload.upload_key!r} "
-                    f"from {path}"
-                ) from exc
-
-            if len(content) != upload.byte_size:
-                raise ImageUploadError(
-                    f"Staged image upload {upload.upload_key!r} changed size: "
-                    f"expected {upload.byte_size}, got {len(content)}"
-                )
             images.append(
                 RasterImageContent(
                     content=content,

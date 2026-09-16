@@ -39,7 +39,7 @@ from grafy_core.domain.saved_graphs import (
     UserGraphState,
 )
 from grafy_core.domain.security_audit import SecurityAuditEvent
-from grafy_core.domain.staged_uploads import StagedUpload
+from grafy_core.domain.uploads import Upload
 from grafy_core.domain.templates import Template
 
 from grafy_persistence import schema
@@ -164,7 +164,7 @@ def start_mappers() -> None:
         SecurityAuditEvent,
         schema.security_audit_events,
     )
-    mapper_registry.map_imperatively(StagedUpload, schema.staged_uploads)
+    mapper_registry.map_imperatively(Upload, schema.uploads)
     mapper_registry.map_imperatively(
         CollaborativeGraphHead,
         schema.collaborative_graph_heads,

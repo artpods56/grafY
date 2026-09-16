@@ -1,32 +1,41 @@
 """SQLAlchemy repositories, grouped by the feature they persist."""
 
-from .identity import (
-    SqlIdentityRepository as SqlIdentityRepository,
-    SqlSecurityAuditRepository as SqlSecurityAuditRepository,
-)
-
-from .graphs import (
-    SqlSavedGraphRepository as SqlSavedGraphRepository,
-    SqlNodeSecretRepository as SqlNodeSecretRepository,
-    SqlCollaborationRepository as SqlCollaborationRepository,
-)
-
 from .artifacts import (
     SqlArtifactRepository as SqlArtifactRepository,
-    SqlStagedUploadRepository as SqlStagedUploadRepository,
 )
-
+from .artifacts import (
+    SqlUploadRepository as SqlUploadRepository,
+)
 from .execution import (
-    SqlInvocationCacheRepository as SqlInvocationCacheRepository,
-    SqlMaterializedNodeOutputsRepository as SqlMaterializedNodeOutputsRepository,
     SqlGraphExecutionHistoryRepository as SqlGraphExecutionHistoryRepository,
 )
-
-from .plugins import (
-    SqlPluginReleaseRepository as SqlPluginReleaseRepository,
+from .execution import (
+    SqlInvocationCacheRepository as SqlInvocationCacheRepository,
 )
-
+from .execution import (
+    SqlMaterializedNodeOutputsRepository as SqlMaterializedNodeOutputsRepository,
+)
+from .graphs import (
+    SqlCollaborationRepository as SqlCollaborationRepository,
+)
+from .graphs import (
+    SqlNodeSecretRepository as SqlNodeSecretRepository,
+)
+from .graphs import (
+    SqlSavedGraphRepository as SqlSavedGraphRepository,
+)
+from .identity import (
+    SqlIdentityRepository as SqlIdentityRepository,
+)
+from .identity import (
+    SqlSecurityAuditRepository as SqlSecurityAuditRepository,
+)
 from .library import (
     SqlModuleLibraryRepository as SqlModuleLibraryRepository,
+)
+from .library import (
     SqlTemplateRepository as SqlTemplateRepository,
+)
+from .plugins import (
+    SqlPluginReleaseRepository as SqlPluginReleaseRepository,
 )
