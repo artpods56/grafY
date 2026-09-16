@@ -54,6 +54,18 @@ contract:
 build:
     npm --prefix apps/web run build
 
+# Rebuild the SDK wheel vendored by guest plugin projects and refresh its pins.
+rebuild-plugin-sdk:
+    uv build libs/core --wheel --out-dir /tmp/grafy-core-wheel --clear
+    cp /tmp/grafy-core-wheel/grafy_core-0.1.0-py3-none-any.whl plugins/gis/wheels/grafy_core-0.1.0-py3-none-any.whl
+    cp /tmp/grafy-core-wheel/grafy_core-0.1.0-py3-none-any.whl plugins/llm/wheels/grafy_core-0.1.0-py3-none-any.whl
+    cp /tmp/grafy-core-wheel/grafy_core-0.1.0-py3-none-any.whl plugins/ocr/wheels/grafy_core-0.1.0-py3-none-any.whl
+    cp /tmp/grafy-core-wheel/grafy_core-0.1.0-py3-none-any.whl plugins/sql/wheels/grafy_core-0.1.0-py3-none-any.whl
+    cp /tmp/grafy-core-wheel/grafy_core-0.1.0-py3-none-any.whl plugins/notarius/wheels/grafy_core-0.1.0-py3-none-any.whl
+    cp /tmp/grafy-core-wheel/grafy_core-0.1.0-py3-none-any.whl examples/plugin-notes/wheels/grafy_core-0.1.0-py3-none-any.whl
+    uv lock --directory examples/plugin-notes
+    uv run python -c 'from hashlib import sha256; from pathlib import Path; p=Path("/tmp/grafy-core-wheel/grafy_core-0.1.0-py3-none-any.whl"); t=Path("tests/unit/architecture/test_import_boundaries.py"); s=t.read_text(); old=s; digest=sha256(p.read_bytes()).hexdigest(); import re; s=re.sub(r"(sha256\(core_wheel\.read_bytes\(\)\)\.hexdigest\(\) == \(\n\s*\")[0-9a-f]+", rf"\1{digest}", s, count=1); assert s != old; t.write_text(s)'
+
 # Run the complete retained contract.
 check: test lint typecheck contract build
 

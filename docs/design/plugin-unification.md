@@ -80,8 +80,8 @@ source digest → inspected contract + contract digest → OCI image + image dig
 The contract digest covers declared contract bytes only. Every defaulted
 contract field is classified `omit` or `keep` in
 `PLUGIN_CONTRACT_DIGEST_FIELD_ROLES` in
-`grafy_core.domain.plugin_releases`. An `omit` field leaves the digest while it
-holds the empty value it was declared with, so a catalog parsed with those
+`grafy_core.domain.plugin_releases`. An `omit` field is excluded from the digest
+while it holds the empty value it was declared with, so a catalog parsed with those
 fields added after the bytes were persisted digests the same as those bytes; a
 `keep` field stays serialized at its default. The classification test fails
 when a defaulted field is added without a role. Declared extension claims and
@@ -90,6 +90,11 @@ the empty defaults were dropped keep their own digest form, which
 `plugin_contract_digest_matches` still accepts. The guest image hashes with the
 SDK wheel vendored in its own lock, so that wheel carries the same
 canonicalization as the host.
+
+After changing contract canonicalization, run `just rebuild-plugin-sdk`. The
+recipe builds `libs/core`, copies the wheel to all six vendored wheelhouses,
+refreshes the `plugin-notes` lock hash, and refreshes the architecture-test
+pin. Verify the wheel contents against the source before committing the result.
 
 6. Overlays the current release in `GET /v1/workspaces/{id}/nodes`, including
    Plugin-owned artifact types and function-node contracts.
