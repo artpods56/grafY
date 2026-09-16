@@ -236,4 +236,25 @@ describe("artifact payload loading policy", () => {
     );
     await act(async () => root.unmount());
   });
+
+  it("keeps the ingest notice on a blob artifact", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const artifact: ArtifactSummary = {
+      artifact_id: "blob-artifact",
+      artifact_type: "file.blob",
+      schema_version: 1,
+      content_type: "application/octet-stream",
+      byte_size: 128,
+      content_url: "./artifacts/blob-artifact/content",
+    };
+
+    const { container, root } = await renderPreview(outputFor([artifact]));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(container.textContent).toContain(
+      "Format not recognized, stored as a blob.",
+    );
+    await act(async () => root.unmount());
+  });
 });

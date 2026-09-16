@@ -87,6 +87,7 @@ class PluginRuntimeContext:
     bucket: str
     storage_backend: str = "local"
     uploads: UploadReaderPort | None = None
+    artifact_types: tuple[ArtifactTypeSpec, ...] = ()
     node_secrets: NodeSecretResolverPort = field(
         default_factory=UnavailableNodeSecretResolver
     )

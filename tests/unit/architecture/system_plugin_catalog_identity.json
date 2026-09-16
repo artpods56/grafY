@@ -1894,6 +1894,232 @@
       ],
       "title": "SQL"
     },
+    "file": {
+      "artifact_dependencies": [
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.png@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "PNG image"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.jpeg@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "JPEG image"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.tiff@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "TIFF image"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.webp@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "WebP image"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.bmp@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "BMP image"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.xlsx@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "Excel workbook"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.geojson@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "GeoJSON document"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.json@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "JSON document"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.csv@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "CSV file"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.txt@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "Text file"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.blob@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "Binary blob"
+        }
+      ],
+      "artifact_types": [],
+      "capabilities": [],
+      "conversions": [],
+      "nodes": [
+        {
+          "cache_policy": "never",
+          "config": {
+            "fields": [],
+            "required": [],
+            "sha256": "bf56f6f531cb61c6fb8165d68e387ab3757f8d52f1fa07ee91f2b48f83cffea5"
+          },
+          "description": "Confirm blob bytes against one claimed file.* format and claim them.",
+          "input_schema": {
+            "fields": [
+              "file"
+            ],
+            "required": [
+              "file"
+            ],
+            "sha256": "40dda6def7fb395ceafde612c03de42275f76ad50654282763583527931578e5"
+          },
+          "inputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "file.blob@1",
+              "description": "Blob file artifact whose bytes should be interpreted.",
+              "instance_plugs": false,
+              "name": "file",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "key": "file.interpret@1",
+          "output_schema": {
+            "fields": [
+              "file"
+            ],
+            "required": [
+              "file"
+            ],
+            "sha256": "fb33733684cfc7cfb97c74daee763b6764167a3287b6847f1b1bc99bbfab673d"
+          },
+          "outputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "$format",
+              "description": "New file artifact of the chosen format.",
+              "instance_plugs": false,
+              "name": "file",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "required_capabilities": [],
+          "secret_inputs": [],
+          "staged_upload_inputs": [],
+          "title": "Interpret file"
+        }
+      ],
+      "title": "File"
+    },
     "image": {
       "artifact_dependencies": [
         {

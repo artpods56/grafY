@@ -267,6 +267,12 @@ export interface WorkflowNodeData extends Record<string, unknown> {
     name: string,
   ) => Promise<boolean>;
   onResetArtifactTypeBinding?: (nodeId: string, variable: string) => void;
+  onBindArtifactTypeBinding?: (
+    nodeId: string,
+    variable: string,
+    artifactType: ArtifactTypeKey,
+  ) => void;
+  bindableArtifactTypes?: readonly ArtifactTypeKey[];
   onHandlesMeasured?: (
     nodeId: string,
     artifactTypeBindings: WorkflowArtifactTypeBindings,

@@ -24,7 +24,8 @@ This is a single-context repo:
 │   ├── 0004-unify-system-and-workspace-plugin-releases.md
 │   ├── 0005-separate-plugin-releases-from-installations.md
 │   ├── 0006-authenticate-plugin-publication-with-scoped-tokens.md
-│   └── 0007-builtin-families-are-application-code.md
+│   ├── 0007-builtin-families-are-application-code.md
+│   └── 0008-interpret-node-binds-its-format.md
 ├── apps/
 └── libs/
 ```

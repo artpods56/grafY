@@ -226,6 +226,11 @@ class NodeExecutionContext:
     invocation_path: tuple[int, ...] = ()
     module_path: tuple[str, ...] = ()
     node_path: tuple[str, ...] = ()
+    artifact_type_bindings: Mapping[str, ArtifactTypeKey] = dataclass_field(
+        default_factory=dict[str, ArtifactTypeKey],
+        repr=False,
+        compare=False,
+    )
     progress_reporter: NodeProgressReporter | None = dataclass_field(
         default=None,
         repr=False,
@@ -617,6 +622,20 @@ class Node[
         """
         ...
 
+    @classmethod
+    def validate_artifact_type_bindings(
+        cls,
+        bindings: Mapping[str, ArtifactTypeKey],
+    ) -> None:
+        """Refuse a binding that variable resolution cannot judge on its own.
+
+        Resolution checks that every declared variable is bound, that each name
+        is known, and that each key is an artifact type. A variable with a
+        semantic constraint, such as one that must name a claimed file format,
+        overrides this hook so an impossible binding never reaches a saved
+        graph. Raise :class:`NodeContractResolutionError` with the reason.
+        """
+
 
 def resolve_node_contracts(
     node: Node[Any, Any, Any],
@@ -680,6 +699,7 @@ def resolve_node_contracts(
                 "reference a positive schema version"
             )
 
+    node.validate_artifact_type_bindings(bindings)
     input_ports = {
         name: replace(port, accepts=bindings[port.accepts.name])
         if isinstance(port.accepts, ArtifactTypeVariable)

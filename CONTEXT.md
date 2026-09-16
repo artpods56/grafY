@@ -125,8 +125,12 @@ file fails in the visible decode or import node.
 The format type for bytes whose extension the deployment does not recognize:
 `file.blob@1`. It is the fallback member of the same family and carries the same
 reading, that nothing has interpreted these bytes yet. A blob has no domain
-meaning and projects no fields, and it stays the answer only until the
-deployment recognizes the format.
+meaning and projects no fields. Recognizing the format later does not rewrite a
+stored blob: a Plugin that claims an extension types the next upload, and rows
+already stored stay `file.blob@1`. A blob reaches a typed node only through the
+visible `file.interpret@1` node, which confirms the bytes with the chosen
+format's confirmation rule, writes a new artifact of that type, and leaves the
+blob row unchanged. A blob never gains a format in place.
 _Avoid_: opaque file, raw file
 
 ### Artifact bundle contract

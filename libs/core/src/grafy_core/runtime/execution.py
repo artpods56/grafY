@@ -84,6 +84,10 @@ class NodeRuntime:
             node,
             effective_bindings,
         )
+        context = replace(
+            context,
+            artifact_type_bindings=effective_bindings,
+        )
         raw_config: JsonObject = {} if config is None else config
         validated_config = node.config_contract.model.model_validate(raw_config)
 

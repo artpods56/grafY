@@ -1156,6 +1156,27 @@ function WorkbenchBody({
     [applyAuthoringCommands, edges],
   );
 
+  const bindNodeArtifactTypeBinding = React.useCallback(
+    (nodeId: string, variable: string, artifactType: ArtifactTypeKey) => {
+      const hasIncidentEdges = edges.some(
+        (edge) => edge.source === nodeId || edge.target === nodeId,
+      );
+      if (hasIncidentEdges) return;
+
+      applyAuthoringCommands([
+        {
+          kind: "bind_artifact_type",
+          node_id: nodeId,
+          variable,
+          artifact_type: artifactType,
+        },
+      ]);
+      setPendingConnectionRoute(null);
+      setRunError(null);
+    },
+    [applyAuthoringCommands, edges],
+  );
+
   const openGraphInNewTab = React.useCallback(
     (graphId: string) => {
       // Internal route: workbenchGraphPath() returns a same-origin path from encoded params.
@@ -1267,6 +1288,8 @@ function WorkbenchBody({
           onSchemaBuilderFieldsChange: undefined,
           onArtifactQueryRelationsChange: undefined,
           onResetArtifactTypeBinding: undefined,
+          onBindArtifactTypeBinding: undefined,
+          bindableArtifactTypes: undefined,
           onHandlesMeasured: undefined,
           onOpenModuleSource: undefined,
           moduleUpgradeRelease: null,
@@ -1287,6 +1310,10 @@ function WorkbenchBody({
         onSchemaBuilderFieldsChange: updateSchemaBuilderFields,
         onArtifactQueryRelationsChange: updateArtifactQueryRelations,
         onResetArtifactTypeBinding: resetNodeArtifactTypeBinding,
+        onBindArtifactTypeBinding: bindNodeArtifactTypeBinding,
+        bindableArtifactTypes: registry?.artifact_types.map(
+          (artifactType) => artifactType.key,
+        ),
         onHandlesMeasured: handleNodeHandlesMeasured,
         onOpenModuleSource: data.spec.module_graph_id
           ? openGraphInNewTab
@@ -1302,6 +1329,7 @@ function WorkbenchBody({
     },
     [
       addNodeInputPlug,
+      bindNodeArtifactTypeBinding,
       handleNodeHandlesMeasured,
       openGraphInNewTab,
       openNodeExecutionHistory,
