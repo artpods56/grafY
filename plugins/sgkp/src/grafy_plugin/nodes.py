@@ -13,8 +13,9 @@ from pydantic import (
 )
 
 from grafy_core.artifacts import ArtifactRef, NodeConfig, NodeInput, NodeOutput
+from grafy_core.domain.errors import NotFoundError
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.file_artifacts import load_file_artifact
+from grafy_core.file_artifacts import FileArtifactError, load_file_artifact
 from grafy_core.file_contracts import JSON_FILE
 from grafy_core.nodes import (
     InPort,
@@ -107,14 +108,18 @@ class ImportSgkpJsonNode(Node[NodeConfig, ImportJsonInput, ImportJsonOutput]):
         inputs: ImportJsonInput,
         /,
     ) -> ImportJsonOutput:
-        file = await load_file_artifact(
-            storage=self._storage,
-            uow=self._uow,
-            workspace_id=context.workspace_id,
-            ref=inputs.file,
-        )
+        try:
+            file = await load_file_artifact(
+                storage=self._storage,
+                uow=self._uow,
+                workspace_id=context.workspace_id,
+                ref=inputs.file,
+            )
+        except (FileArtifactError, NotFoundError) as exc:
+            raise UserFacingNodeError(str(exc)) from exc
         await context.progress("Parsing SGKP JSON")
-        source_name = file.original_filename or str(inputs.file.artifact_id)
+        # A missing recorded name hits the parser's blank-source rule.
+        source_name = file.original_filename or ""
         try:
             dataset = parse_sgkp_records(file.content, source_name=source_name)
         except ValueError as exc:

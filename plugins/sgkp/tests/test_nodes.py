@@ -3,9 +3,9 @@ from io import BytesIO
 from uuid import UUID
 
 import pytest
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
-from grafy_core.artifacts import ArtifactObject, ArtifactRef, NodeConfig
+from grafy_core.artifacts import ArtifactObject, ArtifactRef, JsonObject, NodeConfig
 from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.file_contracts import JSON_FILE
 from grafy_core.nodes import NodeExecutionContext, UserFacingNodeError
@@ -138,8 +138,11 @@ async def seed_file_artifact(
     uow: InMemoryUnitOfWork,
     *,
     content: bytes,
-    original_filename: str,
+    original_filename: str | None = None,
 ) -> ArtifactRef:
+    metadata: JsonObject = {}
+    if original_filename is not None:
+        metadata["original_filename"] = original_filename
     artifact = ArtifactObject(
         workspace_id=TEST_WORKSPACE_ID,
         artifact_type=JSON_FILE.key.id,
@@ -148,12 +151,16 @@ async def seed_file_artifact(
         bucket=ARTIFACT_BUCKET,
         object_key=ARTIFACT_OBJECT_KEY,
         byte_size=len(content),
-        metadata={"original_filename": original_filename},
+        metadata=metadata,
     )
     async with uow as entered:
         await entered.artifacts.add(artifact)
         await entered.commit()
     return artifact.ref()
+
+
+def import_context() -> NodeExecutionContext:
+    return NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="import")
 
 
 @pytest.mark.asyncio
@@ -167,7 +174,7 @@ async def test_import_reads_sgkp_json_file_artifact() -> None:
         original_filename="sgkp_sample.json",
     )
     output = await ImportSgkpJsonNode(storage=storage, uow=uow).run(
-        NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="import"),
+        import_context(),
         NodeConfig(),
         ImportJsonInput(file=ref),
     )
@@ -175,6 +182,54 @@ async def test_import_reads_sgkp_json_file_artifact() -> None:
     assert output.dataset.source_name == "sgkp_sample.json"
     assert len(output.dataset.records) == 4
     assert output.dataset.records[0]["ID"] == "01-00001"
+
+
+@pytest.mark.asyncio
+async def test_import_rejects_a_missing_original_filename() -> None:
+    content = SAMPLE_SGKP_JSON
+    storage = RecordingFileStorage(content)
+    uow = InMemoryUnitOfWork()
+    ref = await seed_file_artifact(uow, content=content)
+    node = ImportSgkpJsonNode(storage=storage, uow=uow)
+    with pytest.raises(UserFacingNodeError, match="must not be blank"):
+        _ = await node.run(
+            import_context(),
+            NodeConfig(),
+            ImportJsonInput(file=ref),
+        )
+
+
+@pytest.mark.asyncio
+async def test_import_wraps_a_missing_artifact_as_a_user_error() -> None:
+    storage = RecordingFileStorage(SAMPLE_SGKP_JSON)
+    uow = InMemoryUnitOfWork()
+    ref = ArtifactRef.from_key(
+        artifact_id=UUID("00000000-0000-0000-0000-000000000999"),
+        key=JSON_FILE.key,
+    )
+    node = ImportSgkpJsonNode(storage=storage, uow=uow)
+    with pytest.raises(UserFacingNodeError, match="not found"):
+        _ = await node.run(
+            import_context(),
+            NodeConfig(),
+            ImportJsonInput(file=ref),
+        )
+
+
+def test_import_config_rejects_a_leftover_staged_upload() -> None:
+    config_model = ImportSgkpJsonNode.config_contract.model
+    with pytest.raises(ValidationError):
+        _ = config_model.model_validate(
+            {
+                "uploads": [
+                    {
+                        "upload_key": "staged-sgkp.json",
+                        "filename": "sgkp_sample.json",
+                        "byte_size": len(SAMPLE_SGKP_JSON),
+                    }
+                ]
+            }
+        )
 
 
 @pytest.mark.asyncio
