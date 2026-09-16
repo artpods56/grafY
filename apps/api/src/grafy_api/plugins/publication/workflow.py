@@ -22,6 +22,7 @@ from grafy_core.domain.plugin_releases import (
     PluginReleaseHeadConflictError,
 )
 from grafy_core.domain.plugin_selection import PluginReleaseSelection
+from grafy_core.file_contracts import ExtensionClaimCollisionError
 
 from grafy_api.plugins.runtime.admission import (
     ReleaseExecutionAdmission,
@@ -248,6 +249,8 @@ class PluginPublicationWorkflow:
             )
         except PluginReleaseHeadConflictError as exc:
             raise PluginPublicationConflictError(str(exc)) from exc
+        except ExtensionClaimCollisionError as exc:
+            raise PluginPublishingError(str(exc)) from exc
 
 
 class SystemPluginPublicationWorkflow:
@@ -379,12 +382,15 @@ class SystemPluginPublicationWorkflow:
                 "exact deployment host binding for its prospective selection "
                 "generation before promotion"
             )
-        return await self._releases.promote_system(
-            slug=slug,
-            revision=revision,
-            platform_actor=platform_actor,
-            expected_generation=candidate.expected_generation,
-        )
+        try:
+            return await self._releases.promote_system(
+                slug=slug,
+                revision=revision,
+                platform_actor=platform_actor,
+                expected_generation=candidate.expected_generation,
+            )
+        except ExtensionClaimCollisionError as exc:
+            raise PluginPublishingError(str(exc)) from exc
 
 
 __all__ = [
