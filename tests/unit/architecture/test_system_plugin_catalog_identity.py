@@ -161,9 +161,6 @@ def _node_identity(node: PluginNodeContract) -> dict[str, object]:
             }
             for secret in node.secret_inputs
         ],
-        "staged_upload_inputs": [
-            staged.config_field for staged in node.staged_upload_inputs
-        ],
         "title": node.title,
     }
 

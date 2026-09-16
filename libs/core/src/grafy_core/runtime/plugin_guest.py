@@ -4,7 +4,6 @@ import asyncio
 import json
 import sys
 from collections.abc import Mapping
-from datetime import UTC, datetime
 from hashlib import sha256
 from importlib import import_module
 from io import BytesIO
@@ -31,7 +30,6 @@ from grafy_core.domain.plugin_releases import (
     plugin_contract_digest_matches,
     plugin_protocol_digest,
 )
-from grafy_core.domain.uploads import Upload, UploadStatus
 from grafy_core.nodes import (
     InputContract,
     Node,
@@ -92,7 +90,6 @@ from grafy_core.runtime.table_bundle import (
     load_table_bundle_with_manifest,
     write_table_bundle,
 )
-from grafy_core.runtime.upload_reader import BundleUploadReader
 from grafy_core.table_contracts import Table
 
 
@@ -889,18 +886,6 @@ def _build_node(
             raise PluginGuestError(
                 "Invocation capability profile does not match the installed Plugin"
             )
-        expected_staged_upload_fields = tuple(
-            declaration.config_field
-            for declaration in registration.staged_upload_inputs
-        )
-        requested_staged_upload_fields = tuple(
-            dict.fromkeys(binding.config_field for binding in request.staged_uploads)
-        )
-        if requested_staged_upload_fields != expected_staged_upload_fields:
-            raise PluginGuestError(
-                "Invocation staged-upload declarations do not match the installed "
-                "Plugin"
-            )
         if registration.factory is not None:
             return registration.factory(context)
         return registration.node_class()
@@ -908,48 +893,6 @@ def _build_node(
         f"Installed Plugin does not declare {request.operator_id}@"
         f"{request.operator_version}"
     )
-
-
-async def _stage_uploaded_files(
-    root: Path,
-    request: PluginInvocationEnvelope,
-    unit_of_work: InMemoryUnitOfWork,
-) -> None:
-    total_bytes = 0
-    for binding in request.staged_uploads:
-        path = _bundle_path(root, binding.relative_path)
-        if path.is_symlink() or not path.is_file():
-            raise PluginGuestError(
-                f"Staged upload {binding.upload_key!r} is not a regular file"
-            )
-        identity = file_identity(path)
-        if (
-            identity.byte_size != binding.byte_count
-            or identity.sha256 != binding.content_sha256
-        ):
-            raise PluginGuestError(
-                f"Staged upload {binding.upload_key!r} failed identity validation"
-            )
-        total_bytes += identity.byte_size
-        if total_bytes > request.limits.max_input_bytes:
-            raise PluginGuestError("Staged uploads exceed the input byte limit")
-    async with unit_of_work as entered:
-        for binding in request.staged_uploads:
-            await entered.uploads.add(
-                Upload(
-                    workspace_id=request.workspace_id,
-                    upload_id=UUID(binding.upload_key),
-                    original_filename=binding.original_filename,
-                    bucket="guest-bundle",
-                    object_key=binding.relative_path,
-                    expected_size=binding.byte_count,
-                    status=UploadStatus.READY,
-                    actual_size=binding.byte_count,
-                    sha256=binding.content_sha256,
-                    completed_at=datetime.now(UTC),
-                )
-            )
-        await entered.commit()
 
 
 def _artifact_type_bindings(
@@ -1394,7 +1337,6 @@ async def execute_plugin_invocation(
             system_loader_manifest_path=system_loader_manifest_path,
         )
         unit_of_work = InMemoryUnitOfWork()
-        await _stage_uploaded_files(root, request, unit_of_work)
         bundle_storage = _GuestBundleStorage(root, request)
         plugin_context = PluginRuntimeContext(
             workspace=root,
@@ -1402,7 +1344,6 @@ async def execute_plugin_invocation(
             uow=cast(PluginUnitOfWorkPort, unit_of_work),
             bucket="guest-outputs",
             storage_backend="guest-bundle",
-            uploads=BundleUploadReader(root / "uploads", unit_of_work),
             node_secrets=_GuestNodeSecretResolver(root, request),
         )
         node = _build_node(plugin, request, plugin_context)

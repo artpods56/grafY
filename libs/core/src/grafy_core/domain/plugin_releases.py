@@ -515,6 +515,8 @@ class PluginSecretInputContract(PluginReleaseValue):
 
 
 class PluginStagedUploadInputContract(PluginReleaseValue):
+    """One config field whose upload keys a release asked the host to stage."""
+
     config_field: str = Field(
         pattern=r"^[a-z][a-z0-9_]*$",
         min_length=1,
@@ -559,6 +561,9 @@ class PluginNodeContract(PluginReleaseValue):
     inputs: tuple[PluginPortContract, ...]
     outputs: tuple[PluginPortContract, ...]
     secret_inputs: tuple[PluginSecretInputContract, ...] = ()
+    # Tombstone: no registration declares staged uploads any more, but persisted
+    # catalogs serialize this key and its ``keep`` digest role covers releases
+    # published while declarations were live, so dropping it invalidates them.
     staged_upload_inputs: tuple[PluginStagedUploadInputContract, ...] = ()
     required_capabilities: tuple[PluginRuntimeCapability, ...] = ()
     cache_policy: NodeCachePolicy = NodeCachePolicy.NEVER
@@ -581,11 +586,6 @@ class PluginNodeContract(PluginReleaseValue):
             and PluginRuntimeCapability.NODE_SECRETS not in capabilities
         ):
             raise ValueError("Plugin node secret inputs require node.secrets")
-        if (
-            self.staged_upload_inputs
-            and PluginRuntimeCapability.STAGED_UPLOADS not in capabilities
-        ):
-            raise ValueError("Plugin node staged uploads require staged.uploads")
         if (
             self.http_egress is not None
             and PluginRuntimeCapability.NETWORK_EGRESS not in capabilities
@@ -624,12 +624,6 @@ class PluginNodeContract(PluginReleaseValue):
                     description=secret.description,
                 )
                 for secret in registration.secret_inputs
-            ),
-            staged_upload_inputs=tuple(
-                PluginStagedUploadInputContract(
-                    config_field=staged_upload.config_field,
-                )
-                for staged_upload in registration.staged_upload_inputs
             ),
             required_capabilities=registration.required_capabilities,
             cache_policy=registration.cache_policy,

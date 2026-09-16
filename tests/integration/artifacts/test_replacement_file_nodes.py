@@ -537,7 +537,6 @@ def test_replacement_nodes_declare_their_catalog_contracts() -> None:
     decode_images = decode.node_class.output_contract.ports["images"]
     assert decode_images.produces == RASTER_IMAGE.key
     assert decode_images.shape.value == "many"
-    assert decode.staged_upload_inputs == ()
     assert decode.required_capabilities == ()
 
     import_table = registry.node_registration("table.import", 1)
@@ -556,7 +555,6 @@ def test_replacement_nodes_declare_their_catalog_contracts() -> None:
         "sheet_name",
         "skip_empty_rows",
     ]
-    assert import_table.staged_upload_inputs == ()
     assert import_table.required_capabilities == ()
 
     parse_geojson = registry.node_registration("gis.geojson.parse", 1)
@@ -568,7 +566,6 @@ def test_replacement_nodes_declare_their_catalog_contracts() -> None:
         parse_geojson.node_class.output_contract.ports["features"].produces
         == GEO_FEATURE_COLLECTION.key
     )
-    assert parse_geojson.staged_upload_inputs == ()
     assert parse_geojson.required_capabilities == ()
 
     import_raster = registry.node_registration("gis.raster_scan.import", 1)
@@ -583,7 +580,6 @@ def test_replacement_nodes_declare_their_catalog_contracts() -> None:
     assert list(import_raster.node_class.config_contract.model.model_fields) == [
         "source_name"
     ]
-    assert import_raster.staged_upload_inputs == ()
     assert import_raster.required_capabilities == (PluginRuntimeCapability.NATIVE_GDAL,)
 
     assert {spec.key for spec in IMAGES.artifact_type_dependencies} == {

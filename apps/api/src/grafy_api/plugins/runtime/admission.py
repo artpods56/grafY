@@ -58,7 +58,6 @@ _DEFAULT_PLATFORM_ARTIFACT_CONTRACTS = tuple(
 ISOLATED_BASE_CAPABILITIES = frozenset(
     {
         PluginRuntimeCapability.NODE_SECRETS,
-        PluginRuntimeCapability.STAGED_UPLOADS,
         PluginRuntimeCapability.UNTRUSTED_SQL,
     }
 )

@@ -261,24 +261,6 @@ class PluginSecretBinding(PluginProtocolValue):
         return self
 
 
-class PluginStagedUploadBinding(PluginProtocolValue):
-    """Digest-bound metadata for one host-authorized staged upload file."""
-
-    config_field: str = Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=255)
-    upload_key: str = Field(min_length=1, max_length=1_024)
-    original_filename: str = Field(min_length=1, max_length=255)
-    byte_count: int = Field(ge=0, strict=True)
-    content_sha256: Sha256Digest
-    relative_path: str = Field(min_length=1, max_length=1_024)
-
-    @model_validator(mode="after")
-    def validate_contract(self) -> Self:
-        _validate_relative_bundle_path(self.relative_path)
-        if not self.relative_path.startswith("uploads/"):
-            raise ValueError("Plugin staged-upload paths must be beneath uploads/")
-        return self
-
-
 class PluginInvocationEnvelope(PluginProtocolValue):
     protocol_version: Literal["grafy-plugin-invocation@7"] = PLUGIN_INVOCATION_PROTOCOL
     invocation_id: UUID
@@ -302,7 +284,6 @@ class PluginInvocationEnvelope(PluginProtocolValue):
     )
     outputs: tuple[PluginOutputDeclaration, ...]
     secrets: tuple[PluginSecretBinding, ...] = ()
-    staged_uploads: tuple[PluginStagedUploadBinding, ...] = ()
     limits: PluginInvocationLimits
 
     @field_validator("required_capabilities")
@@ -338,15 +319,6 @@ class PluginInvocationEnvelope(PluginProtocolValue):
         secret_paths = [binding.relative_path for binding in self.secrets]
         if len(secret_paths) != len(set(secret_paths)):
             raise ValueError("Plugin invocation secret paths must be unique")
-        staged_upload_paths = [binding.relative_path for binding in self.staged_uploads]
-        if len(staged_upload_paths) != len(set(staged_upload_paths)):
-            raise ValueError("Plugin staged-upload paths must be unique")
-        staged_upload_keys = [
-            (binding.config_field, binding.upload_key)
-            for binding in self.staged_uploads
-        ]
-        if len(staged_upload_keys) != len(set(staged_upload_keys)):
-            raise ValueError("Plugin staged-upload bindings must be unique")
         direct_artifact_ids = {
             artifact.artifact_id
             for binding in self.inputs
