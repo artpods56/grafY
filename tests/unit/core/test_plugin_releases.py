@@ -906,6 +906,8 @@ def test_contract_digest_accepts_releases_persisted_before_canonicalization() ->
             PluginRuntimeCapability.NODE_SECRETS,
         )
     )
+    # Construction is the assertion for the stored digest: the release
+    # validator raises unless the digest is one of the two accepted forms.
     release = replace(
         _release(),
         catalog=catalog,
@@ -914,7 +916,16 @@ def test_contract_digest_accepts_releases_persisted_before_canonicalization() ->
         contract_digest=stored,
         descriptor_digest=None,
     )
-    assert release.contract_digest == stored
+    assert release.descriptor_digest == release.descriptor.digest
+    with pytest.raises(PluginReleaseError, match="contract digest must match"):
+        replace(
+            _release(),
+            catalog=catalog,
+            capabilities=capabilities,
+            capability_digest=capabilities.digest,
+            contract_digest="0" * 64,
+            descriptor_digest=None,
+        )
 
 
 def _catalog_contract_models() -> set[type[BaseModel]]:
