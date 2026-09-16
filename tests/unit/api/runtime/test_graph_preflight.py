@@ -5,6 +5,7 @@ import pytest
 
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.artifacts import (
+    ArtifactRef,
     ArtifactTypeKey,
     NodeConfig,
     NodeInput,
@@ -19,6 +20,7 @@ from grafy_core.domain.saved_graphs import (
     SavedGraphEdge,
     SavedGraphInputPlug,
     SavedGraphNode,
+    SavedGraphOrigin,
     SavedGraphPluginReleasePin,
     SavedGraphProjection,
     SavedGraphRevision,
@@ -57,6 +59,7 @@ from grafy_api.execution.requests import (
     RunEdgeRequest,
     RunInputPlugRequest,
     RunNodeRequest,
+    RunOriginRequest,
     RunRequest,
 )
 from grafy_api.execution.errors import GraphExecutionError
@@ -398,6 +401,120 @@ async def test_saved_fragment_ignores_disabled_incoming_edges() -> None:
     ):
         await preflight.validate(
             WORKSPACE_ID, active_request.model_copy(update={"edges": submitted.edges})
+        )
+
+
+def _origin_fragment_case() -> tuple[SavedGraphRevision, RunRequest]:
+    origin_value = ArtifactRef(
+        artifact_id=UUID("00000000-0000-0000-0000-000000000401"),
+        artifact_type="test.graph-preflight.value",
+        schema_version=1,
+    )
+    target_origin = SavedGraphOrigin(
+        id="library-origin",
+        to_node="target",
+        to_port="items",
+        to_plug="payload",
+        value=origin_value,
+        conversion_path=(SavedGraphConversion(id="test.convert", version=2),),
+    )
+    graph = SavedGraph(
+        workspace_id=WORKSPACE_ID,
+        name="Saved origin fragment",
+        document=SavedGraphDocument(
+            nodes=(
+                SavedGraphNode(
+                    kind="builtin",
+                    id="target",
+                    operator_id="test.graph-preflight.plain",
+                    operator_version=1,
+                    config={"nested": {"strict": True}},
+                    position=GraphPoint(x=100, y=0),
+                    input_plugs=(SavedGraphInputPlug(id="payload", port="items"),),
+                ),
+                SavedGraphNode(
+                    kind="builtin",
+                    id="downstream",
+                    operator_id="test.graph-preflight.plain",
+                    operator_version=1,
+                    config={},
+                    position=GraphPoint(x=200, y=0),
+                ),
+            ),
+            origins=(
+                target_origin,
+                SavedGraphOrigin(
+                    id="other-origin",
+                    to_node="downstream",
+                    to_port="value",
+                    value=origin_value,
+                ),
+            ),
+        ),
+    ).snapshot()
+    request = RunRequest(
+        graph_id=graph.id,
+        graph_revision=graph.revision,
+        nodes=[
+            RunNodeRequest(
+                kind="builtin",
+                id="target",
+                operator_id="test.graph-preflight.plain",
+                operator_version=1,
+                config={"nested": {"strict": True}},
+                input_plugs=[RunInputPlugRequest(id="payload", port="items")],
+            )
+        ],
+        origins=[
+            RunOriginRequest(
+                to_node=target_origin.to_node,
+                to_port=target_origin.to_port,
+                to_plug=target_origin.to_plug,
+                value=target_origin.value,
+                conversion_path=[
+                    ArtifactConversionRequest(id="test.convert", version=2)
+                ],
+            )
+        ],
+    )
+    return graph, request
+
+
+@pytest.mark.asyncio
+async def test_saved_fragment_matches_exact_origin_state() -> None:
+    graph, request = _origin_fragment_case()
+    preflight = GraphRunPreflight(
+        plugin_registry=PLUGIN_REGISTRY,
+        saved_graphs=_RecordingSavedGraphs(graph),
+    )
+
+    context = await preflight.validate(WORKSPACE_ID, request)
+
+    assert context.secret_node_ids == frozenset()
+
+
+@pytest.mark.asyncio
+async def test_saved_fragment_rejects_origin_drift() -> None:
+    graph, matching = _origin_fragment_case()
+    preflight = GraphRunPreflight(
+        plugin_registry=PLUGIN_REGISTRY,
+        saved_graphs=_RecordingSavedGraphs(graph),
+    )
+    changed_origin = matching.origins[0].model_copy(update={"conversion_path": []})
+
+    with pytest.raises(
+        GraphExecutionError,
+        match="1 missing and 1 unexpected or duplicated",
+    ):
+        await preflight.validate(
+            WORKSPACE_ID, matching.model_copy(update={"origins": [changed_origin]})
+        )
+    with pytest.raises(
+        GraphExecutionError,
+        match="1 missing and 0 unexpected or duplicated",
+    ):
+        await preflight.validate(
+            WORKSPACE_ID, matching.model_copy(update={"origins": []})
         )
 
 
@@ -937,9 +1054,7 @@ async def test_preflight_allows_configured_egress_under_assigned_profile() -> No
 
 
 @pytest.mark.asyncio
-async def test_preflight_denies_configured_egress_outside_curated_allowlist() -> (
-    None
-):
+async def test_preflight_denies_configured_egress_outside_curated_allowlist() -> None:
     profile = NetworkAccessProfile(
         name="curated",
         plane=NetworkAccessPlane.PLUGIN_EXECUTION,

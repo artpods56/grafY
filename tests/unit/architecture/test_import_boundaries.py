@@ -341,7 +341,13 @@ def test_execution_http_models_preserve_public_request_and_event_identity() -> N
     for module, names in (
         (
             requests,
-            ("RunRequest", "RunNodeRequest", "RunEdgeRequest", "PinnedOutputRequest"),
+            (
+                "RunRequest",
+                "RunNodeRequest",
+                "RunEdgeRequest",
+                "PinnedOutputRequest",
+                "RunOriginRequest",
+            ),
         ),
         (events, ("ExecutionStatusEvent", "NodeStatusEvent", "NodeProgressEvent")),
     ):

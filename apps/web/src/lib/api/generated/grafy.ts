@@ -3079,6 +3079,19 @@ export interface components {
              */
             readonly status: "succeeded" | "failed" | "skipped";
         };
+        /** RunOriginRequest */
+        readonly RunOriginRequest: {
+            /** Conversion Path */
+            readonly conversion_path?: readonly components["schemas"]["ArtifactConversionRequest"][];
+            /** To Node */
+            readonly to_node: string;
+            /** To Plug */
+            readonly to_plug?: string | null;
+            /** To Port */
+            readonly to_port: string;
+            /** Value */
+            readonly value: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"];
+        };
         /** RunPortOutputResponse */
         readonly RunPortOutputResponse: {
             /** Artifacts */
@@ -3103,6 +3116,8 @@ export interface components {
             readonly graph_revision?: number | null;
             /** Nodes */
             readonly nodes: readonly components["schemas"]["RunNodeRequest"][];
+            /** Origins */
+            readonly origins?: readonly components["schemas"]["RunOriginRequest"][];
             /** Pinned Outputs */
             readonly pinned_outputs?: readonly components["schemas"]["PinnedOutputRequest"][];
             /** @default all */

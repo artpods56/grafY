@@ -17,7 +17,9 @@ from grafy_api.execution.requests import (
     PinnedOutputRequest,
     RunEdgeRequest,
     RunNodeRequest,
+    RunOriginRequest,
     RunRequest,
+    connection_label,
 )
 from grafy_api.execution.materializations import MaterializationService
 from grafy_api.execution.compiler import GraphCompiler
@@ -155,10 +157,18 @@ class RunGraph:
                 or input_names_by_boundary_id[edge.from_node] in inputs
             )
         ]
+        origins = [
+            origin
+            for origin in definition.document.origins
+            if origin.to_node in executed_node_ids
+        ]
         active_input_plug_ids_by_node = {node.id: set[str]() for node in executed_nodes}
         for edge in active_edges:
             if edge.to_plug is not None:
                 active_input_plug_ids_by_node[edge.to_node].add(edge.to_plug)
+        for origin in origins:
+            if origin.to_plug is not None:
+                active_input_plug_ids_by_node[origin.to_node].add(origin.to_plug)
 
         request = RunRequest(
             nodes=[
@@ -169,6 +179,7 @@ class RunGraph:
                 for node in executed_nodes
             ],
             edges=[RunEdgeRequest.from_saved_edge(edge) for edge in active_edges],
+            origins=[RunOriginRequest.from_saved_origin(origin) for origin in origins],
             pinned_outputs=[
                 PinnedOutputRequest(
                     from_node=port.boundary_node_id,
@@ -253,6 +264,14 @@ class RunGraph:
             )
         initial_outputs = await self._materializations.resolve_pinned_outputs(
             workspace_id, plan.pinned_outputs
+        )
+        await self._materializations.resolve_accessible_values(
+            workspace_id,
+            tuple(
+                (connection_label(edge.request), edge.origin_value)
+                for edge in plan.edges
+                if edge.origin_value is not None
+            ),
         )
         execution = await self._coordinator.execute(
             PreparedGraphExecution(

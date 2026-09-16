@@ -39,6 +39,7 @@ from grafy_api.execution.requests import (
     RunEdgeRequest,
     RunInputPlugRequest,
     RunNodeRequest,
+    RunOriginRequest,
 )
 from grafy_api.execution.edge_values import EdgeValueResolver
 from grafy_api.execution.errors import GraphExecutionError
@@ -371,3 +372,79 @@ async def test_conversion_failure_identifies_step_item_artifact_and_edge() -> No
     assert f"artifact {source.id} at sequence item 0" in message
     assert "on edge 'source'.'value' -> 'target'.'text'" in message
     assert isinstance(captured.value.__cause__, ValueError)
+
+
+@pytest.mark.asyncio
+async def test_origin_value_is_assembled_without_looking_up_source_outputs() -> None:
+    unit_of_work = InMemoryUnitOfWork()
+    edge_values = _edge_value_resolver(unit_of_work)
+    origin_ref = ArtifactRef.from_key(artifact_id=uuid4(), key=TEXT_VALUE.key)
+    compiled_node = _compiled_replace(NodeInvocation())
+    origin = CompiledEdge(
+        request=RunOriginRequest(
+            to_node="target",
+            to_port="text",
+            value=origin_ref,
+        ),
+        projection=None,
+        conversion_path=(),
+        origin_value=origin_ref,
+    )
+
+    inputs = await edge_values.assemble_inputs(
+        compiled_node,
+        (origin,),
+        {},
+        uuid4(),
+        WORKSPACE_ID,
+    )
+
+    assert inputs["text"] is origin_ref
+
+
+@pytest.mark.asyncio
+async def test_origin_conversion_failure_names_the_origin() -> None:
+    unit_of_work = InMemoryUnitOfWork()
+    edge_values = _edge_value_resolver(unit_of_work)
+    source = ArtifactObject(
+        workspace_id=WORKSPACE_ID,
+        artifact_type=INTEGER_VALUE.key.id,
+        schema_version=INTEGER_VALUE.key.schema_version,
+        content_type="application/json",
+        storage_backend="inline",
+        inline_payload={"value": 3},
+    )
+    async with unit_of_work as transaction:
+        await transaction.artifacts.add(source)
+        await transaction.commit()
+    compiled_node = _compiled_replace(NodeInvocation())
+    origin = CompiledEdge(
+        request=RunOriginRequest(
+            to_node="target",
+            to_port="text",
+            value=source.ref(),
+            conversion_path=[
+                ArtifactConversionRequest(
+                    id=FAILING_INTEGER_TO_TEXT.key.id,
+                    version=FAILING_INTEGER_TO_TEXT.key.version,
+                )
+            ],
+        ),
+        projection=None,
+        conversion_path=(FAILING_INTEGER_TO_TEXT,),
+        origin_value=source.ref(),
+    )
+
+    with pytest.raises(GraphExecutionError) as captured:
+        await edge_values.assemble_inputs(
+            compiled_node,
+            (origin,),
+            {},
+            uuid4(),
+            WORKSPACE_ID,
+        )
+
+    message = str(captured.value)
+    assert "Failed conversion step 1/1 'test.edge_values.fail'@1" in message
+    assert f"artifact {source.id}" in message
+    assert "on origin 'target'.'text'" in message

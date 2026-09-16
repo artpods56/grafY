@@ -19,6 +19,7 @@ from grafy_api.execution.models import (
     PreparedGraphExecution,
 )
 from grafy_api.execution.node_execution import NodeExecutionService
+from grafy_api.execution.requests import RunEdgeRequest
 
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,11 @@ class GraphExecutionCoordinator:
             node_request = compiled_node.request
             node_path = (*execution.node_path, node_request.id)
             node_edges = incoming_edges[node_request.id]
-            upstream_node_ids = {edge.request.from_node for edge in node_edges}
+            upstream_node_ids = {
+                edge.request.from_node
+                for edge in node_edges
+                if isinstance(edge.request, RunEdgeRequest)
+            }
             if upstream_node_ids & failed:
                 failed.add(node_request.id)
                 node_results.append(

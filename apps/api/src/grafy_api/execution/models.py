@@ -17,6 +17,7 @@ from grafy_core.runtime.plugin_protocol import PluginFailureCode
 
 from grafy_api.execution.requests import (
     RunEdgeRequest,
+    RunOriginRequest,
     RunNodeRequest,
 )
 from grafy_api.execution.control import RunExecutionControl
@@ -26,9 +27,10 @@ type OutputEndpoint = tuple[str, str]
 
 @dataclass(frozen=True, slots=True)
 class CompiledEdge:
-    request: RunEdgeRequest
+    request: RunEdgeRequest | RunOriginRequest
     projection: ArtifactFieldProjection | None
     conversion_path: tuple[ArtifactConversion[Any, Any], ...]
+    origin_value: ArtifactOutputValue | None = None
 
 
 @dataclass(frozen=True, slots=True)

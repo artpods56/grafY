@@ -36,6 +36,7 @@ from grafy_api.plugins.runtime.network_policy import (
 from grafy_api.execution.requests import (
     RunEdgeRequest,
     RunNodeRequest,
+    RunOriginRequest,
     RunRequest,
 )
 from grafy_api.execution.errors import GraphExecutionError
@@ -151,6 +152,7 @@ class GraphRunPreflight:
                 saved_graph_context,
                 request.nodes,
                 request.edges,
+                request.origins,
                 {
                     (pinned_output.from_node, pinned_output.from_port)
                     for pinned_output in request.pinned_outputs
@@ -231,6 +233,7 @@ def _validate_saved_graph_fragment(
     graph: SavedGraph | SavedGraphRevision,
     nodes: list[RunNodeRequest],
     edges: list[RunEdgeRequest],
+    origins: list[RunOriginRequest],
     pinned_output_endpoints: set[tuple[str, str]],
 ) -> None:
     saved_nodes = {node.id: node for node in graph.document.nodes}
@@ -271,6 +274,12 @@ def _validate_saved_graph_fragment(
         if edge.to_plug is None:
             continue
         active_saved_plug_ids_by_node.setdefault(edge.to_node, set()).add(edge.to_plug)
+    for origin in graph.document.origins:
+        if origin.to_node not in executed_node_ids or origin.to_plug is None:
+            continue
+        active_saved_plug_ids_by_node.setdefault(origin.to_node, set()).add(
+            origin.to_plug
+        )
 
     for node in nodes:
         saved_node = saved_nodes.get(node.id)
@@ -361,6 +370,36 @@ def _validate_saved_graph_fragment(
         raise GraphExecutionError(
             "Run edges do not match the saved incoming edges for the executed "
             f"nodes in graph {graph.id} revision {graph.revision}: "
+            f"{missing_count} missing and {unexpected_count} unexpected or duplicated"
+        )
+
+    expected_origins = Counter(
+        (
+            origin.to_node,
+            origin.to_port,
+            origin.to_plug,
+            origin.value.model_dump_json(),
+            tuple((step.id, step.version) for step in origin.conversion_path),
+        )
+        for origin in graph.document.origins
+        if origin.to_node in executed_node_ids
+    )
+    submitted_origins = Counter(
+        (
+            origin.to_node,
+            origin.to_port,
+            origin.to_plug,
+            origin.value.model_dump_json(),
+            tuple((step.id, step.version) for step in origin.conversion_path),
+        )
+        for origin in origins
+    )
+    if submitted_origins != expected_origins:
+        missing_count = sum((expected_origins - submitted_origins).values())
+        unexpected_count = sum((submitted_origins - expected_origins).values())
+        raise GraphExecutionError(
+            "Run origins do not match the saved origins for the executed nodes "
+            f"in graph {graph.id} revision {graph.revision}: "
             f"{missing_count} missing and {unexpected_count} unexpected or duplicated"
         )
 

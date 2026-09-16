@@ -8,7 +8,7 @@ import {
   type WorkflowInputPlug,
   type WorkflowNodeData,
 } from "../canvas/types";
-import type { NodeSpec, Port, RunNodeResult } from "@/lib/api";
+import type { NodeSpec, Port, RunNodeResult, SavedGraphOrigin } from "@/lib/api";
 import {
   executionRequestPlan,
   executionSubgraphFor,
@@ -753,5 +753,90 @@ describe("execution request planning", () => {
     expect(plan.request.nodes[1]?.input_plugs).toEqual([
       { id: "plug", port: "items" },
     ]);
+  });
+
+  it("sends origins for executed nodes and treats them as satisfying required inputs", () => {
+    const target = workflowNode(
+      "target",
+      nodeSpec("target", [port("input", "input")]),
+      { selected: true },
+    );
+    const skipped = workflowNode(
+      "skipped",
+      nodeSpec("skipped", [port("input", "input")]),
+    );
+    const origin: SavedGraphOrigin = {
+      id: "library-origin",
+      to_node: "target",
+      to_port: "input",
+      to_plug: null,
+      value: artifactValue,
+      conversion_path: [{ id: "builtin.scalar.integer_to_text", version: 1 }],
+    };
+    const unusedOrigin: SavedGraphOrigin = {
+      id: "other-origin",
+      to_node: "skipped",
+      to_port: "input",
+      to_plug: null,
+      value: artifactValue,
+      conversion_path: [],
+    };
+
+    expect(missingRequiredInputsFor([target], [], [origin])).toEqual([]);
+    expect(
+      executionValidationIssue("selected", [target], [], [origin]),
+    ).toBeNull();
+
+    const execution = executionSubgraphFor("selected", [target, skipped], []);
+    const plan = executionRequestPlan(
+      "selected",
+      [target, skipped],
+      execution,
+      [origin, unusedOrigin],
+    );
+
+    expect(plan.status).toBe("ready");
+    if (plan.status !== "ready") return;
+    expect(plan.request.origins).toEqual([{
+      to_node: "target",
+      to_port: "input",
+      to_plug: null,
+      value: artifactValue,
+      conversion_path: [{ id: "builtin.scalar.integer_to_text", version: 1 }],
+    }]);
+    expect(plan.request.nodes.map((node) => node.id)).toEqual(["target"]);
+  });
+
+  it("keeps origin-connected plugs on executed nodes", () => {
+    const collect = workflowNode(
+      "collect",
+      nodeSpec("collect", [
+        port("items", "input", { required: false, instancePlugs: true }),
+      ]),
+      { inputPlugs: [{ id: "plug", portName: "items" }], selected: true },
+    );
+    const origin: SavedGraphOrigin = {
+      id: "library-origin",
+      to_node: "collect",
+      to_port: "items",
+      to_plug: "plug",
+      value: artifactValue,
+      conversion_path: [],
+    };
+    const execution = executionSubgraphFor("selected", [collect], []);
+    const plan = executionRequestPlan("selected", [collect], execution, [origin]);
+
+    expect(plan.status).toBe("ready");
+    if (plan.status !== "ready") return;
+    expect(plan.request.nodes[0]?.input_plugs).toEqual([
+      { id: "plug", port: "items" },
+    ]);
+    expect(plan.request.origins).toEqual([{
+      to_node: "collect",
+      to_port: "items",
+      to_plug: "plug",
+      value: artifactValue,
+      conversion_path: [],
+    }]);
   });
 });

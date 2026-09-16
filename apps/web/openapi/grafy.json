@@ -5276,6 +5276,57 @@
         "title": "RunNodeResponse",
         "type": "object"
       },
+      "RunOriginRequest": {
+        "properties": {
+          "conversion_path": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactConversionRequest"
+            },
+            "maxItems": 8,
+            "title": "Conversion Path",
+            "type": "array"
+          },
+          "to_node": {
+            "title": "To Node",
+            "type": "string"
+          },
+          "to_plug": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Plug"
+          },
+          "to_port": {
+            "title": "To Port",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "$ref": "#/components/schemas/ArtifactRefSequence"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "to_node",
+          "to_port",
+          "value"
+        ],
+        "title": "RunOriginRequest",
+        "type": "object"
+      },
       "RunPortOutputResponse": {
         "properties": {
           "artifacts": {
@@ -5356,6 +5407,13 @@
               "$ref": "#/components/schemas/RunNodeRequest"
             },
             "title": "Nodes",
+            "type": "array"
+          },
+          "origins": {
+            "items": {
+              "$ref": "#/components/schemas/RunOriginRequest"
+            },
+            "title": "Origins",
             "type": "array"
           },
           "pinned_outputs": {

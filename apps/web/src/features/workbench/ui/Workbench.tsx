@@ -1826,6 +1826,7 @@ function WorkbenchBody({
     registryAvailable: Boolean(registry),
     nodes,
     edges,
+    origins: authoredDocument.origins,
     activeGraph,
     currentExecutionFingerprint,
     canMaterializeSavedGraph,

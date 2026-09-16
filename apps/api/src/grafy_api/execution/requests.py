@@ -20,6 +20,7 @@ from grafy_core.domain.saved_graphs import (
     SavedGraphNodeKind,
     SavedGraphNode,
     SavedGraphEdge,
+    SavedGraphOrigin,
 )
 
 from grafy_api.v1.models import (
@@ -184,9 +185,60 @@ class PinnedOutputRequest(BaseModel):
     value: ArtifactRef | ArtifactRefSequence
 
 
+class RunOriginRequest(BaseModel):
+    to_node: str
+    to_port: str
+    to_plug: InputPlugIdentifier | None = None
+    value: ArtifactRef | ArtifactRefSequence
+    conversion_path: list[ArtifactConversionRequest] = Field(
+        default_factory=list,
+        max_length=MAX_ARTIFACT_CONVERSION_HOPS,
+    )
+
+    @property
+    def from_node(self) -> str:
+        return "origin"
+
+    @property
+    def from_port(self) -> str:
+        return "value"
+
+    @classmethod
+    def from_saved_origin(cls, origin: SavedGraphOrigin) -> "RunOriginRequest":
+        return cls(
+            to_node=origin.to_node,
+            to_port=origin.to_port,
+            to_plug=origin.to_plug,
+            value=origin.value,
+            conversion_path=[
+                ArtifactConversionRequest(id=step.id, version=step.version)
+                for step in origin.conversion_path
+            ],
+        )
+
+
+type RunConnectionRequest = RunEdgeRequest | RunOriginRequest
+
+
+def connection_label(
+    connection: RunConnectionRequest,
+    *,
+    capitalized: bool = True,
+) -> str:
+    if isinstance(connection, RunOriginRequest):
+        kind = "Origin" if capitalized else "origin"
+        return f"{kind} {connection.to_node!r}.{connection.to_port!r}"
+    kind = "Edge" if capitalized else "edge"
+    return (
+        f"{kind} {connection.from_node!r}.{connection.from_port!r} -> "
+        f"{connection.to_node!r}.{connection.to_port!r}"
+    )
+
+
 class RunRequest(BaseModel):
     nodes: list[RunNodeRequest]
     edges: list[RunEdgeRequest] = Field(default_factory=list)
+    origins: list[RunOriginRequest] = Field(default_factory=list)
     pinned_outputs: list[PinnedOutputRequest] = Field(default_factory=list)
     scope: GraphExecutionScope = "all"
     graph_id: UUID | None = None
@@ -204,6 +256,9 @@ class RunRequest(BaseModel):
         for edge in active_edges:
             if edge.to_plug is not None:
                 connected_plugs.setdefault(edge.to_node, set()).add(edge.to_plug)
+        for origin in graph.document.origins:
+            if origin.to_plug is not None:
+                connected_plugs.setdefault(origin.to_node, set()).add(origin.to_plug)
         return cls(
             nodes=[
                 RunNodeRequest.from_saved_node(
@@ -213,6 +268,10 @@ class RunRequest(BaseModel):
                 for node in graph.document.nodes
             ],
             edges=[RunEdgeRequest.from_saved_edge(edge) for edge in active_edges],
+            origins=[
+                RunOriginRequest.from_saved_origin(origin)
+                for origin in graph.document.origins
+            ],
             scope="all",
             graph_id=graph.id,
             graph_revision=graph.revision,
