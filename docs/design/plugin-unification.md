@@ -93,8 +93,10 @@ canonicalization as the host.
 
 After changing contract canonicalization, run `just rebuild-plugin-sdk`. The
 recipe builds `libs/core`, copies the wheel to all six vendored wheelhouses,
-refreshes the `plugin-notes` lock hash, and refreshes the architecture-test
-pin. Verify the wheel contents against the source before committing the result.
+refreshes the `plugin-notes` lock hash, and refreshes the architecture-test pin.
+`test_vendored_sdk_wheels_accept_the_digest_the_host_stores` reruns every
+vendored wheel against a real catalog, so a wheel rebuilt from a different
+field-role table fails instead of shipping.
 
 6. Overlays the current release in `GET /v1/workspaces/{id}/nodes`, including
    Plugin-owned artifact types and function-node contracts.
