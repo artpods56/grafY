@@ -1,4 +1,4 @@
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -107,10 +107,30 @@ class MaterializationService:
         workspace_id: UUID,
         pinned_outputs: Mapping[tuple[str, str], ArtifactOutputValue],
     ) -> dict[str, dict[str, ArtifactOutputValue]]:
-        batch = await self._availability.load(workspace_id, pinned_outputs.values())
+        await self.resolve_accessible_values(
+            workspace_id,
+            tuple(
+                (f"Pinned output {from_node!r}.{from_port!r}", value)
+                for (from_node, from_port), value in pinned_outputs.items()
+            ),
+        )
         outputs: dict[str, dict[str, ArtifactOutputValue]] = {}
         for (from_node, from_port), value in pinned_outputs.items():
-            context = f"Pinned output {from_node!r}.{from_port!r}"
+            outputs.setdefault(from_node, {})[from_port] = value
+        return outputs
+
+    async def resolve_accessible_values(
+        self,
+        workspace_id: UUID,
+        labeled_values: Sequence[tuple[str, ArtifactOutputValue]],
+    ) -> None:
+        if not labeled_values:
+            return
+        batch = await self._availability.load(
+            workspace_id,
+            (value for _, value in labeled_values),
+        )
+        for context, value in labeled_values:
             resolved = batch.resolve_refs(
                 value,
                 context=context,
@@ -118,8 +138,6 @@ class MaterializationService:
             for artifact in resolved:
                 if not await batch.artifact_is_accessible(artifact):
                     raise GraphExecutionError(f"{context} is not accessible")
-            outputs.setdefault(from_node, {})[from_port] = value
-        return outputs
 
     async def persist_execution(
         self,

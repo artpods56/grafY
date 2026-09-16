@@ -19,8 +19,10 @@ import {
 import type {
   PinnedOutputInput,
   RunEdgeInput,
+  RunOriginInput,
   RunRequest,
   RunScopeInput,
+  SavedGraphOrigin,
 } from "@/lib/api";
 
 export type WorkflowNode = Node<
@@ -72,6 +74,30 @@ export type ExecutionRequestPlanResult =
       status: "invalid";
       message: string;
     };
+
+function originSatisfiesSlot(
+  origin: SavedGraphOrigin,
+  nodeId: string,
+  portName: string,
+  plugId: string | null,
+): boolean {
+  return origin.to_node === nodeId
+    && origin.to_port === portName
+    && (origin.to_plug ?? null) === plugId;
+}
+
+function serializeRunOrigin(origin: SavedGraphOrigin): RunOriginInput {
+  return {
+    to_node: origin.to_node,
+    to_port: origin.to_port,
+    to_plug: origin.to_plug ?? null,
+    value: structuredClone(origin.value),
+    conversion_path: (origin.conversion_path ?? []).map((step) => ({
+      id: step.id,
+      version: step.version,
+    })),
+  };
+}
 
 export function selectedNodeAndAncestorIds(
   nodes: readonly WorkflowNode[],
@@ -145,6 +171,7 @@ export function executionSubgraphFor(
 export function missingRequiredInputsFor(
   nodes: readonly WorkflowNode[],
   edges: readonly WorkflowEdge[],
+  origins: readonly SavedGraphOrigin[] = [],
 ): MissingRequiredInput[] {
   return nodes.flatMap((node) =>
     node.data.spec.inputs.flatMap((port) => {
@@ -164,6 +191,8 @@ export function missingRequiredInputsFor(
               edge.data?.enabled !== false &&
               edge.target === node.id &&
               decodeHandleId(edge.targetHandle)?.plugId === plug.id,
+          ) || origins.some((origin) =>
+            originSatisfiesSlot(origin, node.id, port.name, plug.id)
           )
             ? []
             : [{
@@ -179,6 +208,8 @@ export function missingRequiredInputsFor(
           edge.data?.enabled !== false &&
           edge.target === node.id &&
           decodeHandleId(edge.targetHandle)?.portName === port.name,
+      ) || origins.some((origin) =>
+        originSatisfiesSlot(origin, node.id, port.name, null)
       )
         ? []
         : [{
@@ -194,6 +225,7 @@ export function executionValidationIssue(
   scope: RunScope,
   executionNodes: readonly WorkflowNode[],
   executionEdges: readonly WorkflowEdge[],
+  origins: readonly SavedGraphOrigin[] = [],
 ): ExecutionValidationIssue | null {
   if (!executionNodes.length) {
     return {
@@ -266,6 +298,7 @@ export function executionValidationIssue(
   const missingInputs = missingRequiredInputsFor(
     executionNodes,
     executionEdges,
+    origins,
   );
   if (!missingInputs.length) return null;
 
@@ -281,6 +314,7 @@ export function executionRequestPlan(
   scope: RunScope,
   planningNodes: readonly WorkflowNode[],
   execution: ExecutionSubgraph,
+  origins: readonly SavedGraphOrigin[] = [],
 ): ExecutionRequestPlanResult {
   const pinnedOutputs: PinnedOutputInput[] = [];
 
@@ -350,6 +384,10 @@ export function executionRequestPlan(
     }];
   });
 
+  const runOrigins = origins
+    .filter((origin) => execution.nodeIds.has(origin.to_node))
+    .map(serializeRunOrigin);
+
   const activeInputPlugIdsByNode = new Map<string, Set<string>>();
   for (const edge of execution.edges) {
     const target = decodeHandleId(edge.targetHandle);
@@ -361,6 +399,12 @@ export function executionRequestPlan(
     plugIds.add(targetPlugId);
     activeInputPlugIdsByNode.set(edge.target, plugIds);
   }
+  for (const origin of runOrigins) {
+    if (!origin.to_plug) continue;
+    const plugIds = activeInputPlugIdsByNode.get(origin.to_node) ?? new Set();
+    plugIds.add(origin.to_plug);
+    activeInputPlugIdsByNode.set(origin.to_node, plugIds);
+  }
 
   const runNodes = execution.nodes.map((node) => {
     const activeInputPlugIds =
@@ -371,6 +415,7 @@ export function executionRequestPlan(
   const request: RunRequest = {
     nodes: runNodes,
     edges: runEdges,
+    origins: runOrigins,
     scope,
     ...(scope === "selected" ? { pinned_outputs: pinnedOutputs } : {}),
   };

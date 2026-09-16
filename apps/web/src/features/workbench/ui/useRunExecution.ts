@@ -12,6 +12,7 @@ import {
   type RunExecutionNodeProgressEvent,
   type RunExecution,
   type RunNodeResult,
+  type SavedGraphOrigin,
 } from "@/lib/api";
 import { ApiError } from "@/lib/api/client";
 import { withMaterializedNodeRuns } from "../canvas/saved-graph";
@@ -191,6 +192,7 @@ interface UseRunExecutionOptions {
   registryAvailable: boolean;
   nodes: readonly WorkflowNode[];
   edges: readonly WorkflowEdge[];
+  origins?: readonly SavedGraphOrigin[];
   activeGraph: ActiveSavedGraph | null;
   currentExecutionFingerprint: string;
   /** Workflow topology matches the saved revision (presentation may differ). */
@@ -208,6 +210,7 @@ export function useRunExecution({
   registryAvailable,
   nodes,
   edges,
+  origins = [],
   activeGraph,
   currentExecutionFingerprint,
   canMaterializeSavedGraph,
@@ -370,6 +373,7 @@ export function useRunExecution({
       scope,
       execution.nodes,
       execution.edges,
+      origins,
     );
     if (validationIssue) {
       if (validationIssue.nodeId) {
@@ -491,7 +495,12 @@ export function useRunExecution({
       );
       return;
     }
-    const requestPlan = executionRequestPlan(scope, planningNodes, execution);
+    const requestPlan = executionRequestPlan(
+      scope,
+      planningNodes,
+      execution,
+      origins,
+    );
     if (requestPlan.status === "invalid") {
       setRunError(requestPlan.message);
       return;
@@ -1262,6 +1271,7 @@ export function useRunExecution({
     clearPendingProgress,
     currentExecutionFingerprint,
     edges,
+    origins,
     flushPendingProgress,
     isGraphSnapshotCurrent,
     nodeSecretStatuses,

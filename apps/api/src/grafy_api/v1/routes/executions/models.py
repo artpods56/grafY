@@ -9,6 +9,7 @@ from grafy_api.execution.requests import (
     RunEdgeRequest,
     RunInputPlugRequest,
     RunNodeRequest,
+    RunOriginRequest,
     RunRequest,
 )
 from grafy_api.execution.events import (
@@ -309,6 +310,7 @@ __all__ = [
     "RunInputPlugRequest",
     "RunNodeRequest",
     "RunNodeResponse",
+    "RunOriginRequest",
     "RunPortOutputResponse",
     "RunRequest",
     "RunResponse",

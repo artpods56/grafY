@@ -57,6 +57,7 @@ export type RunEdgeProjectionInput = NonNullable<
   RunEdgeInput["projection"]
 >;
 export type PinnedOutputInput = Schemas["PinnedOutputRequest"];
+export type RunOriginInput = Schemas["RunOriginRequest"];
 export type ArtifactSummary =
   Schemas["ArtifactSummaryResponse"];
 export type ArtifactExportFormat =

@@ -79,9 +79,12 @@ from grafy_core.domain.modules import GraphModuleDefinitionError
 
 from grafy_api.execution.requests import (
     PinnedOutputRequest,
+    RunConnectionRequest,
     RunEdgeRequest,
     RunNodeRequest,
+    RunOriginRequest,
     RunRequest,
+    connection_label,
 )
 from grafy_api.execution.errors import GraphExecutionError
 from grafy_api.execution.releases import (
@@ -290,13 +293,33 @@ class GraphCompiler:
             bindings_by_node[node_request.id] = bindings
             resolved_contracts_by_node[node_request.id] = resolved_contracts
 
-        _validate_input_plugs(nodes_by_id, request.nodes, request.edges)
+        for origin in request.origins:
+            if origin.to_node in nodes_by_id:
+                continue
+            raise GraphExecutionError(
+                f"{connection_label(origin)} references unknown target node "
+                f"{origin.to_node!r}"
+            )
+        _validate_input_plugs(
+            nodes_by_id,
+            request.nodes,
+            [*request.edges, *request.origins],
+        )
         invocations_by_id = _derive_invocations(nodes_by_id, request.edges)
+        for origin in request.origins:
+            invocation = invocations_by_id[origin.to_node]
+            if (
+                invocation.mode is InvocationMode.MAP
+                and invocation.map_input == origin.to_port
+            ):
+                raise GraphExecutionError(
+                    f"{connection_label(origin)} cannot use collection mode 'map'"
+                )
         compiled_edges = _compile_edges(
             nodes_by_id=nodes_by_id,
             resolved_contracts_by_node=resolved_contracts_by_node,
             invocations_by_id=invocations_by_id,
-            edges=request.edges,
+            edges=[*request.edges, *request.origins],
             projectable_artifact_types=projectable_artifact_types,
             artifact_conversions=self._artifact_conversions,
             pinned_outputs=pinned_outputs,
@@ -703,7 +726,7 @@ def _pinned_outputs_by_endpoint(
 def _validate_input_plugs(
     nodes_by_id: dict[str, Node[Any, Any, Any]],
     node_requests: list[RunNodeRequest],
-    edges: list[RunEdgeRequest],
+    connections: Sequence[RunConnectionRequest],
 ) -> None:
     plugs_by_node: dict[str, dict[str, str]] = {}
     for node_request in node_requests:
@@ -740,50 +763,50 @@ def _validate_input_plugs(
             )
 
     incoming_by_plug: Counter[tuple[str, str]] = Counter()
-    for edge in edges:
-        target_node = nodes_by_id[edge.to_node]
-        target_port = target_node.input_contract.ports.get(edge.to_port)
+    for connection in connections:
+        target_node = nodes_by_id[connection.to_node]
+        target_port = target_node.input_contract.ports.get(connection.to_port)
         if target_port is None:
             continue
+        collection_mode = (
+            "direct"
+            if isinstance(connection, RunOriginRequest)
+            else connection.collection_mode
+        )
         if not target_port.instance_plugs:
-            if edge.to_plug is not None:
+            if connection.to_plug is not None:
                 raise GraphExecutionError(
-                    f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                    f"{edge.to_node!r}.{edge.to_port!r} declares input plug "
-                    f"{edge.to_plug!r}, but the target port does not accept "
+                    f"{connection_label(connection)} declares input plug "
+                    f"{connection.to_plug!r}, but the target port does not accept "
                     "instance plugs"
                 )
             continue
-        if edge.collection_mode == "map":
+        if collection_mode == "map":
             raise GraphExecutionError(
-                f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                f"{edge.to_node!r}.{edge.to_port!r} cannot use collection mode "
+                f"{connection_label(connection)} cannot use collection mode "
                 "'map' with an instance-plug input"
             )
-        if edge.to_plug is None:
+        if connection.to_plug is None:
             raise GraphExecutionError(
-                f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                f"{edge.to_node!r}.{edge.to_port!r} must target an input plug"
+                f"{connection_label(connection)} must target an input plug"
             )
-        plug_port = plugs_by_node[edge.to_node].get(edge.to_plug)
+        plug_port = plugs_by_node[connection.to_node].get(connection.to_plug)
         if plug_port is None:
             raise GraphExecutionError(
-                f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                f"{edge.to_node!r}.{edge.to_port!r} targets unknown input plug "
-                f"{edge.to_plug!r}"
+                f"{connection_label(connection)} targets unknown input plug "
+                f"{connection.to_plug!r}"
             )
-        if plug_port != edge.to_port:
+        if plug_port != connection.to_port:
             raise GraphExecutionError(
-                f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                f"{edge.to_node!r}.{edge.to_port!r} targets input plug "
-                f"{edge.to_plug!r}, which belongs to port {plug_port!r}"
+                f"{connection_label(connection)} targets input plug "
+                f"{connection.to_plug!r}, which belongs to port {plug_port!r}"
             )
-        plug_key = (edge.to_node, edge.to_plug)
+        plug_key = (connection.to_node, connection.to_plug)
         incoming_by_plug[plug_key] += 1
         if incoming_by_plug[plug_key] > 1:
             raise GraphExecutionError(
-                f"Node {edge.to_node!r} input plug {edge.to_plug!r} requires "
-                "exactly one incoming edge"
+                f"Node {connection.to_node!r} input plug {connection.to_plug!r} "
+                "requires exactly one incoming edge"
             )
 
     for node_id, plugs in plugs_by_node.items():
@@ -805,7 +828,7 @@ def _compile_edges(
     nodes_by_id: dict[str, Node[Any, Any, Any]],
     resolved_contracts_by_node: dict[str, ResolvedNodeContracts],
     invocations_by_id: dict[str, NodeInvocation],
-    edges: list[RunEdgeRequest],
+    edges: Sequence[RunConnectionRequest],
     projectable_artifact_types: dict[ArtifactTypeKey, ArtifactTypeSpec],
     artifact_conversions: dict[
         ArtifactConversionKey,
@@ -816,15 +839,15 @@ def _compile_edges(
     incoming_counts: dict[tuple[str, str], int] = {}
     compiled_edges: list[CompiledEdge] = []
     for edge in edges:
+        label = connection_label(edge)
         target_node = nodes_by_id[edge.to_node]
         target_port = resolved_contracts_by_node[edge.to_node].input_contract.ports.get(
             edge.to_port
         )
         if target_port is None:
             raise GraphExecutionError(
-                f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                f"{edge.to_node!r}.{edge.to_port!r} references unknown input "
-                f"port {edge.to_port!r} on node {edge.to_node!r}"
+                f"{label} references unknown input port {edge.to_port!r} on node "
+                f"{edge.to_node!r}"
             )
         target_keys = target_port.accepted_types
         if not target_keys:
@@ -840,42 +863,55 @@ def _compile_edges(
             )
         target_label = _artifact_type_keys_label(target_keys)
 
-        source_node = nodes_by_id.get(edge.from_node)
-        if source_node is None:
-            pinned_value = pinned_outputs[(edge.from_node, edge.from_port)]
+        origin_value: ArtifactOutputValue | None = None
+        requested_projection = (
+            None if isinstance(edge, RunOriginRequest) else edge.projection
+        )
+        collection_mode = (
+            "direct" if isinstance(edge, RunOriginRequest) else edge.collection_mode
+        )
+        if isinstance(edge, RunOriginRequest):
+            origin_value = edge.value
             source_shape = (
                 PortShape.MANY
-                if isinstance(pinned_value, ArtifactRefSequence)
+                if isinstance(edge.value, ArtifactRefSequence)
                 else PortShape.ONE
             )
-            source_key = _value_key(pinned_value)
+            source_key = _value_key(edge.value)
         else:
-            source_port = resolved_contracts_by_node[
-                edge.from_node
-            ].output_contract.ports.get(edge.from_port)
-            if source_port is None:
-                raise GraphExecutionError(
-                    f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                    f"{edge.to_node!r}.{edge.to_port!r} references unknown output "
-                    f"port {edge.from_port!r} on node {edge.from_node!r}"
+            source_node = nodes_by_id.get(edge.from_node)
+            if source_node is None:
+                pinned_value = pinned_outputs[(edge.from_node, edge.from_port)]
+                source_shape = (
+                    PortShape.MANY
+                    if isinstance(pinned_value, ArtifactRefSequence)
+                    else PortShape.ONE
                 )
-            source_shape = effective_output_shape(
-                source_node,
-                invocations_by_id[edge.from_node],
-                edge.from_port,
-            )
-            source_key = source_port.produces
-            if not isinstance(source_key, ArtifactTypeKey):
-                raise GraphExecutionError(
-                    f"Node {edge.from_node!r} output {edge.from_port!r} retained "
-                    f"unresolved artifact type variable {source_key.name!r}"
+                source_key = _value_key(pinned_value)
+            else:
+                source_port = resolved_contracts_by_node[
+                    edge.from_node
+                ].output_contract.ports.get(edge.from_port)
+                if source_port is None:
+                    raise GraphExecutionError(
+                        f"{label} references unknown output port {edge.from_port!r} "
+                        f"on node {edge.from_node!r}"
+                    )
+                source_shape = effective_output_shape(
+                    source_node,
+                    invocations_by_id[edge.from_node],
+                    edge.from_port,
                 )
-        if edge.collection_mode == "map" and source_shape is not PortShape.MANY:
+                source_key = source_port.produces
+                if not isinstance(source_key, ArtifactTypeKey):
+                    raise GraphExecutionError(
+                        f"Node {edge.from_node!r} output {edge.from_port!r} retained "
+                        f"unresolved artifact type variable {source_key.name!r}"
+                    )
+        if collection_mode == "map" and source_shape is not PortShape.MANY:
             raise GraphExecutionError(
-                f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                f"{edge.to_node!r}.{edge.to_port!r} uses collection mode 'map', "
-                f"which requires a source with shape {PortShape.MANY.value!r}; "
-                f"source is {source_shape.value!r}"
+                f"{label} uses collection mode 'map', which requires a source with "
+                f"shape {PortShape.MANY.value!r}; source is {source_shape.value!r}"
             )
 
         incoming_key = (edge.to_node, edge.to_port)
@@ -888,8 +924,8 @@ def _compile_edges(
 
         resolved_projection: ArtifactFieldProjection | None = None
         effective_source_key = source_key
-        if edge.projection is not None:
-            requested_path = tuple(edge.projection.path)
+        if requested_projection is not None:
+            requested_path = tuple(requested_projection.path)
             resolved_projection = _field_projection_for(
                 projectable_artifact_types,
                 effective_source_key,
@@ -897,19 +933,16 @@ def _compile_edges(
             )
             if resolved_projection is None:
                 raise GraphExecutionError(
-                    f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                    f"{edge.to_node!r}.{edge.to_port!r} requests undeclared "
-                    f"projection {'.'.join(requested_path)!r} on "
-                    f"{effective_source_key.id}@"
+                    f"{label} requests undeclared projection "
+                    f"{'.'.join(requested_path)!r} on {effective_source_key.id}@"
                     f"{effective_source_key.schema_version}"
                 )
             effective_source_key = resolved_projection.target
 
         if len(edge.conversion_path) > MAX_ARTIFACT_CONVERSION_HOPS:
             raise GraphExecutionError(
-                f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                f"{edge.to_node!r}.{edge.to_port!r} conversion path exceeds "
-                f"the maximum of {MAX_ARTIFACT_CONVERSION_HOPS} steps"
+                f"{label} conversion path exceeds the maximum of "
+                f"{MAX_ARTIFACT_CONVERSION_HOPS} steps"
             )
         seen_artifact_keys = {effective_source_key}
         resolved_conversions: list[ArtifactConversion[Any, Any]] = []
@@ -921,16 +954,13 @@ def _compile_edges(
             conversion = artifact_conversions.get(conversion_key)
             if conversion is None:
                 raise GraphExecutionError(
-                    f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                    f"{edge.to_node!r}.{edge.to_port!r} requests undeclared "
-                    f"conversion {conversion_key.id!r}@{conversion_key.version} "
+                    f"{label} requests undeclared conversion "
+                    f"{conversion_key.id!r}@{conversion_key.version} "
                     f"at step {step_index + 1}"
                 )
             if conversion.source != effective_source_key:
                 raise GraphExecutionError(
-                    f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                    f"{edge.to_node!r}.{edge.to_port!r} applies conversion step "
-                    f"{step_index + 1} "
+                    f"{label} applies conversion step {step_index + 1} "
                     f"{conversion.key.id!r}@{conversion.key.version}, which expects "
                     f"{conversion.source.id}@{conversion.source.schema_version}, "
                     f"to {effective_source_key.id}@"
@@ -942,18 +972,15 @@ def _compile_edges(
             ):
                 previous = resolved_conversions[-1]
                 raise GraphExecutionError(
-                    f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                    f"{edge.to_node!r}.{edge.to_port!r} conversion steps "
-                    f"{step_index} and {step_index + 1} have incompatible runtime "
-                    f"types: {previous.target_type} does not match "
-                    f"{conversion.source_type}"
+                    f"{label} conversion steps {step_index} and {step_index + 1} "
+                    f"have incompatible runtime types: {previous.target_type} "
+                    f"does not match {conversion.source_type}"
                 )
             if conversion.target in seen_artifact_keys:
                 raise GraphExecutionError(
-                    f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                    f"{edge.to_node!r}.{edge.to_port!r} conversion path repeats "
-                    f"artifact type {conversion.target.id}@"
-                    f"{conversion.target.schema_version} at step {step_index + 1}"
+                    f"{label} conversion path repeats artifact type "
+                    f"{conversion.target.id}@{conversion.target.schema_version} "
+                    f"at step {step_index + 1}"
                 )
             resolved_conversions.append(conversion)
             effective_source_key = conversion.target
@@ -966,28 +993,21 @@ def _compile_edges(
                     for conversion in resolved_conversions
                 )
                 raise GraphExecutionError(
-                    f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                    f"{edge.to_node!r}.{edge.to_port!r} converts through "
-                    f"{conversion_path} as "
+                    f"{label} converts through {conversion_path} as "
                     f"{effective_source_key.id}@"
                     f"{effective_source_key.schema_version}, but target expects "
                     f"{target_label}"
                 )
-            if edge.projection is not None:
+            if requested_projection is not None:
                 raise GraphExecutionError(
-                    f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                    f"{edge.to_node!r}.{edge.to_port!r} projects "
-                    f"{'.'.join(edge.projection.path)!r} as "
+                    f"{label} projects {'.'.join(requested_projection.path)!r} as "
                     f"{effective_source_key.id}@"
                     f"{effective_source_key.schema_version}, but target expects "
                     f"{target_label}"
                 )
             raise GraphExecutionError(
-                f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                f"{edge.to_node!r}.{edge.to_port!r} cannot connect "
-                f"{effective_source_key.id}@"
-                f"{effective_source_key.schema_version} to "
-                f"{target_label} "
+                f"{label} cannot connect {effective_source_key.id}@"
+                f"{effective_source_key.schema_version} to {target_label} "
                 "without a declared field projection or conversion"
             )
 
@@ -1012,9 +1032,8 @@ def _compile_edges(
             else:
                 target_shapes = f"accepts one of {expected_shapes}"
             raise GraphExecutionError(
-                f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
-                f"{edge.to_node!r}.{edge.to_port!r} has incompatible shapes: "
-                f"source is {source_shape.value!r}, target {target_shapes}"
+                f"{label} has incompatible shapes: source is "
+                f"{source_shape.value!r}, target {target_shapes}"
             )
 
         compiled_edges.append(
@@ -1022,6 +1041,7 @@ def _compile_edges(
                 request=edge,
                 projection=resolved_projection,
                 conversion_path=tuple(resolved_conversions),
+                origin_value=origin_value,
             )
         )
 

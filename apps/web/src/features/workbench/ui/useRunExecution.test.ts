@@ -13,6 +13,7 @@ import type {
   RunExecutionStatusEvent,
   RunNodeResult,
   RunRequest,
+  SavedGraphOrigin,
 } from "@/lib/api";
 import { encodeHandleId } from "../canvas/handles";
 import {
@@ -1135,6 +1136,46 @@ describe("useRunExecution", () => {
       expect.objectContaining({
         graph_id: "graph-1",
         graph_revision: 7,
+      }),
+    );
+  });
+
+  it("sends authored origins for executed nodes", async () => {
+    apiMocks.startRunExecution.mockResolvedValue(succeededExecution());
+    const origin: SavedGraphOrigin = {
+      id: "library-origin",
+      to_node: "node-1",
+      to_port: "input",
+      to_plug: null,
+      value: {
+        artifact_id: "00000000-0000-4000-8000-000000000001",
+        artifact_type: "text.plain",
+        schema_version: 1,
+      },
+      conversion_path: [],
+    };
+    const unused: SavedGraphOrigin = {
+      ...origin,
+      id: "other-origin",
+      to_node: "skipped",
+    };
+    const harness = hookHarness({ origins: [origin, unused] });
+    const hook = await renderHook(useRunExecution, harness.hookOptions);
+
+    await React.act(async () => {
+      await hook.result.current.runWorkflow("all");
+    });
+
+    expect(apiMocks.startRunExecution).toHaveBeenCalledWith(
+      "workspace-1",
+      expect.objectContaining({
+        origins: [{
+          to_node: "node-1",
+          to_port: "input",
+          to_plug: null,
+          value: origin.value,
+          conversion_path: [],
+        }],
       }),
     );
   });

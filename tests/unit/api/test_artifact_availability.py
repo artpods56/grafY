@@ -11,6 +11,7 @@ from grafy_core.ports.storage import SaveFileCommand, StoredObjectInfo
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_storage import LocalFileObjectStore
 from grafy_api.artifact_availability import ArtifactAvailability, ArtifactReferenceError
+from grafy_api.execution.errors import GraphExecutionError
 from grafy_api.execution.materializations import MaterializationService
 from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.v1.routes.executions.services import RunResultPresenter
@@ -226,3 +227,59 @@ async def test_materialization_presentation_shares_rows_and_rechecks_next_operat
         assert storage.stat_calls == 2
     finally:
         await reader.close()
+
+
+@pytest.mark.asyncio
+async def test_origin_resolution_reuses_pin_path_with_origin_context(
+    tmp_path: Path,
+) -> None:
+    uow = InMemoryUnitOfWork()
+    storage = LocalFileObjectStore(tmp_path / "objects")
+    artifact = ArtifactObject(
+        workspace_id=WORKSPACE_ID,
+        artifact_type="scalar.text",
+        schema_version=1,
+        content_type="application/json",
+        inline_payload={"value": "hello"},
+    )
+    async with uow:
+        await uow.artifacts.add(artifact)
+        await uow.commit()
+    service = MaterializationService(uow, ArtifactAvailability(uow, storage), None)
+    origin_context = "Origin 'replace'.'text'"
+
+    await service.resolve_accessible_values(
+        WORKSPACE_ID,
+        ((origin_context, artifact.ref()),),
+    )
+
+    missing = artifact.ref().model_copy(update={"artifact_id": uuid4()})
+    with pytest.raises(
+        ArtifactReferenceError,
+        match=r"Origin 'replace'\.'text' references missing artifact",
+    ):
+        await service.resolve_accessible_values(
+            WORKSPACE_ID,
+            ((origin_context, missing),),
+        )
+
+    stored = ArtifactObject(
+        workspace_id=WORKSPACE_ID,
+        artifact_type="test.binary",
+        schema_version=1,
+        content_type="application/octet-stream",
+        bucket="artifacts",
+        object_key="missing.bin",
+        sha256="a" * 64,
+    )
+    async with uow:
+        await uow.artifacts.add(stored)
+        await uow.commit()
+    with pytest.raises(
+        GraphExecutionError,
+        match=r"Origin 'replace'\.'text' is not accessible",
+    ):
+        await service.resolve_accessible_values(
+            WORKSPACE_ID,
+            ((origin_context, stored.ref()),),
+        )

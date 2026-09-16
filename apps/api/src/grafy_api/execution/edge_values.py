@@ -26,6 +26,7 @@ from grafy_api.execution.models import (
     CompiledEdge,
     CompiledNode,
 )
+from grafy_api.execution.requests import connection_label
 
 
 class EdgeValueResolver:
@@ -78,14 +79,20 @@ class EdgeValueResolver:
             port_values: list[ArtifactOutputValue] = []
             for edge in matching_edges:
                 edge_request = edge.request
-                source_ports = outputs.get(edge_request.from_node)
-                if source_ports is None or edge_request.from_port not in source_ports:
-                    raise GraphExecutionError(
-                        f"Node {node_request.id!r} input {name!r} references "
-                        f"missing output {edge_request.from_node!r}."
-                        f"{edge_request.from_port!r}"
-                    )
-                value = source_ports[edge_request.from_port]
+                if edge.origin_value is not None:
+                    value = edge.origin_value
+                else:
+                    source_ports = outputs.get(edge_request.from_node)
+                    if (
+                        source_ports is None
+                        or edge_request.from_port not in source_ports
+                    ):
+                        raise GraphExecutionError(
+                            f"Node {node_request.id!r} input {name!r} references "
+                            f"missing output {edge_request.from_node!r}."
+                            f"{edge_request.from_port!r}"
+                        )
+                    value = source_ports[edge_request.from_port]
                 if edge.projection is not None:
                     value = await self._project_value(
                         value,
@@ -176,8 +183,7 @@ class EdgeValueResolver:
         if artifact is None:
             raise GraphExecutionError(
                 f"Cannot project missing source artifact {ref.artifact_id} for "
-                f"edge {edge.request.from_node!r}.{edge.request.from_port!r} -> "
-                f"{edge.request.to_node!r}.{edge.request.to_port!r}"
+                f"{connection_label(edge.request, capitalized=False)}"
             )
         if artifact.ref() != ref:
             raise GraphExecutionError(
@@ -311,9 +317,8 @@ class EdgeValueResolver:
         except Exception as exc:
             raise GraphExecutionError(
                 f"Failed to resolve artifact {ref.artifact_id}{item_context} for "
-                "conversion path on edge "
-                f"{edge.request.from_node!r}.{edge.request.from_port!r} -> "
-                f"{edge.request.to_node!r}.{edge.request.to_port!r}"
+                "conversion path on "
+                f"{connection_label(edge.request, capitalized=False)}"
             ) from exc
 
         for step_index, conversion in enumerate(conversions):
@@ -330,9 +335,8 @@ class EdgeValueResolver:
                 raise GraphExecutionError(
                     f"Failed conversion step {step_index + 1}/{len(conversions)} "
                     f"{conversion.key.id!r}@{conversion.key.version} for artifact "
-                    f"{ref.artifact_id}{item_context} on edge "
-                    f"{edge.request.from_node!r}.{edge.request.from_port!r} -> "
-                    f"{edge.request.to_node!r}.{edge.request.to_port!r}"
+                    f"{ref.artifact_id}{item_context} on "
+                    f"{connection_label(edge.request, capitalized=False)}"
                 ) from exc
 
         metadata: dict[str, object] = {
@@ -373,9 +377,8 @@ class EdgeValueResolver:
                     f"{written_ref.schema_version}, expected "
                     f"{final_conversion.target.id}@"
                     f"{final_conversion.target.schema_version} for artifact "
-                    f"{ref.artifact_id}{item_context} on edge "
-                    f"{edge.request.from_node!r}.{edge.request.from_port!r} -> "
-                    f"{edge.request.to_node!r}.{edge.request.to_port!r}"
+                    f"{ref.artifact_id}{item_context} on "
+                    f"{connection_label(edge.request, capitalized=False)}"
                 )
             return written_ref
         except GraphExecutionError:
@@ -385,9 +388,8 @@ class EdgeValueResolver:
                 "Failed to materialize final target "
                 f"{final_conversion.target.id}@"
                 f"{final_conversion.target.schema_version} for conversion path "
-                f"from artifact {ref.artifact_id}{item_context} on edge "
-                f"{edge.request.from_node!r}.{edge.request.from_port!r} -> "
-                f"{edge.request.to_node!r}.{edge.request.to_port!r}"
+                f"from artifact {ref.artifact_id}{item_context} on "
+                f"{connection_label(edge.request, capitalized=False)}"
             ) from exc
 
 

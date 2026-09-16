@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
+from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.artifact_contracts import INTEGER_VALUE, TEXT_VALUE
 from grafy_core.canonical_conversions import (
@@ -24,8 +24,23 @@ from grafy_api.execution.requests import (
     ArtifactConversionRequest,
     PinnedOutputRequest,
     RunEdgeRequest,
+    RunInputPlugRequest,
     RunNodeRequest,
+    RunOriginRequest,
     RunRequest,
+)
+from grafy_api.v1.models import (
+    ArtifactTypeBindingModel,
+    ArtifactTypeKeyResponse,
+)
+from grafy_core.domain.saved_graphs import (
+    GraphPoint,
+    SavedGraph,
+    SavedGraphConversion,
+    SavedGraphDocument,
+    SavedGraphInputPlug,
+    SavedGraphNode,
+    SavedGraphOrigin,
 )
 from tests.support.system_plugins import (
     TEST_BUILD_DIGEST,
@@ -401,3 +416,340 @@ def test_topological_order_on_large_sparse_dag() -> None:
         parent = f"n{i % (chain - 1)}"
         assert ids.index(parent) < ids.index(f"branch{i}")
         assert ids.index(f"branch{i}") < ids.index(f"n{chain - 1}")
+
+
+def _text_ref() -> ArtifactRef:
+    return ArtifactRef.from_key(
+        artifact_id=uuid4(),
+        key=ArtifactTypeKey("scalar.text", 1),
+    )
+
+
+def _integer_ref() -> ArtifactRef:
+    return ArtifactRef.from_key(
+        artifact_id=uuid4(),
+        key=ArtifactTypeKey("scalar.integer", 1),
+    )
+
+
+def _replace_node(node_id: str = "replace") -> RunNodeRequest:
+    return RunNodeRequest(
+        kind="builtin",
+        id=node_id,
+        operator_id="text.replace",
+        operator_version=1,
+        config={"search": "a", "replacement": "A"},
+    )
+
+
+def test_from_saved_graph_copies_origins_and_origin_plugs() -> None:
+    origin_value = _text_ref()
+    origin = SavedGraphOrigin(
+        id="library-origin",
+        to_node="collect",
+        to_port="items",
+        to_plug="item",
+        value=origin_value,
+        conversion_path=(
+            SavedGraphConversion(id="builtin.scalar.integer_to_text", version=1),
+        ),
+    )
+    graph = SavedGraph(
+        workspace_id=WORKSPACE_ID,
+        name="Origin graph",
+        document=SavedGraphDocument(
+            nodes=(
+                SavedGraphNode(
+                    kind="builtin",
+                    id="collect",
+                    operator_id="sequence.collect",
+                    operator_version=1,
+                    config={},
+                    position=GraphPoint(x=0, y=0),
+                    input_plugs=(SavedGraphInputPlug(id="item", port="items"),),
+                    artifact_type_bindings=(),
+                ),
+            ),
+            origins=(origin,),
+        ),
+    )
+
+    request = RunRequest.from_saved_graph(graph)
+
+    assert request.origins == [RunOriginRequest.from_saved_origin(origin)]
+    assert request.nodes[0].input_plugs == [
+        RunInputPlugRequest(id="item", port="items")
+    ]
+    assert request.pinned_outputs == []
+
+
+@pytest.mark.asyncio
+async def test_compiler_treats_an_origin_satisfied_node_as_a_run_root(
+    tmp_path: Path,
+) -> None:
+    text_ref = _text_ref()
+    request = RunRequest(
+        nodes=[_replace_node()],
+        origins=[
+            RunOriginRequest(
+                to_node="replace",
+                to_port="text",
+                value=text_ref,
+            )
+        ],
+    )
+
+    compiled = await _compiler(tmp_path).compile(
+        _pin_system_plugins(request),
+        _UnusedModuleExecutor(),
+        workspace_id=WORKSPACE_ID,
+    )
+
+    assert [node.request.id for node in compiled.nodes] == ["replace"]
+    assert compiled.nodes[0].invocation.mode is InvocationMode.ONCE
+    assert compiled.pinned_outputs == {}
+    assert len(compiled.edges) == 1
+    compiled_origin = compiled.edges[0]
+    assert isinstance(compiled_origin.request, RunOriginRequest)
+    assert compiled_origin.origin_value == text_ref
+    assert compiled_origin.projection is None
+    assert compiled_origin.conversion_path == ()
+
+
+@pytest.mark.asyncio
+async def test_compiler_replays_origin_conversion_paths_and_rejects_type_mismatch(
+    tmp_path: Path,
+) -> None:
+    integer_ref = _integer_ref()
+    compiler = _compiler(tmp_path)
+    mismatched = RunRequest(
+        nodes=[_replace_node()],
+        origins=[
+            RunOriginRequest(
+                to_node="replace",
+                to_port="text",
+                value=integer_ref,
+            )
+        ],
+    )
+    converted = mismatched.model_copy(
+        update={
+            "origins": [
+                RunOriginRequest(
+                    to_node="replace",
+                    to_port="text",
+                    value=integer_ref,
+                    conversion_path=[
+                        ArtifactConversionRequest(
+                            id="builtin.scalar.integer_to_text",
+                            version=1,
+                        )
+                    ],
+                )
+            ]
+        }
+    )
+
+    with pytest.raises(
+        GraphExecutionError,
+        match=r"Origin 'replace'\.'text' cannot connect scalar.integer@1",
+    ):
+        await compiler.compile(
+            _pin_system_plugins(mismatched),
+            _UnusedModuleExecutor(),
+            workspace_id=WORKSPACE_ID,
+        )
+
+    compiled = await compiler.compile(
+        _pin_system_plugins(converted),
+        _UnusedModuleExecutor(),
+        workspace_id=WORKSPACE_ID,
+    )
+    assert [conversion.key.id for conversion in compiled.edges[0].conversion_path] == [
+        "builtin.scalar.integer_to_text"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_compiler_rejects_origin_shape_map_and_invalid_plugs(
+    tmp_path: Path,
+) -> None:
+    compiler = _compiler(tmp_path)
+    sequence = ArtifactRefSequence.from_key(
+        key=ArtifactTypeKey("scalar.text", 1),
+        item_refs=[_text_ref()],
+    )
+
+    with pytest.raises(
+        GraphExecutionError,
+        match=r"Origin 'replace'\.'text' has incompatible shapes",
+    ):
+        await compiler.compile(
+            _pin_system_plugins(
+                RunRequest(
+                    nodes=[_replace_node()],
+                    origins=[
+                        RunOriginRequest(
+                            to_node="replace",
+                            to_port="text",
+                            value=sequence,
+                        )
+                    ],
+                )
+            ),
+            _UnusedModuleExecutor(),
+            workspace_id=WORKSPACE_ID,
+        )
+
+    with pytest.raises(
+        GraphExecutionError,
+        match="does not accept instance plugs",
+    ):
+        await compiler.compile(
+            _pin_system_plugins(
+                RunRequest(
+                    nodes=[_replace_node()],
+                    origins=[
+                        RunOriginRequest(
+                            to_node="replace",
+                            to_port="text",
+                            to_plug="item",
+                            value=_text_ref(),
+                        )
+                    ],
+                )
+            ),
+            _UnusedModuleExecutor(),
+            workspace_id=WORKSPACE_ID,
+        )
+
+    collect = RunNodeRequest(
+        kind="builtin",
+        id="collect",
+        operator_id="sequence.collect",
+        operator_version=1,
+        input_plugs=[RunInputPlugRequest(id="item", port="items")],
+        artifact_type_bindings=[
+            ArtifactTypeBindingModel(
+                variable="T",
+                artifact_type=ArtifactTypeKeyResponse(
+                    id="scalar.text",
+                    schema_version=1,
+                ),
+            )
+        ],
+    )
+    with pytest.raises(GraphExecutionError, match="must target an input plug"):
+        await compiler.compile(
+            _pin_system_plugins(
+                RunRequest(
+                    nodes=[collect],
+                    origins=[
+                        RunOriginRequest(
+                            to_node="collect",
+                            to_port="items",
+                            value=_text_ref(),
+                        )
+                    ],
+                )
+            ),
+            _UnusedModuleExecutor(),
+            workspace_id=WORKSPACE_ID,
+        )
+
+    mapped = RunRequest(
+        nodes=[
+            RunNodeRequest(
+                kind="builtin",
+                id="source",
+                operator_id="arithmetic.integer_sequence",
+                operator_version=1,
+                config={"start": 1, "step": 1, "count": 2},
+            ),
+            RunNodeRequest(
+                kind="builtin",
+                id="add",
+                operator_id="arithmetic.add",
+                operator_version=1,
+            ),
+        ],
+        edges=[
+            RunEdgeRequest(
+                from_node="source",
+                from_port="values",
+                to_node="add",
+                to_port="left",
+                collection_mode="map",
+            )
+        ],
+        origins=[
+            RunOriginRequest(
+                to_node="add",
+                to_port="left",
+                value=_integer_ref(),
+            )
+        ],
+    )
+    with pytest.raises(
+        GraphExecutionError,
+        match=r"Origin 'add'\.'left' cannot use collection mode 'map'",
+    ):
+        await compiler.compile(
+            _pin_system_plugins(mapped),
+            _UnusedModuleExecutor(),
+            workspace_id=WORKSPACE_ID,
+        )
+
+
+@pytest.mark.asyncio
+async def test_compiler_broadcasts_an_origin_beside_a_map_edge(
+    tmp_path: Path,
+) -> None:
+    right_ref = _integer_ref()
+    request = RunRequest(
+        nodes=[
+            RunNodeRequest(
+                kind="builtin",
+                id="source",
+                operator_id="arithmetic.integer_sequence",
+                operator_version=1,
+                config={"start": 1, "step": 1, "count": 2},
+            ),
+            RunNodeRequest(
+                kind="builtin",
+                id="add",
+                operator_id="arithmetic.add",
+                operator_version=1,
+            ),
+        ],
+        edges=[
+            RunEdgeRequest(
+                from_node="source",
+                from_port="values",
+                to_node="add",
+                to_port="left",
+                collection_mode="map",
+            )
+        ],
+        origins=[
+            RunOriginRequest(
+                to_node="add",
+                to_port="right",
+                value=right_ref,
+            )
+        ],
+    )
+
+    compiled = await _compiler(tmp_path).compile(
+        _pin_system_plugins(request),
+        _UnusedModuleExecutor(),
+        workspace_id=WORKSPACE_ID,
+    )
+
+    add = next(node for node in compiled.nodes if node.request.id == "add")
+    assert add.invocation.mode is InvocationMode.MAP
+    assert add.invocation.map_input == "left"
+    origin_edge = next(
+        edge for edge in compiled.edges if isinstance(edge.request, RunOriginRequest)
+    )
+    assert origin_edge.origin_value == right_ref
