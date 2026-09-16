@@ -56,15 +56,20 @@ build:
 
 # Rebuild the SDK wheel vendored by guest plugin projects and refresh its pins.
 rebuild-plugin-sdk:
-    uv build libs/core --wheel --out-dir /tmp/grafy-core-wheel --clear
-    cp /tmp/grafy-core-wheel/grafy_core-0.1.0-py3-none-any.whl plugins/gis/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp /tmp/grafy-core-wheel/grafy_core-0.1.0-py3-none-any.whl plugins/llm/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp /tmp/grafy-core-wheel/grafy_core-0.1.0-py3-none-any.whl plugins/ocr/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp /tmp/grafy-core-wheel/grafy_core-0.1.0-py3-none-any.whl plugins/sql/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp /tmp/grafy-core-wheel/grafy_core-0.1.0-py3-none-any.whl plugins/notarius/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp /tmp/grafy-core-wheel/grafy_core-0.1.0-py3-none-any.whl examples/plugin-notes/wheels/grafy_core-0.1.0-py3-none-any.whl
+    #!/usr/bin/env bash
+    set -euo pipefail
+    wheel_dir="$(mktemp -d)"
+    trap 'rm -rf "$wheel_dir"' EXIT
+    uv build libs/core --wheel --out-dir "$wheel_dir" --clear
+    wheel="$wheel_dir/grafy_core-0.1.0-py3-none-any.whl"
+    cp "$wheel" plugins/gis/wheels/grafy_core-0.1.0-py3-none-any.whl
+    cp "$wheel" plugins/llm/wheels/grafy_core-0.1.0-py3-none-any.whl
+    cp "$wheel" plugins/ocr/wheels/grafy_core-0.1.0-py3-none-any.whl
+    cp "$wheel" plugins/sql/wheels/grafy_core-0.1.0-py3-none-any.whl
+    cp "$wheel" plugins/notarius/wheels/grafy_core-0.1.0-py3-none-any.whl
+    cp "$wheel" examples/plugin-notes/wheels/grafy_core-0.1.0-py3-none-any.whl
     uv lock --directory examples/plugin-notes
-    uv run python -c 'from hashlib import sha256; from pathlib import Path; p=Path("/tmp/grafy-core-wheel/grafy_core-0.1.0-py3-none-any.whl"); t=Path("tests/unit/architecture/test_import_boundaries.py"); s=t.read_text(); old=s; digest=sha256(p.read_bytes()).hexdigest(); import re; s=re.sub(r"(sha256\(core_wheel\.read_bytes\(\)\)\.hexdigest\(\) == \(\n\s*\")[0-9a-f]+", rf"\1{digest}", s, count=1); assert s != old; t.write_text(s)'
+    uv run python -c 'from hashlib import sha256; from pathlib import Path; import re, sys; p=Path(sys.argv[1]); t=Path("tests/unit/architecture/test_import_boundaries.py"); digest=sha256(p.read_bytes()).hexdigest(); s=t.read_text(); s, count=re.subn(r"(sha256\(core_wheel\.read_bytes\(\)\)\.hexdigest\(\) == \(\n\s*\")[0-9a-f]+", rf"\1{digest}", s, count=1); assert count == 1, "architecture wheel pin not found"; t.write_text(s)' "$wheel"
 
 # Run the complete retained contract.
 check: test lint typecheck contract build
