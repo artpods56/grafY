@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { ArrowUpRight, Library, LoaderCircle, X } from "lucide-react";
 
 import { listLibraryArtifacts, type LibraryItem } from "@/lib/api";
+import { writeArtifactDrop } from "../model/artifact-drop";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
@@ -216,6 +217,15 @@ export function LibraryDrawer({
             <button
               key={item.artifact.artifact_id}
               type="button"
+              draggable
+              onDragStart={(event) => {
+                writeArtifactDrop(event.dataTransfer, {
+                  artifact_id: item.artifact.artifact_id,
+                  artifact_type: item.artifact.artifact_type,
+                  schema_version: item.artifact.schema_version,
+                  content_hash: item.artifact.sha256 ?? null,
+                });
+              }}
               aria-pressed={selectedId === item.artifact.artifact_id}
               onClick={() => setSelectedId(item.artifact.artifact_id)}
               {...stylex.props(

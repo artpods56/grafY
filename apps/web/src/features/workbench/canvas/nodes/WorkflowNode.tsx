@@ -1397,10 +1397,16 @@ function PortTab({
     ),
   );
   const docked = useHandleIsDocked(id, handleId);
+  // A drawer drop lands on the row itself, so only a plain input port row
+  // publishes the identity a drop reads. A port that takes plugs publishes it
+  // on each plug row instead.
+  const artifactDropRow = input && !portHasInstancePlugs(port);
 
   return (
     <div
       data-docked-port={docked ? "true" : undefined}
+      data-input-node-id={artifactDropRow ? id : undefined}
+      data-input-port-name={artifactDropRow ? port.name : undefined}
       {...stylex.props(nodeChrome.tabRow, input ? null : nodeChrome.tabRowOut)}
     >
       <div
@@ -1506,6 +1512,7 @@ function InstancePlugRow({
 
   return (
     <div
+      data-input-node-id={id}
       data-input-plug-id={plug.id}
       data-input-plug-port={port.name}
       {...stylex.props(

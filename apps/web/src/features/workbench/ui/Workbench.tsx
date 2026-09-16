@@ -193,6 +193,7 @@ import {
   createWorkflowNodeData,
   effectivePortShape,
   imageUploads,
+  portHasInstancePlugs,
   removeImageUpload,
   resolvedPortArtifactType,
   type WorkflowEdge,
@@ -210,6 +211,13 @@ import {
   preferredWholeFeedRoute,
   routesForHandleFeed,
 } from "../model/connection-feeds";
+import {
+  artifactDropCommands,
+  artifactDropTargetFromRow,
+  isArtifactDrop,
+  readArtifactDrop,
+  type ArtifactDropTarget,
+} from "../model/artifact-drop";
 import {
   collectionModeForConnection,
   inputPlugBindingsForNode,
@@ -239,6 +247,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import {
   type ArtifactTypeKey,
   type NodeSpec,
+  type Port,
   type RunEdgeCollectionMode,
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
@@ -329,6 +338,28 @@ function useSafeAreaInsets(enabled: boolean): SafeAreaInsets {
     };
   }, [enabled]);
   return insets;
+}
+
+/** The input row under a drawer drag, read from the row element it is over. */
+function artifactDropRowAt(
+  event: React.DragEvent<HTMLElement>,
+): HTMLElement | null {
+  return event.target instanceof Element
+    ? event.target.closest<HTMLElement>("[data-input-node-id]")
+    : null;
+}
+
+/** A drop only fits a row the node actually publishes for that input slot. */
+function artifactDropTargetFitsNode(
+  target: ArtifactDropTarget,
+  data: WorkflowNodeData,
+  port: Port,
+): boolean {
+  if (!portHasInstancePlugs(port)) return target.plugId === null;
+  if (!target.plugId) return false;
+  return data.inputPlugs.some(
+    (plug) => plug.id === target.plugId && plug.portName === port.name,
+  );
 }
 
 interface PendingBoundEdge {
@@ -646,7 +677,9 @@ function WorkbenchBody({
   const applyAuthoringCommands = React.useCallback(
     (commands: readonly GraphCommand[], options?: AuthoringCommandOptions) => {
       if (!commands.length) return;
-      if (shouldBlockAuthoringCommand(localAuthoringEnabledRef.current, options)) {
+      if (
+        shouldBlockAuthoringCommand(localAuthoringEnabledRef.current, options)
+      ) {
         setRunError(localAuthoringBlockedMessageRef.current);
         return;
       }
@@ -1810,9 +1843,7 @@ function WorkbenchBody({
   const localAuthoringEnabled =
     !graphOperationBusy &&
     (activeGraph
-      ? canEditGraph &&
-        graphOperationsTrusted &&
-        graphRoom.canSubmitCommands
+      ? canEditGraph && graphOperationsTrusted && graphRoom.canSubmitCommands
       : initialGraphId === null && canCreateGraph);
   const localAuthoringBlockedMessage = !(activeGraph
     ? canEditGraph
@@ -2480,6 +2511,52 @@ function WorkbenchBody({
     [applyAuthoringCommands],
   );
 
+  const dragOverArtifactDrop = React.useCallback(
+    (event: React.DragEvent<HTMLElement>) => {
+      if (!isArtifactDrop(event.dataTransfer)) return;
+      const row = artifactDropRowAt(event);
+      if (!row) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    [],
+  );
+
+  const dropArtifact = React.useCallback(
+    (event: React.DragEvent<HTMLElement>) => {
+      if (!isArtifactDrop(event.dataTransfer)) return;
+      const row = artifactDropRowAt(event);
+      if (!row) return;
+      event.preventDefault();
+      const payload = readArtifactDrop(event.dataTransfer);
+      const target = artifactDropTargetFromRow(row);
+      if (!payload || !target) return;
+      // Read the graph at drop time: a drag captures its state when it starts,
+      // so acting on that snapshot would miss an earlier drop.
+      const node = nodesRef.current.find(
+        (candidate) => candidate.id === target.nodeId,
+      );
+      if (!node || !workflowNodeIsSupported(node.data)) return;
+      const port = node.data.spec.inputs.find(
+        (candidate) => candidate.name === target.portName,
+      );
+      if (!port || !artifactDropTargetFitsNode(target, node.data, port)) return;
+      const commands = artifactDropCommands(
+        payload,
+        target,
+        port,
+        node.data.artifactTypeBindings,
+        {
+          edges: edgesRef.current,
+          origins: authoredDocumentRef.current.origins,
+          conversions: registry?.artifact_conversions ?? [],
+        },
+      );
+      if (commands?.length) applyAuthoringCommands(commands);
+    },
+    [applyAuthoringCommands, registry?.artifact_conversions],
+  );
+
   const addWorkflowEdge = React.useCallback(
     (
       connection: Connection,
@@ -2785,11 +2862,7 @@ function WorkbenchBody({
       }) ?? { x: 600, y: 280 };
       const data = attachNodeCallbacks(createWorkflowNodeData(spec));
       applyAuthoringCommands([
-        addNodeCommand(
-          id,
-          data,
-          { x: center.x - 140, y: center.y - 110 },
-        ),
+        addNodeCommand(id, data, { x: center.x - 140, y: center.y - 110 }),
       ]);
       setSelectedNodeIdSet(new Set([id]));
       setSelectedEdgeIdSet(new Set());
@@ -2946,16 +3019,12 @@ function WorkbenchBody({
           };
       const edgeId = `edge-${createUuid()}`;
       const selection = connectionRouteSelection(choice.route);
-      const nodeCommand = addNodeCommand(
-        id,
-        data,
-        {
-          x: contextualDiscovery.flowPosition.x,
-          y:
-            contextualDiscovery.flowPosition.y -
-            DEFAULT_NODE_PLACEMENT_HEIGHT / 2,
-        },
-      );
+      const nodeCommand = addNodeCommand(id, data, {
+        x: contextualDiscovery.flowPosition.x,
+        y:
+          contextualDiscovery.flowPosition.y -
+          DEFAULT_NODE_PLACEMENT_HEIGHT / 2,
+      });
 
       const edgeCommand = addEdgeCommand(
         edgeConnection,
@@ -2973,10 +3042,7 @@ function WorkbenchBody({
         edgeId,
       );
 
-      applyAuthoringCommands([
-        nodeCommand,
-        edgeCommand,
-      ]);
+      applyAuthoringCommands([nodeCommand, edgeCommand]);
       setSelectedNodeIdSet(new Set([id]));
       setSelectedEdgeIdSet(new Set());
       setContextualDiscovery(null);
@@ -3938,6 +4004,8 @@ function WorkbenchBody({
       <section
         {...stylex.props(s.canvas)}
         aria-label="Workflow canvas"
+        onDragOver={dragOverArtifactDrop}
+        onDrop={dropArtifact}
         onPointerMove={(event) => {
           if (!graphRoom.canPublishPresence || !flow) return;
           presenceOverCanvasRef.current = true;
@@ -4006,8 +4074,8 @@ function WorkbenchBody({
                   !graphOperationsTrusted
                     ? "Run is unavailable until the displayed graph is current"
                     : selectedNodesAreRunnable
-                    ? "Run only the selected nodes; latest accessible upstream outputs are pinned"
-                    : "Unavailable or invalid selected nodes cannot run"
+                      ? "Run only the selected nodes; latest accessible upstream outputs are pinned"
+                      : "Unavailable or invalid selected nodes cannot run"
                 }
                 {...stylex.props(s.toolButton, s.primaryButton)}
                 onClick={() => void runWorkflow("selected")}
@@ -4026,8 +4094,8 @@ function WorkbenchBody({
                   !graphOperationsTrusted
                     ? "Run is unavailable until the displayed graph is current"
                     : selectedWithDependenciesAreRunnable
-                    ? `Run the selection and every upstream dependency (${selectedWithDependenciesCount} total)`
-                    : "Unavailable or invalid upstream dependencies cannot run"
+                      ? `Run the selection and every upstream dependency (${selectedWithDependenciesCount} total)`
+                      : "Unavailable or invalid upstream dependencies cannot run"
                 }
                 {...stylex.props(s.toolButton)}
                 onClick={() => void runWorkflow("selected-with-dependencies")}
@@ -4108,7 +4176,7 @@ function WorkbenchBody({
               ? "Stop the current execution before opening Module setup"
               : !graphOperationsTrusted
                 ? "Module setup is unavailable until the displayed graph is current"
-              : "Set up and publish this graph as a Module"
+                : "Set up and publish this graph as a Module"
           }
           disabled={running || !graphOperationsTrusted}
           {...stylex.props(s.railButton)}
@@ -4245,7 +4313,10 @@ function WorkbenchBody({
           type="button"
           aria-label="Saved artifacts"
           title="Saved artifacts and where they came from"
-          {...stylex.props(s.railButton, libraryDrawerOpen ? s.railPrimary : null)}
+          {...stylex.props(
+            s.railButton,
+            libraryDrawerOpen ? s.railPrimary : null,
+          )}
           onClick={() => {
             closeGraphBrowser();
             setLibraryOpen(false);
