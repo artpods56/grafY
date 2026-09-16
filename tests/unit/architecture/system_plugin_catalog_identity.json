@@ -444,6 +444,48 @@
             "sha256": "c065574ee6bb529e861886d0f1f72d43e0e82326e29acd11ccba2d3c0a9e7bbd"
           },
           "title": "Table"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.geojson@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "GeoJSON document"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.json@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "JSON document"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.tiff@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "TIFF image"
         }
       ],
       "artifact_types": [
@@ -769,6 +811,136 @@
             "uploads"
           ],
           "title": "Import georeferenced GeoTIFF"
+        },
+        {
+          "cache_policy": "never",
+          "config": {
+            "fields": [],
+            "required": [],
+            "sha256": "bf56f6f531cb61c6fb8165d68e387ab3757f8d52f1fa07ee91f2b48f83cffea5"
+          },
+          "description": "Parse one persisted GeoJSON document into an exact WGS84 collection.",
+          "input_schema": {
+            "fields": [
+              "file"
+            ],
+            "required": [
+              "file"
+            ],
+            "sha256": "47bc70c40173af366e6ed98149a19485d2fbedb9623e83604290c56746034348"
+          },
+          "inputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "file.geojson@1",
+              "description": "GeoJSON document artifact to parse.",
+              "instance_plugs": false,
+              "name": "file",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "key": "gis.geojson.parse@1",
+          "output_schema": {
+            "fields": [
+              "features"
+            ],
+            "required": [
+              "features"
+            ],
+            "sha256": "3fbd10fda1b0514fa2d40e5eb1359097e95ad167d8ad94b93db412168182a162"
+          },
+          "outputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "geo.feature_collection@1",
+              "description": "Validated exact WGS84 GeoJSON FeatureCollection.",
+              "instance_plugs": false,
+              "name": "features",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "required_capabilities": [],
+          "secret_inputs": [],
+          "staged_upload_inputs": [],
+          "title": "Parse GeoJSON"
+        },
+        {
+          "cache_policy": "never",
+          "config": {
+            "fields": [
+              "source_name"
+            ],
+            "required": [
+              "source_name"
+            ],
+            "sha256": "d7a11b95512ad23f453bf8c2b73f78ec43c1dec84828fe325b8aac2204adf041"
+          },
+          "description": "Import one persisted GeoTIFF file artifact as a georeferenced scan.",
+          "input_schema": {
+            "fields": [
+              "file"
+            ],
+            "required": [
+              "file"
+            ],
+            "sha256": "6969640687a94b03169e620c8c1d8585c20f418b28ad2c9f931fb82eb692a29a"
+          },
+          "inputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "file.tiff@1",
+              "description": "Georeferenced TIFF file artifact to import.",
+              "instance_plugs": false,
+              "name": "file",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "key": "gis.raster_scan.import@1",
+          "output_schema": {
+            "fields": [
+              "raster"
+            ],
+            "required": [
+              "raster"
+            ],
+            "sha256": "17c5658ddf2977c833a096f3261e1f95e63fb1204750515b42fc669ed7eacf4c"
+          },
+          "outputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "geo.raster_scan@1",
+              "description": "Georeferenced raster normalized to COG during persistence.",
+              "instance_plugs": false,
+              "name": "raster",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "required_capabilities": [
+            "native.gdal"
+          ],
+          "secret_inputs": [],
+          "staged_upload_inputs": [],
+          "title": "Import raster scan"
         },
         {
           "cache_policy": "never",
@@ -1829,7 +2001,78 @@
       "title": "SQL"
     },
     "image": {
-      "artifact_dependencies": [],
+      "artifact_dependencies": [
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.png@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "PNG image"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.jpeg@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "JPEG image"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.webp@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "WebP image"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.tiff@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "TIFF image"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.bmp@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "BMP image"
+        }
+      ],
       "artifact_types": [
         {
           "bundle": "binary-file@1",
@@ -1902,6 +2145,68 @@
             "uploads"
           ],
           "title": "Upload images"
+        },
+        {
+          "cache_policy": "never",
+          "config": {
+            "fields": [],
+            "required": [],
+            "sha256": "bf56f6f531cb61c6fb8165d68e387ab3757f8d52f1fa07ee91f2b48f83cffea5"
+          },
+          "description": "Decode one ordered batch of persisted image file artifacts.",
+          "input_schema": {
+            "fields": [
+              "files"
+            ],
+            "required": [
+              "files"
+            ],
+            "sha256": "efaf0fcf5cf2a674fa588d31a6a3ae6616c0ecabf5a81923bbd96cfda32b054d"
+          },
+          "inputs": [
+            {
+              "accepted_shapes": [
+                "many"
+              ],
+              "artifact": "file.png@1",
+              "description": "Ordered image file artifacts to decode.",
+              "instance_plugs": false,
+              "name": "files",
+              "required": true,
+              "shape": "many",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "key": "image.decode@1",
+          "output_schema": {
+            "fields": [
+              "images"
+            ],
+            "required": [
+              "images"
+            ],
+            "sha256": "fc5f261684577eb09d495ffc53c4a0494ab87f4c2c398cec87367db2838242de"
+          },
+          "outputs": [
+            {
+              "accepted_shapes": [
+                "many"
+              ],
+              "artifact": "image.raster@1",
+              "description": "Decoded raster images in input order.",
+              "instance_plugs": false,
+              "name": "images",
+              "required": true,
+              "shape": "many",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "required_capabilities": [],
+          "secret_inputs": [],
+          "staged_upload_inputs": [],
+          "title": "Decode images"
         }
       ],
       "title": "Image"
@@ -2282,7 +2587,36 @@
       "title": "Sequence"
     },
     "table": {
-      "artifact_dependencies": [],
+      "artifact_dependencies": [
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.csv@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "CSV file"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "file.xlsx@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "Excel workbook"
+        }
+      ],
       "artifact_types": [
         {
           "bundle": "table-bundle@1",
@@ -2371,6 +2705,73 @@
             "uploads"
           ],
           "title": "Import table file"
+        },
+        {
+          "cache_policy": "never",
+          "config": {
+            "fields": [
+              "delimiter",
+              "header_row",
+              "sheet_name",
+              "skip_empty_rows"
+            ],
+            "required": [],
+            "sha256": "bfe0e2a7f72925d2887635d7fa730d7c5a699fb5d23b9991eea53b3e15fe8017"
+          },
+          "description": "Import one persisted CSV or XLSX file artifact as a table.",
+          "input_schema": {
+            "fields": [
+              "file"
+            ],
+            "required": [
+              "file"
+            ],
+            "sha256": "b199836acf771e3ccb4a0e9edec6615392a192f36f4d6afc449fead125fabf4b"
+          },
+          "inputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "file.csv@1",
+              "description": "CSV or XLSX file artifact to import.",
+              "instance_plugs": false,
+              "name": "file",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "key": "table.import@1",
+          "output_schema": {
+            "fields": [
+              "table"
+            ],
+            "required": [
+              "table"
+            ],
+            "sha256": "fb50122623ed5f1d553c990a3d6658b31d4e25771621f5ba2c7aea244b2153d5"
+          },
+          "outputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "table.data@1",
+              "description": "Table imported from the selected worksheet or CSV file.",
+              "instance_plugs": false,
+              "name": "table",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "required_capabilities": [],
+          "secret_inputs": [],
+          "staged_upload_inputs": [],
+          "title": "Import table"
         },
         {
           "cache_policy": "exact",

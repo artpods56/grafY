@@ -22,6 +22,7 @@ def test_builtin_node_cache_policy_inventory_is_fail_closed() -> None:
 
     assert policies == {
         ("image.upload", 1): NodeCachePolicy.NEVER,
+        ("image.decode", 1): NodeCachePolicy.NEVER,
         ("module.input", 1): NodeCachePolicy.NEVER,
         ("module.output", 1): NodeCachePolicy.EXACT,
         ("sequence.collect", 1): NodeCachePolicy.EXACT,
