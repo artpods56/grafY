@@ -895,6 +895,13 @@ def test_contract_digest_accepts_releases_persisted_before_canonicalization() ->
     catalog = _contract_catalog()
     stored = stored_contract_digest_before_canonicalization(catalog)
     assert stored != plugin_contract_digest(catalog)
+    # Literal produced by the ``plugin_contract_digest`` of a9037727, the commit
+    # this branch repairs, so the oracle is tied to the implementation that wrote
+    # those rows instead of agreeing with a copy of its own fragments. Recompute
+    # it when the fixture catalog changes.
+    assert stored == (
+        "86f63659d2f0b590cda937e7962f691ca8fdee28eed305ae85fa1da37ac83ffc"
+    )
 
     assert plugin_contract_digest_matches(catalog, plugin_contract_digest(catalog))
     assert plugin_contract_digest_matches(catalog, stored)
