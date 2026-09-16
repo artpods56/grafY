@@ -85,7 +85,9 @@ classifies every defaulted contract field, and the classification test fails
 when a defaulted field is added without a role. Declared extension claims and
 non-default confirmation rules stay in the digest. Releases published before the
 empty defaults were dropped keep their own digest form, which
-`plugin_contract_digest_matches` still accepts.
+`plugin_contract_digest_matches` still accepts. The guest image hashes with the
+SDK wheel vendored in its own lock, so that wheel carries the same
+canonicalization as the host.
 
 6. Overlays the current release in `GET /v1/workspaces/{id}/nodes`, including
    Plugin-owned artifact types and function-node contracts.

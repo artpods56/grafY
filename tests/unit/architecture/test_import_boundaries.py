@@ -3,6 +3,7 @@ from hashlib import sha256
 from importlib.util import resolve_name
 from pathlib import Path
 from typing import cast
+from zipfile import ZipFile
 
 import pytest
 import tomllib
@@ -286,9 +287,29 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
         assert "grafy-core==0.1.0" in cast(list[str], project["dependencies"])
         core_wheel = project_root / "wheels/grafy_core-0.1.0-py3-none-any.whl"
         assert sha256(core_wheel.read_bytes()).hexdigest() == (
-            "08128a287d3b26fa4961afed2b80e4c7a3b65c01dcdecc03b032e1d77e71821f"
+            "94c822787ef920bc1236147df172d834f34a321a32d41cd1e0b072799d5edd65"
         )
         assert "workspace = true" not in (project_root / "pyproject.toml").read_text()
+
+
+def test_vendored_sdk_wheels_carry_the_contract_digest_compatibility_window() -> None:
+    """Every vendored SDK wheel must canonicalize the catalog digest.
+
+    The guest runtime hashes the catalog with the SDK wheel installed in its own
+    image, so a wheel built before empty-default canonicalization rejects every
+    release the host publishes now. Rebuild a stale wheel from libs/core and
+    refresh its hash.
+    """
+
+    wheels = sorted(REPO_ROOT.glob("*/**/wheels/grafy_core-*.whl"))
+    assert len(wheels) >= len(PUBLISHED_PLUGIN_FAMILIES) + 1
+    for wheel in wheels:
+        with ZipFile(wheel) as archive:
+            guest_sdk = archive.read(
+                "grafy_core/domain/plugin_releases.py"
+            ).decode("utf-8")
+        assert "PLUGIN_CONTRACT_DIGEST_FIELD_ROLES" in guest_sdk, wheel
+        assert "plugin_contract_digest_matches" in guest_sdk, wheel
 
 
 def test_host_eligible_plugins_carry_their_exact_build_backend() -> None:
