@@ -1,6 +1,5 @@
 from hashlib import sha256
 from io import BytesIO
-from mimetypes import guess_type
 from typing import Annotated, final, override
 
 from grafy_core.artifact_contracts import (
@@ -17,7 +16,6 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
-from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.file_artifacts import load_file_artifact
 from grafy_core.file_contracts import (
     BMP_FILE,
@@ -27,19 +25,13 @@ from grafy_core.file_contracts import (
     WEBP_FILE,
 )
 from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
-from grafy_core.plugins import NodeStagedUploadInput
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.storage import FileMetadata, FileStoragePort, SaveFileCommand
-from grafy_core.ports.uploads import UploadReaderPort
 from grafy_core.runtime.persistence import (
     ArtifactOutputWriter,
     ArtifactWriteContext,
 )
-from grafy_core.runtime.upload_reader import (
-    UploadBytesUnavailableError,
-    read_confirmed_upload,
-)
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
+from pydantic import Field
 
 from grafy_workbench.image.declaration import IMAGES
 
@@ -159,99 +151,6 @@ IMAGES.register_writer(
         storage_backend=context.storage_backend,
     )
 )
-
-
-class ImageUploadError(RuntimeError):
-    pass
-
-
-class ImageUploadItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    upload_key: StrictStr = Field(min_length=1)
-    filename: StrictStr = Field(min_length=1)
-    byte_size: StrictInt = Field(ge=0)
-
-
-class ImageUploadConfig(NodeConfig):
-    uploads: list[ImageUploadItem] = Field(
-        min_length=1,
-        description="Staged image uploads in output order.",
-    )
-
-
-class ImageUploadInput(NodeInput):
-    pass
-
-
-class ImageUploadOutput(NodeOutput):
-    images: Annotated[
-        list[RasterImageContent],
-        OutPort(RASTER_IMAGE),
-        Field(description="Ordered raster images imported from staged uploads."),
-    ]
-
-
-@IMAGES.node(
-    operator_id="image.upload",
-    version=1,
-    title="Upload images",
-    factory=lambda context: UploadImagesNode(
-        uploads=context.upload_reader,
-    ),
-    staged_upload_inputs=(NodeStagedUploadInput(config_field="uploads"),),
-    required_capabilities=(PluginRuntimeCapability.STAGED_UPLOADS,),
-)
-@final
-class UploadImagesNode(Node[ImageUploadConfig, ImageUploadInput, ImageUploadOutput]):
-    """Imports staged image uploads as an ordered raster image sequence."""
-
-    def __init__(self, uploads: UploadReaderPort) -> None:
-        self._uploads = uploads
-
-    @override
-    async def run(
-        self,
-        context: NodeExecutionContext,
-        config: ImageUploadConfig,
-        _inputs: ImageUploadInput,
-        /,
-    ) -> ImageUploadOutput:
-        images: list[RasterImageContent] = []
-        for upload in config.uploads:
-            try:
-                content = await read_confirmed_upload(
-                    self._uploads,
-                    workspace_id=context.workspace_id,
-                    upload_key=upload.upload_key,
-                    byte_size=upload.byte_size,
-                    label="Staged image upload",
-                )
-            except UploadBytesUnavailableError as exc:
-                raise ImageUploadError(str(exc)) from exc
-            images.append(
-                RasterImageContent(
-                    content=content,
-                    content_type=self._content_type_for(upload),
-                    filename=upload.filename,
-                )
-            )
-        return ImageUploadOutput(images=images)
-
-    def _content_type_for(self, upload: ImageUploadItem) -> RasterImageContentType:
-        content_type = guess_type(upload.filename)[0]
-        if content_type in (
-            "image/png",
-            "image/jpeg",
-            "image/webp",
-            "image/tiff",
-            "image/bmp",
-        ):
-            return content_type
-        raise ImageUploadError(
-            f"Unsupported image content type for upload {upload.upload_key!r} "
-            f"with filename {upload.filename!r}"
-        )
 
 
 class ImageDecodeError(RuntimeError):

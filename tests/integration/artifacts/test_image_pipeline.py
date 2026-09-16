@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 import pytest
 from grafy_core.artifact_contracts import RASTER_IMAGE, RasterImageContent
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
+from grafy_core.file_contracts import PNG_FILE
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.runtime.execution import NodeRuntime
@@ -27,14 +28,13 @@ from grafy_plugin_ocr.tesseract import FakeOcrEngine, TesseractOcrNode
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.image import IMAGES
 from grafy_workbench.image.nodes import (
-    ImageUploadError,
+    DecodeImagesNode,
     RasterImageOutputWriter,
-    UploadImagesNode,
 )
 from grafy_workbench.sequence.nodes import CollectNode
 from PIL import Image
 
-from tests.support.uploads import bundle_upload_reader, seed_ready_upload
+from tests.support.file_artifacts import seed_file_artifact
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -52,25 +52,28 @@ def _png_bytes(size: tuple[int, int]) -> bytes:
 
 @pytest.mark.asyncio
 async def test_runtime_chains_image_collect_and_ocr_writers(tmp_path: Path) -> None:
-    staging_root = tmp_path / "uploads"
     uow = InMemoryUnitOfWork()
     first_content = _png_bytes((3, 2))
     second_content = _png_bytes((5, 4))
-    first_id = await seed_ready_upload(
-        uow,
-        uploads_dir=staging_root,
-        workspace_id=TEST_WORKSPACE_ID,
-        content=first_content,
-        filename="page-001.png",
-    )
-    second_id = await seed_ready_upload(
-        uow,
-        uploads_dir=staging_root,
-        workspace_id=TEST_WORKSPACE_ID,
-        content=second_content,
-        filename="page-002.png",
-    )
     storage = LocalFileObjectStore(tmp_path / "object-store")
+    first_ref = await seed_file_artifact(
+        storage,
+        uow,
+        workspace_id=TEST_WORKSPACE_ID,
+        spec=PNG_FILE,
+        content=first_content,
+        original_filename="page-001.png",
+        content_type="image/png",
+    )
+    second_ref = await seed_file_artifact(
+        storage,
+        uow,
+        workspace_id=TEST_WORKSPACE_ID,
+        spec=PNG_FILE,
+        content=second_content,
+        original_filename="page-002.png",
+        content_type="image/png",
+    )
     runtime = NodeRuntime(
         materializer=InputMaterializer(
             ResolverRegistry([PilImageResolver(uow=uow, storage=storage)])
@@ -89,46 +92,37 @@ async def test_runtime_chains_image_collect_and_ocr_writers(tmp_path: Path) -> N
         ),
     )
 
-    upload_output = await runtime.run_node(
-        UploadImagesNode(bundle_upload_reader(uow, uploads_dir=staging_root)),
+    decode_output = await runtime.run_node(
+        DecodeImagesNode(storage=storage, uow=uow),
         NodeExecutionContext(
             workspace_id=TEST_WORKSPACE_ID,
-            node_id="image_upload_1",
+            node_id="image_decode_1",
         ),
-        {},
-        config={
-            "uploads": [
-                {
-                    "upload_key": str(second_id),
-                    "filename": "page-002.png",
-                    "byte_size": len(second_content),
-                },
-                {
-                    "upload_key": str(first_id),
-                    "filename": "page-001.png",
-                    "byte_size": len(first_content),
-                },
-            ],
+        {
+            "files": ArtifactRefSequence.from_key(
+                key=PNG_FILE.key,
+                item_refs=[second_ref, first_ref],
+            )
         },
     )
-    assert isinstance(upload_output, PersistedNodeOutput)
-    uploaded_images = upload_output["images"]
+    assert isinstance(decode_output, PersistedNodeOutput)
+    decoded_images = decode_output["images"]
 
-    assert isinstance(uploaded_images, ArtifactRefSequence)
-    assert uploaded_images.artifact_type == RASTER_IMAGE.key.id
-    assert len(uploaded_images.item_refs) == 2
+    assert isinstance(decoded_images, ArtifactRefSequence)
+    assert decoded_images.artifact_type == RASTER_IMAGE.key.id
+    assert len(decoded_images.item_refs) == 2
 
     collect_output = await runtime.run_node(
         CollectNode(),
         NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="collect_1"),
-        {"items": [uploaded_images]},
+        {"items": [decoded_images]},
         artifact_type_bindings={"T": RASTER_IMAGE.key},
     )
     assert isinstance(collect_output, PersistedNodeOutput)
     collected_images = collect_output["items"]
 
     assert isinstance(collected_images, ArtifactRefSequence)
-    assert collected_images.item_refs == uploaded_images.item_refs
+    assert collected_images.item_refs == decoded_images.item_refs
     assert collected_images.metadata["collect_segments"] == [
         {
             "input_index": 0,
@@ -198,98 +192,6 @@ async def test_ocr_many_input_requires_artifact_ref_sequence() -> None:
             TesseractOcrNode.input_contract,
             {"pages": [page_ref]},
             TEST_WORKSPACE_ID,
-        )
-
-
-@pytest.mark.asyncio
-async def test_upload_rejects_keys_that_are_not_upload_identifiers(
-    tmp_path: Path,
-) -> None:
-    uploads_dir = tmp_path / "uploads"
-    uploads_dir.mkdir()
-    node = UploadImagesNode(
-        bundle_upload_reader(InMemoryUnitOfWork(), uploads_dir=uploads_dir)
-    )
-
-    with pytest.raises(ImageUploadError, match="not a known upload identifier"):
-        await node.run(
-            NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="upload"),
-            node.config_contract.model.model_validate(
-                {
-                    "uploads": [
-                        {
-                            "upload_key": "../outside.png",
-                            "filename": "outside.png",
-                            "byte_size": 1,
-                        }
-                    ]
-                }
-            ),
-            node.input_contract.model.model_validate({}),
-        )
-
-
-@pytest.mark.asyncio
-async def test_upload_fails_closed_when_file_exists_without_db_row(
-    tmp_path: Path,
-) -> None:
-    uploads_dir = tmp_path / "uploads"
-    absent_id = uuid4()
-    staged = uploads_dir / str(TEST_WORKSPACE_ID) / str(absent_id)
-    staged.parent.mkdir(parents=True)
-    write_png(staged, (2, 2))
-    node = UploadImagesNode(
-        bundle_upload_reader(InMemoryUnitOfWork(), uploads_dir=uploads_dir)
-    )
-
-    with pytest.raises(ImageUploadError, match="was not found in workspace"):
-        await node.run(
-            NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="upload"),
-            node.config_contract.model.model_validate(
-                {
-                    "uploads": [
-                        {
-                            "upload_key": str(absent_id),
-                            "filename": "page.png",
-                            "byte_size": staged.stat().st_size,
-                        }
-                    ]
-                }
-            ),
-            node.input_contract.model.model_validate({}),
-        )
-
-
-@pytest.mark.asyncio
-async def test_upload_fails_closed_for_row_in_another_workspace(tmp_path: Path) -> None:
-    uploads_dir = tmp_path / "uploads"
-    other_workspace = UUID("00000000-0000-0000-0000-000000000902")
-    content = _png_bytes((2, 2))
-    uow = InMemoryUnitOfWork()
-    foreign_id = await seed_ready_upload(
-        uow,
-        uploads_dir=uploads_dir,
-        workspace_id=other_workspace,
-        content=content,
-        filename="page.png",
-    )
-    node = UploadImagesNode(bundle_upload_reader(uow, uploads_dir=uploads_dir))
-
-    with pytest.raises(ImageUploadError, match="was not found in workspace"):
-        await node.run(
-            NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="upload"),
-            node.config_contract.model.model_validate(
-                {
-                    "uploads": [
-                        {
-                            "upload_key": str(foreign_id),
-                            "filename": "page.png",
-                            "byte_size": len(content),
-                        }
-                    ]
-                }
-            ),
-            node.input_contract.model.model_validate({}),
         )
 
 

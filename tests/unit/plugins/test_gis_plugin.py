@@ -12,6 +12,7 @@ import httpx
 import pytest
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeSpec
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.file_contracts import TIFF_FILE
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.plugins import (
     NodeHttpEgressInput,
@@ -54,15 +55,9 @@ from grafy_plugin_gis.nodes import (
     GeoFeaturesToTableConfig,
     GeoFeaturesToTableError,
     GeoFeaturesToTableInput,
-    GeoJsonUploadConfig,
-    GeoJsonUploadError,
-    GeoJsonUploadInput,
-    GeoJsonUploadItem,
-    GeoTiffUploadConfig,
-    GeoTiffUploadInput,
-    GeoTiffUploadItem,
-    ImportGeoJsonNode,
-    ImportGeoTiffNode,
+    GeoRasterScanImportConfig,
+    GeoRasterScanImportInput,
+    ImportRasterScanNode,
     ImportWfsNode,
     RasterLayerConfig,
     RasterLayerInput,
@@ -94,7 +89,7 @@ from grafy_storage import LocalFileObjectStore
 from grafy_workbench.table import TABLES
 from pydantic import ValidationError
 
-from tests.support.uploads import bundle_upload_reader, seed_ready_upload
+from tests.support.file_artifacts import seed_file_artifact
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -118,49 +113,6 @@ def feature_collection(*coordinates: tuple[float, float]) -> bytes:
 
 def artifact_ref(artifact_type: ArtifactTypeSpec) -> ArtifactRef:
     return ArtifactRef.from_key(artifact_id=uuid4(), key=artifact_type.key)
-
-
-async def seed_staged_upload(
-    unit_of_work: InMemoryUnitOfWork,
-    *,
-    workspace_id: UUID,
-    upload_key: str,
-    filename: str,
-    byte_size: int,
-) -> None:
-    del unit_of_work, workspace_id, upload_key, filename, byte_size
-
-
-async def import_geojson(
-    uploads_dir: Path,
-    *,
-    filename: str,
-    content: bytes,
-) -> GeoFeatureCollection:
-    uow = InMemoryUnitOfWork()
-    upload_id = await seed_ready_upload(
-        uow,
-        uploads_dir=uploads_dir,
-        workspace_id=TEST_WORKSPACE_ID,
-        content=content,
-        filename=filename,
-    )
-    result = await ImportGeoJsonNode(
-        bundle_upload_reader(uow, uploads_dir=uploads_dir)
-    ).run(
-        NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="import"),
-        GeoJsonUploadConfig(
-            uploads=[
-                GeoJsonUploadItem(
-                    upload_key=str(upload_id),
-                    filename=filename,
-                    byte_size=len(content),
-                )
-            ]
-        ),
-        GeoJsonUploadInput(),
-    )
-    return result.features
 
 
 def write_geotiff(path: Path) -> bytes:
@@ -210,13 +162,13 @@ def test_gis_registers_exact_sources_lightweight_layers_and_documents() -> None:
         GEO_MAP_DOCUMENT.key,
     }
     assert (
-        registry.node_registration("gis.geojson.upload", 1)
+        registry.node_registration("gis.geojson.parse", 1)
         .node_class.output_contract.ports["features"]
         .produces
         == GEO_FEATURE_COLLECTION.key
     )
     assert (
-        registry.node_registration("gis.geotiff.upload", 1)
+        registry.node_registration("gis.raster_scan.import", 1)
         .node_class.output_contract.ports["raster"]
         .produces
         == GEO_RASTER_SCAN.key
@@ -491,51 +443,6 @@ async def test_table_wkt_error_identifies_row_and_column() -> None:
                 source_crs="EPSG:4326",
             ),
             TableToGeoFeaturesInput(table=table),
-        )
-
-
-@pytest.mark.asyncio
-async def test_geojson_upload_validates_exact_wgs84_source(tmp_path: Path) -> None:
-    collection = await import_geojson(
-        tmp_path / "uploads",
-        filename="cities.geojson",
-        content=feature_collection((13.405, 52.52), (2.3522, 48.8566)),
-    )
-    assert collection.bounds == (2.3522, 48.8566, 13.405, 52.52)
-
-    with pytest.raises(GeoJsonUploadError, match="outside WGS84"):
-        await import_geojson(
-            tmp_path / "other-uploads",
-            filename="projected.geojson",
-            content=feature_collection((4_000_000, 5_000_000)),
-        )
-
-
-@pytest.mark.asyncio
-async def test_geojson_upload_fails_closed_without_db_row(tmp_path: Path) -> None:
-    uploads_dir = tmp_path / "uploads"
-    absent_id = uuid4()
-    content = feature_collection((13.405, 52.52))
-    staged = uploads_dir / str(TEST_WORKSPACE_ID) / str(absent_id)
-    staged.parent.mkdir(parents=True)
-    staged.write_bytes(content)
-    node = ImportGeoJsonNode(
-        bundle_upload_reader(InMemoryUnitOfWork(), uploads_dir=uploads_dir)
-    )
-
-    with pytest.raises(GeoJsonUploadError, match="was not found in workspace"):
-        await node.run(
-            NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="import"),
-            GeoJsonUploadConfig(
-                uploads=[
-                    GeoJsonUploadItem(
-                        upload_key=str(absent_id),
-                        filename="orphan.geojson",
-                        byte_size=len(content),
-                    )
-                ]
-            ),
-            GeoJsonUploadInput(),
         )
 
 
@@ -1124,39 +1031,30 @@ async def test_wfs_import_rejects_oversized_page_with_context(
 
 
 @pytest.mark.asyncio
-async def test_geotiff_upload_and_raster_persistence_produce_cog_and_xyz_tiles(
+async def test_raster_scan_import_and_raster_persistence_produce_cog_and_xyz_tiles(
     tmp_path: Path,
 ) -> None:
-    uploads = tmp_path / "uploads"
-    workspace_uploads = uploads / str(TEST_WORKSPACE_ID)
-    workspace_uploads.mkdir(parents=True)
-    source_content = write_geotiff(workspace_uploads / "source.tif")
+    source_content = write_geotiff(tmp_path / "source.tif")
     unit_of_work = InMemoryUnitOfWork()
-    upload_id = await seed_ready_upload(
-        unit_of_work,
-        uploads_dir=uploads,
-        workspace_id=TEST_WORKSPACE_ID,
-        content=source_content,
-        filename="historical-map.tif",
-    )
-    upload = await ImportGeoTiffNode(
-        bundle_upload_reader(unit_of_work, uploads_dir=uploads)
-    ).run(
-        NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="upload"),
-        GeoTiffUploadConfig(
-            uploads=[
-                GeoTiffUploadItem(
-                    upload_key=str(upload_id),
-                    filename="historical-map.tif",
-                    byte_size=len(source_content),
-                )
-            ],
-            source_name="Historical map",
-        ),
-        GeoTiffUploadInput(),
-    )
     object_root = tmp_path / "objects"
     storage = LocalFileObjectStore(object_root)
+    file_ref = await seed_file_artifact(
+        storage,
+        unit_of_work,
+        workspace_id=TEST_WORKSPACE_ID,
+        spec=TIFF_FILE,
+        content=source_content,
+        original_filename="historical-map.tif",
+        content_type="image/tiff",
+    )
+    raster = await ImportRasterScanNode(
+        storage=storage,
+        uow=unit_of_work,
+    ).run(
+        NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="raster_scan"),
+        GeoRasterScanImportConfig(source_name="Historical map"),
+        GeoRasterScanImportInput(file=file_ref),
+    )
     writer = RasterScanOutputWriter(
         storage=storage,
         uow=unit_of_work,
@@ -1164,7 +1062,7 @@ async def test_geotiff_upload_and_raster_persistence_produce_cog_and_xyz_tiles(
         storage_backend="local",
     )
     ref = await writer.write(
-        upload.raster,
+        raster.raster,
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
                 workspace_id=TEST_WORKSPACE_ID,

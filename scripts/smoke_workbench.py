@@ -1,16 +1,21 @@
 import asyncio
 import json
+from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 from uuid import UUID
 
 from PIL import Image, ImageDraw
 
 from grafy_core.artifacts import (
+    ArtifactObject,
     ArtifactRef,
     ArtifactRefSequence,
     InMemoryUnitOfWork,
 )
+from grafy_core.file_contracts import PNG_FILE
 from grafy_core.nodes import NodeExecutionContext
+from grafy_core.ports.storage import SaveFileCommand
 from grafy_workbench.arithmetic.nodes import (
     INTEGER_VALUE,
     IntegerValueOutputWriter,
@@ -39,13 +44,13 @@ from grafy_storage import LocalFileObjectStore
 
 WORKSPACE = Path(".grafy-artifacts/workbench-smoke").resolve()
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
-UPLOADS = WORKSPACE / "uploads"
+SAMPLE_DIR = WORKSPACE / "samples"
 OBJECT_STORE = WORKSPACE / "objects"
 BUCKET = "workbench-artifacts"
 
 
 async def main() -> None:
-    image_paths = create_sample_images(UPLOADS / str(WORKSPACE_ID))
+    image_paths = create_sample_images(SAMPLE_DIR / str(WORKSPACE_ID))
 
     uow = InMemoryUnitOfWork()
     storage = LocalFileObjectStore(OBJECT_STORE)
@@ -55,7 +60,6 @@ async def main() -> None:
     plugin_registry.freeze()
     plugin_context = PluginRuntimeContext(
         workspace=WORKSPACE,
-        uploads_dir=UPLOADS,
         storage=storage,
         uow=uow,
         bucket=BUCKET,
@@ -75,55 +79,59 @@ async def main() -> None:
         ),
     )
 
-    upload_output = await runtime.bind(
-        plugin_registry.build_node("image.upload", 1, plugin_context),
-        NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="image_upload_1"),
-    )(
-        {},
-        config={
-            "uploads": [
-                {
-                    "upload_key": path.name,
-                    "filename": path.name,
-                    "byte_size": path.stat().st_size,
-                }
-                for path in image_paths
-            ],
+    image_files = [
+        await seed_file_artifact(
+            storage,
+            uow,
+            content=path.read_bytes(),
+            original_filename=path.name,
+        )
+        for path in image_paths
+    ]
+
+    decode_output = await runtime.run_node(
+        plugin_registry.build_node("image.decode", 1, plugin_context),
+        NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="image_decode_1"),
+        {
+            "files": ArtifactRefSequence.from_key(
+                key=PNG_FILE.key,
+                item_refs=image_files,
+            )
         },
     )
-    uploaded_images = output_sequence(upload_output, "images")
+    decoded_images = output_sequence(decode_output, "images")
 
-    collect_output = await runtime.bind(
+    collect_output = await runtime.run_node(
         CollectNode(),
         NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="collect_1"),
+        {"items": [decoded_images]},
         artifact_type_bindings={"T": RASTER_IMAGE.key},
-    )({"items": [uploaded_images]})
+    )
     collected_images = output_sequence(collect_output, "items")
 
-    count_output = await runtime.bind(
+    count_output = await runtime.run_node(
         CountNode(),
         NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="count_1"),
+        {"items": collected_images},
         artifact_type_bindings={"T": RASTER_IMAGE.key},
-    )({"items": collected_images})
+    )
     count_ref = output_ref(count_output, "count")
 
-    slice_output = await runtime.bind(
+    slice_output = await runtime.run_node(
         SliceNode(),
         NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="slice_1"),
-        artifact_type_bindings={"T": RASTER_IMAGE.key},
-    )(
         {"items": collected_images},
         config={"start": 0, "count": 1},
+        artifact_type_bindings={"T": RASTER_IMAGE.key},
     )
     selected_pages = output_sequence(slice_output, "items")
 
-    pick_output = await runtime.bind(
+    pick_output = await runtime.run_node(
         ItemAtNode(),
         NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="pick_1"),
-        artifact_type_bindings={"T": RASTER_IMAGE.key},
-    )(
         {"items": collected_images},
         config={"index": 0},
+        artifact_type_bindings={"T": RASTER_IMAGE.key},
     )
     first_image_ref = output_ref(pick_output, "item")
     first_image = await resolver_registry.resolve(
@@ -132,10 +140,11 @@ async def main() -> None:
         WORKSPACE_ID,
     )
 
-    ocr_output = await runtime.bind(
+    ocr_output = await runtime.run_node(
         plugin_registry.build_node("ocr.tesseract.pages", 2, plugin_context),
         NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="ocr_1"),
-    )({"pages": selected_pages})
+        {"pages": selected_pages},
+    )
     ocr_pages = output_sequence(ocr_output, "results")
 
     async with uow as entered:
@@ -168,7 +177,7 @@ async def main() -> None:
 
     result: dict[str, object] = {
         "workspace": str(WORKSPACE),
-        "uploaded_sequence_id": uploaded_images.sequence_id,
+        "decoded_sequence_id": decoded_images.sequence_id,
         "collected_sequence_id": collected_images.sequence_id,
         "selected_sequence_id": selected_pages.sequence_id,
         "ocr_sequence_id": ocr_pages.sequence_id,
@@ -183,6 +192,42 @@ async def main() -> None:
         "segments": collected_images.metadata["collect_segments"],
     }
     print(json.dumps(result, indent=2, default=str))
+
+
+async def seed_file_artifact(
+    storage: LocalFileObjectStore,
+    uow: InMemoryUnitOfWork,
+    *,
+    content: bytes,
+    original_filename: str,
+) -> ArtifactRef:
+    """Persist the file.png artifact and bytes ingest would have written."""
+
+    stored = await storage.save(
+        SaveFileCommand(
+            bucket=BUCKET,
+            path=f"files/{PNG_FILE.key.id}/{sha256(content).hexdigest()}",
+            stream=BytesIO(content),
+            content_type="image/png",
+            metadata={},
+            allow_overwrite=True,
+        )
+    )
+    artifact = ArtifactObject(
+        workspace_id=WORKSPACE_ID,
+        artifact_type=PNG_FILE.key.id,
+        schema_version=PNG_FILE.key.schema_version,
+        content_type="image/png",
+        bucket=stored.bucket,
+        object_key=stored.path,
+        byte_size=stored.byte_size,
+        sha256=stored.sha256,
+        metadata={"original_filename": original_filename},
+    )
+    async with uow as entered:
+        await entered.artifacts.add(artifact)
+        await entered.commit()
+    return artifact.ref()
 
 
 def output_sequence(output: object, name: str) -> ArtifactRefSequence:

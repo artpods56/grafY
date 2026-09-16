@@ -15,8 +15,6 @@ def test_manifest_loader_target_preserves_system_identity_and_freezes() -> None:
         ("gis.features.to_table", 1),
         ("gis.table.to_features", 1),
         ("gis.geojson.parse", 1),
-        ("gis.geojson.upload", 1),
-        ("gis.geotiff.upload", 1),
         ("gis.raster_scan.import", 1),
         ("gis.wfs.import", 1),
         ("gis.map.vector_layer", 1),

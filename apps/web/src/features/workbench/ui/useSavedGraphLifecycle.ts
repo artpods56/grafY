@@ -73,7 +73,6 @@ interface UseSavedGraphLifecycleOptions {
   presentation?: GraphPresentation;
   nodes: readonly WorkflowNode[];
   isExecutionRunning: () => boolean;
-  uploading: boolean;
   replaceDocument: (
     document: AuthoredGraphDocument,
     overlayNodes?: readonly WorkflowNode[],
@@ -141,7 +140,6 @@ export function useSavedGraphLifecycle({
   presentation = emptyGraphPresentation(),
   nodes,
   isExecutionRunning,
-  uploading,
   replaceDocument,
   replacePresentation,
   updateDocumentName,
@@ -219,7 +217,7 @@ export function useSavedGraphLifecycle({
       savedExecutionFingerprint === currentExecutionFingerprint,
   );
   const persistenceOperationBusy = Boolean(
-    saving || openingGraphId || deletingGraphId || uploading,
+    saving || openingGraphId || deletingGraphId,
   );
 
   React.useEffect(() => {
