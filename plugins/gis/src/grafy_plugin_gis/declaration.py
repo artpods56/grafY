@@ -10,7 +10,6 @@ GIS = Plugin(
     capabilities=(
         PluginRuntimeCapability.NATIVE_GDAL,
         PluginRuntimeCapability.NETWORK_EGRESS,
-        PluginRuntimeCapability.STAGED_UPLOADS,
     ),
 )
 GIS.register_artifact_type_dependency(TABLE_DATA)
