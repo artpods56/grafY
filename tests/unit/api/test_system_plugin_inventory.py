@@ -79,6 +79,18 @@ def _release(
     release_catalog = catalog or PluginCatalogManifest(
         slug=entry.slug,
         title=entry.slug,
+        # An owned artifact type is what makes the catalog serialize the empty
+        # extension defaults the pre-canonicalization digest still hashed, and
+        # the inventory entry only permits its own allowlisted prefixes.
+        artifact_types=(
+            PluginArtifactTypeContract(
+                key=PluginArtifactTypeKey(
+                    id=f"{entry.artifact_type_prefixes[0]}.value",
+                    schema_version=1,
+                ),
+                title="Value",
+            ),
+        ),
         nodes=(
             PluginNodeContract(
                 operator_id=f"{operator_prefix}.node",
@@ -455,14 +467,6 @@ def test_inventory_and_exact_binding_collisions_are_rejected() -> None:
         SystemPluginInventory(plugins=tuple(entries))
 
 
-_SYSTEM_PLUGINS_BY_SLUG: dict[str, Plugin] = {
-    "external.gis": GIS,
-    "external.llm": LLM,
-    "external.ocr": OCR,
-    "external.sql": SQL,
-}
-
-
 @pytest.mark.asyncio
 async def test_generator_accepts_releases_stored_before_canonicalization() -> None:
     inventory = load_system_plugin_inventory(INVENTORY_PATH)
@@ -472,13 +476,7 @@ async def test_generator_accepts_releases_stored_before_canonicalization() -> No
             await connection.run_sync(metadata.create_all)
         releases: dict[str, InstalledPluginRelease] = {}
         for position, entry in enumerate(inventory.plugins):
-            release = _release(
-                entry,
-                position,
-                catalog=PluginCatalogManifest.from_plugin(
-                    _SYSTEM_PLUGINS_BY_SLUG[entry.slug]
-                ),
-            )
+            release = _release(entry, position)
             stored = stored_contract_digest_before_canonicalization(
                 release.release.catalog
             )
@@ -509,8 +507,7 @@ async def test_generator_accepts_releases_stored_before_canonicalization() -> No
         assert {
             release.slug: release.contract_digest for release in baseline.releases
         } == {
-            slug: release.release.contract_digest
-            for slug, release in releases.items()
+            slug: release.release.contract_digest for slug, release in releases.items()
         }
     finally:
         await database.dispose()
