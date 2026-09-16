@@ -65,10 +65,16 @@ function Harness({ workspaces }: { workspaces: readonly Workspace[] }) {
 
 function browserGraph(
   id: string,
-  sequence: { head_sequence: number; checkpoint_sequence: number },
+  fields: { name?: string; draft_pending: boolean; revision?: number },
 ) {
   return {
     id,
+    name: fields.name ?? id,
+    revision: fields.revision ?? 1,
+    node_count: 2,
+    edge_count: 1,
+    updated_at: "2026-08-10T12:00:00Z",
+    draft_pending: fields.draft_pending,
     location: {
       id: personal.id,
       slug: personal.slug,
@@ -80,15 +86,6 @@ function browserGraph(
     archived_at: null,
     starred: false,
     last_opened_at: null,
-    updated_at: "2026-08-10T12:00:00Z",
-    draft: {
-      name: id,
-      checkpoint_revision: 1,
-      updated_at: "2026-08-10T12:00:00Z",
-      node_count: 2,
-      edge_count: 1,
-      ...sequence,
-    },
     creator: null,
   };
 }
@@ -128,29 +125,13 @@ describe("useAllWorkspacesGraphs", () => {
     apiMocks.request.mockResolvedValue({
       graphs: [
         {
-          id: "graph-1",
-          location: {
-            id: personal.id,
-            slug: personal.slug,
-            name: personal.name,
-            kind: personal.kind,
-          },
-          folder: null,
-          archived: false,
-          archived_at: null,
+          ...browserGraph("graph-1", {
+            name: "Invoice intake",
+            draft_pending: true,
+            revision: 3,
+          }),
           starred: true,
           last_opened_at: "2026-08-10T12:00:00Z",
-          updated_at: "2026-08-10T12:00:00Z",
-          draft: {
-            name: "Invoice intake",
-            head_sequence: 4,
-            checkpoint_sequence: 3,
-            checkpoint_revision: 3,
-            updated_at: "2026-08-10T12:00:00Z",
-            node_count: 2,
-            edge_count: 1,
-          },
-          creator: null,
         },
       ],
     });
@@ -210,17 +191,11 @@ describe("useAllWorkspacesGraphs", () => {
     await act(async () => root.unmount());
   });
 
-  it("labels a draft head that is ahead of the saved checkpoint", async () => {
+  it("passes through the shared draft-head summary from /v1/me/graphs", async () => {
     apiMocks.request.mockResolvedValue({
       graphs: [
-        browserGraph("graph-pending", {
-          head_sequence: 4,
-          checkpoint_sequence: 3,
-        }),
-        browserGraph("graph-checkpointed", {
-          head_sequence: 2,
-          checkpoint_sequence: 2,
-        }),
+        browserGraph("graph-pending", { draft_pending: true }),
+        browserGraph("graph-checkpointed", { draft_pending: false }),
       ],
     });
 

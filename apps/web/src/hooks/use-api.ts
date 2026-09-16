@@ -3,12 +3,12 @@
 import * as React from "react";
 import useSWR, { useSWRConfig, type ScopedMutator } from "swr";
 import {
+  type GraphBrowserGraph,
   type GraphBrowserList,
   listWorkspaceMembers,
   listWorkspaces,
   type NodeRegistry,
   type SavedGraphList,
-  type SavedGraphSummary,
   type Workspace,
   type WorkspaceInvitation,
   type WorkspaceInvitationForRecipient,
@@ -44,7 +44,9 @@ export async function revalidateGraphSummaries(
     workspaceId ? workspaceGraphsKey(workspaceId) : null,
     ALL_GRAPHS_KEY,
   ];
-  await Promise.all(keys.filter((key) => key !== null).map((key) => mutate(key)));
+  await Promise.all(
+    keys.filter((key) => key !== null).map((key) => mutate(key)),
+  );
 }
 
 /** Revalidate both graph-list caches from any component. */
@@ -79,18 +81,7 @@ export function useWorkspaces(userId: string | undefined) {
   );
 }
 
-export type GraphLocation = Pick<
-  Workspace,
-  "id" | "slug" | "name" | "kind"
->;
-
-export interface LocatedGraph extends SavedGraphSummary {
-  location: GraphLocation;
-  folder: { id: string; name: string } | null;
-  archived: boolean;
-  starred: boolean;
-  last_opened_at: string | null;
-}
+export type LocatedGraph = GraphBrowserGraph;
 
 export interface AllWorkspacesGraphsResult {
   graphs: readonly LocatedGraph[] | null;
@@ -112,21 +103,7 @@ export function useAllWorkspacesGraphs(
   const graphs =
     !workspaces || (workspaces.length > 0 && !load.data)
       ? null
-      : (load.data?.graphs ?? []).map((graph) => ({
-          id: graph.id,
-          name: graph.draft.name,
-          revision: graph.draft.checkpoint_revision,
-          node_count: graph.draft.node_count,
-          edge_count: graph.draft.edge_count,
-          updated_at: graph.updated_at,
-          draft_pending:
-            graph.draft.head_sequence > graph.draft.checkpoint_sequence,
-          location: graph.location,
-          folder: graph.folder,
-          archived: graph.archived,
-          starred: graph.starred,
-          last_opened_at: graph.last_opened_at,
-        }));
+      : (load.data?.graphs ?? []);
 
   return {
     graphs,
@@ -144,9 +121,7 @@ export function useWorkspaceMembers(
   workspaceId: string | undefined,
 ) {
   return useSWR<readonly WorkspaceMember[]>(
-    userId && workspaceId
-      ? ["workspace-members", userId, workspaceId]
-      : null,
+    userId && workspaceId ? ["workspace-members", userId, workspaceId] : null,
     () => listWorkspaceMembers(workspaceId!),
   );
 }

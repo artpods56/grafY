@@ -1811,56 +1811,6 @@
         "title": "GraphBrowserCreatorResponse",
         "type": "object"
       },
-      "GraphBrowserDraftResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "checkpoint_revision": {
-            "minimum": 1.0,
-            "title": "Checkpoint Revision",
-            "type": "integer"
-          },
-          "checkpoint_sequence": {
-            "minimum": 0.0,
-            "title": "Checkpoint Sequence",
-            "type": "integer"
-          },
-          "edge_count": {
-            "minimum": 0.0,
-            "title": "Edge Count",
-            "type": "integer"
-          },
-          "head_sequence": {
-            "minimum": 0.0,
-            "title": "Head Sequence",
-            "type": "integer"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "node_count": {
-            "minimum": 0.0,
-            "title": "Node Count",
-            "type": "integer"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "head_sequence",
-          "checkpoint_sequence",
-          "checkpoint_revision",
-          "updated_at",
-          "node_count",
-          "edge_count"
-        ],
-        "title": "GraphBrowserDraftResponse",
-        "type": "object"
-      },
       "GraphBrowserFolderResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1883,6 +1833,7 @@
       },
       "GraphBrowserItemResponse": {
         "additionalProperties": false,
+        "description": "The shared discovery summary plus workspace location and per-user state.",
         "properties": {
           "archived": {
             "title": "Archived",
@@ -1910,8 +1861,13 @@
               }
             ]
           },
-          "draft": {
-            "$ref": "#/components/schemas/GraphBrowserDraftResponse"
+          "draft_pending": {
+            "title": "Draft Pending",
+            "type": "boolean"
+          },
+          "edge_count": {
+            "title": "Edge Count",
+            "type": "integer"
           },
           "folder": {
             "anyOf": [
@@ -1943,6 +1899,18 @@
           "location": {
             "$ref": "#/components/schemas/GraphBrowserLocationResponse"
           },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node_count": {
+            "title": "Node Count",
+            "type": "integer"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
           "starred": {
             "title": "Starred",
             "type": "boolean"
@@ -1955,14 +1923,18 @@
         },
         "required": [
           "id",
+          "name",
+          "revision",
+          "node_count",
+          "edge_count",
+          "updated_at",
+          "draft_pending",
           "location",
           "folder",
           "archived",
           "archived_at",
           "starred",
           "last_opened_at",
-          "updated_at",
-          "draft",
           "creator"
         ],
         "title": "GraphBrowserItemResponse",
@@ -6332,7 +6304,7 @@
       },
       "SavedGraphSummaryResponse": {
         "additionalProperties": false,
-        "description": "Authoritative summary shared by every graph discovery surface.\n\nCounts and ``updated_at`` describe the collaborative draft head (what the\ncanvas shows). ``revision`` is the durable checkpoint revision used by\nlifecycle writes, and ``draft_pending`` labels a head that is ahead of that\ncheckpoint.",
+        "description": "Authoritative summary shared by every graph discovery surface.\n\nCounts and ``updated_at`` describe the collaborative draft head (what the\ncanvas shows). ``revision`` is the durable checkpoint revision used by\nlifecycle writes, and ``draft_pending`` labels a head that is ahead of that\ncheckpoint. Located lists reuse this model and add workspace metadata.",
         "properties": {
           "draft_pending": {
             "title": "Draft Pending",

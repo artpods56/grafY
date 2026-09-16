@@ -382,16 +382,10 @@ def test_graph_lists_agree_on_the_live_draft_head_summary(
     assert summary.revision == 1
     assert summary.name == "Shared summary"
 
-    # Both surfaces describe the same graph the same way.
-    assert browser.id == summary.id
-    assert browser.draft.name == summary.name
-    assert (browser.draft.node_count, browser.draft.edge_count) == (
-        summary.node_count,
-        summary.edge_count,
+    # The browser row is that same summary plus location metadata.
+    assert browser.model_dump(include=set(type(summary).model_fields)) == (
+        summary.model_dump()
     )
-    assert browser.updated_at == summary.updated_at
-    assert browser.draft.updated_at == summary.updated_at
-    assert browser.draft.checkpoint_revision == summary.revision
 
     # Checkpointing clears the pending label on both surfaces.
     checkpoint = graphs.checkpoint_ok(
@@ -402,11 +396,12 @@ def test_graph_lists_agree_on_the_live_draft_head_summary(
         ),
     )
     after = graphs.list_ok().graphs[0]
+    after_browser = api.graph_browser.list_ok().graphs[0]
     assert after.draft_pending is False
     assert after.revision == checkpoint.saved_revision
     assert after.updated_at == checkpoint.head.updated_at
-    assert api.graph_browser.list_ok().graphs[0].draft.checkpoint_revision == (
-        checkpoint.saved_revision
+    assert after_browser.model_dump(include=set(type(after).model_fields)) == (
+        after.model_dump()
     )
 
 

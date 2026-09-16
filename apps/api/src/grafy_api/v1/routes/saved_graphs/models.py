@@ -32,7 +32,6 @@ from grafy_api.graph_contracts import (
     GraphBrowserLocationResponse as GraphBrowserLocationResponse,
     GraphBrowserFolderResponse as GraphBrowserFolderResponse,
     GraphBrowserCreatorResponse as GraphBrowserCreatorResponse,
-    GraphBrowserDraftResponse as GraphBrowserDraftResponse,
     GraphBrowserItemResponse as GraphBrowserItemResponse,
     GraphBrowserListResponse as GraphBrowserListResponse,
     CollaborativeHeadResponse as CollaborativeHeadResponse,
