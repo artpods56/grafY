@@ -142,8 +142,11 @@ async def list_saved_graphs(
     service: SavedGraphDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
 ) -> SavedGraphListResponse:
-    graphs = await service.list(access.workspace_id)
-    return SavedGraphListResponse.from_graphs(graphs)
+    items = await service.list_accessible(
+        access.actor,
+        workspace_id=access.workspace_id,
+    )
+    return SavedGraphListResponse.from_items(items)
 
 
 @router.put("/{graph_id}/folder", response_model=GraphOrganizationResponse)

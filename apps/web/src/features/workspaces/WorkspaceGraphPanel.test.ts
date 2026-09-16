@@ -10,6 +10,7 @@ import {
   WorkspaceGraphPanel,
   filterGraphsByQuery,
   graphAgeLabel,
+  graphCountLabel,
   sortGraphsByRecency,
 } from "./WorkspaceGraphPanel";
 
@@ -23,21 +24,26 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: testState.push }),
 }));
 
+const panelState = vi.hoisted(() => ({
+  graphs: [
+    {
+      id: "graph-invoice",
+      name: "Invoice intake",
+      node_count: 2,
+      edge_count: 1,
+      revision: 1,
+      updated_at: "2026-08-10T12:00:00Z",
+      draft_pending: false,
+    },
+  ],
+  isValidating: false,
+}));
+
 vi.mock("@/hooks/use-api", () => ({
   useSavedGraphs: () => ({
-    data: {
-      graphs: [
-        {
-          id: "graph-invoice",
-          name: "Invoice intake",
-          node_count: 2,
-          edge_count: 1,
-          revision: 1,
-          updated_at: "2026-08-10T12:00:00Z",
-        },
-      ],
-    },
+    data: { graphs: panelState.graphs },
     isLoading: false,
+    isValidating: panelState.isValidating,
   }),
 }));
 
@@ -55,6 +61,18 @@ afterEach(async () => {
   document.body.replaceChildren();
   vi.unstubAllGlobals();
   testState.push.mockReset();
+  panelState.graphs = [
+    {
+      id: "graph-invoice",
+      name: "Invoice intake",
+      node_count: 2,
+      edge_count: 1,
+      revision: 1,
+      updated_at: "2026-08-10T12:00:00Z",
+      draft_pending: false,
+    },
+  ];
+  panelState.isValidating = false;
 });
 
 const graph = (
@@ -68,6 +86,7 @@ const graph = (
   edge_count: 1,
   revision: 1,
   updated_at: updatedAt,
+  draft_pending: false,
   ...overrides,
 });
 
@@ -105,6 +124,21 @@ describe("workspace graph panel listing", () => {
     expect(graphAgeLabel("2026-08-10T11:15:00Z", now)).toBe("45m ago");
     expect(graphAgeLabel("2026-08-10T09:00:00Z", now)).toBe("3h ago");
     expect(graphAgeLabel("2026-08-06T12:00:00Z", now)).toBe("4d ago");
+  });
+
+  it("labels every graph summary with the same node and edge wording", () => {
+    expect(graphCountLabel({ node_count: 1, edge_count: 0 })).toBe(
+      "1 node · 0 edges",
+    );
+    expect(graphCountLabel({ node_count: 2, edge_count: 1 })).toBe(
+      "2 nodes · 1 edge",
+    );
+  });
+
+  it("labels a draft head that is ahead of the saved checkpoint", () => {
+    expect(
+      graphCountLabel({ node_count: 0, edge_count: 0, draft_pending: true }),
+    ).toBe("0 nodes · 0 edges · unsaved draft");
   });
 });
 
@@ -164,6 +198,34 @@ describe("workspace graph panel interactions", () => {
     accountMenu.dispatchEvent(new Event("pointerdown", { bubbles: true }));
 
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("shows a refreshing indicator instead of a confidently stale count", async () => {
+    panelState.isValidating = true;
+    const { container } = await renderPanel();
+
+    const status = container.querySelector("[role='status']");
+
+    expect(status?.textContent).toBe("Refreshing…");
+  });
+
+  it("labels a graph whose live draft is ahead of its saved checkpoint", async () => {
+    panelState.graphs = [
+      {
+        id: "graph-draft",
+        name: "Draft ahead",
+        node_count: 0,
+        edge_count: 0,
+        revision: 1,
+        updated_at: "2026-08-10T12:00:00Z",
+        draft_pending: true,
+      },
+    ];
+    const { container } = await renderPanel();
+
+    expect(
+      container.querySelector(".grafy-graph-panel__row-meta")?.textContent,
+    ).toContain("0 nodes · 0 edges · unsaved draft");
   });
 
   it("reports an explicit close", async () => {

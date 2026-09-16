@@ -143,7 +143,12 @@ class SqlSavedGraphRepository(SavedGraphRepositoryPort):
         ]
 
     @override
-    async def list_accessible(self, user_id: UUID) -> list[GraphBrowserItem]:
+    async def list_accessible(
+        self,
+        user_id: UUID,
+        *,
+        workspace_id: UUID | None = None,
+    ) -> list[GraphBrowserItem]:
         graphs = schema.saved_graphs
         memberships = schema.workspace_memberships
         workspaces = schema.workspaces
@@ -153,30 +158,29 @@ class SqlSavedGraphRepository(SavedGraphRepositoryPort):
         heads = schema.collaborative_graph_heads
         active_user = schema.users.alias("active_graph_browser_user")
         creator = schema.users.alias("graph_creator")
-        rows = (
-            await self._session.execute(
-                select(
-                    graphs.c.id,
-                    organizations.c.archived_at,
-                    organizations.c.updated_at.label("organization_updated_at"),
-                    heads.c.name.label("head_name"),
-                    heads.c.document.label("head_document"),
-                    heads.c.collaboration_sequence,
-                    heads.c.checkpoint_sequence,
-                    heads.c.checkpoint_revision,
-                    heads.c.updated_at.label("head_updated_at"),
-                    workspaces.c.id.label("workspace_id"),
-                    workspaces.c.slug.label("workspace_slug"),
-                    workspaces.c.name.label("workspace_name"),
-                    workspaces.c.kind.label("workspace_kind"),
-                    folders.c.id.label("folder_id"),
-                    folders.c.name.label("folder_name"),
-                    states.c.starred,
-                    states.c.last_opened_at,
-                    creator.c.id.label("creator_id"),
-                    creator.c.display_name.label("creator_display_name"),
-                )
-                .select_from(
+        query = (
+            select(
+                graphs.c.id,
+                organizations.c.archived_at,
+                organizations.c.updated_at.label("organization_updated_at"),
+                heads.c.name.label("head_name"),
+                heads.c.document.label("head_document"),
+                heads.c.collaboration_sequence,
+                heads.c.checkpoint_sequence,
+                heads.c.checkpoint_revision,
+                heads.c.updated_at.label("head_updated_at"),
+                workspaces.c.id.label("workspace_id"),
+                workspaces.c.slug.label("workspace_slug"),
+                workspaces.c.name.label("workspace_name"),
+                workspaces.c.kind.label("workspace_kind"),
+                folders.c.id.label("folder_id"),
+                folders.c.name.label("folder_name"),
+                states.c.starred,
+                states.c.last_opened_at,
+                creator.c.id.label("creator_id"),
+                creator.c.display_name.label("creator_display_name"),
+            )
+            .select_from(
                     graphs.join(
                         memberships,
                         and_(
@@ -229,14 +233,16 @@ class SqlSavedGraphRepository(SavedGraphRepositoryPort):
                             states.c.user_id == user_id,
                         ),
                     )
-                    .outerjoin(creator, creator.c.id == graphs.c.created_by_user_id)
-                )
-                .order_by(
-                    heads.c.updated_at.desc(),
-                    graphs.c.id.asc(),
-                )
+                .outerjoin(creator, creator.c.id == graphs.c.created_by_user_id)
             )
-        ).mappings()
+            .order_by(
+                heads.c.updated_at.desc(),
+                graphs.c.id.asc(),
+            )
+        )
+        if workspace_id is not None:
+            query = query.where(graphs.c.workspace_id == workspace_id)
+        rows = (await self._session.execute(query)).mappings()
         items: list[GraphBrowserItem] = []
         for row in rows:
             document = cast(SavedGraphDocument, row["head_document"])

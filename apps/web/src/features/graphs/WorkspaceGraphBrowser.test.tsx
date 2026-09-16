@@ -67,6 +67,7 @@ function graph(
     edge_count: 2,
     revision: 4,
     updated_at: updatedAt,
+    draft_pending: false,
   };
 }
 

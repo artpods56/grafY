@@ -27,7 +27,7 @@ import {
   WorkspaceRail,
   workspaceDisplayName,
 } from "@/features/workspaces/WorkspaceLayout";
-import { graphAgeLabel } from "@/features/workspaces/WorkspaceGraphPanel";
+import { graphAgeLabel, graphCountLabel } from "@/features/workspaces/WorkspaceGraphPanel";
 import {
   NEW_GRAPH_ROUTE_ID,
   workbenchGraphPath,
@@ -60,10 +60,7 @@ function GraphRow({ graph }: { graph: LocatedGraph }) {
         <span className="grafy-graphs__row-meta">
           {graphAgeLabel(graph.updated_at)}
         </span>
-        <span className="grafy-graphs__row-meta">
-          {graph.node_count} {graph.node_count === 1 ? "node" : "nodes"} ·{" "}
-          {graph.edge_count} {graph.edge_count === 1 ? "edge" : "edges"}
-        </span>
+        <span className="grafy-graphs__row-meta">{graphCountLabel(graph)}</span>
         <ArrowUpRight
           className="grafy-graphs__row-arrow"
           size={15}
@@ -223,6 +220,7 @@ export function GraphBrowser() {
             <span className="grafy-graphs__count">
               {filteredGraphs.length}{" "}
               {filteredGraphs.length === 1 ? "graph" : "graphs"}
+              {graphState.isRefreshing ? " · refreshing…" : ""}
             </span>
           ) : null}
         </div>

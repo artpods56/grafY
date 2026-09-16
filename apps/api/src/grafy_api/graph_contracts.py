@@ -245,23 +245,45 @@ class SavedGraphResponse(SavedGraphApiModel):
         )
 
 
+def graph_browser_updated_at(item: GraphBrowserItem) -> datetime:
+    """Freshness shared by every graph discovery surface for one graph."""
+
+    updated_at = item.draft.updated_at
+    if (
+        item.organization_updated_at is not None
+        and item.organization_updated_at > updated_at
+    ):
+        return item.organization_updated_at
+    return updated_at
+
+
 class SavedGraphSummaryResponse(SavedGraphApiModel):
+    """Authoritative summary shared by every graph discovery surface.
+
+    Counts and ``updated_at`` describe the collaborative draft head (what the
+    canvas shows). ``revision`` is the durable checkpoint revision used by
+    lifecycle writes, and ``draft_pending`` labels a head that is ahead of that
+    checkpoint. Located lists reuse this model and add workspace metadata.
+    """
+
     id: UUID
     name: str
     revision: int
     node_count: int
     edge_count: int
     updated_at: datetime
+    draft_pending: bool
 
-    @classmethod
-    def from_graph(cls, graph: SavedGraph) -> "SavedGraphSummaryResponse":
-        return cls(
-            id=graph.id,
-            name=graph.name,
-            revision=graph.revision,
-            node_count=len(graph.document.nodes),
-            edge_count=len(graph.document.edges),
-            updated_at=graph.updated_at,
+    @staticmethod
+    def from_browser_item(item: GraphBrowserItem) -> "SavedGraphSummaryResponse":
+        return SavedGraphSummaryResponse(
+            id=item.id,
+            name=item.draft.name,
+            revision=item.draft.checkpoint_revision,
+            node_count=item.draft.node_count,
+            edge_count=item.draft.edge_count,
+            updated_at=graph_browser_updated_at(item),
+            draft_pending=item.draft.head_sequence > item.draft.checkpoint_sequence,
         )
 
 
@@ -269,12 +291,9 @@ class SavedGraphListResponse(SavedGraphApiModel):
     graphs: list[SavedGraphSummaryResponse]
 
     @classmethod
-    def from_graphs(
-        cls,
-        graphs: list[SavedGraph],
-    ) -> "SavedGraphListResponse":
+    def from_items(cls, items: list[GraphBrowserItem]) -> "SavedGraphListResponse":
         return cls(
-            graphs=[SavedGraphSummaryResponse.from_graph(graph) for graph in graphs]
+            graphs=[SavedGraphSummaryResponse.from_browser_item(item) for item in items]
         )
 
 
@@ -367,38 +386,22 @@ class GraphBrowserCreatorResponse(SavedGraphApiModel):
     display_name: str | None
 
 
-class GraphBrowserDraftResponse(SavedGraphApiModel):
-    name: str
-    head_sequence: int = Field(ge=0)
-    checkpoint_sequence: int = Field(ge=0)
-    checkpoint_revision: int = Field(ge=1)
-    updated_at: datetime
-    node_count: int = Field(ge=0)
-    edge_count: int = Field(ge=0)
+class GraphBrowserItemResponse(SavedGraphSummaryResponse):
+    """The shared discovery summary plus workspace location and per-user state."""
 
-
-class GraphBrowserItemResponse(SavedGraphApiModel):
-    id: UUID
     location: GraphBrowserLocationResponse
     folder: GraphBrowserFolderResponse | None
     archived: bool
     archived_at: datetime | None
     starred: bool
     last_opened_at: datetime | None
-    updated_at: datetime
-    draft: GraphBrowserDraftResponse
     creator: GraphBrowserCreatorResponse | None
 
     @classmethod
     def from_item(cls, item: GraphBrowserItem) -> "GraphBrowserItemResponse":
-        updated_at = item.draft.updated_at
-        if (
-            item.organization_updated_at is not None
-            and item.organization_updated_at > updated_at
-        ):
-            updated_at = item.organization_updated_at
+        summary = SavedGraphSummaryResponse.from_browser_item(item)
         return cls(
-            id=item.id,
+            **summary.model_dump(),
             location=GraphBrowserLocationResponse(
                 id=item.location.id,
                 slug=item.location.slug,
@@ -417,16 +420,6 @@ class GraphBrowserItemResponse(SavedGraphApiModel):
             archived_at=item.archived_at,
             starred=item.starred,
             last_opened_at=item.last_opened_at,
-            updated_at=updated_at,
-            draft=GraphBrowserDraftResponse(
-                name=item.draft.name,
-                head_sequence=item.draft.head_sequence,
-                checkpoint_sequence=item.draft.checkpoint_sequence,
-                checkpoint_revision=item.draft.checkpoint_revision,
-                updated_at=item.draft.updated_at,
-                node_count=item.draft.node_count,
-                edge_count=item.draft.edge_count,
-            ),
             creator=(
                 None
                 if item.creator is None

@@ -1874,26 +1874,6 @@ export interface components {
              */
             readonly id: string;
         };
-        /** GraphBrowserDraftResponse */
-        readonly GraphBrowserDraftResponse: {
-            /** Checkpoint Revision */
-            readonly checkpoint_revision: number;
-            /** Checkpoint Sequence */
-            readonly checkpoint_sequence: number;
-            /** Edge Count */
-            readonly edge_count: number;
-            /** Head Sequence */
-            readonly head_sequence: number;
-            /** Name */
-            readonly name: string;
-            /** Node Count */
-            readonly node_count: number;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            readonly updated_at: string;
-        };
         /** GraphBrowserFolderResponse */
         readonly GraphBrowserFolderResponse: {
             /**
@@ -1904,14 +1884,20 @@ export interface components {
             /** Name */
             readonly name: string;
         };
-        /** GraphBrowserItemResponse */
+        /**
+         * GraphBrowserItemResponse
+         * @description The shared discovery summary plus workspace location and per-user state.
+         */
         readonly GraphBrowserItemResponse: {
             /** Archived */
             readonly archived: boolean;
             /** Archived At */
             readonly archived_at: string | null;
             readonly creator: components["schemas"]["GraphBrowserCreatorResponse"] | null;
-            readonly draft: components["schemas"]["GraphBrowserDraftResponse"];
+            /** Draft Pending */
+            readonly draft_pending: boolean;
+            /** Edge Count */
+            readonly edge_count: number;
             readonly folder: components["schemas"]["GraphBrowserFolderResponse"] | null;
             /**
              * Id
@@ -1921,6 +1907,12 @@ export interface components {
             /** Last Opened At */
             readonly last_opened_at: string | null;
             readonly location: components["schemas"]["GraphBrowserLocationResponse"];
+            /** Name */
+            readonly name: string;
+            /** Node Count */
+            readonly node_count: number;
+            /** Revision */
+            readonly revision: number;
             /** Starred */
             readonly starred: boolean;
             /**
@@ -3447,8 +3439,18 @@ export interface components {
              */
             readonly updated_at: string;
         };
-        /** SavedGraphSummaryResponse */
+        /**
+         * SavedGraphSummaryResponse
+         * @description Authoritative summary shared by every graph discovery surface.
+         *
+         *     Counts and ``updated_at`` describe the collaborative draft head (what the
+         *     canvas shows). ``revision`` is the durable checkpoint revision used by
+         *     lifecycle writes, and ``draft_pending`` labels a head that is ahead of that
+         *     checkpoint. Located lists reuse this model and add workspace metadata.
+         */
         readonly SavedGraphSummaryResponse: {
+            /** Draft Pending */
+            readonly draft_pending: boolean;
             /** Edge Count */
             readonly edge_count: number;
             /**

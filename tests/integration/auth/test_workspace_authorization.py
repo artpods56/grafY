@@ -171,7 +171,7 @@ async def test_global_graph_browser_is_authorized_and_keeps_user_state_private(
 
             api.authenticate(owner_a_issued)
             head = workspace_a.graphs.get_head_ok(graph_a.id)
-            renamed = workspace_a.graphs.submit_command_ok(
+            workspace_a.graphs.submit_command_ok(
                 graph_a.id,
                 SubmitGraphCommandRequest(
                     command_id=uuid4(),
@@ -223,13 +223,11 @@ async def test_global_graph_browser_is_authorized_and_keeps_user_state_private(
             assert (folder_row.id, folder_row.name) == (folder.id, "Research")
             assert owner_row.starred is True
             assert owner_row.last_opened_at is not None
-            draft = owner_row.draft
-            assert draft.name == "Current live-head name"
-            assert draft.head_sequence == 2
-            assert draft.checkpoint_sequence == 1
-            assert draft.checkpoint_revision == 1
-            assert draft.updated_at == renamed.head.updated_at
-            assert (draft.node_count, draft.edge_count) == (0, 0)
+            assert owner_row.name == "Current live-head name"
+            assert owner_row.revision == 1
+            assert owner_row.draft_pending is True
+            assert owner_row.updated_at == assigned.updated_at
+            assert (owner_row.node_count, owner_row.edge_count) == (0, 0)
             creator = owner_row.creator
             assert creator is not None
             assert (creator.id, creator.display_name) == (
