@@ -2,10 +2,21 @@ import ast
 from hashlib import sha256
 from importlib.util import resolve_name
 from pathlib import Path
+import subprocess
+import sys
 from typing import cast
 
 import pytest
 import tomllib
+
+from grafy_core.domain.plugin_releases import (
+    PluginCatalogManifest,
+    plugin_contract_digest,
+)
+from grafy_plugin_llm import LLM
+from tests.support.plugin_contract_digests import (
+    stored_contract_digest_before_canonicalization,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -286,9 +297,61 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
         assert "grafy-core==0.1.0" in cast(list[str], project["dependencies"])
         core_wheel = project_root / "wheels/grafy_core-0.1.0-py3-none-any.whl"
         assert sha256(core_wheel.read_bytes()).hexdigest() == (
-            "08128a287d3b26fa4961afed2b80e4c7a3b65c01dcdecc03b032e1d77e71821f"
+            "dc2efea157a3dfeb2c187677c4dc39e36e06c0fb7e9c3fc56bdbf057dda402b9"
         )
         assert "workspace = true" not in (project_root / "pyproject.toml").read_text()
+
+
+_GUEST_DIGEST_PROBE = """
+import sys
+
+sys.path.insert(0, sys.argv[1])
+
+import grafy_core
+from grafy_core.domain.plugin_releases import (
+    PluginCatalogManifest,
+    plugin_contract_digest,
+    plugin_contract_digest_matches,
+)
+
+catalog = PluginCatalogManifest.model_validate_json(sys.stdin.read())
+print(grafy_core.__file__)
+print(plugin_contract_digest(catalog))
+print(plugin_contract_digest_matches(catalog, sys.argv[2]))
+"""
+
+
+def test_vendored_sdk_wheels_accept_the_digest_the_host_stores() -> None:
+    """Every vendored SDK wheel must canonicalize the catalog digest itself.
+
+    The guest runtime hashes the catalog with the SDK wheel installed in its own
+    image, so a wheel built before empty-default canonicalization rejects every
+    release the host publishes now. The wheel is run, not grepped: the symbols
+    being present says nothing about which fields the wheel's canonicalization
+    drops, so a wheel built from a different field-role table would pass a
+    source-text check and still reject the release the host just stored.
+    """
+
+    catalog = PluginCatalogManifest.from_plugin(LLM)
+    payload = catalog.model_dump_json()
+    canonical = plugin_contract_digest(catalog)
+    historical = stored_contract_digest_before_canonicalization(catalog)
+    assert historical != canonical
+
+    wheels = sorted(REPO_ROOT.glob("*/**/wheels/grafy_core-*.whl"))
+    assert len(wheels) >= len(PUBLISHED_PLUGIN_FAMILIES) + 1
+    for wheel in wheels:
+        guest = subprocess.run(
+            [sys.executable, "-c", _GUEST_DIGEST_PROBE, str(wheel), historical],
+            input=payload,
+            capture_output=True,
+            text=True,
+        )
+        assert guest.returncode == 0, f"{wheel}: {guest.stderr}"
+        module_file, digest, accepts_historical = guest.stdout.splitlines()
+        assert str(wheel) in module_file, module_file
+        assert digest == canonical, wheel
+        assert accepts_historical == "True", wheel
 
 
 def test_host_eligible_plugins_carry_their_exact_build_backend() -> None:

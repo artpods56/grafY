@@ -40,6 +40,10 @@ from grafy_persistence.database import Database, create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_plugin_llm import LLM
 from tests.support.identity import create_schema
+from tests.support.plugin_contract_digests import (
+    persisted_row_with_digest,
+    stored_contract_digest_before_canonicalization,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -305,6 +309,28 @@ async def test_builder_writes_exact_idempotent_manifest_for_absent_selection(
     assert first == second
     assert output.read_bytes() == first_bytes
     assert first.plugins == ()
+
+
+@pytest.mark.asyncio
+async def test_builder_accepts_a_release_stored_before_canonicalization(
+    deployment_database: tuple[Database, SystemPluginInventory],
+    tmp_path: Path,
+) -> None:
+    database, inventory = deployment_database
+    release = _release(inventory, 1)
+    stored = stored_contract_digest_before_canonicalization(release.release.catalog)
+    assert stored != plugin_contract_digest(release.release.catalog)
+    await _persist_release(database, persisted_row_with_digest(release, stored))
+
+    manifest = await SystemPluginDeploymentManifestBuilder(database.sessions).build(
+        inventory,
+        repository_root=REPOSITORY_ROOT,
+        output=tmp_path / "deployment.json",
+        slug=release.release.slug,
+        revision=release.release.revision,
+    )
+
+    assert manifest.plugins == ()
 
 
 @pytest.mark.asyncio

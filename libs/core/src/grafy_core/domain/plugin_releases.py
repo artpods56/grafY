@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -10,6 +11,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.errors import PydanticInvalidForJsonSchema
+from pydantic.main import IncEx
 
 from grafy_core.artifacts import (
     ArtifactBundleContract,
@@ -64,13 +66,66 @@ _EMPTY_HTTP_EGRESS_SERIALIZATION = ',"http_egress":null'
 _EMPTY_ALSO_ACCEPTS_SERIALIZATION = ',"also_accepts":[]'
 
 
+def _contract_digest_exclusions_for_model(
+    model: BaseModel,
+) -> dict[str, IncEx | bool]:
+    """Exclusion tree that drops contract fields holding their empty default."""
+
+    roles = PLUGIN_CONTRACT_DIGEST_FIELD_ROLES.get(type(model), {})
+    exclusions: dict[str, IncEx | bool] = {}
+    for name, field_info in type(model).model_fields.items():
+        value = getattr(model, name)
+        if roles.get(name) == "omit" and value == field_info.get_default(
+            call_default_factory=True
+        ):
+            exclusions[name] = True
+            continue
+        nested = _contract_digest_exclusions_for_value(value)
+        if nested is not None:
+            exclusions[name] = nested
+    return exclusions
+
+
+def _contract_digest_exclusions_for_value(value: object) -> IncEx | None:
+    if isinstance(value, BaseModel):
+        nested = _contract_digest_exclusions_for_model(value)
+        return nested or None
+    if isinstance(value, (tuple, list)):
+        items = {
+            index: nested
+            for index, item in enumerate(cast(Sequence[object], value))
+            if (nested := _contract_digest_exclusions_for_value(item)) is not None
+        }
+        return items or None
+    return None
+
+
 def plugin_contract_digest(catalog: PluginCatalogManifest) -> str:
     """Digest of the serialized catalog contract.
 
-    Absent HTTP-egress declarations are dropped before hashing so a catalog
-    parsed with the newer contract fields digests identically to the bytes
-    persisted before that field existed. Absent additional accepted artifact
-    types are dropped for the same reason.
+    A field classified ``omit`` in ``PLUGIN_CONTRACT_DIGEST_FIELD_ROLES`` is
+    excluded from the digest while it holds the empty value it was declared
+    with, so a
+    catalog parsed with those fields added later digests identically to the
+    bytes persisted before they existed. Every other defaulted field is
+    classified ``keep`` and stays serialized at its default, which keeps a
+    declared extension claim or a confirmation rule other than ``none`` in the
+    digest. The field roles live beside the contract models.
+    """
+
+    serialized = catalog.model_dump_json(
+        exclude=_contract_digest_exclusions_for_model(catalog)
+    )
+    return sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _stored_contract_digest_before_canonicalization(
+    catalog: PluginCatalogManifest,
+) -> str:
+    """Digest that releases published before empty-default canonicalization stored.
+
+    Those releases hashed the empty extension and confirmation defaults, so
+    verification still accepts this digest for them.
     """
 
     serialized = catalog.model_dump_json()
@@ -79,6 +134,24 @@ def plugin_contract_digest(catalog: PluginCatalogManifest) -> str:
     if _EMPTY_ALSO_ACCEPTS_SERIALIZATION in serialized:
         serialized = serialized.replace(_EMPTY_ALSO_ACCEPTS_SERIALIZATION, "")
     return sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def plugin_contract_digest_matches(
+    catalog: PluginCatalogManifest,
+    contract_digest: str,
+) -> bool:
+    """Whether a persisted digest verifies against this catalog.
+
+    Releases published before empty-default canonicalization hashed the empty
+    extension and confirmation defaults, so both the canonical digest and that
+    historical form verify. Newly published releases store only the canonical
+    digest.
+    """
+
+    return contract_digest in {
+        plugin_contract_digest(catalog),
+        _stored_contract_digest_before_canonicalization(catalog),
+    }
 
 
 class PluginReleaseError(ValueError):
@@ -703,6 +776,67 @@ class PluginCatalogManifest(PluginReleaseValue):
         )
 
 
+# Digest role of every field that declares a default inside the catalog
+# contract. An ``omit`` field leaves ``plugin_contract_digest`` while it holds
+# that default, so bytes persisted before the field existed keep their digest.
+# A ``keep`` field stays in the digest because releases persisted before
+# empty-default canonicalization already hashed it.
+# test_contract_digest_classifies_every_defaulted_catalog_field fails until a
+# new defaulted field is classified here, and
+# test_contract_digest_ignores_every_empty_defaulting_catalog_field fails when a
+# new defaulted field is classified ``keep`` and re-hashes its default.
+CatalogDigestFieldRole = Literal["omit", "keep"]
+
+PLUGIN_CONTRACT_DIGEST_FIELD_ROLES: Mapping[
+    type[BaseModel], Mapping[str, CatalogDigestFieldRole]
+] = {
+    PluginArtifactTypeContract: {
+        "payload_schema": "keep",
+        "field_projections": "keep",
+        "materialized_json_type": "keep",
+        "export_formats": "keep",
+        "references": "keep",
+        "bundle": "keep",
+        "extensions": "omit",
+        "confirmation_rule": "omit",
+    },
+    PluginCatalogManifest: {
+        "artifact_types": "keep",
+        "artifact_type_dependencies": "keep",
+        "artifact_conversions": "keep",
+    },
+    PluginConfirmationRule: {
+        "rule": "keep",
+        "signatures": "keep",
+    },
+    PluginNodeContract: {
+        "secret_inputs": "keep",
+        "staged_upload_inputs": "keep",
+        "required_capabilities": "keep",
+        "cache_policy": "keep",
+        "http_egress": "omit",
+    },
+    PluginNodeHttpEgressContract: {
+        "configured_inputs": "keep",
+        "dynamic_destinations": "keep",
+    },
+    PluginPortContract: {
+        "title": "keep",
+        "description": "keep",
+        "artifact_type": "keep",
+        "artifact_type_variable": "keep",
+        "also_accepts": "omit",
+        "instance_plugs": "keep",
+        "variadic": "keep",
+        "required": "keep",
+    },
+    PluginSecretInputContract: {
+        "config_dependencies": "keep",
+        "description": "keep",
+    },
+}
+
+
 @dataclass(frozen=True, slots=True)
 class PluginReleaseIdentity:
     """Exact immutable identity of one resolved Plugin release.
@@ -859,7 +993,7 @@ class PluginRelease:
             raise PluginReleaseError("Plugin release slug must match its catalog")
         if isinstance(self.revision, bool) or self.revision < 1:
             raise PluginReleaseError("Plugin release revision must be positive")
-        if self.contract_digest != plugin_contract_digest(self.catalog):
+        if not plugin_contract_digest_matches(self.catalog, self.contract_digest):
             raise PluginReleaseError(
                 "Plugin contract digest must match the serialized catalog contract"
             )
@@ -1016,6 +1150,7 @@ def _sha256(value: str, label: str) -> str:
 
 
 __all__ = [
+    "PLUGIN_CONTRACT_DIGEST_FIELD_ROLES",
     "PLUGIN_INVOCATION_PROTOCOL",
     "PluginArtifactBundleContract",
     "PluginConfirmationRule",
@@ -1046,6 +1181,7 @@ __all__ = [
     "PluginRuntimeArtifact",
     "PluginSecretInputContract",
     "plugin_contract_digest",
+    "plugin_contract_digest_matches",
     "plugin_profile_digest",
     "plugin_protocol_digest",
 ]

@@ -60,6 +60,10 @@ from grafy_plugin_gis import GIS
 from grafy_plugin_llm import LLM
 from grafy_plugin_ocr import OCR
 from grafy_plugin_sql import SQL
+from tests.support.plugin_contract_digests import (
+    persisted_row_with_digest,
+    stored_contract_digest_before_canonicalization,
+)
 
 
 INVENTORY_PATH = Path(__file__).parents[3] / "plugins" / "system-plugins.toml"
@@ -68,11 +72,25 @@ INVENTORY_PATH = Path(__file__).parents[3] / "plugins" / "system-plugins.toml"
 def _release(
     entry: SystemPluginInventoryEntry,
     position: int,
+    *,
+    catalog: PluginCatalogManifest | None = None,
 ) -> InstalledPluginRelease:
     operator_prefix = entry.operator_prefixes[0]
-    catalog = PluginCatalogManifest(
+    release_catalog = catalog or PluginCatalogManifest(
         slug=entry.slug,
         title=entry.slug,
+        # An owned artifact type is what makes the catalog serialize the empty
+        # extension defaults the pre-canonicalization digest still hashed, and
+        # the inventory entry only permits its own allowlisted prefixes.
+        artifact_types=(
+            PluginArtifactTypeContract(
+                key=PluginArtifactTypeKey(
+                    id=f"{entry.artifact_type_prefixes[0]}.value",
+                    schema_version=1,
+                ),
+                title="Value",
+            ),
+        ),
         nodes=(
             PluginNodeContract(
                 operator_id=f"{operator_prefix}.node",
@@ -100,8 +118,8 @@ def _release(
     release = PluginRelease(
         slug=entry.slug,
         revision=position + 1,
-        catalog=catalog,
-        contract_digest=plugin_contract_digest(catalog),
+        catalog=release_catalog,
+        contract_digest=plugin_contract_digest(release_catalog),
         capabilities=capabilities,
         capability_digest=capabilities.digest,
         protocol_digest=plugin_protocol_digest(),
@@ -447,3 +465,49 @@ def test_inventory_and_exact_binding_collisions_are_rejected() -> None:
 
     with pytest.raises(ValidationError, match="loader targets must be unique"):
         SystemPluginInventory(plugins=tuple(entries))
+
+
+@pytest.mark.asyncio
+async def test_generator_accepts_releases_stored_before_canonicalization() -> None:
+    inventory = load_system_plugin_inventory(INVENTORY_PATH)
+    database = create_database("sqlite+aiosqlite:///:memory:")
+    try:
+        async with database.engine.begin() as connection:
+            await connection.run_sync(metadata.create_all)
+        releases: dict[str, InstalledPluginRelease] = {}
+        for position, entry in enumerate(inventory.plugins):
+            release = _release(entry, position)
+            stored = stored_contract_digest_before_canonicalization(
+                release.release.catalog
+            )
+            assert stored != plugin_contract_digest(release.release.catalog)
+            releases[entry.slug] = persisted_row_with_digest(release, stored)
+        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+            for entry in inventory.plugins:
+                release = releases[entry.slug]
+                await unit_of_work.plugin_releases.add(release.release)
+                await unit_of_work.plugin_releases.add_installation(
+                    release.installation
+                )
+                await unit_of_work.plugin_releases.add_selection(
+                    PluginReleaseSelection.from_release(
+                        release,
+                        actor_reference="test:inventory",
+                    )
+                )
+            await unit_of_work.commit()
+
+        baseline = await SystemBaselineManifestGenerator(database.sessions).generate(
+            inventory
+        )
+
+        assert [release.slug for release in baseline.releases] == sorted(
+            SYSTEM_PLUGIN_SLUGS
+        )
+        assert {
+            release.slug: release.contract_digest for release in baseline.releases
+        } == {
+            slug: release.release.contract_digest for slug, release in releases.items()
+        }
+    finally:
+        await database.dispose()

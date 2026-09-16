@@ -28,7 +28,7 @@ from grafy_core.domain.node_secrets import (
 from grafy_core.domain.plugin_releases import (
     PLUGIN_INVOCATION_PROTOCOL,
     PluginCatalogManifest,
-    plugin_contract_digest,
+    plugin_contract_digest_matches,
     plugin_protocol_digest,
 )
 from grafy_core.domain.uploads import Upload, UploadStatus
@@ -128,7 +128,7 @@ def load_guest_plugin(
     catalog = PluginCatalogManifest.from_plugin(plugin)
     if (
         plugin.slug != release.slug
-        or plugin_contract_digest(catalog) != release.contract_digest
+        or not plugin_contract_digest_matches(catalog, release.contract_digest)
     ):
         raise PluginGuestError(
             "Installed Plugin contract does not match the exact release"

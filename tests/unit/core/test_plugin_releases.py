@@ -1,8 +1,10 @@
+from collections.abc import Sequence
 from dataclasses import replace
-from typing import Annotated, cast
+from hashlib import sha256
+from typing import Annotated, cast, get_args
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 import pytest
 
 from grafy_core.application.plugin_releases import (
@@ -21,6 +23,7 @@ from grafy_core.artifacts import (
 from grafy_core.conversions import ArtifactConversion, ArtifactConversionKey
 from grafy_core.canonical_conversions import INTEGER_TO_TEXT
 from grafy_core.domain.plugin_releases import (
+    PLUGIN_CONTRACT_DIGEST_FIELD_ROLES,
     PluginArtifactBundleContract,
     PluginArtifactConversionContract,
     PluginArtifactConversionKey,
@@ -29,20 +32,25 @@ from grafy_core.domain.plugin_releases import (
     PluginArtifactTypeKey,
     PluginCapabilityManifest,
     PluginCatalogManifest,
+    PluginConfirmationRule,
     PluginExecutionPolicy,
     PluginNodeContract,
+    PluginNodeHttpEgressContract,
+    PluginPortContract,
     PluginRelease,
     PluginReleaseError,
     PluginReleaseScope,
     PluginRuntimeArtifact,
+    PluginSecretInputContract,
     plugin_contract_digest,
+    plugin_contract_digest_matches,
     plugin_profile_digest,
     plugin_protocol_digest,
 )
 from grafy_core.domain.plugin_installations import PluginInstallation
 from grafy_core.domain.plugin_identity import PluginReleaseNamespace
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.nodes import InPort, OutPort
+from grafy_core.nodes import InPort, OutPort, PortShape
 from grafy_core.artifact_contracts import (
     INTEGER_VALUE,
     RASTER_IMAGE,
@@ -54,6 +62,9 @@ from grafy_workbench.arithmetic import ARITHMETIC
 from grafy_workbench.table import TABLES
 from grafy_workbench.text import TEXT
 from grafy_core.plugins import Plugin
+from tests.support.plugin_contract_digests import (
+    stored_contract_digest_before_canonicalization,
+)
 
 
 PLUGIN = Plugin(slug="test.notes", title="Test notes")
@@ -683,8 +694,6 @@ def test_plugin_node_contract_http_egress_requires_network_egress() -> None:
 
 
 def test_contract_digest_stays_stable_for_catalogs_without_http_egress() -> None:
-    from hashlib import sha256
-
     node = _http_egress_node(
         capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,)
     )
@@ -737,3 +746,227 @@ def test_catalog_manifest_round_trips_the_http_egress_contract() -> None:
         configured_inputs=("base_url", "fallback_url"),
         dynamic_destinations=True,
     )
+
+
+_CATALOG_BYTES_BEFORE_EXTENSION_CONTRACT = (
+    ',"http_egress":null',
+    ',"also_accepts":[]',
+    ',"extensions":[]',
+    ',"confirmation_rule":{"rule":"none","signatures":[]}',
+)
+
+
+def _contract_catalog(
+    *,
+    extensions: tuple[str, ...] = (),
+    confirmation_rule: PluginConfirmationRule = PluginConfirmationRule(),
+) -> PluginCatalogManifest:
+    """Catalog that instantiates every contract model with defaulted fields.
+
+    The second node carries a declared HTTP egress contract and a secret input,
+    so ``PluginNodeHttpEgressContract`` and ``PluginSecretInputContract`` are
+    part of the hashed bytes. Without them a new empty default classified
+    ``keep`` on either model would leave the pinned digest green.
+    """
+
+    key = PluginArtifactTypeKey(id="file.png", schema_version=1)
+    port = PluginPortContract(
+        name="file",
+        direction="input",
+        artifact_type=key,
+        shape=PortShape.ONE,
+        accepted_shapes=(PortShape.ONE,),
+    )
+    return PluginCatalogManifest(
+        slug="test.notes",
+        title="Test notes",
+        artifact_types=(
+            PluginArtifactTypeContract(
+                key=key,
+                title="PNG file",
+                extensions=extensions,
+                confirmation_rule=confirmation_rule,
+            ),
+        ),
+        nodes=(
+            PluginNodeContract(
+                operator_id="test.notes.echo",
+                operator_version=1,
+                title="Echo",
+                description="Echo one file.",
+                config_schema={"type": "object"},
+                input_schema={"type": "object"},
+                output_schema={"type": "object"},
+                inputs=(port,),
+                outputs=(),
+            ),
+            PluginNodeContract(
+                operator_id="test.notes.fetch",
+                operator_version=1,
+                title="Fetch",
+                description="Fetch one URL.",
+                config_schema={"type": "object"},
+                input_schema={"type": "object"},
+                output_schema={"type": "object"},
+                inputs=(port,),
+                outputs=(),
+                secret_inputs=(
+                    PluginSecretInputContract(name="api_key", title="API key"),
+                ),
+                required_capabilities=(
+                    PluginRuntimeCapability.NETWORK_EGRESS,
+                    PluginRuntimeCapability.NODE_SECRETS,
+                ),
+                http_egress=PluginNodeHttpEgressContract(),
+            ),
+        ),
+    )
+
+
+def test_contract_digest_stays_stable_for_catalogs_without_extension_defaults() -> (
+    None
+):
+    catalog = _contract_catalog()
+    serialized = catalog.model_dump_json()
+    for fragment in _CATALOG_BYTES_BEFORE_EXTENSION_CONTRACT:
+        assert fragment in serialized
+
+    before_extension_contract = serialized
+    for fragment in _CATALOG_BYTES_BEFORE_EXTENSION_CONTRACT:
+        before_extension_contract = before_extension_contract.replace(fragment, "")
+    assert plugin_contract_digest(catalog) == sha256(
+        before_extension_contract.encode("utf-8")
+    ).hexdigest()
+
+
+def test_contract_digest_changes_when_an_extension_claim_is_declared() -> None:
+    assert plugin_contract_digest(
+        _contract_catalog(extensions=("png",))
+    ) != plugin_contract_digest(_contract_catalog())
+
+
+def test_contract_digest_changes_when_a_confirmation_rule_is_declared() -> None:
+    assert plugin_contract_digest(
+        _contract_catalog(
+            confirmation_rule=PluginConfirmationRule(rule="json_document")
+        )
+    ) != plugin_contract_digest(_contract_catalog())
+
+
+def _catalog_contract_instances(catalog: BaseModel) -> set[type[BaseModel]]:
+    """Every Pydantic model instantiated inside a catalog contract."""
+
+    instances: set[type[BaseModel]] = set()
+    pending: list[object] = [catalog]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, BaseModel):
+            instances.add(type(value))
+            pending.extend(getattr(value, name) for name in type(value).model_fields)
+        elif isinstance(value, (tuple, list)):
+            pending.extend(cast(Sequence[object], value))
+        elif isinstance(value, dict):
+            pending.extend(cast(dict[str, object], value).values())
+    return instances
+
+
+def test_contract_digest_ignores_every_empty_defaulting_catalog_field() -> None:
+    """Pin the digest of the catalog whose defaulted fields are all empty.
+
+    A new defaulted field keeps this value only while it is classified
+    ``omit``: a ``keep`` classification re-hashes the default and breaks the
+    bytes persisted before the field existed. Recompute this literal only
+    after deciding that role.
+    """
+
+    catalog = _contract_catalog()
+    assert plugin_contract_digest(catalog) == (
+        "4531883a81e55e8bcce716b48d31e62b096d7e8b43993f50bbf0f16dbc80b377"
+    )
+    # A model the pinned catalog never instantiates cannot fail the pin, so a
+    # new empty default classified ``keep`` on it would stay green while every
+    # row persisted before that field failed verification.
+    assert _catalog_contract_instances(catalog) >= set(
+        PLUGIN_CONTRACT_DIGEST_FIELD_ROLES
+    )
+
+
+def test_contract_digest_accepts_releases_persisted_before_canonicalization() -> None:
+    catalog = _contract_catalog()
+    stored = stored_contract_digest_before_canonicalization(catalog)
+    assert stored != plugin_contract_digest(catalog)
+    # Literal produced by the ``plugin_contract_digest`` of a9037727, the commit
+    # this branch repairs, so the oracle is tied to the implementation that wrote
+    # those rows instead of agreeing with a copy of its own fragments. Recompute
+    # it when the fixture catalog changes.
+    assert stored == (
+        "86f63659d2f0b590cda937e7962f691ca8fdee28eed305ae85fa1da37ac83ffc"
+    )
+
+    assert plugin_contract_digest_matches(catalog, plugin_contract_digest(catalog))
+    assert plugin_contract_digest_matches(catalog, stored)
+    assert not plugin_contract_digest_matches(catalog, "0" * 64)
+
+    capabilities = PluginCapabilityManifest(
+        capabilities=(
+            PluginRuntimeCapability.NETWORK_EGRESS,
+            PluginRuntimeCapability.NODE_SECRETS,
+        )
+    )
+    # Construction is the assertion for the stored digest: the release
+    # validator raises unless the digest is one of the two accepted forms.
+    release = replace(
+        _release(),
+        catalog=catalog,
+        capabilities=capabilities,
+        capability_digest=capabilities.digest,
+        contract_digest=stored,
+        descriptor_digest=None,
+    )
+    assert release.descriptor_digest == release.descriptor.digest
+    with pytest.raises(PluginReleaseError, match="contract digest must match"):
+        replace(
+            _release(),
+            catalog=catalog,
+            capabilities=capabilities,
+            capability_digest=capabilities.digest,
+            contract_digest="0" * 64,
+            descriptor_digest=None,
+        )
+
+
+def _catalog_contract_models() -> set[type[BaseModel]]:
+    """Every Pydantic model reachable inside the catalog contract."""
+
+    models: set[type[BaseModel]] = set()
+    pending: list[object] = [PluginCatalogManifest]
+    while pending:
+        annotation = pending.pop()
+        arguments = get_args(annotation)
+        if arguments:
+            pending.extend(arguments)
+        elif (
+            isinstance(annotation, type)
+            and issubclass(annotation, BaseModel)
+            and annotation not in models
+        ):
+            models.add(annotation)
+            pending.extend(
+                field.annotation for field in annotation.model_fields.values()
+            )
+    return models
+
+
+def test_contract_digest_classifies_every_defaulted_catalog_field() -> None:
+    classified = {
+        (model.__name__, name)
+        for model, roles in PLUGIN_CONTRACT_DIGEST_FIELD_ROLES.items()
+        for name in roles
+    }
+    observed = {
+        (model.__name__, name)
+        for model in _catalog_contract_models()
+        for name, field in model.model_fields.items()
+        if not field.is_required()
+    }
+    assert classified == observed
