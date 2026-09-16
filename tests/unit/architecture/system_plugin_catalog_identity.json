@@ -566,8 +566,7 @@
       ],
       "capabilities": [
         "native.gdal",
-        "network.egress",
-        "staged.uploads"
+        "network.egress"
       ],
       "conversions": [],
       "nodes": [
@@ -2209,9 +2208,7 @@
           "title": "Raster image"
         }
       ],
-      "capabilities": [
-        "staged.uploads"
-      ],
+      "capabilities": [],
       "conversions": [],
       "nodes": [
         {
@@ -2713,9 +2710,7 @@
           "title": "Table"
         }
       ],
-      "capabilities": [
-        "staged.uploads"
-      ],
+      "capabilities": [],
       "conversions": [],
       "nodes": [
         {

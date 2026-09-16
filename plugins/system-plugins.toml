@@ -6,7 +6,7 @@ project = "plugins/gis"
 distribution_name = "grafy-plugin-gis"
 loader_target = "grafy_plugin_gis.plugin:GIS"
 execution_policy = "isolated-only"
-capabilities = ["native.gdal", "network.egress", "staged.uploads"]
+capabilities = ["native.gdal", "network.egress"]
 operator_prefixes = ["gis"]
 artifact_type_prefixes = ["geo"]
 
