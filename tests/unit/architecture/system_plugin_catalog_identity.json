@@ -70,7 +70,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Number"
         },
         {
@@ -118,7 +117,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Integer sequence"
         },
         {
@@ -195,7 +193,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Add integers"
         },
         {
@@ -272,7 +269,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Subtract integers"
         },
         {
@@ -349,7 +345,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Multiply"
         },
         {
@@ -411,7 +406,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Sum integers"
         }
       ],
@@ -632,7 +626,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Geo features to table"
         },
         {
@@ -702,7 +695,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Table to geo features"
         },
         {
@@ -764,7 +756,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Parse GeoJSON"
         },
         {
@@ -832,7 +823,6 @@
             "native.gdal"
           ],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Import raster scan"
         },
         {
@@ -892,7 +882,6 @@
             "network.egress"
           ],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Import OGC WFS features"
         },
         {
@@ -963,7 +952,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Vector map layer"
         },
         {
@@ -1034,7 +1022,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Raster map layer"
         },
         {
@@ -1098,7 +1085,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Remote WMS map layer"
         },
         {
@@ -1163,7 +1149,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Compose map"
         }
       ],
@@ -1392,7 +1377,6 @@
               "title": "API key"
             }
           ],
-          "staged_upload_inputs": [],
           "title": "OpenAI-compatible Chat Completion"
         },
         {
@@ -1470,7 +1454,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Create prompt message"
         }
       ],
@@ -1573,7 +1556,6 @@
             "native.tesseract"
           ],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Tesseract OCR"
         }
       ],
@@ -1713,7 +1695,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Raw SQL statement"
         },
         {
@@ -1796,7 +1777,6 @@
             "sql.untrusted"
           ],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Query artifact tables"
         },
         {
@@ -1887,7 +1867,6 @@
               "title": "Password"
             }
           ],
-          "staged_upload_inputs": [],
           "title": "Execute PostgreSQL"
         }
       ],
@@ -2113,7 +2092,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Interpret file"
         }
       ],
@@ -2270,7 +2248,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Decode images"
         }
       ],
@@ -2363,7 +2340,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Schema Builder"
         }
       ],
@@ -2454,7 +2430,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Collect"
         },
         {
@@ -2516,7 +2491,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Count"
         },
         {
@@ -2581,7 +2555,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Slice"
         },
         {
@@ -2645,7 +2618,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Pick item"
         }
       ],
@@ -2777,7 +2749,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Import table"
         },
         {
@@ -2851,7 +2822,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Normalize table text"
         },
         {
@@ -2943,7 +2913,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Fuzzy match tables"
         }
       ],
@@ -3049,7 +3018,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Text input"
         },
         {
@@ -3111,7 +3079,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "As Markdown"
         },
         {
@@ -3177,7 +3144,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Split text"
         },
         {
@@ -3244,7 +3210,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Replace text"
         },
         {
@@ -3308,7 +3273,6 @@
           ],
           "required_capabilities": [],
           "secret_inputs": [],
-          "staged_upload_inputs": [],
           "title": "Join text"
         }
       ],

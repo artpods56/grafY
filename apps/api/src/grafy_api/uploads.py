@@ -27,9 +27,7 @@ from grafy_core.ports.storage import (
     SaveFileCommand,
 )
 from grafy_core.ports.uploads import UploadUnitOfWorkPort
-from grafy_core.runtime.upload_reader import require_ready_upload
 from grafy_storage.adapters.local import LocalFileObjectStore
-from starlette.concurrency import run_in_threadpool
 
 from grafy_api.services.errors import WorkbenchOperationError
 from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES, Settings
@@ -552,38 +550,11 @@ class UploadService:
         return f"objects/{upload_id}"
 
 
-@final
-class StorageUploadReader:
-    """Read a completed upload's bytes from object storage for one run."""
-
-    def __init__(
-        self,
-        *,
-        storage: FileStoragePort,
-        unit_of_work_factory: Callable[[], UploadUnitOfWorkPort],
-    ) -> None:
-        self._storage = storage
-        self._unit_of_work_factory = unit_of_work_factory
-
-    async def read(self, workspace_id: UUID, upload_id: UUID) -> bytes:
-        record = await require_ready_upload(
-            self._unit_of_work_factory(),
-            workspace_id,
-            upload_id,
-        )
-        stream = await self._storage.open_chunks(record.bucket, record.object_key)
-        try:
-            return await run_in_threadpool(stream.read)
-        finally:
-            stream.close()
-
-
 __all__ = [
     "ByteReader",
     "FileFormatMismatchError",
     "PresignedUploadTarget",
     "PresigningStorage",
-    "StorageUploadReader",
     "UploadExpiredError",
     "UploadNotFoundError",
     "UploadResult",

@@ -49,11 +49,7 @@ from grafy_api.plugins.runtime.artifacts import ArtifactBundlePluginInvoker
 from grafy_api.plugins.runtime.docker import DockerPluginRuntime
 from grafy_api.plugins.runtime.network_policy import NetworkPolicy
 from grafy_api.realtime.hub import GraphRoomHub
-from grafy_api.uploads import (
-    StorageUploadReader,
-    UploadService,
-    UploadServiceConfig,
-)
+from grafy_api.uploads import UploadService, UploadServiceConfig
 from grafy_core.ports.storage import PresigningStorage
 from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.v1.routes.executions.services import RunResultPresenter
@@ -155,10 +151,6 @@ def build_workbench_components(
         uow=resolved_unit_of_work,
         bucket=bucket,
         storage_backend=storage_backend,
-        uploads=StorageUploadReader(
-            storage=resolved_storage,
-            unit_of_work_factory=lambda: resolved_unit_of_work,
-        ),
         artifact_types=tuple(artifact_types.values()),
         node_secrets=resolved_node_secrets,
     )

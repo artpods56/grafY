@@ -33,7 +33,6 @@ from grafy_core.runtime.plugin_guest import (
     PluginGuestError,
     _GuestBundleStorage,
     _stage_input_artifacts,
-    _stage_uploaded_files,
     _write_output_bundles,
     load_guest_plugin,
 )
@@ -47,9 +46,7 @@ from grafy_core.runtime.plugin_protocol import (
     PluginInvocationLimits,
     PluginInvocationRelease,
     PluginOutputDeclaration,
-    PluginStagedUploadBinding,
 )
-from grafy_core.runtime.upload_reader import BundleUploadReader
 from grafy_workbench.text import TEXT
 
 
@@ -547,58 +544,3 @@ async def test_guest_object_set_codec_restores_and_rewrites_exact_file_set(
     assert output_manifest.logical_sha256 == output_artifact.sha256
     assert output_manifest.metadata["original_filename"] == "scan.tif"
     assert set(output_contents.values()) == {b"exact cog", b"exact tile"}
-
-
-@pytest.mark.asyncio
-async def test_guest_upload_reader_exposes_only_the_validated_bundle_file(
-    tmp_path: Path,
-) -> None:
-    workspace_id = UUID("00000000-0000-4000-8000-000000000503")
-    upload_id = UUID("00000000-0000-4000-8000-000000000504")
-    content = b"authorized upload"
-    relative_path = f"uploads/{workspace_id}/{upload_id}"
-    path = tmp_path / relative_path
-    path.parent.mkdir(parents=True)
-    path.write_bytes(content)
-    request = PluginInvocationEnvelope(
-        invocation_id=UUID("00000000-0000-4000-8000-000000000501"),
-        execution_scope_id=UUID("00000000-0000-4000-8000-000000000502"),
-        workspace_id=workspace_id,
-        release=PluginInvocationRelease(
-            scope=PluginReleaseScope.WORKSPACE,
-            workspace_id=workspace_id,
-            slug="uploads",
-            revision=1,
-            source_digest="a" * 64,
-            contract_digest="b" * 64,
-            protocol_digest=plugin_protocol_digest(),
-            descriptor_digest="d" * 64,
-        ),
-        operator_id="uploads.read",
-        operator_version=1,
-        config={},
-        inputs=(),
-        outputs=(),
-        staged_uploads=(
-            PluginStagedUploadBinding(
-                config_field="uploads",
-                upload_key=str(upload_id),
-                original_filename="source.csv",
-                byte_count=len(content),
-                content_sha256=sha256(content).hexdigest(),
-                relative_path=relative_path,
-            ),
-        ),
-        limits=PluginInvocationLimits(),
-    )
-    unit_of_work = InMemoryUnitOfWork()
-
-    await _stage_uploaded_files(tmp_path, request, unit_of_work)
-    reader = BundleUploadReader(tmp_path / "uploads", unit_of_work)
-
-    assert await reader.read(workspace_id, upload_id) == content
-    with pytest.raises(FileNotFoundError):
-        await reader.read(
-            workspace_id,
-            UUID("00000000-0000-4000-8000-000000000599"),
-        )

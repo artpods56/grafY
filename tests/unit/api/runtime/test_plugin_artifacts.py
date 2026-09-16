@@ -3,7 +3,6 @@ import json
 import sys
 from collections.abc import Mapping
 from dataclasses import replace
-from datetime import UTC, datetime
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
@@ -48,12 +47,10 @@ from grafy_core.domain.plugin_releases import (
     PluginReleaseNamespace,
     PluginReleaseScope,
     PluginSecretInputContract,
-    PluginStagedUploadInputContract,
     plugin_contract_digest,
     plugin_profile_digest,
     plugin_protocol_digest,
 )
-from grafy_core.domain.uploads import Upload, UploadStatus
 from grafy_core.nodes import (
     InPort,
     Node,
@@ -245,7 +242,6 @@ def _release(
     two_inputs: bool = False,
     protocol_digest: str | None = None,
     with_secret: bool = False,
-    with_upload: bool = False,
 ) -> InstalledPluginRelease:
     output_shape = PortShape.MANY if many_output else PortShape.ONE
     outputs = [_port("text", "output", TEXT, output_shape)]
@@ -285,16 +281,10 @@ def _release(
                 )
                 if with_secret
                 else (),
-                staged_upload_inputs=(
-                    PluginStagedUploadInputContract(config_field="uploads"),
-                )
-                if with_upload
-                else (),
                 required_capabilities=tuple(
                     capability
                     for capability, enabled in (
                         (PluginRuntimeCapability.NODE_SECRETS, with_secret),
-                        (PluginRuntimeCapability.STAGED_UPLOADS, with_upload),
                     )
                     if enabled
                 ),
@@ -306,7 +296,6 @@ def _release(
             capability
             for capability, enabled in (
                 (PluginRuntimeCapability.NODE_SECRETS, with_secret),
-                (PluginRuntimeCapability.STAGED_UPLOADS, with_upload),
             )
             if enabled
         )
@@ -829,30 +818,6 @@ class SecretObservingRunner(ManifestRunner):
         await super().run(invocation_root, limits, request)
 
 
-class StagedUploadObservingRunner(ManifestRunner):
-    def __init__(self, expected_content: bytes) -> None:
-        super().__init__()
-        self._expected_content = expected_content
-        self.observed_envelope: PluginInvocationEnvelope | None = None
-
-    async def run(
-        self,
-        invocation_root: Path,
-        limits: PluginInvocationLimits,
-        request: PluginInvocationRequest,
-    ) -> None:
-        envelope = PluginInvocationEnvelope.from_json_bytes(
-            (invocation_root / "invocation.json").read_bytes()
-        )
-        binding = envelope.staged_uploads[0]
-        path = invocation_root.joinpath(*binding.relative_path.split("/"))
-        assert path.read_bytes() == self._expected_content
-        assert path.stat().st_mode & 0o777 == 0o400
-        assert binding.content_sha256 == sha256(self._expected_content).hexdigest()
-        self.observed_envelope = envelope
-        await super().run(invocation_root, limits, request)
-
-
 class FailingGuestRunner(PluginGuestRunner):
     async def run(
         self,
@@ -1111,72 +1076,6 @@ async def test_secret_is_staged_outside_ordinary_invocation_json(
         {"base_url": base_url}
     )
     assert secret_value not in envelope.model_dump_json()
-
-
-@pytest.mark.asyncio
-async def test_staged_upload_is_authorized_digest_bound_and_read_only(
-    tmp_path: Path,
-) -> None:
-    unit_of_work = InMemoryUnitOfWork()
-    input_ref = await _seed_inline_artifact(unit_of_work)
-    upload_id = UUID("00000000-0000-0000-0000-0000000000f1")
-    upload_key = str(upload_id)
-    filename = "source.csv"
-    content = b"name\nAda\n"
-    storage = LocalFileObjectStore(tmp_path / "objects")
-    stored = await storage.save(
-        SaveFileCommand(
-            bucket="artifacts",
-            path=f"objects/{upload_id}",
-            stream=BytesIO(content),
-            content_type="text/csv",
-            metadata={"sha256": sha256(content).hexdigest()},
-        )
-    )
-    async with unit_of_work as entered:
-        await entered.uploads.add(
-            Upload(
-                workspace_id=WORKSPACE_ID,
-                upload_id=upload_id,
-                original_filename=filename,
-                bucket=stored.bucket,
-                object_key=stored.path,
-                expected_size=len(content),
-                status=UploadStatus.READY,
-                actual_size=len(content),
-                sha256=stored.sha256,
-                completed_at=datetime.now(UTC),
-            )
-        )
-        await entered.commit()
-    runner = StagedUploadObservingRunner(content)
-    invoker = ArtifactBundlePluginInvoker(
-        unit_of_work=unit_of_work,
-        runner=runner,
-        scratch_root=tmp_path / "scratch",
-        storage=storage,
-    )
-
-    await invoker.invoke(
-        _request(
-            _release(with_upload=True),
-            input_ref,
-            config={
-                "uploads": [
-                    {
-                        "upload_key": upload_key,
-                        "filename": filename,
-                        "byte_size": len(content),
-                    }
-                ]
-            },
-        )
-    )
-
-    assert runner.observed_envelope is not None
-    assert runner.observed_envelope.required_capabilities == (
-        PluginRuntimeCapability.STAGED_UPLOADS,
-    )
 
 
 @pytest.mark.asyncio

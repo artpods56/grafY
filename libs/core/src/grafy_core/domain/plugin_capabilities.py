@@ -12,7 +12,6 @@ class PluginRuntimeCapability(StrEnum):
     NATIVE_TESSERACT = "native.tesseract"
     UNTRUSTED_SQL = "sql.untrusted"
     POSTGRESQL_EGRESS = "postgresql.egress"
-    STAGED_UPLOADS = "staged.uploads"
 
 
 __all__ = ["PluginRuntimeCapability"]

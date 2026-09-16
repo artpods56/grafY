@@ -32,8 +32,6 @@ from grafy_core.domain.node_secrets import (
     JsonValue,
     node_secret_dependency_sha256,
 )
-from grafy_core.plugins import PluginUnitOfWorkPort
-from grafy_core.domain.uploads import Upload, UploadStatus
 from grafy_core.domain.errors import ObjectAlreadyExistsError
 from grafy_core.table_contracts import (
     TABLE_DATA,
@@ -76,7 +74,6 @@ from grafy_core.runtime.plugin_protocol import (
     PluginInvocationResultEnvelope,
     PluginOutputDeclaration,
     PluginSecretBinding,
-    PluginStagedUploadBinding,
 )
 from grafy_core.runtime.object_set_bundle import (
     ObjectSetBundleError,
@@ -1081,132 +1078,6 @@ class ArtifactBundlePluginInvoker(PluginInvoker):
             )
         return tuple(bindings)
 
-    async def _stage_uploads(
-        self,
-        request: PluginInvocationRequest,
-        invocation_root: Path,
-    ) -> tuple[tuple[PluginStagedUploadBinding, ...], int, int]:
-        if not request.contract.staged_upload_inputs:
-            return (), 0, 0
-        if self._storage is None:
-            raise PluginInvocationError("Plugin staged-upload storage is unavailable")
-        requested: list[tuple[str, str, str, int]] = []
-        for declaration in request.contract.staged_upload_inputs:
-            raw_items = request.config.get(declaration.config_field)
-            if not isinstance(raw_items, list):
-                raise PluginInvocationError(
-                    f"Plugin staged-upload field "
-                    f"{declaration.config_field!r} must be a list"
-                )
-            for raw_item in raw_items:
-                if not isinstance(raw_item, dict):
-                    raise PluginInvocationError(
-                        "Plugin staged-upload items must be objects"
-                    )
-                upload_key = raw_item.get("upload_key")
-                filename = raw_item.get("filename")
-                byte_size = raw_item.get("byte_size")
-                if (
-                    not isinstance(upload_key, str)
-                    or not isinstance(filename, str)
-                    or not isinstance(byte_size, int)
-                    or isinstance(byte_size, bool)
-                    or byte_size < 0
-                ):
-                    raise PluginInvocationError(
-                        "Plugin staged-upload item must declare exact "
-                        "upload_key, filename, and byte_size values"
-                    )
-                requested.append(
-                    (declaration.config_field, upload_key, filename, byte_size)
-                )
-        if len(requested) > self._limits.max_files:
-            raise PluginInvocationError(
-                "Plugin staged uploads exceed their file-count limit"
-            )
-        keys = [upload_key for _, upload_key, _, _ in requested]
-        if len(keys) != len(set(keys)):
-            raise PluginInvocationError("Plugin staged-upload keys must be unique")
-        records: dict[str, Upload] = {}
-        plugin_uow = cast(PluginUnitOfWorkPort, self._unit_of_work)
-        async with plugin_uow as entered:
-            for upload_key in keys:
-                try:
-                    upload_id = UUID(upload_key)
-                except ValueError as exc:
-                    raise PluginInvocationError(
-                        f"Plugin staged upload {upload_key!r} is not an upload "
-                        "identifier"
-                    ) from exc
-                record = await entered.uploads.get(
-                    request.workspace_id,
-                    upload_id,
-                )
-                if record is None:
-                    raise PluginInvocationError(
-                        f"Plugin staged upload {upload_key!r} is "
-                        "missing or unauthorized"
-                    )
-                if record.status is not UploadStatus.READY:
-                    raise PluginInvocationError(
-                        f"Plugin staged upload {upload_key!r} is not complete"
-                    )
-                records[upload_key] = record
-        bindings: list[PluginStagedUploadBinding] = []
-        total_bytes = 0
-        for config_field, upload_key, filename, byte_size in requested:
-            record = records[upload_key]
-            if (
-                record.workspace_id != request.workspace_id
-                or record.original_filename != filename
-                or record.actual_size != byte_size
-            ):
-                raise PluginInvocationError(
-                    f"Plugin staged upload {upload_key!r} metadata "
-                    "does not match its authorized record"
-                )
-            relative_path = f"uploads/{request.workspace_id}/{upload_key}"
-            destination = _bundle_path(invocation_root, relative_path)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            digest = sha256()
-            copied = 0
-            source_stream = await self._storage.load(
-                record.bucket,
-                record.object_key,
-            )
-            try:
-                with destination.open("xb") as output:
-                    while chunk := source_stream.read(1 * 1_024 * 1_024):
-                        copied += len(chunk)
-                        total_bytes += len(chunk)
-                        if (
-                            copied > byte_size
-                            or total_bytes > self._limits.max_input_bytes
-                        ):
-                            raise PluginInvocationError(
-                                "Plugin staged uploads exceed their byte limit"
-                            )
-                        digest.update(chunk)
-                        output.write(chunk)
-            finally:
-                source_stream.close()
-            if copied != byte_size:
-                raise PluginInvocationError(
-                    f"Plugin staged upload {upload_key!r} changed size"
-                )
-            destination.chmod(0o400)
-            bindings.append(
-                PluginStagedUploadBinding(
-                    config_field=config_field,
-                    upload_key=upload_key,
-                    original_filename=filename,
-                    byte_count=copied,
-                    content_sha256=digest.hexdigest(),
-                    relative_path=relative_path,
-                )
-            )
-        return tuple(bindings), total_bytes, len(bindings)
-
     async def _load_referenced_input_artifacts(
         self,
         request: PluginInvocationRequest,
@@ -1479,17 +1350,6 @@ class ArtifactBundlePluginInvoker(PluginInvoker):
         invocation_id = uuid4()
         execution_scope_id = request.workflow_run_id or invocation_id
         secret_bindings = await self._stage_secrets(request, invocation_root)
-        (
-            staged_uploads,
-            staged_upload_bytes,
-            staged_upload_files,
-        ) = await self._stage_uploads(request, invocation_root)
-        if total_bytes + staged_upload_bytes > self._limits.max_input_bytes:
-            raise PluginInvocationError("Plugin aggregate input byte limit exceeded")
-        if total_files + staged_upload_files > self._limits.max_files:
-            raise PluginInvocationError(
-                "Plugin aggregate input file-count limit exceeded"
-            )
         return PluginInvocationEnvelope(
             invocation_id=invocation_id,
             execution_scope_id=execution_scope_id,
@@ -1526,7 +1386,6 @@ class ArtifactBundlePluginInvoker(PluginInvoker):
             input_artifact_dependencies=tuple(dependency_bindings),
             outputs=tuple(declarations),
             secrets=secret_bindings,
-            staged_uploads=staged_uploads,
             limits=invocation_limits,
         )
 

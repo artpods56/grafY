@@ -53,10 +53,7 @@ from grafy_core.ports.node_secrets import (
     UnavailableNodeSecretResolver,
 )
 from grafy_core.ports.storage import FileStoragePort
-from grafy_core.ports.uploads import (
-    UploadReaderPort,
-    UploadRepositoryPort,
-)
+from grafy_core.ports.uploads import UploadRepositoryPort
 
 if TYPE_CHECKING:
     from grafy_core.runtime.persistence import ArtifactOutputWriter
@@ -86,19 +83,10 @@ class PluginRuntimeContext:
     uow: PluginUnitOfWorkPort
     bucket: str
     storage_backend: str = "local"
-    uploads: UploadReaderPort | None = None
     artifact_types: tuple[ArtifactTypeSpec, ...] = ()
     node_secrets: NodeSecretResolverPort = field(
         default_factory=UnavailableNodeSecretResolver
     )
-
-    @property
-    def upload_reader(self) -> UploadReaderPort:
-        """The upload reader every runtime that declares uploads must wire."""
-
-        if self.uploads is None:
-            raise RuntimeError("This Plugin runtime was built without an upload reader")
-        return self.uploads
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,24 +116,6 @@ class NodeSecretInput:
                     f"Node secret input {self.name!r} dependency names must be "
                     "non-empty without surrounding whitespace"
                 )
-
-
-@dataclass(frozen=True, slots=True)
-class NodeStagedUploadInput:
-    """One config field whose upload keys the host authorizes and stages."""
-
-    config_field: str
-
-    def __post_init__(self) -> None:
-        if re.fullmatch(r"[a-z][a-z0-9_]*", self.config_field) is None:
-            raise ValueError(
-                "Node staged-upload config field must start with a lowercase letter "
-                "and contain only lowercase letters, digits, and underscores"
-            )
-        if len(self.config_field) > 255:
-            raise ValueError(
-                "Node staged-upload config field must be at most 255 characters"
-            )
 
 
 MAX_NODE_HTTP_EGRESS_CONFIGURED_FIELDS: Final = 8
@@ -214,7 +184,6 @@ class NodeRegistration:
     node_class: type[Node[Any, Any, Any]]
     factory: NodeFactory | None
     secret_inputs: tuple[NodeSecretInput, ...] = ()
-    staged_upload_inputs: tuple[NodeStagedUploadInput, ...] = ()
     http_egress: NodeHttpEgressContract | None = None
     required_capabilities: tuple[PluginRuntimeCapability, ...] = ()
     cache_policy: NodeCachePolicy = NodeCachePolicy.NEVER
@@ -282,7 +251,6 @@ class Plugin:
         title: str,
         factory: NodeFactory | None = None,
         secret_inputs: tuple[NodeSecretInput, ...] = (),
-        staged_upload_inputs: tuple[NodeStagedUploadInput, ...] = (),
         http_egress: NodeHttpEgressContract | None = None,
         required_capabilities: tuple[PluginRuntimeCapability, ...] = (),
         cache_policy: NodeCachePolicy = NodeCachePolicy.NEVER,
@@ -331,23 +299,6 @@ class Plugin:
                     f"{secret_input.name!r} references missing config fields: "
                     f"{rendered}"
                 )
-            staged_upload_fields = [
-                staged_upload.config_field for staged_upload in staged_upload_inputs
-            ]
-            if len(staged_upload_fields) != len(set(staged_upload_fields)):
-                raise PluginRegistrationError(
-                    f"Plugin {self.slug!r} node {operator_id!r} declares duplicate "
-                    "staged-upload config fields"
-                )
-            missing_staged_upload_fields = sorted(
-                set(staged_upload_fields) - set(config_fields)
-            )
-            if missing_staged_upload_fields:
-                rendered = ", ".join(missing_staged_upload_fields)
-                raise PluginRegistrationError(
-                    f"Plugin {self.slug!r} node {operator_id!r} staged-upload "
-                    f"inputs reference missing config fields: {rendered}"
-                )
             if http_egress is not None:
                 http_egress_fields = [
                     configured_input.config_field
@@ -391,15 +342,6 @@ class Plugin:
                     "inputs without requiring node.secrets"
                 )
             if (
-                staged_upload_inputs
-                and PluginRuntimeCapability.STAGED_UPLOADS
-                not in normalized_capabilities
-            ):
-                raise PluginRegistrationError(
-                    f"Plugin {self.slug!r} node {operator_id!r} declares staged "
-                    "uploads without requiring staged.uploads"
-                )
-            if (
                 http_egress is not None
                 and PluginRuntimeCapability.NETWORK_EGRESS
                 not in normalized_capabilities
@@ -413,7 +355,6 @@ class Plugin:
                 node_class=registered_class,
                 factory=factory,
                 secret_inputs=secret_inputs,
-                staged_upload_inputs=staged_upload_inputs,
                 http_egress=http_egress,
                 required_capabilities=normalized_capabilities,
                 cache_policy=cache_policy,
