@@ -60,6 +60,7 @@ rebuild-plugin-sdk:
     set -euo pipefail
     wheel_dir="$(mktemp -d)"
     trap 'rm -rf "$wheel_dir"' EXIT
+    export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct -- libs/core)"
     uv build libs/core --wheel --out-dir "$wheel_dir" --clear
     wheel="$wheel_dir/grafy_core-0.1.0-py3-none-any.whl"
     cp "$wheel" plugins/gis/wheels/grafy_core-0.1.0-py3-none-any.whl
@@ -68,8 +69,8 @@ rebuild-plugin-sdk:
     cp "$wheel" plugins/sql/wheels/grafy_core-0.1.0-py3-none-any.whl
     cp "$wheel" plugins/notarius/wheels/grafy_core-0.1.0-py3-none-any.whl
     cp "$wheel" examples/plugin-notes/wheels/grafy_core-0.1.0-py3-none-any.whl
-    uv lock --directory examples/plugin-notes
-    uv run python -c 'from hashlib import sha256; from pathlib import Path; import re, sys; p=Path(sys.argv[1]); t=Path("tests/unit/architecture/test_import_boundaries.py"); digest=sha256(p.read_bytes()).hexdigest(); s=t.read_text(); s, count=re.subn(r"(sha256\(core_wheel\.read_bytes\(\)\)\.hexdigest\(\) == \(\n\s*\")[0-9a-f]+", rf"\1{digest}", s, count=1); assert count == 1, "architecture wheel pin not found"; t.write_text(s)' "$wheel"
+    uv lock --directory examples/plugin-notes --refresh-package grafy-core
+    uv run python -c 'from hashlib import sha256; from pathlib import Path; import re, sys; p=Path(sys.argv[1]); t=Path("tests/unit/architecture/test_import_boundaries.py"); digest=sha256(p.read_bytes()).hexdigest(); s=t.read_text(); s, count=re.subn(r"(sha256\(core_wheel\.read_bytes\(\)\)\.hexdigest\(\) == \(\n\s*\")[0-9a-f]+", rf"\g<1>{digest}", s, count=1); assert count == 1, "architecture wheel pin not found"; t.write_text(s)' "$wheel"
 
 # Run the complete retained contract.
 check: test lint typecheck contract build
