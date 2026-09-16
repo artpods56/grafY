@@ -11,6 +11,7 @@ import pytest
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from grafy_api.settings import get_settings
 from grafy_persistence.schema import (
     plugin_installations,
@@ -78,7 +79,9 @@ def test_fresh_postgresql_database_upgrades_to_head(
         _, revision, workspace_count = asyncio.run(
             _postgresql_migration_state(database_url)
         )
-        assert revision == "0029_uploads"
+        heads = ScriptDirectory.from_config(config).get_heads()
+        assert len(heads) == 1
+        assert revision == heads[0]
         assert workspace_count == 0
         command.check(config)
 
