@@ -2,7 +2,7 @@ from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from typing import cast
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 from grafy_core.artifacts import ArtifactObject, JsonObject
@@ -30,21 +30,14 @@ from grafy_core.table_contracts import (
     TableManifest,
     TableValueType,
 )
-from openpyxl import Workbook
 from pydantic import ValidationError
 
 from grafy_workbench.table import TABLES
 
-from tests.support.uploads import bundle_upload_reader, seed_ready_upload
 from grafy_workbench.table.nodes import (
     FuzzyMatchScorer,
     FuzzyMatchTablesNode,
     NormalizeTableTextNode,
-    TableFileImportConfig,
-    TableFileImportError,
-    TableFileImportInput,
-    TableFileImportNode,
-    TableFileUploadItem,
     TableFuzzyMatchConfig,
     TableFuzzyMatchInput,
     TableTextNormalizeConfig,
@@ -188,180 +181,6 @@ def test_table_model_rejects_non_rectangular_or_mistyped_rows() -> None:
         Table(columns=columns, rows=[{"count": 1, "other": 2}])
     with pytest.raises(ValidationError, match="declares 'integer'.*str"):
         Table(columns=columns, rows=[{"count": "1"}])
-
-
-@pytest.mark.asyncio
-async def test_table_file_import_reads_utf8_csv_with_stable_column_ids(
-    tmp_path: Path,
-) -> None:
-    uploads_dir = tmp_path / "uploads"
-    content = (
-        "Nr,Miejscowość,Powiat\n1,м. Бѣлыничи,mohylewski\n2,Вендорож,mohylewski\n"
-    ).encode()
-    uow = InMemoryUnitOfWork()
-    upload_id = await seed_ready_upload(
-        uow,
-        uploads_dir=uploads_dir,
-        workspace_id=TEST_WORKSPACE_ID,
-        content=content,
-        filename="places.csv",
-    )
-    node = TableFileImportNode(
-        uploads=bundle_upload_reader(uow, uploads_dir=uploads_dir)
-    )
-
-    output = await node.run(
-        NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="table-file"),
-        TableFileImportConfig(
-            uploads=[
-                TableFileUploadItem(
-                    upload_key=str(upload_id),
-                    filename="places.csv",
-                    byte_size=len(content),
-                )
-            ]
-        ),
-        TableFileImportInput(),
-    )
-
-    assert [column.id for column in output.table.columns] == [
-        "column_1",
-        "column_2",
-        "column_3",
-    ]
-    assert [column.title for column in output.table.columns] == [
-        "Nr",
-        "Miejscowość",
-        "Powiat",
-    ]
-    assert output.table.rows == [
-        {
-            "column_1": "1",
-            "column_2": "м. Бѣлыничи",
-            "column_3": "mohylewski",
-        },
-        {
-            "column_1": "2",
-            "column_2": "Вендорож",
-            "column_3": "mohylewski",
-        },
-    ]
-
-
-@pytest.mark.asyncio
-async def test_table_file_import_selects_xlsx_sheet_and_preserves_scalars(
-    tmp_path: Path,
-) -> None:
-    uploads_dir = tmp_path / "uploads"
-    workbook = Workbook()
-    ignored = workbook.active
-    assert ignored is not None
-    ignored.title = "Ignored"
-    selected = workbook.create_sheet("Places")
-    selected.append(["Name", "Population", "Seat"])
-    selected.append(["Belynichi", 10, True])
-    buffer = BytesIO()
-    workbook.save(buffer)
-    workbook.close()
-    content = buffer.getvalue()
-    uow = InMemoryUnitOfWork()
-    upload_id = await seed_ready_upload(
-        uow,
-        uploads_dir=uploads_dir,
-        workspace_id=TEST_WORKSPACE_ID,
-        content=content,
-        filename="places.xlsx",
-    )
-    node = TableFileImportNode(
-        uploads=bundle_upload_reader(uow, uploads_dir=uploads_dir)
-    )
-
-    output = await node.run(
-        NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="table-file"),
-        TableFileImportConfig(
-            uploads=[
-                TableFileUploadItem(
-                    upload_key=str(upload_id),
-                    filename="places.xlsx",
-                    byte_size=len(content),
-                )
-            ],
-            sheet_name="Places",
-        ),
-        TableFileImportInput(),
-    )
-
-    assert [column.value_type for column in output.table.columns] == [
-        TableValueType.TEXT,
-        TableValueType.INTEGER,
-        TableValueType.BOOLEAN,
-    ]
-    assert output.table.rows == [
-        {"column_1": "Belynichi", "column_2": 10, "column_3": True}
-    ]
-
-
-@pytest.mark.asyncio
-async def test_table_file_import_fails_closed_without_db_row(tmp_path: Path) -> None:
-    uploads_dir = tmp_path / "uploads"
-    content = b"a,b\n1,2\n"
-    upload_id = uuid4()
-    workspace_uploads = uploads_dir / str(TEST_WORKSPACE_ID)
-    workspace_uploads.mkdir(parents=True)
-    (workspace_uploads / str(upload_id)).write_bytes(content)
-    node = TableFileImportNode(
-        uploads=bundle_upload_reader(InMemoryUnitOfWork(), uploads_dir=uploads_dir)
-    )
-
-    with pytest.raises(TableFileImportError, match="was not found in workspace"):
-        await node.run(
-            NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="table-file"),
-            TableFileImportConfig(
-                uploads=[
-                    TableFileUploadItem(
-                        upload_key=str(upload_id),
-                        filename="orphan.csv",
-                        byte_size=len(content),
-                    )
-                ]
-            ),
-            TableFileImportInput(),
-        )
-
-
-@pytest.mark.asyncio
-async def test_table_file_import_fails_closed_for_foreign_workspace_row(
-    tmp_path: Path,
-) -> None:
-    uploads_dir = tmp_path / "uploads"
-    other_workspace = UUID("00000000-0000-0000-0000-000000000902")
-    content = b"a,b\n1,2\n"
-    uow = InMemoryUnitOfWork()
-    upload_id = await seed_ready_upload(
-        uow,
-        uploads_dir=uploads_dir,
-        workspace_id=other_workspace,
-        content=content,
-        filename="places.csv",
-    )
-    node = TableFileImportNode(
-        uploads=bundle_upload_reader(uow, uploads_dir=uploads_dir)
-    )
-
-    with pytest.raises(TableFileImportError, match="was not found in workspace"):
-        await node.run(
-            NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="table-file"),
-            TableFileImportConfig(
-                uploads=[
-                    TableFileUploadItem(
-                        upload_key=str(upload_id),
-                        filename="places.csv",
-                        byte_size=len(content),
-                    )
-                ]
-            ),
-            TableFileImportInput(),
-        )
 
 
 @pytest.mark.asyncio
@@ -547,7 +366,6 @@ def test_table_plugin_registers_chunked_persistence(tmp_path: Path) -> None:
     assert writer.artifact_type == TABLE_DATA.key
     assert sample_table().rows[0]["column_2"] == "19.99"
     assert {node.key for node in registry.nodes} >= {
-        ("table.file.import", 1),
         ("table.text.normalize", 1),
         ("table.fuzzy_match", 1),
     }

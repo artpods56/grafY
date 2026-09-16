@@ -94,7 +94,6 @@ import {
   shouldBlockAuthoringCommand,
   type AuthoringCommandOptions,
 } from "./authoring-command-guard";
-import { useNodeFileUploads } from "./useNodeFileUploads";
 import {
   GraphRoomCommandError,
   PRESENCE_CLIENT_MIN_INTERVAL_MS,
@@ -187,14 +186,11 @@ import { artifactTypeColor } from "../canvas/nodes.css";
 import type { ArtifactQueryRelation } from "../canvas/query-artifact-tables";
 import type { SchemaBuilderField } from "../canvas/schema-builder";
 import {
-  isFileUploadOperator,
   WORKFLOW_EDGE_TYPE,
   WORKFLOW_NODE_TYPE,
   createWorkflowNodeData,
   effectivePortShape,
-  imageUploads,
   portHasInstancePlugs,
-  removeImageUpload,
   resolvedPortArtifactType,
   type WorkflowEdge,
   type WorkflowEdgeRouteOffset,
@@ -1042,22 +1038,6 @@ function WorkbenchBody({
     [applyAuthoringCommands, commitArtifactViewers, forgetNodeSecretStatuses],
   );
 
-  const handleRemoveImageUpload = React.useCallback(
-    (nodeId: string, index: number) => {
-      const node = nodes.find((candidate) => candidate.id === nodeId);
-      if (!node) return;
-      applyAuthoringCommands([
-        {
-          kind: "update_node_configuration",
-          node_id: nodeId,
-          field: "uploads",
-          value: imageUploads(removeImageUpload(node.data, index)),
-        },
-      ]);
-    },
-    [applyAuthoringCommands, nodes],
-  );
-
   const addNodeInputPlug = React.useCallback(
     (nodeId: string, portName: string) => {
       const node = nodes.find((candidate) => candidate.id === nodeId);
@@ -1155,15 +1135,6 @@ function WorkbenchBody({
     },
     [applyAuthoringCommands, nodes],
   );
-
-  const { uploading, handleImagesSelected } = useNodeFileUploads({
-    workspaceId,
-    nodes,
-    edges,
-    setNodes,
-    setRunError,
-    applyAuthoringCommands,
-  });
 
   const resetNodeArtifactTypeBinding = React.useCallback(
     (nodeId: string, variable: string) => {
@@ -1290,8 +1261,6 @@ function WorkbenchBody({
           onConfigChange: undefined,
           onLayoutChange: updateLayout,
           onRemoveNode: removeNode,
-          onImagesSelected: undefined,
-          onRemoveImageUpload: undefined,
           onAddInputPlug: undefined,
           onRemoveInputPlug: undefined,
           onReorderInputPlug: undefined,
@@ -1312,10 +1281,6 @@ function WorkbenchBody({
         onConfigChange: updateConfig,
         onLayoutChange: updateLayout,
         onRemoveNode: removeNode,
-        onImagesSelected: isFileUploadOperator(data.spec.operator_id)
-          ? handleImagesSelected
-          : undefined,
-        onRemoveImageUpload: handleRemoveImageUpload,
         onAddInputPlug: addNodeInputPlug,
         onRemoveInputPlug: removeNodeInputPlug,
         onReorderInputPlug: reorderNodeInputPlug,
@@ -1337,14 +1302,12 @@ function WorkbenchBody({
     },
     [
       addNodeInputPlug,
-      handleImagesSelected,
       handleNodeHandlesMeasured,
       openGraphInNewTab,
       openNodeExecutionHistory,
       registry,
       removeNode,
       removeNodeInputPlug,
-      handleRemoveImageUpload,
       reorderNodeInputPlug,
       resetNodeArtifactTypeBinding,
       updateConfig,
@@ -1473,7 +1436,6 @@ function WorkbenchBody({
     presentation: sharedPresentation,
     nodes,
     isExecutionRunning,
-    uploading,
     replaceDocument,
     replacePresentation,
     updateDocumentName,

@@ -167,7 +167,7 @@ export function schemaFields(rawSchema: unknown): SchemaField[] {
 
   return Object.entries(properties).flatMap(
     ([name, rawProperty]): SchemaField[] => {
-      if (/api.?key|token|secret/i.test(name) || name === "uploads") {
+      if (/api.?key|token|secret/i.test(name)) {
         return [];
       }
 

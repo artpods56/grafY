@@ -1,6 +1,5 @@
 import json
 from collections.abc import Callable
-from pathlib import Path
 from typing import Annotated, Self, cast, final, override
 
 from grafy_core.artifacts import (
@@ -19,15 +18,9 @@ from grafy_core.plugins import (
     NodeCachePolicy,
     NodeHttpEgressContract,
     NodeHttpEgressInput,
-    NodeStagedUploadInput,
 )
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.storage import FileStoragePort
-from grafy_core.ports.uploads import UploadReaderPort
-from grafy_core.runtime.upload_reader import (
-    UploadBytesUnavailableError,
-    read_confirmed_upload,
-)
 from grafy_core.table_contracts import (
     TABLE_DATA,
     Table,
@@ -37,8 +30,6 @@ from grafy_core.table_contracts import (
 )
 from pydantic import (
     AnyHttpUrl,
-    BaseModel,
-    ConfigDict,
     Field,
     StrictInt,
     StrictStr,
@@ -92,19 +83,11 @@ _serialize_wkt = cast(Callable[..., str], to_wkt)
 _parse_crs = cast(Callable[[str], CRS], CRS.from_user_input)
 
 
-class GeoJsonUploadError(RuntimeError):
-    pass
-
-
 class GeoJsonParseError(RuntimeError):
     pass
 
 
 class GeoRasterScanImportError(RuntimeError):
-    pass
-
-
-class GeoTiffUploadError(RuntimeError):
     pass
 
 
@@ -439,157 +422,6 @@ async def table_to_geo_features(
             f"Converted table contains invalid WGS84 geometry: {exc}"
         ) from exc
     return TableToGeoFeaturesOutput(features=collection)
-
-
-class GeoUploadItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    upload_key: StrictStr = Field(min_length=1)
-    filename: StrictStr = Field(min_length=1)
-    byte_size: StrictInt = Field(ge=0)
-
-
-GeoJsonUploadItem = GeoUploadItem
-GeoTiffUploadItem = GeoUploadItem
-
-
-class GeoJsonUploadConfig(NodeConfig):
-    uploads: list[GeoUploadItem] = Field(
-        min_length=1,
-        max_length=1,
-        description="One staged GeoJSON upload.",
-    )
-
-
-class GeoJsonUploadInput(NodeInput):
-    pass
-
-
-class GeoJsonUploadOutput(NodeOutput):
-    features: Annotated[
-        GeoFeatureCollection,
-        OutPort(GEO_FEATURE_COLLECTION),
-        Field(description="Validated exact WGS84 GeoJSON FeatureCollection."),
-    ]
-
-
-@GIS.node(
-    operator_id="gis.geojson.upload",
-    version=1,
-    title="Import GeoJSON",
-    factory=lambda context: ImportGeoJsonNode(
-        uploads=context.upload_reader,
-    ),
-    staged_upload_inputs=(NodeStagedUploadInput(config_field="uploads"),),
-    required_capabilities=(PluginRuntimeCapability.STAGED_UPLOADS,),
-)
-@final
-class ImportGeoJsonNode(
-    Node[GeoJsonUploadConfig, GeoJsonUploadInput, GeoJsonUploadOutput]
-):
-    """Imports one staged WGS84 GeoJSON FeatureCollection."""
-
-    def __init__(self, uploads: UploadReaderPort) -> None:
-        self._uploads = uploads
-
-    @override
-    async def run(
-        self,
-        context: NodeExecutionContext,
-        config: GeoJsonUploadConfig,
-        _inputs: GeoJsonUploadInput,
-        /,
-    ) -> GeoJsonUploadOutput:
-        upload = config.uploads[0]
-        try:
-            content = await read_confirmed_upload(
-                self._uploads,
-                workspace_id=context.workspace_id,
-                upload_key=upload.upload_key,
-                byte_size=upload.byte_size,
-                label="Staged GeoJSON upload",
-            )
-        except UploadBytesUnavailableError as exc:
-            raise GeoJsonUploadError(str(exc)) from exc
-        try:
-            features = GeoFeatureCollection.from_geojson_bytes(content, upload.filename)
-        except ValueError as exc:
-            raise GeoJsonUploadError(str(exc)) from exc
-        return GeoJsonUploadOutput(features=features)
-
-
-class GeoTiffUploadConfig(NodeConfig):
-    uploads: list[GeoUploadItem] = Field(
-        min_length=1,
-        max_length=1,
-        description="One staged georeferenced GeoTIFF or COG upload.",
-    )
-    source_name: StrictStr | None = Field(default=None, min_length=1, max_length=1_024)
-
-
-class GeoTiffUploadInput(NodeInput):
-    pass
-
-
-class GeoTiffUploadOutput(NodeOutput):
-    raster: Annotated[
-        GeoRasterScan,
-        OutPort(GEO_RASTER_SCAN),
-        Field(description="Georeferenced raster normalized to COG during persistence."),
-    ]
-
-
-@GIS.node(
-    operator_id="gis.geotiff.upload",
-    version=1,
-    title="Import georeferenced GeoTIFF",
-    factory=lambda context: ImportGeoTiffNode(
-        uploads=context.upload_reader,
-    ),
-    staged_upload_inputs=(NodeStagedUploadInput(config_field="uploads"),),
-    required_capabilities=(
-        PluginRuntimeCapability.NATIVE_GDAL,
-        PluginRuntimeCapability.STAGED_UPLOADS,
-    ),
-)
-@final
-class ImportGeoTiffNode(
-    Node[GeoTiffUploadConfig, GeoTiffUploadInput, GeoTiffUploadOutput]
-):
-    def __init__(self, uploads: UploadReaderPort) -> None:
-        self._uploads = uploads
-
-    @override
-    async def run(
-        self,
-        context: NodeExecutionContext,
-        config: GeoTiffUploadConfig,
-        _inputs: GeoTiffUploadInput,
-        /,
-    ) -> GeoTiffUploadOutput:
-        upload = config.uploads[0]
-        if Path(upload.filename).suffix.lower() not in {".tif", ".tiff"}:
-            raise GeoTiffUploadError(
-                f"GeoTIFF upload {upload.upload_key!r} filename must end in .tif or .tiff"
-            )
-        try:
-            content = await read_confirmed_upload(
-                self._uploads,
-                workspace_id=context.workspace_id,
-                upload_key=upload.upload_key,
-                byte_size=upload.byte_size,
-                label="Staged GeoTIFF upload",
-            )
-        except UploadBytesUnavailableError as exc:
-            raise GeoTiffUploadError(str(exc)) from exc
-        source_name = config.source_name or upload.filename
-        return GeoTiffUploadOutput(
-            raster=GeoRasterScan(
-                content=content,
-                filename=upload.filename,
-                source_name=source_name,
-            )
-        )
 
 
 class GeoJsonParseInput(NodeInput):
@@ -1054,14 +886,6 @@ __all__ = [
     "GeoJsonParseError",
     "GeoJsonParseInput",
     "GeoJsonParseOutput",
-    "GeoJsonUploadConfig",
-    "GeoJsonUploadError",
-    "GeoJsonUploadInput",
-    "GeoJsonUploadItem",
-    "GeoTiffUploadConfig",
-    "GeoTiffUploadError",
-    "GeoTiffUploadInput",
-    "GeoTiffUploadItem",
     "GeoRasterScanImportConfig",
     "GeoRasterScanImportError",
     "GeoRasterScanImportInput",
@@ -1070,8 +894,6 @@ __all__ = [
     "GeoFeaturesToTableError",
     "GeoFeaturesToTableInput",
     "GeoFeaturesToTableOutput",
-    "ImportGeoJsonNode",
-    "ImportGeoTiffNode",
     "ImportRasterScanNode",
     "ImportWfsNode",
     "MapLayerOutput",

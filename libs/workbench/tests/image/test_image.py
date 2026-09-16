@@ -1,6 +1,6 @@
 from hashlib import sha256
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 from grafy_core.artifact_contracts import RASTER_IMAGE, RasterImageContent
@@ -17,13 +17,7 @@ from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext
 
 from grafy_workbench.image import IMAGES
-from grafy_workbench.image.nodes import (
-    ImageUploadError,
-    RasterImageOutputWriter,
-    UploadImagesNode,
-)
-
-from tests.support.uploads import bundle_upload_reader, seed_ready_upload
+from grafy_workbench.image.nodes import RasterImageOutputWriter
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -79,156 +73,6 @@ class RecordingFileStorage:
 
     async def delete(self, bucket: str, path: str) -> None:
         raise AssertionError(f"Unexpected delete for {bucket}/{path}")
-
-
-@pytest.mark.asyncio
-async def test_upload_preserves_order_content_and_declared_filenames(
-    tmp_path: Path,
-) -> None:
-    uploads_dir = tmp_path / "uploads"
-    uow = InMemoryUnitOfWork()
-    first_id = await seed_ready_upload(
-        uow,
-        uploads_dir=uploads_dir,
-        workspace_id=TEST_WORKSPACE_ID,
-        content=b"first-image",
-        filename="first.png",
-    )
-    second_id = await seed_ready_upload(
-        uow,
-        uploads_dir=uploads_dir,
-        workspace_id=TEST_WORKSPACE_ID,
-        content=b"second-image",
-        filename="second.jpg",
-    )
-
-    output = await UploadImagesNode(
-        bundle_upload_reader(uow, uploads_dir=uploads_dir)
-    ).run(
-        NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="upload"),
-        UploadImagesNode.config_contract.model.model_validate(
-            {
-                "uploads": [
-                    {
-                        "upload_key": str(second_id),
-                        "filename": "page-002.jpg",
-                        "byte_size": len(b"second-image"),
-                    },
-                    {
-                        "upload_key": str(first_id),
-                        "filename": "page-001.png",
-                        "byte_size": len(b"first-image"),
-                    },
-                ]
-            }
-        ),
-        UploadImagesNode.input_contract.model.model_validate({}),
-    )
-
-    assert output.images == [
-        RasterImageContent(
-            content=b"second-image",
-            content_type="image/jpeg",
-            filename="page-002.jpg",
-        ),
-        RasterImageContent(
-            content=b"first-image",
-            content_type="image/png",
-            filename="page-001.png",
-        ),
-    ]
-
-
-@pytest.mark.asyncio
-async def test_upload_rejects_keys_that_are_not_upload_identifiers(
-    tmp_path: Path,
-) -> None:
-    uploads_dir = tmp_path / "uploads"
-    uploads_dir.mkdir()
-    uow = InMemoryUnitOfWork()
-    node = UploadImagesNode(bundle_upload_reader(uow, uploads_dir=uploads_dir))
-
-    with pytest.raises(ImageUploadError, match="not a known upload identifier"):
-        await node.run(
-            NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="upload"),
-            node.config_contract.model.model_validate(
-                {
-                    "uploads": [
-                        {
-                            "upload_key": "../outside.png",
-                            "filename": "outside.png",
-                            "byte_size": 1,
-                        }
-                    ]
-                }
-            ),
-            node.input_contract.model.model_validate({}),
-        )
-
-
-@pytest.mark.asyncio
-async def test_upload_fails_closed_when_file_exists_without_db_row(
-    tmp_path: Path,
-) -> None:
-    uploads_dir = tmp_path / "uploads"
-    upload_id = uuid4()
-    workspace_dir = uploads_dir / str(TEST_WORKSPACE_ID)
-    workspace_dir.mkdir(parents=True)
-    staged = workspace_dir / str(upload_id)
-    staged.write_bytes(b"image")
-    node = UploadImagesNode(
-        bundle_upload_reader(InMemoryUnitOfWork(), uploads_dir=uploads_dir)
-    )
-
-    with pytest.raises(ImageUploadError, match="was not found in workspace"):
-        await node.run(
-            NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="upload"),
-            node.config_contract.model.model_validate(
-                {
-                    "uploads": [
-                        {
-                            "upload_key": str(upload_id),
-                            "filename": "page.png",
-                            "byte_size": staged.stat().st_size,
-                        }
-                    ]
-                }
-            ),
-            node.input_contract.model.model_validate({}),
-        )
-
-
-@pytest.mark.asyncio
-async def test_upload_fails_closed_for_row_in_another_workspace(
-    tmp_path: Path,
-) -> None:
-    uploads_dir = tmp_path / "uploads"
-    other_workspace = UUID("00000000-0000-0000-0000-000000000902")
-    uow = InMemoryUnitOfWork()
-    upload_id = await seed_ready_upload(
-        uow,
-        uploads_dir=uploads_dir,
-        workspace_id=other_workspace,
-        content=b"image",
-        filename="page.png",
-    )
-
-    with pytest.raises(ImageUploadError, match="was not found in workspace"):
-        await UploadImagesNode(bundle_upload_reader(uow, uploads_dir=uploads_dir)).run(
-            NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="upload"),
-            UploadImagesNode.config_contract.model.model_validate(
-                {
-                    "uploads": [
-                        {
-                            "upload_key": str(upload_id),
-                            "filename": "page.png",
-                            "byte_size": len(b"image"),
-                        }
-                    ]
-                }
-            ),
-            UploadImagesNode.input_contract.model.model_validate({}),
-        )
 
 
 @pytest.mark.asyncio

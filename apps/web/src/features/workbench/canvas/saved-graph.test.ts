@@ -13,11 +13,7 @@ import {
   savedGraphExecutionFingerprint,
   savedGraphFingerprint,
 } from "./saved-graph";
-import {
-  IMAGE_UPLOAD_OPERATOR_ID,
-  effectivePortShape,
-  serializeWorkflowEdgeTransport,
-} from "./types";
+import { effectivePortShape, serializeWorkflowEdgeTransport } from "./types";
 
 function conversion(
   id: string,
@@ -1018,7 +1014,7 @@ describe("saved graph module nodes", () => {
 
   it("hydrates the pinned historical revision and exposes mapped outputs as a sequence", () => {
     const sourceSpec = nodeSpec(
-      IMAGE_UPLOAD_OPERATOR_ID,
+      "image.decode",
       "output",
       "image.raster",
       "many",
@@ -1036,7 +1032,7 @@ describe("saved graph module nodes", () => {
           {
             id: "images",
             kind: "builtin",
-            operator_id: IMAGE_UPLOAD_OPERATOR_ID,
+            operator_id: "image.decode",
             operator_version: 1,
             config: {},
             input_plugs: [],
