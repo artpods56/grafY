@@ -2,6 +2,15 @@ import * as stylex from "@stylexjs/stylex";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
+/**
+ * Width of the docked Runs drawer. The shell publishes it as
+ * `--grafy-generated-drawer-width`; the canvas, the chrome anchored to the
+ * canvas, and the drawer itself read it back, so one place decides how much
+ * room the drawer takes. It stays local to this module because a named import
+ * of a plain value from a styles module reads to StyleX as a theme variable.
+ */
+const GENERATED_DRAWER_WIDTH = "320px";
+
 export const workbenchStyles = stylex.create({
   /* Sits beside the docked workspace rail; floating chrome anchors to this box. */
   shell: {
@@ -14,7 +23,20 @@ export const workbenchStyles = stylex.create({
     backgroundColor: tokens.colorBg,
     color: tokens.colorText,
   },
-  canvas: { position: "absolute", inset: 0 },
+  shellWithGeneratedDrawer: {
+    "--grafy-generated-drawer-width": GENERATED_DRAWER_WIDTH,
+  },
+  /* The canvas keeps its own box; the docked drawer takes width off its right. */
+  canvas: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: {
+      default: "var(--grafy-generated-drawer-width, 0px)",
+      "@media (max-width: 720px)": 0,
+    },
+  },
   toolButton: {
     height: {
       default: "31px",
@@ -50,7 +72,7 @@ export const workbenchStyles = stylex.create({
       "@media (max-width: 720px)": "max(12px, env(safe-area-inset-bottom))",
     },
     left: {
-      default: "50%",
+      default: "calc(50% - (var(--grafy-generated-drawer-width, 0px) / 2))",
       "@media (max-width: 720px)":
         "calc(12px + env(safe-area-inset-left, 0px))",
     },

@@ -45,7 +45,12 @@ const s = stylex.create({
       default: "78px",
       "@media (max-width: 720px)": "calc(80px + env(safe-area-inset-bottom))",
     },
-    left: "50%",
+    left: {
+      default: "50%",
+      // Centre on the canvas, not on the canvas plus the docked Runs drawer.
+      "@media (min-width: 721px)":
+        "calc(50% - (var(--grafy-generated-drawer-width, 0px) / 2))",
+    },
     width: {
       default: "min(460px, calc(100% - 24px))",
       "@media (max-width: 720px)":

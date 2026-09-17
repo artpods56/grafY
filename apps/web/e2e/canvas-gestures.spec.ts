@@ -162,7 +162,8 @@ test("touch can select and move a node without moving the viewport", async ({ pa
   expect(await viewportTransform(page)).toEqual(beforeViewport);
 });
 
-test("ports still connect through a real drag", async ({ page, hasTouch }) => {
+/** Builds two nodes and wires them with a real pointer drag. */
+async function connectPortsThroughDrag(page: Page, hasTouch: boolean) {
   const source = await addNode(page, "Test text source", hasTouch);
   const target = await addNode(page, "Test text sink", hasTouch);
   // New nodes open near the viewport center. Move the sink below the source
@@ -212,4 +213,28 @@ test("ports still connect through a real drag", async ({ page, hasTouch }) => {
     await page.mouse.up();
   }
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+}
+
+test("ports still connect through a real drag", async ({ page, hasTouch }) => {
+  await connectPortsThroughDrag(page, hasTouch);
+});
+
+// The Runs drawer takes width off the canvas, so a connection drag has to keep
+// landing on its ports while the canvas is resized.
+test("ports still connect with the Runs drawer docked", async ({
+  page,
+  hasTouch,
+}) => {
+  const viewport = page.viewportSize();
+  test.skip(
+    (viewport?.width ?? 0) <= 720,
+    "Below 721px the Runs drawer floats over the canvas instead of docking beside it.",
+  );
+
+  await page.getByRole("button", { name: "Generated artifacts" }).click();
+  await expect(
+    page.getByRole("complementary", { name: "Generated", exact: true }),
+  ).toBeVisible();
+
+  await connectPortsThroughDrag(page, hasTouch);
 });
