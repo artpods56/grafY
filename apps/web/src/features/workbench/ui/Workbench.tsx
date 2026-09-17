@@ -24,6 +24,7 @@ import {
   Eye,
   Grid3x3,
   History,
+  Layers,
   LoaderCircle,
   Maximize2,
   Package,
@@ -37,6 +38,7 @@ import {
 } from "lucide-react";
 
 import { ExecutionHistoryDrawer } from "./ExecutionHistoryDrawer";
+import { GeneratedDrawer } from "./GeneratedDrawer";
 import { LibraryDrawer } from "./LibraryDrawer";
 import { GraphRoomRecoveryNotice } from "./GraphRoomRecoveryNotice";
 import { GlobalIssueToastList, type GlobalIssue } from "./GlobalIssueToastList";
@@ -577,6 +579,7 @@ function WorkbenchBody({
   const { workspace } = useWorkspaceContext();
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [libraryDrawerOpen, setLibraryDrawerOpen] = React.useState(false);
+  const [generatedDrawerOpen, setGeneratedDrawerOpen] = React.useState(false);
   const [contextualDiscovery, setContextualDiscovery] =
     React.useState<ContextualDiscoverySession | null>(null);
   const [workspaceLibraryOpen, setWorkspaceLibraryOpen] = React.useState(false);
@@ -3973,7 +3976,12 @@ function WorkbenchBody({
   usePublishWorkbenchChrome(chromeValue);
 
   return (
-    <main {...stylex.props(s.shell)}>
+    <main
+      {...stylex.props(
+        s.shell,
+        generatedDrawerOpen ? s.shellWithGeneratedDrawer : null,
+      )}
+    >
       <span
         role="status"
         aria-live="polite"
@@ -4302,6 +4310,25 @@ function WorkbenchBody({
         </button>
         <button
           type="button"
+          aria-label="Generated artifacts"
+          aria-pressed={generatedDrawerOpen}
+          title="Run artifacts this canvas produced"
+          {...stylex.props(
+            s.railButton,
+            generatedDrawerOpen ? s.railPrimary : null,
+          )}
+          onClick={() => {
+            closeGraphBrowser();
+            setLibraryOpen(false);
+            setGridPanelOpen(false);
+            setGeneratedDrawerOpen((open) => !open);
+          }}
+        >
+          <Layers size={14} />
+          <span {...stylex.props(s.railLabel)}>Generated</span>
+        </button>
+        <button
+          type="button"
           aria-label="Saved artifacts"
           title="Saved artifacts and where they came from"
           {...stylex.props(
@@ -4372,6 +4399,18 @@ function WorkbenchBody({
           isDirty={isDirty}
           returnFocusRef={executionHistoryReturnFocusRef}
           onClose={() => setExecutionHistoryTarget(null)}
+        />
+      ) : null}
+
+      {generatedDrawerOpen ? (
+        <GeneratedDrawer
+          workspaceId={workspaceId}
+          graphId={activeGraph?.id ?? null}
+          nodeTitles={nodeTitles}
+          registry={registry ?? null}
+          canSave={canEditGraph}
+          executionRunning={running}
+          onClose={() => setGeneratedDrawerOpen(false)}
         />
       ) : null}
 
