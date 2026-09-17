@@ -27,7 +27,7 @@ export const SIDE_PANEL_DOCK_QUERY = "(min-width: 1100px)";
 /** Above this width the panel opens on its own the first time. */
 export const SIDE_PANEL_AUTO_OPEN_QUERY = "(min-width: 1280px)";
 
-export const SIDE_PANEL_VIEWS = ["artifacts", "templates"] as const;
+export const SIDE_PANEL_VIEWS = ["artifacts", "templates", "generated"] as const;
 export type SidePanelViewId = (typeof SIDE_PANEL_VIEWS)[number];
 
 const OPEN_KEY = "grafy-side-panel-open";

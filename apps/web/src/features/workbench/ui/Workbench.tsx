@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 
 import { ExecutionHistoryDrawer } from "./ExecutionHistoryDrawer";
+import { GeneratedDrawer } from "./GeneratedDrawer";
 import { WorkbenchSidePanel } from "./side-panel/WorkbenchSidePanel";
 import { useWorkbenchSidePanel } from "./side-panel/workbench-side-panel-state";
 import { GraphRoomRecoveryNotice } from "./GraphRoomRecoveryNotice";
@@ -4774,7 +4775,7 @@ function WorkbenchBody({
           type="button"
           aria-label="Artifacts and templates panel"
           aria-pressed={sidePanel.open}
-          title="The docked panel: Workspace Library artifacts and graph templates"
+          title="The docked panel: Workspace Library artifacts, graph templates, and this canvas' Run artifacts"
           {...stylex.props(s.railButton, sidePanel.open ? s.railPrimary : null)}
           onClick={() => {
             closeGraphBrowser();
@@ -4846,6 +4847,17 @@ function WorkbenchBody({
       <WorkbenchSidePanel
         workspaceId={workspaceId}
         sidePanel={sidePanel}
+        generatedView={
+          <GeneratedDrawer
+            workspaceId={workspaceId}
+            graphId={activeGraph?.id ?? null}
+            nodeTitles={nodeTitles}
+            registry={registry ?? null}
+            canSave={canEditGraph}
+            executionRunning={running}
+            onClose={() => sidePanel.setOpen(false)}
+          />
+        }
         onOpenRun={(graphId, executionId) => {
           if (graphId !== activeGraph?.id) {
             openGraphInNewTab(graphId);

@@ -47,7 +47,10 @@ function state(
   };
 }
 
-async function renderPanel(sidePanel: WorkbenchSidePanelState): Promise<void> {
+async function renderPanel(
+  sidePanel: WorkbenchSidePanelState,
+  generatedView?: React.ReactNode,
+): Promise<void> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -57,6 +60,7 @@ async function renderPanel(sidePanel: WorkbenchSidePanelState): Promise<void> {
       <WorkbenchSidePanel
         workspaceId="workspace-1"
         sidePanel={sidePanel}
+        generatedView={generatedView}
         onOpenRun={vi.fn()}
         onOpenGraph={vi.fn()}
       />,
@@ -122,6 +126,24 @@ describe("WorkbenchSidePanel", () => {
         "aria-labelledby",
       ),
     ).toBe("grafy-side-panel-tab-templates");
+  });
+
+  it("hosts the Runs drawer inside the tab panel on the Generated tab", async () => {
+    await renderPanel(
+      state({ view: "generated" }),
+      <div role="region" aria-label="Generated">
+        Latest run
+      </div>,
+    );
+
+    expect(tab("generated")?.getAttribute("aria-selected")).toBe("true");
+    const view = document.getElementById("grafy-side-panel-view");
+    expect(view?.getAttribute("aria-labelledby")).toBe(
+      "grafy-side-panel-tab-generated",
+    );
+    const drawer = view?.querySelector('[aria-label="Generated"]') ?? null;
+    expect(drawer).not.toBeNull();
+    expect(view?.contains(drawer)).toBe(true);
   });
 
   it("switches views from the tab strip and with the arrow keys", async () => {

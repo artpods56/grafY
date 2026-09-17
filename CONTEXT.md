@@ -222,7 +222,10 @@ _Avoid_: directory, collection
 
 ### Run artifact
 
-An output one run of a graph produced, shown in the Runs drawer. The Runs drawer
+An output one run of a graph produced, shown in the Runs drawer. The Runs
+drawer is the `Generated` tab of the workbench side panel, so it shares one
+docked pane with the Workspace Library and graph templates instead of opening a
+dock of its own; the term for the surface stays Runs drawer. The drawer
 is per canvas, newest first, grouped by run and then by the node that made the
 item, and each row names the revision it came from. Run artifacts are not a
 second persist: they exist as materialized output bindings the moment their node

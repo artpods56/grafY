@@ -5,6 +5,7 @@ import * as stylex from "@stylexjs/stylex";
 import { Drawer } from "@base-ui/react/drawer";
 import {
   FolderTree,
+  Layers,
   LayoutTemplate,
   PanelLeftClose,
   type LucideIcon,
@@ -30,6 +31,12 @@ type PanelContext = {
   workspaceId: string;
   onOpenRun: (graphId: string, executionId: string) => void;
   onOpenGraph: (graphId: string) => void;
+  /**
+   * The Runs drawer, composed by the workbench because it needs the live canvas
+   * — graph id, node titles, registry, edit rights. The panel only decides when
+   * to show it, so the canvas types stay out of the panel's own vocabulary.
+   */
+  generatedView: React.ReactNode;
 };
 
 /**
@@ -64,6 +71,12 @@ const PANEL_VIEWS: readonly {
         onOpenGraph={context.onOpenGraph}
       />
     ),
+  },
+  {
+    id: "generated",
+    label: "Generated",
+    icon: Layers,
+    render: (context) => context.generatedView,
   },
 ];
 
@@ -199,11 +212,13 @@ const s = stylex.create({
 export function WorkbenchSidePanel({
   workspaceId,
   sidePanel,
+  generatedView,
   onOpenRun,
   onOpenGraph,
 }: {
   workspaceId: string;
   sidePanel: WorkbenchSidePanelState;
+  generatedView?: React.ReactNode;
   onOpenRun: (graphId: string, executionId: string) => void;
   onOpenGraph: (graphId: string) => void;
 }) {
@@ -212,6 +227,7 @@ export function WorkbenchSidePanel({
   const body = (
     <SidePanelBody
       workspaceId={workspaceId}
+      generatedView={generatedView}
       view={sidePanel.view}
       onViewChange={sidePanel.setView}
       onClose={() => sidePanel.setOpen(false)}
@@ -252,6 +268,7 @@ export function WorkbenchSidePanel({
 
 function SidePanelBody({
   workspaceId,
+  generatedView,
   view,
   onViewChange,
   onClose,
@@ -259,6 +276,7 @@ function SidePanelBody({
   onOpenGraph,
 }: {
   workspaceId: string;
+  generatedView: React.ReactNode;
   view: SidePanelViewId;
   onViewChange: (next: SidePanelViewId) => void;
   onClose: () => void;
@@ -266,7 +284,12 @@ function SidePanelBody({
   onOpenGraph: (graphId: string) => void;
 }) {
   const active = PANEL_VIEWS.find((entry) => entry.id === view) ?? PANEL_VIEWS[0]!;
-  const context: PanelContext = { workspaceId, onOpenRun, onOpenGraph };
+  const context: PanelContext = {
+    workspaceId,
+    onOpenRun,
+    onOpenGraph,
+    generatedView,
+  };
 
   function onTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
