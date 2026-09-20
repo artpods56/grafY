@@ -6,11 +6,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ArtifactRef, PlacedLibraryItem } from "@/lib/api";
 import type { ArtifactCardValue } from "../artifact-card";
-import type { ArtifactViewerNodeData } from "../artifact-viewer";
+import {
+  ARTIFACT_VIEWER_EDGE_TYPE,
+  ARTIFACT_VIEWER_INPUT_HANDLE,
+  type ArtifactViewerNodeData,
+} from "../artifact-viewer";
+import { WORKFLOW_NODE_TYPE } from "../types";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const libraryMocks = vi.hoisted(() => ({ items: [] as PlacedLibraryItem[] }));
+const flowMocks = vi.hoisted(() => ({
+  edges: [] as unknown[],
+  nodes: new Map<string, unknown>(),
+}));
 
 vi.mock("@stylexjs/stylex", () => ({
   create: <Styles,>(styles: Styles) => styles,
@@ -20,6 +29,16 @@ vi.mock("@stylexjs/stylex", () => ({
 vi.mock("@xyflow/react", () => ({
   useUpdateNodeInternals: () => vi.fn(),
   useViewport: () => ({ zoom: 1 }),
+  useEdges: () => flowMocks.edges,
+  useNodesData: (nodeId: string) => flowMocks.nodes.get(nodeId) ?? null,
+  Handle: (props: { id?: string; "aria-label"?: string }) => (
+    <span
+      data-testid="card-port"
+      data-handle-id={props.id}
+      aria-label={props["aria-label"]}
+    />
+  ),
+  Position: { Left: "left", Right: "right" },
 }));
 
 vi.mock("swr", () => ({
@@ -133,6 +152,8 @@ function mount(
 afterEach(() => {
   document.body.replaceChildren();
   libraryMocks.items = [];
+  flowMocks.edges = [];
+  flowMocks.nodes = new Map();
 });
 
 describe("artifact on the canvas", () => {
@@ -155,6 +176,96 @@ describe("artifact on the canvas", () => {
     // photo takes the same room on the canvas as a wide map.
     const media = container.querySelector<HTMLElement>("[data-artifact-media]");
     expect(media?.style.height).toBe("198px");
+  });
+
+  it("follows the output port wired into it", () => {
+    flowMocks.nodes = new Map<string, unknown>([
+      [
+        "node-producer",
+        {
+          id: "node-producer",
+          type: WORKFLOW_NODE_TYPE,
+          data: {
+            spec: {
+              title: "Resize image",
+              outputs: [{ name: "image", title: "Resized" }],
+            },
+            run: {
+              status: "succeeded",
+              outputs: [
+                {
+                  port: "image",
+                  kind: "single",
+                  artifacts: [
+                    {
+                      artifact_id: "produced-9",
+                      artifact_type: "file.png",
+                      schema_version: "1.0.0",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    ]);
+    flowMocks.edges = [
+      {
+        id: "artifact-viewer-edge-1",
+        type: ARTIFACT_VIEWER_EDGE_TYPE,
+        source: "node-producer",
+        target: "artifact-viewer-1",
+        targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
+        data: { sourcePortName: "image" },
+      },
+    ];
+
+    const { container } = mount(single("library-1"));
+
+    expect(container.querySelector("img")?.getAttribute("src")).toContain(
+      "produced-9",
+    );
+    expect(container.textContent).toContain("Resize image → Resized");
+    expect(
+      container.querySelector(
+        `[data-handle-id="${ARTIFACT_VIEWER_INPUT_HANDLE}"]`,
+      ),
+    ).not.toBeNull();
+  });
+
+  it("waits while the wired port has produced nothing", () => {
+    flowMocks.nodes = new Map<string, unknown>([
+      [
+        "node-producer",
+        {
+          id: "node-producer",
+          type: WORKFLOW_NODE_TYPE,
+          data: {
+            spec: {
+              title: "Resize image",
+              outputs: [{ name: "image", title: "Resized" }],
+            },
+            run: { status: "failed", outputs: [] },
+          },
+        },
+      ],
+    ]);
+    flowMocks.edges = [
+      {
+        id: "artifact-viewer-edge-1",
+        type: ARTIFACT_VIEWER_EDGE_TYPE,
+        source: "node-producer",
+        target: "artifact-viewer-1",
+        targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
+        data: { sourcePortName: "image" },
+      },
+    ];
+
+    const { container } = mount(single("library-1"));
+
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("Waiting for Resized");
   });
 
   it("passes its artifact out when the ball is dragged", () => {

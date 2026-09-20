@@ -3,7 +3,13 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Menu } from "@base-ui/react/menu";
-import { useUpdateNodeInternals } from "@xyflow/react";
+import {
+  Handle,
+  Position,
+  useEdges,
+  useNodesData,
+  useUpdateNodeInternals,
+} from "@xyflow/react";
 import useSWR from "swr";
 import {
   ArrowDown,
@@ -35,7 +41,17 @@ import {
   moveArtifactCardRef,
   type ArtifactCardValue,
 } from "../artifact-card";
-import type { ArtifactViewerNodeData } from "../artifact-viewer";
+import {
+  ARTIFACT_VIEWER_EDGE_TYPE,
+  ARTIFACT_VIEWER_INPUT_HANDLE,
+  type ArtifactViewerEdge,
+  type ArtifactViewerNodeData,
+  type CanvasEdge,
+  type CanvasNode,
+} from "../artifact-viewer";
+import type { ArtifactRef } from "@/lib/api";
+import { handleStyle } from "../handle-style";
+import { WORKFLOW_NODE_TYPE } from "../types";
 import type { WorkflowNodeLayout } from "../node-layout";
 import { CanvasNodeShell, useCanvasNodeShell } from "./CanvasNodeShell";
 import { LayoutResizeHandle } from "./LayoutResizeHandle";
@@ -118,6 +134,16 @@ const s = stylex.create({
   fileMeta: {
     fontSize: tokens.fontSizeXs,
     color: tokens.colorMuted,
+  },
+  awaiting: {
+    position: "absolute",
+    inset: 0,
+    display: "grid",
+    placeItems: "center",
+    padding: "0 16px",
+    color: tokens.colorSubtle,
+    fontSize: tokens.fontSizeXs,
+    textAlign: "center",
   },
   stack: {
     position: "relative",
@@ -294,8 +320,45 @@ export function ArtifactCardBody({
   const [imagesFailed, setImagesFailed] = React.useState<
     Record<string, boolean>
   >({});
-  const refs = cardArtifactRefs(value);
-  const contract = artifactCardContract(value);
+  // A card an output port is wired into follows that port: it presents the
+  // latest artifact the port produced instead of the ref it was dropped with.
+  const edges = useEdges<CanvasEdge>();
+  const feed = edges.find(
+    (edge): edge is ArtifactViewerEdge =>
+      edge.type === ARTIFACT_VIEWER_EDGE_TYPE &&
+      edge.target === id &&
+      edge.targetHandle === ARTIFACT_VIEWER_INPUT_HANDLE,
+  );
+  const producerCandidate = useNodesData<CanvasNode>(feed?.source ?? "");
+  const producer =
+    producerCandidate?.type === WORKFLOW_NODE_TYPE ? producerCandidate : null;
+  const feedPortName = feed?.data?.sourcePortName ?? null;
+  const feedPort =
+    producer && feedPortName
+      ? producer.data.spec.outputs.find(
+          (candidate) => candidate.name === feedPortName,
+        )
+      : undefined;
+  const succeededRun =
+    producer?.data.run?.status === "succeeded" ? producer.data.run : null;
+  const feedArtifacts =
+    succeededRun && feedPortName
+      ? (succeededRun.outputs.find(
+          (candidate) => candidate.port === feedPortName,
+        )?.artifacts ?? [])
+      : [];
+  // A fed card shows only what the port produced: falling back to the ref it was
+  // dropped with would paint a stale artifact behind a live wire.
+  const fedValue = artifactCardValue(
+    [...feedArtifacts] as unknown as ArtifactRef[],
+    value,
+  );
+  const shownValue: ArtifactCardValue | null = feed ? fedValue : value;
+  const refs = shownValue ? cardArtifactRefs(shownValue) : [];
+  const contract = shownValue
+    ? artifactCardContract(shownValue)
+    : (feedPortName ?? "—");
+  const awaitingFeed = Boolean(feed) && refs.length === 0;
   const itemsById = React.useMemo(
     () =>
       new Map<string, PlacedLibraryItem>(
@@ -308,6 +371,12 @@ export function ArtifactCardBody({
     const item = itemsById.get(artifactId);
     return item ? libraryFileDisplayName(item) : null;
   };
+
+  const titleLabel = feed
+    ? `${producer?.data.spec.title ?? "Output"} → ${feedPort?.title ?? feedPortName ?? "output"}`
+    : refs.length === 1
+      ? (nameOf(refs[0].artifact_id) ?? refs[0].artifact_id)
+      : `${refs.length} artifacts`;
 
   const grid = useOptionalCanvasGridSettings();
   const allowCornerResize = grid?.settings.allowWorkflowCornerResize ?? false;
@@ -338,10 +407,13 @@ export function ArtifactCardBody({
     commit(artifactCardValue(moved, value));
   };
 
-  const first = refs[0];
-  const firstItem = itemsById.get(first.artifact_id);
-  const firstUrl = artifactInlineContentUrl(workspace.id, first.artifact_id);
+  const first = refs[0] ?? null;
+  const firstItem = first ? itemsById.get(first.artifact_id) : undefined;
+  const firstUrl = first
+    ? artifactInlineContentUrl(workspace.id, first.artifact_id)
+    : "";
   const showsImage =
+    first !== null &&
     refs.length === 1 &&
     isImageArtifact(first, firstItem?.artifact.content_type) &&
     !imagesFailed[first.artifact_id];
@@ -370,9 +442,7 @@ export function ArtifactCardBody({
         }
       >
         <span {...stylex.props(s.meta)}>
-          {refs.length === 1
-            ? (nameOf(first.artifact_id) ?? first.artifact_id)
-            : `${refs.length} artifacts`}
+          {titleLabel}
           <span {...stylex.props(s.metaContract)}>{contract}</span>
         </span>
 
@@ -383,6 +453,14 @@ export function ArtifactCardBody({
             {...stylex.props(s.media)}
             style={{ height: mediaHeight }}
           >
+            {awaitingFeed ? (
+              <div {...stylex.props(s.awaiting)}>
+                {producer
+                  ? `Waiting for ${feedPort?.title ?? feedPortName ?? "output"}`
+                  : "Waiting for this graph to run"}
+              </div>
+            ) : null}
+
             {showsImage ? (
               /* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */
               <img
@@ -449,15 +527,25 @@ export function ArtifactCardBody({
             ) : null}
           </div>
 
+          <Handle
+            id={ARTIFACT_VIEWER_INPUT_HANDLE}
+            type="target"
+            position={Position.Left}
+            isConnectable
+            aria-label="Artifact input port, accepts any artifact"
+            title="Drag an output port here so this card follows it"
+            style={handleStyle("50%", tokens.colorAccent)}
+          />
+
           <button
             type="button"
             className="nodrag"
-            draggable
+            draggable={shownValue !== null}
             title="Drag onto a node input to pass these artifacts"
             aria-label={`Pass ${contract} to a node input`}
-            onDragStart={(event) =>
-              writeArtifactDrop(event.dataTransfer, value)
-            }
+            onDragStart={(event) => {
+              if (shownValue) writeArtifactDrop(event.dataTransfer, shownValue);
+            }}
             {...stylex.props(s.ball)}
           />
 
@@ -472,7 +560,7 @@ export function ArtifactCardBody({
             <Menu.Portal>
               <Menu.Positioner side="bottom" align="end" sideOffset={4}>
                 <Menu.Popup {...stylex.props(s.menuPopup)}>
-                  {refs.length > 1 ? (
+                  {!feed && refs.length > 1 ? (
                     <Menu.Item
                       onClick={() => setReordering((open) => !open)}
                       {...stylex.props(s.menuItem)}
@@ -503,7 +591,7 @@ export function ArtifactCardBody({
           </Menu.Root>
         </div>
 
-        {reordering && refs.length > 1 ? (
+        {reordering && !feed && refs.length > 1 ? (
           <div className="nodrag" {...stylex.props(s.reorder)}>
             <span {...stylex.props(s.reorderHead)}>
               Passed in this order · drag a row&rsquo;s arrows to change it
