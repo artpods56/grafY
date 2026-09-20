@@ -10,10 +10,7 @@ import {
 } from "@xyflow/react";
 import { Download, LoaderCircle, TriangleAlert } from "lucide-react";
 
-import {
-  artifactDownloadUrl,
-  type ArtifactSummary,
-} from "@/lib/api";
+import { artifactDownloadUrl, type ArtifactSummary } from "@/lib/api";
 import { useNodeRegistry } from "@/hooks/use-api";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { tokens } from "@/lib/stylex/tokens.stylex";
@@ -54,10 +51,7 @@ import {
   CanvasPortTab,
   canvasNodeInteractionProps,
 } from "./CanvasNodeChrome";
-import {
-  CanvasNodeShell,
-  useCanvasNodeShell,
-} from "./CanvasNodeShell";
+import { CanvasNodeShell, useCanvasNodeShell } from "./CanvasNodeShell";
 import { LayoutResizeHandle } from "./LayoutResizeHandle";
 
 const s = stylex.create({
@@ -109,31 +103,34 @@ export default function ArtifactViewerNodeCard({
   const sourceNodeCandidate = useNodesData<CanvasNode>(
     incomingEdge?.source ?? "",
   );
-  const sourceNode = sourceNodeCandidate?.type === WORKFLOW_NODE_TYPE
-    ? sourceNodeCandidate
-    : null;
+  const sourceNode =
+    sourceNodeCandidate?.type === WORKFLOW_NODE_TYPE
+      ? sourceNodeCandidate
+      : null;
   const sourcePortName = incomingEdge?.data?.sourcePortName ?? null;
-  const sourcePort = sourceNode && sourcePortName
-    ? sourceNode.data.spec.outputs.find(
-        (candidate) => candidate.name === sourcePortName,
-      )
-    : undefined;
-  const succeededRun = sourceNode?.data.run?.status === "succeeded"
-    ? sourceNode.data.run
-    : null;
-  const output = succeededRun && sourcePortName
-    ? succeededRun.outputs.find(
-        (candidate) => candidate.port === sourcePortName,
-      )
-    : undefined;
+  const sourcePort =
+    sourceNode && sourcePortName
+      ? sourceNode.data.spec.outputs.find(
+          (candidate) => candidate.name === sourcePortName,
+        )
+      : undefined;
+  const succeededRun =
+    sourceNode?.data.run?.status === "succeeded" ? sourceNode.data.run : null;
+  const output =
+    succeededRun && sourcePortName
+      ? succeededRun.outputs.find(
+          (candidate) => candidate.port === sourcePortName,
+        )
+      : undefined;
   const renderableOutput = output?.artifacts.length ? output : null;
   const firstArtifact = renderableOutput?.artifacts[0];
-  const declaredArtifactType = sourcePort && sourceNode
-    ? resolvedPortArtifactType(
-        sourcePort,
-        sourceNode.data.artifactTypeBindings,
-      )
-    : null;
+  const declaredArtifactType =
+    sourcePort && sourceNode
+      ? resolvedPortArtifactType(
+          sourcePort,
+          sourceNode.data.artifactTypeBindings,
+        )
+      : null;
   const artifactTypeLabel = firstArtifact
     ? `${firstArtifact.artifact_type}@${firstArtifact.schema_version}`
     : declaredArtifactType
@@ -178,9 +175,8 @@ export default function ArtifactViewerNodeCard({
       ? artifactTypeColor(firstArtifact.artifact_type, tokens.colorAccent)
       : tokens.colorAccent;
   const updateNodeInternals = useUpdateNodeInternals();
-  const [draftLayout, setDraftLayout] = React.useState<WorkflowNodeLayout | null>(
-    null,
-  );
+  const [draftLayout, setDraftLayout] =
+    React.useState<WorkflowNodeLayout | null>(null);
   const layout = draftLayout ?? data.layout;
   const width = resolvedNodeWidth(layout);
   const previewHeight = resolvedAppendixHeight(layout);
@@ -192,14 +188,14 @@ export default function ArtifactViewerNodeCard({
     updateNodeInternals,
   });
   const { gridWidth, fillMinHeight } = shell;
-  const outputRevision = renderableOutput?.artifacts
-    .map((artifact) => artifact.artifact_id)
-    .join(":") ?? "";
+  const outputRevision =
+    renderableOutput?.artifacts
+      .map((artifact) => artifact.artifact_id)
+      .join(":") ?? "";
   const { workspace } = useWorkspaceContext();
   const { data: registry } = useNodeRegistry(workspace.id);
-  const [focusedArtifact, setFocusedArtifact] = React.useState<
-    ArtifactSummary | null
-  >(null);
+  const [focusedArtifact, setFocusedArtifact] =
+    React.useState<ArtifactSummary | null>(null);
   const focusedFormats = focusedArtifact?.download_formats ?? [];
   const overflowItems: CanvasNodeOverflowItem[] =
     focusedFormats.length && showPreview && focusedArtifact
@@ -231,12 +227,9 @@ export default function ArtifactViewerNodeCard({
       outgoingFields: data.outgoingFields ?? [],
       selection: data.selection ?? EMPTY_ARTIFACT_KEY_SELECTION,
       incoming: data.incomingBindings ?? [],
-      onFieldsChange: (fields) =>
-        data.onFieldsChange?.(id, fields),
-      onSelectionChange: (selection) =>
-        data.onSelectionChange?.(id, selection),
-      onActivityChange: (activity) =>
-        data.onActivityChange?.(id, activity),
+      onFieldsChange: (fields) => data.onFieldsChange?.(id, fields),
+      onSelectionChange: (selection) => data.onSelectionChange?.(id, selection),
+      onActivityChange: (activity) => data.onActivityChange?.(id, activity),
     }),
     [data, id],
   );
@@ -307,10 +300,7 @@ export default function ArtifactViewerNodeCard({
         }
         aboutFooter={
           artifactContract ? (
-            <span
-              title={artifactContract}
-              {...stylex.props(s.aboutMeta)}
-            >
+            <span title={artifactContract} {...stylex.props(s.aboutMeta)}>
               {artifactContract}
             </span>
           ) : null
@@ -353,32 +343,34 @@ export default function ArtifactViewerNodeCard({
             ),
           },
           ...(showInteractionRow
-            ? [{
-                input: (
-                  <CanvasPortTab
-                    nodeId={id}
-                    label="Follow selection"
-                    direction="input"
-                    handleId={ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE}
-                    color={tokens.colorInfo}
-                    isConnectable={isConnectable}
-                    ariaLabel="Follow selection from another Artifact Viewer"
-                    title="Accept a key selection from another Artifact Viewer."
-                  />
-                ),
-                output: (
-                  <CanvasPortTab
-                    nodeId={id}
-                    label="Selected rows"
-                    direction="output"
-                    handleId={ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE}
-                    color={tokens.colorInfo}
-                    isConnectable={isConnectable}
-                    ariaLabel="Selected rows from this Artifact Viewer"
-                    title="Send this viewer's key selection to another Artifact Viewer."
-                  />
-                ),
-              }]
+            ? [
+                {
+                  input: (
+                    <CanvasPortTab
+                      nodeId={id}
+                      label="Follow selection"
+                      direction="input"
+                      handleId={ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE}
+                      color={tokens.colorInfo}
+                      isConnectable={isConnectable}
+                      ariaLabel="Follow selection from another Artifact Viewer"
+                      title="Accept a key selection from another Artifact Viewer."
+                    />
+                  ),
+                  output: (
+                    <CanvasPortTab
+                      nodeId={id}
+                      label="Selected rows"
+                      direction="output"
+                      handleId={ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE}
+                      color={tokens.colorInfo}
+                      isConnectable={isConnectable}
+                      ariaLabel="Selected rows from this Artifact Viewer"
+                      title="Send this viewer's key selection to another Artifact Viewer."
+                    />
+                  ),
+                },
+              ]
             : []),
         ]}
       />
