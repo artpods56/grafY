@@ -18,7 +18,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
  * would cover the canvas on every visit.
  */
 
-export const SIDE_PANEL_DEFAULT_WIDTH = 276;
+export const SIDE_PANEL_DEFAULT_WIDTH = 360;
 export const SIDE_PANEL_MIN_WIDTH = 240;
 export const SIDE_PANEL_MAX_WIDTH = 420;
 
@@ -208,10 +208,10 @@ export function useCollapsedFolderKeys(): [
   );
 
   const setCollapsed = React.useCallback((key: string, next: boolean) => {
-    const current = readCollapsedKeys();
-    if (next) current.add(key);
-    else current.delete(key);
-    writeStored(COLLAPSED_FOLDERS_KEY, JSON.stringify([...current]));
+    const keys = new Set(readCollapsedKeys());
+    if (next) keys.add(key);
+    else keys.delete(key);
+    writeStored(COLLAPSED_FOLDERS_KEY, JSON.stringify([...keys]));
     notify();
   }, []);
 

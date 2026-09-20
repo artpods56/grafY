@@ -5,21 +5,38 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LibraryPanel } from "./LibraryPanel";
-import type { LibraryItem } from "@/lib/api";
+import { BLOB_ARTIFACT_NOTICE } from "../../model/blob-notice";
+import type { LibraryFolder, PlacedLibraryItem } from "@/lib/api";
 
-const listLibraryArtifacts = vi.hoisted(() => vi.fn());
+const listTree = vi.hoisted(() => vi.fn());
+const createFolder = vi.hoisted(() => vi.fn());
+const renameFolder = vi.hoisted(() => vi.fn());
+const deleteFolder = vi.hoisted(() => vi.fn());
+const moveFolder = vi.hoisted(() => vi.fn());
+const moveItems = vi.hoisted(() => vi.fn());
 const uploadFile = vi.hoisted(() => vi.fn());
 const saveUploadedArtifactToLibrary = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lib/api", () => ({
-  listLibraryArtifacts,
-  uploadFile,
-  saveUploadedArtifactToLibrary,
-  artifactContentUrl: (
-    _workspaceId: string,
-    contentUrl: string | null | undefined,
-  ) => (contentUrl ? `/api/v1/${contentUrl}` : null),
-}));
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<Record<string, unknown>>("@/lib/api");
+  return {
+    ...actual,
+    libraryFoldersApi: {
+      listTree,
+      createFolder,
+      renameFolder,
+      deleteFolder,
+      moveFolder,
+      moveItems,
+    },
+    uploadFile,
+    saveUploadedArtifactToLibrary,
+    artifactContentUrl: (
+      _workspaceId: string,
+      contentUrl: string | null | undefined,
+    ) => (contentUrl ? `/api/v1/${contentUrl}` : null),
+  };
+});
 
 vi.mock("@stylexjs/stylex", () => ({
   create: <Styles,>(styles: Styles) => styles,
@@ -28,7 +45,29 @@ vi.mock("@stylexjs/stylex", () => ({
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const RUN_ITEM: LibraryItem = {
+const FIELDWORK: LibraryFolder = {
+  folder_id: "fieldwork",
+  workspace_id: "workspace",
+  parent_id: null,
+  name: "Fieldwork",
+  created_at: "2026-09-01T00:00:00Z",
+  updated_at: "2026-09-01T00:00:00Z",
+};
+
+const SEPTEMBER: LibraryFolder = {
+  ...FIELDWORK,
+  folder_id: "september",
+  parent_id: "fieldwork",
+  name: "September",
+};
+
+const EMPTY_FOLDER: LibraryFolder = {
+  ...FIELDWORK,
+  folder_id: "archive",
+  name: "Archive",
+};
+
+const RUN_ITEM: PlacedLibraryItem = {
   artifact: {
     artifact_id: "artifact-run",
     artifact_type: "table.data",
@@ -56,9 +95,10 @@ const RUN_ITEM: LibraryItem = {
     graph_id: "graph-1",
     finished_at: "2026-09-11T11:59:00Z",
   },
+  folder_id: "september",
 };
 
-const UPLOAD_ITEM: LibraryItem = {
+const UPLOAD_ITEM: PlacedLibraryItem = {
   artifact: {
     artifact_id: "artifact-upload",
     artifact_type: "file.jpeg",
@@ -77,9 +117,10 @@ const UPLOAD_ITEM: LibraryItem = {
     original_filename: "harbour-front.jpg",
   },
   run: null,
+  folder_id: null,
 };
 
-const BLOB_ITEM: LibraryItem = {
+const BLOB_ITEM: PlacedLibraryItem = {
   artifact: {
     artifact_id: "artifact-blob",
     artifact_type: "file.blob",
@@ -98,16 +139,13 @@ const BLOB_ITEM: LibraryItem = {
     original_filename: "scan.unknown",
   },
   run: null,
+  folder_id: null,
 };
 
 const roots: ReturnType<typeof createRoot>[] = [];
 
-function row(label: string): HTMLElement {
-  const found = [
-    ...document.querySelectorAll<HTMLElement>("[data-tree-key]"),
-  ].find((element) => element.dataset.treeLabel === label);
-  if (!found) throw new Error(`No tree row named ${label}`);
-  return found;
+function rows(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>("[data-tree-key]")];
 }
 
 function folderRow(id: string): HTMLElement {
@@ -115,6 +153,14 @@ function folderRow(id: string): HTMLElement {
     `[data-tree-key="folder:${id}"]`,
   );
   if (!found) throw new Error(`No folder row ${id}`);
+  return found;
+}
+
+function fileRow(id: string): HTMLElement {
+  const found = document.querySelector<HTMLElement>(
+    `[data-tree-key="file:${id}"]`,
+  );
+  if (!found) throw new Error(`No file row ${id}`);
   return found;
 }
 
@@ -126,16 +172,46 @@ function dropRegion(): HTMLElement {
   return region;
 }
 
+/** React tracks input values, so a controlled input only changes through its setter. */
+function typeInto(input: HTMLInputElement, value: string): void {
+  const setValue = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )!.set!;
+  setValue.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function press(element: HTMLElement, key: string): void {
   element.dispatchEvent(
     new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
   );
 }
 
+/**
+ * A drop with the payload shape the real drag carries. jsdom has no
+ * DataTransfer, and the tree only ever reads `types` and `getData`.
+ */
+function dropPayload(target: HTMLElement, data: Record<string, string>): void {
+  const dataTransfer = {
+    files: [],
+    types: Object.keys(data),
+    getData: (type: string) => data[type] ?? "",
+    setData: () => {},
+    dropEffect: "move",
+    effectAllowed: "all",
+  };
+  const event = new Event("drop", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+  target.dispatchEvent(event);
+}
+
 function dropFiles(target: HTMLElement, files: File[]): void {
   const dataTransfer = {
     files,
     types: ["Files"],
+    getData: () => "",
+    setData: () => {},
     dropEffect: "copy",
     effectAllowed: "all",
   };
@@ -146,8 +222,23 @@ function dropFiles(target: HTMLElement, files: File[]): void {
   }
 }
 
+const ARTIFACT_DROP_TYPE = "application/x-grafy-artifact";
+const FOLDER_DROP_TYPE = "application/x-grafy-library-folder";
+
+function artifactDropValue(artifactId: string): string {
+  return JSON.stringify({
+    value: {
+      artifact_id: artifactId,
+      artifact_type: "file.png",
+      schema_version: 1,
+      content_hash: null,
+    },
+    shape: "one",
+  });
+}
+
 /** jsdom's storage is shadowed by Node's experimental one, so provide our own. */
-function installMemoryStorage(): Map<string, string> {
+function installMemoryStorage(): void {
   const store = new Map<string, string>();
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => store.get(key) ?? null,
@@ -159,16 +250,15 @@ function installMemoryStorage(): Map<string, string> {
     },
     clear: () => store.clear(),
   });
-  return store;
 }
 
 let workspaceCounter = 0;
 
 async function renderPanel(
-  items: LibraryItem[],
+  tree: { folders: LibraryFolder[]; items: PlacedLibraryItem[] },
   onOpenRun = vi.fn(),
 ): Promise<{ onOpenRun: ReturnType<typeof vi.fn>; workspaceId: string }> {
-  listLibraryArtifacts.mockResolvedValue({ items });
+  listTree.mockResolvedValue(tree);
   workspaceCounter += 1;
   const workspaceId = `workspace-${workspaceCounter}`;
   const container = document.createElement("div");
@@ -192,239 +282,298 @@ afterEach(() => {
   });
   document.body.replaceChildren();
   vi.unstubAllGlobals();
-  listLibraryArtifacts.mockReset();
-  uploadFile.mockReset();
-  saveUploadedArtifactToLibrary.mockReset();
+  for (const call of [
+    listTree,
+    createFolder,
+    renameFolder,
+    deleteFolder,
+    moveFolder,
+    moveItems,
+    uploadFile,
+    saveUploadedArtifactToLibrary,
+  ]) {
+    call.mockReset();
+  }
 });
 
 describe("LibraryPanel", () => {
   beforeEach(() => {
     installMemoryStorage();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ text: async () => "plot(x),y(x)\n1,2\n" })),
+    );
   });
 
-  it("shows the five standing folders of an empty Library", async () => {
-    await renderPanel([]);
+  it("paints the user's folders and the artifacts filed in them", async () => {
+    await renderPanel({
+      folders: [FIELDWORK, SEPTEMBER, EMPTY_FOLDER],
+      items: [RUN_ITEM, UPLOAD_ITEM],
+    });
 
-    expect(
-      [...document.querySelectorAll<HTMLElement>("[data-tree-key]")].map(
-        (element) => element.dataset.treeLabel,
-      ),
-    ).toEqual(["images", "tables", "text", "models", "other"]);
+    expect(rows().map((element) => element.dataset.treeLabel)).toEqual([
+      "Archive",
+      "Fieldwork",
+      "September",
+      "sales-table",
+      "harbour-front.jpg",
+    ]);
+    expect(folderRow("fieldwork").getAttribute("aria-expanded")).toBe("true");
+    expect(folderRow("fieldwork").textContent).toContain("1");
+    expect(folderRow("archive").textContent).toContain("0");
+  });
+
+  it("marks where an artifact sits in the tree", async () => {
+    await renderPanel({
+      folders: [FIELDWORK, SEPTEMBER],
+      items: [RUN_ITEM],
+    });
+
+    expect(fileRow("artifact-run").getAttribute("aria-level")).toBe("3");
+    expect(folderRow("fieldwork").getAttribute("aria-level")).toBe("1");
+  });
+
+  it("says the Library is empty when there is nothing to file", async () => {
+    await renderPanel({ folders: [], items: [] });
+
     expect(document.body.textContent).toContain("The Library is empty");
-    expect(document.body.textContent).toContain("0 artifacts");
+    expect(document.body.textContent).toContain("0 artifacts · 0 folders");
   });
 
-  it("files each artifact under its type folder", async () => {
-    await renderPanel([RUN_ITEM, UPLOAD_ITEM, BLOB_ITEM]);
-
-    expect(folderRow("images").getAttribute("aria-expanded")).toBe("true");
-    expect(row("harbour-front.jpg").closest('[role="group"]')).not.toBeNull();
-    expect(row("sales-table").getAttribute("aria-level")).toBe("2");
-    expect(document.body.textContent).toContain("2.5 GB · uploaded");
-  });
-
-  it("writes the typed artifact drag payload from a file row", async () => {
-    await renderPanel([RUN_ITEM]);
-    const dataTransfer = { setData: vi.fn(), effectAllowed: "" };
-    const event = new Event("dragstart", { bubbles: true, cancelable: true });
-    Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
-    row("sales-table").dispatchEvent(event);
-
-    expect(dataTransfer.effectAllowed).toBe("copy");
-    expect(dataTransfer.setData).toHaveBeenCalledWith(
-      "application/x-grafy-artifact",
-      JSON.stringify({
-        value: {
-          artifact_id: "artifact-run",
-          artifact_type: "table.data",
-          schema_version: 1,
-          content_hash: "abcdef1234567890",
-        },
-        shape: "one",
-      }),
-    );
-  });
-
-  it("keeps the provenance line and the run link in the inspector", async () => {
-    const { onOpenRun } = await renderPanel([RUN_ITEM, UPLOAD_ITEM]);
-
-    await React.act(async () => {
-      row("sales-table").click();
+  it("folds a folder away and remembers it", async () => {
+    await renderPanel({
+      folders: [FIELDWORK, SEPTEMBER],
+      items: [RUN_ITEM],
     });
 
-    const inspector = document.querySelector('[aria-label="Selected artifact"]');
-    expect(inspector?.textContent).toContain(
-      "Sales · Resize · revision 4 · from a run",
-    );
-    expect(inspector?.textContent).toContain("table.data@1 · abcdef123456");
-
-    const link = [...document.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Execution history"),
-    );
     await React.act(async () => {
-      link?.click();
+      folderRow("fieldwork").click();
     });
-    expect(onOpenRun).toHaveBeenCalledWith("graph-1", "execution-1");
+    expect(document.querySelector('[data-tree-key="folder:september"]')).toBeNull();
 
     await React.act(async () => {
-      row("harbour-front.jpg").click();
+      folderRow("fieldwork").click();
     });
     expect(
-      [...document.querySelectorAll("button")].some((button) =>
-        button.textContent?.includes("Execution history"),
-      ),
-    ).toBe(false);
-  });
-
-  it("keeps the blob ingest notice on a blob row", async () => {
-    await renderPanel([BLOB_ITEM]);
-
-    expect(document.body.textContent).toContain(
-      "Format not recognized, stored as a blob.",
-    );
-  });
-
-  it("falls back to the folder icon when a thumbnail cannot load", async () => {
-    await renderPanel([UPLOAD_ITEM]);
-    const thumbnail = row("harbour-front.jpg").querySelector("img");
-    expect(thumbnail?.getAttribute("src")).toContain(
-      "/artifacts/artifact-upload/content",
-    );
-
-    await React.act(async () => {
-      thumbnail?.dispatchEvent(new Event("error"));
-    });
-
-    expect(
-      row("harbour-front.jpg").querySelector("img"),
-    ).toBeNull();
-  });
-
-  it("collapses a folder and remembers the choice", async () => {
-    await renderPanel([RUN_ITEM]);
-
-    await React.act(async () => {
-      folderRow("tables").click();
-    });
-
-    expect(folderRow("tables").getAttribute("aria-expanded")).toBe("false");
-    expect(
-      window.localStorage.getItem("grafy-library-folders-collapsed"),
-    ).toContain("folder:tables");
-    expect(document.querySelector("[data-tree-key='file:artifact-run']")).toBe(
-      null,
-    );
-  });
-
-  it("reopens a collapsed folder and drops the stored exception", async () => {
-    await renderPanel([RUN_ITEM]);
-
-    await React.act(async () => {
-      folderRow("tables").click();
-    });
-    await React.act(async () => {
-      folderRow("tables").click();
-    });
-
-    expect(folderRow("tables").getAttribute("aria-expanded")).toBe("true");
-    expect(
-      window.localStorage.getItem("grafy-library-folders-collapsed"),
-    ).not.toContain("folder:tables");
-    expect(
-      document.querySelector("[data-tree-key='file:artifact-run']"),
+      document.querySelector('[data-tree-key="folder:september"]'),
     ).not.toBeNull();
   });
 
-  it("filters the tree and hides the folders with no match", async () => {
-    await renderPanel([RUN_ITEM, UPLOAD_ITEM]);
-    const filter = document.querySelector<HTMLInputElement>(
-      'input[aria-label="Filter Library artifacts"]',
+  it("makes a folder from the toolbar and names it on the spot", async () => {
+    createFolder.mockResolvedValue({ ...EMPTY_FOLDER, name: "New folder" });
+
+    await renderPanel({ folders: [], items: [] });
+    await React.act(async () => {
+      document
+        .querySelector<HTMLElement>('[aria-label="New folder"]')!
+        .click();
+    });
+
+    expect(createFolder).toHaveBeenCalledWith({
+      workspaceId: expect.any(String),
+      name: "New folder",
+      parentId: null,
+    });
+    expect(createFolder.mock.calls.length).toBe(1);
+  });
+
+  it("renames a folder with F2 and sends the new name", async () => {
+    renameFolder.mockResolvedValue({ ...EMPTY_FOLDER, name: "Cold store" });
+
+    await renderPanel({ folders: [EMPTY_FOLDER], items: [] });
+
+    await React.act(async () => {
+      folderRow("archive").focus();
+      press(folderRow("archive"), "F2");
+    });
+    const input = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Folder name"]',
     );
+    expect(input).not.toBeNull();
 
     await React.act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value",
-      )!.set!;
-      setter.call(filter, "harbour");
-      filter?.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-
-    expect(row("harbour-front.jpg")).toBeDefined();
-    expect(document.querySelector("[data-tree-key='folder:tables']")).toBeNull();
-    expect(document.body.textContent).toContain("images");
-  });
-
-  it("uploads files dropped anywhere in the panel", async () => {
-    uploadFile.mockResolvedValue({
-      artifact_id: "artifact-new",
-      filename: "notes.txt",
-    });
-    saveUploadedArtifactToLibrary.mockResolvedValue({});
-    const { workspaceId } = await renderPanel([]);
-
-    await React.act(async () => {
-      dropFiles(dropRegion(), [new File(["a"], "notes.txt")]);
+      typeInto(input!, "Cold store");
     });
     await React.act(async () => {
-      await vi.waitFor(() =>
-        expect(saveUploadedArtifactToLibrary).toHaveBeenCalledWith(workspaceId, {
-          artifact_id: "artifact-new",
-          original_filename: "notes.txt",
-        }),
-      );
+      press(input!, "Enter");
+    });
+
+    expect(renameFolder).toHaveBeenCalledWith({
+      workspaceId: expect.any(String),
+      folderId: "archive",
+      name: "Cold store",
     });
   });
 
-  it("walks the tree with the keyboard", async () => {
-    await renderPanel([RUN_ITEM, UPLOAD_ITEM]);
-    const images = folderRow("images");
-    images.focus();
+  it("keeps the keyboard inside the tree", async () => {
+    await renderPanel({
+      folders: [FIELDWORK, SEPTEMBER],
+      items: [RUN_ITEM],
+    });
 
     await React.act(async () => {
-      press(images, "ArrowLeft");
+      fileRow("artifact-run").focus();
+      press(fileRow("artifact-run"), "ArrowLeft");
     });
-    expect(folderRow("images").getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(folderRow("september"));
+
+    // A folder closes before the keyboard walks out of it, as in a file tree.
+    await React.act(async () => {
+      press(folderRow("september"), "ArrowLeft");
+    });
+    expect(folderRow("september").getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(folderRow("september"));
 
     await React.act(async () => {
-      press(folderRow("images"), "ArrowRight");
+      press(folderRow("september"), "ArrowLeft");
     });
-    expect(folderRow("images").getAttribute("aria-expanded")).toBe("true");
-
-    await React.act(async () => {
-      press(document.activeElement as HTMLElement, "ArrowDown");
-    });
-    expect(document.activeElement).toBe(row("harbour-front.jpg"));
-
-    await React.act(async () => {
-      press(document.activeElement as HTMLElement, "ArrowDown");
-    });
-    expect(document.activeElement).toBe(folderRow("tables"));
-
-    await React.act(async () => {
-      press(document.activeElement as HTMLElement, "End");
-    });
-    expect(document.activeElement).toBe(folderRow("other"));
-
-    await React.act(async () => {
-      row("sales-table").focus();
-      press(row("sales-table"), "ArrowLeft");
-    });
-    expect(document.activeElement).toBe(folderRow("tables"));
+    expect(document.activeElement).toBe(folderRow("fieldwork"));
   });
 
-  it("selects one row at a time with the pointer", async () => {
-    await renderPanel([RUN_ITEM, UPLOAD_ITEM]);
+  it("filters the tree, not just the rows", async () => {
+    await renderPanel({
+      folders: [FIELDWORK, EMPTY_FOLDER],
+      items: [RUN_ITEM, UPLOAD_ITEM],
+    });
+
+    const filter = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Filter the Library"]',
+    )!;
+    await React.act(async () => {
+      typeInto(filter, "harbour");
+    });
+
+    expect(rows().map((element) => element.dataset.treeLabel)).toEqual([
+      "harbour-front.jpg",
+    ]);
+  });
+
+  it("files an artifact dropped on a folder", async () => {
+    moveItems.mockResolvedValue(undefined);
+
+    await renderPanel({ folders: [FIELDWORK], items: [UPLOAD_ITEM] });
 
     await React.act(async () => {
-      row("sales-table").click();
+      dropPayload(folderRow("fieldwork"), {
+        [ARTIFACT_DROP_TYPE]: artifactDropValue("artifact-upload"),
+      });
     });
-    expect(row("sales-table").getAttribute("aria-selected")).toBe("true");
+
+    expect(moveItems).toHaveBeenCalledWith({
+      workspaceId: expect.any(String),
+      artifactIds: ["artifact-upload"],
+      folderId: "fieldwork",
+    });
+  });
+
+  it("moves a folder dropped inside another folder", async () => {
+    moveFolder.mockResolvedValue({ ...EMPTY_FOLDER, parent_id: "fieldwork" });
+
+    await renderPanel({ folders: [FIELDWORK, EMPTY_FOLDER], items: [] });
 
     await React.act(async () => {
-      row("harbour-front.jpg").click();
+      dropPayload(folderRow("fieldwork"), { [FOLDER_DROP_TYPE]: "archive" });
     });
-    expect(row("sales-table").getAttribute("aria-selected")).toBe("false");
-    expect(row("harbour-front.jpg").getAttribute("aria-selected")).toBe("true");
+
+    expect(moveFolder).toHaveBeenCalledWith({
+      workspaceId: expect.any(String),
+      folderId: "archive",
+      parentId: "fieldwork",
+    });
+  });
+
+  it("uploads files dropped on a folder straight into it", async () => {
+    uploadFile.mockResolvedValue({ artifact_id: "artifact-new", filename: "core.png" });
+    saveUploadedArtifactToLibrary.mockResolvedValue({
+      ...UPLOAD_ITEM,
+      artifact: { ...UPLOAD_ITEM.artifact, artifact_id: "artifact-new" },
+    });
+    moveItems.mockResolvedValue(undefined);
+
+    await renderPanel({ folders: [FIELDWORK], items: [] });
+
+    await React.act(async () => {
+      dropFiles(folderRow("fieldwork"), [new File(["x"], "core.png")]);
+    });
+
+    expect(saveUploadedArtifactToLibrary).toHaveBeenCalledWith(
+      expect.any(String),
+      { artifact_id: "artifact-new", original_filename: "core.png" },
+    );
+    expect(moveItems).toHaveBeenCalledWith({
+      workspaceId: expect.any(String),
+      artifactIds: ["artifact-new"],
+      folderId: "fieldwork",
+    });
+  });
+
+  it("frees an artifact dropped on the panel background", async () => {
+    moveItems.mockResolvedValue(undefined);
+
+    await renderPanel({ folders: [FIELDWORK], items: [RUN_ITEM] });
+
+    await React.act(async () => {
+      dropPayload(dropRegion(), {
+        [ARTIFACT_DROP_TYPE]: artifactDropValue("artifact-run"),
+      });
+    });
+
+    expect(moveItems).toHaveBeenCalledWith({
+      workspaceId: expect.any(String),
+      artifactIds: ["artifact-run"],
+      folderId: null,
+    });
+  });
+
+  it("previews the selected artifact on the tile under the browser", async () => {
+    await renderPanel({ folders: [FIELDWORK, SEPTEMBER], items: [RUN_ITEM] });
+
+    await React.act(async () => {
+      fileRow("artifact-run").click();
+    });
+
+    const tile = document.querySelector<HTMLElement>('[aria-label="Selected artifact"]');
+    expect(tile).not.toBeNull();
+    expect(tile!.textContent).toContain("/Fieldwork/September");
+    expect(tile!.textContent).toContain("Sales · Resize · revision 4 · from a run");
+    expect(tile!.querySelector("pre")?.textContent).toContain("plot(x),y(x)");
+  });
+
+  it("opens the run a selected artifact came from", async () => {
+    const { onOpenRun } = await renderPanel({
+      folders: [FIELDWORK],
+      items: [RUN_ITEM],
+    });
+    onOpenRun.mockClear();
+
+    await React.act(async () => {
+      fileRow("artifact-run").click();
+    });
+    await React.act(async () => {
+      document
+        .querySelector<HTMLElement>('[aria-label="Selected artifact"] button')!
+        .click();
+    });
+
+    expect(onOpenRun).toHaveBeenCalledWith("graph-1", "execution-1");
+  });
+
+  it("falls back to the folder icon when a thumbnail cannot load", async () => {
+    await renderPanel({ folders: [], items: [UPLOAD_ITEM] });
+
+    const image = fileRow("artifact-upload").querySelector("img");
+    expect(image).not.toBeNull();
+    await React.act(async () => {
+      image!.dispatchEvent(new Event("error", { bubbles: false }));
+    });
+
+    expect(fileRow("artifact-upload").querySelector("img")).toBeNull();
+  });
+
+  it("says an unreadable artifact will not open, without hiding the row", async () => {
+    await renderPanel({ folders: [], items: [BLOB_ITEM] });
+
+    expect(document.body.textContent).toContain("scan.unknown");
+    expect(fileRow("artifact-blob").textContent).toContain(BLOB_ARTIFACT_NOTICE);
   });
 });

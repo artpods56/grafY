@@ -86,7 +86,7 @@ describe("clampSidePanelWidth", () => {
   it("keeps the panel between a usable minimum and maximum", () => {
     expect(clampSidePanelWidth(100)).toBe(240);
     expect(clampSidePanelWidth(4_000)).toBe(SIDE_PANEL_MAX_WIDTH);
-    expect(clampSidePanelWidth(Number.NaN)).toBe(276);
+    expect(clampSidePanelWidth(Number.NaN)).toBe(360);
   });
 });
 

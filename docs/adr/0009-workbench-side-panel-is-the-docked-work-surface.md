@@ -13,7 +13,9 @@ space. A surface that answers one transient question stays a floating overlay.
 Run history, dialogs, and node pickers remain overlays; the Artifact Library does
 not.
 
-Panel views are a fixed module-level set, not a plugin registry. The Library
-folder tree is a client projection of the flat Library list; the filing rule is
-one function, which the Library folder table of #25 replaces without touching the
-tree, the panel shell, or the artifact drag contract.
+Panel views are a fixed module-level set, not a plugin registry.
+
+The folder model in the last paragraph — a client projection of the flat Library
+list, filed by an `images / tables / text / models / other` rule — is withdrawn
+by ADR 0010: folders are made by the user and reached through
+`libraryFoldersApi`. What ADR 0009 decided about the panel itself is unchanged.

@@ -9,6 +9,8 @@ const panel = (page: Page) =>
   page.getByRole("complementary", { name: "Workbench side panel" });
 const panelButton = (page: Page) =>
   page.getByRole("button", { name: "Artifacts and templates panel" });
+const tree = (page: Page) =>
+  panel(page).getByRole("tree", { name: "Workspace Library" });
 
 const LIBRARY: LibraryList = {
   items: [
@@ -30,6 +32,8 @@ const LIBRARY: LibraryList = {
     },
   ],
 };
+
+const EMPTY_LIBRARY: LibraryList = { items: [] };
 
 const TEMPLATES: TemplateList = {
   templates: [
@@ -54,6 +58,11 @@ function viewportWidth(page: Page): number {
   return page.viewportSize()?.width ?? 0;
 }
 
+/**
+ * The Library folder tree lives in the browser until its routes land. Tests name
+ * the folders they make after themselves, so they never collide with the tree
+ * another test left in the same workspace.
+ */
 async function stubResponses(page: Page, library: LibraryList): Promise<void> {
   await page.route("**/api/v1/workspaces/*/library/artifacts", (route) =>
     route.request().method() === "GET"
@@ -67,6 +76,43 @@ async function stubResponses(page: Page, library: LibraryList): Promise<void> {
   );
   await page.reload();
   await expect(page.locator(".react-flow")).toBeVisible();
+}
+
+async function openPanel(page: Page): Promise<void> {
+  if ((await panelButton(page).getAttribute("aria-pressed")) === "false") {
+    await panelButton(page).click();
+  }
+  await expect(panel(page)).toBeVisible();
+}
+
+/** Makes a folder through the toolbar and names it in place. */
+async function makeFolder(page: Page, name: string): Promise<void> {
+  await panel(page).getByRole("button", { name: "New folder" }).click();
+  const rename = panel(page).getByRole("textbox", { name: "Folder name" });
+  await expect(rename).toBeVisible();
+  await rename.fill(name);
+  await rename.press("Enter");
+  await expect(folderRow(page, name)).toBeVisible();
+}
+
+/** Drops a row on the panel background, which files it at the root. */
+async function dragToRoot(page: Page, source: ReturnType<Page["locator"]>) {
+  const region = panel(page).getByRole("region", {
+    name: "Workspace Library files",
+  });
+  const box = await region.boundingBox();
+  if (!box) throw new Error("No Library drop region");
+  await source.dragTo(region, {
+    targetPosition: { x: box.width - 8, y: box.height - 8 },
+  });
+}
+
+function folderRow(page: Page, name: string) {
+  return panel(page).locator(`[data-tree-key^="folder:"][data-tree-label="${name}"]`);
+}
+
+function folderActions(page: Page, name: string) {
+  return panel(page).getByRole("button", { name: `Actions for ${name}` });
 }
 
 async function addNode(page: Page, title: string) {
@@ -108,38 +154,20 @@ test("the docked panel takes layout space from the canvas", async ({
   const drawerBox = await panel(page).boundingBox();
   const canvasBox = await page.locator(".react-flow").boundingBox();
   expect(drawerBox?.x ?? -1).toBeGreaterThanOrEqual(200);
-  expect(drawerBox?.width ?? 0).toBeGreaterThanOrEqual(240);
+  expect(drawerBox?.width ?? 0).toBeGreaterThanOrEqual(360);
   expect(drawerBox?.width ?? 0).toBeLessThanOrEqual(420);
   // The canvas starts where the panel ends instead of hiding underneath it.
-  expect(canvasBox?.x ?? 0).toBeCloseTo((drawerBox?.x ?? 0) + (drawerBox?.width ?? 0), 1);
+  expect(canvasBox?.x ?? 0).toBeCloseTo(
+    (drawerBox?.x ?? 0) + (drawerBox?.width ?? 0),
+    1,
+  );
   expect(canvasBox?.width ?? 0).toBeGreaterThan(400);
 });
 
-test("an empty Library still shows the five standing folders", async ({
-  page,
-}) => {
-  test.skip(
-    viewportWidth(page) < DOCKED_MIN_WIDTH,
-    "Docked panel layout",
-  );
-
-  const tree = panel(page).getByRole("tree", { name: "Workspace Library" });
-  for (const folder of ["images", "tables", "text", "models", "other"]) {
-    await expect(tree.getByRole("treeitem", { name: folder })).toBeVisible();
-  }
-  await expect(panel(page)).toContainText("The Library is empty");
-});
-
 test("the Panel rail button docks and undocks the panel", async ({ page }) => {
-  test.skip(
-    viewportWidth(page) < DOCKED_MIN_WIDTH,
-    "Docked panel layout",
-  );
+  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
 
-  if ((await panelButton(page).getAttribute("aria-pressed")) === "false") {
-    await panelButton(page).click();
-  }
-  await expect(panel(page)).toBeVisible();
+  await openPanel(page);
   const openCanvas = await page.locator(".react-flow").boundingBox();
 
   await panelButton(page).click();
@@ -153,43 +181,108 @@ test("the Panel rail button docks and undocks the panel", async ({ page }) => {
   await expect(panel(page)).toBeVisible();
 });
 
-test("the panel is a folder tree of Library artifacts", async ({ page }) => {
-  test.skip(
-    viewportWidth(page) < DOCKED_MIN_WIDTH,
-    "Docked panel layout",
-  );
+test("a folder is made from the toolbar and sits at the root", async ({
+  page,
+}) => {
+  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
+
+  await stubResponses(page, EMPTY_LIBRARY);
+  await openPanel(page);
+
+  await makeFolder(page, "Kestrel tray");
+  await expect(folderRow(page, "Kestrel tray")).toHaveAttribute("aria-level", "1");
+  await expect(panel(page)).toContainText(/\d+ folders?/);
+});
+
+test("Library artifacts sit at the root and open on the tile below", async ({
+  page,
+}) => {
+  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
 
   await stubResponses(page, LIBRARY);
-  if ((await panelButton(page).getAttribute("aria-pressed")) === "false") {
-    await panelButton(page).click();
-  }
+  await openPanel(page);
 
-  const tree = panel(page).getByRole("tree", { name: "Workspace Library" });
-  await expect(tree.getByRole("treeitem", { name: "tables" })).toBeVisible();
-  const file = tree.getByRole("treeitem", { name: /measurements\.csv/ });
+  const file = tree(page).getByRole("treeitem", { name: /measurements\.csv/ });
   await expect(file).toBeVisible();
-  await expect(file).toHaveAttribute("aria-level", "2");
+  await expect(file).toHaveAttribute("aria-level", "1");
   await expect(file).toHaveAttribute("draggable", "true");
   await expect(file).toContainText("1.0 KB · uploaded");
 
   await file.click();
-  const inspector = page.getByRole("complementary", {
-    name: "Selected artifact",
+  const tile = page.getByRole("complementary", { name: "Selected artifact" });
+  await expect(tile).toContainText("uploaded · measurements.csv");
+  await expect(tile).toContainText("/ · file.csv@1");
+});
+
+test("folders nest, and an artifact dragged into one moves with its depth", async ({
+  page,
+}) => {
+  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
+
+  await stubResponses(page, LIBRARY);
+  await openPanel(page);
+
+  await makeFolder(page, "Kestrel tray");
+  await folderActions(page, "Kestrel tray").click();
+  await page.getByRole("menuitem", { name: "New subfolder" }).click();
+  const rename = panel(page).getByRole("textbox", { name: "Folder name" });
+  await rename.fill("Tray two");
+  await rename.press("Enter");
+
+  const child = folderRow(page, "Tray two");
+  await expect(child).toHaveAttribute("aria-level", "2");
+
+  await tree(page)
+    .getByRole("treeitem", { name: /measurements\.csv/ })
+    .dragTo(child);
+  const moved = tree(page).getByRole("treeitem", { name: /measurements\.csv/ });
+  await expect(moved).toHaveAttribute("aria-level", "3");
+  // A folder's count is everything filed beneath it, however deeply.
+  await expect(folderRow(page, "Kestrel tray")).toContainText("1");
+  await expect(folderRow(page, "Tray two")).toContainText("1");
+});
+
+test("a folder refuses deletion until it is empty", async ({ page }) => {
+  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
+
+  await stubResponses(page, LIBRARY);
+  await openPanel(page);
+
+  await makeFolder(page, "Cold store");
+  await tree(page)
+    .getByRole("treeitem", { name: /measurements\.csv/ })
+    .dragTo(folderRow(page, "Cold store"));
+
+  await folderActions(page, "Cold store").click();
+  const deleteWithContents = page.getByRole("menuitem", {
+    name: /Delete folder/,
   });
-  await expect(inspector).toContainText("uploaded · measurements.csv");
+  await expect(deleteWithContents).toHaveAttribute("aria-disabled", "true");
+  await expect(deleteWithContents).toContainText("empty it first");
+  await page.keyboard.press("Escape");
+
+  await dragToRoot(
+    page,
+    tree(page).getByRole("treeitem", { name: /measurements\.csv/ }),
+  );
+  await expect(
+    tree(page).getByRole("treeitem", { name: /measurements\.csv/ }),
+  ).toHaveAttribute("aria-level", "1");
+
+  await folderActions(page, "Cold store").click();
+  await page.getByRole("menuitem", { name: /^Delete folder/ }).click();
+  await expect(
+    tree(page).getByRole("treeitem", { name: "Cold store" }),
+  ).toHaveCount(0);
 });
 
 test("the Templates tab lists graph templates", async ({ page }) => {
   test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
 
   await stubResponses(page, LIBRARY);
-  if ((await panelButton(page).getAttribute("aria-pressed")) === "false") {
-    await panelButton(page).click();
-  }
+  await openPanel(page);
 
-  await panel(page)
-    .getByRole("tab", { name: "Templates" })
-    .click();
+  await panel(page).getByRole("tab", { name: "Templates" }).click();
 
   await expect(
     panel(page).getByRole("list", { name: "Graph templates" }),
@@ -210,9 +303,7 @@ test("a Library artifact drag still lands on an input port", async ({
   test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
 
   await stubResponses(page, LIBRARY);
-  if ((await panelButton(page).getAttribute("aria-pressed")) === "false") {
-    await panelButton(page).click();
-  }
+  await openPanel(page);
 
   const sink = await addNode(page, "Test text sink");
   const port = sink.locator("[data-input-port-name='text']");
@@ -245,7 +336,7 @@ test("a Library artifact drag still lands on an input port", async ({
     );
   });
 
-  const source = panel(page)
+  const source = tree(page)
     .getByRole("treeitem")
     .filter({ hasText: "measurements.csv" });
   const from = await source.boundingBox();

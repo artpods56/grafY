@@ -54,7 +54,7 @@ the space back.
    │  rail    │              │   panel     │
 ───┴──────────┴──────────────┴─────────────┴──────────────────────────────
                                        ▲
-                          resizer (240…420px, persisted)
+                          resizer (240…420px, persisted, 360px first visit)
 ```
 
 Position follows the rail through CSS custom properties on `:root`, the same
@@ -63,7 +63,7 @@ with it:
 
 ```
 :root                        --grafy-side-panel-width: 0px
-@media (min-width: 1100px)   --grafy-side-panel-width: 276px   /* first visit */
+@media (min-width: 1100px)   --grafy-side-panel-width: 360px   /* first visit */
 :root[data-side-panel=open]  --grafy-side-panel-width: var(--grafy-side-panel-expanded-width)
 :root[data-side-panel=closed] --grafy-side-panel-width: 0px
 ```
@@ -77,24 +77,33 @@ a slide-over with a backdrop and the shell stops reserving width.
 ┌───────────────────────────────┐
 │ [▦ Artifacts] [▤ Templates]   │  view switcher · collapse ▸
 ├───────────────────────────────┤
-│ ⌕ filter…              ↕ ⬆    │  filter · sort · upload
+│ ⊕ ⌕ filter the Library… ↕ ⬆   │  this view's tools: new folder · filter · sort · upload
 ├───────────────────────────────┤
-│ ▾ 📁 images              3    │  standing folder + count
-│    ▣  photo.png               │  image row: thumbnail
-│       128 KB · uploaded       │
-│    ▣  scan.jpg                │
-│ ▸ 📁 tables              0    │  empty standing folder still renders
-│ ▸ 📁 text                1    │
-│ ▸ 📁 models              0    │
-│ ▾ 📁 other               1    │
-│    ▣  mystery.bin             │
-│       stored as a blob        │
+│ ▾ 📁 Fieldwork            2  ⋯│  the user's folders, nested to any depth
+│   ▾ 📁 September          1  ⋯│
+│     ▾ 📁 Raw photos       1  ⋯│
+│        ▣  core.png            │  artifact row: thumbnail, size, origin
+│           2.6 MB · uploaded   │
+│   ▸ 📁 Reports            0  ⋯│  an empty folder renders, and deletes
+│ ▣  field-notes.txt         ⋯  │  an unfiled artifact sits at the root
 ├───────────────────────────────┤
-│ PROVENANCE                    │  inspector for the selected row
-│ uploaded · scan.jpg           │
-│ [Open in execution history]   │
+│ core.png                      │  the tile under the browser: the artifact itself
+│ /Fieldwork/September/Raw photos · file.png@1
+│ ┌───────────────────────────┐ │
+│ │   the image, or the head   │ │  image inline, text read from its URL,
+│ │   of the text file         │ │  nothing forced through a download
+│ └───────────────────────────┘ │
+│ PROVENANCE                    │
+│ uploaded · core.png           │
+│ [Open original] [Execution…]  │
 └───────────────────────────────┘
 ```
+
+The toolbar is **per view**, not one shared strip: Artifacts offers new folder,
+filter, sort and upload; Templates offers its own filter and create. Each view
+owns the row under the tabs, which is why the switcher has no idea what a folder
+is. `⋯` on a folder is new subfolder · rename · delete; on an artifact it is open
+original · copy link. The row's own click still means fold or unfold.
 
 ## 4. The seam
 
@@ -114,26 +123,41 @@ that receives `{ workspace, workspaceId, onOpenGraph, onOpenRun }`. Adding a
 third view means adding one entry and one component; nothing else moves. There
 is no registration API, no provider, no ordering protocol — see [R41].
 
-The Artifacts view keeps its own data seam one level down. The Library list API
-returns a flat list; the folder tree is a **projection**, not stored state:
+The Artifacts view keeps its own data seam one level down:
 
 ```
-listLibraryArtifacts(workspaceId)        LibraryItem[]  (flat, server truth)
+libraryFoldersApi.listTree(workspaceId)
+   → { folders: LibraryFolder[], items: PlacedLibraryItem[] }   folder_id null = root
               │
               ▼
-  libraryFolderPath(item) ──► "images" | "tables" | "text" | "models" | "other"
+  buildLibraryTree({folders, items, query, sort}) ──► LibraryTreeNode[]   (recursive)
               │
               ▼
-  buildLibraryFolders(items, {query, sort}) ──► LibraryFolderNode[]
+  flattenLibraryRows(roots, {collapsed})  ──► the order the panel paints, and the order the keyboard walks
               │
               ▼
-  LibraryTree (Base UI Collapsible + role=tree)
+  LibraryRow (recursive, role=tree / treeitem)
 ```
 
-`libraryFolderPath` is the only place that knows how a Library artifact is filed.
-#25 will replace it with a Library folder table; that change touches this
-function and the tree's node identity, not the tree component, the panel shell,
-or the drag contract.
+`libraryFoldersApi` (`src/lib/api/library-folders.ts`) is the whole contract:
+`listTree`, `createFolder`, `renameFolder`, `deleteFolder`, `moveFolder`,
+`moveItems`, plus `LibraryFolderNotEmptyError`, `LibraryFolderCycleError` and
+`LibraryFolderNameTakenError` for the rules a type cannot express.
+
+**The backend for this does not exist yet.** Unless
+`NEXT_PUBLIC_LIBRARY_FOLDERS_API=real`, the api resolves to
+`library-folders.mock.ts`: the folder tree and artifact placements persist per
+workspace in `localStorage`, while the artifacts themselves still come from the
+real Library endpoint — real data in a made-up tree. Flipping the flag is the
+whole migration, because the HTTP calls are already written against the routes
+the server will expose. Nothing outside `src/lib/api` knows the mock is there.
+
+```mermaid
+graph LR
+    A[LibraryPanel] --> B[libraryFoldersApi]
+    B -->|flag unset| C[mock: localStorage tree over real artifacts]
+    B -->|flag real| D[HTTP /library/folders]
+```
 
 ## 5. Decisions
 
@@ -144,12 +168,35 @@ or the drag contract.
   push the canvas past 400px of chrome before the first node. A segmented switcher
   in the header keeps the unit two panes wide, which is what "double sidebar"
   means here.
-- **Standing folders are always rendered.** Five folders, including empty ones,
-  because a filesystem that hides its empty directories is not teaching the
-  structure. `#79` states the same acceptance check; the flat-list iteration that
-  hid them was wrong.
-- **Folders are derived, not persisted.** Type family is the filing rule until
-  #25 ships a folder table. The rule lives in one function.
+- **Folders belong to the user, not to the artifact types.** This reverses the
+  acceptance line in `#79` that had the tree derived from
+  `images/tables/text/models/other`: five folders the user never made are not a
+  filing system, they are a file format leaking into the interface. Folders are
+  created, renamed, moved and deleted in the panel, nest to any depth, and an
+  artifact with no folder sits at the root. Artifact type now picks only the row
+  icon.
+- **A folder deletes only when empty.** Emptying a folder is a visible, reversible
+  act; deleting a subtree that holds someone's work is not. The API says so with
+  `LibraryFolderNotEmptyError` and the row menu says "empty it first".
+- **Moving a folder cannot make a cycle.** `moveFolder` rejects a parent that is
+  the folder itself or one of its descendants.
+- **The tree folds on its own state.** Each row renders its children with a plain
+  conditional. Base UI's `Collapsible` reported a folder as *closing* at the
+  moment it gained its first child, which hid the subfolder the user had just
+  made; a tree this recursive is not worth an animation primitive.
+- **A row click means the row, a control click means the control.** The `⋯` menu
+  renders inside its row, so its items bubble through the row handler. Row
+  handlers ignore anything under `button, [role="button"], [role="menu"],
+  [role="menuitem"]`.
+- **Every drop target accepts what it says it accepts.** The panel background is
+  the root of the tree, so its `dragover` accepts uploads, artifacts and folders.
+  `dragover` that never calls `preventDefault` means the `drop` never fires — an
+  artifact could be dragged into a folder but never back out.
+- **The tile under the browser previews the artifact.** An image renders inline,
+  a text-ish artifact has its head read from the content URL, and the row states
+  the path (`/Fieldwork/September · file.csv@1`) so location survives a deep tree.
+- **The toolbar belongs to the view.** Artifacts and Templates each render their
+  own tools under the tabs; the shell ships none.
 - **Drag stays the contract.** Rows carry `application/x-grafy-artifact` through
   `writeArtifactDrop`; the drop still resolves the port row under the cursor with
   `document.elementsFromPoint`, skipping portals.
@@ -163,9 +210,14 @@ or the drag contract.
 
 ## 6. Verification
 
-- `npm --prefix apps/web test` — tree projection, panel shell, both views.
+- `npm --prefix apps/web test` — the folder mock and its rules, the recursive
+  projection and filter, the panel (create, rename, fold, move, preview), the
+  shell, and both views.
 - `npm --prefix apps/web run typecheck`, `npm --prefix apps/web run lint`.
-- `npm --prefix apps/web test:e2e` — the drawer opens docked on the left, toggles,
+- `npm --prefix apps/web test:e2e` — the panel opens docked, takes width, folds
+  and unfolds; a folder is created, nested, filled by drag, emptied and deleted;
   and a Library artifact drag still lands on an input port.
 - Visual check at 1600px, 1280px, and 720px: the two columns must read as one
-  surface at a glance; the canvas must not sit under the panel.
+  surface at a glance; the canvas must not sit under the panel. StyleX errors and
+  popup stacking only ever show up in a browser, so the browser is part of the
+  check, not an optional extra.
