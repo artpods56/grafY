@@ -604,6 +604,21 @@ export function artifactContentUrl(
  * summary carries `download_formats`; the caller picks one format and builds
  * the relative `/download` URL.
  */
+/**
+ * Resolve the URL that serves an artifact's own bytes, typed with its stored
+ * content type. Unlike `/download`, it asks for no export format, so it shows
+ * any artifact the caller can name by id — a library file or a run output.
+ */
+export function artifactInlineContentUrl(
+  workspaceId: string,
+  artifactId: string,
+): string {
+  return artifactContentUrl(
+    workspaceId,
+    `./artifacts/${encodeURIComponent(artifactId)}/content`,
+  ) as string;
+}
+
 export function artifactDownloadUrl(
   workspaceId: string,
   artifactId: string,

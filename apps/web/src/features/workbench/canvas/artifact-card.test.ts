@@ -7,8 +7,12 @@ import {
   artifactCardValue,
   canMergeIntoCard,
   cardArtifactRefs,
+  isImageArtifact,
   mergedArtifactCardValue,
   moveArtifactCardRef,
+  originCarriesCardArtifacts,
+  presentsArtifacts,
+  type ArtifactCardValue,
 } from "./artifact-card";
 
 function ref(id: string, artifactType = "file.jpg", schemaVersion = 1): ArtifactRef {
@@ -80,6 +84,36 @@ describe("artifact card value", () => {
       "cccc",
     ]);
     expect(mergedArtifactCardValue(target, ref("aaaa"))).toBeNull();
+  });
+
+  it("tells a card that carries artifacts from a viewer that does not", () => {
+    expect(presentsArtifacts(ref("aaaa"))).toBe(true);
+    expect(presentsArtifacts(null)).toBe(false);
+    expect(presentsArtifacts(undefined)).toBe(false);
+  });
+
+  it("knows an origin carries what a card presents", () => {
+    const card = artifactCardValue([ref("aaaa"), ref("bbbb")]);
+
+    expect(originCarriesCardArtifacts(ref("aaaa"), card)).toBe(true);
+    expect(originCarriesCardArtifacts(ref("bbbb"), card)).toBe(true);
+    expect(originCarriesCardArtifacts(ref("cccc"), card)).toBe(false);
+    expect(originCarriesCardArtifacts(ref("aaaa"), null)).toBe(false);
+    const partlyDifferent: ArtifactCardValue = {
+      artifact_type: "file.jpg",
+      schema_version: 1,
+      item_refs: [ref("aaaa"), ref("cccc")],
+      ordered: true,
+      index_key: "order_index",
+    };
+
+    expect(originCarriesCardArtifacts(partlyDifferent, card)).toBe(false);
+  });
+
+  it("paints an artifact by its declared type when no content type is known", () => {
+    expect(isImageArtifact(ref("aaaa", "file.jpeg"))).toBe(true);
+    expect(isImageArtifact(ref("aaaa", "file.csv"))).toBe(false);
+    expect(isImageArtifact(ref("aaaa", "file.csv"), "image/png")).toBe(true);
   });
 
   it("will not merge cards of different artifact types", () => {

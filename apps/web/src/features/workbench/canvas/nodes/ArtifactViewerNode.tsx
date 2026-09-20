@@ -43,7 +43,9 @@ import {
   effectivePortShape,
   resolvedPortArtifactType,
 } from "../types";
+import { ArtifactCardBody } from "./ArtifactCardBody";
 import { ArtifactPortPreview } from "./ArtifactsAppendix";
+import { presentsArtifacts } from "../artifact-card";
 import { rendererCanBrush } from "./artifact-renderers";
 import {
   type CanvasNodeOverflowItem,
@@ -259,6 +261,12 @@ export default function ArtifactViewerNodeCard({
     data.onLayoutChange?.(id, next);
     window.requestAnimationFrame(() => updateNodeInternals(id));
   };
+
+  // A viewer that carries artifacts is an artifact on the canvas, so it paints
+  // the artifact itself rather than a preview of a connected output.
+  if (presentsArtifacts(data.artifactRef)) {
+    return <ArtifactCardBody id={id} data={data} value={data.artifactRef} />;
+  }
 
   return (
     <CanvasNodeShell

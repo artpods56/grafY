@@ -20,6 +20,7 @@ import {
   type WorkflowEdgeRouteOption,
   type WorkflowNodeData,
 } from "./types";
+import type { ArtifactCardValue } from "./artifact-card";
 import type {
   ArtifactInteractionField,
   ArtifactKeySelection,
@@ -45,7 +46,8 @@ export const ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE =
 export interface ArtifactViewerNodeData extends Record<string, unknown> {
   layout: WorkflowNodeLayout | null;
   mode: string | null;
-  artifactRef?: NonNullable<GraphPresentation["viewers"]>[number]["artifact_ref"];
+  /** A node-less card: the artifacts it presents, in the order it passes them. */
+  artifactRef?: ArtifactCardValue | null;
   outgoingFields?: string[];
   selection?: ArtifactKeySelection;
   incomingBindings?: ArtifactViewerIncomingBinding[];
@@ -67,6 +69,7 @@ export interface ArtifactViewerNodeData extends Record<string, unknown> {
     nodeId: string,
     activity: ArtifactViewerActivity | null,
   ) => void;
+  onRefsChange?: (nodeId: string, value: ArtifactCardValue | null) => void;
   onRemoveNode?: (nodeId: string) => void;
   /** Ephemeral collaborator selection tint; never persisted. */
   remoteSelectionColor?: string | null;

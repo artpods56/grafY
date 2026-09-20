@@ -100,6 +100,62 @@ export function moveArtifactCardRef(
   return next;
 }
 
+/**
+ * Artifact types the browser can paint directly. A card without a library
+ * entry has no content type to ask, so it falls back on the declared type.
+ */
+const IMAGE_ARTIFACT_TYPES = new Set([
+  "image.raster",
+  "image.pixmap",
+  "geo.raster_scan",
+  "file.png",
+  "file.jpeg",
+  "file.tiff",
+  "file.webp",
+  "file.bmp",
+]);
+
+/** Whether a card paints this artifact as a picture. */
+export function isImageArtifact(
+  ref: ArtifactRef,
+  contentType?: string | null,
+): boolean {
+  if (contentType) return contentType.toLowerCase().startsWith("image/");
+  return IMAGE_ARTIFACT_TYPES.has(ref.artifact_type);
+}
+
+/** Whether a presentation viewer carries artifacts of its own, so it is a card. */
+export function presentsArtifacts(
+  value: ArtifactCardValue | null | undefined,
+): value is ArtifactCardValue {
+  return value !== null && value !== undefined;
+}
+
+/** The artifact ids a card presents. */
+export function cardArtifactIds(
+  value: ArtifactCardValue | null | undefined,
+): string[] {
+  return cardArtifactRefs(value).map((ref) => ref.artifact_id);
+}
+
+/**
+ * Whether an origin's value carries what this card presents, which is how a
+ * card learns it is already passed into an input. The card owns the order, so
+ * reordering it rewrites the origin that carries it.
+ */
+export function originCarriesCardArtifacts(
+  originValue: ArtifactCardValue,
+  cardValue: ArtifactCardValue | null | undefined,
+): boolean {
+  const cardIds = new Set(cardArtifactIds(cardValue));
+  if (cardIds.size === 0) return false;
+  const originRefs = cardArtifactRefs(originValue);
+  return (
+    originRefs.length > 0 &&
+    originRefs.every((ref) => cardIds.has(ref.artifact_id))
+  );
+}
+
 /** The contract line a card shows: `file.jpg@1`, or `file.jpg@1 · 3 items`. */
 export function artifactCardContract(value: ArtifactCardValue | null): string {
   const refs = cardArtifactRefs(value);

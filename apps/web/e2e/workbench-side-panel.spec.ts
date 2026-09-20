@@ -365,6 +365,30 @@ test("a Library artifact drag still lands on an input port", async ({
   ).toBe(true);
 });
 
+test("an artifact dragged out of the Library onto empty canvas lands on it", async ({
+  page,
+}) => {
+  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
+
+  await stubResponses(page, LIBRARY);
+  await openPanel(page);
+
+  const source = tree(page)
+    .getByRole("treeitem")
+    .filter({ hasText: "measurements.csv" });
+  await source.dragTo(page.locator(".react-flow"), {
+    targetPosition: { x: 520, y: 420 },
+  });
+
+  const card = page.locator("[data-artifact-card-id]");
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("measurements.csv");
+  await expect(card).toContainText("file.csv@1");
+  await expect(
+    card.getByRole("button", { name: "Pass file.csv@1 to a node input" }),
+  ).toBeVisible();
+});
+
 test("a narrow canvas keeps the panel closed until it is asked for", async ({
   page,
 }) => {

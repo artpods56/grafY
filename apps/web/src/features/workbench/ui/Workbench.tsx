@@ -156,6 +156,14 @@ import {
   type GraphPresentation,
 } from "../canvas/artifact-viewer";
 import {
+  DEFAULT_ARTIFACT_CARD_WIDTH,
+  artifactCardContract,
+  artifactCardValue,
+  originCarriesCardArtifacts,
+  cardArtifactRefs,
+  type ArtifactCardValue,
+} from "../canvas/artifact-card";
+import {
   hydrateAuthoredGraphDocument,
   savedGraphExecutionFingerprint,
 } from "../canvas/saved-graph";
@@ -346,6 +354,16 @@ function artifactDropRowAt(clientX: number, clientY: number): HTMLElement | null
     if (row) return row;
   }
   return null;
+}
+
+/** Whether a drawer drag is over the canvas itself, rather than a panel. */
+function canvasAtPoint(clientX: number, clientY: number): boolean {
+  for (const element of document.elementsFromPoint(clientX, clientY)) {
+    if (!(element instanceof Element)) continue;
+    if (element.closest("[data-base-ui-portal]")) continue;
+    if (element.closest(".react-flow")) return true;
+  }
+  return false;
 }
 
 /** A drop only fits a row the node actually publishes for that input slot. */
@@ -943,8 +961,34 @@ function WorkbenchBody({
     [commitArtifactViewers],
   );
 
+  /**
+   * A card is the only visible handle on the inputs it fed, so removing the card
+   * removes what it passed in. An origin left behind is a constant on a node
+   * input with nothing on the canvas that says where it came from.
+   */
+  const dropOriginsCarriedByCards = React.useCallback(
+    (cards: readonly (ArtifactViewerNode | undefined)[]) => {
+      const originIds = authoredDocumentRef.current.origins
+        .filter((origin) =>
+          cards.some((card) =>
+            card
+              ? originCarriesCardArtifacts(origin.value, card.data.artifactRef)
+              : false,
+          ),
+        )
+        .map((origin) => origin.id);
+      if (originIds.length) {
+        applyAuthoringCommands([{ kind: "remove_origins", origin_ids: originIds }]);
+      }
+    },
+    [applyAuthoringCommands],
+  );
+
   const removeArtifactViewer = React.useCallback(
     (nodeId: string) => {
+      dropOriginsCarriedByCards([
+        artifactViewers.nodes.find((node) => node.id === nodeId),
+      ]);
       commitArtifactViewers((current) => ({
         ...current,
         nodes: current.nodes.filter((node) => node.id !== nodeId),
@@ -974,7 +1018,7 @@ function WorkbenchBody({
         return next;
       });
     },
-    [commitArtifactViewers],
+    [artifactViewers.nodes, commitArtifactViewers, dropOriginsCarriedByCards],
   );
 
   const updateAnnotationLayout = React.useCallback(
@@ -2270,6 +2314,11 @@ function WorkbenchBody({
         }));
       }
       if (removedArtifactViewerIds.size) {
+        dropOriginsCarriedByCards(
+          [...removedArtifactViewerIds].map((nodeId) =>
+            artifactViewers.nodes.find((node) => node.id === nodeId),
+          ),
+        );
         setArtifactViewerSelections((current) => {
           const next = { ...current };
           for (const nodeId of removedArtifactViewerIds) delete next[nodeId];
@@ -2380,6 +2429,7 @@ function WorkbenchBody({
       artifactViewers.annotations,
       artifactViewers.nodes,
       commitArtifactViewers,
+      dropOriginsCarriedByCards,
       nodes,
       schedulePresenceSnapshot,
       setNodes,
@@ -2505,11 +2555,106 @@ function WorkbenchBody({
     [applyAuthoringCommands],
   );
 
+  /**
+   * An artifact dropped on empty canvas lands on it: a card that presents that
+   * artifact and can be passed into any input that takes it. It arrives the
+   * same way from the library and from a node's output, because both carry one
+   * artifact value.
+   */
+  const addArtifactCard = React.useCallback(
+    (value: ArtifactCardValue, position: { x: number; y: number }) => {
+      commitArtifactViewers((current) => ({
+        ...current,
+        nodes: [
+          ...current.nodes.map((node) => ({ ...node, selected: false })),
+          {
+            id: `artifact-viewer-${createUuid()}`,
+            type: ARTIFACT_VIEWER_NODE_TYPE,
+            position,
+            selected: true,
+            data: {
+              layout: { width: DEFAULT_ARTIFACT_CARD_WIDTH },
+              mode: null,
+              artifactRef: value,
+            },
+          },
+        ],
+      }));
+    },
+    [commitArtifactViewers],
+  );
+
+  const dropArtifactOnCanvas = React.useCallback(
+    (event: DragEvent | React.DragEvent<HTMLElement>) => {
+      if (!event.dataTransfer || !canvasAtPoint(event.clientX, event.clientY)) {
+        return;
+      }
+      const payload = readArtifactDrop(event.dataTransfer);
+      if (!payload) return;
+      event.preventDefault();
+      const point =
+        flow?.screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
+        }) ?? { x: 0, y: 0 };
+      const refs = cardArtifactRefs(payload.value);
+      addArtifactCard(payload.value, {
+        x: point.x - DEFAULT_ARTIFACT_CARD_WIDTH / 2,
+        y: point.y - (refs.length > 1 ? 76 : 24),
+      });
+    },
+    [addArtifactCard, flow],
+  );
+
+  /**
+   * The card owns the order its artifacts are passed in, and an origin carries
+   * what it was handed, so a reorder rewrites the origin beside the card.
+   */
+  const updateArtifactCardRefs = React.useCallback(
+    (nodeId: string, value: ArtifactCardValue | null) => {
+      const card = artifactViewers.nodes.find((node) => node.id === nodeId);
+      if (!card) return;
+      const carried = authoredDocumentRef.current.origins.filter((origin) =>
+        originCarriesCardArtifacts(origin.value, card.data.artifactRef),
+      );
+      commitArtifactViewers((current) => ({
+        ...current,
+        nodes: value
+          ? current.nodes.map((node) =>
+              node.id === nodeId
+                ? { ...node, data: { ...node.data, artifactRef: value } }
+                : node,
+            )
+          : current.nodes.filter((node) => node.id !== nodeId),
+      }));
+      if (!value || !carried.length) return;
+      applyAuthoringCommands(
+        carried.flatMap((origin) => {
+          const next = artifactCardValue(cardArtifactRefs(value), origin.value);
+          return next
+            ? [
+                {
+                  kind: "update_origin" as const,
+                  origin_id: origin.id,
+                  update: { value: next },
+                },
+              ]
+            : [];
+        }),
+      );
+    },
+    [applyAuthoringCommands, artifactViewers.nodes, commitArtifactViewers],
+  );
+
   const dragOverArtifactDrop = React.useCallback(
     (event: DragEvent | React.DragEvent<HTMLElement>) => {
       if (!event.dataTransfer || !isArtifactDrop(event.dataTransfer)) return;
-      const row = artifactDropRowAt(event.clientX, event.clientY);
-      if (!row) return;
+      if (artifactDropRowAt(event.clientX, event.clientY)) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        return;
+      }
+      if (!canvasAtPoint(event.clientX, event.clientY)) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
     },
@@ -2520,7 +2665,10 @@ function WorkbenchBody({
     (event: DragEvent | React.DragEvent<HTMLElement>) => {
       if (!event.dataTransfer || !isArtifactDrop(event.dataTransfer)) return;
       const row = artifactDropRowAt(event.clientX, event.clientY);
-      if (!row) return;
+      if (!row) {
+        dropArtifactOnCanvas(event);
+        return;
+      }
       event.preventDefault();
       const payload = readArtifactDrop(event.dataTransfer);
       const target = artifactDropTargetFromRow(row);
@@ -2546,9 +2694,20 @@ function WorkbenchBody({
           conversions: registry?.artifact_conversions ?? [],
         },
       );
-      if (commands?.length) applyAuthoringCommands(commands);
+      if (commands?.length) {
+        applyAuthoringCommands(commands);
+        return;
+      }
+      setRunError(
+        `That input will not take ${artifactCardContract(payload.value)}: the port refuses the type, or two conversions tie.`,
+      );
     },
-    [applyAuthoringCommands, registry?.artifact_conversions],
+    [
+      applyAuthoringCommands,
+      dropArtifactOnCanvas,
+      registry?.artifact_conversions,
+      setRunError,
+    ],
   );
 
   React.useEffect(() => {
@@ -3452,6 +3611,7 @@ function WorkbenchBody({
             fields: artifactViewerFields[node.id] ?? [],
             onLayoutChange: updateArtifactViewerLayout,
             onModeChange: updateArtifactViewerMode,
+            onRefsChange: updateArtifactCardRefs,
             onSelectionChange: updateArtifactViewerSelection,
             onFieldsChange: updateArtifactViewerFields,
             onActivityChange: updateArtifactViewerActivity,
@@ -3465,6 +3625,7 @@ function WorkbenchBody({
       artifactViewerFields,
       artifactViewerSelections,
       removeArtifactViewer,
+      updateArtifactCardRefs,
       updateArtifactViewerActivity,
       updateArtifactViewerLayout,
       updateArtifactViewerMode,
