@@ -3084,9 +3084,13 @@
                 "$ref": "#/components/schemas/ArtifactRef"
               },
               {
+                "$ref": "#/components/schemas/ArtifactRefSequence"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Artifact Ref"
           },
           "id": {
             "maxLength": 255,
@@ -3136,9 +3140,13 @@
                 "$ref": "#/components/schemas/ArtifactRef"
               },
               {
+                "$ref": "#/components/schemas/ArtifactRefSequence"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Artifact Ref"
           },
           "id": {
             "maxLength": 255,

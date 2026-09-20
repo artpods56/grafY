@@ -150,7 +150,8 @@ class GraphPresentationViewerModel(SavedGraphApiModel):
     position: GraphPointModel
     layout: SavedGraphNodeLayoutModel | None = None
     mode: str | None = Field(default=None, max_length=255)
-    artifact_ref: ArtifactRef | None = None
+    # A card shows one artifact, or an ordered run of same-typed artifacts.
+    artifact_ref: ArtifactRef | ArtifactRefSequence | None = None
 
 
 class SavedGraphAnnotationLayoutModel(SavedGraphApiModel):

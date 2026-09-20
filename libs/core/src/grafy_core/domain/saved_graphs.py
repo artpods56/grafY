@@ -389,10 +389,12 @@ class GraphPresentationViewer(SavedGraphValue):
     position: GraphPoint
     layout: SavedGraphNodeLayout | None = None
     mode: str | None = Field(default=None, max_length=255)
-    # A node-less card: it presents one persisted artifact and executes nothing.
-    # The reference is kept even when the artifact is gone, so the card can show
-    # a missing state until the user removes it. It is never a link target.
-    artifact_ref: ArtifactRef | None = None
+    # A node-less card: it presents persisted artifacts and executes nothing.
+    # One reference shows one artifact; a sequence shows them in the order the
+    # card passes them on. The reference is kept even when the artifact is gone,
+    # so the card can show a missing state until the user removes it. It is
+    # never a link target.
+    artifact_ref: ArtifactRef | ArtifactRefSequence | None = None
 
     @field_validator("id")
     @classmethod

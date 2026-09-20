@@ -14,7 +14,7 @@ from grafy_api.graph_contracts import (
     SavedGraphNodeModel,
     SavedGraphOriginModel,
 )
-from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
+from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
 from grafy_core.domain.collaboration import CollaborativeGraphHead
 from grafy_core.domain.saved_graphs import (
     SavedGraphDocument,
@@ -403,3 +403,47 @@ def test_artifact_card_reference_survives_head_transport(
         ]["artifact_type"]
         == "table.data"
     )
+
+
+def test_artifact_card_sequence_survives_head_transport(
+    head: CollaborativeGraphHead,
+) -> None:
+    sequence = ArtifactRefSequence(
+        artifact_type="file.jpg",
+        schema_version=1,
+        item_refs=[
+            ArtifactRef(
+                artifact_id=UUID(int=81),
+                artifact_type="file.jpg",
+                schema_version=1,
+            ),
+            ArtifactRef(
+                artifact_id=UUID(int=82),
+                artifact_type="file.jpg",
+                schema_version=1,
+            ),
+        ],
+    )
+    head.document = head.document.with_topology(
+        presentation=GraphPresentationDocument(
+            viewers=(
+                GraphPresentationViewer(
+                    id="artifact-viewer-card",
+                    position=GraphPoint(x=1.0, y=2.0),
+                    artifact_ref=sequence,
+                ),
+            ),
+        ),
+    )
+
+    canonical = CanonicalCollaborativeHeadResponse.from_head(head)
+    legacy = CollaborativeHeadResponse.from_head(head)
+
+    assert canonical.document.presentation.viewers[0].artifact_ref == sequence
+    assert legacy.presentation.viewers[0].artifact_ref == sequence
+    assert [
+        item["artifact_id"]
+        for item in legacy.model_dump(mode="json")["presentation"]["viewers"][0][
+            "artifact_ref"
+        ]["item_refs"]
+    ] == [str(UUID(int=81)), str(UUID(int=82))]
