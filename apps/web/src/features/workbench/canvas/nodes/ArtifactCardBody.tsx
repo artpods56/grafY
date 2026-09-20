@@ -23,10 +23,12 @@ import {
   type PlacedLibraryItem,
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
 import { writeArtifactDrop } from "../../model/artifact-drop";
 import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
   artifactCardContract,
+  artifactCardMediaHeight,
   artifactCardValue,
   cardArtifactRefs,
   isImageArtifact,
@@ -43,15 +45,22 @@ import {
 } from "../../ui/side-panel/library-tree";
 
 const s = stylex.create({
+  /**
+   * The strip a node header would occupy, kept the same height so an artifact's
+   * body starts on the same line as the body of the node next to it. The name
+   * rides in it instead of a title bar.
+   */
   meta: {
     display: "flex",
-    alignItems: "baseline",
+    alignItems: "center",
     gap: "6px",
-    minHeight: "18px",
-    marginBottom: "4px",
-    padding: "0 2px",
+    height: "34px",
+    boxSizing: "border-box",
+    padding: "0 28px 0 12px",
     fontSize: tokens.fontSizeXs,
     color: tokens.colorTextEmphasis,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
     pointerEvents: "none",
     userSelect: "none",
   },
@@ -59,27 +68,35 @@ const s = stylex.create({
     color: tokens.colorMuted,
     fontFamily: "var(--font-mono, ui-monospace, monospace)",
   },
-  frame: {
+  mediaWrap: {
     position: "relative",
+  },
+  /**
+   * The container sets the size and the artifact fits inside it, so a portrait
+   * photo and a wide map take the same room on the canvas instead of each
+   * dictating its own shape.
+   */
+  media: {
+    position: "relative",
+    width: "100%",
     borderRadius: "10px",
+    overflow: "hidden",
+    backgroundColor: tokens.colorSurfaceSunken,
     boxShadow: tokens.shadowNode,
-    backgroundColor: tokens.colorSurface,
   },
   image: {
     display: "block",
     width: "100%",
-    height: "auto",
-    maxHeight: "460px",
-    objectFit: "cover",
-    borderRadius: "10px",
+    height: "100%",
+    objectFit: "contain",
   },
   fileTile: {
     display: "flex",
     alignItems: "center",
     gap: "9px",
-    padding: "12px 13px",
-    borderRadius: "10px",
-    backgroundColor: tokens.colorSurfaceRaised,
+    height: "100%",
+    boxSizing: "border-box",
+    padding: "0 13px",
   },
   fileIcon: {
     color: tokens.colorMuted,
@@ -105,8 +122,7 @@ const s = stylex.create({
   stack: {
     position: "relative",
     width: "100%",
-    height: "150px",
-    backgroundColor: tokens.colorSurfaceSunken,
+    height: "100%",
   },
   stackThumb: {
     position: "absolute",
@@ -147,8 +163,8 @@ const s = stylex.create({
   },
   menu: {
     position: "absolute",
-    top: "6px",
-    right: "6px",
+    top: "-30px",
+    right: "2px",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -269,26 +285,21 @@ export function ArtifactCardBody({
 }) {
   const { workspace } = useWorkspaceContext();
   const updateNodeInternals = useUpdateNodeInternals();
-  const [draftLayout, setDraftLayout] = React.useState<WorkflowNodeLayout | null>(
-    null,
-  );
-  const { data: library } = useSWR(
-    ["library-tree", workspace.id],
-    () => libraryFoldersApi.listTree(workspace.id),
+  const [draftLayout, setDraftLayout] =
+    React.useState<WorkflowNodeLayout | null>(null);
+  const { data: library } = useSWR(["library-tree", workspace.id], () =>
+    libraryFoldersApi.listTree(workspace.id),
   );
   const [reordering, setReordering] = React.useState(false);
-  const [imagesFailed, setImagesFailed] = React.useState<Record<string, boolean>>(
-    {},
-  );
+  const [imagesFailed, setImagesFailed] = React.useState<
+    Record<string, boolean>
+  >({});
   const refs = cardArtifactRefs(value);
   const contract = artifactCardContract(value);
   const itemsById = React.useMemo(
     () =>
       new Map<string, PlacedLibraryItem>(
-        (library?.items ?? []).map((item) => [
-          item.artifact.artifact_id,
-          item,
-        ]),
+        (library?.items ?? []).map((item) => [item.artifact.artifact_id, item]),
       ),
     [library],
   );
@@ -298,6 +309,8 @@ export function ArtifactCardBody({
     return item ? libraryFileDisplayName(item) : null;
   };
 
+  const grid = useOptionalCanvasGridSettings();
+  const allowCornerResize = grid?.settings.allowWorkflowCornerResize ?? false;
   const shell = useCanvasNodeShell({
     id,
     selected,
@@ -332,6 +345,8 @@ export function ArtifactCardBody({
     refs.length === 1 &&
     isImageArtifact(first, firstItem?.artifact.content_type) &&
     !imagesFailed[first.artifact_id];
+  const mediaWidth = layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH;
+  const mediaHeight = layout?.bodyHeight ?? artifactCardMediaHeight(mediaWidth);
 
   return (
     <div data-artifact-card-id={id}>
@@ -343,181 +358,195 @@ export function ArtifactCardBody({
         ariaLabel={`Artifact ${contract}`}
         testId="artifact-card-node"
         resizeHandle={
-          <LayoutResizeHandle
-            layout={layout}
-            axes={["width"]}
-            ariaLabel="Resize artifact"
-            onDraft={setDraftLayout}
-            onCommit={commitLayout}
-          />
+          allowCornerResize ? (
+            <LayoutResizeHandle
+              layout={layout}
+              axes={["width", "bodyHeight"]}
+              ariaLabel="Resize artifact"
+              onDraft={setDraftLayout}
+              onCommit={commitLayout}
+            />
+          ) : undefined
         }
       >
-      <span {...stylex.props(s.meta)}>
-        {refs.length === 1
-          ? (nameOf(first.artifact_id) ?? first.artifact_id)
-          : `${refs.length} artifacts`}
-        <span {...stylex.props(s.metaContract)}>{contract}</span>
-      </span>
+        <span {...stylex.props(s.meta)}>
+          {refs.length === 1
+            ? (nameOf(first.artifact_id) ?? first.artifact_id)
+            : `${refs.length} artifacts`}
+          <span {...stylex.props(s.metaContract)}>{contract}</span>
+        </span>
 
-      <div {...stylex.props(s.frame)}>
-        {showsImage ? (
-          /* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */
-          <img
-            src={firstUrl}
-            alt={nameOf(first.artifact_id) ?? contract}
-            loading="lazy"
-            decoding="async"
-            onError={() =>
-              setImagesFailed((current) => ({
-                ...current,
-                [first.artifact_id]: true,
-              }))
-            }
-            {...stylex.props(s.image)}
-          />
-        ) : null}
-
-        {refs.length > 1 ? (
-          <div {...stylex.props(s.stack)}>
-            {refs.slice(0, 3).map((ref, index) => (
+        <div {...stylex.props(s.mediaWrap)}>
+          {/* The container sets the size; the artifact fits inside it. */}
+          <div
+            data-artifact-media="true"
+            {...stylex.props(s.media)}
+            style={{ height: mediaHeight }}
+          >
+            {showsImage ? (
               /* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */
               <img
-                key={ref.artifact_id}
-                src={artifactInlineContentUrl(workspace.id, ref.artifact_id)}
-                alt=""
+                src={firstUrl}
+                alt={nameOf(first.artifact_id) ?? contract}
                 loading="lazy"
                 decoding="async"
-                {...stylex.props(s.stackThumb)}
-                style={{
-                  left: `${8 + index * 16}%`,
-                  top: `${index * 9}px`,
-                  transform: `rotate(${index === 0 ? 0 : index % 2 ? -2 : 2}deg)`,
-                  zIndex: refs.length - index,
-                }}
+                onError={() =>
+                  setImagesFailed((current) => ({
+                    ...current,
+                    [first.artifact_id]: true,
+                  }))
+                }
+                {...stylex.props(s.image)}
               />
-            ))}
-            <span {...stylex.props(s.stackCount)}>
-              {refs.length} items · drag to pass
-            </span>
+            ) : null}
+
+            {refs.length > 1 ? (
+              <div {...stylex.props(s.stack)}>
+                {refs.slice(0, 3).map((ref, index) => (
+                  /* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */
+                  <img
+                    key={ref.artifact_id}
+                    src={artifactInlineContentUrl(
+                      workspace.id,
+                      ref.artifact_id,
+                    )}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    {...stylex.props(s.stackThumb)}
+                    style={{
+                      left: `${8 + index * 16}%`,
+                      top: `${index * 9}px`,
+                      transform: `rotate(${index === 0 ? 0 : index % 2 ? -2 : 2}deg)`,
+                      zIndex: refs.length - index,
+                    }}
+                  />
+                ))}
+                <span {...stylex.props(s.stackCount)}>
+                  {refs.length} items · drag to pass
+                </span>
+              </div>
+            ) : null}
+
+            {refs.length === 1 && !showsImage ? (
+              <div {...stylex.props(s.fileTile)}>
+                {isImageArtifact(first, firstItem?.artifact.content_type) ? (
+                  <ImageOff size={20} {...stylex.props(s.fileIcon)} />
+                ) : (
+                  <FileIcon size={20} {...stylex.props(s.fileIcon)} />
+                )}
+                <span {...stylex.props(s.fileCopy)}>
+                  <span {...stylex.props(s.fileName)}>
+                    {nameOf(first.artifact_id) ?? `${contract} artifact`}
+                  </span>
+                  <span {...stylex.props(s.fileMeta)}>
+                    {firstItem
+                      ? libraryFileSubtitle(firstItem)
+                      : "not in this library"}
+                  </span>
+                </span>
+              </div>
+            ) : null}
           </div>
-        ) : null}
 
-        {refs.length === 1 && !showsImage ? (
-          <div {...stylex.props(s.fileTile)}>
-            {isImageArtifact(first, firstItem?.artifact.content_type) ? (
-              <ImageOff size={20} {...stylex.props(s.fileIcon)} />
-            ) : (
-              <FileIcon size={20} {...stylex.props(s.fileIcon)} />
-            )}
-            <span {...stylex.props(s.fileCopy)}>
-              <span {...stylex.props(s.fileName)}>
-                {nameOf(first.artifact_id) ?? `${contract} artifact`}
-              </span>
-              <span {...stylex.props(s.fileMeta)}>
-                {firstItem
-                  ? libraryFileSubtitle(firstItem)
-                  : "not in this library"}
-              </span>
-            </span>
-          </div>
-        ) : null}
-
-        <button
-          type="button"
-          className="nodrag"
-          draggable
-          title="Drag onto a node input to pass these artifacts"
-          aria-label={`Pass ${contract} to a node input`}
-          onDragStart={(event) => writeArtifactDrop(event.dataTransfer, value)}
-          {...stylex.props(s.ball)}
-        />
-
-        <Menu.Root>
-          <Menu.Trigger
+          <button
+            type="button"
             className="nodrag"
-            aria-label={`Actions for ${contract}`}
-            {...stylex.props(s.menu)}
-          >
-            <MoreHorizontal size={13} />
-          </Menu.Trigger>
-          <Menu.Portal>
-            <Menu.Positioner side="bottom" align="end" sideOffset={4}>
-              <Menu.Popup {...stylex.props(s.menuPopup)}>
-                {refs.length > 1 ? (
+            draggable
+            title="Drag onto a node input to pass these artifacts"
+            aria-label={`Pass ${contract} to a node input`}
+            onDragStart={(event) =>
+              writeArtifactDrop(event.dataTransfer, value)
+            }
+            {...stylex.props(s.ball)}
+          />
+
+          <Menu.Root>
+            <Menu.Trigger
+              className="nodrag"
+              aria-label={`Actions for ${contract}`}
+              {...stylex.props(s.menu)}
+            >
+              <MoreHorizontal size={13} />
+            </Menu.Trigger>
+            <Menu.Portal>
+              <Menu.Positioner side="bottom" align="end" sideOffset={4}>
+                <Menu.Popup {...stylex.props(s.menuPopup)}>
+                  {refs.length > 1 ? (
+                    <Menu.Item
+                      onClick={() => setReordering((open) => !open)}
+                      {...stylex.props(s.menuItem)}
+                    >
+                      <GripVertical size={13} />
+                      Reorder items
+                    </Menu.Item>
+                  ) : null}
                   <Menu.Item
-                    onClick={() => setReordering((open) => !open)}
+                    onClick={() =>
+                      window.open(firstUrl, "_blank", "noopener,noreferrer")
+                    }
                     {...stylex.props(s.menuItem)}
                   >
-                    <GripVertical size={13} />
-                    Reorder items
+                    <Download size={13} />
+                    Open original
                   </Menu.Item>
-                ) : null}
-                <Menu.Item
-                  onClick={() =>
-                    window.open(firstUrl, "_blank", "noopener,noreferrer")
-                  }
-                  {...stylex.props(s.menuItem)}
-                >
-                  <Download size={13} />
-                  Open original
-                </Menu.Item>
-                <Menu.Item
-                  onClick={() => data.onRemoveNode?.(id)}
-                  {...stylex.props(s.menuItem)}
-                >
-                  <Trash2 size={13} />
-                  Remove from canvas
-                </Menu.Item>
-              </Menu.Popup>
-            </Menu.Positioner>
-          </Menu.Portal>
-        </Menu.Root>
-      </div>
-
-      {reordering && refs.length > 1 ? (
-        <div className="nodrag" {...stylex.props(s.reorder)}>
-          <span {...stylex.props(s.reorderHead)}>
-            Passed in this order · drag a row&rsquo;s arrows to change it
-          </span>
-          {refs.map((ref, index) => (
-            <div key={ref.artifact_id} {...stylex.props(s.reorderRow)}>
-              <span {...stylex.props(s.reorderIndex)}>{index + 1}</span>
-              {/* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */}
-              <img
-                src={artifactInlineContentUrl(workspace.id, ref.artifact_id)}
-                alt=""
-                loading="lazy"
-                decoding="async"
-                {...stylex.props(s.reorderThumb)}
-              />
-              <span {...stylex.props(s.reorderName)}>
-                {nameOf(ref.artifact_id) ?? ref.artifact_id}
-              </span>
-              <button
-                type="button"
-                disabled={index === 0}
-                aria-label="Move earlier in the order"
-                onClick={() => step(index, -1)}
-                {...stylex.props(s.step, index === 0 ? s.stepDisabled : null)}
-              >
-                <ArrowUp size={11} />
-              </button>
-              <button
-                type="button"
-                disabled={index === refs.length - 1}
-                aria-label="Move later in the order"
-                onClick={() => step(index, 1)}
-                {...stylex.props(
-                  s.step,
-                  index === refs.length - 1 ? s.stepDisabled : null,
-                )}
-              >
-                <ArrowDown size={11} />
-              </button>
-            </div>
-          ))}
+                  <Menu.Item
+                    onClick={() => data.onRemoveNode?.(id)}
+                    {...stylex.props(s.menuItem)}
+                  >
+                    <Trash2 size={13} />
+                    Remove from canvas
+                  </Menu.Item>
+                </Menu.Popup>
+              </Menu.Positioner>
+            </Menu.Portal>
+          </Menu.Root>
         </div>
-      ) : null}
+
+        {reordering && refs.length > 1 ? (
+          <div className="nodrag" {...stylex.props(s.reorder)}>
+            <span {...stylex.props(s.reorderHead)}>
+              Passed in this order · drag a row&rsquo;s arrows to change it
+            </span>
+            {refs.map((ref, index) => (
+              <div key={ref.artifact_id} {...stylex.props(s.reorderRow)}>
+                <span {...stylex.props(s.reorderIndex)}>{index + 1}</span>
+                {/* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */}
+                <img
+                  src={artifactInlineContentUrl(workspace.id, ref.artifact_id)}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  {...stylex.props(s.reorderThumb)}
+                />
+                <span {...stylex.props(s.reorderName)}>
+                  {nameOf(ref.artifact_id) ?? ref.artifact_id}
+                </span>
+                <button
+                  type="button"
+                  disabled={index === 0}
+                  aria-label="Move earlier in the order"
+                  onClick={() => step(index, -1)}
+                  {...stylex.props(s.step, index === 0 ? s.stepDisabled : null)}
+                >
+                  <ArrowUp size={11} />
+                </button>
+                <button
+                  type="button"
+                  disabled={index === refs.length - 1}
+                  aria-label="Move later in the order"
+                  onClick={() => step(index, 1)}
+                  {...stylex.props(
+                    s.step,
+                    index === refs.length - 1 ? s.stepDisabled : null,
+                  )}
+                >
+                  <ArrowDown size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </CanvasNodeShell>
     </div>
   );

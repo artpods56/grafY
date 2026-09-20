@@ -8,8 +8,16 @@ import { createUuid } from "@/features/workbench/model/uuid";
  */
 export type ArtifactCardValue = SavedGraphOrigin["value"];
 
-/** Card width when it is placed and has never been resized. */
-export const DEFAULT_ARTIFACT_CARD_WIDTH = 264;
+/** Card width when placed: five lattice cells at the default cell size. */
+export const DEFAULT_ARTIFACT_CARD_WIDTH = 250;
+
+/** A card's media box is 4:3 until the operator shapes it. */
+export const ARTIFACT_CARD_MEDIA_ASPECT = 3 / 4;
+
+/** The height an unresized card's media box takes at a given width. */
+export function artifactCardMediaHeight(width: number): number {
+  return Math.round(width * ARTIFACT_CARD_MEDIA_ASPECT);
+}
 
 /** The card's artifacts in the order it presents and passes them. */
 export function cardArtifactRefs(
@@ -76,13 +84,9 @@ export function canMergeIntoCard(
 }
 
 /** These artifacts may join one card: they share one artifact type. */
-export function shareOneArtifactType(
-  a: ArtifactRef,
-  b: ArtifactRef,
-): boolean {
+export function shareOneArtifactType(a: ArtifactRef, b: ArtifactRef): boolean {
   return (
-    a.artifact_type === b.artifact_type &&
-    a.schema_version === b.schema_version
+    a.artifact_type === b.artifact_type && a.schema_version === b.schema_version
   );
 }
 

@@ -23,7 +23,6 @@ vi.mock("@xyflow/react", () => ({
 }));
 
 vi.mock("swr", () => ({
-
   default: () => ({ data: { folders: [], items: libraryMocks.items } }),
 }));
 
@@ -125,11 +124,7 @@ function mount(
   };
   React.act(() => {
     root.render(
-      <ArtifactCardBody
-        id="artifact-viewer-1"
-        data={nodeData}
-        value={value}
-      />,
+      <ArtifactCardBody id="artifact-viewer-1" data={nodeData} value={value} />,
     );
   });
   return { container, root };
@@ -156,6 +151,10 @@ describe("artifact on the canvas", () => {
     expect(
       container.querySelector('[data-node-pickup-shadow="true"]'),
     ).not.toBeNull();
+    // The container sets the size and the artifact fits inside it, so a portrait
+    // photo takes the same room on the canvas as a wide map.
+    const media = container.querySelector<HTMLElement>("[data-artifact-media]");
+    expect(media?.style.height).toBe("198px");
   });
 
   it("passes its artifact out when the ball is dragged", () => {
@@ -175,7 +174,9 @@ describe("artifact on the canvas", () => {
       ball?.dispatchEvent(event);
     });
 
-    expect(JSON.parse(stored.get("application/x-grafy-artifact") ?? "{}")).toEqual({
+    expect(
+      JSON.parse(stored.get("application/x-grafy-artifact") ?? "{}"),
+    ).toEqual({
       value: single("a1"),
       shape: "one",
     });
@@ -215,7 +216,9 @@ describe("artifact on the canvas", () => {
     const committed = onRefsChange.mock.calls[0][1];
     expect(
       "item_refs" in committed
-        ? committed.item_refs.map((ref: { artifact_id: string }) => ref.artifact_id)
+        ? committed.item_refs.map(
+            (ref: { artifact_id: string }) => ref.artifact_id,
+          )
         : null,
     ).toEqual(["a2", "a1"]);
     expect("sequence_id" in committed ? committed.sequence_id : null).toBe(

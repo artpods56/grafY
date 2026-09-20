@@ -158,6 +158,7 @@ import {
 import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
   artifactCardContract,
+  artifactCardMediaHeight,
   artifactCardValue,
   originCarriesCardArtifacts,
   cardArtifactRefs,
@@ -346,7 +347,10 @@ function useSafeAreaInsets(enabled: boolean): SafeAreaInsets {
 }
 
 /** The input row under a drawer drag, including a row hidden under the overlay. */
-function artifactDropRowAt(clientX: number, clientY: number): HTMLElement | null {
+function artifactDropRowAt(
+  clientX: number,
+  clientY: number,
+): HTMLElement | null {
   for (const element of document.elementsFromPoint(clientX, clientY)) {
     if (!(element instanceof Element)) continue;
     if (element.closest("[data-base-ui-portal]")) continue;
@@ -978,7 +982,9 @@ function WorkbenchBody({
         )
         .map((origin) => origin.id);
       if (originIds.length) {
-        applyAuthoringCommands([{ kind: "remove_origins", origin_ids: originIds }]);
+        applyAuthoringCommands([
+          { kind: "remove_origins", origin_ids: originIds },
+        ]);
       }
     },
     [applyAuthoringCommands],
@@ -2592,11 +2598,10 @@ function WorkbenchBody({
       const payload = readArtifactDrop(event.dataTransfer);
       if (!payload) return;
       event.preventDefault();
-      const point =
-        flow?.screenToFlowPosition({
-          x: event.clientX,
-          y: event.clientY,
-        }) ?? { x: 0, y: 0 };
+      const point = flow?.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      }) ?? { x: 0, y: 0 };
       const refs = cardArtifactRefs(payload.value);
       addArtifactCard(payload.value, {
         x: point.x - DEFAULT_ARTIFACT_CARD_WIDTH / 2,
@@ -3945,11 +3950,14 @@ function WorkbenchBody({
           const current = node.data.layout;
           const seed = {
             width: current?.width ?? DEFAULT_NODE_WIDTH,
+            bodyHeight:
+              current?.bodyHeight ??
+              artifactCardMediaHeight(DEFAULT_ARTIFACT_CARD_WIDTH),
             appendixHeight: current?.appendixHeight ?? DEFAULT_APPENDIX_HEIGHT,
           };
           const snapped = snapNodeLayout(
             seed,
-            ["width", "appendixHeight"],
+            ["width", "bodyHeight", "appendixHeight"],
             cellSize,
           );
           updateArtifactViewerLayout(node.id, snapped);
@@ -4478,10 +4486,7 @@ function WorkbenchBody({
           aria-label="Artifacts and templates panel"
           aria-pressed={sidePanel.open}
           title="The docked panel: Workspace Library artifacts and graph templates"
-          {...stylex.props(
-            s.railButton,
-            sidePanel.open ? s.railPrimary : null,
-          )}
+          {...stylex.props(s.railButton, sidePanel.open ? s.railPrimary : null)}
           onClick={() => {
             closeGraphBrowser();
             setLibraryOpen(false);
