@@ -62,11 +62,7 @@ const registry: NodeRegistry = {
   nodes: [],
 };
 
-function savedGraph(
-  id: string,
-  name: string,
-  revision = 1,
-): SavedGraph {
+function savedGraph(id: string, name: string, revision = 1): SavedGraph {
   return {
     id,
     revision,
@@ -116,8 +112,9 @@ interface LifecycleCallbacks {
 
 function lifecycleOptions(
   initialGraphId: string | null,
-  refreshNodeSecretStatuses: LifecycleOptions["refreshNodeSecretStatuses"] =
-    vi.fn().mockResolvedValue(true),
+  refreshNodeSecretStatuses: LifecycleOptions["refreshNodeSecretStatuses"] = vi
+    .fn()
+    .mockResolvedValue(true),
   initialDocument: LifecycleOptions["document"] = {
     name: "Untitled workflow",
     nodes: [],
@@ -323,14 +320,16 @@ describe("useSavedGraphLifecycle document ownership", () => {
       document: {
         schema_version: 7,
         origins: [],
-        nodes: [{
+        nodes: [
+          {
             ...checkpointNode,
-          input_plugs: [],
-          artifact_type_bindings: [],
+            input_plugs: [],
+            artifact_type_bindings: [],
             config: { base_url: "https://openrouter.ai/api/v1" },
-          }],
-        edges: []
-      }
+          },
+        ],
+        edges: [],
+      },
     };
 
     React.act(() => {
@@ -374,8 +373,8 @@ describe("useSavedGraphLifecycle document ownership", () => {
         schema_version: 7,
         origins: [],
         nodes: [],
-        edges: []
-      }
+        edges: [],
+      },
     };
     options.roomPersistence = {
       canPersist: true,
@@ -423,17 +422,14 @@ describe("useSavedGraphLifecycle document ownership", () => {
     };
     const refreshNodeSecretStatuses = vi.fn().mockResolvedValue(true);
     api.getSavedGraph.mockResolvedValue(graph);
-    const { options } = lifecycleOptions(
-      GRAPH_A_ID,
-      refreshNodeSecretStatuses,
-    );
+    const { options } = lifecycleOptions(GRAPH_A_ID, refreshNodeSecretStatuses);
     const hook = await renderHook(useSavedGraphLifecycle, options);
     await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
     refreshNodeSecretStatuses.mockClear();
     const checkpointedNode = {
       ...checkpointNode,
-          input_plugs: [],
-          artifact_type_bindings: [],
+      input_plugs: [],
+      artifact_type_bindings: [],
       config: { base_url: "https://openrouter.ai/api/v1" },
     };
 
@@ -450,8 +446,8 @@ describe("useSavedGraphLifecycle document ownership", () => {
           schema_version: 7,
           origins: [],
           nodes: [checkpointedNode],
-          edges: []
-        }
+          edges: [],
+        },
       });
     });
 
@@ -492,12 +488,14 @@ describe("useSavedGraphLifecycle document ownership", () => {
     expect(persistDocument).toHaveBeenCalledOnce();
 
     const peerPresentation = {
-      viewers: [{
-        id: "peer-viewer",
-        position: { x: 80, y: 120 },
-        layout: null,
-        mode: null,
-      }],
+      viewers: [
+        {
+          id: "peer-viewer",
+          position: { x: 80, y: 120 },
+          layout: null,
+          mode: null,
+        },
+      ],
       links: [],
       bindings: [],
       annotations: [],
@@ -515,8 +513,8 @@ describe("useSavedGraphLifecycle document ownership", () => {
         origins: [],
         nodes: [],
         edges: [],
-        presentation: peerPresentation
-      }
+        presentation: peerPresentation,
+      },
     };
     React.act(() => {
       hook.result.current.syncFromCollaborativeHead(peerHeadBeforeCheckpoint);
@@ -535,8 +533,8 @@ describe("useSavedGraphLifecycle document ownership", () => {
           schema_version: 7,
           origins: [],
           nodes: [],
-          edges: []
-        }
+          edges: [],
+        },
       };
       checkpointContinuation.resolve({
         checkpointHead,
@@ -568,17 +566,19 @@ describe("useSavedGraphLifecycle document ownership", () => {
       ...savedGraph(GRAPH_A_ID, "Dragged graph", 3),
       document: {
         ...savedGraph(GRAPH_A_ID, "Dragged graph", 3).document,
-        nodes: [{
-          id: "source",
-          kind: "builtin" as const,
-          operator_id: "test.source",
-          operator_version: 1,
-          config: { label: "source" },
-          input_plugs: [],
-          artifact_type_bindings: [],
-          position: finalPosition,
-          layout: null,
-        }],
+        nodes: [
+          {
+            id: "source",
+            kind: "builtin" as const,
+            operator_id: "test.source",
+            operator_version: 1,
+            config: { label: "source" },
+            input_plugs: [],
+            artifact_type_bindings: [],
+            position: finalPosition,
+            layout: null,
+          },
+        ],
       },
     };
     api.getSavedGraph.mockResolvedValue(graph);
@@ -634,14 +634,9 @@ describe("useSavedGraphLifecycle document ownership", () => {
       Promise.resolve(graphId === GRAPH_A_ID ? graphA : graphB),
     );
     const refreshSecrets = vi.fn((graph: { id: string }) =>
-      graph.id === GRAPH_A_ID
-        ? graphASecrets.promise
-        : Promise.resolve(true),
+      graph.id === GRAPH_A_ID ? graphASecrets.promise : Promise.resolve(true),
     );
-    const { options, callbacks } = lifecycleOptions(
-      GRAPH_A_ID,
-      refreshSecrets,
-    );
+    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID, refreshSecrets);
     const hook = await renderHook(useSavedGraphLifecycle, options);
 
     await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
@@ -782,10 +777,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
       return Promise.resolve(graphA);
     });
     const refreshSecrets = vi.fn(() => secretRefresh.promise);
-    const { options, callbacks } = lifecycleOptions(
-      GRAPH_A_ID,
-      refreshSecrets,
-    );
+    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID, refreshSecrets);
     const hook = await renderHook(useSavedGraphLifecycle, options);
     await waitFor(() => refreshSecrets.mock.calls.length === 1);
 
@@ -873,6 +865,95 @@ describe("useSavedGraphLifecycle document ownership", () => {
     await React.act(async () => {
       secretRefresh.resolve(true);
       await savePromise;
+    });
+  });
+
+  describe("leaving the page", () => {
+    function fireBeforeUnload(): boolean {
+      const event = new Event("beforeunload", {
+        cancelable: true,
+        bubbles: true,
+      });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }
+
+    async function openJournaledGraph(name: string) {
+      api.getSavedGraph.mockResolvedValue(savedGraph(GRAPH_A_ID, name, 4));
+      const rendered = lifecycleOptions(GRAPH_A_ID);
+      const hook = await renderHook(useSavedGraphLifecycle, rendered.options);
+      await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
+      return { ...rendered, hook };
+    }
+
+    it("stays silent when the room journal already holds the canvas", async () => {
+      const { options, hook } = await openJournaledGraph("Journal holds it");
+
+      // An edit the room has recorded but no checkpoint has captured yet.
+      await React.act(async () => {
+        await hook.rerender({
+          ...options,
+          document: {
+            ...options.document,
+            name: "Renamed after a journal write",
+          },
+        });
+      });
+
+      expect(hook.result.current.isDirty).toBe(true);
+      expect(fireBeforeUnload()).toBe(false);
+    });
+
+    it("opens a new graph without asking when the journal holds the canvas", async () => {
+      const { options, hook } = await openJournaledGraph("Journal holds it");
+      await React.act(async () => {
+        await hook.rerender({
+          ...options,
+          document: {
+            ...options.document,
+            name: "Renamed after a journal write",
+          },
+        });
+      });
+
+      await React.act(async () => {
+        hook.result.current.requestNewGraph();
+      });
+
+      expect(window.confirm).not.toHaveBeenCalled();
+    });
+
+    it("warns when the room refused edits while reconnecting", async () => {
+      const { options, hook } = await openJournaledGraph("Refused edits");
+      expect(fireBeforeUnload()).toBe(false);
+
+      await React.act(async () => {
+        await hook.rerender({ ...options, hasUnsyncedRoomEdits: true });
+      });
+
+      expect(fireBeforeUnload()).toBe(true);
+      await React.act(async () => {
+        hook.result.current.requestNewGraph();
+      });
+      expect(window.confirm).toHaveBeenCalledTimes(1);
+    });
+
+    it("warns while the graph exists only in this tab", async () => {
+      const { options } = lifecycleOptions(null, undefined, {
+        name: "Drawn but never saved",
+        nodes: [],
+        edges: [],
+        origins: [],
+      });
+      await renderHook(useSavedGraphLifecycle, options);
+
+      expect(fireBeforeUnload()).toBe(true);
+    });
+
+    it("stays silent for an empty canvas nobody has drawn on", async () => {
+      await renderHook(useSavedGraphLifecycle, lifecycleOptions(null).options);
+
+      expect(fireBeforeUnload()).toBe(false);
     });
   });
 });

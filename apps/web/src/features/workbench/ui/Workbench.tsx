@@ -1489,6 +1489,11 @@ function WorkbenchBody({
     }),
     [],
   );
+  /**
+   * Canvas edits applied while the room would not take commands. They live only
+   * in this tab, which is the one case a reload can actually lose work.
+   */
+  const [unsyncedRoomEdits, setUnsyncedRoomEdits] = React.useState(false);
   const {
     activeGraph,
     graphName,
@@ -1529,6 +1534,7 @@ function WorkbenchBody({
     requestCanvasRefit,
     refreshNodeRegistry: requestNodeRegistryRefresh,
     roomPersistence,
+    hasUnsyncedRoomEdits: unsyncedRoomEdits,
   });
   const router = useRouter();
   const activeGraphIdRef = React.useRef(activeGraph?.id ?? null);
@@ -1536,6 +1542,15 @@ function WorkbenchBody({
     activeGraphIdRef.current = activeGraph?.id ?? null;
   }, [activeGraph?.id]);
   const syncFromCollaborativeHeadRef = React.useRef(syncFromCollaborativeHead);
+  /**
+   * Applying an authoritative head means the room took the commands or
+   * reconciled with another writer, so the canvas holds nothing the server
+   * does not already have.
+   */
+  const applyRoomHead = React.useCallback((head: CollaborativeHead) => {
+    syncFromCollaborativeHeadRef.current(head);
+    setUnsyncedRoomEdits(false);
+  }, []);
   const applyAuthoringCommandsRef = React.useRef(applyAuthoringCommands);
   React.useLayoutEffect(() => {
     syncFromCollaborativeHeadRef.current = syncFromCollaborativeHead;
@@ -1567,7 +1582,7 @@ function WorkbenchBody({
             return;
           }
           replaceHeadRef.current(head);
-          syncFromCollaborativeHeadRef.current(head);
+          applyRoomHead(head);
         })
         .catch((error: unknown) => {
           const message =
@@ -1584,7 +1599,7 @@ function WorkbenchBody({
           }
         });
     };
-  }, [workspaceId]);
+  }, [applyRoomHead, workspaceId]);
 
   React.useEffect(
     () => () => {
@@ -1601,10 +1616,10 @@ function WorkbenchBody({
     onReady: (ready) => {
       // Durable editing is disabled while disconnected, so reconnect always
       // restores the authoritative room snapshot before authoring resumes.
-      syncFromCollaborativeHeadRef.current(ready.head);
+      applyRoomHead(ready.head);
     },
     onRehydrate: (head) => {
-      syncFromCollaborativeHeadRef.current(head);
+      applyRoomHead(head);
     },
     onHeadRefreshRequired: () => {
       refreshCollaborativeHeadRef.current({ errorMessage: null });
@@ -1729,7 +1744,10 @@ function WorkbenchBody({
   React.useEffect(() => {
     roomCommandSyncRef.current = {
       submitLocal: (commands, before) => {
-        if (!canSubmitRoomCommands) return;
+        if (!canSubmitRoomCommands) {
+          setUnsyncedRoomEdits(true);
+          return;
+        }
         for (const command of commands) {
           const roomCommand = toRoomGraphCommand(command, before);
           if (!roomCommand) continue;
@@ -1756,7 +1774,10 @@ function WorkbenchBody({
   React.useEffect(() => {
     presentationRoomSyncRef.current = {
       submitReplace: (state) => {
-        if (!canSubmitRoomCommands) return;
+        if (!canSubmitRoomCommands) {
+          setUnsyncedRoomEdits(true);
+          return;
+        }
         const command = {
           kind: "replace_presentation",
           presentation: presentationFromArtifactViewers(state),
