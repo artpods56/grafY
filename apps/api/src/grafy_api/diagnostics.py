@@ -27,6 +27,7 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 _HANDLER_NAME = "grafy.diagnostics"
 _EMERGENCY_LINE = b"grafy diagnostics: failure recording failed\n"
 _MAX_STRING_LENGTH = 2_048
+_TRUNCATION_TAIL_LENGTH = 512
 _MAX_COLLECTION_ITEMS = 32
 _MAX_DEPTH = 6
 _MAX_EXCEPTION_DEPTH = 8
@@ -87,10 +88,15 @@ class DiagnosticContext:
 
 
 def _bounded_string(value: str) -> str:
-    normalized = value.replace("\r", "\\r").replace("\n", "\\n")
-    if len(normalized) <= _MAX_STRING_LENGTH:
-        return normalized
-    return f"{normalized[:_MAX_STRING_LENGTH]}...[truncated]"
+    """Bound a string while keeping both ends, since the last line of a
+    formatted traceback carries the exception a reader has to act on."""
+
+    if len(value) <= _MAX_STRING_LENGTH:
+        return value
+    head = value[: _MAX_STRING_LENGTH - _TRUNCATION_TAIL_LENGTH]
+    tail = value[-_TRUNCATION_TAIL_LENGTH:]
+    omitted = len(value) - _MAX_STRING_LENGTH
+    return f"{head}...[{omitted} chars omitted]...{tail}"
 
 
 def _is_sensitive_key(key: str) -> bool:
