@@ -72,9 +72,9 @@ const s = stylex.create({
     position: "relative",
   },
   /**
-   * The container sets the size and the artifact fits inside it, so a portrait
-   * photo and a wide map take the same room on the canvas instead of each
-   * dictating its own shape.
+   * The container sets the size and the artifact fills it, so a portrait photo
+   * and a wide map take the same room on the canvas instead of each dictating
+   * its own shape. Cropping beats empty bands of backdrop.
    */
   media: {
     position: "relative",
@@ -88,7 +88,7 @@ const s = stylex.create({
     display: "block",
     width: "100%",
     height: "100%",
-    objectFit: "contain",
+    objectFit: "cover",
   },
   fileTile: {
     display: "flex",
