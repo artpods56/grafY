@@ -24,8 +24,8 @@ api: db-upgrade
     uv run --exact --no-dev --package grafy-api uvicorn grafy_api.main:app --reload --host 0.0.0.0 --port 8000
 
 # Start the web development server.
-web:
-    npm --prefix apps/web run dev
+web port="":
+    npm --prefix apps/web run dev {{ if port != "" {"--port=" + port} else {""} }}
 
 # Run backend and web tests.
 test:
