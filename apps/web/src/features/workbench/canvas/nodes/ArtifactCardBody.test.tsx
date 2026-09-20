@@ -17,7 +17,13 @@ vi.mock("@stylexjs/stylex", () => ({
   props: () => ({}),
 }));
 
+vi.mock("@xyflow/react", () => ({
+  useUpdateNodeInternals: () => vi.fn(),
+  useViewport: () => ({ zoom: 1 }),
+}));
+
 vi.mock("swr", () => ({
+
   default: () => ({ data: { folders: [], items: libraryMocks.items } }),
 }));
 
@@ -147,6 +153,9 @@ describe("artifact on the canvas", () => {
     expect(container.textContent).toContain("boat.jpg");
     expect(container.textContent).toContain("file.jpeg@1");
     expect(container.querySelector("ol")).toBeNull();
+    expect(
+      container.querySelector('[data-node-pickup-shadow="true"]'),
+    ).not.toBeNull();
   });
 
   it("passes its artifact out when the ball is dragged", () => {

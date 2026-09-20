@@ -265,7 +265,15 @@ export default function ArtifactViewerNodeCard({
   // A viewer that carries artifacts is an artifact on the canvas, so it paints
   // the artifact itself rather than a preview of a connected output.
   if (presentsArtifacts(data.artifactRef)) {
-    return <ArtifactCardBody id={id} data={data} value={data.artifactRef} />;
+    return (
+      <ArtifactCardBody
+        id={id}
+        data={data}
+        value={data.artifactRef}
+        selected={selected}
+        dragging={dragging}
+      />
+    );
   }
 
   return (

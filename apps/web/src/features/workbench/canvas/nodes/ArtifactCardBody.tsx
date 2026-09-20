@@ -3,6 +3,7 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Menu } from "@base-ui/react/menu";
+import { useUpdateNodeInternals } from "@xyflow/react";
 import useSWR from "swr";
 import {
   ArrowDown,
@@ -24,6 +25,7 @@ import {
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { writeArtifactDrop } from "../../model/artifact-drop";
 import {
+  DEFAULT_ARTIFACT_CARD_WIDTH,
   artifactCardContract,
   artifactCardValue,
   cardArtifactRefs,
@@ -32,16 +34,15 @@ import {
   type ArtifactCardValue,
 } from "../artifact-card";
 import type { ArtifactViewerNodeData } from "../artifact-viewer";
+import type { WorkflowNodeLayout } from "../node-layout";
+import { CanvasNodeShell, useCanvasNodeShell } from "./CanvasNodeShell";
+import { LayoutResizeHandle } from "./LayoutResizeHandle";
 import {
   libraryFileDisplayName,
   libraryFileSubtitle,
 } from "../../ui/side-panel/library-tree";
 
 const s = stylex.create({
-  card: {
-    position: "relative",
-    maxWidth: "420px",
-  },
   meta: {
     display: "flex",
     alignItems: "baseline",
@@ -61,7 +62,6 @@ const s = stylex.create({
   frame: {
     position: "relative",
     borderRadius: "10px",
-    overflow: "hidden",
     boxShadow: tokens.shadowNode,
     backgroundColor: tokens.colorSurface,
   },
@@ -71,12 +71,14 @@ const s = stylex.create({
     height: "auto",
     maxHeight: "460px",
     objectFit: "cover",
+    borderRadius: "10px",
   },
   fileTile: {
     display: "flex",
     alignItems: "center",
     gap: "9px",
     padding: "12px 13px",
+    borderRadius: "10px",
     backgroundColor: tokens.colorSurfaceRaised,
   },
   fileIcon: {
@@ -256,12 +258,20 @@ export function ArtifactCardBody({
   id,
   data,
   value,
+  selected,
+  dragging,
 }: {
   id: string;
   data: ArtifactViewerNodeData;
   value: ArtifactCardValue;
+  selected?: boolean;
+  dragging?: boolean;
 }) {
   const { workspace } = useWorkspaceContext();
+  const updateNodeInternals = useUpdateNodeInternals();
+  const [draftLayout, setDraftLayout] = React.useState<WorkflowNodeLayout | null>(
+    null,
+  );
   const { data: library } = useSWR(
     ["library-tree", workspace.id],
     () => libraryFoldersApi.listTree(workspace.id),
@@ -288,6 +298,21 @@ export function ArtifactCardBody({
     return item ? libraryFileDisplayName(item) : null;
   };
 
+  const shell = useCanvasNodeShell({
+    id,
+    selected,
+    dragging,
+    naturalWidth: data.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH,
+    updateNodeInternals,
+  });
+  const layout = draftLayout ?? data.layout;
+
+  const commitLayout = (next: WorkflowNodeLayout | null) => {
+    setDraftLayout(null);
+    data.onLayoutChange?.(id, next);
+    window.requestAnimationFrame(() => updateNodeInternals(id));
+  };
+
   const commit = (next: ArtifactCardValue | null) =>
     data.onRefsChange?.(id, next);
 
@@ -309,11 +334,24 @@ export function ArtifactCardBody({
     !imagesFailed[first.artifact_id];
 
   return (
-    <div
-      data-artifact-card-id={id}
-      {...stylex.props(s.card)}
-      style={{ width: data.layout?.width ?? undefined }}
-    >
+    <div data-artifact-card-id={id}>
+      <CanvasNodeShell
+        state={shell}
+        selected={selected}
+        remoteSelectionColor={data.remoteSelectionColor}
+        variant="bare"
+        ariaLabel={`Artifact ${contract}`}
+        testId="artifact-card-node"
+        resizeHandle={
+          <LayoutResizeHandle
+            layout={layout}
+            axes={["width"]}
+            ariaLabel="Resize artifact"
+            onDraft={setDraftLayout}
+            onCommit={commitLayout}
+          />
+        }
+      >
       <span {...stylex.props(s.meta)}>
         {refs.length === 1
           ? (nameOf(first.artifact_id) ?? first.artifact_id)
@@ -480,6 +518,7 @@ export function ArtifactCardBody({
           ))}
         </div>
       ) : null}
+      </CanvasNodeShell>
     </div>
   );
 }
