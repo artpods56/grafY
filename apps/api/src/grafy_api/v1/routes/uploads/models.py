@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Annotated, Literal, Self
+from uuid import UUID
 
 from pydantic import BaseModel, Field, RootModel, field_validator
 
@@ -87,6 +88,7 @@ class ImageUploadItemResponse(ApiResponse):
     upload_key: str
     filename: str
     byte_size: int
+    artifact_id: UUID | None = None
     artifact_type: str | None = None
     notice: str | None = None
 
@@ -99,6 +101,7 @@ class ImageUploadItemResponse(ApiResponse):
             upload_key=str(upload.upload_id),
             filename=upload.original_filename,
             byte_size=byte_size if byte_size is not None else upload.expected_size,
+            artifact_id=upload.artifact_id,
             artifact_type=f"{key.id}@{key.schema_version}" if key is not None else None,
             notice=BLOB_UPLOAD_NOTICE
             if key is not None and key.id == BLOB_FILE.key.id

@@ -3,11 +3,17 @@ import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 export const workbenchStyles = stylex.create({
-  /* Sits beside the docked workspace rail; floating chrome anchors to this box. */
+  /*
+   * Sits beside the two docked sidebar panes — the workspace rail and the workbench
+   * side panel — and gives up exactly their width, so the canvas is never covered.
+   * Floating chrome anchors to this box.
+   */
   shell: {
     position: "relative",
-    marginInlineStart: "var(--grafy-rail-width, 0px)",
-    width: "calc(100% - var(--grafy-rail-width, 0px))",
+    marginInlineStart:
+      "calc(var(--grafy-rail-width, 0px) + var(--grafy-side-panel-width, 0px))",
+    width:
+      "calc(100% - var(--grafy-rail-width, 0px) - var(--grafy-side-panel-width, 0px))",
     minWidth: 0,
     height: "100svh",
     overflow: "hidden",

@@ -114,6 +114,7 @@ class UploadItem(ClientModel):
     upload_key: str
     filename: str
     byte_size: int
+    artifact_id: UUID | None = None
     artifact_type: str | None = None
     notice: str | None = None
 

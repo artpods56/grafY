@@ -927,6 +927,7 @@
         "description": "Reserve one upload before the bytes leave the client.",
         "properties": {
           "byte_size": {
+            "maximum": 67108864.0,
             "minimum": 0.0,
             "title": "Byte Size",
             "type": "integer"
@@ -3193,6 +3194,18 @@
       },
       "ImageUploadItemResponse": {
         "properties": {
+          "artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          },
           "artifact_type": {
             "anyOf": [
               {

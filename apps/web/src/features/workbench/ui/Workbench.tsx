@@ -37,7 +37,8 @@ import {
 } from "lucide-react";
 
 import { ExecutionHistoryDrawer } from "./ExecutionHistoryDrawer";
-import { LibraryDrawer } from "./LibraryDrawer";
+import { WorkbenchSidePanel } from "./side-panel/WorkbenchSidePanel";
+import { useWorkbenchSidePanel } from "./side-panel/workbench-side-panel-state";
 import { GraphRoomRecoveryNotice } from "./GraphRoomRecoveryNotice";
 import { GlobalIssueToastList, type GlobalIssue } from "./GlobalIssueToastList";
 import {
@@ -336,13 +337,15 @@ function useSafeAreaInsets(enabled: boolean): SafeAreaInsets {
   return insets;
 }
 
-/** The input row under a drawer drag, read from the row element it is over. */
-function artifactDropRowAt(
-  event: React.DragEvent<HTMLElement>,
-): HTMLElement | null {
-  return event.target instanceof Element
-    ? event.target.closest<HTMLElement>("[data-input-node-id]")
-    : null;
+/** The input row under a drawer drag, including a row hidden under the overlay. */
+function artifactDropRowAt(clientX: number, clientY: number): HTMLElement | null {
+  for (const element of document.elementsFromPoint(clientX, clientY)) {
+    if (!(element instanceof Element)) continue;
+    if (element.closest("[data-base-ui-portal]")) continue;
+    const row = element.closest<HTMLElement>("[data-input-node-id]");
+    if (row) return row;
+  }
+  return null;
 }
 
 /** A drop only fits a row the node actually publishes for that input slot. */
@@ -576,7 +579,7 @@ function WorkbenchBody({
     React.useState<ReactFlowInstance<CanvasNode, CanvasEdge>>();
   const { workspace } = useWorkspaceContext();
   const [libraryOpen, setLibraryOpen] = React.useState(false);
-  const [libraryDrawerOpen, setLibraryDrawerOpen] = React.useState(false);
+  const sidePanel = useWorkbenchSidePanel();
   const [contextualDiscovery, setContextualDiscovery] =
     React.useState<ContextualDiscoverySession | null>(null);
   const [workspaceLibraryOpen, setWorkspaceLibraryOpen] = React.useState(false);
@@ -2503,9 +2506,9 @@ function WorkbenchBody({
   );
 
   const dragOverArtifactDrop = React.useCallback(
-    (event: React.DragEvent<HTMLElement>) => {
-      if (!isArtifactDrop(event.dataTransfer)) return;
-      const row = artifactDropRowAt(event);
+    (event: DragEvent | React.DragEvent<HTMLElement>) => {
+      if (!event.dataTransfer || !isArtifactDrop(event.dataTransfer)) return;
+      const row = artifactDropRowAt(event.clientX, event.clientY);
       if (!row) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
@@ -2514,9 +2517,9 @@ function WorkbenchBody({
   );
 
   const dropArtifact = React.useCallback(
-    (event: React.DragEvent<HTMLElement>) => {
-      if (!isArtifactDrop(event.dataTransfer)) return;
-      const row = artifactDropRowAt(event);
+    (event: DragEvent | React.DragEvent<HTMLElement>) => {
+      if (!event.dataTransfer || !isArtifactDrop(event.dataTransfer)) return;
+      const row = artifactDropRowAt(event.clientX, event.clientY);
       if (!row) return;
       event.preventDefault();
       const payload = readArtifactDrop(event.dataTransfer);
@@ -2547,6 +2550,17 @@ function WorkbenchBody({
     },
     [applyAuthoringCommands, registry?.artifact_conversions],
   );
+
+  React.useEffect(() => {
+    const onDragOver = (event: DragEvent) => dragOverArtifactDrop(event);
+    const onDrop = (event: DragEvent) => dropArtifact(event);
+    document.addEventListener("dragover", onDragOver);
+    document.addEventListener("drop", onDrop);
+    return () => {
+      document.removeEventListener("dragover", onDragOver);
+      document.removeEventListener("drop", onDrop);
+    };
+  }, [dragOverArtifactDrop, dropArtifact]);
 
   const addWorkflowEdge = React.useCallback(
     (
@@ -3995,8 +4009,6 @@ function WorkbenchBody({
       <section
         {...stylex.props(s.canvas)}
         aria-label="Workflow canvas"
-        onDragOver={dragOverArtifactDrop}
-        onDrop={dropArtifact}
         onPointerMove={(event) => {
           if (!graphRoom.canPublishPresence || !flow) return;
           presenceOverCanvasRef.current = true;
@@ -4302,21 +4314,22 @@ function WorkbenchBody({
         </button>
         <button
           type="button"
-          aria-label="Saved artifacts"
-          title="Saved artifacts and where they came from"
+          aria-label="Artifacts and templates panel"
+          aria-pressed={sidePanel.open}
+          title="The docked panel: Workspace Library artifacts and graph templates"
           {...stylex.props(
             s.railButton,
-            libraryDrawerOpen ? s.railPrimary : null,
+            sidePanel.open ? s.railPrimary : null,
           )}
           onClick={() => {
             closeGraphBrowser();
             setLibraryOpen(false);
             setGridPanelOpen(false);
-            setLibraryDrawerOpen((open) => !open);
+            sidePanel.toggle();
           }}
         >
           <Bookmark size={14} />
-          <span {...stylex.props(s.railLabel)}>Saved</span>
+          <span {...stylex.props(s.railLabel)}>Panel</span>
         </button>
         <span {...stylex.props(s.railDivider)} />
         <button
@@ -4375,21 +4388,21 @@ function WorkbenchBody({
         />
       ) : null}
 
-      {libraryDrawerOpen ? (
-        <LibraryDrawer
-          workspaceId={workspaceId}
-          onClose={() => setLibraryDrawerOpen(false)}
-          onOpenRun={(graphId, executionId) => {
-            setLibraryDrawerOpen(false);
-            if (graphId !== activeGraph?.id) {
-              openGraphInNewTab(graphId);
-              return;
-            }
-            executionHistoryReturnFocusRef.current = null;
-            setExecutionHistoryTarget({ nodeId: null, executionId });
-          }}
-        />
-      ) : null}
+      <WorkbenchSidePanel
+        workspaceId={workspaceId}
+        sidePanel={sidePanel}
+        onOpenRun={(graphId, executionId) => {
+          if (graphId !== activeGraph?.id) {
+            openGraphInNewTab(graphId);
+            return;
+          }
+          executionHistoryReturnFocusRef.current = null;
+          setExecutionHistoryTarget({ nodeId: null, executionId });
+        }}
+        onOpenGraph={(graphId) => {
+          router.push(workbenchGraphPath(workspaceSlug, graphId));
+        }}
+      />
 
       {registry ? (
         <NodeSelector

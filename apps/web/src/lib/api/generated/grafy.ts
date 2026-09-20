@@ -2333,6 +2333,8 @@ export interface components {
         };
         /** ImageUploadItemResponse */
         readonly ImageUploadItemResponse: {
+            /** Artifact Id */
+            readonly artifact_id?: string | null;
             /** Artifact Type */
             readonly artifact_type?: string | null;
             /** Byte Size */
