@@ -169,6 +169,11 @@ services:
       <<: *persistence-environment
       GRAFY_PLUGIN_ROOTS: '["/publisher-input"]'
       GRAFY_PLUGIN_RUNTIME_PROFILE: ${GRAFY_PLUGIN_RUNTIME_PROFILE:-python-uv}
+      # Native profiles import the deployment-owned base image pinned by
+      # digest; see infra/docker/.env.production.example.
+      GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE:
+      GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE_DIGEST:
+
       GRAFY_PLUGIN_DOCKER_BINARY: /usr/local/bin/docker
       GRAFY_PLUGIN_PUBLISHER_SCRATCH_ROOT: ${GRAFY_PUBLISHER_SCRATCH_ROOT:-/tmp/grafy-plugin-publisher}
       GRAFY_STORAGE_BACKEND: ${GRAFY_STORAGE_BACKEND:-local}
