@@ -3,6 +3,11 @@ services:
     environment:
       GRAFY_PLUGIN_RUNTIME_ENABLED: "true"
       GRAFY_PLUGIN_RUNTIME_PROFILE: ${GRAFY_PLUGIN_RUNTIME_PROFILE:-python-uv}
+      # Native profiles import the deployment-owned base image pinned by
+      # digest; see infra/docker/.env.production.example.
+      GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE:
+      GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE_DIGEST:
+
       GRAFY_PLUGIN_DOCKER_BINARY: /usr/local/bin/docker
       GRAFY_PLUGIN_EGRESS_BROKER_IMAGE: ${GRAFY_PLUGIN_EGRESS_BROKER_IMAGE:-}
       GRAFY_PLUGIN_HTTP_EGRESS_DESTINATIONS: ${GRAFY_PLUGIN_HTTP_EGRESS_DESTINATIONS:-[]}
