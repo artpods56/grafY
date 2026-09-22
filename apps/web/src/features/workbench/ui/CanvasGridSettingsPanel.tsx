@@ -26,6 +26,10 @@ const s = stylex.create({
     },
     right: {
       default: "13px",
+      // The docked Runs drawer takes the canvas' right edge, so the panel keeps
+      // clear of it. Below 721px the drawer floats over the canvas instead.
+      "@media (min-width: 721px)":
+        "calc(13px + var(--grafy-generated-drawer-width, 0px))",
       "@media (max-width: 620px)":
         "calc(12px + env(safe-area-inset-right, 0px))",
     },
