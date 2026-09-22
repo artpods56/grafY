@@ -1,3 +1,4 @@
+import type { ArtifactOriginEdge } from "./artifact-connections";
 import type { Edge, Node } from "@xyflow/react";
 
 import type { CollaborativeHead, SavedGraphDocument } from "@/lib/api";
@@ -127,6 +128,7 @@ export type CanvasNode =
   | ArtifactViewerNode
   | AnnotationNode;
 export type CanvasEdge =
+  | ArtifactOriginEdge
   | WorkflowEdge
   | ArtifactViewerEdge
   | ArtifactViewerInteractionEdge;

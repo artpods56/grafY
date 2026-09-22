@@ -156,6 +156,12 @@ import {
   type GraphPresentation,
 } from "../canvas/artifact-viewer";
 import {
+  ARTIFACT_CARD_OUTPUT_HANDLE,
+  ARTIFACT_ORIGIN_EDGE_TYPE,
+  artifactOriginConnections,
+  resolveArtifactCardConnection,
+} from "../canvas/artifact-connections";
+import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
   artifactCardContract,
   artifactCardMediaHeight,
@@ -2463,6 +2469,34 @@ function WorkbenchBody({
     ],
   );
 
+  const artifactOriginCanvasEdges = React.useMemo(
+    () =>
+      artifactOriginConnections(
+        activeArtifactViewers.nodes,
+        activeArtifactViewers.edges,
+        nodes,
+        authoredDocument.origins,
+      ).map((edge) => ({
+        ...edge,
+        selected: selectedEdgeIdSet.has(edge.id),
+        data: {
+          ...edge.data,
+          onDisconnect: (originId: string) =>
+            applyAuthoringCommands([
+              { kind: "remove_origins", origin_ids: [originId] },
+            ]),
+        },
+      })),
+    [
+      activeArtifactViewers.nodes,
+      activeArtifactViewers.edges,
+      nodes,
+      authoredDocument.origins,
+      selectedEdgeIdSet,
+      applyAuthoringCommands,
+    ],
+  );
+
   const onEdgesChange: OnEdgesChange<CanvasEdge> = React.useCallback(
     (changes) => {
       const workflowEdgeIds = new Set(edges.map((edge) => edge.id));
@@ -2475,7 +2509,8 @@ function WorkbenchBody({
       const workflowChanges = changes.filter((change) =>
         change.type === "add" || change.type === "replace"
           ? change.item.type !== ARTIFACT_VIEWER_EDGE_TYPE &&
-            change.item.type !== ARTIFACT_VIEWER_INTERACTION_EDGE_TYPE
+            change.item.type !== ARTIFACT_VIEWER_INTERACTION_EDGE_TYPE &&
+            change.item.type !== ARTIFACT_ORIGIN_EDGE_TYPE
           : workflowEdgeIds.has(change.id),
       ) as EdgeChange<WorkflowEdge>[];
       const artifactViewerChanges = changes.filter((change) =>
@@ -2498,6 +2533,33 @@ function WorkbenchBody({
         }
         if (semanticChanges.length) applyAuthoringCommands(semanticChanges);
         else clearRunError();
+      }
+      const originEdgesById = new Map(
+        artifactOriginCanvasEdges.map((edge) => [edge.id, edge]),
+      );
+      const removedOrigins = changes.flatMap((change) => {
+        if (change.type !== "remove") return [];
+        const edge = originEdgesById.get(change.id);
+        return edge ? [edge.data.originId] : [];
+      });
+      if (removedOrigins.length) {
+        applyAuthoringCommands([
+          { kind: "remove_origins", origin_ids: [...new Set(removedOrigins)] },
+        ]);
+      }
+      const selectedOrigins = changes.filter(
+        (change) => change.type === "select" && originEdgesById.has(change.id),
+      );
+      if (selectedOrigins.length) {
+        setSelectedEdgeIdSet((current) => {
+          const next = new Set(current);
+          for (const change of selectedOrigins) {
+            if (change.type !== "select") continue;
+            if (change.selected) next.add(change.id);
+            else next.delete(change.id);
+          }
+          return next;
+        });
       }
       if (artifactViewerChanges.length) {
         commitArtifactViewers((current) => ({
@@ -2522,6 +2584,7 @@ function WorkbenchBody({
       }
     },
     [
+      artifactOriginCanvasEdges,
       artifactViewers.bindings,
       artifactViewers.edges,
       applyAuthoringCommands,
@@ -2864,6 +2927,17 @@ function WorkbenchBody({
         target: connection.target,
         targetHandle: connection.targetHandle ?? null,
       };
+      if (candidate.sourceHandle === ARTIFACT_CARD_OUTPUT_HANDLE) {
+        return (
+          resolveArtifactCardConnection(
+            candidate,
+            activeArtifactViewers.nodes,
+            activeArtifactViewers.edges,
+            nodes,
+            registry?.artifact_conversions ?? [],
+          ) !== null
+        );
+      }
       if (
         candidate.sourceHandle === ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE ||
         candidate.targetHandle === ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE
@@ -2911,6 +2985,7 @@ function WorkbenchBody({
     },
     [
       activeArtifactViewers.nodes,
+      activeArtifactViewers.edges,
       activeArtifactViewers.bindings,
       edges,
       nodes,
@@ -2922,6 +2997,40 @@ function WorkbenchBody({
   const onConnect: OnConnect = React.useCallback(
     (connection) => {
       if (!isValidConnection(connection)) return;
+      if (connection.sourceHandle === ARTIFACT_CARD_OUTPUT_HANDLE) {
+        const resolved = resolveArtifactCardConnection(
+          connection,
+          activeArtifactViewers.nodes,
+          activeArtifactViewers.edges,
+          nodes,
+          registry?.artifact_conversions ?? [],
+        );
+        if (!resolved) return;
+        const commands = artifactDropCommands(
+          resolved.payload,
+          resolved.target,
+          resolved.port,
+          resolved.bindings,
+          {
+            edges,
+            origins: authoredDocumentRef.current.origins,
+            conversions: registry?.artifact_conversions ?? [],
+          },
+        );
+        if (!commands) return;
+        if (resolved.binding) {
+          commands.unshift({
+            kind: "bind_artifact_type",
+            node_id: resolved.target.nodeId,
+            variable: resolved.binding.variable,
+            artifact_type: resolved.binding.artifactType,
+          });
+        }
+        applyAuthoringCommands(commands);
+        clearRunError();
+        setPendingConnectionRoute(null);
+        return;
+      }
       if (
         connection.sourceHandle === ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE &&
         connection.targetHandle === ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE
@@ -3033,6 +3142,10 @@ function WorkbenchBody({
       });
     },
     [
+      activeArtifactViewers.nodes,
+      activeArtifactViewers.edges,
+      applyAuthoringCommands,
+      clearRunError,
       addWorkflowEdge,
       commitArtifactViewers,
       edges,
@@ -3897,10 +4010,12 @@ function WorkbenchBody({
       ...canvasEdges,
       ...artifactViewerCanvasEdges,
       ...artifactViewerInteractionCanvasEdges,
+      ...artifactOriginCanvasEdges,
     ],
     [
       artifactViewerCanvasEdges,
       artifactViewerInteractionCanvasEdges,
+      artifactOriginCanvasEdges,
       canvasEdges,
     ],
   );
