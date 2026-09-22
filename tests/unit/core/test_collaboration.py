@@ -252,6 +252,56 @@ def test_move_remove_update_edge_and_plugs() -> None:
     assert [node.id for node in document.nodes] == ["target", "source-copy"]
 
 
+def test_replacing_input_plugs_drops_wiring_to_removed_plugs() -> None:
+    source = _node("source")
+    collect = SavedGraphNode(
+        kind="builtin",
+        id="collect",
+        operator_id="sequence.collect",
+        operator_version=1,
+        position=GraphPoint(x=10, y=20),
+        input_plugs=(
+            SavedGraphInputPlug(id="plug-a", port="items"),
+            SavedGraphInputPlug(id="plug-b", port="items"),
+            SavedGraphInputPlug(id="plug-c", port="items"),
+        ),
+    )
+    edge = SavedGraphEdge(
+        id="e1",
+        from_node="source",
+        from_port="result",
+        to_node="collect",
+        to_port="items",
+        to_plug="plug-b",
+        enabled=True,
+    )
+    kept_origin = _origin("o-kept", to_node="collect").model_copy(
+        update={"to_port": "items", "to_plug": "plug-a"}
+    )
+    dropped_origin = _origin("o-dropped", to_node="collect").model_copy(
+        update={"to_port": "items", "to_plug": "plug-c"}
+    )
+    document = SavedGraphDocument(
+        nodes=(source, collect),
+        edges=(edge,),
+        origins=(kept_origin, dropped_origin),
+    )
+
+    _, updated = apply_graph_command(
+        name="Graph",
+        document=document,
+        command=SetNodeInputPlugsCommand(
+            node_id="collect",
+            input_plugs=(SavedGraphInputPlug(id="plug-a", port="items"),),
+            expected_plug_ids=("plug-a", "plug-b", "plug-c"),
+        ),
+    )
+
+    assert [plug.id for plug in updated.nodes[1].input_plugs] == ["plug-a"]
+    assert updated.edges == ()
+    assert updated.origins == (kept_origin,)
+
+
 def test_update_node_plugin_release_is_a_single_node_cas() -> None:
     current_pin = SavedGraphPluginReleasePin(
         scope=PluginReleaseScope.SYSTEM,
