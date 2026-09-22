@@ -3,13 +3,7 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Menu } from "@base-ui/react/menu";
-import {
-  Handle,
-  Position,
-  useEdges,
-  useNodesData,
-  useUpdateNodeInternals,
-} from "@xyflow/react";
+import { useEdges, useNodesData, useUpdateNodeInternals } from "@xyflow/react";
 import useSWR from "swr";
 import {
   ArrowDown,
@@ -17,9 +11,12 @@ import {
   Download,
   File as FileIcon,
   GripVertical,
+  Image as ImageIcon,
   ImageOff,
-  MoreHorizontal,
+  Layers,
+  MoreVertical,
   Trash2,
+  X,
 } from "lucide-react";
 
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
@@ -30,8 +27,9 @@ import {
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
-import { writeArtifactDrop } from "../../model/artifact-drop";
+import { ARTIFACT_CARD_OUTPUT_HANDLE } from "../artifact-connections";
 import {
+  ARTIFACT_CARD_WIDTH_MIN,
   DEFAULT_ARTIFACT_CARD_WIDTH,
   artifactCardContract,
   artifactCardMediaHeight,
@@ -49,84 +47,49 @@ import {
   type CanvasEdge,
   type CanvasNode,
 } from "../artifact-viewer";
-import type { ArtifactRef } from "@/lib/api";
-import { handleStyle } from "../handle-style";
+import { artifactTypeColor } from "../nodes.css";
 import { WORKFLOW_NODE_TYPE } from "../types";
 import type { WorkflowNodeLayout } from "../node-layout";
 import { CanvasNodeShell, useCanvasNodeShell } from "./CanvasNodeShell";
+import { CanvasPortRail, CanvasPortTab } from "./CanvasNodeChrome";
 import { LayoutResizeHandle } from "./LayoutResizeHandle";
 import {
+  formatLibraryByteSize,
   libraryFileDisplayName,
-  libraryFileSubtitle,
 } from "../../ui/side-panel/library-tree";
 
 const s = stylex.create({
-  /**
-   * The strip a node header would occupy, kept the same height so an artifact's
-   * body starts on the same line as the body of the node next to it. The name
-   * rides in it instead of a title bar.
-   */
-  meta: {
+  header: {
+    position: "relative",
     display: "flex",
     alignItems: "center",
-    gap: "6px",
-    height: "34px",
+    gap: "10px",
+    minHeight: "58px",
     boxSizing: "border-box",
-    padding: "0 28px 0 12px",
-    fontSize: tokens.fontSizeXs,
-    color: tokens.colorTextEmphasis,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    pointerEvents: "none",
+    padding: "8px 44px 8px 6px",
     userSelect: "none",
   },
-  metaContract: {
-    color: tokens.colorMuted,
-    fontFamily: "var(--font-mono, ui-monospace, monospace)",
-  },
-  mediaWrap: {
-    position: "relative",
-  },
-  /**
-   * The container sets the size and the artifact fills it, so a portrait photo
-   * and a wide map take the same room on the canvas instead of each dictating
-   * its own shape. Cropping beats empty bands of backdrop.
-   */
-  media: {
-    position: "relative",
-    width: "100%",
-    borderRadius: "10px",
-    overflow: "hidden",
-    backgroundColor: tokens.colorSurfaceSunken,
-    boxShadow: tokens.shadowNode,
-  },
-  image: {
-    display: "block",
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
-  },
-  fileTile: {
-    display: "flex",
-    alignItems: "center",
-    gap: "9px",
-    height: "100%",
-    boxSizing: "border-box",
-    padding: "0 13px",
-  },
   fileIcon: {
+    display: "grid",
+    placeItems: "center",
+    width: "30px",
+    height: "34px",
+    borderRadius: "5px",
+    backgroundColor: tokens.colorSurfaceRaised,
     color: tokens.colorMuted,
     flexShrink: 0,
   },
+  imageIcon: { color: tokens.colorInfo },
   fileCopy: {
     display: "flex",
     flexDirection: "column",
-    gap: "2px",
+    gap: "4px",
     minWidth: 0,
   },
   fileName: {
     fontSize: tokens.fontSizeSm,
-    color: tokens.colorText,
+    fontWeight: 500,
+    color: tokens.colorTextEmphasis,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -134,6 +97,53 @@ const s = stylex.create({
   fileMeta: {
     fontSize: tokens.fontSizeXs,
     color: tokens.colorMuted,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  card: { position: "relative" },
+  body: {
+    boxSizing: "border-box",
+    padding: "0 10px 10px",
+  },
+  /**
+   * A snapshot card has no upstream, so its input port stays out of the way
+   * until the card is hovered, focused, or selected.
+   */
+  portPeek: {
+    width: "100%",
+    height: "100%",
+    opacity: 0,
+    transitionProperty: {
+      default: "opacity",
+      "@media (prefers-reduced-motion: reduce)": "none",
+    },
+    transitionDuration: "120ms",
+    ":hover": { opacity: 1 },
+    ":focus-within": { opacity: 1 },
+  },
+  portPeekShown: { opacity: 1 },
+  media: {
+    position: "relative",
+    width: "100%",
+    borderRadius: "6px",
+    overflow: "hidden",
+    backgroundColor: tokens.colorSurfaceSunken,
+  },
+  image: {
+    display: "block",
+    width: "100%",
+    height: "100%",
+    objectFit: "contain",
+  },
+  imageUnavailable: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    height: "100%",
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeXs,
   },
   awaiting: {
     position: "absolute",
@@ -148,59 +158,35 @@ const s = stylex.create({
   stack: {
     position: "relative",
     width: "100%",
-    height: "100%",
+    height: "112px",
   },
   stackThumb: {
     position: "absolute",
-    width: "58%",
-    height: "112px",
+    display: "grid",
+    placeItems: "center",
+    width: "136px",
+    height: "88px",
     objectFit: "cover",
-    borderRadius: "7px",
-    boxShadow: tokens.shadowNode,
-    border: `1px solid ${tokens.colorBorder}`,
-  },
-  stackCount: {
-    position: "absolute",
-    right: "10px",
-    bottom: "9px",
-    padding: "2px 7px",
-    borderRadius: "999px",
+    borderRadius: "6px",
     backgroundColor: tokens.colorSurfaceRaised,
-    border: `1px solid ${tokens.colorBorder}`,
-    fontSize: tokens.fontSizeXs,
-    color: tokens.colorText,
-  },
-  /** The pass handle: a floating ball that carries the card's artifacts. */
-  ball: {
-    position: "absolute",
-    right: "-9px",
-    top: "50%",
-    transform: "translateY(-50%)",
-    width: "18px",
-    height: "18px",
-    padding: 0,
-    borderRadius: "999px",
-    border: `2px solid ${tokens.colorSurface}`,
-    backgroundColor: tokens.colorAccent,
+    color: tokens.colorMuted,
     boxShadow: tokens.shadowNode,
-    cursor: "grab",
-    opacity: { default: 0.9, ":hover": 1 },
-    zIndex: 2,
+    border: `1px solid ${tokens.colorBorderStrong}`,
   },
   menu: {
     position: "absolute",
-    top: "-30px",
-    right: "2px",
+    top: "14px",
+    right: "12px",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    width: "22px",
-    height: "22px",
+    width: "28px",
+    height: "28px",
     padding: 0,
     borderRadius: "6px",
     border: "none",
-    backgroundColor: tokens.colorSurfaceRaised,
-    color: tokens.colorText,
+    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
+    color: tokens.colorMuted,
     cursor: "pointer",
     opacity: { default: 0.72, ":hover": 1 },
     zIndex: 2,
@@ -240,6 +226,10 @@ const s = stylex.create({
     boxShadow: tokens.shadowNode,
   },
   reorderHead: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
     fontSize: tokens.fontSizeXs,
     color: tokens.colorMuted,
     marginBottom: "2px",
@@ -256,6 +246,9 @@ const s = stylex.create({
     textAlign: "center",
   },
   reorderThumb: {
+    display: "grid",
+    placeItems: "center",
+    color: tokens.colorMuted,
     width: "30px",
     height: "30px",
     borderRadius: "5px",
@@ -302,12 +295,14 @@ export function ArtifactCardBody({
   value,
   selected,
   dragging,
+  isConnectable = true,
 }: {
   id: string;
   data: ArtifactViewerNodeData;
   value: ArtifactCardValue;
   selected?: boolean;
   dragging?: boolean;
+  isConnectable?: boolean;
 }) {
   const { workspace } = useWorkspaceContext();
   const updateNodeInternals = useUpdateNodeInternals();
@@ -317,6 +312,9 @@ export function ArtifactCardBody({
     libraryFoldersApi.listTree(workspace.id),
   );
   const [reordering, setReordering] = React.useState(false);
+  const [imageSizes, setImageSizes] = React.useState<
+    Record<string, { width: number; height: number }>
+  >({});
   const [imagesFailed, setImagesFailed] = React.useState<
     Record<string, boolean>
   >({});
@@ -349,10 +347,7 @@ export function ArtifactCardBody({
       : [];
   // A fed card shows only what the port produced: falling back to the ref it was
   // dropped with would paint a stale artifact behind a live wire.
-  const fedValue = artifactCardValue(
-    [...feedArtifacts] as unknown as ArtifactRef[],
-    value,
-  );
+  const fedValue = artifactCardValue(feedArtifacts, value);
   const shownValue: ArtifactCardValue | null = feed ? fedValue : value;
   const refs = shownValue ? cardArtifactRefs(shownValue) : [];
   const contract = shownValue
@@ -372,22 +367,17 @@ export function ArtifactCardBody({
     return item ? libraryFileDisplayName(item) : null;
   };
 
-  const titleLabel = feed
-    ? `${producer?.data.spec.title ?? "Output"} → ${feedPort?.title ?? feedPortName ?? "output"}`
-    : refs.length === 1
-      ? (nameOf(refs[0].artifact_id) ?? refs[0].artifact_id)
-      : `${refs.length} artifacts`;
-
   const grid = useOptionalCanvasGridSettings();
   const allowCornerResize = grid?.settings.allowWorkflowCornerResize ?? false;
+  const layout = draftLayout ?? data.layout;
   const shell = useCanvasNodeShell({
     id,
     selected,
     dragging,
-    naturalWidth: data.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH,
+    naturalWidth: layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH,
+    minWidth: ARTIFACT_CARD_WIDTH_MIN,
     updateNodeInternals,
   });
-  const layout = draftLayout ?? data.layout;
 
   const commitLayout = (next: WorkflowNodeLayout | null) => {
     setDraftLayout(null);
@@ -412,13 +402,56 @@ export function ArtifactCardBody({
   const firstUrl = first
     ? artifactInlineContentUrl(workspace.id, first.artifact_id)
     : "";
-  const showsImage =
-    first !== null &&
-    refs.length === 1 &&
-    isImageArtifact(first, firstItem?.artifact.content_type) &&
-    !imagesFailed[first.artifact_id];
-  const mediaWidth = layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH;
-  const mediaHeight = layout?.bodyHeight ?? artifactCardMediaHeight(mediaWidth);
+  const firstSummary = feedArtifacts[0] ?? firstItem?.artifact;
+  const imageArtifact =
+    first !== null && isImageArtifact(first, firstSummary?.content_type);
+  const isSequence = shownValue !== null && "item_refs" in shownValue;
+  const imageSize = first ? imageSizes[first.artifact_id] : undefined;
+  const titleLabel = feed
+    ? `${producer?.data.spec.title ?? "Output"} → ${feedPort?.title ?? feedPortName ?? "output"}`
+    : isSequence
+      ? `${refs.length} artifacts`
+      : first
+        ? (nameOf(first.artifact_id) ?? (imageArtifact ? "Image" : "File"))
+        : "Artifact";
+  const byteSize = formatLibraryByteSize(firstSummary?.byte_size);
+  const subtitle = awaitingFeed
+    ? "Output"
+    : isSequence
+      ? `${imageArtifact ? "Image sequence" : "Sequence"} · ${refs.length} items`
+      : [
+          byteSize,
+          imageSize
+            ? `${imageSize.width} × ${imageSize.height}`
+            : imageArtifact
+              ? "Image"
+              : "File",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+  const mediaWidth = shell.paintWidth;
+  const mediaHeight =
+    layout?.bodyHeight ??
+    (imageSize
+      ? Math.min(
+          320,
+          Math.max(
+            100,
+            Math.round((mediaWidth * imageSize.height) / imageSize.width),
+          ),
+        )
+      : artifactCardMediaHeight(mediaWidth));
+  const hasPreview = imageArtifact || isSequence || awaitingFeed;
+  const portColor = first
+    ? artifactTypeColor(first.artifact_type, tokens.colorAccent)
+    : tokens.colorInfo;
+  const outputPortLabel = shownValue
+    ? shownValue.artifact_type
+    : (feedPort?.title ?? feedPortName ?? "Output");
+
+  React.useLayoutEffect(() => {
+    updateNodeInternals(id);
+  }, [id, updateNodeInternals, mediaWidth, reordering]);
 
   return (
     <div data-artifact-card-id={id}>
@@ -426,14 +459,15 @@ export function ArtifactCardBody({
         state={shell}
         selected={selected}
         remoteSelectionColor={data.remoteSelectionColor}
-        variant="bare"
         ariaLabel={`Artifact ${contract}`}
         testId="artifact-card-node"
         resizeHandle={
           allowCornerResize ? (
             <LayoutResizeHandle
               layout={layout}
-              axes={["width", "bodyHeight"]}
+              axes={
+                hasPreview && !isSequence ? ["width", "bodyHeight"] : ["width"]
+              }
               ariaLabel="Resize artifact"
               onDraft={setDraftLayout}
               onCommit={commitLayout}
@@ -441,49 +475,238 @@ export function ArtifactCardBody({
           ) : undefined
         }
       >
-        <span {...stylex.props(s.meta)}>
-          {titleLabel}
-          <span {...stylex.props(s.metaContract)}>{contract}</span>
-        </span>
+        <div {...stylex.props(s.card)}>
+          <div {...stylex.props(s.header)}>
+            <span
+              aria-hidden="true"
+              {...stylex.props(s.fileIcon, imageArtifact ? s.imageIcon : null)}
+            >
+              {isSequence ? (
+                <Layers size={21} />
+              ) : imageArtifact ? (
+                <ImageIcon size={21} />
+              ) : (
+                <FileIcon size={23} />
+              )}
+            </span>
+            <span {...stylex.props(s.fileCopy)}>
+              <span title={titleLabel} {...stylex.props(s.fileName)}>
+                {titleLabel}
+              </span>
+              <span title={contract} {...stylex.props(s.fileMeta)}>
+                {subtitle}
+              </span>
+            </span>
+          </div>
 
-        <div {...stylex.props(s.mediaWrap)}>
-          {/* The container sets the size; the artifact fits inside it. */}
-          <div
-            data-artifact-media="true"
-            {...stylex.props(s.media)}
-            style={{ height: mediaHeight }}
-          >
-            {awaitingFeed ? (
-              <div {...stylex.props(s.awaiting)}>
-                {producer
-                  ? `Waiting for ${feedPort?.title ?? feedPortName ?? "output"}`
-                  : "Waiting for this graph to run"}
-              </div>
-            ) : null}
+          <CanvasPortRail
+            rows={[
+              {
+                input: (
+                  <div
+                    {...stylex.props(
+                      s.portPeek,
+                      feed || selected ? s.portPeekShown : null,
+                    )}
+                  >
+                    <CanvasPortTab
+                      nodeId={id}
+                      label="Artifact"
+                      hint={feed ? undefined : "any"}
+                      direction="input"
+                      handleId={ARTIFACT_VIEWER_INPUT_HANDLE}
+                      color={feed ? tokens.colorSuccess : tokens.colorInfo}
+                      isConnectable={isConnectable}
+                      ariaLabel="Input port Artifact, accepts any artifact"
+                      title="Accepts any artifact or artifact sequence. Drag an output port here so this card follows it."
+                    />
+                  </div>
+                ),
+                output: (
+                  <CanvasPortTab
+                    nodeId={id}
+                    label={outputPortLabel}
+                    hint={isSequence ? "· many" : undefined}
+                    direction="output"
+                    handleId={ARTIFACT_CARD_OUTPUT_HANDLE}
+                    color={portColor}
+                    multiple={isSequence}
+                    inactive={refs.length === 0}
+                    isConnectable={isConnectable && refs.length > 0}
+                    ariaLabel={`Connect ${contract} to a node input`}
+                    title="Connect to a compatible input"
+                  />
+                ),
+              },
+            ]}
+          />
 
-            {showsImage ? (
-              /* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */
-              <img
-                src={firstUrl}
-                alt={nameOf(first.artifact_id) ?? contract}
-                loading="lazy"
-                decoding="async"
-                onError={() =>
-                  setImagesFailed((current) => ({
-                    ...current,
-                    [first.artifact_id]: true,
-                  }))
-                }
-                {...stylex.props(s.image)}
-              />
-            ) : null}
+          {hasPreview || isSequence ? (
+            <div {...stylex.props(s.body)}>
+              {hasPreview && !isSequence ? (
+                <div
+                  data-artifact-media="true"
+                  {...stylex.props(s.media)}
+                  style={{ height: mediaHeight }}
+                >
+                  {awaitingFeed ? (
+                    <div {...stylex.props(s.awaiting)}>
+                      {producer
+                        ? `Waiting for ${feedPort?.title ?? feedPortName ?? "output"}`
+                        : "Waiting for this graph to run"}
+                    </div>
+                  ) : first && !imagesFailed[first.artifact_id] ? (
+                    /* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */
+                    <img
+                      src={firstUrl}
+                      alt={titleLabel}
+                      loading="lazy"
+                      decoding="async"
+                      draggable={false}
+                      onLoad={(event) => {
+                        const { naturalWidth: width, naturalHeight: height } =
+                          event.currentTarget;
+                        if (width > 0 && height > 0) {
+                          setImageSizes((current) => ({
+                            ...current,
+                            [first.artifact_id]: { width, height },
+                          }));
+                        }
+                      }}
+                      onError={() =>
+                        setImagesFailed((current) => ({
+                          ...current,
+                          [first.artifact_id]: true,
+                        }))
+                      }
+                      {...stylex.props(s.image)}
+                    />
+                  ) : (
+                    <div {...stylex.props(s.imageUnavailable)}>
+                      <ImageOff size={18} />
+                      Preview unavailable
+                    </div>
+                  )}
+                </div>
+              ) : null}
 
-            {refs.length > 1 ? (
-              <div {...stylex.props(s.stack)}>
-                {refs.slice(0, 3).map((ref, index) => (
+              {isSequence ? (
+                <div
+                  aria-label={`${refs.length} items in sequence`}
+                  {...stylex.props(s.stack)}
+                >
+                  {refs.slice(0, 4).map((ref, index) => {
+                    const position = {
+                      left: 6 + index * 12,
+                      top: index * 6,
+                      zIndex: index + 1,
+                    };
+                    return isImageArtifact(
+                      ref,
+                      itemsById.get(ref.artifact_id)?.artifact.content_type,
+                    ) && !imagesFailed[ref.artifact_id] ? (
+                      /* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */
+                      <img
+                        key={ref.artifact_id}
+                        src={artifactInlineContentUrl(
+                          workspace.id,
+                          ref.artifact_id,
+                        )}
+                        alt={nameOf(ref.artifact_id) ?? `Item ${index + 1}`}
+                        loading="lazy"
+                        decoding="async"
+                        draggable={false}
+                        onError={() =>
+                          setImagesFailed((current) => ({
+                            ...current,
+                            [ref.artifact_id]: true,
+                          }))
+                        }
+                        {...stylex.props(s.stackThumb)}
+                        style={position}
+                      />
+                    ) : (
+                      <span
+                        key={ref.artifact_id}
+                        {...stylex.props(s.stackThumb)}
+                        style={position}
+                      >
+                        <FileIcon size={28} />
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {selected ? (
+            <Menu.Root>
+              <Menu.Trigger
+                className="nodrag"
+                aria-label={`Actions for ${contract}`}
+                {...stylex.props(s.menu)}
+              >
+                <MoreVertical size={16} />
+              </Menu.Trigger>
+              <Menu.Portal>
+                <Menu.Positioner side="bottom" align="end" sideOffset={4}>
+                  <Menu.Popup {...stylex.props(s.menuPopup)}>
+                    {!feed && refs.length > 1 ? (
+                      <Menu.Item
+                        onClick={() => setReordering((open) => !open)}
+                        {...stylex.props(s.menuItem)}
+                      >
+                        <GripVertical size={13} />
+                        Reorder items
+                      </Menu.Item>
+                    ) : null}
+                    <Menu.Item
+                      disabled={!first}
+                      onClick={() =>
+                        window.open(firstUrl, "_blank", "noopener,noreferrer")
+                      }
+                      {...stylex.props(s.menuItem)}
+                    >
+                      <Download size={13} />
+                      Open original
+                    </Menu.Item>
+                    <Menu.Item
+                      onClick={() => data.onRemoveNode?.(id)}
+                      {...stylex.props(s.menuItem)}
+                    >
+                      <Trash2 size={13} />
+                      Remove from canvas
+                    </Menu.Item>
+                  </Menu.Popup>
+                </Menu.Positioner>
+              </Menu.Portal>
+            </Menu.Root>
+          ) : null}
+        </div>
+
+        {reordering && !feed && refs.length > 1 ? (
+          <div className="nodrag" {...stylex.props(s.reorder)}>
+            <span {...stylex.props(s.reorderHead)}>
+              <span>{refs.length} items · use arrows to reorder</span>
+              <button
+                type="button"
+                aria-label="Close sequence order"
+                onClick={() => setReordering(false)}
+                {...stylex.props(s.step)}
+              >
+                <X size={12} />
+              </button>
+            </span>
+            {refs.map((ref, index) => (
+              <div key={ref.artifact_id} {...stylex.props(s.reorderRow)}>
+                <span {...stylex.props(s.reorderIndex)}>{index + 1}</span>
+                {isImageArtifact(
+                  ref,
+                  itemsById.get(ref.artifact_id)?.artifact.content_type,
+                ) && !imagesFailed[ref.artifact_id] ? (
                   /* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */
                   <img
-                    key={ref.artifact_id}
                     src={artifactInlineContentUrl(
                       workspace.id,
                       ref.artifact_id,
@@ -491,122 +714,20 @@ export function ArtifactCardBody({
                     alt=""
                     loading="lazy"
                     decoding="async"
-                    {...stylex.props(s.stackThumb)}
-                    style={{
-                      left: `${8 + index * 16}%`,
-                      top: `${index * 9}px`,
-                      transform: `rotate(${index === 0 ? 0 : index % 2 ? -2 : 2}deg)`,
-                      zIndex: refs.length - index,
-                    }}
-                  />
-                ))}
-                <span {...stylex.props(s.stackCount)}>
-                  {refs.length} items · drag to pass
-                </span>
-              </div>
-            ) : null}
-
-            {refs.length === 1 && !showsImage ? (
-              <div {...stylex.props(s.fileTile)}>
-                {isImageArtifact(first, firstItem?.artifact.content_type) ? (
-                  <ImageOff size={20} {...stylex.props(s.fileIcon)} />
-                ) : (
-                  <FileIcon size={20} {...stylex.props(s.fileIcon)} />
-                )}
-                <span {...stylex.props(s.fileCopy)}>
-                  <span {...stylex.props(s.fileName)}>
-                    {nameOf(first.artifact_id) ?? `${contract} artifact`}
-                  </span>
-                  <span {...stylex.props(s.fileMeta)}>
-                    {firstItem
-                      ? libraryFileSubtitle(firstItem)
-                      : "not in this library"}
-                  </span>
-                </span>
-              </div>
-            ) : null}
-          </div>
-
-          <Handle
-            id={ARTIFACT_VIEWER_INPUT_HANDLE}
-            type="target"
-            position={Position.Left}
-            isConnectable
-            aria-label="Artifact input port, accepts any artifact"
-            title="Drag an output port here so this card follows it"
-            style={handleStyle("50%", tokens.colorAccent)}
-          />
-
-          <button
-            type="button"
-            className="nodrag"
-            draggable={shownValue !== null}
-            title="Drag onto a node input to pass these artifacts"
-            aria-label={`Pass ${contract} to a node input`}
-            onDragStart={(event) => {
-              if (shownValue) writeArtifactDrop(event.dataTransfer, shownValue);
-            }}
-            {...stylex.props(s.ball)}
-          />
-
-          <Menu.Root>
-            <Menu.Trigger
-              className="nodrag"
-              aria-label={`Actions for ${contract}`}
-              {...stylex.props(s.menu)}
-            >
-              <MoreHorizontal size={13} />
-            </Menu.Trigger>
-            <Menu.Portal>
-              <Menu.Positioner side="bottom" align="end" sideOffset={4}>
-                <Menu.Popup {...stylex.props(s.menuPopup)}>
-                  {!feed && refs.length > 1 ? (
-                    <Menu.Item
-                      onClick={() => setReordering((open) => !open)}
-                      {...stylex.props(s.menuItem)}
-                    >
-                      <GripVertical size={13} />
-                      Reorder items
-                    </Menu.Item>
-                  ) : null}
-                  <Menu.Item
-                    onClick={() =>
-                      window.open(firstUrl, "_blank", "noopener,noreferrer")
+                    draggable={false}
+                    onError={() =>
+                      setImagesFailed((current) => ({
+                        ...current,
+                        [ref.artifact_id]: true,
+                      }))
                     }
-                    {...stylex.props(s.menuItem)}
-                  >
-                    <Download size={13} />
-                    Open original
-                  </Menu.Item>
-                  <Menu.Item
-                    onClick={() => data.onRemoveNode?.(id)}
-                    {...stylex.props(s.menuItem)}
-                  >
-                    <Trash2 size={13} />
-                    Remove from canvas
-                  </Menu.Item>
-                </Menu.Popup>
-              </Menu.Positioner>
-            </Menu.Portal>
-          </Menu.Root>
-        </div>
-
-        {reordering && !feed && refs.length > 1 ? (
-          <div className="nodrag" {...stylex.props(s.reorder)}>
-            <span {...stylex.props(s.reorderHead)}>
-              Passed in this order · drag a row&rsquo;s arrows to change it
-            </span>
-            {refs.map((ref, index) => (
-              <div key={ref.artifact_id} {...stylex.props(s.reorderRow)}>
-                <span {...stylex.props(s.reorderIndex)}>{index + 1}</span>
-                {/* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */}
-                <img
-                  src={artifactInlineContentUrl(workspace.id, ref.artifact_id)}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                  {...stylex.props(s.reorderThumb)}
-                />
+                    {...stylex.props(s.reorderThumb)}
+                  />
+                ) : (
+                  <span {...stylex.props(s.reorderThumb)}>
+                    <FileIcon size={16} />
+                  </span>
+                )}
                 <span {...stylex.props(s.reorderName)}>
                   {nameOf(ref.artifact_id) ?? ref.artifact_id}
                 </span>

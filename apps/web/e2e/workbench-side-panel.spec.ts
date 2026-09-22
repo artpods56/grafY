@@ -108,7 +108,9 @@ async function dragToRoot(page: Page, source: ReturnType<Page["locator"]>) {
 }
 
 function folderRow(page: Page, name: string) {
-  return panel(page).locator(`[data-tree-key^="folder:"][data-tree-label="${name}"]`);
+  return panel(page).locator(
+    `[data-tree-key^="folder:"][data-tree-label="${name}"]`,
+  );
 }
 
 function folderActions(page: Page, name: string) {
@@ -190,7 +192,10 @@ test("a folder is made from the toolbar and sits at the root", async ({
   await openPanel(page);
 
   await makeFolder(page, "Kestrel tray");
-  await expect(folderRow(page, "Kestrel tray")).toHaveAttribute("aria-level", "1");
+  await expect(folderRow(page, "Kestrel tray")).toHaveAttribute(
+    "aria-level",
+    "1",
+  );
   await expect(panel(page)).toContainText(/\d+ folders?/);
 });
 
@@ -293,7 +298,9 @@ test("the Templates tab lists graph templates", async ({ page }) => {
       .filter({ hasText: "Photo review starter" }),
   ).toContainText("4 nodes");
   await expect(
-    panel(page).getByRole("button", { name: "New graph from Photo review starter" }),
+    panel(page).getByRole("button", {
+      name: "New graph from Photo review starter",
+    }),
   ).toBeVisible();
 });
 
@@ -383,10 +390,29 @@ test("an artifact dragged out of the Library onto empty canvas lands on it", asy
   const card = page.locator("[data-artifact-card-id]");
   await expect(card).toBeVisible();
   await expect(card).toContainText("measurements.csv");
-  await expect(card).toContainText("file.csv@1");
+  await expect(card.locator('[title="file.csv@1"]')).toBeVisible();
+  await expect(card.locator("[data-artifact-media]")).toHaveCount(0);
   await expect(
-    card.getByRole("button", { name: "Pass file.csv@1 to a node input" }),
+    card.locator('[aria-label="Connect file.csv@1 to a node input"]'),
   ).toBeVisible();
+
+  // A snapshot card has no upstream, so its input port waits for a hover or a
+  // selection, and its actions menu waits for the selection.
+  const inputPeek = card
+    .locator('[aria-label="Input port Artifact, accepts any artifact"]')
+    .locator("xpath=../..");
+  const actions = card.getByRole("button", { name: "Actions for file.csv@1" });
+  const flow = await page.locator(".react-flow").boundingBox();
+  if (!flow) throw new Error("No canvas box");
+  await page.mouse.click(flow.x + flow.width - 40, flow.y + flow.height - 40);
+
+  await expect(inputPeek).toHaveCSS("opacity", "0");
+  await expect(actions).toHaveCount(0);
+
+  await inputPeek.hover();
+  await expect(inputPeek).toHaveCSS("opacity", "1");
+  await card.click();
+  await expect(actions).toBeVisible();
 });
 
 test("a narrow canvas keeps the panel closed until it is asked for", async ({

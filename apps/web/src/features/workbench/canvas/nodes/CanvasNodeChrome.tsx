@@ -167,6 +167,7 @@ export const nodeChrome = stylex.create({
     visibility: "hidden",
     pointerEvents: "none",
   },
+  tabInactive: { opacity: 0.55 },
 });
 
 export function canvasNodeInteractionProps(
@@ -224,7 +225,9 @@ export function CanvasNodeHeader({
               type="button"
               aria-label={aboutLabel}
               title={aboutLabel}
-              {...canvasNodeInteractionProps(stylex.props(nodeChrome.headerButton))}
+              {...canvasNodeInteractionProps(
+                stylex.props(nodeChrome.headerButton),
+              )}
             >
               <CircleHelp size={13} />
             </Popover.Trigger>
@@ -235,7 +238,9 @@ export function CanvasNodeHeader({
                     stylex.props(overlay.popup, nodeChrome.helpPopup),
                   )}
                 >
-                  <span {...stylex.props(nodeChrome.helpTitle)}>{aboutTitle}</span>
+                  <span {...stylex.props(nodeChrome.helpTitle)}>
+                    {aboutTitle}
+                  </span>
                   <span {...stylex.props(nodeChrome.helpDescription)}>
                     {aboutDescription}
                   </span>
@@ -332,7 +337,12 @@ export function CanvasPortRail({
           {...stylex.props(nodeChrome.portRailRow)}
         >
           <div {...stylex.props(nodeChrome.portRailSlot)}>{row.input}</div>
-          <div {...stylex.props(nodeChrome.portRailSlot, nodeChrome.portRailSlotOut)}>
+          <div
+            {...stylex.props(
+              nodeChrome.portRailSlot,
+              nodeChrome.portRailSlotOut,
+            )}
+          >
             {row.output}
           </div>
         </div>
@@ -351,6 +361,8 @@ export function CanvasPortTab({
   isConnectable,
   ariaLabel,
   title,
+  multiple = false,
+  inactive = false,
 }: {
   nodeId: string;
   label: string;
@@ -361,6 +373,10 @@ export function CanvasPortTab({
   isConnectable?: boolean;
   ariaLabel: string;
   title?: string;
+  /** Sequence (or plug collection) shape: the mark draws a second ring. */
+  multiple?: boolean;
+  /** Nothing to pass yet: the pill and mark read as inert. */
+  inactive?: boolean;
 }) {
   const input = direction === "input";
   const docked = useHandleIsDocked(nodeId, handleId);
@@ -374,6 +390,7 @@ export function CanvasPortTab({
           nodeChrome.tab,
           input ? nodeChrome.tabIn : nodeChrome.tabOut,
           docked ? nodeChrome.tabDocked : null,
+          inactive ? nodeChrome.tabInactive : null,
         )}
         title={title}
       >
@@ -387,11 +404,17 @@ export function CanvasPortTab({
         type={input ? "target" : "source"}
         position={input ? Position.Left : Position.Right}
         isConnectable={isConnectable}
+        aria-disabled={isConnectable === false || inactive}
         aria-hidden={docked}
         aria-label={ariaLabel}
         title={title}
         style={
-          docked ? dockedHandleStyle("50%") : handleStyle("50%", color)
+          docked
+            ? dockedHandleStyle("50%")
+            : {
+                ...handleStyle("50%", color, multiple),
+                ...(inactive ? { opacity: 0.3 } : null),
+              }
         }
       />
     </div>

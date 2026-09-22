@@ -11,6 +11,13 @@ export type ArtifactCardValue = SavedGraphOrigin["value"];
 /** Card width when placed: five lattice cells at the default cell size. */
 export const DEFAULT_ARTIFACT_CARD_WIDTH = 250;
 
+/**
+ * Narrowest a card may be snapped. Workflow nodes floor at `NODE_WIDTH_MIN`,
+ * which would bump the five-cell card default up to six, so a card declares
+ * its own narrower lattice floor.
+ */
+export const ARTIFACT_CARD_WIDTH_MIN = 150;
+
 /** A card's media box is 4:3 until the operator shapes it. */
 export const ARTIFACT_CARD_MEDIA_ASPECT = 3 / 4;
 

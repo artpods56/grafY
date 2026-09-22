@@ -260,6 +260,7 @@ export default function ArtifactViewerNodeCard({
   if (presentsArtifacts(data.artifactRef)) {
     return (
       <ArtifactCardBody
+        isConnectable={isConnectable}
         id={id}
         data={data}
         value={data.artifactRef}

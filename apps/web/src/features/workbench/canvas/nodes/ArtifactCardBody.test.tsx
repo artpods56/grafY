@@ -31,10 +31,21 @@ vi.mock("@xyflow/react", () => ({
   useViewport: () => ({ zoom: 1 }),
   useEdges: () => flowMocks.edges,
   useNodesData: (nodeId: string) => flowMocks.nodes.get(nodeId) ?? null,
-  Handle: (props: { id?: string; "aria-label"?: string }) => (
+  useStore: (selector: (state: unknown) => unknown) =>
+    selector({ edges: [], nodeLookup: new Map() }),
+  Handle: (props: {
+    id?: string;
+    "aria-label"?: string;
+    "aria-disabled"?: boolean;
+    type: string;
+    style?: React.CSSProperties;
+  }) => (
     <span
       data-testid="card-port"
       data-handle-id={props.id}
+      data-handle-type={props.type}
+      aria-disabled={props["aria-disabled"]}
+      style={props.style}
       aria-label={props["aria-label"]}
     />
   ),
@@ -132,6 +143,7 @@ function sequence(artifactIds: readonly string[]): ArtifactCardValue {
 function mount(
   value: ArtifactCardValue,
   data: Partial<ArtifactViewerNodeData> = {},
+  selected = false,
 ) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -143,7 +155,12 @@ function mount(
   };
   React.act(() => {
     root.render(
-      <ArtifactCardBody id="artifact-viewer-1" data={nodeData} value={value} />,
+      <ArtifactCardBody
+        id="artifact-viewer-1"
+        data={nodeData}
+        value={value}
+        selected={selected}
+      />,
     );
   });
   return { container, root };
@@ -167,13 +184,13 @@ describe("artifact on the canvas", () => {
 
     expect(image?.getAttribute("src")).toContain("/artifacts/a1/content");
     expect(container.textContent).toContain("boat.jpg");
-    expect(container.textContent).toContain("file.jpeg@1");
+    expect(container.querySelector('[title="file.jpeg@1"]')).not.toBeNull();
     expect(container.querySelector("ol")).toBeNull();
     expect(
       container.querySelector('[data-node-pickup-shadow="true"]'),
     ).not.toBeNull();
-    // The container sets the size and the artifact fits inside it, so a portrait
-    // photo takes the same room on the canvas as a wide map.
+    expect(container.textContent).toContain("2.4 MB · Image");
+    // Use a stable placeholder size until the image dimensions are known.
     const media = container.querySelector<HTMLElement>("[data-artifact-media]");
     expect(media?.style.height).toBe("198px");
   });
@@ -200,7 +217,7 @@ describe("artifact on the canvas", () => {
                     {
                       artifact_id: "produced-9",
                       artifact_type: "file.png",
-                      schema_version: "1.0.0",
+                      schema_version: 1,
                     },
                   ],
                 },
@@ -262,35 +279,30 @@ describe("artifact on the canvas", () => {
       },
     ];
 
-    const { container } = mount(single("library-1"));
+    const { container } = mount(single("library-1"), {}, true);
 
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain("Waiting for Resized");
+    expect(
+      [...container.querySelectorAll("button")].find(
+        (button) => button.textContent === "Open original",
+      )?.disabled,
+    ).toBe(true);
+    expect(
+      container
+        .querySelector('[aria-label^="Connect "]')
+        ?.getAttribute("aria-disabled"),
+    ).toBe("true");
   });
 
-  it("passes its artifact out when the ball is dragged", () => {
+  it("exposes a graph output handle for the artifact", () => {
     const { container } = mount(single("a1"));
-    const ball = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Pass file.jpeg@1 to a node input"]',
+    const port = container.querySelector(
+      '[aria-label="Connect file.jpeg@1 to a node input"]',
     );
-    const stored = new Map<string, string>();
-    const dataTransfer = {
-      effectAllowed: "",
-      setData: (mime: string, value: string) => stored.set(mime, value),
-    };
-    const event = new Event("dragstart", { bubbles: true, cancelable: true });
-    Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
-
-    React.act(() => {
-      ball?.dispatchEvent(event);
-    });
-
-    expect(
-      JSON.parse(stored.get("application/x-grafy-artifact") ?? "{}"),
-    ).toEqual({
-      value: single("a1"),
-      shape: "one",
-    });
+    expect(port?.getAttribute("data-handle-id")).toBe("artifact-card-output");
+    expect(port?.getAttribute("data-handle-type")).toBe("source");
+    expect(port?.getAttribute("aria-disabled")).toBe("false");
   });
 
   it("shows a run of artifacts as a stack counted by item", () => {
@@ -298,7 +310,18 @@ describe("artifact on the canvas", () => {
 
     expect(container.textContent).toContain("3 artifacts");
     expect(container.textContent).toContain("3 items");
-    expect(container.textContent).toContain("file.jpeg@1 · 3 items");
+    expect(container.textContent).toContain("Image sequence · 3 items");
+  });
+
+  it("hides its actions menu until the card is selected", () => {
+    const actions = (container: HTMLElement) =>
+      container.querySelector('[aria-label="Actions for file.jpeg@1"]');
+
+    const quiet = mount(single("a1"));
+    expect(actions(quiet.container)).toBeNull();
+
+    const picked = mount(single("a1"), {}, true);
+    expect(actions(picked.container)).not.toBeNull();
   });
 
   it("reorders the run it passes on", () => {
@@ -307,7 +330,7 @@ describe("artifact on the canvas", () => {
       libraryItem("a2", "coast.jpg"),
     ];
     const onRefsChange = vi.fn();
-    const { container } = mount(sequence(["a1", "a2"]), { onRefsChange });
+    const { container } = mount(sequence(["a1", "a2"]), { onRefsChange }, true);
     const reorder = [...container.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Reorder items"),
     );
@@ -343,10 +366,10 @@ describe("artifact on the canvas", () => {
     expect(container.querySelector("img")?.getAttribute("src")).toContain(
       "/artifacts/zz/content",
     );
-    expect(container.textContent).toContain("file.jpeg@1");
+    expect(container.querySelector('[title="file.jpeg@1"]')).not.toBeNull();
   });
 
-  it("shows a file tile for a type it cannot paint", () => {
+  it("shows a compact file row for a type it cannot preview", () => {
     const { container } = mount({
       artifact_id: "csv1",
       artifact_type: "file.csv",
@@ -354,7 +377,94 @@ describe("artifact on the canvas", () => {
     });
 
     expect(container.querySelector("img")).toBeNull();
-    expect(container.textContent).toContain("not in this library");
-    expect(container.textContent).toContain("file.csv@1");
+    expect(container.querySelector("[data-artifact-media]")).toBeNull();
+    expect(container.querySelector('[title="file.csv@1"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("not in this library");
+  });
+
+  it("shows image dimensions and fits the preview to its aspect ratio", () => {
+    const { container } = mount(single("a1"));
+    const image = container.querySelector("img");
+    if (!image) throw new Error("Image preview missing");
+    Object.defineProperties(image, {
+      naturalWidth: { value: 1920 },
+      naturalHeight: { value: 1080 },
+    });
+    React.act(() => image.dispatchEvent(new Event("load")));
+
+    expect(container.textContent).toContain("2.4 MB · 1920 × 1080");
+    expect(
+      container.querySelector<HTMLElement>("[data-artifact-media]")?.style
+        .height,
+    ).toBe("149px");
+    expect(image.draggable).toBe(false);
+  });
+
+  it("keeps an explicitly resized preview height when the image loads", () => {
+    const { container } = mount(single("a1"), {
+      layout: { width: 264, bodyHeight: 220 },
+    });
+    const image = container.querySelector("img");
+    if (!image) throw new Error("Image preview missing");
+    Object.defineProperties(image, {
+      naturalWidth: { value: 1920 },
+      naturalHeight: { value: 1080 },
+    });
+    React.act(() => image.dispatchEvent(new Event("load")));
+    expect(
+      container.querySelector<HTMLElement>("[data-artifact-media]")?.style
+        .height,
+    ).toBe("220px");
+  });
+
+  it("preserves the filename and drag action when an image fails to load", () => {
+    const { container } = mount(single("a1"));
+    const image = container.querySelector("img");
+    if (!image) throw new Error("Image preview missing");
+    React.act(() => image.dispatchEvent(new Event("error")));
+
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("boat.jpg");
+    expect(container.textContent).toContain("Preview unavailable");
+    expect(
+      container
+        .querySelector('[aria-label="Connect file.jpeg@1 to a node input"]')
+        ?.getAttribute("aria-disabled"),
+    ).toBe("false");
+  });
+
+  it("uses file thumbnails for a non-image sequence", () => {
+    const { container } = mount(
+      {
+        artifact_type: "file.csv",
+        schema_version: 1,
+        item_refs: ["csv1", "csv2"].map((artifact_id) => ({
+          artifact_id,
+          artifact_type: "file.csv",
+          schema_version: 1,
+        })),
+        ordered: true,
+        index_key: "order_index",
+        sequence_id: "csv-sequence",
+      },
+      {},
+      true,
+    );
+    expect(container.querySelectorAll("img")).toHaveLength(0);
+    expect(container.textContent).toContain("Sequence · 2 items");
+    const reorder = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Reorder items"),
+    );
+    React.act(() => reorder?.click());
+    expect(container.querySelectorAll("img")).toHaveLength(0);
+    expect(container.textContent).toContain("2 items · use arrows to reorder");
+    React.act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Close sequence order"]')
+        ?.click(),
+    );
+    expect(
+      container.querySelector('[aria-label="Move earlier in the order"]'),
+    ).toBeNull();
   });
 });

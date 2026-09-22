@@ -130,6 +130,8 @@ interface UseCanvasNodeShellOptions {
   selected: boolean | undefined;
   dragging: boolean | undefined;
   naturalWidth: number;
+  /** Lattice floor for the shell width; artifact cards are narrower than nodes. */
+  minWidth?: number;
   updateNodeInternals: (id: string) => void;
 }
 
@@ -138,6 +140,7 @@ export function useCanvasNodeShell({
   selected,
   dragging,
   naturalWidth,
+  minWidth,
   updateNodeInternals,
 }: UseCanvasNodeShellOptions) {
   const lift = usePickupLift({
@@ -146,7 +149,7 @@ export function useCanvasNodeShell({
     dragging,
     updateNodeInternals,
   });
-  const grid = useShellGridFill(naturalWidth);
+  const grid = useShellGridFill(naturalWidth, minWidth);
   return { ...lift, ...grid };
 }
 

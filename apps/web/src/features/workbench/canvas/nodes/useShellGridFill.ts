@@ -19,7 +19,10 @@ import {
  * card (`shellStyle`) sits inset by {@link GRID_SHELL_GUTTER} so lattice lines
  * remain visible around neighboring nodes.
  */
-export function useShellGridFill(naturalWidth: number): {
+export function useShellGridFill(
+  naturalWidth: number,
+  minWidth?: number,
+): {
   contentRef: React.RefObject<HTMLDivElement | null>;
   frameStyle: React.CSSProperties;
   shellStyle: React.CSSProperties;
@@ -33,7 +36,7 @@ export function useShellGridFill(naturalWidth: number): {
   const bypass = grid?.bypassSnap ?? false;
   const fill = shouldFillShellToGrid(settings, bypass);
   const cellSize = settings?.cellSize ?? 50;
-  const gridWidth = gridAlignedWidth(naturalWidth, settings, bypass);
+  const gridWidth = gridAlignedWidth(naturalWidth, settings, bypass, minWidth);
   const gutter = fill ? GRID_SHELL_GUTTER : 0;
   const paintWidth = Math.max(1, gridWidth - gutter * 2);
 
