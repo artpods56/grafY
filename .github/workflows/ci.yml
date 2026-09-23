@@ -120,6 +120,9 @@ jobs:
       - name: Web lint
         if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
         run: npm --prefix apps/web run lint
+      - name: Web format
+        if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
+        run: npm --prefix apps/web exec prettier -- --check "src/**/*.{ts,tsx,css,md,json}" "e2e/**/*.{ts,tsx}"
       - name: Web typecheck
         if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
         run: npm --prefix apps/web run typecheck
