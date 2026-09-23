@@ -89,21 +89,18 @@ const s = stylex.create({
   },
   // The plate a file artifact shows instead of its pixels. It lifts on the same
   // tier ladder as an image's media box.
-  // A tile for bytes that cannot be painted: mark, format, and size, centred so
-  // the plate reads as the artifact instead of a labelled field.
+  // A tile for bytes that cannot be painted: mark, then format and size.
   fileBody: {
     position: "relative",
     display: "flex",
-    flexDirection: "column",
     alignItems: "center",
-    justifyContent: "center",
-    gap: "6px",
+    gap: "10px",
     width: "100%",
     // The rails, not the content, set this floor: the stacked actions take the
     // rail's top 50px (4 + 22 + 2 + 22) and the output ball its bottom 30px.
     minHeight: "80px",
     boxSizing: "border-box",
-    padding: "12px 10px",
+    padding: "8px 10px",
     border: `1px solid ${tokens.colorBorder}`,
     borderRadius: tokens.radiusSm,
     backgroundColor: tokens.colorSurface,
@@ -119,16 +116,8 @@ const s = stylex.create({
   },
   pdfIcon: { color: tokens.colorDanger },
   tableIcon: { color: tokens.colorSuccess },
-  fileKind: {
-    maxWidth: "100%",
-    fontSize: tokens.fontSizeXs,
-    color: tokens.colorText,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  fileMeta: {
-    maxWidth: "100%",
+  fileText: {
+    minWidth: 0,
     fontSize: tokens.fontSizeXs,
     color: tokens.colorMuted,
     overflow: "hidden",
@@ -392,6 +381,7 @@ export function ArtifactCardBody({
       : "Artifact";
   const byteSize = formatLibraryByteSize(firstSummary?.byte_size);
   const fileKind = isPdf ? "PDF" : isTableFile ? "Table" : "File";
+  const fileLabel = byteSize ? `${fileKind} · ${byteSize}` : fileKind;
   // A file card has no pixels to size itself from, so it opens narrow; an image
   // card opens wide enough to read the picture.
   const requestedWidth = gridAlignedWidth(
@@ -552,9 +542,7 @@ export function ArtifactCardBody({
         <div data-artifact-head="true" {...stylex.props(s.head)}>
           <ArtifactLabel
             title={titleLabel}
-            // A file's plate already says PDF or Table, so the head keeps the
-            // whole width for the filename.
-            contract={imageArtifact || isSequence ? contract : undefined}
+            contract={contract}
             selected={selected ?? false}
             image={imageArtifact}
           />
@@ -633,10 +621,7 @@ export function ArtifactCardBody({
                   >
                     {fileGlyph}
                   </span>
-                  <span {...stylex.props(s.fileKind)}>{fileKind}</span>
-                  {byteSize ? (
-                    <span {...stylex.props(s.fileMeta)}>{byteSize}</span>
-                  ) : null}
+                  <span {...stylex.props(s.fileText)}>{fileLabel}</span>
                 </div>
               ) : null}
             </>

@@ -195,9 +195,13 @@ describe("artifact on the canvas", () => {
 
     expect(image?.getAttribute("src")).toContain("/artifacts/a1/content");
     expect(content?.querySelector("[data-artifact-media] img")).toBe(image);
-    expect(content?.querySelectorAll("[data-artifact-port-side]")).toHaveLength(2);
+    expect(content?.querySelectorAll("[data-artifact-port-side]")).toHaveLength(
+      2,
+    );
     expect(content?.querySelector("[data-testid='port-rail']")).toBeNull();
-    expect(container.querySelector("[data-artifact-image-header]")).not.toBeNull();
+    expect(
+      container.querySelector("[data-artifact-image-header]"),
+    ).not.toBeNull();
     expect(media?.querySelector("[data-artifact-image-header]")).toBeNull();
     expect(container.textContent).toContain("boat.jpg");
     expect(container.querySelector("ol")).toBeNull();
@@ -210,7 +214,9 @@ describe("artifact on the canvas", () => {
     const picked = mount(single("a1"), {}, true);
     expect(picked.container.textContent).toContain("boat.jpg");
     expect(picked.container.textContent).toContain("file.jpeg@1");
-    expect(picked.container.querySelector("[data-artifact-image-header]")).not.toBeNull();
+    expect(
+      picked.container.querySelector("[data-artifact-image-header]"),
+    ).not.toBeNull();
     // Use a stable placeholder size until the image dimensions are known.
     expect(media?.style.height).toBe("198px");
   });
@@ -233,7 +239,11 @@ describe("artifact on the canvas", () => {
                 {
                   port: "image",
                   kind: "single",
-                  value: { artifact_id: "produced-9", artifact_type: "file.png", schema_version: 1 },
+                  value: {
+                    artifact_id: "produced-9",
+                    artifact_type: "file.png",
+                    schema_version: 1,
+                  },
                   artifacts: [
                     {
                       artifact_id: "produced-9",
@@ -341,20 +351,32 @@ describe("artifact on the canvas", () => {
 
   it("hides ports and actions until the card is picked up", () => {
     const quiet = mount(single("a1"));
-    expect(quiet.container.querySelector('[data-artifact-chrome="off"]')).not.toBeNull();
-    expect(quiet.container.querySelectorAll('[data-artifact-ports="off"]')).toHaveLength(2);
+    expect(
+      quiet.container.querySelector('[data-artifact-chrome="off"]'),
+    ).not.toBeNull();
+    expect(
+      quiet.container.querySelectorAll('[data-artifact-ports="off"]'),
+    ).toHaveLength(2);
 
     React.act(() => {
       quiet.container
         .querySelector("[data-artifact-card-id]")
         ?.dispatchEvent(new Event("pointerover", { bubbles: true }));
     });
-    expect(quiet.container.querySelector('[data-artifact-chrome="off"]')).not.toBeNull();
-    expect(quiet.container.querySelectorAll('[data-artifact-ports="off"]')).toHaveLength(2);
+    expect(
+      quiet.container.querySelector('[data-artifact-chrome="off"]'),
+    ).not.toBeNull();
+    expect(
+      quiet.container.querySelectorAll('[data-artifact-ports="off"]'),
+    ).toHaveLength(2);
 
     const picked = mount(single("a1"), {}, true);
-    expect(picked.container.querySelector('[data-artifact-chrome="on"]')).not.toBeNull();
-    expect(picked.container.querySelectorAll('[data-artifact-ports="on"]')).toHaveLength(2);
+    expect(
+      picked.container.querySelector('[data-artifact-chrome="on"]'),
+    ).not.toBeNull();
+    expect(
+      picked.container.querySelectorAll('[data-artifact-ports="on"]'),
+    ).toHaveLength(2);
   });
 
   it("reorders the run it passes on", () => {
@@ -412,16 +434,18 @@ describe("artifact on the canvas", () => {
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector("[data-artifact-media]")).toBeNull();
     expect(
-      container.querySelector("[data-artifact-content] [data-artifact-port-side='output']"),
+      container.querySelector(
+        "[data-artifact-content] [data-artifact-port-side='output']",
+      ),
     ).not.toBeNull();
     const label = container.querySelector("[data-artifact-label]");
     const body = container.querySelector("[data-artifact-file-body]");
-    // The plate names the format, so the head spends its width on the filename
-    // and the contract moves to the info popover.
     expect(label?.textContent).toContain("File");
-    expect(label?.textContent).not.toContain("file.csv@1");
-    expect(body?.textContent).toContain("Table");
+    expect(label?.textContent).toContain("file.csv@1");
+    // The plate states the format, never the contract.
+    expect(body?.textContent).toBe("Table");
     expect(body?.textContent).not.toContain("file.csv@1");
+    expect(container.querySelector('[title="file.csv@1"]')).not.toBeNull();
     expect(container.textContent).not.toContain("not in this library");
   });
 
@@ -447,7 +471,10 @@ describe("artifact on the canvas", () => {
     expect(container.querySelector(".lucide-file-text")).not.toBeNull();
     expect(container.querySelector("[data-artifact-media]")).toBeNull();
     expect(container.textContent).toContain("report.pdf");
-    expect(container.textContent).toContain("PDF");
+    // One line beside the mark: format first, then size.
+    expect(
+      container.querySelector("[data-artifact-file-body]")?.textContent,
+    ).toMatch(/^PDF · \d+(\.\d)? [KM]B$/);
   });
 
   it("shows image dimensions in info and fits the preview to its aspect ratio", async () => {
@@ -461,7 +488,11 @@ describe("artifact on the canvas", () => {
     React.act(() => image.dispatchEvent(new Event("load")));
 
     await React.act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="Inspect file.jpeg@1 artifact"]')?.click();
+      container
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="Inspect file.jpeg@1 artifact"]',
+        )
+        ?.click();
     });
     expect(document.body.textContent).toContain("2.4 MB · 1920 × 1080");
     expect(

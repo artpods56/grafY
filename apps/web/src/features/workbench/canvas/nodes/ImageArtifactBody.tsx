@@ -66,8 +66,7 @@ export function ArtifactLabel({
   image = false,
 }: {
   title: string;
-  /** Omitted when the body already states what the artifact is. */
-  contract?: string;
+  contract: string;
   selected: boolean;
   image?: boolean;
 }) {
@@ -80,11 +79,9 @@ export function ArtifactLabel({
       <span title={title} {...stylex.props(s.name)}>
         {title}
       </span>
-      {contract ? (
-        <span title={contract} {...stylex.props(s.contract)}>
-          {contract}
-        </span>
-      ) : null}
+      <span title={contract} {...stylex.props(s.contract)}>
+        {contract}
+      </span>
     </div>
   );
 }

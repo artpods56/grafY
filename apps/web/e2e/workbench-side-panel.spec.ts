@@ -445,8 +445,9 @@ test("an artifact dragged out of the Library onto empty canvas lands on it", asy
     return el.getBoundingClientRect().width / scale;
   });
   expect(placedWidth).toBeCloseTo(FILE_CARD_PLACED_WIDTH, 0);
-  // The plate names the format; the contract stays off the face and is carried
-  // by the port and the info popover.
+  // The head carries the filename and the contract; the plate states the
+  // format and size on its own, without repeating either.
+  await expect(card.locator('[title="file.csv@1"]')).toBeVisible();
   await expect(card.locator("[data-artifact-file-body]")).toContainText(
     "Table",
   );
