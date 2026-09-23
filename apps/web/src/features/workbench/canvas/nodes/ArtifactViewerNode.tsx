@@ -86,7 +86,29 @@ const s = stylex.create({
   statusUnavailable: { flexShrink: 0, color: tokens.colorWarning },
 });
 
-export default function ArtifactViewerNodeCard({
+export default function ArtifactViewerNodeCard(
+  props: NodeProps<ArtifactViewerNode>,
+) {
+  const { id, data, isConnectable, selected, dragging } = props;
+  // Artifact mode follows a connected output even before it has a saved ref.
+  // Standalone viewers with refs use the same direct canvas presentation.
+  if (data.mode === "artifact" || presentsArtifacts(data.artifactRef)) {
+    return (
+      <ArtifactCardBody
+        isConnectable={isConnectable}
+        id={id}
+        data={data}
+        value={data.artifactRef ?? null}
+        selected={selected}
+        dragging={dragging}
+      />
+    );
+  }
+
+  return <RichArtifactViewerNode {...props} />;
+}
+
+function RichArtifactViewerNode({
   id,
   data,
   isConnectable,
@@ -254,21 +276,6 @@ export default function ArtifactViewerNodeCard({
     data.onLayoutChange?.(id, next);
     window.requestAnimationFrame(() => updateNodeInternals(id));
   };
-
-  // A viewer that carries artifacts is an artifact on the canvas, so it paints
-  // the artifact itself rather than a preview of a connected output.
-  if (presentsArtifacts(data.artifactRef)) {
-    return (
-      <ArtifactCardBody
-        isConnectable={isConnectable}
-        id={id}
-        data={data}
-        value={data.artifactRef}
-        selected={selected}
-        dragging={dragging}
-      />
-    );
-  }
 
   return (
     <CanvasNodeShell

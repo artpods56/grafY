@@ -31,6 +31,8 @@ vi.mock("@xyflow/react", () => ({
   useViewport: () => ({ zoom: 1 }),
   useEdges: () => flowMocks.edges,
   useNodesData: (nodeId: string) => flowMocks.nodes.get(nodeId) ?? null,
+  useConnection: (selector: (state: { inProgress: boolean }) => unknown) =>
+    selector({ inProgress: false }),
   useStore: (selector: (state: unknown) => unknown) =>
     selector({ edges: [], nodeLookup: new Map() }),
   Handle: (props: {
@@ -140,6 +142,8 @@ function sequence(artifactIds: readonly string[]): ArtifactCardValue {
   };
 }
 
+const mountedRoots: ReturnType<typeof createRoot>[] = [];
+
 function mount(
   value: ArtifactCardValue,
   data: Partial<ArtifactViewerNodeData> = {},
@@ -148,6 +152,7 @@ function mount(
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
+  const _ = mountedRoots.push(root);
   const nodeData: ArtifactViewerNodeData = {
     layout: { width: 264 },
     mode: null,
@@ -167,6 +172,10 @@ function mount(
 }
 
 afterEach(() => {
+  React.act(() => {
+    for (const root of mountedRoots) root.unmount();
+  });
+  mountedRoots.length = 0;
   document.body.replaceChildren();
   libraryMocks.items = [];
   flowMocks.edges = [];
@@ -178,20 +187,31 @@ describe("artifact on the canvas", () => {
     libraryMocks.items = [libraryItem("a1", "boat.jpg")];
   });
 
-  it("paints a single image with its name floating above it", () => {
+  it("keeps filename and type above the image in both selection states", () => {
     const { container } = mount(single("a1"));
     const image = container.querySelector("img");
+    const content = container.querySelector("[data-artifact-content]");
+    const media = container.querySelector<HTMLElement>("[data-artifact-media]");
 
     expect(image?.getAttribute("src")).toContain("/artifacts/a1/content");
+    expect(content?.querySelector("[data-artifact-media] img")).toBe(image);
+    expect(content?.querySelectorAll("[data-artifact-port-side]")).toHaveLength(2);
+    expect(content?.querySelector("[data-testid='port-rail']")).toBeNull();
+    expect(container.querySelector("[data-artifact-image-header]")).not.toBeNull();
+    expect(media?.querySelector("[data-artifact-image-header]")).toBeNull();
     expect(container.textContent).toContain("boat.jpg");
-    expect(container.querySelector('[title="file.jpeg@1"]')).not.toBeNull();
     expect(container.querySelector("ol")).toBeNull();
     expect(
       container.querySelector('[data-node-pickup-shadow="true"]'),
-    ).not.toBeNull();
-    expect(container.textContent).toContain("2.4 MB · Image");
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-artifact-shadow-scope="image"]'),
+    ).toBe(media);
+    const picked = mount(single("a1"), {}, true);
+    expect(picked.container.textContent).toContain("boat.jpg");
+    expect(picked.container.textContent).toContain("file.jpeg@1");
+    expect(picked.container.querySelector("[data-artifact-image-header]")).not.toBeNull();
     // Use a stable placeholder size until the image dimensions are known.
-    const media = container.querySelector<HTMLElement>("[data-artifact-media]");
     expect(media?.style.height).toBe("198px");
   });
 
@@ -213,6 +233,7 @@ describe("artifact on the canvas", () => {
                 {
                   port: "image",
                   kind: "single",
+                  value: { artifact_id: "produced-9", artifact_type: "file.png", schema_version: 1 },
                   artifacts: [
                     {
                       artifact_id: "produced-9",
@@ -238,7 +259,7 @@ describe("artifact on the canvas", () => {
       },
     ];
 
-    const { container } = mount(single("library-1"));
+    const { container } = mount(single("library-1"), {}, true);
 
     expect(container.querySelector("img")?.getAttribute("src")).toContain(
       "produced-9",
@@ -285,7 +306,7 @@ describe("artifact on the canvas", () => {
     expect(container.textContent).toContain("Waiting for Resized");
     expect(
       [...container.querySelectorAll("button")].find(
-        (button) => button.textContent === "Open original",
+        (button) => button.textContent?.trim() === "Open original",
       )?.disabled,
     ).toBe(true);
     expect(
@@ -306,22 +327,34 @@ describe("artifact on the canvas", () => {
   });
 
   it("shows a run of artifacts as a stack counted by item", () => {
-    const { container } = mount(sequence(["a1", "a2", "a3"]));
+    const { container } = mount(sequence(["a1", "a2", "a3"]), {}, true);
 
-    expect(container.textContent).toContain("3 artifacts");
+    const stack = container.querySelector('[aria-label="3 items in sequence"]');
+    const thumbs = stack?.querySelectorAll("img");
     expect(container.textContent).toContain("3 items");
-    expect(container.textContent).toContain("Image sequence · 3 items");
+    expect(container.textContent).toContain("Sequence<file.jpeg@1>");
+    expect(thumbs).toHaveLength(3);
+    expect(thumbs?.[0].parentElement?.style.left).toBe("24px");
+    expect(thumbs?.[2].parentElement?.style.left).toBe("0px");
+    expect(stack?.closest("[data-artifact-content]")).not.toBeNull();
   });
 
-  it("hides its actions menu until the card is selected", () => {
-    const actions = (container: HTMLElement) =>
-      container.querySelector('[aria-label="Actions for file.jpeg@1"]');
-
+  it("hides ports and actions until the card is picked up", () => {
     const quiet = mount(single("a1"));
-    expect(actions(quiet.container)).toBeNull();
+    expect(quiet.container.querySelector('[data-artifact-chrome="off"]')).not.toBeNull();
+    expect(quiet.container.querySelectorAll('[data-artifact-ports="off"]')).toHaveLength(2);
+
+    React.act(() => {
+      quiet.container
+        .querySelector("[data-artifact-card-id]")
+        ?.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    });
+    expect(quiet.container.querySelector('[data-artifact-chrome="off"]')).not.toBeNull();
+    expect(quiet.container.querySelectorAll('[data-artifact-ports="off"]')).toHaveLength(2);
 
     const picked = mount(single("a1"), {}, true);
-    expect(actions(picked.container)).not.toBeNull();
+    expect(picked.container.querySelector('[data-artifact-chrome="on"]')).not.toBeNull();
+    expect(picked.container.querySelectorAll('[data-artifact-ports="on"]')).toHaveLength(2);
   });
 
   it("reorders the run it passes on", () => {
@@ -361,7 +394,7 @@ describe("artifact on the canvas", () => {
   });
 
   it("paints a produced artifact the library never listed", () => {
-    const { container } = mount(single("zz"));
+    const { container } = mount(single("zz"), {}, true);
 
     expect(container.querySelector("img")?.getAttribute("src")).toContain(
       "/artifacts/zz/content",
@@ -378,12 +411,46 @@ describe("artifact on the canvas", () => {
 
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector("[data-artifact-media]")).toBeNull();
+    expect(
+      container.querySelector("[data-artifact-content] [data-artifact-port-side='output']"),
+    ).not.toBeNull();
+    const label = container.querySelector("[data-artifact-label]");
+    const body = container.querySelector("[data-artifact-file-body]");
+    expect(label?.textContent).toContain("File");
+    expect(label?.textContent).toContain("file.csv@1");
+    expect(body?.textContent).toContain("Table");
+    expect(body?.textContent).not.toContain("file.csv@1");
     expect(container.querySelector('[title="file.csv@1"]')).not.toBeNull();
     expect(container.textContent).not.toContain("not in this library");
   });
 
-  it("shows image dimensions and fits the preview to its aspect ratio", () => {
-    const { container } = mount(single("a1"));
+  it("uses a PDF file glyph without a preview frame", () => {
+    libraryMocks.items = [
+      {
+        ...libraryItem("pdf1", "report.pdf"),
+        artifact: {
+          artifact_id: "pdf1",
+          artifact_type: "file.pdf",
+          schema_version: 1,
+          content_type: "application/pdf",
+          byte_size: 3_200_000,
+        },
+      },
+    ];
+    const { container } = mount({
+      artifact_id: "pdf1",
+      artifact_type: "file.pdf",
+      schema_version: 1,
+    });
+
+    expect(container.querySelector(".lucide-file-text")).not.toBeNull();
+    expect(container.querySelector("[data-artifact-media]")).toBeNull();
+    expect(container.textContent).toContain("report.pdf");
+    expect(container.textContent).toContain("PDF");
+  });
+
+  it("shows image dimensions in info and fits the preview to its aspect ratio", async () => {
+    const { container } = mount(single("a1"), {}, true);
     const image = container.querySelector("img");
     if (!image) throw new Error("Image preview missing");
     Object.defineProperties(image, {
@@ -392,7 +459,10 @@ describe("artifact on the canvas", () => {
     });
     React.act(() => image.dispatchEvent(new Event("load")));
 
-    expect(container.textContent).toContain("2.4 MB · 1920 × 1080");
+    await React.act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Inspect file.jpeg@1 artifact"]')?.click();
+    });
+    expect(document.body.textContent).toContain("2.4 MB · 1920 × 1080");
     expect(
       container.querySelector<HTMLElement>("[data-artifact-media]")?.style
         .height,
@@ -400,7 +470,7 @@ describe("artifact on the canvas", () => {
     expect(image.draggable).toBe(false);
   });
 
-  it("keeps an explicitly resized preview height when the image loads", () => {
+  it("keeps the image's aspect ratio when a saved height is larger", () => {
     const { container } = mount(single("a1"), {
       layout: { width: 264, bodyHeight: 220 },
     });
@@ -414,11 +484,11 @@ describe("artifact on the canvas", () => {
     expect(
       container.querySelector<HTMLElement>("[data-artifact-media]")?.style
         .height,
-    ).toBe("220px");
+    ).toBe("149px");
   });
 
   it("preserves the filename and drag action when an image fails to load", () => {
-    const { container } = mount(single("a1"));
+    const { container } = mount(single("a1"), {}, true);
     const image = container.querySelector("img");
     if (!image) throw new Error("Image preview missing");
     React.act(() => image.dispatchEvent(new Event("error")));
@@ -451,7 +521,8 @@ describe("artifact on the canvas", () => {
       true,
     );
     expect(container.querySelectorAll("img")).toHaveLength(0);
-    expect(container.textContent).toContain("Sequence · 2 items");
+    expect(container.textContent).toContain("File sequence");
+    expect(container.textContent).toContain("Sequence<file.csv@1>");
     const reorder = [...container.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Reorder items"),
     );
