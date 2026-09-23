@@ -1,14 +1,15 @@
 import type { Connection, Edge } from "@xyflow/react";
-import type { ArtifactConversionSpec, SavedGraphOrigin } from "@/lib/api";
+import type {
+  ArtifactConversionSpec,
+  SavedGraphOrigin,
+  RunPortOutput,
+  RunNodeResult,
+} from "@/lib/api";
 import {
   artifactDropPayload,
   resolveArtifactDrop,
 } from "../model/artifact-drop";
-import {
-  artifactCardValue,
-  cardArtifactRefs,
-  type ArtifactCardValue,
-} from "./artifact-card";
+import { cardArtifactRefs, type ArtifactCardValue } from "./artifact-card";
 import type {
   ArtifactViewerEdge,
   ArtifactViewerNode,
@@ -33,6 +34,32 @@ export type ArtifactOriginEdge = Edge<
   typeof ARTIFACT_ORIGIN_EDGE_TYPE
 > & { data: ArtifactOriginEdgeData };
 
+type ArtifactCardSource =
+  | { kind: "fixed"; value: ArtifactCardValue | null; output: null }
+  | { kind: "waiting"; value: null; output: null }
+  | { kind: "output"; value: ArtifactCardValue; output: RunPortOutput };
+
+/** Rendering and outgoing connections resolve the same exact output value. */
+export function resolveArtifactCardSource({
+  value,
+  feed,
+  run,
+}: {
+  value: ArtifactCardValue | null | undefined;
+  feed: ArtifactViewerEdge | undefined;
+  run: RunNodeResult | null | undefined;
+}): ArtifactCardSource {
+  if (!feed) return { kind: "fixed", value: value ?? null, output: null };
+  const output =
+    run?.status === "succeeded"
+      ? run.outputs.find((output) => output.port === feed.data?.sourcePortName)
+      : undefined;
+  if (!output || feed.data?.projection?.path.length) {
+    return { kind: "waiting", value: null, output: null };
+  }
+  return { kind: "output", value: output.value, output };
+}
+
 /** A following card may pass only the current output, never its saved fallback. */
 export function artifactCardConnectionValue(
   card: ArtifactViewerNode,
@@ -40,15 +67,11 @@ export function artifactCardConnectionValue(
   nodes: readonly CanvasWorkflowNode[],
 ): ArtifactCardValue | null {
   const feed = feeds.find((edge) => edge.target === card.id);
-  if (!feed) return card.data.artifactRef ?? null;
-  // A projected viewer does not represent the whole artifact reference.
-  if (feed.data?.projection?.path.length) return null;
-  const producer = nodes.find((node) => node.id === feed.source);
-  if (producer?.data.run?.status !== "succeeded") return null;
-  const output = producer.data.run.outputs.find(
-    (output) => output.port === feed.data?.sourcePortName,
-  );
-  return artifactCardValue(output?.artifacts ?? [], card.data.artifactRef);
+  return resolveArtifactCardSource({
+    value: card.data.artifactRef,
+    feed,
+    run: nodes.find((node) => node.id === feed?.source)?.data.run,
+  }).value;
 }
 
 /** Resolve real canvas endpoints before applying the normal artifact-input rules. */
