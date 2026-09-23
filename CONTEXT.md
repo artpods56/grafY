@@ -703,6 +703,18 @@ when the artifact is deleted, becomes inaccessible, or cannot cross a Workspace
 or Template boundary; the card stays and reports the reference as missing until
 the user removes the card deliberately.
 
+Collect replaces selected, unconnected artifact cards with one sequence card.
+It requires the same artifact type and schema version, orders cards top to
+bottom then left to right, and keeps each artifact reference once. Ungroup
+replaces that sequence with individual cards in its current order. Neither
+operation deletes artifacts. Cards with producer links, viewer bindings, or
+input origins must be disconnected before grouping or ungrouping. Tidy-up
+changes card positions without changing references or sequence order.
+
+Image cards keep the filename and artifact contract above the image, dimmed
+when unselected. Info and action controls sit outside the image. Single values
+use one connector ring; sequences use two, including a sequence of one item.
+
 Saved graphs use optimistic revisions. Replacing a graph requires the revision
 last read by the caller so competing edits are reported instead of silently
 overwriting one another.
