@@ -479,20 +479,19 @@ test("an artifact dragged out of the Library onto empty canvas lands on it", asy
       .evaluate((element) => getComputedStyle(element).borderTopWidth),
   ).toBe("0px");
   await expect(card.locator("[data-node-pickup-shadow]")).toHaveCount(0);
-  await expect(
-    card.locator('[data-artifact-shadow-scope="file-icon"]'),
-  ).toBeVisible();
   expect(
     await card.evaluate((element) => getComputedStyle(element).boxShadow),
   ).toBe("none");
+  // The plate is the card's one shadow scope, and it lifts on selection the way
+  // an image's media box does.
+  await expect(
+    card.locator(
+      '[data-artifact-file-body][data-artifact-shadow-scope="file"]',
+    ),
+  ).toHaveCount(1);
   expect(
     await body.evaluate((element) => getComputedStyle(element).boxShadow),
-  ).toBe("none");
-  expect(
-    await card
-      .locator('[data-artifact-shadow-scope="file-icon"]')
-      .evaluate((element) => getComputedStyle(element).boxShadow),
-  ).toBe("none");
+  ).not.toBe("none");
   expect(labelBox.y + labelBox.height).toBeLessThanOrEqual(bodyBox.y + 1);
   const actions = card.getByRole("button", { name: "Actions for file.csv@1" });
   const inspect = card.getByRole("button", {
@@ -524,9 +523,15 @@ test("an artifact dragged out of the Library onto empty canvas lands on it", asy
 
   await expect(actions).toBeHidden();
   await expect(card.locator('[data-artifact-ports="off"]')).toHaveCount(2);
+  await expect
+    .poll(() => body.evaluate((element) => getComputedStyle(element).boxShadow))
+    .toBe("none");
   await card.click();
   await expect(actions).toBeVisible();
   await expect(card.locator('[data-artifact-ports="on"]')).toHaveCount(2);
+  await expect
+    .poll(() => body.evaluate((element) => getComputedStyle(element).boxShadow))
+    .not.toBe("none");
 });
 
 test("an image keeps dimmed metadata above its pixels and external controls reachable", async ({

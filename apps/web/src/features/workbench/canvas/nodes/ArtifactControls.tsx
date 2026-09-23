@@ -11,16 +11,11 @@ import { ARTIFACT_VIEWER_INPUT_HANDLE } from "../artifact-viewer";
 import { handleStyle } from "../handle-style";
 
 /**
- * Hit target of a port, and the rail width on a card that stacks its action
- * buttons in one column. Every mark centres on the rail, so the two rails
- * mirror each other and the actions cannot drift off the port centreline.
+ * Hit target of a port, and the width of either rail. Every mark centres on the
+ * rail, so the two rails mirror each other and the actions cannot drift off the
+ * port centreline.
  */
 export const ARTIFACT_RAIL_PORT = 30;
-/**
- * Rail width when the two action buttons sit side by side. A file card body is
- * a short row, so it has no room for the stacked pair above the output port.
- */
-export const ARTIFACT_RAIL_ACTIONS = 48;
 /** Gap between the card and the rail, so the marks sit beside it. */
 export const ARTIFACT_RAIL_GAP = 8;
 
@@ -65,16 +60,11 @@ const s = stylex.create({
     left: "50%",
     transform: "translateX(-50%)",
     display: "flex",
-    flexDirection: "row",
-    alignItems: "center",
-    height: "30px",
-    gap: "2px",
-  },
-  actionsStacked: {
     flexDirection: "column",
-    height: "auto",
+    alignItems: "center",
+    gap: "2px",
     // Half the difference between the 30px rail slot and a 22px button, so the
-    // first button still sits level with the input port.
+    // first button sits level with the input port.
     paddingTop: "4px",
   },
   button: {
@@ -182,7 +172,6 @@ export function ArtifactRightRail({
   isConnectable,
   showActions,
   showPorts,
-  stackActions,
   onOverlayChange,
   editableSequence,
   onRearrange,
@@ -199,7 +188,6 @@ export function ArtifactRightRail({
   isConnectable: boolean;
   showActions: boolean;
   showPorts: boolean;
-  stackActions: boolean;
   onOverlayChange: (open: boolean) => void;
   editableSequence: boolean;
   onRearrange: () => void;
@@ -211,11 +199,7 @@ export function ArtifactRightRail({
     onOverlayChange(overlays.current.info || overlays.current.menu);
   };
   const button = stylex.props(s.button);
-  const actions = stylex.props(
-    s.actions,
-    stackActions ? s.actionsStacked : null,
-    showActions ? null : s.concealed,
-  );
+  const actions = stylex.props(s.actions, showActions ? null : s.concealed);
   const menu = stylex.props(overlay.popup);
   const popup = stylex.props(overlay.popup, s.popup);
   return (

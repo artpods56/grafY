@@ -53,7 +53,6 @@ import { WORKFLOW_NODE_TYPE } from "../types";
 import type { WorkflowNodeLayout } from "../node-layout";
 import { LayoutResizeHandle } from "./LayoutResizeHandle";
 import {
-  ARTIFACT_RAIL_ACTIONS,
   ARTIFACT_RAIL_GAP,
   ARTIFACT_RAIL_PORT,
   ArtifactLeftRail,
@@ -87,20 +86,26 @@ const s = stylex.create({
     transform: "translate3d(0, -8px, 0)",
     cursor: "grabbing",
   },
+  // The plate a file artifact shows instead of its pixels. It lifts on the same
+  // tier ladder as an image's media box.
   fileBody: {
     position: "relative",
     display: "flex",
     alignItems: "center",
     gap: "8px",
     width: "100%",
-    minHeight: "64px",
+    // The rails, not the content, set this floor: the stacked actions take the
+    // rail's top 50px (4 + 22 + 2 + 22) and the output ball its bottom 30px.
+    minHeight: "80px",
     boxSizing: "border-box",
     padding: "8px 10px",
     border: `1px solid ${tokens.colorBorder}`,
     borderRadius: tokens.radiusSm,
     backgroundColor: tokens.colorSurface,
+    boxShadow: "none",
   },
-  fileBodySelected: { borderColor: tokens.colorBorderStrong },
+  fileBodyRaised: { boxShadow: tokens.shadowNodeActive },
+  fileBodyDragged: { boxShadow: tokens.shadowNodeDragged },
   fileIcon: {
     display: "grid",
     placeItems: "center",
@@ -426,12 +431,8 @@ export function ArtifactCardBody({
 
   const showActions = Boolean(selected) || overlayOpen;
   const showPorts = showActions || connecting;
-  // One rail width on both sides so the two mirror each other. A tall image
-  // card stacks the action buttons in one column; a short file card has no room
-  // for that above the output port and keeps them side by side.
-  const railWidth = imageArtifact ? ARTIFACT_RAIL_PORT : ARTIFACT_RAIL_ACTIONS;
-  const leftRail = showPorts ? railWidth : 0;
-  const rightRail = showPorts ? railWidth : 0;
+  const leftRail = showPorts ? ARTIFACT_RAIL_PORT : 0;
+  const rightRail = showPorts ? ARTIFACT_RAIL_PORT : 0;
   const railGap = showPorts ? ARTIFACT_RAIL_GAP : 0;
   const cardWidth = imageArtifact ? mediaWidth : requestedWidth;
 
@@ -593,9 +594,11 @@ export function ArtifactCardBody({
               ) : first && !awaitingFeed ? (
                 <div
                   data-artifact-file-body="true"
+                  data-artifact-shadow-scope="file"
                   {...stylex.props(
                     s.fileBody,
-                    selected ? s.fileBodySelected : null,
+                    tier === "active" ? s.fileBodyRaised : null,
+                    tier === "dragged" ? s.fileBodyDragged : null,
                   )}
                 >
                   {!selected && data.remoteSelectionColor ? (
@@ -605,7 +608,6 @@ export function ArtifactCardBody({
                     />
                   ) : null}
                   <span
-                    data-artifact-shadow-scope="file-icon"
                     aria-hidden="true"
                     {...stylex.props(
                       s.fileIcon,
@@ -642,7 +644,6 @@ export function ArtifactCardBody({
           isConnectable={isConnectable}
           showActions={showActions}
           showPorts={showPorts}
-          stackActions={imageArtifact}
           onOverlayChange={setOverlayOpen}
           editableSequence={isSequence && !feed && isConnectable}
           onRearrange={() => setReordering((open) => !open)}
