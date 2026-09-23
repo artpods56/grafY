@@ -72,6 +72,8 @@ export interface ArtifactViewerNodeData extends Record<string, unknown> {
   ) => void;
   onRefsChange?: (nodeId: string, value: ArtifactCardValue | null) => void;
   onRemoveNode?: (nodeId: string) => void;
+  onUngroup?: (nodeId: string) => void;
+  ungroupDisabledReason?: string | null;
   /** Ephemeral collaborator selection tint; never persisted. */
   remoteSelectionColor?: string | null;
 }

@@ -7,6 +7,7 @@ import {
   artifactCardValue,
   canMergeIntoCard,
   cardArtifactRefs,
+  collectArtifactCardRefs,
   isImageArtifact,
   mergedArtifactCardValue,
   moveArtifactCardRef,
@@ -39,12 +40,55 @@ describe("artifact card value", () => {
       "aaaa",
       "bbbb",
     ]);
-    expect(artifactCardContract(value)).toBe("file.jpg@1 · 2 items");
+    expect(artifactCardContract(value)).toBe("Sequence<file.jpg@1>");
+  });
+
+  it("preserves a sequence with one remaining item", () => {
+    const original = artifactCardValue([ref("first"), ref("second")]);
+    const next = artifactCardValue([ref("first")], original);
+    expect(next).toMatchObject({ item_refs: [ref("first")] });
+    expect(artifactCardContract(next)).toBe("Sequence<file.jpg@1>");
   });
 
   it("refuses one card for two artifact types", () => {
     expect(
       artifactCardValue([ref("aaaa"), ref("bbbb", "table.csv")]),
+    ).toBeNull();
+  });
+
+  it("collects selected cards in canvas reading order and keeps each artifact once", () => {
+    const firstSequence = artifactCardValue([ref("first"), ref("second")]);
+    if (!firstSequence) throw new Error("Expected a same-type sequence");
+    const refs = collectArtifactCardRefs([
+      { position: { x: 400, y: 200 }, value: ref("fourth") },
+      { position: { x: 300, y: 0 }, value: ref("second") },
+      {
+        position: { x: 0, y: 0 },
+        value: firstSequence,
+      },
+      { position: { x: 0, y: 200 }, value: ref("third") },
+    ]);
+
+    expect(refs?.map((item) => item.artifact_id)).toEqual([
+      "first",
+      "second",
+      "third",
+      "fourth",
+    ]);
+  });
+
+  it("refuses a selected group with mixed types or one unique artifact", () => {
+    expect(
+      collectArtifactCardRefs([
+        { position: { x: 0, y: 0 }, value: ref("image") },
+        { position: { x: 200, y: 0 }, value: ref("table", "table.data") },
+      ]),
+    ).toBeNull();
+    expect(
+      collectArtifactCardRefs([
+        { position: { x: 0, y: 0 }, value: ref("same") },
+        { position: { x: 200, y: 0 }, value: ref("same") },
+      ]),
     ).toBeNull();
   });
 

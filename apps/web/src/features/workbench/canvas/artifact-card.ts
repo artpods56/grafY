@@ -51,7 +51,7 @@ export function artifactCardValue(
       ref.schema_version !== first.schema_version,
   );
   if (mixedType) return null;
-  if (refs.length === 1) return first;
+  if (refs.length === 1 && !(previous && "item_refs" in previous)) return first;
   return {
     artifact_type: first.artifact_type,
     schema_version: first.schema_version,
@@ -63,6 +63,32 @@ export function artifactCardValue(
         ? previous.sequence_id
         : createUuid(),
   };
+}
+
+/** Order selected canvas artifacts for collection, without repeating a ref. */
+export function collectArtifactCardRefs(
+  cards: readonly {
+    position: { x: number; y: number };
+    value: ArtifactCardValue;
+  }[],
+): ArtifactRef[] | null {
+  if (cards.length < 2) return null;
+  const seen = new Set<string>();
+  const refs = [...cards]
+    .sort(
+      (left, right) =>
+        left.position.y - right.position.y ||
+        left.position.x - right.position.x,
+    )
+    .flatMap((card) => cardArtifactRefs(card.value))
+    .filter((ref) => {
+      if (seen.has(ref.artifact_id)) return false;
+      seen.add(ref.artifact_id);
+      return true;
+    });
+  if (refs.length < 2) return null;
+  const first = refs[0];
+  return refs.every((ref) => shareOneArtifactType(ref, first)) ? refs : null;
 }
 
 /**
@@ -167,10 +193,9 @@ export function originCarriesCardArtifacts(
   );
 }
 
-/** The contract line a card shows: `file.jpg@1`, or `file.jpg@1 · 3 items`. */
+/** The value contract, including sequence shape even for one item. */
 export function artifactCardContract(value: ArtifactCardValue | null): string {
-  const refs = cardArtifactRefs(value);
-  if (refs.length === 0) return "";
-  const contract = `${refs[0].artifact_type}@${refs[0].schema_version}`;
-  return refs.length === 1 ? contract : `${contract} · ${refs.length} items`;
+  if (!value) return "";
+  const contract = `${value.artifact_type}@${value.schema_version}`;
+  return "item_refs" in value ? `Sequence<${contract}>` : contract;
 }

@@ -24,6 +24,7 @@ import {
   Eye,
   Grid3x3,
   History,
+  Layers,
   LoaderCircle,
   Maximize2,
   Package,
@@ -65,6 +66,12 @@ import {
   type ModuleBoundarySummary,
 } from "./PublishModuleDialog";
 import { createUuid } from "@/features/workbench/model/uuid";
+import {
+  artifactGroupingDisabledReason,
+  collectArtifactCards,
+  ungroupArtifactCard,
+  tidyArtifactCards,
+} from "../model/artifact-grouping";
 import { WorkspaceLibraryDialog } from "@/features/workspaces/WorkspaceLibraryDialog";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { usePublishWorkbenchChrome } from "./WorkbenchChromeContext";
@@ -168,6 +175,7 @@ import {
   artifactCardValue,
   originCarriesCardArtifacts,
   cardArtifactRefs,
+  collectArtifactCardRefs,
   type ArtifactCardValue,
 } from "../canvas/artifact-card";
 import {
@@ -2057,6 +2065,39 @@ function WorkbenchBody({
   const selectedViewerCount = artifactViewers.nodes.filter(
     (node) => node.selected,
   ).length;
+  const selectedArtifactCards = React.useMemo(
+    () =>
+      artifactViewers.nodes.flatMap((node) => {
+        const value = node.data.artifactRef;
+        if (
+          !node.selected ||
+          !value
+        ) {
+          return [];
+        }
+        return [{ node, value }];
+      }),
+    [artifactViewers.edges, artifactViewers.nodes],
+  );
+  const collectedArtifactRefs = React.useMemo(
+    () =>
+      collectArtifactCardRefs(
+        selectedArtifactCards.map(({ node, value }) => ({
+          position: node.position,
+          value,
+        })),
+      ),
+    [selectedArtifactCards],
+  );
+  const groupingDisabledReason =
+    selectedNodeCount !== selectedArtifactCards.length
+      ? "Select only artifacts to collect."
+      : artifactGroupingDisabledReason({
+          cards: selectedArtifactCards.map(({ node }) => node),
+          state: artifactViewers,
+          origins: authoredDocument.origins,
+        });
+
   const runSelectionBusy = !registry || running || selectedWorkflowCount === 0;
   const runSelectedDisabled =
     !canExecuteGraph ||
@@ -2674,6 +2715,26 @@ function WorkbenchBody({
     [commitArtifactViewers],
   );
 
+  const collectSelectedArtifacts = React.useCallback(() => {
+    if (!localAuthoringEnabled || groupingDisabledReason) return;
+    commitArtifactViewers((state) => collectArtifactCards({
+      state,
+      origins: authoredDocumentRef.current.origins,
+    }));
+  }, [commitArtifactViewers, groupingDisabledReason, localAuthoringEnabled]);
+
+  const ungroupArtifacts = React.useCallback((nodeId: string) => {
+    commitArtifactViewers((state) => ungroupArtifactCard({
+      state,
+      origins: authoredDocumentRef.current.origins,
+      nodeId,
+    }));
+  }, [commitArtifactViewers]);
+
+  const tidySelectedArtifacts = React.useCallback(() => {
+    commitArtifactViewers(tidyArtifactCards);
+  }, [commitArtifactViewers]);
+
   const dropArtifactOnCanvas = React.useCallback(
     (event: DragEvent | React.DragEvent<HTMLElement>) => {
       if (!event.dataTransfer || !canvasAtPoint(event.clientX, event.clientY)) {
@@ -3191,8 +3252,8 @@ function WorkbenchBody({
         return;
       }
 
-      // Dragging from an output port offers downstream nodes; dragging from an
-      // input port offers upstream nodes whose outputs can feed it.
+      // An output with artifacts can be pulled onto the canvas. Other drags
+      // offer compatible workflow nodes in the discovery menu.
       const upstream = connectionState.fromHandle.type === "target";
       const handleId = connectionState.fromHandle.id;
       if (!handleId) return;
@@ -3233,6 +3294,44 @@ function WorkbenchBody({
         y: connectionState.to?.y ?? fromNode.position.y,
       };
 
+      const materializedOutput =
+        !upstream && fromNode.data.run?.status === "succeeded"
+          ? fromNode.data.run.outputs.find(
+              (output) => output.port === port.name && output.artifacts.length > 0,
+            )
+          : null;
+      if (materializedOutput && canvasAtPoint(clientPoint.x, clientPoint.y)) {
+        const viewerId = `artifact-viewer-${createUuid()}`;
+        const link: ArtifactViewerEdge = {
+          id: `artifact-viewer-edge-${createUuid()}`,
+          type: ARTIFACT_VIEWER_EDGE_TYPE,
+          source: fromNode.id,
+          target: viewerId,
+          targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
+          data: { sourcePortName: port.name },
+        };
+        commitArtifactViewers((current) => ({
+          ...current,
+          nodes: [
+            ...current.nodes.map((node) => ({ ...node, selected: false })),
+            {
+              id: viewerId,
+              type: ARTIFACT_VIEWER_NODE_TYPE,
+              position: flowPosition,
+              selected: true,
+              data: {
+                layout: { width: DEFAULT_ARTIFACT_CARD_WIDTH },
+                mode: "artifact",
+                artifactRef: null,
+              },
+            },
+          ],
+          edges: [...current.edges, link],
+        }));
+        setLibraryOpen(false);
+        return;
+      }
+
       const catalogNodes = catalogNodeSpecs(registry, activeGraph?.id ?? null);
       const candidates = upstream
         ? upstreamCandidatesFromInput({
@@ -3266,7 +3365,15 @@ function WorkbenchBody({
         candidates,
       });
     },
-    [activeGraph?.id, canEditGraph, flow, nodes, registry, running],
+    [
+      activeGraph?.id,
+      canEditGraph,
+      commitArtifactViewers,
+      flow,
+      nodes,
+      registry,
+      running,
+    ],
   );
 
   const confirmContextualDiscovery = React.useCallback(
@@ -3525,6 +3632,7 @@ function WorkbenchBody({
             data: {
               layout: node.data.layout,
               mode: node.data.mode,
+              artifactRef: node.data.artifactRef,
             },
           })),
         ],
@@ -3751,6 +3859,12 @@ function WorkbenchBody({
             onLayoutChange: updateArtifactViewerLayout,
             onModeChange: updateArtifactViewerMode,
             onRefsChange: updateArtifactCardRefs,
+            onUngroup: ungroupArtifacts,
+            ungroupDisabledReason: artifactGroupingDisabledReason({
+              cards: [node],
+              state: activeArtifactViewers,
+              origins: authoredDocument.origins,
+            }),
             onSelectionChange: updateArtifactViewerSelection,
             onFieldsChange: updateArtifactViewerFields,
             onActivityChange: updateArtifactViewerActivity,
@@ -3759,8 +3873,9 @@ function WorkbenchBody({
         };
       }),
     [
-      activeArtifactViewers.bindings,
-      activeArtifactViewers.nodes,
+      activeArtifactViewers,
+      authoredDocument.origins,
+      ungroupArtifacts,
       artifactViewerFields,
       artifactViewerSelections,
       removeArtifactViewer,
@@ -4363,7 +4478,7 @@ function WorkbenchBody({
             participants={graphRoom.participants}
             localSessionId={graphRoom.localSessionId}
           />
-          {selectedNodeIds.length ? (
+          {selectedWorkflowCount || selectedArtifactCards.length > 1 ? (
             <NodeToolbar
               nodeId={selectedNodeIds}
               isVisible
@@ -4375,48 +4490,85 @@ function WorkbenchBody({
                 {selectedNodeCount} selected
               </span>
               <span {...stylex.props(s.selectionDivider)} />
-              <button
-                type="button"
-                disabled={runSelectedDisabled}
-                title={
-                  !graphOperationsTrusted
-                    ? "Run is unavailable until the displayed graph is current"
-                    : selectedNodesAreRunnable
-                      ? "Run only the selected nodes; latest accessible upstream outputs are pinned"
-                      : "Unavailable or invalid selected nodes cannot run"
-                }
-                {...stylex.props(s.toolButton, s.primaryButton)}
-                onClick={() => void runWorkflow("selected")}
-              >
-                {runningScope === "selected" ? (
-                  <LoaderCircle size={13} {...stylex.props(s.spinner)} />
-                ) : (
-                  <Play size={13} />
-                )}
-                {runningScope === "selected" ? "Running…" : "Run"}
-              </button>
-              <button
-                type="button"
-                disabled={runSelectedWithDependenciesDisabled}
-                title={
-                  !graphOperationsTrusted
-                    ? "Run is unavailable until the displayed graph is current"
-                    : selectedWithDependenciesAreRunnable
-                      ? `Run the selection and every upstream dependency (${selectedWithDependenciesCount} total)`
-                      : "Unavailable or invalid upstream dependencies cannot run"
-                }
-                {...stylex.props(s.toolButton)}
-                onClick={() => void runWorkflow("selected-with-dependencies")}
-              >
-                {runningScope === "selected-with-dependencies" ? (
-                  <LoaderCircle size={13} {...stylex.props(s.spinner)} />
-                ) : (
-                  <Workflow size={13} />
-                )}
-                {runningScope === "selected-with-dependencies"
-                  ? "Running…"
-                  : "With dependencies"}
-              </button>
+              {selectedArtifactCards.length > 1 ? (
+                <button
+                  type="button"
+                  disabled={
+                    !collectedArtifactRefs ||
+                    !localAuthoringEnabled ||
+                    Boolean(groupingDisabledReason)
+                  }
+                  title={
+                    groupingDisabledReason ??
+                    (collectedArtifactRefs
+                      ? `Collect ${selectedArtifactCards.length} selected artifacts into an ordered sequence`
+                      : "Select artifacts of the same type to collect")
+                  }
+                  {...stylex.props(s.toolButton, s.primaryButton)}
+                  onClick={collectSelectedArtifacts}
+                >
+                  <Layers size={13} />
+                  Collect
+                </button>
+              ) : null}
+              {!selectedWorkflowCount && selectedArtifactCards.length > 1 ? (
+                <button
+                  type="button"
+                  disabled={!localAuthoringEnabled}
+                  {...stylex.props(s.toolButton)}
+                  onClick={tidySelectedArtifacts}
+                >
+                  Tidy-up
+                </button>
+              ) : null}
+              {selectedWorkflowCount ? (
+                <button
+                  type="button"
+                  disabled={runSelectedDisabled}
+                  title={
+                    !graphOperationsTrusted
+                      ? "Run is unavailable until the displayed graph is current"
+                      : selectedNodesAreRunnable
+                        ? "Run only the selected nodes; latest accessible upstream outputs are pinned"
+                        : "Unavailable or invalid selected nodes cannot run"
+                  }
+                  {...stylex.props(s.toolButton, s.primaryButton)}
+                  onClick={() => void runWorkflow("selected")}
+                >
+                  {runningScope === "selected" ? (
+                    <LoaderCircle size={13} {...stylex.props(s.spinner)} />
+                  ) : (
+                    <Play size={13} />
+                  )}
+                  {runningScope === "selected" ? "Running…" : "Run"}
+                </button>
+              ) : null}
+              {selectedWorkflowCount ? (
+                <button
+                  type="button"
+                  disabled={runSelectedWithDependenciesDisabled}
+                  title={
+                    !graphOperationsTrusted
+                      ? "Run is unavailable until the displayed graph is current"
+                      : selectedWithDependenciesAreRunnable
+                        ? `Run the selection and every upstream dependency (${selectedWithDependenciesCount} total)`
+                        : "Unavailable or invalid upstream dependencies cannot run"
+                  }
+                  {...stylex.props(s.toolButton)}
+                  onClick={() =>
+                    void runWorkflow("selected-with-dependencies")
+                  }
+                >
+                  {runningScope === "selected-with-dependencies" ? (
+                    <LoaderCircle size={13} {...stylex.props(s.spinner)} />
+                  ) : (
+                    <Workflow size={13} />
+                  )}
+                  {runningScope === "selected-with-dependencies"
+                    ? "Running…"
+                    : "With dependencies"}
+                </button>
+              ) : null}
             </NodeToolbar>
           ) : null}
           {registry && activeContextualDiscovery ? (
