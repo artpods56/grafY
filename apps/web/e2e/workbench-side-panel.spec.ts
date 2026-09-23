@@ -8,6 +8,9 @@ import type {
 import type { Page } from "@playwright/test";
 
 const DOCKED_MIN_WIDTH = 1100;
+// Mirrors DEFAULT_ARTIFACT_FILE_CARD_WIDTH. A stamped width on the drop path is
+// exactly the regression this pins: the card would silently open wide.
+const FILE_CARD_PLACED_WIDTH = 150;
 const AUTO_OPEN_MIN_WIDTH = 1280;
 
 const panel = (page: Page) =>
@@ -432,7 +435,24 @@ test("an artifact dragged out of the Library onto empty canvas lands on it", asy
   const card = page.locator("[data-artifact-card-id]");
   await expect(card).toBeVisible();
   await expect(card).toContainText("measurements.csv");
-  await expect(card.locator('[title="file.csv@1"]')).toBeVisible();
+  // A file card has no pixels to fill, so it opens on the narrow default. The
+  // canvas is zoomed, so cancel the transform before comparing CSS pixels.
+  const placedWidth = await card.evaluate((el) => {
+    const viewport = el.closest(".react-flow__viewport");
+    const scale = viewport
+      ? new DOMMatrix(getComputedStyle(viewport).transform).a
+      : 1;
+    return el.getBoundingClientRect().width / scale;
+  });
+  expect(placedWidth).toBeCloseTo(FILE_CARD_PLACED_WIDTH, 0);
+  // The plate names the format; the contract stays off the face and is carried
+  // by the port and the info popover.
+  await expect(card.locator("[data-artifact-file-body]")).toContainText(
+    "Table",
+  );
+  await expect(card.locator("[data-artifact-file-body]")).not.toContainText(
+    "file.csv@1",
+  );
   await expect(card.locator("[data-artifact-media]")).toHaveCount(0);
   await expect(
     card.locator('[aria-label="Connect file.csv@1 to a node input"]'),
@@ -461,10 +481,8 @@ test("an artifact dragged out of the Library onto empty canvas lands on it", asy
   if (!bodyBox || !labelBox || !inputBox || !outputBox) {
     throw new Error("Artifact body or connection ball has no bounds");
   }
-  // A file card rail is wide enough for the two action buttons side by side,
-  // so every mark centres 24px from the body rather than the image card's 15.
   expect(bodyBox.x - (inputBox.x + inputBox.width)).toBeGreaterThan(4);
-  expect(bodyBox.x - (inputBox.x + inputBox.width)).toBeLessThan(20);
+  expect(bodyBox.x - (inputBox.x + inputBox.width)).toBeLessThan(16);
   expect(Math.abs(inputBox.y - bodyBox.y)).toBeLessThan(8);
   expect(outputBox.x - (bodyBox.x + bodyBox.width)).toBeGreaterThan(4);
   expect(outputBox.x - (bodyBox.x + bodyBox.width)).toBeLessThan(16);
@@ -501,22 +519,21 @@ test("an artifact dragged out of the Library onto empty canvas lands on it", asy
   const menuBox = await actions.boundingBox();
   if (!actionBox || !menuBox) throw new Error("Actions missing");
   expect(actionBox.x - (bodyBox.x + bodyBox.width)).toBeGreaterThan(4);
-  expect(actionBox.x - (bodyBox.x + bodyBox.width)).toBeLessThan(26);
-  expect(Math.abs(actionBox.y - bodyBox.y)).toBeLessThan(8);
-  // The rail holds one centreline. A short file card lays the two buttons side
-  // by side, so the pair straddles it evenly instead of each sitting on it.
+  expect(actionBox.x - (bodyBox.x + bodyBox.width)).toBeLessThan(16);
+  // One rail centreline serves both card kinds, so each button sits on it and
+  // the first is level with the input port.
   const csvOutputCentreX = outputBox.x + outputBox.width / 2;
-  const chromeBox = await card.locator("[data-artifact-chrome]").boundingBox();
-  if (!chromeBox) throw new Error("Action chrome has no bounds");
-  expect(
-    Math.abs(chromeBox.x + chromeBox.width / 2 - csvOutputCentreX),
-  ).toBeLessThan(1);
   expect(
     Math.abs(actionBox.x + actionBox.width / 2 - csvOutputCentreX),
-  ).toBeCloseTo(
-    Math.abs(csvOutputCentreX - (menuBox.x + menuBox.width / 2)),
-    0,
-  );
+  ).toBeLessThan(1);
+  expect(
+    Math.abs(menuBox.x + menuBox.width / 2 - csvOutputCentreX),
+  ).toBeLessThan(1);
+  expect(
+    Math.abs(
+      actionBox.y + actionBox.height / 2 - (inputBox.y + inputBox.height / 2),
+    ),
+  ).toBeLessThan(1);
   const flow = await page.locator(".react-flow").boundingBox();
   if (!flow) throw new Error("No canvas box");
   await page.mouse.click(flow.x + flow.width - 40, flow.y + flow.height - 40);

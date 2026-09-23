@@ -2704,7 +2704,8 @@ function WorkbenchBody({
             position,
             selected: true,
             data: {
-              layout: { width: DEFAULT_ARTIFACT_CARD_WIDTH },
+              // No width: the card takes the one that suits its artifact.
+              layout: null,
               mode: null,
               artifactRef: value,
             },
@@ -3320,7 +3321,7 @@ function WorkbenchBody({
               position: flowPosition,
               selected: true,
               data: {
-                layout: { width: DEFAULT_ARTIFACT_CARD_WIDTH },
+                layout: null,
                 mode: "artifact",
                 artifactRef: null,
               },

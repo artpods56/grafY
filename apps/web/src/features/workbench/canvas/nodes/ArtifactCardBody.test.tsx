@@ -416,11 +416,12 @@ describe("artifact on the canvas", () => {
     ).not.toBeNull();
     const label = container.querySelector("[data-artifact-label]");
     const body = container.querySelector("[data-artifact-file-body]");
+    // The plate names the format, so the head spends its width on the filename
+    // and the contract moves to the info popover.
     expect(label?.textContent).toContain("File");
-    expect(label?.textContent).toContain("file.csv@1");
+    expect(label?.textContent).not.toContain("file.csv@1");
     expect(body?.textContent).toContain("Table");
     expect(body?.textContent).not.toContain("file.csv@1");
-    expect(container.querySelector('[title="file.csv@1"]')).not.toBeNull();
     expect(container.textContent).not.toContain("not in this library");
   });
 

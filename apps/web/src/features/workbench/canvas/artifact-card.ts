@@ -12,6 +12,12 @@ export type ArtifactCardValue = SavedGraphOrigin["value"];
 export const DEFAULT_ARTIFACT_CARD_WIDTH = 250;
 
 /**
+ * Width a file or PDF card opens at: three lattice cells. It has no pixels to
+ * fill, so it takes the narrowest card that still reads as a document.
+ */
+export const DEFAULT_ARTIFACT_FILE_CARD_WIDTH = 150;
+
+/**
  * Narrowest a card may be snapped. Workflow nodes floor at `NODE_WIDTH_MIN`,
  * which would bump the five-cell card default up to six, so a card declares
  * its own narrower lattice floor.

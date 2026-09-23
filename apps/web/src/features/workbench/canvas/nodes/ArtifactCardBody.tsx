@@ -32,6 +32,7 @@ import { gridAlignedWidth } from "../grid-layout";
 import {
   ARTIFACT_CARD_WIDTH_MIN,
   DEFAULT_ARTIFACT_CARD_WIDTH,
+  DEFAULT_ARTIFACT_FILE_CARD_WIDTH,
   artifactCardContract,
   artifactCardMediaHeight,
   artifactCardValue,
@@ -88,17 +89,21 @@ const s = stylex.create({
   },
   // The plate a file artifact shows instead of its pixels. It lifts on the same
   // tier ladder as an image's media box.
+  // A tile for bytes that cannot be painted: mark, format, and size, centred so
+  // the plate reads as the artifact instead of a labelled field.
   fileBody: {
     position: "relative",
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
-    gap: "8px",
+    justifyContent: "center",
+    gap: "6px",
     width: "100%",
     // The rails, not the content, set this floor: the stacked actions take the
     // rail's top 50px (4 + 22 + 2 + 22) and the output ball its bottom 30px.
     minHeight: "80px",
     boxSizing: "border-box",
-    padding: "8px 10px",
+    padding: "12px 10px",
     border: `1px solid ${tokens.colorBorder}`,
     borderRadius: tokens.radiusSm,
     backgroundColor: tokens.colorSurface,
@@ -114,8 +119,16 @@ const s = stylex.create({
   },
   pdfIcon: { color: tokens.colorDanger },
   tableIcon: { color: tokens.colorSuccess },
+  fileKind: {
+    maxWidth: "100%",
+    fontSize: tokens.fontSizeXs,
+    color: tokens.colorText,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
   fileMeta: {
-    minWidth: 0,
+    maxWidth: "100%",
     fontSize: tokens.fontSizeXs,
     color: tokens.colorMuted,
     overflow: "hidden",
@@ -327,13 +340,6 @@ export function ArtifactCardBody({
     dragging,
     updateNodeInternals,
   });
-  const requestedWidth = gridAlignedWidth(
-    layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH,
-    grid?.settings,
-    grid?.bypassSnap,
-    ARTIFACT_CARD_WIDTH_MIN,
-  );
-
   const commitLayout = (next: WorkflowNodeLayout | null) => {
     setDraftLayout(null);
     data.onLayoutChange?.(id, next);
@@ -385,6 +391,18 @@ export function ArtifactCardBody({
             : "File"))
       : "Artifact";
   const byteSize = formatLibraryByteSize(firstSummary?.byte_size);
+  const fileKind = isPdf ? "PDF" : isTableFile ? "Table" : "File";
+  // A file card has no pixels to size itself from, so it opens narrow; an image
+  // card opens wide enough to read the picture.
+  const requestedWidth = gridAlignedWidth(
+    layout?.width ??
+      (imageArtifact
+        ? DEFAULT_ARTIFACT_CARD_WIDTH
+        : DEFAULT_ARTIFACT_FILE_CARD_WIDTH),
+    grid?.settings,
+    grid?.bypassSnap,
+    ARTIFACT_CARD_WIDTH_MIN,
+  );
 
   const subtitle = awaitingFeed
     ? "Output"
@@ -396,11 +414,7 @@ export function ArtifactCardBody({
             ? `${imageSize.width} × ${imageSize.height}`
             : imageArtifact
               ? "Image"
-              : isPdf
-                ? "PDF"
-                : isTableFile
-                  ? "Table"
-                  : "File",
+              : fileKind,
         ]
           .filter(Boolean)
           .join(" · ");
@@ -422,11 +436,11 @@ export function ArtifactCardBody({
     : tokens.colorInfo;
 
   const fileGlyph = isPdf ? (
-    <FileText size={16} />
+    <FileText size={26} />
   ) : isTableFile ? (
-    <FileSpreadsheet size={16} />
+    <FileSpreadsheet size={26} />
   ) : (
-    <FileIcon size={16} />
+    <FileIcon size={26} />
   );
 
   const showActions = Boolean(selected) || overlayOpen;
@@ -538,7 +552,9 @@ export function ArtifactCardBody({
         <div data-artifact-head="true" {...stylex.props(s.head)}>
           <ArtifactLabel
             title={titleLabel}
-            contract={contract}
+            // A file's plate already says PDF or Table, so the head keeps the
+            // whole width for the filename.
+            contract={imageArtifact || isSequence ? contract : undefined}
             selected={selected ?? false}
             image={imageArtifact}
           />
@@ -617,7 +633,10 @@ export function ArtifactCardBody({
                   >
                     {fileGlyph}
                   </span>
-                  <span {...stylex.props(s.fileMeta)}>{subtitle}</span>
+                  <span {...stylex.props(s.fileKind)}>{fileKind}</span>
+                  {byteSize ? (
+                    <span {...stylex.props(s.fileMeta)}>{byteSize}</span>
+                  ) : null}
                 </div>
               ) : null}
             </>
