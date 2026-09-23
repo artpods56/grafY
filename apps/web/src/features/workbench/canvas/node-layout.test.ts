@@ -70,10 +70,7 @@ describe("node layout", () => {
 
   it("merges patches while preserving untouched dimensions", () => {
     expect(
-      mergeNodeLayout(
-        { width: 300, bodyHeight: 120 },
-        { appendixHeight: 400 },
-      ),
+      mergeNodeLayout({ width: 300, bodyHeight: 120 }, { appendixHeight: 400 }),
     ).toEqual({
       width: 300,
       bodyHeight: 120,

@@ -34,9 +34,9 @@ describe("WorkbenchActivityBar", () => {
       tone: "success",
     });
 
-    expect(
-      container.querySelector("aside")?.getAttribute("aria-label"),
-    ).toBe("Linked view: Linked feature located");
+    expect(container.querySelector("aside")?.getAttribute("aria-label")).toBe(
+      "Linked view: Linked feature located",
+    );
     expect(container.textContent).toContain("Located 1 matching map feature.");
     expect(container.querySelector("button")).toBeNull();
     await act(async () => root.unmount());

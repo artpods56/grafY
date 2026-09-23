@@ -27,7 +27,11 @@ export function saveUploadedArtifactToLibrary(
   workspaceId: string,
   body: SaveUploadedArtifactRequest,
 ) {
-  return request<LibraryItem>("POST", libraryPath(workspaceId, "/from-upload"), {
-    body,
-  });
+  return request<LibraryItem>(
+    "POST",
+    libraryPath(workspaceId, "/from-upload"),
+    {
+      body,
+    },
+  );
 }

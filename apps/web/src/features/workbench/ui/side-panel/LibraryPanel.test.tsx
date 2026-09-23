@@ -266,7 +266,9 @@ async function renderPanel(
   const root = createRoot(container);
   roots.push(root);
   await React.act(async () => {
-    root.render(<LibraryPanel workspaceId={workspaceId} onOpenRun={onOpenRun} />);
+    root.render(
+      <LibraryPanel workspaceId={workspaceId} onOpenRun={onOpenRun} />,
+    );
   });
   await React.act(async () => {
     await vi.waitFor(() =>
@@ -349,7 +351,9 @@ describe("LibraryPanel", () => {
     await React.act(async () => {
       folderRow("fieldwork").click();
     });
-    expect(document.querySelector('[data-tree-key="folder:september"]')).toBeNull();
+    expect(
+      document.querySelector('[data-tree-key="folder:september"]'),
+    ).toBeNull();
 
     await React.act(async () => {
       folderRow("fieldwork").click();
@@ -364,9 +368,7 @@ describe("LibraryPanel", () => {
 
     await renderPanel({ folders: [], items: [] });
     await React.act(async () => {
-      document
-        .querySelector<HTMLElement>('[aria-label="New folder"]')!
-        .click();
+      document.querySelector<HTMLElement>('[aria-label="New folder"]')!.click();
     });
 
     expect(createFolder).toHaveBeenCalledWith({
@@ -483,7 +485,10 @@ describe("LibraryPanel", () => {
   });
 
   it("uploads files dropped on a folder straight into it", async () => {
-    uploadFile.mockResolvedValue({ artifact_id: "artifact-new", filename: "core.png" });
+    uploadFile.mockResolvedValue({
+      artifact_id: "artifact-new",
+      filename: "core.png",
+    });
     saveUploadedArtifactToLibrary.mockResolvedValue({
       ...UPLOAD_ITEM,
       artifact: { ...UPLOAD_ITEM.artifact, artifact_id: "artifact-new" },
@@ -532,10 +537,14 @@ describe("LibraryPanel", () => {
       fileRow("artifact-run").click();
     });
 
-    const tile = document.querySelector<HTMLElement>('[aria-label="Selected artifact"]');
+    const tile = document.querySelector<HTMLElement>(
+      '[aria-label="Selected artifact"]',
+    );
     expect(tile).not.toBeNull();
     expect(tile!.textContent).toContain("/Fieldwork/September");
-    expect(tile!.textContent).toContain("Sales · Resize · revision 4 · from a run");
+    expect(tile!.textContent).toContain(
+      "Sales · Resize · revision 4 · from a run",
+    );
     expect(tile!.querySelector("pre")?.textContent).toContain("plot(x),y(x)");
   });
 
@@ -574,6 +583,8 @@ describe("LibraryPanel", () => {
     await renderPanel({ folders: [], items: [BLOB_ITEM] });
 
     expect(document.body.textContent).toContain("scan.unknown");
-    expect(fileRow("artifact-blob").textContent).toContain(BLOB_ARTIFACT_NOTICE);
+    expect(fileRow("artifact-blob").textContent).toContain(
+      BLOB_ARTIFACT_NOTICE,
+    );
   });
 });

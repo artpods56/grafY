@@ -88,19 +88,21 @@ afterEach(() => vi.unstubAllGlobals());
 describe("artifact payload loading policy", () => {
   it("loads only the bounded page endpoint for table previews", async () => {
     const fetchMock = vi.fn().mockImplementation(() =>
-      Promise.resolve(new Response(
-        JSON.stringify({
-          columns: [],
-          rows: [],
-          offset: 0,
-          limit: 50,
-          total_rows: 0,
-          column_offset: 0,
-          column_limit: 25,
-          total_columns: 0,
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ))
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            columns: [],
+            rows: [],
+            offset: 0,
+            limit: 50,
+            total_rows: 0,
+            column_offset: 0,
+            column_limit: 25,
+            total_columns: 0,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
     const artifact: ArtifactSummary = {
@@ -115,17 +117,25 @@ describe("artifact payload loading policy", () => {
     const { root } = await renderPreview(outputFor([artifact]));
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls.some((call) =>
-      String(call[0]).includes("/v1/workspaces/workspace-1/artifacts/table-artifact/table/schema")
-    )).toBe(true);
-    expect(fetchMock.mock.calls.some((call) =>
-      String(call[0]).includes(
-      "/v1/workspaces/workspace-1/artifacts/table-artifact/table/page?",
-      )
-    )).toBe(true);
-    expect(fetchMock.mock.calls.every(
-      (call) => !String(call[0]).includes("/content"),
-    )).toBe(true);
+    expect(
+      fetchMock.mock.calls.some((call) =>
+        String(call[0]).includes(
+          "/v1/workspaces/workspace-1/artifacts/table-artifact/table/schema",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      fetchMock.mock.calls.some((call) =>
+        String(call[0]).includes(
+          "/v1/workspaces/workspace-1/artifacts/table-artifact/table/page?",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      fetchMock.mock.calls.every(
+        (call) => !String(call[0]).includes("/content"),
+      ),
+    ).toBe(true);
     await act(async () => root.unmount());
   });
 
@@ -134,66 +144,72 @@ describe("artifact payload loading policy", () => {
     "geo.raster_scan",
     "geo.map_layer",
     "geo.map_document",
-  ])(
-    "never loads generic content for %s previews",
-    async (artifactType) => {
-      const fetchMock = vi.fn().mockResolvedValue(new Response(
-        JSON.stringify({ detail: "Render descriptor unavailable in this policy test" }),
-        { status: 500, headers: { "Content-Type": "application/json" } },
-      ));
-      vi.stubGlobal("fetch", fetchMock);
-      const artifact: ArtifactSummary = {
-        artifact_id: `map-${artifactType}`,
-        artifact_type: artifactType,
-        schema_version: 1,
-        content_type:
-          artifactType === "geo.map_document"
-            ? "application/json"
-            : "application/geo+json",
-        byte_size: 120,
-        content_url: `./artifacts/map-${artifactType}/content`,
-      };
-
-      const { container, root } = await renderPreview(outputFor([artifact]));
-
-      expect(fetchMock).not.toHaveBeenCalled();
-      expect(container.textContent).toContain("Load interactive map");
-      const loadButton = [...container.querySelectorAll("button")].find(
-        (button) => button.textContent === "Load interactive map",
+  ])("never loads generic content for %s previews", async (artifactType) => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            detail: "Render descriptor unavailable in this policy test",
+          }),
+          { status: 500, headers: { "Content-Type": "application/json" } },
+        ),
       );
-      await act(async () => {
-        loadButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(String(fetchMock.mock.calls[0][0])).toContain("/geo/render");
-      expect(String(fetchMock.mock.calls[0][0])).not.toContain("/geo/page");
-      expect(String(fetchMock.mock.calls[0][0])).not.toContain("/content");
-      await act(async () => root.unmount());
-    },
-  );
-
-  it.each([
-    ["known-large", 2_000_000],
-    ["unknown-size", null],
-  ])("defers %s JSON artifacts until explicit loading", async (id, byteSize) => {
-    const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const artifact: ArtifactSummary = {
-      artifact_id: id,
-      artifact_type: "json.object",
+      artifact_id: `map-${artifactType}`,
+      artifact_type: artifactType,
       schema_version: 1,
-      content_type: "application/json",
-      byte_size: byteSize,
-      content_url: `./artifacts/${id}/content`,
+      content_type:
+        artifactType === "geo.map_document"
+          ? "application/json"
+          : "application/geo+json",
+      byte_size: 120,
+      content_url: `./artifacts/map-${artifactType}/content`,
     };
 
     const { container, root } = await renderPreview(outputFor([artifact]));
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("Load complete JSON");
+    expect(container.textContent).toContain("Load interactive map");
+    const loadButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Load interactive map",
+    );
+    await act(async () => {
+      loadButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/geo/render");
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain("/geo/page");
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain("/content");
     await act(async () => root.unmount());
   });
+
+  it.each([
+    ["known-large", 2_000_000],
+    ["unknown-size", null],
+  ])(
+    "defers %s JSON artifacts until explicit loading",
+    async (id, byteSize) => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const artifact: ArtifactSummary = {
+        artifact_id: id,
+        artifact_type: "json.object",
+        schema_version: 1,
+        content_type: "application/json",
+        byte_size: byteSize,
+        content_url: `./artifacts/${id}/content`,
+      };
+
+      const { container, root } = await renderPreview(outputFor([artifact]));
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(container.textContent).toContain("Load complete JSON");
+      await act(async () => root.unmount());
+    },
+  );
 
   it("does not let field projection bypass the aggregate byte budget", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
@@ -230,7 +246,9 @@ describe("artifact payload loading policy", () => {
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toContain("/workspaces/workspace-1/artifacts/first/content");
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/workspaces/workspace-1/artifacts/first/content",
+    );
     expect(container.textContent).toContain(
       "Field projection is disabled because this sequence is too large",
     );

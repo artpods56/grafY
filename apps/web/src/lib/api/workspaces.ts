@@ -22,7 +22,10 @@ export function createWorkspace(body: WorkspaceCreateRequest) {
   return request<Workspace>("POST", "/v1/workspaces", { body });
 }
 
-export function listWorkspaceMembers(workspaceId: string, signal?: AbortSignal) {
+export function listWorkspaceMembers(
+  workspaceId: string,
+  signal?: AbortSignal,
+) {
   return request<readonly WorkspaceMember[]>(
     "GET",
     `/v1/workspaces/${encodeURIComponent(workspaceId)}/members`,

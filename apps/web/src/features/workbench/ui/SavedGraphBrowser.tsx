@@ -61,7 +61,10 @@ const s = stylex.create({
       ":hover": tokens.colorHover,
       ":disabled": "transparent",
     },
-    color: { default: tokens.colorMuted, ":disabled": tokens.colorTextDisabled },
+    color: {
+      default: tokens.colorMuted,
+      ":disabled": tokens.colorTextDisabled,
+    },
     cursor: { default: "pointer", ":disabled": "not-allowed" },
     fontSize: tokens.fontSizeXs,
     fontWeight: 700,
@@ -85,7 +88,10 @@ const s = stylex.create({
     padding: "0 9px 0 29px",
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: { default: tokens.colorBorderStrong, ":focus": tokens.colorAccent },
+    borderColor: {
+      default: tokens.colorBorderStrong,
+      ":focus": tokens.colorAccent,
+    },
     borderRadius: "5px",
     outline: "none",
     backgroundColor: tokens.colorSurfaceSunken,
@@ -142,7 +148,11 @@ const s = stylex.create({
       ":hover": tokens.colorDangerHover,
       ":disabled": "transparent",
     },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorDanger, ":disabled": tokens.colorTextDisabled },
+    color: {
+      default: tokens.colorSubtle,
+      ":hover": tokens.colorDanger,
+      ":disabled": tokens.colorTextDisabled,
+    },
     cursor: { default: "pointer", ":disabled": "not-allowed" },
   },
   message: {
@@ -228,7 +238,10 @@ export function SavedGraphBrowser({
           {...stylex.props(s.headerButton)}
           onClick={onRefresh}
         >
-          <RefreshCw size={12} {...stylex.props(refreshing ? s.spinner : null)} />
+          <RefreshCw
+            size={12}
+            {...stylex.props(refreshing ? s.spinner : null)}
+          />
         </button>
         <button
           type="button"
@@ -276,7 +289,10 @@ export function SavedGraphBrowser({
                   onClick={() => onOpen(graph.id)}
                 >
                   {opening || deleting ? (
-                    <LoaderCircle size={13} {...stylex.props(s.stateIcon, s.spinner)} />
+                    <LoaderCircle
+                      size={13}
+                      {...stylex.props(s.stateIcon, s.spinner)}
+                    />
                   ) : active ? (
                     <Check size={13} {...stylex.props(s.stateIcon)} />
                   ) : (
@@ -304,7 +320,9 @@ export function SavedGraphBrowser({
           })
         ) : (
           <p {...stylex.props(s.message)}>
-            {normalizedQuery ? "No saved graphs match your search." : "No saved graphs yet."}
+            {normalizedQuery
+              ? "No saved graphs match your search."
+              : "No saved graphs yet."}
           </p>
         )}
       </div>

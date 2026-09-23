@@ -8,7 +8,12 @@ import {
   type WorkflowInputPlug,
   type WorkflowNodeData,
 } from "../canvas/types";
-import type { NodeSpec, Port, RunNodeResult, SavedGraphOrigin } from "@/lib/api";
+import type {
+  NodeSpec,
+  Port,
+  RunNodeResult,
+  SavedGraphOrigin,
+} from "@/lib/api";
 import {
   executionRequestPlan,
   executionSubgraphFor,
@@ -70,10 +75,7 @@ function nodeSpec(
 function unsupportedCompatibility(
   nodeId: string,
   operatorId: string,
-): Exclude<
-  WorkflowNodeData["compatibility"],
-  { status: "supported" }
-> {
+): Exclude<WorkflowNodeData["compatibility"], { status: "supported" }> {
   return {
     status: "unsupported",
     issues: [`Operator ${operatorId}@1 is unavailable.`],
@@ -163,12 +165,14 @@ function workflowEdge(
 ): WorkflowEdge {
   const sourcePort = options.sourcePort ?? "result";
   const targetPort = options.targetPort ?? "input";
-  const sourceHandle = "sourceHandle" in options
-    ? options.sourceHandle ?? null
-    : outputHandle(sourcePort);
-  const targetHandle = "targetHandle" in options
-    ? options.targetHandle ?? null
-    : inputHandle(targetPort, options.targetPlug);
+  const sourceHandle =
+    "sourceHandle" in options
+      ? (options.sourceHandle ?? null)
+      : outputHandle(sourcePort);
+  const targetHandle =
+    "targetHandle" in options
+      ? (options.targetHandle ?? null)
+      : inputHandle(targetPort, options.targetPlug);
   return {
     id: options.id ?? `${source}-${sourcePort}-${target}-${targetPort}`,
     source,
@@ -299,15 +303,12 @@ describe("execution subgraphs", () => {
     });
     const second = workflowNode("second");
 
-    expect(
-      [...selectedNodeAndAncestorIds(
+    expect([
+      ...selectedNodeAndAncestorIds(
         [first, second],
-        [
-          workflowEdge("first", "second"),
-          workflowEdge("second", "first"),
-        ],
-      )],
-    ).toEqual(["first", "second"]);
+        [workflowEdge("first", "second"), workflowEdge("second", "first")],
+      ),
+    ]).toEqual(["first", "second"]);
   });
 });
 
@@ -403,25 +404,14 @@ describe("execution validation", () => {
       [unsupported, healthy],
       [],
     );
-    const all = executionSubgraphFor(
-      "all",
-      [unsupported, healthy],
-      [],
-    );
+    const all = executionSubgraphFor("all", [unsupported, healthy], []);
 
     expect(
-      executionValidationIssue(
-        "selected",
-        selected.nodes,
-        selected.edges,
-      ),
+      executionValidationIssue("selected", selected.nodes, selected.edges),
     ).toBeNull();
-    expect(
-      executionValidationIssue("all", all.nodes, all.edges),
-    ).toEqual({
+    expect(executionValidationIssue("all", all.nodes, all.edges)).toEqual({
       nodeId: "legacy",
-      message:
-        "Cannot run legacy: Operator legacy@1 is unavailable.",
+      message: "Cannot run legacy: Operator legacy@1 is unavailable.",
     });
   });
 
@@ -447,8 +437,7 @@ describe("execution validation", () => {
       ),
     ).toEqual({
       nodeId: "legacy",
-      message:
-        "Cannot run legacy: Operator legacy@1 is unavailable.",
+      message: "Cannot run legacy: Operator legacy@1 is unavailable.",
     });
   });
 
@@ -460,8 +449,7 @@ describe("execution validation", () => {
 
     expect(executionValidationIssue("all", [target], [])).toEqual({
       nodeId: "target",
-      message:
-        "Summarize.document is required but unconnected in this run.",
+      message: "Summarize.document is required but unconnected in this run.",
     });
   });
 });
@@ -579,11 +567,7 @@ describe("execution request planning", () => {
     );
 
     expect(
-      executionValidationIssue(
-        "selected",
-        execution.nodes,
-        execution.edges,
-      ),
+      executionValidationIssue("selected", execution.nodes, execution.edges),
     ).toBeNull();
     const plan = executionRequestPlan(
       "selected",
@@ -642,11 +626,7 @@ describe("execution request planning", () => {
         sourcePort: "second",
       }),
     ];
-    const execution = executionSubgraphFor(
-      "selected",
-      [source, target],
-      edges,
-    );
+    const execution = executionSubgraphFor("selected", [source, target], edges);
 
     expect(
       executionRequestPlan("selected", [source, target], execution),
@@ -703,11 +683,7 @@ describe("execution request planning", () => {
       [malformed],
     );
 
-    const plan = executionRequestPlan(
-      "all",
-      [source, collect],
-      execution,
-    );
+    const plan = executionRequestPlan("all", [source, collect], execution);
 
     expect(plan.status).toBe("ready");
     if (plan.status !== "ready") return;
@@ -761,13 +737,15 @@ describe("execution request planning", () => {
 
     expect(plan.status).toBe("ready");
     if (plan.status !== "ready") return;
-    expect(plan.request.origins).toEqual([{
-      to_node: "target",
-      to_port: "input",
-      to_plug: null,
-      value: artifactValue,
-      conversion_path: [{ id: "builtin.scalar.integer_to_text", version: 1 }],
-    }]);
+    expect(plan.request.origins).toEqual([
+      {
+        to_node: "target",
+        to_port: "input",
+        to_plug: null,
+        value: artifactValue,
+        conversion_path: [{ id: "builtin.scalar.integer_to_text", version: 1 }],
+      },
+    ]);
     expect(plan.request.nodes.map((node) => node.id)).toEqual(["target"]);
   });
 
@@ -788,19 +766,23 @@ describe("execution request planning", () => {
       conversion_path: [],
     };
     const execution = executionSubgraphFor("selected", [collect], []);
-    const plan = executionRequestPlan("selected", [collect], execution, [origin]);
+    const plan = executionRequestPlan("selected", [collect], execution, [
+      origin,
+    ]);
 
     expect(plan.status).toBe("ready");
     if (plan.status !== "ready") return;
     expect(plan.request.nodes[0]?.input_plugs).toEqual([
       { id: "plug", port: "items" },
     ]);
-    expect(plan.request.origins).toEqual([{
-      to_node: "collect",
-      to_port: "items",
-      to_plug: "plug",
-      value: artifactValue,
-      conversion_path: [],
-    }]);
+    expect(plan.request.origins).toEqual([
+      {
+        to_node: "collect",
+        to_port: "items",
+        to_plug: "plug",
+        value: artifactValue,
+        conversion_path: [],
+      },
+    ]);
   });
 });

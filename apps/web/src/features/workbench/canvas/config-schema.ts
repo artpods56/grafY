@@ -40,9 +40,7 @@ export interface StringListSchemaField extends SchemaFieldBase {
 }
 
 export type SchemaField =
-  | ScalarSchemaField
-  | NumberTupleSchemaField
-  | StringListSchemaField;
+  ScalarSchemaField | NumberTupleSchemaField | StringListSchemaField;
 
 function record(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -117,8 +115,7 @@ function fixedNumberTupleItems(
     const item = resolveSchema(itemRecord, root);
     if (item.type !== "number" && item.type !== "integer") return null;
     items.push({
-      title:
-        typeof item.title === "string" ? item.title : `Value ${index + 1}`,
+      title: typeof item.title === "string" ? item.title : `Value ${index + 1}`,
       type: item.type,
       minimum: typeof item.minimum === "number" ? item.minimum : undefined,
       maximum: typeof item.maximum === "number" ? item.maximum : undefined,
@@ -138,16 +135,13 @@ function stringListConstraints(
   if (items.type !== "string") return null;
 
   return {
-    minItems:
-      typeof schema.minItems === "number" ? schema.minItems : undefined,
-    maxItems:
-      typeof schema.maxItems === "number" ? schema.maxItems : undefined,
+    minItems: typeof schema.minItems === "number" ? schema.minItems : undefined,
+    maxItems: typeof schema.maxItems === "number" ? schema.maxItems : undefined,
     itemMinLength:
       typeof items.minLength === "number" ? items.minLength : undefined,
     itemMaxLength:
       typeof items.maxLength === "number" ? items.maxLength : undefined,
-    itemPattern:
-      typeof items.pattern === "string" ? items.pattern : undefined,
+    itemPattern: typeof items.pattern === "string" ? items.pattern : undefined,
   };
 }
 

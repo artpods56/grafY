@@ -88,10 +88,7 @@ export function TextareaBodyResizeHandle({
     (width: number, bodyHeight: number, drafting: boolean, bypass: boolean) => {
       const merged = mergeNodeLayout(layout, { width, bodyHeight });
       const settings = grid?.settings;
-      if (
-        !settings ||
-        !shouldSnapSize(settings, { drafting, bypass })
-      ) {
+      if (!settings || !shouldSnapSize(settings, { drafting, bypass })) {
         return clampNodeLayout(merged);
       }
       return (

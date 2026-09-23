@@ -56,7 +56,9 @@ describe("GraphRoomRecoveryNotice", () => {
     });
 
     expect(container.textContent).toContain("Stale graph — read only");
-    expect(container.textContent).toContain("Server-accepted work is preserved");
+    expect(container.textContent).toContain(
+      "Server-accepted work is preserved",
+    );
     expect(container.textContent).toContain(
       "Editing, saving, running, and Module setup are unavailable",
     );

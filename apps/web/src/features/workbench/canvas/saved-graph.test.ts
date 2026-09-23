@@ -90,22 +90,13 @@ function registry(
     ],
     nodes: [
       nodeSpec("source", "output", "x", sourceShape),
-      nodeSpec(
-        "target",
-        "input",
-        "z",
-        targetShape,
-        targetAcceptedShapes,
-      ),
+      nodeSpec("target", "input", "z", targetShape, targetAcceptedShapes),
     ],
   };
 }
 
 function graphWithEdge(
-  edgeConversion: Pick<
-    SavedGraphDocument["edges"][number],
-    "conversion_path"
-  >,
+  edgeConversion: Pick<SavedGraphDocument["edges"][number], "conversion_path">,
 ): SavedGraph {
   return {
     id: "00000000-0000-4000-8000-000000000001",
@@ -163,9 +154,7 @@ function graphWithEdge(
   };
 }
 
-function graphWithCollectionMode(
-  collectionMode: "direct" | "map",
-): SavedGraph {
+function graphWithCollectionMode(collectionMode: "direct" | "map"): SavedGraph {
   const graph = graphWithEdge({ conversion_path: conversionPath });
   return {
     ...graph,
@@ -300,9 +289,7 @@ describe("unavailable saved operators", () => {
         (spec) => spec.operator_id !== "gis.map.compose",
       ),
     });
-    const sourceNode = hydrated.nodes.find(
-      (node) => node.id === "source-node",
-    );
+    const sourceNode = hydrated.nodes.find((node) => node.id === "source-node");
     const edge = hydrated.edges[0];
 
     expect(sourceNode?.data.compatibility).toMatchObject({
@@ -411,8 +398,10 @@ describe("saved edge enablement", () => {
     };
     const enabledEdge = enabledDraft.document.edges[0];
     if (!enabledEdge) throw new Error("enabled-edge fixture is incomplete");
-    const legacyEdge = { ...enabledEdge } as
-      Omit<typeof enabledEdge, "enabled"> & { enabled?: boolean };
+    const legacyEdge = { ...enabledEdge } as Omit<
+      typeof enabledEdge,
+      "enabled"
+    > & { enabled?: boolean };
     delete legacyEdge.enabled;
     const legacyDraft = {
       ...enabledDraft,
@@ -422,9 +411,9 @@ describe("saved edge enablement", () => {
       },
     } as unknown as typeof enabledDraft;
 
-    expect(
-      savedGraphFingerprint(legacyDraft),
-    ).toBe(savedGraphFingerprint(enabledDraft));
+    expect(savedGraphFingerprint(legacyDraft)).toBe(
+      savedGraphFingerprint(enabledDraft),
+    );
   });
 
   it("ignores presentation in the execution fingerprint", () => {
@@ -438,10 +427,12 @@ describe("saved edge enablement", () => {
       document: {
         ...base.document,
         presentation: {
-          viewers: [{
-            id: "viewer-1",
-            position: { x: 1, y: 2 },
-          }],
+          viewers: [
+            {
+              id: "viewer-1",
+              position: { x: 1, y: 2 },
+            },
+          ],
           links: base.document.presentation?.links ?? [],
           bindings: base.document.presentation?.bindings ?? [],
           annotations: base.document.presentation?.annotations ?? [],
@@ -466,9 +457,7 @@ describe("saved collection modes", () => {
     );
 
     expect(hydrated.edges[0]?.data?.collectionMode).toBe("direct");
-    expect(decodeHandleId(hydrated.edges[0]?.sourceHandle)?.shape).toBe(
-      "many",
-    );
+    expect(decodeHandleId(hydrated.edges[0]?.sourceHandle)?.shape).toBe("many");
   });
 
   it("hydrates a map edge from a many source into a one target", () => {
@@ -478,20 +467,13 @@ describe("saved collection modes", () => {
     );
 
     expect(hydrated.edges[0]?.data?.collectionMode).toBe("map");
-    expect(decodeHandleId(hydrated.edges[0]?.sourceHandle)?.shape).toBe(
-      "many",
-    );
+    expect(decodeHandleId(hydrated.edges[0]?.sourceHandle)?.shape).toBe("many");
     expect(decodeHandleId(hydrated.edges[0]?.targetHandle)?.shape).toBe("one");
   });
 
   it("rejects map edges targeting different inputs on the same node", () => {
     const sourceSpec = nodeSpec("source", "output", "x", "many");
-    const otherSourceSpec = nodeSpec(
-      "other-source",
-      "output",
-      "x",
-      "many",
-    );
+    const otherSourceSpec = nodeSpec("other-source", "output", "x", "many");
     const targetSpec = nodeSpec("target", "input", "z");
     const targetInput = targetSpec.inputs[0]!;
     const testRegistry: NodeRegistry = {
@@ -718,7 +700,9 @@ describe("saved instance plugs", () => {
       graphWithCollectPlugs(),
       collectRegistry(),
     );
-    const collectNode = hydrated.nodes.find((node) => node.id === "collect-node");
+    const collectNode = hydrated.nodes.find(
+      (node) => node.id === "collect-node",
+    );
     const edge = hydrated.edges[0];
 
     expect(collectNode?.data.inputPlugs).toEqual([
@@ -873,7 +857,9 @@ describe("saved generic artifact type bindings", () => {
       graphWithGenericCollectBinding(),
       genericCollectRegistry(),
     );
-    const collectNode = hydrated.nodes.find((node) => node.id === "collect-node");
+    const collectNode = hydrated.nodes.find(
+      (node) => node.id === "collect-node",
+    );
     const edge = hydrated.edges[0];
 
     expect(collectNode?.data.artifactTypeBindings).toEqual({
@@ -1050,19 +1036,21 @@ describe("saved graph module nodes", () => {
             position: { x: 300, y: 0 },
           },
         ],
-        edges: [{
-          id: "map-images",
-          from_node: "images",
-          from_port: "output",
-          to_node: "extract",
-          to_port: "image",
-          to_plug: null,
-          enabled: true,
-          collection_mode: "map",
-          projection: null,
-          conversion_path: [],
-          route_offset: null,
-        }],
+        edges: [
+          {
+            id: "map-images",
+            from_node: "images",
+            from_port: "output",
+            to_node: "extract",
+            to_port: "image",
+            to_plug: null,
+            enabled: true,
+            collection_mode: "map",
+            projection: null,
+            conversion_path: [],
+            route_offset: null,
+          },
+        ],
         presentation: {
           viewers: [],
           links: [],
@@ -1073,13 +1061,15 @@ describe("saved graph module nodes", () => {
     };
     const moduleV1 = moduleSpec(1, false);
     const hydrated = hydrateSavedGraph(savedGraph, {
-      plugins: [{
-        slug: "saved-graph-modules",
-        title: "Modules",
-        origin: "module",
-        entry_kind: "module",
-        runnable: true,
-      }],
+      plugins: [
+        {
+          slug: "saved-graph-modules",
+          title: "Modules",
+          origin: "module",
+          entry_kind: "module",
+          runnable: true,
+        },
+      ],
       artifact_types: [
         {
           key: imageType,

@@ -39,10 +39,7 @@ export type LibraryFoldersApi = {
     name: string;
   }): Promise<LibraryFolder>;
   /** Rejects with `LibraryFolderNotEmptyError` while the folder has contents. */
-  deleteFolder(input: {
-    workspaceId: string;
-    folderId: string;
-  }): Promise<void>;
+  deleteFolder(input: { workspaceId: string; folderId: string }): Promise<void>;
   /** Rejects with `LibraryFolderCycleError` when a folder would land inside itself. */
   moveFolder(input: {
     workspaceId: string;

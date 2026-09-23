@@ -13,6 +13,8 @@ describe("SWR API retry policy", () => {
   it("keeps retries for transient API and network failures", () => {
     expect(shouldRetryApiError(new ApiError(408, "timeout"))).toBe(true);
     expect(shouldRetryApiError(new ApiError(503, "unavailable"))).toBe(true);
-    expect(shouldRetryApiError(new TypeError("network unavailable"))).toBe(true);
+    expect(shouldRetryApiError(new TypeError("network unavailable"))).toBe(
+      true,
+    );
   });
 });

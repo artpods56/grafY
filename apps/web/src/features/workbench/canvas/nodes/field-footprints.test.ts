@@ -31,7 +31,9 @@ describe("config field footprints", () => {
     expect(
       configControlKind(scalarField({ enumValues: ["fast", "slow"] })),
     ).toBe("select");
-    expect(configControlKind(scalarField({ type: "boolean" }))).toBe("checkbox");
+    expect(configControlKind(scalarField({ type: "boolean" }))).toBe(
+      "checkbox",
+    );
     expect(configControlKind(scalarField({ format: "textarea" }))).toBe(
       "textarea",
     );

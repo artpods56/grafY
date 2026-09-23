@@ -262,8 +262,7 @@ export interface NodeExecutionAppendixProps {
 function interactionProps(props: ReturnType<typeof stylex.props>) {
   return {
     ...props,
-    className:
-      `nodrag nopan nowheel${props.className ? ` ${props.className}` : ""}`,
+    className: `nodrag nopan nowheel${props.className ? ` ${props.className}` : ""}`,
   };
 }
 
@@ -277,8 +276,8 @@ function progressEntryContext(
   const invocationPath = entry.invocationPath.length
     ? entry.invocationPath.map((index) => index + 1)
     : entry.invocationIndex === null
-    ? []
-    : [entry.invocationIndex + 1];
+      ? []
+      : [entry.invocationIndex + 1];
   if (!invocationPath.length) return source;
   const invocationLabel = invocationPath.length === 1 ? "item" : "items";
   return `${source} · ${invocationLabel} ${invocationPath.join(" › ")}`;
@@ -321,7 +320,7 @@ async function loadNodeHistory([
   });
   const details = await Promise.all(
     executionList.items.map((item) =>
-      getGraphExecution(workspaceId, graphId, item.execution_id)
+      getGraphExecution(workspaceId, graphId, item.execution_id),
     ),
   );
   const rows: NodeHistoryRow[] = [];
@@ -354,7 +353,10 @@ function ProgressRow({
   const context = progressEntryContext(entry, nodeTitle);
   const amount = progressEntryAmount(entry);
   return (
-    <span title={progressEntryLabel(entry, nodeTitle)} {...stylex.props(s.rowCopy)}>
+    <span
+      title={progressEntryLabel(entry, nodeTitle)}
+      {...stylex.props(s.rowCopy)}
+    >
       <span {...stylex.props(s.rowContext)}>{context}</span>
       {" · "}
       {entry.message}
@@ -454,9 +456,11 @@ function EventsPanel({
             <button
               type="button"
               aria-expanded={disclosed}
-              aria-label={disclosed
-                ? "Hide earlier events"
-                : `Show ${earlier.length} earlier events`}
+              aria-label={
+                disclosed
+                  ? "Hide earlier events"
+                  : `Show ${earlier.length} earlier events`
+              }
               {...interactionProps(stylex.props(s.expandButton))}
               onClick={() => setDisclosed((current) => !current)}
             >
@@ -507,25 +511,39 @@ function HistoryPanel({
 }) {
   const showTemporaryResult = artifactCount > 0 && (!graphId || isDirty);
   return (
-    <div role="list" aria-label="Node execution history" {...stylex.props(s.stack, s.historyList)}>
+    <div
+      role="list"
+      aria-label="Node execution history"
+      {...stylex.props(s.stack, s.historyList)}
+    >
       {showTemporaryResult ? (
         <div
           role="listitem"
           aria-label="Temporary current result"
           {...stylex.props(s.row, s.temporaryRow)}
         >
-          <span {...stylex.props(s.temporaryLabel)}>Current result · temporary</span>
+          <span {...stylex.props(s.temporaryLabel)}>
+            Current result · temporary
+          </span>
           <span {...stylex.props(s.historyMeta)}>
             {artifactCount} artifact{artifactCount === 1 ? "" : "s"}
           </span>
         </div>
       ) : null}
       {!graphId ? (
-        <p {...stylex.props(s.state)}>Save the graph to build durable history.</p>
+        <p {...stylex.props(s.state)}>
+          Save the graph to build durable history.
+        </p>
       ) : loading ? (
-        <p role="status" {...stylex.props(s.state)}>Loading history…</p>
+        <p role="status" {...stylex.props(s.state)}>
+          Loading history…
+        </p>
       ) : error ? (
-        <p role="alert" title={error.message} {...stylex.props(s.state, s.stateError)}>
+        <p
+          role="alert"
+          title={error.message}
+          {...stylex.props(s.state, s.stateError)}
+        >
           History unavailable.
         </p>
       ) : rows.length === 0 ? (
@@ -579,9 +597,10 @@ export function NodeExecutionAppendix({
 }: NodeExecutionAppendixProps) {
   const [activeTab, setActiveTab] = React.useState<AppendixTab>("events");
   const entries = React.useMemo(
-    () => [...(progress?.entries ?? [])].sort(
-      (left, right) => right.sequence - left.sequence,
-    ),
+    () =>
+      [...(progress?.entries ?? [])].sort(
+        (left, right) => right.sequence - left.sequence,
+      ),
     [progress],
   );
   const artifactCount = (run?.outputs ?? []).reduce(
@@ -593,18 +612,19 @@ export function NodeExecutionAppendix({
   const isDirty = historyContext?.isDirty ?? true;
   const runArtifactRevision = JSON.stringify(
     (run?.outputs ?? []).flatMap((output) =>
-      output.artifacts.map((artifact) => artifact.artifact_id)
+      output.artifacts.map((artifact) => artifact.artifact_id),
     ),
   );
-  const historyKey: NodeHistoryKey | null = expanded && workspaceId && graphId
-    ? [
-        "node-execution-appendix-history",
-        workspaceId,
-        graphId,
-        nodeId,
-        runArtifactRevision,
-      ]
-    : null;
+  const historyKey: NodeHistoryKey | null =
+    expanded && workspaceId && graphId
+      ? [
+          "node-execution-appendix-history",
+          workspaceId,
+          graphId,
+          nodeId,
+          runArtifactRevision,
+        ]
+      : null;
   const {
     data: historyResult,
     error: historyError,
@@ -613,15 +633,14 @@ export function NodeExecutionAppendix({
     historyKey,
     loadNodeHistory,
   );
-  const temporaryHistoryCount = artifactCount > 0 && (!graphId || isDirty)
-    ? 1
-    : 0;
+  const temporaryHistoryCount =
+    artifactCount > 0 && (!graphId || isDirty) ? 1 : 0;
   const durableHistoryCount = historyResult?.rows.length ?? 0;
   const historyCount = `${durableHistoryCount + temporaryHistoryCount}${
     historyResult?.hasMore ? "+" : ""
   }`;
-  const eventCount = entries.length + (progress?.omittedCount ?? 0) +
-    (execution.error ? 1 : 0);
+  const eventCount =
+    entries.length + (progress?.omittedCount ?? 0) + (execution.error ? 1 : 0);
 
   const footprint = (
     <CollapsedFootprint
@@ -676,13 +695,17 @@ export function NodeExecutionAppendix({
         >
           <Tabs.Tab
             value="events"
-            {...interactionProps(stylex.props(s.tab, activeTab === "events" ? s.tabActive : null))}
+            {...interactionProps(
+              stylex.props(s.tab, activeTab === "events" ? s.tabActive : null),
+            )}
           >
             Events <span {...stylex.props(s.tabCount)}>{eventCount}</span>
           </Tabs.Tab>
           <Tabs.Tab
             value="history"
-            {...interactionProps(stylex.props(s.tab, activeTab === "history" ? s.tabActive : null))}
+            {...interactionProps(
+              stylex.props(s.tab, activeTab === "history" ? s.tabActive : null),
+            )}
           >
             History <span {...stylex.props(s.tabCount)}>{historyCount}</span>
           </Tabs.Tab>

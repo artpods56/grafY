@@ -52,10 +52,12 @@ describe("write-only node secret metadata", () => {
     expect(reconciledNodeSecretStatuses(spec, "llm-1", [])).toEqual({
       api_key: { state: "unconfigured" },
     });
-    expect(reconciledNodeSecretStatuses(spec, "llm-1", [
-      { node_id: "other", name: "api_key", configured: true },
-      { node_id: "llm-1", name: "api_key", configured: true },
-    ])).toEqual({
+    expect(
+      reconciledNodeSecretStatuses(spec, "llm-1", [
+        { node_id: "other", name: "api_key", configured: true },
+        { node_id: "llm-1", name: "api_key", configured: true },
+      ]),
+    ).toEqual({
       api_key: { state: "configured" },
     });
   });
@@ -92,14 +94,20 @@ describe("write-only node secret metadata", () => {
       },
     };
 
-    expect(nodeSecretBindingReady(input, {
-      ...savedNode,
-      config: {
-        ...savedNode.config,
-        model: "gpt-5.1-mini",
-        temperature: 0.4,
-      },
-    }, savedNode)).toBe(true);
+    expect(
+      nodeSecretBindingReady(
+        input,
+        {
+          ...savedNode,
+          config: {
+            ...savedNode.config,
+            model: "gpt-5.1-mini",
+            temperature: 0.4,
+          },
+        },
+        savedNode,
+      ),
+    ).toBe(true);
   });
 
   it("rejects changed dependencies, changed operators, and missing saved nodes", () => {
@@ -112,22 +120,46 @@ describe("write-only node secret metadata", () => {
       config: { base_url: "https://api.openai.com/v1" },
     };
 
-    expect(nodeSecretBindingReady(input, {
-      ...savedNode,
-      config: { base_url: "https://openrouter.ai/api/v1" },
-    }, savedNode)).toBe(false);
-    expect(nodeSecretBindingReady(input, {
-      ...savedNode,
-      id: "llm-2",
-    }, savedNode)).toBe(false);
-    expect(nodeSecretBindingReady(input, {
-      ...savedNode,
-      operator_id: "llm.other.completion",
-    }, savedNode)).toBe(false);
-    expect(nodeSecretBindingReady(input, {
-      ...savedNode,
-      operator_version: 2,
-    }, savedNode)).toBe(false);
+    expect(
+      nodeSecretBindingReady(
+        input,
+        {
+          ...savedNode,
+          config: { base_url: "https://openrouter.ai/api/v1" },
+        },
+        savedNode,
+      ),
+    ).toBe(false);
+    expect(
+      nodeSecretBindingReady(
+        input,
+        {
+          ...savedNode,
+          id: "llm-2",
+        },
+        savedNode,
+      ),
+    ).toBe(false);
+    expect(
+      nodeSecretBindingReady(
+        input,
+        {
+          ...savedNode,
+          operator_id: "llm.other.completion",
+        },
+        savedNode,
+      ),
+    ).toBe(false);
+    expect(
+      nodeSecretBindingReady(
+        input,
+        {
+          ...savedNode,
+          operator_version: 2,
+        },
+        savedNode,
+      ),
+    ).toBe(false);
     expect(nodeSecretBindingReady(input, savedNode, undefined)).toBe(false);
   });
 
@@ -161,8 +193,9 @@ describe("write-only node secret metadata", () => {
     };
 
     expect(nodeSecretBindingReady(apiKey!, currentNode, savedNode)).toBe(true);
-    expect(nodeSecretBindingReady(organizationKey!, currentNode, savedNode))
-      .toBe(false);
+    expect(
+      nodeSecretBindingReady(organizationKey!, currentNode, savedNode),
+    ).toBe(false);
   });
 
   it("restores readiness when a dependency is reverted to its saved value", () => {

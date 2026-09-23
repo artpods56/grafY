@@ -81,9 +81,7 @@ export interface WorkflowCanvasProps {
   onConnect: OnConnect;
   onConnectEnd?: OnConnectEnd;
   isValidConnection?: IsValidConnection<CanvasEdge>;
-  onPaneReady?: (
-    instance: ReactFlowInstance<CanvasNode, CanvasEdge>,
-  ) => void;
+  onPaneReady?: (instance: ReactFlowInstance<CanvasNode, CanvasEdge>) => void;
   onPaneClick?: () => void;
   animateEdges?: boolean;
   /** Disable durable canvas gestures while authority or synchronization is unavailable. */
@@ -115,13 +113,14 @@ export function WorkflowCanvas({
   const compactCanvas = useMediaQuery("(max-width: 720px)");
   const backgroundTouch = React.useRef(false);
   const renderedEdges = React.useMemo(
-    () => edges.map((edge) => ({
-      ...edge,
-      animated:
-        edge.type === WORKFLOW_EDGE_TYPE &&
-        animateEdges &&
-        !(edge as WorkflowEdge).data?.compatibilityIssues?.length,
-    })),
+    () =>
+      edges.map((edge) => ({
+        ...edge,
+        animated:
+          edge.type === WORKFLOW_EDGE_TYPE &&
+          animateEdges &&
+          !(edge as WorkflowEdge).data?.compatibilityIssues?.length,
+      })),
     [animateEdges, edges],
   );
 
@@ -177,18 +176,22 @@ export function WorkflowCanvas({
           const selectedNodes = nodes.filter((node) => node.selected);
           const selectedEdges = edges.filter((edge) => edge.selected);
           if (selectedNodes.length) {
-            onNodesChange(selectedNodes.map((node) => ({
-              id: node.id,
-              type: "select",
-              selected: false,
-            })));
+            onNodesChange(
+              selectedNodes.map((node) => ({
+                id: node.id,
+                type: "select",
+                selected: false,
+              })),
+            );
           }
           if (selectedEdges.length) {
-            onEdgesChange(selectedEdges.map((edge) => ({
-              id: edge.id,
-              type: "select",
-              selected: false,
-            })));
+            onEdgesChange(
+              selectedEdges.map((edge) => ({
+                id: edge.id,
+                type: "select",
+                selected: false,
+              })),
+            );
           }
         }}
         multiSelectionKeyCode="Shift"

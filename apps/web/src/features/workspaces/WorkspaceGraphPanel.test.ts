@@ -173,7 +173,9 @@ describe("workspace graph panel interactions", () => {
     {
       name: "outside pointer dismissal",
       dismiss: () =>
-        document.body.dispatchEvent(new Event("pointerdown", { bubbles: true })),
+        document.body.dispatchEvent(
+          new Event("pointerdown", { bubbles: true }),
+        ),
       reason: "outside-pointer",
     },
   ] as const)("reports $name", async ({ dismiss, reason }) => {

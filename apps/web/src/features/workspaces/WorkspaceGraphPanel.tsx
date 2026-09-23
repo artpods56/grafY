@@ -5,17 +5,13 @@ import { Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { useSavedGraphs } from "@/hooks/use-api";
-import {
-  FINE_POINTER_QUERY,
-  useMediaQuery,
-} from "@/hooks/use-media-query";
+import { FINE_POINTER_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import type { SavedGraphSummary } from "@/lib/api";
 import { workbenchGraphPath } from "@/features/workbench/routes";
 import { GraphRowMenu } from "./GraphRowMenu";
 
 export type WorkspaceGraphPanelCloseReason =
   "close-button" | "escape" | "graph-selected" | "outside-pointer";
-
 
 export function sortGraphsByRecency(
   graphs: readonly SavedGraphSummary[],
@@ -200,7 +196,9 @@ export function WorkspaceGraphPanel({
                 className="grafy-graph-panel__row-open"
                 onClick={() => openGraph(graph.id)}
               >
-                <span className="grafy-graph-panel__row-name">{graph.name}</span>
+                <span className="grafy-graph-panel__row-name">
+                  {graph.name}
+                </span>
                 <span className="grafy-graph-panel__row-meta">
                   {`${graphAgeLabel(graph.updated_at)} · ${graphCountLabel(graph)}`}
                 </span>

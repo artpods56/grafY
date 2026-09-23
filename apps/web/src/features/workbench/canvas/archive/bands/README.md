@@ -2,8 +2,8 @@
 
 Explored 2026-07 — not registered in the canvas, kept as a visual reference.
 
-| File | Idea |
-|---|---|
+| File            | Idea                                                         |
+| --------------- | ------------------------------------------------------------ |
 | `BandsTint.tsx` | Soft artifact wash on full-width input and output port bands |
 
 `BandsTint.tsx` is self-contained apart from current production canvas contracts,

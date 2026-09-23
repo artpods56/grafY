@@ -69,7 +69,10 @@ export type AnnotationNode = Node<
   typeof ANNOTATION_NODE_TYPE
 >;
 
-export const DEFAULT_ANNOTATION_LAYOUT: Record<AnnotationKind, AnnotationLayout> = {
+export const DEFAULT_ANNOTATION_LAYOUT: Record<
+  AnnotationKind,
+  AnnotationLayout
+> = {
   text: { width: 240, height: 120 },
   rectangle: { width: 160, height: 120 },
   ellipse: { width: 160, height: 160 },
@@ -89,7 +92,9 @@ export function normalizeAnnotationColor(
   return DEFAULT_ANNOTATION_COLOR;
 }
 
-export function clampAnnotationLayout(layout: AnnotationLayout): AnnotationLayout {
+export function clampAnnotationLayout(
+  layout: AnnotationLayout,
+): AnnotationLayout {
   return {
     width: Math.min(LAYOUT_MAX, Math.max(LAYOUT_MIN, layout.width)),
     height: Math.min(LAYOUT_MAX, Math.max(LAYOUT_MIN, layout.height)),
@@ -154,9 +159,7 @@ export function serializeAnnotations(
   return nodes.map((node) => {
     const layout = clampAnnotationLayout(node.data.layout);
     const text =
-      node.data.kind === "text"
-        ? node.data.text.slice(0, TEXT_MAX)
-        : "";
+      node.data.kind === "text" ? node.data.text.slice(0, TEXT_MAX) : "";
     return {
       id: node.id,
       kind: node.data.kind,
@@ -182,7 +185,8 @@ export function createAnnotationNode(
     data: {
       kind,
       layout: { ...DEFAULT_ANNOTATION_LAYOUT[kind] },
-      text: kind === "text" ? "## Note\n\nDescribe this part of the graph." : "",
+      text:
+        kind === "text" ? "## Note\n\nDescribe this part of the graph." : "",
       color: DEFAULT_ANNOTATION_COLOR,
     },
   };

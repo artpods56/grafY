@@ -42,7 +42,10 @@ function pointerEvent(
     clientY: number;
   },
 ) {
-  const event = new Event(type, { bubbles: true, cancelable: true }) as Event & {
+  const event = new Event(type, {
+    bubbles: true,
+    cancelable: true,
+  }) as Event & {
     pointerId: number;
     button: number;
     clientX: number;

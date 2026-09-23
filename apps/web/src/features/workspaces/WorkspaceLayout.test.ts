@@ -61,11 +61,16 @@ vi.mock("@/components/threshold-status", () => ({
 vi.mock("@/components/ui/dialog", () => ({
   Dialog: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
     open ? React.createElement("div", { role: "dialog" }, children) : null,
-  DialogBody: ({ children }: { children: React.ReactNode }) => React.createElement("div", null, children),
-  DialogContent: ({ children }: { children: React.ReactNode }) => React.createElement("div", null, children),
-  DialogDescription: ({ children }: { children: React.ReactNode }) => React.createElement("p", null, children),
-  DialogHeader: ({ children }: { children: React.ReactNode }) => React.createElement("div", null, children),
-  DialogTitle: ({ children }: { children: React.ReactNode }) => React.createElement("h2", null, children),
+  DialogBody: ({ children }: { children: React.ReactNode }) =>
+    React.createElement("div", null, children),
+  DialogContent: ({ children }: { children: React.ReactNode }) =>
+    React.createElement("div", null, children),
+  DialogDescription: ({ children }: { children: React.ReactNode }) =>
+    React.createElement("p", null, children),
+  DialogHeader: ({ children }: { children: React.ReactNode }) =>
+    React.createElement("div", null, children),
+  DialogTitle: ({ children }: { children: React.ReactNode }) =>
+    React.createElement("h2", null, children),
 }));
 
 vi.mock("swr", () => ({
@@ -140,7 +145,10 @@ async function renderWorkspaceRail(
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   };
-  vi.stubGlobal("matchMedia", vi.fn(() => media));
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => media),
+  );
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     callback(0);
     return 1;

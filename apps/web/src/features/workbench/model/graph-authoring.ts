@@ -189,18 +189,10 @@ export function isConnectionAccepted(
   artifactConversions: readonly ArtifactConversionSpec[],
   existingEdgeId: string | null = null,
 ): boolean {
-  const collectionMode = collectionModeForConnection(
-    connection,
-    nodes,
-    edges,
-  );
+  const collectionMode = collectionModeForConnection(connection, nodes, edges);
   if (
     !collectionMode ||
-    !connectionRoutesFor(
-      connection,
-      artifactTypes,
-      artifactConversions,
-    ).length
+    !connectionRoutesFor(connection, artifactTypes, artifactConversions).length
   ) {
     return false;
   }
@@ -216,8 +208,7 @@ export function isConnectionAccepted(
     if (
       !target.plugId ||
       !targetNode.data.inputPlugs.some(
-        (plug) =>
-          plug.id === target.plugId && plug.portName === input.name,
+        (plug) => plug.id === target.plugId && plug.portName === input.name,
       )
     ) {
       return false;
@@ -311,7 +302,9 @@ export function inputPlugBindingsForNode(
       if (!edge) return;
 
       const sourceHandle = decodeHandleId(edge.sourceHandle);
-      const sourceNode = nodes.find((candidate) => candidate.id === edge.source);
+      const sourceNode = nodes.find(
+        (candidate) => candidate.id === edge.source,
+      );
       if (sourceNode && !workflowNodeIsSupported(sourceNode.data)) return;
       const sourcePort = sourceNode?.data.spec.outputs.find(
         (candidate) => candidate.name === sourceHandle?.portName,

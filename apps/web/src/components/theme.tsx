@@ -93,7 +93,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const cycleTheme = React.useCallback(() => {
     setPreference(
-      preference === "light" ? "dark" : preference === "dark" ? "system" : "light",
+      preference === "light"
+        ? "dark"
+        : preference === "dark"
+          ? "system"
+          : "light",
     );
   }, [preference, setPreference]);
 

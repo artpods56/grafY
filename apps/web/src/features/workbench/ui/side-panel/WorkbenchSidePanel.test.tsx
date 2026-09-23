@@ -65,7 +65,9 @@ async function renderPanel(sidePanel: WorkbenchSidePanelState): Promise<void> {
   if (!sidePanel.open) return;
   await React.act(async () => {
     await vi.waitFor(() =>
-      expect(document.querySelector('[role="tabpanel"], [role="dialog"]')).not.toBeNull(),
+      expect(
+        document.querySelector('[role="tabpanel"], [role="dialog"]'),
+      ).not.toBeNull(),
     );
   });
 }
@@ -109,7 +111,9 @@ describe("WorkbenchSidePanel", () => {
     expect(tab("artifacts")?.getAttribute("aria-selected")).toBe("true");
     expect(tab("templates")?.getAttribute("aria-selected")).toBe("false");
     expect(document.body.textContent).toContain("The Library is empty");
-    expect(document.querySelector('[role="tree"][aria-label="Workspace Library"]')).not.toBeNull();
+    expect(
+      document.querySelector('[role="tree"][aria-label="Workspace Library"]'),
+    ).not.toBeNull();
   });
 
   it("shows the selected view in the tab panel", async () => {
@@ -118,9 +122,9 @@ describe("WorkbenchSidePanel", () => {
     expect(tab("templates")?.getAttribute("aria-selected")).toBe("true");
     expect(document.body.textContent).toContain("No graph templates");
     expect(
-      document.getElementById("grafy-side-panel-view")?.getAttribute(
-        "aria-labelledby",
-      ),
+      document
+        .getElementById("grafy-side-panel-view")
+        ?.getAttribute("aria-labelledby"),
     ).toBe("grafy-side-panel-tab-templates");
   });
 
@@ -159,9 +163,7 @@ describe("WorkbenchSidePanel", () => {
   it("resizes by keyboard from the separator", async () => {
     const sidePanel = state();
     await renderPanel(sidePanel);
-    const separator = panel()?.querySelector<HTMLElement>(
-      '[role="separator"]',
-    );
+    const separator = panel()?.querySelector<HTMLElement>('[role="separator"]');
 
     await React.act(async () => {
       separator?.dispatchEvent(

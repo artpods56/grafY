@@ -112,21 +112,21 @@ function nullableExecutionEventUuid(value: unknown): value is string | null {
 function validExecutionIdentifier(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const normalized = value.trim();
-  return normalized.length >= 1 &&
-    normalized.length <= MAX_EXECUTION_IDENTIFIER_CHARACTERS;
+  return (
+    normalized.length >= 1 &&
+    normalized.length <= MAX_EXECUTION_IDENTIFIER_CHARACTERS
+  );
 }
 
-function nullableExecutionIdentifier(
-  value: unknown,
-): value is string | null {
+function nullableExecutionIdentifier(value: unknown): value is string | null {
   return value === null || validExecutionIdentifier(value);
 }
 
 function nullableNonNegativeInteger(value: unknown): value is number | null {
-  return value === null ||
-    (typeof value === "number" &&
-      Number.isSafeInteger(value) &&
-      value >= 0);
+  return (
+    value === null ||
+    (typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
+  );
 }
 
 function validExecutionEventDateTime(value: unknown): value is string {
@@ -156,7 +156,8 @@ function validExecutionEventDateTime(value: unknown): value is string {
     30,
     31,
   ];
-  return month >= 1 &&
+  return (
+    month >= 1 &&
     month <= 12 &&
     day >= 1 &&
     day <= (daysInMonth[month - 1] ?? 0) &&
@@ -165,7 +166,8 @@ function validExecutionEventDateTime(value: unknown): value is string {
     second <= 59 &&
     offsetHour <= 23 &&
     offsetMinute <= 59 &&
-    !Number.isNaN(Date.parse(value));
+    !Number.isNaN(Date.parse(value))
+  );
 }
 
 function parseRunExecutionEvent(
@@ -211,9 +213,7 @@ function parseRunExecutionEvent(
     value.invocation_path.length > MAX_EXECUTION_EVENT_PATH_DEPTH ||
     !value.invocation_path.every(
       (index) =>
-        typeof index === "number" &&
-        Number.isSafeInteger(index) &&
-        index >= 0,
+        typeof index === "number" && Number.isSafeInteger(index) && index >= 0,
     )
   ) {
     throw new Error(`Invalid ${eventKind} execution event payload.`);
@@ -360,9 +360,13 @@ export function createSavedGraph(
   workspaceId: string,
   requestBody: CreateSavedGraphRequest,
 ) {
-  return request<CreateSavedGraphResponse>("POST", `/v1/workspaces/${encodeURIComponent(workspaceId)}/graphs`, {
-    body: requestBody,
-  });
+  return request<CreateSavedGraphResponse>(
+    "POST",
+    `/v1/workspaces/${encodeURIComponent(workspaceId)}/graphs`,
+    {
+      body: requestBody,
+    },
+  );
 }
 
 export function updateSavedGraph(
@@ -491,7 +495,10 @@ export function resolveUploadTargetUrl(target: UploadTarget): string {
   if (target.kind === "api") {
     if (target.url.startsWith("/v1/")) return `${API_BASE}${target.url}`;
     if (target.url.startsWith("/api/")) return target.url;
-    throw new ApiError(500, "The API upload target URL was not a recognized path.");
+    throw new ApiError(
+      500,
+      "The API upload target URL was not a recognized path.",
+    );
   }
   if (!/^https?:\/\//i.test(target.url)) {
     throw new ApiError(500, "The storage upload target URL must be absolute.");
@@ -500,18 +507,26 @@ export function resolveUploadTargetUrl(target: UploadTarget): string {
 }
 
 export function runGraph(workspaceId: string, requestBody: RunRequest) {
-  return request<RunResponse>("POST", `/v1/workspaces/${encodeURIComponent(workspaceId)}/runs`, {
-    body: requestBody,
-  });
+  return request<RunResponse>(
+    "POST",
+    `/v1/workspaces/${encodeURIComponent(workspaceId)}/runs`,
+    {
+      body: requestBody,
+    },
+  );
 }
 
 export function startRunExecution(
   workspaceId: string,
   requestBody: RunRequest,
 ) {
-  return request<RunExecution>("POST", `/v1/workspaces/${encodeURIComponent(workspaceId)}/executions`, {
-    body: requestBody,
-  });
+  return request<RunExecution>(
+    "POST",
+    `/v1/workspaces/${encodeURIComponent(workspaceId)}/executions`,
+    {
+      body: requestBody,
+    },
+  );
 }
 
 export function getRunExecution(workspaceId: string, executionId: string) {

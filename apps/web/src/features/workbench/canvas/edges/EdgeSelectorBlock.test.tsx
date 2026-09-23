@@ -29,7 +29,9 @@ vi.mock("@base-ui/react/popover", () => ({
       </button>
     ),
     Portal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    Positioner: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Positioner: ({ children }: { children: React.ReactNode }) => (
+      <>{children}</>
+    ),
     Popup: ({ children }: { children: React.ReactNode }) => (
       <div data-testid="edge-selector-menu">{children}</div>
     ),

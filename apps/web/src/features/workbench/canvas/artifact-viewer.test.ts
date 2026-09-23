@@ -20,11 +20,13 @@ describe("shared presentation", () => {
       content_hash: "c".repeat(64),
     };
     const loaded = artifactViewersFromPresentation("graph-1", {
-      viewers: [{
-        id: "artifact-card",
-        position: { x: 40, y: 80 },
-        artifact_ref: reference,
-      }],
+      viewers: [
+        {
+          id: "artifact-card",
+          position: { x: 40, y: 80 },
+          artifact_ref: reference,
+        },
+      ],
       links: [],
       bindings: [],
       annotations: [],
@@ -151,9 +153,7 @@ describe("shared presentation", () => {
     expect(JSON.stringify(presentation)).not.toContain("do-not-persist");
     expect(JSON.stringify(presentation)).not.toContain("private.example");
 
-    expect(
-      artifactViewersFromPresentation("graph-1", presentation),
-    ).toEqual({
+    expect(artifactViewersFromPresentation("graph-1", presentation)).toEqual({
       graphId: "graph-1",
       nodes: [
         {

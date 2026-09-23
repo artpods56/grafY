@@ -26,7 +26,11 @@ import { applyRoomCommandToHead } from "./room-command-bridge";
 
 export type { GraphRoomStatus, GraphRoomTerminalReason, RoomGraphCommand };
 export type { GraphRoomFailure, GraphRoomRecoveryReason };
-export type { ActiveExecutionSummary, PresenceParticipant, PresenceUpdateSubmit };
+export type {
+  ActiveExecutionSummary,
+  PresenceParticipant,
+  PresenceUpdateSubmit,
+};
 export { ROOM_COMMAND_QUEUE_CAP, graphRoomWebSocketUrl };
 
 export const PRESENCE_CLIENT_MIN_INTERVAL_MS = 50;
@@ -231,7 +235,9 @@ export class GraphRoomSession {
     );
   }
 
-  publishPresence(update: Omit<PresenceUpdateSubmit, "presence_sequence">): boolean {
+  publishPresence(
+    update: Omit<PresenceUpdateSubmit, "presence_sequence">,
+  ): boolean {
     if (!this.canPublishPresence()) return false;
     const now = Date.now();
     if (
@@ -297,11 +303,13 @@ export class GraphRoomSession {
     if (socket && socket.readyState < WebSocket.CLOSING) {
       socket.close(1000, "client_disconnect");
     }
-    this.rejectAllQueued(new GraphRoomCommandError(
-      "",
-      "disconnected",
-      "Graph room disconnected before the command completed.",
-    ));
+    this.rejectAllQueued(
+      new GraphRoomCommandError(
+        "",
+        "disconnected",
+        "Graph room disconnected before the command completed.",
+      ),
+    );
     this.localCommandIds.clear();
     this.reconnectAttempts = 0;
     this.setFailure(null);
@@ -510,7 +518,8 @@ export class GraphRoomSession {
       typeof raw === "object" &&
       raw !== null &&
       "protocol_version" in raw &&
-      typeof (raw as { protocol_version?: unknown }).protocol_version === "number"
+      typeof (raw as { protocol_version?: unknown }).protocol_version ===
+        "number"
         ? (raw as { protocol_version: number }).protocol_version
         : null;
     if (protocolVersion !== ROOM_PROTOCOL_VERSION) {
@@ -561,7 +570,10 @@ export class GraphRoomSession {
       this.finishHeadRehydration();
       return;
     }
-    if (message.type === "presence.join" || message.type === "presence.update") {
+    if (
+      message.type === "presence.join" ||
+      message.type === "presence.update"
+    ) {
       this.upsertParticipant(message.participant);
       return;
     }
@@ -611,15 +623,13 @@ export class GraphRoomSession {
         messageType: message.type,
         protocolVersion: message.protocol_version,
         closeCode: null,
-        detail: "The room-ready message identified a different workspace or graph.",
+        detail:
+          "The room-ready message identified a different workspace or graph.",
       });
       return;
     }
     let ready = message;
-    if (
-      this.head &&
-      !shouldReplaceCollaborativeHead(this.head, message.head)
-    ) {
+    if (this.head && !shouldReplaceCollaborativeHead(this.head, message.head)) {
       ready = { ...message, head: this.head };
     }
     this.ready = ready;
@@ -712,10 +722,7 @@ export class GraphRoomSession {
     }
     this.localCommandIds.delete(message.command_id);
     pending.receipt = message;
-    if (
-      message.requires_head_rehydration ||
-      !this.headCoversReceipt(message)
-    ) {
+    if (message.requires_head_rehydration || !this.headCoversReceipt(message)) {
       this.requestHeadRefresh();
       return;
     }
@@ -871,7 +878,8 @@ export class GraphRoomSession {
         messageType: null,
         protocolVersion: ROOM_PROTOCOL_VERSION,
         closeCode: code,
-        detail: reason || `The server closed the graph room (${classifiedReason}).`,
+        detail:
+          reason || `The server closed the graph room (${classifiedReason}).`,
       });
       return;
     }
@@ -974,8 +982,7 @@ export class GraphRoomSession {
         side: priorFailure?.side ?? "network",
         phase: priorFailure?.phase ?? "connect",
         messageType: priorFailure?.messageType ?? null,
-        protocolVersion:
-          priorFailure?.protocolVersion ?? ROOM_PROTOCOL_VERSION,
+        protocolVersion: priorFailure?.protocolVersion ?? ROOM_PROTOCOL_VERSION,
         closeCode: priorFailure?.closeCode ?? null,
         detail: `Automatic reconnection stopped after ${this.maxReconnectAttempts} attempts.`,
       });

@@ -473,7 +473,10 @@ export function applyRoomCommandToHead(
   const nextDocument = applyGraphCommand(base, local);
   let presentation = presentationFromCollaborativeHead(head);
   if (local.kind === "remove_nodes") {
-    presentation = prunePresentationLinks(presentation, new Set(local.node_ids));
+    presentation = prunePresentationLinks(
+      presentation,
+      new Set(local.node_ids),
+    );
   }
   const request = createSavedGraphRequest(nextDocument, presentation);
   return {

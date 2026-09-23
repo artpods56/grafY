@@ -63,9 +63,7 @@ export interface CapabilitySnapshot {
 }
 
 export type PresenceActivityKind =
-  | "moving_nodes"
-  | "editing_node"
-  | "connecting";
+  "moving_nodes" | "editing_node" | "connecting";
 
 export interface PresencePoint {
   readonly x: number;
@@ -118,7 +116,8 @@ export interface PresenceUpdateSubmit {
   readonly transient_node_positions?: readonly TransientNodePosition[];
 }
 
-export type ActiveExecutionLifecycleStatus = "queued" | "running" | "cancelling";
+export type ActiveExecutionLifecycleStatus =
+  "queued" | "running" | "cancelling";
 export type TerminalExecutionStatus = "cancelled" | "succeeded" | "failed";
 
 export interface ActiveExecutionSummary {
@@ -243,7 +242,11 @@ function isPositiveInt(value: unknown): value is number {
 
 function parseActor(value: unknown): ActorPresentation | null {
   if (!isRecord(value)) return null;
-  if (!isString(value.actor_id) || !isString(value.display_name) || !isString(value.color)) {
+  if (
+    !isString(value.actor_id) ||
+    !isString(value.display_name) ||
+    !isString(value.color)
+  ) {
     return null;
   }
   return {
@@ -259,7 +262,11 @@ function isFiniteNumber(value: unknown): value is number {
 
 function parsePresencePoint(value: unknown): PresencePoint | null {
   if (value === null) return null;
-  if (!isRecord(value) || !isFiniteNumber(value.x) || !isFiniteNumber(value.y)) {
+  if (
+    !isRecord(value) ||
+    !isFiniteNumber(value.x) ||
+    !isFiniteNumber(value.y)
+  ) {
     return null;
   }
   return { x: value.x, y: value.y };
@@ -326,7 +333,11 @@ function parseParticipant(value: unknown): PresenceParticipant | null {
     value.activity === null || value.activity === undefined
       ? null
       : parsePresenceActivity(value.activity);
-  if (value.activity !== null && value.activity !== undefined && activity === null) {
+  if (
+    value.activity !== null &&
+    value.activity !== undefined &&
+    activity === null
+  ) {
     return null;
   }
   return {
@@ -344,7 +355,10 @@ function parseParticipant(value: unknown): PresenceParticipant | null {
 
 function parseCapabilities(value: unknown): CapabilitySnapshot | null {
   if (!isRecord(value)) return null;
-  if (!Array.isArray(value.capabilities) || !isPositiveInt(value.authorization_version)) {
+  if (
+    !Array.isArray(value.capabilities) ||
+    !isPositiveInt(value.authorization_version)
+  ) {
     return null;
   }
   if (!value.capabilities.every((item) => isString(item))) return null;
@@ -409,7 +423,9 @@ function parseActiveExecution(value: unknown): ActiveExecutionSummary | null {
     scope: value.scope,
     requested_node_ids: value.requested_node_ids,
     starter,
-    active_node_id: isString(value.active_node_id) ? value.active_node_id : null,
+    active_node_id: isString(value.active_node_id)
+      ? value.active_node_id
+      : null,
     overlays_compatible: value.overlays_compatible,
     cancellable: value.cancellable,
   };
@@ -537,7 +553,11 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
     const epoch = raw.current_room_epoch;
     const sequence = raw.current_sequence;
     if (epoch !== null && epoch !== undefined && !isString(epoch)) return null;
-    if (sequence !== null && sequence !== undefined && !isNonNegativeInt(sequence)) {
+    if (
+      sequence !== null &&
+      sequence !== undefined &&
+      !isNonNegativeInt(sequence)
+    ) {
       return null;
     }
     return {

@@ -168,15 +168,17 @@ describe("generic artifact type reset", () => {
     data.execution = { status: "failed", error: "stale" };
     data.progress = {
       omittedCount: 0,
-      entries: [{
-        sequence: 1,
-        message: "stale",
-        current: null,
-        total: null,
-        sourceNodePath: [],
-        invocationIndex: null,
-        invocationPath: [],
-      }],
+      entries: [
+        {
+          sequence: 1,
+          message: "stale",
+          current: null,
+          total: null,
+          sourceNodePath: [],
+          invocationIndex: null,
+          invocationPath: [],
+        },
+      ],
     };
 
     expect(resetArtifactTypeBinding(data, "T", true)).toBe(data);
@@ -240,12 +242,7 @@ describe("generic artifact type reset", () => {
     );
     const concreteHandle = decodeHandleId(
       encodeHandleId(
-        portMetaForPort(
-          input,
-          input.shape,
-          plugId,
-          data.artifactTypeBindings,
-        ),
+        portMetaForPort(input, input.shape, plugId, data.artifactTypeBindings),
       ),
     );
 
@@ -281,15 +278,17 @@ describe("run node serialization", () => {
     data.onApplyNodeSecret = async () => true;
     data.progress = {
       omittedCount: 0,
-      entries: [{
-        sequence: 1,
-        message: "api_key=must-not-be-serialized",
-        current: null,
-        total: null,
-        sourceNodePath: [],
-        invocationIndex: null,
-        invocationPath: [],
-      }],
+      entries: [
+        {
+          sequence: 1,
+          message: "api_key=must-not-be-serialized",
+          current: null,
+          total: null,
+          sourceNodePath: [],
+          invocationIndex: null,
+          invocationPath: [],
+        },
+      ],
     };
 
     const request = serializeRunNode("llm-node", data);
@@ -310,15 +309,9 @@ describe("run node serialization", () => {
       { id: "disabled", portName: "items" },
     ];
 
-    const request = serializeRunNode(
-      "collect-node",
-      data,
-      new Set(["active"]),
-    );
+    const request = serializeRunNode("collect-node", data, new Set(["active"]));
 
-    expect(request.input_plugs).toEqual([
-      { id: "active", port: "items" },
-    ]);
+    expect(request.input_plugs).toEqual([{ id: "active", port: "items" }]);
     expect(data.inputPlugs).toHaveLength(2);
   });
 });

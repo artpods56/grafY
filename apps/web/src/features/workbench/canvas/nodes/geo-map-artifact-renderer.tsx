@@ -632,11 +632,7 @@ function categoryFilter(
   return [
     "all",
     POINT_FILTER,
-    [
-      "in",
-      ["get", style.category_property],
-      ["literal", [...category.values]],
-    ],
+    ["in", ["get", style.category_property], ["literal", [...category.values]]],
   ] as maplibregl.FilterSpecification;
 }
 
@@ -841,8 +837,7 @@ function createGeoMapStyle(
         const minzoom = Math.max(layer.min_zoom, category.min_zoom);
         const maxzoom = Math.min(layer.max_zoom, category.max_zoom);
         const filter = categoryFilter(layer.style, category);
-        const labelRadialOffset =
-          category.point.radius / label.size + 0.35;
+        const labelRadialOffset = category.point.radius / label.size + 0.35;
         renderLayers.push(
           {
             id: categoryLayerId(layer, category, "point"),
@@ -916,7 +911,9 @@ function createGeoMapStyle(
           minzoom: layer.min_zoom,
           maxzoom: layer.max_zoom,
           filter: POLYGON_FILTER,
-          layout: { visibility: visible(layer.visible, layer.style.fill.enabled) },
+          layout: {
+            visibility: visible(layer.visible, layer.style.fill.enabled),
+          },
           paint: {
             "fill-color": layer.style.fill.color,
             "fill-opacity": combinedOpacity(layer, layer.style.fill.opacity),
@@ -930,7 +927,9 @@ function createGeoMapStyle(
           minzoom: layer.min_zoom,
           maxzoom: layer.max_zoom,
           filter: POLYGON_FILTER,
-          layout: { visibility: visible(layer.visible, layer.style.outline.enabled) },
+          layout: {
+            visibility: visible(layer.visible, layer.style.outline.enabled),
+          },
           paint: {
             "line-color": layer.style.outline.color,
             "line-opacity": combinedOpacity(layer, layer.style.outline.opacity),
@@ -945,7 +944,9 @@ function createGeoMapStyle(
           minzoom: layer.min_zoom,
           maxzoom: layer.max_zoom,
           filter: LINE_FILTER,
-          layout: { visibility: visible(layer.visible, layer.style.line.enabled) },
+          layout: {
+            visibility: visible(layer.visible, layer.style.line.enabled),
+          },
           paint: {
             "line-color": layer.style.line.color,
             "line-opacity": combinedOpacity(layer, layer.style.line.opacity),
@@ -960,7 +961,9 @@ function createGeoMapStyle(
           minzoom: layer.min_zoom,
           maxzoom: layer.max_zoom,
           filter: POINT_FILTER,
-          layout: { visibility: visible(layer.visible, layer.style.point.enabled) },
+          layout: {
+            visibility: visible(layer.visible, layer.style.point.enabled),
+          },
           paint: {
             "circle-color": layer.style.point.color,
             "circle-opacity": combinedOpacity(layer, layer.style.point.opacity),
@@ -1045,16 +1048,23 @@ function normalizedMapBounds(
     east += 0.02;
     north += 0.02;
   }
-  return [[west, south], [east, north]];
+  return [
+    [west, south],
+    [east, north],
+  ];
 }
 
-function fitBounds(map: maplibregl.Map, bounds: GeoBounds | null, animate: boolean) {
+function fitBounds(
+  map: maplibregl.Map,
+  bounds: GeoBounds | null,
+  animate: boolean,
+) {
   const normalizedBounds = normalizedMapBounds(bounds);
   if (!normalizedBounds) return;
-  map.fitBounds(
-    normalizedBounds,
-    { ...MAP_FIT_OPTIONS, duration: animate ? 450 : 0 },
-  );
+  map.fitBounds(normalizedBounds, {
+    ...MAP_FIT_OPTIONS,
+    duration: animate ? 450 : 0,
+  });
 }
 
 function setLayerVisibility(
@@ -1090,7 +1100,12 @@ function applyLayerOverrides(
     if (layer.style.kind === "raster") {
       const id = layerId(layer, "raster");
       setLayerVisibility(map, id, layer.visible);
-      setPaint(map, id, "raster-opacity", combinedOpacity(layer, layer.style.opacity));
+      setPaint(
+        map,
+        id,
+        "raster-opacity",
+        combinedOpacity(layer, layer.style.opacity),
+      );
       setPaint(map, id, "raster-brightness-min", layer.style.brightness_min);
       setPaint(map, id, "raster-brightness-max", layer.style.brightness_max);
       setPaint(map, id, "raster-contrast", layer.style.contrast);
@@ -1105,8 +1120,7 @@ function applyLayerOverrides(
       for (const category of layer.style.categories) {
         const minzoom = Math.max(layer.min_zoom, category.min_zoom);
         const maxzoom = Math.min(layer.max_zoom, category.max_zoom);
-        const labelRadialOffset =
-          category.point.radius / label.size + 0.35;
+        const labelRadialOffset = category.point.radius / label.size + 0.35;
         const pointId = categoryLayerId(layer, category, "point");
         const labelId = categoryLayerId(layer, category, "label");
         if (map.getLayer(pointId)) {
@@ -1144,9 +1158,7 @@ function applyLayerOverrides(
         setLayerVisibility(
           map,
           labelId,
-          layer.visible &&
-            category.point.enabled &&
-            layer.style.label !== null,
+          layer.visible && category.point.enabled && layer.style.label !== null,
         );
         if (map.getLayer(labelId)) {
           map.setLayoutProperty(labelId, "text-field", [
@@ -1155,11 +1167,12 @@ function applyLayerOverrides(
             "",
           ]);
           map.setLayoutProperty(labelId, "text-size", label.size);
-          map.setLayoutProperty(
-            labelId,
-            "text-variable-anchor",
-            ["top", "bottom", "left", "right"],
-          );
+          map.setLayoutProperty(labelId, "text-variable-anchor", [
+            "top",
+            "bottom",
+            "left",
+            "right",
+          ]);
           map.setLayoutProperty(
             labelId,
             "text-radial-offset",
@@ -1178,7 +1191,12 @@ function applyLayerOverrides(
     const fillId = layerId(layer, "fill");
     setLayerVisibility(map, fillId, layer.visible && layer.style.fill.enabled);
     setPaint(map, fillId, "fill-color", layer.style.fill.color);
-    setPaint(map, fillId, "fill-opacity", combinedOpacity(layer, layer.style.fill.opacity));
+    setPaint(
+      map,
+      fillId,
+      "fill-opacity",
+      combinedOpacity(layer, layer.style.fill.opacity),
+    );
 
     for (const [kind, style] of [
       ["outline", layer.style.outline],
@@ -1192,13 +1210,32 @@ function applyLayerOverrides(
     }
 
     const pointId = layerId(layer, "point");
-    setLayerVisibility(map, pointId, layer.visible && layer.style.point.enabled);
+    setLayerVisibility(
+      map,
+      pointId,
+      layer.visible && layer.style.point.enabled,
+    );
     setPaint(map, pointId, "circle-color", layer.style.point.color);
-    setPaint(map, pointId, "circle-opacity", combinedOpacity(layer, layer.style.point.opacity));
+    setPaint(
+      map,
+      pointId,
+      "circle-opacity",
+      combinedOpacity(layer, layer.style.point.opacity),
+    );
     setPaint(map, pointId, "circle-radius", layer.style.point.radius);
-    setPaint(map, pointId, "circle-stroke-color", layer.style.point.stroke_color);
+    setPaint(
+      map,
+      pointId,
+      "circle-stroke-color",
+      layer.style.point.stroke_color,
+    );
     setPaint(map, pointId, "circle-stroke-opacity", layer.opacity);
-    setPaint(map, pointId, "circle-stroke-width", layer.style.point.stroke_width);
+    setPaint(
+      map,
+      pointId,
+      "circle-stroke-width",
+      layer.style.point.stroke_width,
+    );
 
     if (layer.style.label) {
       const labelId = layerId(layer, "label");
@@ -1254,7 +1291,8 @@ function NumberControl({
         {...stylex.props(s.controlInput)}
         onChange={(event) => {
           const next = Number(event.currentTarget.value);
-          if (Number.isFinite(next)) onChange(Math.max(min, Math.min(max, next)));
+          if (Number.isFinite(next))
+            onChange(Math.max(min, Math.min(max, next)));
         }}
       />
     </label>
@@ -1289,7 +1327,9 @@ function RangeControl({
           {...stylex.props(s.range)}
           onChange={(event) => onChange(Number(event.currentTarget.value))}
         />
-        <output {...stylex.props(s.rangeValue)}>{value.toFixed(step < 1 ? 2 : 0)}</output>
+        <output {...stylex.props(s.rangeValue)}>
+          {value.toFixed(step < 1 ? 2 : 0)}
+        </output>
       </span>
     </label>
   );
@@ -1490,7 +1530,9 @@ function LabelControls({
             type="text"
             value={value.property}
             {...stylex.props(s.controlInput)}
-            onChange={(event) => onChange({ ...value, property: event.currentTarget.value })}
+            onChange={(event) =>
+              onChange({ ...value, property: event.currentTarget.value })
+            }
           />
         </label>
         <ColorControl
@@ -1572,7 +1614,9 @@ function VectorControls({
           <button
             type="button"
             {...stylex.props(s.resetButton)}
-            onClick={() => onChange({ ...value, label: { ...DEFAULT_LABEL_STYLE } })}
+            onClick={() =>
+              onChange({ ...value, label: { ...DEFAULT_LABEL_STYLE } })
+            }
           >
             Enable labels
           </button>
@@ -1596,7 +1640,7 @@ function CategorizedPointControls({
     onChange({
       ...value,
       categories: value.categories.map((category) =>
-        category.id === categoryId ? update(category) : category
+        category.id === categoryId ? update(category) : category,
       ),
     });
   };
@@ -1647,7 +1691,8 @@ function CategorizedPointControls({
                   title={`${category.values.join(", ")} · zoom ${category.min_zoom}–${category.max_zoom}`}
                   {...stylex.props(s.categoryMeta)}
                 >
-                  {category.values.join(", ")} · z{category.min_zoom}–{category.max_zoom}
+                  {category.values.join(", ")} · z{category.min_zoom}–
+                  {category.max_zoom}
                 </span>
               </span>
               <input
@@ -1695,7 +1740,9 @@ function CategorizedPointControls({
           <button
             type="button"
             {...stylex.props(s.resetButton)}
-            onClick={() => onChange({ ...value, label: { ...DEFAULT_LABEL_STYLE } })}
+            onClick={() =>
+              onChange({ ...value, label: { ...DEFAULT_LABEL_STYLE } })
+            }
           >
             Enable labels
           </button>
@@ -1769,10 +1816,12 @@ function RasterControls({
           <select
             value={value.resampling}
             {...stylex.props(s.controlInput)}
-            onChange={(event) => onChange({
-              ...value,
-              resampling: event.currentTarget.value as "linear" | "nearest",
-            })}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                resampling: event.currentTarget.value as "linear" | "nearest",
+              })
+            }
           >
             <option value="linear">linear</option>
             <option value="nearest">nearest</option>
@@ -1893,7 +1942,11 @@ function LayerInspector({
               onChange={(style) => onChange({ ...layer, style })}
             />
           )}
-          <button type="button" {...stylex.props(s.resetButton)} onClick={onReset}>
+          <button
+            type="button"
+            {...stylex.props(s.resetButton)}
+            onClick={onReset}
+          >
             <RotateCcw size={11} aria-hidden="true" />
             Reset layer
           </button>
@@ -1918,9 +1971,13 @@ function GeoMapPreview({
   const workspaceId = workspace.id;
   const containerRef = React.useRef<HTMLDivElement>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
-  const [layers, setLayers] = React.useState(() => descriptor.layers.map(cloneLayer));
+  const [layers, setLayers] = React.useState(() =>
+    descriptor.layers.map(cloneLayer),
+  );
   const [inspectorOpen, setInspectorOpen] = React.useState(false);
-  const [expandedLayerId, setExpandedLayerId] = React.useState<string | null>(null);
+  const [expandedLayerId, setExpandedLayerId] = React.useState<string | null>(
+    null,
+  );
   const [mapReady, setMapReady] = React.useState(false);
   const [mapError, setMapError] = React.useState<string | null>(null);
   const [selectedFeature, setSelectedFeature] =
@@ -1932,9 +1989,10 @@ function GeoMapPreview({
     signature: string;
   } | null>(null);
   const inspectorId = React.useId();
-  const focusBindings = interaction?.incoming.filter((binding) =>
-    binding.effects.includes("focus")
-  ) ?? [];
+  const focusBindings =
+    interaction?.incoming.filter((binding) =>
+      binding.effects.includes("focus"),
+    ) ?? [];
   const focusRows = focusBindings.flatMap((binding) => binding.rows);
   const unmappedFocusSelectionCount = focusBindings.reduce(
     (count, binding) =>
@@ -1943,12 +2001,12 @@ function GeoMapPreview({
   );
   const focusSignature = JSON.stringify(focusRows);
   const focusKey = focusRows.length
-    ? [
+    ? ([
         "geo-artifact-focus",
         workspaceId,
         descriptor.artifact_id,
         focusSignature,
-      ] as const
+      ] as const)
     : null;
   const {
     data: focusResult,
@@ -2001,7 +2059,7 @@ function GeoMapPreview({
       }
       if (layer.style.kind === "categorized_points") {
         return layer.style.categories.map((category) =>
-          categoryLayerId(layer, category, "point")
+          categoryLayerId(layer, category, "point"),
         );
       }
       return [];
@@ -2023,9 +2081,10 @@ function GeoMapPreview({
       }
       map = new maplibregl.Map(mapOptions);
     } catch (error) {
-      const message = error instanceof Error
-        ? error.message
-        : "The browser could not initialize the interactive map";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "The browser could not initialize the interactive map";
       const errorTimer = window.setTimeout(() => setMapError(message), 0);
       return () => window.clearTimeout(errorTimer);
     }
@@ -2034,12 +2093,14 @@ function GeoMapPreview({
     const renderedFeaturesAt = (event: maplibregl.MapMouseEvent) => {
       const canvas = map.getCanvas();
       const displayedBounds = canvas.getBoundingClientRect();
-      const scaleX = displayedBounds.width > 0 && canvas.clientWidth > 0
-        ? canvas.clientWidth / displayedBounds.width
-        : 1;
-      const scaleY = displayedBounds.height > 0 && canvas.clientHeight > 0
-        ? canvas.clientHeight / displayedBounds.height
-        : 1;
+      const scaleX =
+        displayedBounds.width > 0 && canvas.clientWidth > 0
+          ? canvas.clientWidth / displayedBounds.width
+          : 1;
+      const scaleY =
+        displayedBounds.height > 0 && canvas.clientHeight > 0
+          ? canvas.clientHeight / displayedBounds.height
+          : 1;
       const canvasIsScaled =
         Math.abs(scaleX - 1) > 0.001 || Math.abs(scaleY - 1) > 0.001;
       // React Flow scales the viewer with CSS while MapLibre queries its
@@ -2059,7 +2120,9 @@ function GeoMapPreview({
           point[1] + FEATURE_HIT_RADIUS * scaleY,
         ],
       ];
-      const renderedLayerIds = interactiveLayerIds.filter((id) => map.getLayer(id));
+      const renderedLayerIds = interactiveLayerIds.filter((id) =>
+        map.getLayer(id),
+      );
       const features = renderedLayerIds.length
         ? map.queryRenderedFeatures(queryBounds, { layers: renderedLayerIds })
         : [];
@@ -2069,10 +2132,12 @@ function GeoMapPreview({
       };
     };
     map.on("mousemove", (event) => {
-      map.getCanvasContainer().classList.toggle(
-        "maplibregl-track-pointer",
-        renderedFeaturesAt(event).features.length > 0,
-      );
+      map
+        .getCanvasContainer()
+        .classList.toggle(
+          "maplibregl-track-pointer",
+          renderedFeaturesAt(event).features.length > 0,
+        );
     });
     map.on("mouseout", () => {
       map.getCanvasContainer().classList.remove("maplibregl-track-pointer");
@@ -2093,7 +2158,7 @@ function GeoMapPreview({
       }
 
       const ownerLayer = layersRef.current.find((layer) =>
-        layerRenderIds(layer).includes(feature.layer.id)
+        layerRenderIds(layer).includes(feature.layer.id),
       );
       const rawProperties: Record<string, unknown> =
         feature.properties && typeof feature.properties === "object"
@@ -2102,12 +2167,13 @@ function GeoMapPreview({
       const titleProperty =
         ownerLayer?.style.kind === "vector" ||
         ownerLayer?.style.kind === "categorized_points"
-        ? ownerLayer.style.label?.property ?? DEFAULT_LABEL_STYLE.property
-        : DEFAULT_LABEL_STYLE.property;
+          ? (ownerLayer.style.label?.property ?? DEFAULT_LABEL_STYLE.property)
+          : DEFAULT_LABEL_STYLE.property;
       const titleValue = rawProperties[titleProperty];
-      const featureId = feature.id === undefined || feature.id === null
-        ? null
-        : String(feature.id);
+      const featureId =
+        feature.id === undefined || feature.id === null
+          ? null
+          : String(feature.id);
       const properties = Object.entries(rawProperties)
         .map(([name, rawValue]) => {
           let value: string;
@@ -2128,18 +2194,19 @@ function GeoMapPreview({
       const selectionValues = Object.fromEntries(
         Object.entries(rawProperties).flatMap(([name, value]) =>
           value === null ||
-            typeof value === "string" ||
-            typeof value === "number" ||
-            typeof value === "boolean"
+          typeof value === "string" ||
+          typeof value === "number" ||
+          typeof value === "boolean"
             ? [[name, value]]
-            : []
+            : [],
         ),
       );
-      const title = typeof titleValue === "string" && titleValue.trim()
-        ? titleValue
-        : featureId
-          ? `Feature ${featureId}`
-          : `${feature.geometry.type} feature`;
+      const title =
+        typeof titleValue === "string" && titleValue.trim()
+          ? titleValue
+          : featureId
+            ? `Feature ${featureId}`
+            : `${feature.geometry.type} feature`;
 
       setInspectorOpen(false);
       setSelectedFeature({
@@ -2176,11 +2243,7 @@ function GeoMapPreview({
   React.useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map?.isStyleLoaded()) return;
-    applyInteractionOverrides(
-      map,
-      layers,
-      interaction?.incoming ?? [],
-    );
+    applyInteractionOverrides(map, layers, interaction?.incoming ?? []);
   }, [interaction?.incoming, layers, mapReady]);
 
   React.useEffect(() => {
@@ -2193,21 +2256,14 @@ function GeoMapPreview({
       !mapReady ||
       !map?.isStyleLoaded() ||
       !focusResult?.bounds ||
-      (
-        focusedSelectionRef.current?.map === map &&
-        focusedSelectionRef.current.signature === focusSignature
-      )
+      (focusedSelectionRef.current?.map === map &&
+        focusedSelectionRef.current.signature === focusSignature)
     ) {
       return;
     }
     fitBounds(map, focusResult.bounds, true);
     focusedSelectionRef.current = { map, signature: focusSignature };
-  }, [
-    focusResult?.bounds,
-    focusRows.length,
-    focusSignature,
-    mapReady,
-  ]);
+  }, [focusResult?.bounds, focusRows.length, focusSignature, mapReady]);
 
   React.useEffect(() => {
     mapRef.current?.resize();
@@ -2215,11 +2271,13 @@ function GeoMapPreview({
 
   const updateLayer = (index: number, next: GeoRenderLayer) => {
     setSelectedFeature((current) =>
-      current?.layerId === next.id ? null : current
+      current?.layerId === next.id ? null : current,
     );
-    setLayers((current) => current.map((layer, currentIndex) =>
-      currentIndex === index ? next : layer
-    ));
+    setLayers((current) =>
+      current.map((layer, currentIndex) =>
+        currentIndex === index ? next : layer,
+      ),
+    );
   };
 
   const moveLayer = (index: number, direction: -1 | 1) => {
@@ -2248,9 +2306,10 @@ function GeoMapPreview({
       };
     }
     if (focusError) {
-      const detail = focusError instanceof Error
-        ? focusError.message
-        : "The map query failed.";
+      const detail =
+        focusError instanceof Error
+          ? focusError.message
+          : "The map query failed.";
       return {
         state: "error",
         title: "Linked selection lookup failed",
@@ -2285,14 +2344,12 @@ function GeoMapPreview({
       focusResult.matched_feature_count > 0 &&
       !focusResult.bounds
     ) {
-      const featureLabel = focusResult.matched_feature_count === 1
-        ? "feature"
-        : "features";
+      const featureLabel =
+        focusResult.matched_feature_count === 1 ? "feature" : "features";
       return {
         state: "warning",
         title: "Linked feature has no geometry",
-        message:
-          `Matched ${focusResult.matched_feature_count} ${featureLabel}, but no geometry was available to focus.`,
+        message: `Matched ${focusResult.matched_feature_count} ${featureLabel}, but no geometry was available to focus.`,
       };
     }
     if (focusResult?.matched_feature_count === 1) {
@@ -2306,8 +2363,7 @@ function GeoMapPreview({
       return {
         state: "warning",
         title: "Multiple linked features located",
-        message:
-          `Located ${focusResult.matched_feature_count} matches; showing their combined extent.`,
+        message: `Located ${focusResult.matched_feature_count} matches; showing their combined extent.`,
       };
     }
     return null;
@@ -2356,7 +2412,11 @@ function GeoMapPreview({
           type="button"
           disabled={!descriptor.initial_bounds}
           aria-label="Fit descriptor bounds"
-          title={descriptor.initial_bounds ? "Fit descriptor bounds" : "No descriptor bounds"}
+          title={
+            descriptor.initial_bounds
+              ? "Fit descriptor bounds"
+              : "No descriptor bounds"
+          }
           {...mapInteractionProps(stylex.props(s.utilityButton))}
           onClick={() => {
             const map = mapRef.current;
@@ -2400,9 +2460,11 @@ function GeoMapPreview({
               index={index}
               count={layers.length}
               expanded={expandedLayerId === layer.id}
-              onExpandedChange={() => setExpandedLayerId((current) =>
-                current === layer.id ? null : layer.id
-              )}
+              onExpandedChange={() =>
+                setExpandedLayerId((current) =>
+                  current === layer.id ? null : layer.id,
+                )
+              }
               onChange={(next) => updateLayer(index, next)}
               onMove={(direction) => moveLayer(index, direction)}
               onReset={() => {
@@ -2494,7 +2556,7 @@ function GeoMapRendererState({
   const { workspace } = useWorkspaceContext();
   const [loadRequested, setLoadRequested] = React.useState(false);
   const renderKey = loadRequested
-    ? ["geo-artifact-render", workspace.id, artifact.artifact_id] as const
+    ? (["geo-artifact-render", workspace.id, artifact.artifact_id] as const)
     : null;
   const {
     data: descriptor,
@@ -2502,14 +2564,19 @@ function GeoMapRendererState({
     isLoading,
     mutate,
   } = useSWR(renderKey, ([, workspaceId, artifactId]) =>
-    getArtifactGeoRender(workspaceId, artifactId));
+    getArtifactGeoRender(workspaceId, artifactId),
+  );
 
   if (!loadRequested) {
     return (
       <div {...mapInteractionProps(stylex.props(s.shell))}>
         <div {...stylex.props(s.placeholder)}>
           <div {...stylex.props(s.placeholderContent)}>
-            <MapIcon size={26} aria-hidden="true" {...stylex.props(s.placeholderIcon)} />
+            <MapIcon
+              size={26}
+              aria-hidden="true"
+              {...stylex.props(s.placeholderIcon)}
+            />
             <span {...stylex.props(s.placeholderTitle)}>GIS preview ready</span>
             <span {...stylex.props(s.placeholderCopy)}>
               Load the render descriptor when you want to inspect this artifact.
@@ -2532,7 +2599,9 @@ function GeoMapRendererState({
       <div {...mapInteractionProps(stylex.props(s.shell))}>
         <div {...stylex.props(s.placeholder)}>
           <div role="alert" {...stylex.props(s.placeholderContent)}>
-            <span {...stylex.props(s.placeholderTitle)}>GIS preview unavailable</span>
+            <span {...stylex.props(s.placeholderTitle)}>
+              GIS preview unavailable
+            </span>
             <span {...stylex.props(s.placeholderCopy)}>
               The render descriptor could not be loaded.
             </span>
@@ -2573,7 +2642,8 @@ function GeoMapRendererState({
       <div {...stylex.props(s.rawShell)}>
         <div {...stylex.props(s.rawHeader)}>
           <span {...stylex.props(s.rawMeta)}>
-            {descriptor.kind} · {descriptor.layers.length} {descriptor.layers.length === 1 ? "layer" : "layers"}
+            {descriptor.kind} · {descriptor.layers.length}{" "}
+            {descriptor.layers.length === 1 ? "layer" : "layers"}
           </span>
           <button
             type="button"
@@ -2583,7 +2653,9 @@ function GeoMapRendererState({
             Unload
           </button>
         </div>
-        <pre {...stylex.props(s.raw)}>{JSON.stringify(descriptor, null, 2)}</pre>
+        <pre {...stylex.props(s.raw)}>
+          {JSON.stringify(descriptor, null, 2)}
+        </pre>
       </div>
     );
   }

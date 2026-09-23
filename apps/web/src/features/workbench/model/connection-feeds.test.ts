@@ -111,9 +111,7 @@ describe("connection feed presentation", () => {
 
     expect(routesMatchingProjectionPath(routes, ["body"])).toHaveLength(2);
     expect(routesMatchingProjectionPath(routes, ["missing"])).toHaveLength(0);
-    expect(routesForHandleFeed(routes, { kind: "whole" })).toEqual([
-      routes[0],
-    ]);
+    expect(routesForHandleFeed(routes, { kind: "whole" })).toEqual([routes[0]]);
     expect(
       routesForHandleFeed(routes, { kind: "projection", path: ["body"] }),
     ).toHaveLength(2);

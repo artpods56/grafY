@@ -49,9 +49,7 @@ import {
 
 const roots = new Map<Root, HTMLElement>();
 
-function workspace(
-  overrides: Partial<Workspace> = {},
-): Workspace {
+function workspace(overrides: Partial<Workspace> = {}): Workspace {
   return {
     id: "workspace-1",
     name: "Operations",
@@ -215,8 +213,12 @@ describe("WorkspaceModuleLibrary", () => {
     await vi.waitFor(() => {
       expect(container.textContent).toContain("No published Modules yet");
     });
-    expect(container.textContent).toContain("Add and connect at least one Module Output boundary");
-    expect(container.textContent).toContain("Publishing requires Editor or Owner access");
+    expect(container.textContent).toContain(
+      "Add and connect at least one Module Output boundary",
+    );
+    expect(container.textContent).toContain(
+      "Publishing requires Editor or Owner access",
+    );
   });
 
   it("renders state, current release, contract, source graph, and filters without a dead end", async () => {
@@ -229,7 +231,9 @@ describe("WorkspaceModuleLibrary", () => {
     expect(container.textContent).toContain("published");
     expect(container.textContent).toContain("Current release 4");
     expect(container.textContent).toContain("2 immutable releases");
-    expect(container.textContent).toContain("invoice · table.data@1 · required");
+    expect(container.textContent).toContain(
+      "invoice · table.data@1 · required",
+    );
     expect(container.textContent).toContain("normalized · table.data@1");
     expect(container.textContent).toContain("Source graph graph-1");
 
@@ -244,7 +248,10 @@ describe("WorkspaceModuleLibrary", () => {
   it("hides Owner stewardship actions when server capabilities do not grant them", async () => {
     mocks.listWorkspaceModules.mockResolvedValue({ modules: [moduleEntry()] });
     const container = await renderLibrary(
-      workspace({ role: "editor", capabilities: ["view_graph", "create_graph", "publish_module"] }),
+      workspace({
+        role: "editor",
+        capabilities: ["view_graph", "create_graph", "publish_module"],
+      }),
     );
 
     await vi.waitFor(() => {
@@ -268,17 +275,27 @@ describe("WorkspaceModuleLibrary", () => {
     });
     await React.act(async () => buttonNamed(container, "Deprecate").click());
     await vi.waitFor(() => {
-      expect(container.textContent).toContain("is deprecated. Existing pinned calls keep working.");
+      expect(container.textContent).toContain(
+        "is deprecated. Existing pinned calls keep working.",
+      );
     });
-    expect(mocks.deprecateModule).toHaveBeenCalledWith("workspace-1", "module-1");
+    expect(mocks.deprecateModule).toHaveBeenCalledWith(
+      "workspace-1",
+      "module-1",
+    );
 
     React.act(() => buttonNamed(container, "Withdraw from library").click());
     expect(container.textContent).toContain("This is not a hard delete.");
-    await React.act(async () => buttonNamed(container, "Confirm withdraw").click());
+    await React.act(async () =>
+      buttonNamed(container, "Confirm withdraw").click(),
+    );
     await vi.waitFor(() => {
       expect(container.textContent).toContain("was withdrawn from the library");
     });
-    expect(mocks.withdrawModule).toHaveBeenCalledWith("workspace-1", "module-1");
+    expect(mocks.withdrawModule).toHaveBeenCalledWith(
+      "workspace-1",
+      "module-1",
+    );
     expect(container.querySelector('[data-module-id="module-1"]')).toBeNull();
   });
 
@@ -308,10 +325,14 @@ describe("WorkspaceModuleLibrary", () => {
       expect(container.textContent).toContain("Invoice normalizer");
     });
     React.act(() => buttonNamed(container, "Import copy to Team").click());
-    expect(container.textContent).toContain("independent—not a live cross-Team link");
+    expect(container.textContent).toContain(
+      "independent—not a live cross-Team link",
+    );
     expect(container.textContent).toContain("Team · Finance");
 
-    await React.act(async () => buttonNamed(container, "Confirm import").click());
+    await React.act(async () =>
+      buttonNamed(container, "Confirm import").click(),
+    );
 
     expect(mocks.importModuleRelease).toHaveBeenCalledWith("workspace-2", {
       source_workspace_id: "workspace-1",

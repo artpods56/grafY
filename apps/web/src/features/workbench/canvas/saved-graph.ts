@@ -11,13 +11,8 @@ import {
   type SavedGraphNode,
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import {
-  connectionRouteForSelection,
-  encodeHandleId,
-} from "./handles";
-import {
-  hydrateNodeLayout,
-} from "./node-layout";
+import { connectionRouteForSelection, encodeHandleId } from "./handles";
+import { hydrateNodeLayout } from "./node-layout";
 import { artifactTypeColor } from "./nodes.css";
 import {
   WORKFLOW_EDGE_TYPE,
@@ -234,11 +229,13 @@ function requireArtifactTypeBindings(
   const declaredVariables = new Set(declaredArtifactTypeVariables(spec));
   const registryArtifactTypes = new Set(
     registry.artifact_types.map(
-      (artifact) =>
-        `${artifact.key.id}@${artifact.key.schema_version}`,
+      (artifact) => `${artifact.key.id}@${artifact.key.schema_version}`,
     ),
   );
-  const bindings: Record<string, WorkflowArtifactTypeBindingInput["artifact_type"]> = {};
+  const bindings: Record<
+    string,
+    WorkflowArtifactTypeBindingInput["artifact_type"]
+  > = {};
   for (const binding of savedNode.artifact_type_bindings ?? []) {
     if (!declaredVariables.has(binding.variable)) {
       throw new SavedGraphHydrationError(
@@ -250,8 +247,7 @@ function requireArtifactTypeBindings(
         `Cannot open “${savedGraph.name}”: node ${savedNode.id} binds artifact type variable ${binding.variable} more than once`,
       );
     }
-    const artifactTypeKey =
-      `${binding.artifact_type.id}@${binding.artifact_type.schema_version}`;
+    const artifactTypeKey = `${binding.artifact_type.id}@${binding.artifact_type.schema_version}`;
     if (!registryArtifactTypes.has(artifactTypeKey)) {
       throw new SavedGraphHydrationError(
         `Cannot open “${savedGraph.name}”: node ${savedNode.id} binds unavailable artifact type ${artifactTypeKey}`,
@@ -265,9 +261,7 @@ function requireArtifactTypeBindings(
   return bindings;
 }
 
-export function savedGraphFingerprint(
-  graph: CreateSavedGraphRequest,
-): string {
+export function savedGraphFingerprint(graph: CreateSavedGraphRequest): string {
   const presentation = graph.document.presentation ?? {
     viewers: [],
     links: [],
@@ -406,15 +400,17 @@ function connectionRouteIsValid(
       ),
     ),
   };
-  return connectionRouteForSelection(
-    connection,
-    registry.artifact_types,
-    registry.artifact_conversions,
-    {
-      projection: edge.projection ?? undefined,
-      conversionPath: edge.conversion_path ?? [],
-    },
-  ) !== null;
+  return (
+    connectionRouteForSelection(
+      connection,
+      registry.artifact_types,
+      registry.artifact_conversions,
+      {
+        projection: edge.projection ?? undefined,
+        conversionPath: edge.conversion_path ?? [],
+      },
+    ) !== null
+  );
 }
 
 export function hydrateSavedGraph(
@@ -434,74 +430,71 @@ export function hydrateSavedGraph(
     ]),
   );
   const nodeIds = new Set<string>();
-  const nodes: SavedGraphWorkflowNode[] = savedGraph.document.nodes.map((savedNode) => {
-    if (nodeIds.has(savedNode.id)) {
-      throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”: duplicate node id ${savedNode.id}`,
-      );
-    }
-    nodeIds.add(savedNode.id);
-    const operatorIdentity = operatorKey(
-      savedNode.operator_id,
-      savedNode.operator_version,
-    );
-    const spec = specs.get(
-      scopedOperatorKey(
-        savedNode.operator_id,
-        savedNode.operator_version,
-        savedNode.plugin_release_pin,
-      ),
-    );
-    let data: WorkflowNodeData;
-    if (!spec) {
-      data = incompatibleNodeData(
-        savedNode,
-        savedEdges,
-        "unsupported",
-        [
-          `Operator ${operatorIdentity} is unavailable. This saved node is preserved but cannot run.`,
-        ],
-      );
-    } else {
-      try {
-        const inputPlugs = requireInputPlugs(savedGraph, savedNode, spec);
-        data = createWorkflowNodeData(spec, inputPlugs);
-        data.artifactTypeBindings = requireArtifactTypeBindings(
-          savedGraph,
-          savedNode,
-          spec,
-          registry,
-        );
-        data.pluginReleasePin = persistedPluginReleasePin(savedNode);
-        data.config = structuredClone(savedNode.config ?? {});
-        data.layout =
-          hydrateNodeLayout(savedNode.layout) ?? defaultNodeLayout(spec);
-      } catch (error) {
-        if (!(error instanceof SavedGraphHydrationError)) throw error;
-        const graphPrefix = `Cannot open “${savedGraph.name}”: `;
-        const issue = error.message.startsWith(graphPrefix)
-          ? error.message.slice(graphPrefix.length)
-          : error.message;
-        data = incompatibleNodeData(
-          savedNode,
-          savedEdges,
-          "invalid",
-          [issue],
-          spec,
+  const nodes: SavedGraphWorkflowNode[] = savedGraph.document.nodes.map(
+    (savedNode) => {
+      if (nodeIds.has(savedNode.id)) {
+        throw new SavedGraphHydrationError(
+          `Cannot open “${savedGraph.name}”: duplicate node id ${savedNode.id}`,
         );
       }
-    }
-    return {
-      id: savedNode.id,
-      type: WORKFLOW_NODE_TYPE,
-      position: {
-        x: savedNode.position.x,
-        y: savedNode.position.y,
-      },
-      selected: false,
-      data,
-    } satisfies SavedGraphWorkflowNode;
-  });
+      nodeIds.add(savedNode.id);
+      const operatorIdentity = operatorKey(
+        savedNode.operator_id,
+        savedNode.operator_version,
+      );
+      const spec = specs.get(
+        scopedOperatorKey(
+          savedNode.operator_id,
+          savedNode.operator_version,
+          savedNode.plugin_release_pin,
+        ),
+      );
+      let data: WorkflowNodeData;
+      if (!spec) {
+        data = incompatibleNodeData(savedNode, savedEdges, "unsupported", [
+          `Operator ${operatorIdentity} is unavailable. This saved node is preserved but cannot run.`,
+        ]);
+      } else {
+        try {
+          const inputPlugs = requireInputPlugs(savedGraph, savedNode, spec);
+          data = createWorkflowNodeData(spec, inputPlugs);
+          data.artifactTypeBindings = requireArtifactTypeBindings(
+            savedGraph,
+            savedNode,
+            spec,
+            registry,
+          );
+          data.pluginReleasePin = persistedPluginReleasePin(savedNode);
+          data.config = structuredClone(savedNode.config ?? {});
+          data.layout =
+            hydrateNodeLayout(savedNode.layout) ?? defaultNodeLayout(spec);
+        } catch (error) {
+          if (!(error instanceof SavedGraphHydrationError)) throw error;
+          const graphPrefix = `Cannot open “${savedGraph.name}”: `;
+          const issue = error.message.startsWith(graphPrefix)
+            ? error.message.slice(graphPrefix.length)
+            : error.message;
+          data = incompatibleNodeData(
+            savedNode,
+            savedEdges,
+            "invalid",
+            [issue],
+            spec,
+          );
+        }
+      }
+      return {
+        id: savedNode.id,
+        type: WORKFLOW_NODE_TYPE,
+        position: {
+          x: savedNode.position.x,
+          y: savedNode.position.y,
+        },
+        selected: false,
+        data,
+      } satisfies SavedGraphWorkflowNode;
+    },
+  );
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const savedNodeById = new Map(
     savedGraph.document.nodes.map((savedNode) => [savedNode.id, savedNode]),
@@ -619,7 +612,9 @@ export function hydrateSavedGraph(
         );
       }
       const sourceShape = sourcePort
-        ? (mapEdgeByTargetNode.has(sourceNode.id) ? "many" : sourcePort.shape)
+        ? mapEdgeByTargetNode.has(sourceNode.id)
+          ? "many"
+          : sourcePort.shape
         : "one";
       sourceHandle = sourcePort
         ? encodeHandleId(
@@ -715,7 +710,9 @@ export function hydrateSavedGraph(
         );
       }
 
-      if (!connectionRouteIsValid(savedEdge, sourceNode, targetNode, registry)) {
+      if (
+        !connectionRouteIsValid(savedEdge, sourceNode, targetNode, registry)
+      ) {
         throw new SavedGraphHydrationError(
           `Cannot open “${savedGraph.name}”: edge ${savedEdge.id} has an incompatible artifact route`,
         );
@@ -766,10 +763,12 @@ export function hydrateSavedGraph(
         ...(savedEdge.projection
           ? { projection: { path: [...savedEdge.projection.path] } }
           : {}),
-        conversionPath: [...(savedEdge.conversion_path ?? [])].map((conversion) => ({
-          id: conversion.id,
-          version: conversion.version,
-        })),
+        conversionPath: [...(savedEdge.conversion_path ?? [])].map(
+          (conversion) => ({
+            id: conversion.id,
+            version: conversion.version,
+          }),
+        ),
         ...(savedEdge.route_offset
           ? {
               routeOffset: {

@@ -27,11 +27,21 @@ vi.mock("@/lib/api", () => ({
 vi.mock("@/components/ui/dialog", () => ({
   Dialog: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
     open ? <div role="dialog">{children}</div> : null,
-  DialogBody: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DialogDescription: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
-  DialogHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DialogTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
+  DialogBody: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogContent: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogDescription: ({ children }: { children: React.ReactNode }) => (
+    <p>{children}</p>
+  ),
+  DialogHeader: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogTitle: ({ children }: { children: React.ReactNode }) => (
+    <h2>{children}</h2>
+  ),
 }));
 
 import {
@@ -175,11 +185,21 @@ describe("moduleSetupReadiness", () => {
       publishedRelease: null,
     });
 
-    expect(checks.find((check) => check.id === "saved")?.status).toBe("complete");
-    expect(checks.find((check) => check.id === "revision")?.status).toBe("complete");
-    expect(checks.find((check) => check.id === "permission")?.status).toBe("complete");
-    expect(checks.find((check) => check.id === "interface")?.status).toBe("complete");
-    expect(checks.find((check) => check.id === "validation")?.status).toBe("pending");
+    expect(checks.find((check) => check.id === "saved")?.status).toBe(
+      "complete",
+    );
+    expect(checks.find((check) => check.id === "revision")?.status).toBe(
+      "complete",
+    );
+    expect(checks.find((check) => check.id === "permission")?.status).toBe(
+      "complete",
+    );
+    expect(checks.find((check) => check.id === "interface")?.status).toBe(
+      "complete",
+    );
+    expect(checks.find((check) => check.id === "validation")?.status).toBe(
+      "pending",
+    );
     expect(checks.find((check) => check.id === "publication")?.detail).toBe(
       "Ready for server validation and publication.",
     );
@@ -196,9 +216,15 @@ describe("PublishModuleDialog", () => {
       boundaries: [],
     });
 
-    expect(container.textContent).toContain("Save this graph before it can become a Module.");
-    expect(container.textContent).toContain("Publishing requires Editor or Owner access here");
-    expect(container.textContent).toContain("Add and connect at least one Module Output boundary");
+    expect(container.textContent).toContain(
+      "Save this graph before it can become a Module.",
+    );
+    expect(container.textContent).toContain(
+      "Publishing requires Editor or Owner access here",
+    );
+    expect(container.textContent).toContain(
+      "Add and connect at least one Module Output boundary",
+    );
     expect(buttonNamed(container, "Publish release").disabled).toBe(true);
   });
 
@@ -226,7 +252,9 @@ describe("PublishModuleDialog", () => {
     );
     const { container } = await renderSetup();
 
-    await React.act(async () => buttonNamed(container, "Publish release").click());
+    await React.act(async () =>
+      buttonNamed(container, "Publish release").click(),
+    );
 
     await vi.waitFor(() => {
       expect(container.querySelector('[role="alert"]')?.textContent).toContain(
@@ -253,7 +281,9 @@ describe("PublishModuleDialog", () => {
       ],
     });
     mocks.publishModuleRelease.mockResolvedValue(published);
-    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => undefined);
+    const alertSpy = vi
+      .spyOn(window, "alert")
+      .mockImplementation(() => undefined);
     const onPublished = vi.fn();
     const onViewModule = vi.fn();
     const onOpenSourceGraph = vi.fn();
@@ -263,7 +293,9 @@ describe("PublishModuleDialog", () => {
       onOpenSourceGraph,
     });
 
-    await React.act(async () => buttonNamed(container, "Publish release").click());
+    await React.act(async () =>
+      buttonNamed(container, "Publish release").click(),
+    );
 
     await vi.waitFor(() => {
       expect(container.textContent).toContain("Published release 3");
@@ -305,11 +337,15 @@ describe("PublishModuleDialog", () => {
     const { container } = await renderSetup();
 
     await vi.waitFor(() => {
-      expect(container.textContent).toContain("Existing callers stay pinned to release 2");
+      expect(container.textContent).toContain(
+        "Existing callers stay pinned to release 2",
+      );
     });
     expect(container.querySelector("input")).toBeNull();
 
-    await React.act(async () => buttonNamed(container, "Publish release").click());
+    await React.act(async () =>
+      buttonNamed(container, "Publish release").click(),
+    );
 
     expect(mocks.publishModuleRelease).toHaveBeenCalledWith("workspace-1", {
       source_graph_id: "graph-1",
@@ -317,7 +353,9 @@ describe("PublishModuleDialog", () => {
     });
     await vi.waitFor(() => {
       expect(container.textContent).toContain("Published release 3");
-      expect(container.textContent).toContain("Existing pinned calls were not changed.");
+      expect(container.textContent).toContain(
+        "Existing pinned calls were not changed.",
+      );
     });
   });
 });

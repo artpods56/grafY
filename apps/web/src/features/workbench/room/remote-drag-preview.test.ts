@@ -65,7 +65,11 @@ describe("remote drag previews", () => {
     syncRemoteDragTracks(tracks, new Map(), 100);
     expect(tracks.get("node-1")?.releaseAt).toBe(100);
 
-    const held = stepRemoteDragTracks(tracks, 100 + REMOTE_DRAG_RELEASE_HOLD_MS - 10, 16);
+    const held = stepRemoteDragTracks(
+      tracks,
+      100 + REMOTE_DRAG_RELEASE_HOLD_MS - 10,
+      16,
+    );
     expect(held["node-1"]).toBeDefined();
 
     const gone = stepRemoteDragTracks(

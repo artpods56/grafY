@@ -32,7 +32,9 @@ function getSnapshot(): WorkbenchChromeValue | null {
   return publishedChrome;
 }
 
-export function publishWorkbenchChrome(value: WorkbenchChromeValue | null): void {
+export function publishWorkbenchChrome(
+  value: WorkbenchChromeValue | null,
+): void {
   publishedChrome = value;
   for (const listener of listeners) listener();
 }

@@ -99,7 +99,8 @@ function droppedArtifactId(dataTransfer: DataTransfer): string | null {
  * The row action menu is rendered inside its row, so a click on the ⋯ or on one
  * of its items would otherwise fold the folder or select the artifact too.
  */
-const ROW_CONTROL_SELECTOR = 'button, [role="button"], [role="menu"], [role="menuitem"]';
+const ROW_CONTROL_SELECTOR =
+  'button, [role="button"], [role="menu"], [role="menuitem"]';
 
 function isRowAction(event: React.MouseEvent): boolean {
   const target = event.target;
@@ -150,8 +151,12 @@ export function LibraryPanel({
   const [sort, setSort] = React.useState<LibrarySort>("name");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [focusKey, setFocusKey] = React.useState<string | null>(null);
-  const [renamingFolderId, setRenamingFolderId] = React.useState<string | null>(null);
-  const [dragOverFolderId, setDragOverFolderId] = React.useState<string | null>(null);
+  const [renamingFolderId, setRenamingFolderId] = React.useState<string | null>(
+    null,
+  );
+  const [dragOverFolderId, setDragOverFolderId] = React.useState<string | null>(
+    null,
+  );
   const [fileDragOver, setFileDragOver] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [message, setMessage] = React.useState<string | null>(null);
@@ -196,7 +201,8 @@ export function LibraryPanel({
         name: uniqueFolderName(parentId),
         parentId,
       });
-      if (parentId !== null) setCollapsedFolder(libraryFolderKey(parentId), false);
+      if (parentId !== null)
+        setCollapsedFolder(libraryFolderKey(parentId), false);
       setRenamingFolderId(folder.folder_id);
       setFocusKey(libraryFolderKey(folder.folder_id));
     });
@@ -215,7 +221,10 @@ export function LibraryPanel({
     }
   }
 
-  async function ingestFiles(files: File[], folderId: string | null): Promise<void> {
+  async function ingestFiles(
+    files: File[],
+    folderId: string | null,
+  ): Promise<void> {
     if (files.length === 0 || uploading) return;
     setUploading(true);
     setMessage(null);
@@ -223,7 +232,9 @@ export function LibraryPanel({
       for (const file of files) {
         const uploaded = await uploadFile(workspaceId, file);
         if (uploaded.artifact_id == null) {
-          throw new Error(`Upload of ${file.name} completed without an artifact.`);
+          throw new Error(
+            `Upload of ${file.name} completed without an artifact.`,
+          );
         }
         await saveUploadedArtifactToLibrary(workspaceId, {
           artifact_id: uploaded.artifact_id,
@@ -267,7 +278,8 @@ export function LibraryPanel({
     const active = document.activeElement;
     if (!(active instanceof HTMLElement)) return focusKey;
     return (
-      active.closest<HTMLElement>("[data-tree-key]")?.dataset.treeKey ?? focusKey
+      active.closest<HTMLElement>("[data-tree-key]")?.dataset.treeKey ??
+      focusKey
     );
   }
 
@@ -333,8 +345,9 @@ export function LibraryPanel({
     if (event.key === "ArrowLeft") {
       if (key.startsWith("folder:")) {
         const folderId = key.slice("folder:".length);
-        const parent = folders.find((folder) => folder.folder_id === folderId)
-          ?.parent_id;
+        const parent = folders.find(
+          (folder) => folder.folder_id === folderId,
+        )?.parent_id;
         if (!collapsedFolders.has(key)) {
           event.preventDefault();
           setCollapsedFolder(key, true);
@@ -354,7 +367,10 @@ export function LibraryPanel({
       }
       return;
     }
-    if ((event.key === "Enter" || event.key === " ") && key.startsWith("folder:")) {
+    if (
+      (event.key === "Enter" || event.key === " ") &&
+      key.startsWith("folder:")
+    ) {
       event.preventDefault();
       setCollapsedFolder(key, !collapsedFolders.has(key));
       return;
@@ -382,9 +398,7 @@ export function LibraryPanel({
     for (let offset = 1; offset <= list.length; offset += 1) {
       const candidate = list[(current + offset) % list.length];
       if (
-        (candidate?.dataset.treeLabel ?? "")
-          .toLowerCase()
-          .startsWith(needle)
+        (candidate?.dataset.treeLabel ?? "").toLowerCase().startsWith(needle)
       ) {
         event.preventDefault();
         focusRow(candidate);
@@ -431,7 +445,9 @@ export function LibraryPanel({
         <button
           type="button"
           aria-label={
-            sort === "name" ? "Sort artifacts by newest" : "Sort artifacts by name"
+            sort === "name"
+              ? "Sort artifacts by newest"
+              : "Sort artifacts by name"
           }
           title={sort === "name" ? "Sorted by name" : "Sorted by newest"}
           {...stylex.props(s.iconButton)}
@@ -530,8 +546,8 @@ export function LibraryPanel({
             <ScrollArea.Content {...stylex.props(s.listContent)}>
               {isLoading ? (
                 <span role="status" {...stylex.props(s.notice)}>
-                  <LoaderCircle size={12} {...stylex.props(s.spinner)} /> Loading
-                  the Library…
+                  <LoaderCircle size={12} {...stylex.props(s.spinner)} />{" "}
+                  Loading the Library…
                 </span>
               ) : null}
               {error && !isLoading ? (
@@ -585,10 +601,15 @@ export function LibraryPanel({
                         }),
                       )
                     }
-                    onCreateSubfolder={(parentId) => void createFolder(parentId)}
+                    onCreateSubfolder={(parentId) =>
+                      void createFolder(parentId)
+                    }
                     onDelete={(folderId) =>
                       runOperation(() =>
-                        libraryFoldersApi.deleteFolder({ workspaceId, folderId }),
+                        libraryFoldersApi.deleteFolder({
+                          workspaceId,
+                          folderId,
+                        }),
                       )
                     }
                     onDragOverFolder={setDragOverFolderId}
@@ -690,7 +711,10 @@ function LibraryRow({
   onDelete: (folderId: string) => Promise<void>;
   onDragOverFolder: (folderId: string | null) => void;
   onMoveFolder: (folderId: string, parentId: string | null) => Promise<void>;
-  onMoveItems: (artifactIds: readonly string[], folderId: string | null) => Promise<void>;
+  onMoveItems: (
+    artifactIds: readonly string[],
+    folderId: string | null,
+  ) => Promise<void>;
   onUploadFiles: (files: File[], folderId: string | null) => void;
 }) {
   if (node.kind === "file") {
@@ -911,8 +935,16 @@ function LibraryFolderRow({
               {...stylex.props(s.menuPositioner)}
             >
               <Menu.Popup {...stylex.props(s.menu)}>
-                <MenuItem icon={FolderPlus} label="New subfolder" onSelect={onCreateSubfolder} />
-                <MenuItem icon={Pencil} label="Rename" onSelect={onStartRename} />
+                <MenuItem
+                  icon={FolderPlus}
+                  label="New subfolder"
+                  onSelect={onCreateSubfolder}
+                />
+                <MenuItem
+                  icon={Pencil}
+                  label="Rename"
+                  onSelect={onStartRename}
+                />
                 <MenuItem
                   icon={Trash2}
                   label={
@@ -1088,7 +1120,8 @@ function LibraryFileRow({
                 label="Copy link"
                 disabled={contentUrl === null}
                 onSelect={() => {
-                  if (contentUrl) void navigator.clipboard?.writeText(contentUrl);
+                  if (contentUrl)
+                    void navigator.clipboard?.writeText(contentUrl);
                 }}
               />
             </Menu.Popup>
@@ -1187,7 +1220,12 @@ function LibraryArtifactTile({
       ) : null}
       <span {...stylex.props(s.inspectorActions)}>
         {contentUrl ? (
-          <a href={contentUrl} target="_blank" rel="noreferrer" {...stylex.props(s.action)}>
+          <a
+            href={contentUrl}
+            target="_blank"
+            rel="noreferrer"
+            {...stylex.props(s.action)}
+          >
             <Download size={11} aria-hidden="true" />
             Open original
           </a>

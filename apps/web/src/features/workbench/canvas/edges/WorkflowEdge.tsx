@@ -123,7 +123,11 @@ function EdgeOption({
   return (
     <button
       type="button"
-      {...stylex.props(overlay.item, s.option, active ? overlay.itemActive : null)}
+      {...stylex.props(
+        overlay.item,
+        s.option,
+        active ? overlay.itemActive : null,
+      )}
       onClick={onSelect}
     >
       <span {...stylex.props(s.optionCopy)}>
@@ -153,7 +157,8 @@ export default function WorkflowEdgeControl({
   const { deleteElements } = useReactFlow();
   const docked = useEdgeIsDocked(id);
   const cellSize =
-    useOptionalCanvasGridSettings()?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
+    useOptionalCanvasGridSettings()?.settings.cellSize ??
+    GRID_CELL_SIZE_DEFAULT;
   const edgeData: WorkflowEdgeData = data ?? {
     enabled: true,
     collectionMode: "direct",
@@ -241,9 +246,7 @@ export default function WorkflowEdgeControl({
     enabled,
     compatible,
   });
-  const bridge = docked
-    ? dockedBridgeLayout(source, target, cellSize)
-    : null;
+  const bridge = docked ? dockedBridgeLayout(source, target, cellSize) : null;
 
   return (
     <>
@@ -351,7 +354,9 @@ export default function WorkflowEdgeControl({
                 {...stylex.props(
                   overlay.item,
                   s.option,
-                  edgeData.collectionMode === "direct" ? overlay.itemActive : null,
+                  edgeData.collectionMode === "direct"
+                    ? overlay.itemActive
+                    : null,
                 )}
                 onClick={() =>
                   edgeData.onUpdate?.(id, {

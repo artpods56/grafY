@@ -28,24 +28,20 @@ import {
 import type { GraphTemplate, Session, Workspace } from "@/lib/api";
 import { ApiError } from "@/lib/api/client";
 
-
 export interface LocatedTemplate {
   template: GraphTemplate;
   location: Workspace;
 }
 
-
 export function templateKey(item: LocatedTemplate): string {
   return `${item.location.id}:${item.template.id}`;
 }
-
 
 export function templateLocationLabel(
   workspace: Pick<Workspace, "kind" | "name">,
 ): string {
   return workspace.kind === "personal" ? "My graphs" : workspace.name;
 }
-
 
 export function filterLocatedTemplates(
   templates: readonly LocatedTemplate[],
@@ -63,26 +59,25 @@ export function filterLocatedTemplates(
   );
 }
 
-
 export function nextTemplateKey(
   templates: readonly LocatedTemplate[],
   selectedKey: string | null,
   direction: 1 | -1,
 ): string | null {
   if (templates.length === 0) return null;
-  const current = templates.findIndex((item) => templateKey(item) === selectedKey);
+  const current = templates.findIndex(
+    (item) => templateKey(item) === selectedKey,
+  );
   const start = current < 0 ? (direction === 1 ? -1 : 0) : current;
   const index = (start + direction + templates.length) % templates.length;
   return templateKey(templates[index]!);
 }
-
 
 export function templatePreviewSummary(template: GraphTemplate): string {
   const nodes = `${template.node_count} ${template.node_count === 1 ? "node" : "nodes"}`;
   const edges = `${template.edge_count} ${template.edge_count === 1 ? "connection" : "connections"}`;
   return `${nodes} · ${edges}`;
 }
-
 
 export function templateUseErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
@@ -96,7 +91,6 @@ export function templateUseErrorMessage(error: unknown): string {
   }
   return "The graph could not be created. Your template is unchanged; try again.";
 }
-
 
 function useLocatedTemplates(
   userId: string,
@@ -123,7 +117,6 @@ function useLocatedTemplates(
   });
 }
 
-
 function useWorkspaceFolders(workspaceId: string, enabled: boolean) {
   return useSWR(
     enabled && workspaceId ? ["graph-folders", workspaceId] : null,
@@ -131,13 +124,11 @@ function useWorkspaceFolders(workspaceId: string, enabled: boolean) {
   );
 }
 
-
 function creatorLabel(template: GraphTemplate, session: Session): string {
   if (template.created_by_user_id === session.user_id) return "You";
   if (template.created_by_user_id) return "Team member";
   return "Unknown creator";
 }
-
 
 export function TemplateLibrary() {
   const router = useRouter();
@@ -227,7 +218,9 @@ export function TemplateLibrary() {
         (location) => location.id === created.destination_workspace_id,
       );
       if (!destination) {
-        setUseError("The graph was created, but its save location is no longer listed.");
+        setUseError(
+          "The graph was created, but its save location is no longer listed.",
+        );
         return;
       }
       router.push(workbenchGraphPath(destination.slug, created.graph_id));
@@ -267,7 +260,9 @@ export function TemplateLibrary() {
       <main className="grafy-template-library">
         <header className="grafy-template-library__header">
           <div>
-            <p className="grafy-template-library__eyebrow">New graph / Library</p>
+            <p className="grafy-template-library__eyebrow">
+              New graph / Library
+            </p>
             <h1>Templates</h1>
             <p>Start an independent graph from an exact saved snapshot.</p>
           </div>
@@ -354,17 +349,23 @@ export function TemplateLibrary() {
           </section>
         ) : (
           <div className="grafy-template-library__workspace">
-            <section className="grafy-template-results" aria-label="Template results">
+            <section
+              className="grafy-template-results"
+              aria-label="Template results"
+            >
               <div className="grafy-template-results__heading">
                 <h2>
-                  {filtered.length} {filtered.length === 1 ? "template" : "templates"}
+                  {filtered.length}{" "}
+                  {filtered.length === 1 ? "template" : "templates"}
                 </h2>
                 <span>↑ ↓ to inspect</span>
               </div>
               <ul id="template-results" role="listbox" aria-label="Templates">
                 {filtered.map((item) => {
                   const key = templateKey(item);
-                  const active = selected ? templateKey(selected) === key : false;
+                  const active = selected
+                    ? templateKey(selected) === key
+                    : false;
                   return (
                     <li key={key}>
                       <button
@@ -428,7 +429,9 @@ export function TemplateLibrary() {
                   <form className="grafy-template-use" onSubmit={submitUse}>
                     <div className="grafy-template-use__heading">
                       <h3>Create independent graph</h3>
-                      <p>Later edits to either graph will not affect the other.</p>
+                      <p>
+                        Later edits to either graph will not affect the other.
+                      </p>
                     </div>
                     <label>
                       Graph name
@@ -476,7 +479,8 @@ export function TemplateLibrary() {
                     </label>
                     {folderError ? (
                       <p className="grafy-template-use__error" role="alert">
-                        Folders could not be loaded. Choose Unfiled or try again.
+                        Folders could not be loaded. Choose Unfiled or try
+                        again.
                       </p>
                     ) : null}
                     {useError ? (
@@ -496,14 +500,23 @@ export function TemplateLibrary() {
                       <button
                         className="grafy-workspace-button grafy-workspace-button--primary"
                         type="submit"
-                        disabled={useBusy || !destinationId || !graphName.trim()}
+                        disabled={
+                          useBusy || !destinationId || !graphName.trim()
+                        }
                       >
                         {useBusy ? (
-                          <LoaderCircle className="grafy-template-spin" size={14} />
+                          <LoaderCircle
+                            className="grafy-template-spin"
+                            size={14}
+                          />
                         ) : (
                           <ArrowRight size={14} />
                         )}
-                        {useBusy ? "Creating…" : useError ? "Try again" : "Create and open"}
+                        {useBusy
+                          ? "Creating…"
+                          : useError
+                            ? "Try again"
+                            : "Create and open"}
                       </button>
                     </div>
                   </form>

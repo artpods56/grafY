@@ -40,7 +40,9 @@ vi.mock("@base-ui/react/popover", () => ({
       </button>
     ),
     Portal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    Positioner: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Positioner: ({ children }: { children: React.ReactNode }) => (
+      <>{children}</>
+    ),
     Popup: ({ children }: { children: React.ReactNode }) => (
       <div data-testid="edge-selector-menu">{children}</div>
     ),
@@ -102,23 +104,25 @@ function bindingEdge(): ArtifactViewerInteractionEdge & {
         effects: ["highlight", "focus"],
         emptySelection: "show_all",
       },
-      sourceFields: [{
-        id: "normalized_name",
-        title: "Normalized name",
-        valueType: "text",
-      }],
-      targetFields: [{
-        id: "transliteration",
-        title: "Transliteration",
-        valueType: "text",
-      }],
+      sourceFields: [
+        {
+          id: "normalized_name",
+          title: "Normalized name",
+          valueType: "text",
+        },
+      ],
+      targetFields: [
+        {
+          id: "transliteration",
+          title: "Transliteration",
+          valueType: "text",
+        },
+      ],
     },
   };
 }
 
-function renderEdge(
-  edge: ArtifactViewerInteractionEdge,
-) {
+function renderEdge(edge: ArtifactViewerInteractionEdge) {
   const container = document.createElement("div");
   document.body.append(container);
   containers.push(container);
@@ -137,9 +141,7 @@ function renderEdge(
           sourcePosition: "right",
           targetPosition: "left",
           selected: false,
-        } as React.ComponentProps<
-          typeof ArtifactViewerInteractionEdgeControl
-        >)}
+        } as React.ComponentProps<typeof ArtifactViewerInteractionEdgeControl>)}
       />,
     );
   });
@@ -171,7 +173,7 @@ describe("ArtifactViewerInteractionEdge", () => {
     expect(sourceSelect?.tagName).toBe("SELECT");
     expect(targetSelect?.tagName).toBe("SELECT");
     expect(
-      [...sourceSelect?.options ?? []].map((option) => [
+      [...(sourceSelect?.options ?? [])].map((option) => [
         option.value,
         option.textContent,
       ]),
@@ -180,7 +182,7 @@ describe("ArtifactViewerInteractionEdge", () => {
       ["normalized_name", "Normalized name · text"],
     ]);
     expect(
-      [...targetSelect?.options ?? []].map((option) => [
+      [...(targetSelect?.options ?? [])].map((option) => [
         option.value,
         option.textContent,
       ]),
@@ -197,16 +199,18 @@ describe("ArtifactViewerInteractionEdge", () => {
     expect(onBindingChange).toHaveBeenLastCalledWith(
       "artifact-viewer-binding-1",
       expect.objectContaining({
-        mappings: [{
-          sourceField: "normalized_name",
-          targetField: "",
-        }],
+        mappings: [
+          {
+            sourceField: "normalized_name",
+            targetField: "",
+          },
+        ],
       }),
     );
 
-    const filter = [...document.body.querySelectorAll("label")].find(
-      (label) => label.textContent?.trim() === "filter",
-    )?.querySelector<HTMLInputElement>("input");
+    const filter = [...document.body.querySelectorAll("label")]
+      .find((label) => label.textContent?.trim() === "filter")
+      ?.querySelector<HTMLInputElement>("input");
     React.act(() => filter?.click());
     expect(onBindingChange).toHaveBeenLastCalledWith(
       "artifact-viewer-binding-1",
@@ -231,7 +235,7 @@ describe("ArtifactViewerInteractionEdge", () => {
       '[aria-label="Source field 1"]',
     );
     expect(
-      [...sourceSelect?.options ?? []].map((option) => option.value),
+      [...(sourceSelect?.options ?? [])].map((option) => option.value),
     ).toEqual(["", "legacy_id", "normalized_name"]);
     expect(sourceSelect?.value).toBe("legacy_id");
   });
@@ -255,9 +259,11 @@ describe("ArtifactViewerInteractionEdge", () => {
   it("removes the persisted binding through the canvas edge contract", () => {
     const container = renderEdge(bindingEdge());
     React.act(() => {
-      container.querySelector<HTMLButtonElement>(
-        '[aria-label="Remove viewer interaction"]',
-      )?.click();
+      container
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="Remove viewer interaction"]',
+        )
+        ?.click();
     });
     expect(flowMocks.deleteElements).toHaveBeenCalledWith({
       edges: [{ id: "artifact-viewer-binding-1" }],
@@ -267,7 +273,9 @@ describe("ArtifactViewerInteractionEdge", () => {
   it("docks into the lattice gutter with the shared selector pill", () => {
     dockMocks.docked = true;
     const container = renderEdge(bindingEdge());
-    const block = container.querySelector('[data-testid="edge-selector-block"]');
+    const block = container.querySelector(
+      '[data-testid="edge-selector-block"]',
+    );
     expect(block?.getAttribute("data-docked")).toBe("true");
     expect(container.textContent).toContain("follow · highlight + focus");
   });

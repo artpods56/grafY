@@ -10,7 +10,9 @@ afterEach(() => {
 
 describe("browser API transport", () => {
   it("uses the relative same-origin base and credentials", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response("{}", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     await request("GET", "/v1/session");
@@ -35,9 +37,11 @@ describe("browser API transport", () => {
   });
 
   it("adds the CSRF token only to unsafe requests", async () => {
-    const fetchMock = vi.fn().mockImplementation(() =>
-      Promise.resolve(new Response("{}", { status: 200 }))
-    );
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(new Response("{}", { status: 200 })),
+      );
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("document", { cookie: `grafy_csrf=${csrfSentinel}` });
 
@@ -49,13 +53,20 @@ describe("browser API transport", () => {
 
     const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
     expect(calls).toHaveLength(5);
-    expect(calls.slice(0, 3).every(([, init]) =>
-      !(init.headers as Record<string, string>)["X-CSRF-Token"]
-    )).toBe(true);
-    expect((calls[3]?.[1].headers as Record<string, string>)["X-CSRF-Token"])
-      .toBe(csrfSentinel);
-    expect((calls[4]?.[1].headers as Record<string, string>)["X-CSRF-Token"])
-      .toBe(csrfSentinel);
+    expect(
+      calls
+        .slice(0, 3)
+        .every(
+          ([, init]) =>
+            !(init.headers as Record<string, string>)["X-CSRF-Token"],
+        ),
+    ).toBe(true);
+    expect(
+      (calls[3]?.[1].headers as Record<string, string>)["X-CSRF-Token"],
+    ).toBe(csrfSentinel);
+    expect(
+      (calls[4]?.[1].headers as Record<string, string>)["X-CSRF-Token"],
+    ).toBe(csrfSentinel);
     expect(JSON.stringify(calls[0])).not.toContain(csrfSentinel);
     expect(JSON.stringify(calls[1])).not.toContain(csrfSentinel);
     expect(JSON.stringify(calls[2])).not.toContain(csrfSentinel);
@@ -64,7 +75,9 @@ describe("browser API transport", () => {
   });
 
   it("does not fabricate a CSRF header when the cookie is absent", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response("{}", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("document", { cookie: "session=opaque-session" });
 
@@ -78,10 +91,12 @@ describe("browser API transport", () => {
     const responseBody = JSON.stringify({
       detail: `${csrfSentinel} ${"x".repeat(10_000)}`,
     });
-    const fetchMock = vi.fn().mockResolvedValue(new Response(responseBody, {
-      status: 400,
-      statusText: "Bad Request",
-    }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(responseBody, {
+        status: 400,
+        statusText: "Bad Request",
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("document", { cookie: `grafy_csrf=${csrfSentinel}` });
 
@@ -115,10 +130,12 @@ describe("browser API transport", () => {
         cancelled = true;
       },
     });
-    const fetchMock = vi.fn().mockResolvedValue(new Response(body, {
-      status: 400,
-      statusText: "Bad Request",
-    }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(body, {
+        status: 400,
+        statusText: "Bad Request",
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("document", { cookie: `grafy_csrf=${csrfSentinel}` });
 
@@ -147,10 +164,12 @@ describe("browser API transport", () => {
         return new Promise<void>(() => {});
       },
     });
-    const fetchMock = vi.fn().mockResolvedValue(new Response(body, {
-      status: 401,
-      statusText: "Unauthorized",
-    }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(body, {
+        status: 401,
+        statusText: "Unauthorized",
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const waitForNotification = new Promise<void>((resolve) => {
       const unsubscribe = onUnauthorized(() => {
@@ -161,12 +180,17 @@ describe("browser API transport", () => {
     });
 
     const pendingRequest = request("GET", "/v1/protected");
-    await expect(Promise.race([
-      waitForNotification,
-      new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("unauthorized notification was delayed")), 100);
-      }),
-    ])).resolves.toBeUndefined();
+    await expect(
+      Promise.race([
+        waitForNotification,
+        new Promise((_, reject) => {
+          setTimeout(
+            () => reject(new Error("unauthorized notification was delayed")),
+            100,
+          );
+        }),
+      ]),
+    ).resolves.toBeUndefined();
     expect(notified).toBe(true);
     bodyController?.error(new Error("stop test stream"));
     await expect(pendingRequest).rejects.toBeInstanceOf(ApiError);

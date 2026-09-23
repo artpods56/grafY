@@ -179,10 +179,7 @@ export function ConnectionRouteDialog({
                     {pendingRoute.source.artifactType}
                   </span>
                 </div>
-                <span
-                  aria-hidden="true"
-                  {...stylex.props(s.projectionArrow)}
-                >
+                <span aria-hidden="true" {...stylex.props(s.projectionArrow)}>
                   →
                 </span>
                 <div {...stylex.props(s.projectionEndpoint)}>

@@ -27,7 +27,10 @@ import {
   WorkspaceRail,
   workspaceDisplayName,
 } from "@/features/workspaces/WorkspaceLayout";
-import { graphAgeLabel, graphCountLabel } from "@/features/workspaces/WorkspaceGraphPanel";
+import {
+  graphAgeLabel,
+  graphCountLabel,
+} from "@/features/workspaces/WorkspaceGraphPanel";
 import {
   NEW_GRAPH_ROUTE_ID,
   workbenchGraphPath,
@@ -108,7 +111,8 @@ export function GraphBrowser() {
         return false;
       }
       if (!normalizedQuery) return true;
-      const haystack = `${graph.name} ${workspaceDisplayName(graph.location)}`.toLowerCase();
+      const haystack =
+        `${graph.name} ${workspaceDisplayName(graph.location)}`.toLowerCase();
       return haystack.includes(normalizedQuery);
     });
   }, [effectiveLocationId, graphState.graphs, normalizedQuery]);
@@ -318,7 +322,10 @@ export function GraphBrowser() {
                 ) : null}
               </section>
             ) : (
-              <ul className="grafy-graphs__list" aria-label={`${view === "recent" ? "Recent" : "All"} graphs`}>
+              <ul
+                className="grafy-graphs__list"
+                aria-label={`${view === "recent" ? "Recent" : "All"} graphs`}
+              >
                 {visibleGraphs.map((graph) => (
                   <GraphRow
                     key={`${graph.location.id}/${graph.id}`}

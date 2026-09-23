@@ -137,7 +137,8 @@ const s = stylex.create({
     borderBottomWidth: 1,
     borderBottomStyle: "solid",
     borderBottomColor: tokens.colorBorder,
-    backgroundColor: "light-dark(rgba(201, 146, 15, 0.09), rgba(251, 191, 36, 0.1))",
+    backgroundColor:
+      "light-dark(rgba(201, 146, 15, 0.09), rgba(251, 191, 36, 0.1))",
     color: tokens.colorWarning,
     fontSize: tokens.fontSizeXs,
     lineHeight: 1.45,
@@ -212,13 +213,21 @@ const s = stylex.create({
     textTransform: "uppercase",
   },
   statusSuccess: {
-    backgroundColor: "light-dark(rgba(42, 157, 124, 0.11), rgba(67, 197, 158, 0.14))",
+    backgroundColor:
+      "light-dark(rgba(42, 157, 124, 0.11), rgba(67, 197, 158, 0.14))",
     color: tokens.colorSuccess,
   },
-  statusFailure: { backgroundColor: tokens.colorDangerHover, color: tokens.colorDanger },
-  statusActive: { backgroundColor: tokens.colorAccentSoft, color: tokens.colorAccent },
+  statusFailure: {
+    backgroundColor: tokens.colorDangerHover,
+    color: tokens.colorDanger,
+  },
+  statusActive: {
+    backgroundColor: tokens.colorAccentSoft,
+    color: tokens.colorAccent,
+  },
   statusCancelled: {
-    backgroundColor: "light-dark(rgba(201, 146, 15, 0.12), rgba(251, 191, 36, 0.15))",
+    backgroundColor:
+      "light-dark(rgba(201, 146, 15, 0.12), rgba(251, 191, 36, 0.15))",
     color: tokens.colorWarning,
   },
   meta: {
@@ -401,7 +410,8 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 function executionTimestamp(execution: GraphExecutionSummary): string {
-  const value = execution.finished_at ?? execution.started_at ?? execution.created_at;
+  const value =
+    execution.finished_at ?? execution.started_at ?? execution.created_at;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat(undefined, {
@@ -485,8 +495,9 @@ export function ExecutionHistoryDrawer({
   const { data: registry } = useNodeRegistry(workspaceId);
   const drawerRef = React.useRef<HTMLElement>(null);
   const closeButtonRef = React.useRef<HTMLButtonElement>(null);
-  const [selectedExecutionId, setSelectedExecutionId] =
-    React.useState<string | null>(initialExecutionId);
+  const [selectedExecutionId, setSelectedExecutionId] = React.useState<
+    string | null
+  >(initialExecutionId);
   const historyKey = React.useCallback(
     (
       index: number,
@@ -498,7 +509,7 @@ export function ExecutionHistoryDrawer({
         workspaceId,
         graphId,
         nodeId,
-        index === 0 ? null : previousPage?.next_cursor ?? null,
+        index === 0 ? null : (previousPage?.next_cursor ?? null),
       ];
     },
     [graphId, nodeId, workspaceId],
@@ -530,11 +541,10 @@ export function ExecutionHistoryDrawer({
   }, [historyPages]);
   const nextCursor = historyPages?.at(-1)?.next_cursor ?? null;
   const effectiveSelectedExecutionId =
-    selectedExecutionId && items.some(
-      (execution) => execution.execution_id === selectedExecutionId,
-    )
+    selectedExecutionId &&
+    items.some((execution) => execution.execution_id === selectedExecutionId)
       ? selectedExecutionId
-      : items[0]?.execution_id ?? null;
+      : (items[0]?.execution_id ?? null);
   const detailKey: ExecutionDetailKey | null =
     graphId && effectiveSelectedExecutionId
       ? [
@@ -632,7 +642,10 @@ export function ExecutionHistoryDrawer({
             void refreshDetail();
           }}
         >
-          <RefreshCw size={13} {...stylex.props(historyValidating ? s.spinner : null)} />
+          <RefreshCw
+            size={13}
+            {...stylex.props(historyValidating ? s.spinner : null)}
+          />
         </button>
         <button
           ref={closeButtonRef}
@@ -648,7 +661,8 @@ export function ExecutionHistoryDrawer({
       {graphId && isDirty ? (
         <div role="note" {...stylex.props(s.dirtyWarning)}>
           <CircleAlert aria-hidden="true" size={14} />
-          Runs started with unsaved changes are temporary and are not recorded here. Save the graph first to keep durable execution history.
+          Runs started with unsaved changes are temporary and are not recorded
+          here. Save the graph first to keep durable execution history.
         </div>
       ) : null}
 
@@ -684,7 +698,8 @@ export function ExecutionHistoryDrawer({
               </div>
             ) : (
               items.map((execution) => {
-                const selected = execution.execution_id === effectiveSelectedExecutionId;
+                const selected =
+                  execution.execution_id === effectiveSelectedExecutionId;
                 return (
                   <button
                     key={execution.execution_id}
@@ -695,21 +710,37 @@ export function ExecutionHistoryDrawer({
                       s.listItem,
                       selected ? s.listItemSelected : null,
                     )}
-                    onClick={() => setSelectedExecutionId(execution.execution_id)}
+                    onClick={() =>
+                      setSelectedExecutionId(execution.execution_id)
+                    }
                   >
                     <span {...stylex.props(s.listCopy)}>
                       <span {...stylex.props(s.listTop)}>
                         <span {...stylex.props(s.timestamp)}>
                           {executionTimestamp(execution)}
                         </span>
-                        <span {...stylex.props(s.status, statusStyle(execution.status))}>
+                        <span
+                          {...stylex.props(
+                            s.status,
+                            statusStyle(execution.status),
+                          )}
+                        >
                           {execution.status}
                         </span>
                       </span>
                       <span {...stylex.props(s.meta)}>
-                        r{execution.graph_revision} · {execution.scope.replaceAll("-", " ")} · {execution.requested_node_ids.length} requested node{execution.requested_node_ids.length === 1 ? "" : "s"} · {execution.node_count} node{execution.node_count === 1 ? "" : "s"} · {execution.artifact_count} artifact{execution.artifact_count === 1 ? "" : "s"}
+                        r{execution.graph_revision} ·{" "}
+                        {execution.scope.replaceAll("-", " ")} ·{" "}
+                        {execution.requested_node_ids.length} requested node
+                        {execution.requested_node_ids.length === 1 ? "" : "s"} ·{" "}
+                        {execution.node_count} node
+                        {execution.node_count === 1 ? "" : "s"} ·{" "}
+                        {execution.artifact_count} artifact
+                        {execution.artifact_count === 1 ? "" : "s"}
                       </span>
-                      <span {...stylex.props(s.id)}>{execution.execution_id}</span>
+                      <span {...stylex.props(s.id)}>
+                        {execution.execution_id}
+                      </span>
                     </span>
                     <ChevronRight size={13} />
                   </button>
@@ -789,9 +820,18 @@ export function ExecutionHistoryDrawer({
                 <div {...stylex.props(s.detailMeta)}>
                   <span>graph revision {detail.graph_revision}</span>
                   <span>{detail.scope.replaceAll("-", " ")}</span>
-                  <span>{detail.requested_node_ids.length} requested node{detail.requested_node_ids.length === 1 ? "" : "s"}</span>
-                  <span>{detail.node_count} node result{detail.node_count === 1 ? "" : "s"}</span>
-                  <span>{detail.artifact_count} artifact{detail.artifact_count === 1 ? "" : "s"}</span>
+                  <span>
+                    {detail.requested_node_ids.length} requested node
+                    {detail.requested_node_ids.length === 1 ? "" : "s"}
+                  </span>
+                  <span>
+                    {detail.node_count} node result
+                    {detail.node_count === 1 ? "" : "s"}
+                  </span>
+                  <span>
+                    {detail.artifact_count} artifact
+                    {detail.artifact_count === 1 ? "" : "s"}
+                  </span>
                 </div>
                 {detail.error ? (
                   <p {...stylex.props(s.nodeError)}>{detail.error}</p>
@@ -802,7 +842,10 @@ export function ExecutionHistoryDrawer({
                   {visibleNodeResults.map((result) => {
                     const outputs = result.outputs;
                     return (
-                      <article key={result.node_id} {...stylex.props(s.nodeResult)}>
+                      <article
+                        key={result.node_id}
+                        {...stylex.props(s.nodeResult)}
+                      >
                         <header {...stylex.props(s.nodeHead)}>
                           <span {...stylex.props(s.nodePosition)}>
                             {result.position + 1}
@@ -811,16 +854,20 @@ export function ExecutionHistoryDrawer({
                             <span {...stylex.props(s.nodeTitle)}>
                               {nodeTitles[result.node_id] ?? result.node_id}
                             </span>
-                            <span {...stylex.props(s.nodeId)}>{result.node_id}</span>
+                            <span {...stylex.props(s.nodeId)}>
+                              {result.node_id}
+                            </span>
                           </span>
-                          <span {...stylex.props(
-                            s.status,
-                            result.status === "succeeded"
-                              ? s.statusSuccess
-                              : result.status === "failed"
-                                ? s.statusFailure
-                                : null,
-                          )}>
+                          <span
+                            {...stylex.props(
+                              s.status,
+                              result.status === "succeeded"
+                                ? s.statusSuccess
+                                : result.status === "failed"
+                                  ? s.statusFailure
+                                  : null,
+                            )}
+                          >
                             {result.status}
                           </span>
                         </header>
@@ -847,14 +894,18 @@ export function ExecutionHistoryDrawer({
                                     {output.port}
                                   </span>
                                   <span {...stylex.props(s.meta)}>
-                                    Historical artifact metadata is unavailable. The execution record remains, but its payload cannot be previewed.
+                                    Historical artifact metadata is unavailable.
+                                    The execution record remains, but its
+                                    payload cannot be previewed.
                                   </span>
                                 </section>
                               ),
                             )}
                           </div>
                         ) : (
-                          <span {...stylex.props(s.meta)}>No artifacts produced.</span>
+                          <span {...stylex.props(s.meta)}>
+                            No artifacts produced.
+                          </span>
                         )}
                       </article>
                     );

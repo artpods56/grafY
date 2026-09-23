@@ -166,12 +166,14 @@ describe("fanSortAxis", () => {
 
 describe("applyHandleFanOffset", () => {
   it("offsets along the axis perpendicular to the handle exit", () => {
-    expect(
-      applyHandleFanOffset({ x: 10, y: 20 }, Position.Right, 4),
-    ).toEqual({ x: 10, y: 24 });
-    expect(
-      applyHandleFanOffset({ x: 10, y: 20 }, Position.Top, -3),
-    ).toEqual({ x: 7, y: 20 });
+    expect(applyHandleFanOffset({ x: 10, y: 20 }, Position.Right, 4)).toEqual({
+      x: 10,
+      y: 24,
+    });
+    expect(applyHandleFanOffset({ x: 10, y: 20 }, Position.Top, -3)).toEqual({
+      x: 7,
+      y: 20,
+    });
   });
 });
 

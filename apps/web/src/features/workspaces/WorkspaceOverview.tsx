@@ -21,7 +21,9 @@ export function WorkspaceOverview() {
       <header className="grafy-workspace-overview__header">
         <div>
           <p className="grafy-workspace-overview__eyebrow">
-            {workspace.kind === "personal" ? "Personal settings" : "Team settings"}
+            {workspace.kind === "personal"
+              ? "Personal settings"
+              : "Team settings"}
           </p>
           <h1>{label}</h1>
           <p className="grafy-workspace-overview__copy">
@@ -34,7 +36,10 @@ export function WorkspaceOverview() {
           {workspace.kind === "shared" && canManageMembers ? (
             <WorkspaceMembersDialog />
           ) : null}
-          <WorkspaceLibraryDialog workspace={workspace} triggerLabel="Modules" />
+          <WorkspaceLibraryDialog
+            workspace={workspace}
+            triggerLabel="Modules"
+          />
           <Link
             className="grafy-workspace-button"
             href={`/workspaces/${encodeURIComponent(workspace.slug)}/graphs`}
@@ -57,7 +62,8 @@ export function WorkspaceOverview() {
             <Users size={18} aria-hidden="true" />
           </div>
           <p className="grafy-workspace-overview__copy">
-            Graphs saved here are available according to this Team&apos;s access.
+            Graphs saved here are available according to this Team&apos;s
+            access.
             {canManageMembers
               ? " Use Manage members to update access."
               : " Ask a Team owner when access needs to change."}

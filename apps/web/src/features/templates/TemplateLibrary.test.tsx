@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GraphFolder, GraphTemplate, Workspace } from "@/lib/api";
 
-
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const testState = vi.hoisted(() => ({
@@ -143,7 +142,6 @@ import {
   templatePreviewSummary,
 } from "./TemplateLibrary";
 
-
 function button(container: HTMLElement, label: string): HTMLButtonElement {
   const match = [...container.querySelectorAll("button")].find((candidate) =>
     candidate.textContent?.includes(label),
@@ -153,7 +151,6 @@ function button(container: HTMLElement, label: string): HTMLButtonElement {
   }
   return match;
 }
-
 
 async function renderLibrary(): Promise<{
   container: HTMLDivElement;
@@ -165,7 +162,6 @@ async function renderLibrary(): Promise<{
   await act(async () => root.render(<TemplateLibrary />));
   return { container, root };
 }
-
 
 beforeEach(() => {
   testState.push.mockReset();
@@ -199,7 +195,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   document.body.replaceChildren();
 });
-
 
 describe("template library search and preview", () => {
   it("filters across source/location metadata and supports keyboard inspection", () => {
@@ -301,7 +296,6 @@ describe("template library search and preview", () => {
   });
 });
 
-
 describe("template use flow", () => {
   it("assigns the copy to an existing folder in the destination", async () => {
     testState.instantiate.mockResolvedValue({
@@ -329,7 +323,9 @@ describe("template use flow", () => {
       }
     });
     await act(async () => {
-      form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      form?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
     });
 
     expect(testState.instantiate).toHaveBeenCalledWith(
@@ -362,7 +358,9 @@ describe("template use flow", () => {
     expect(form).not.toBeNull();
 
     await act(async () => {
-      form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      form?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
     });
     expect(container.getAttribute("aria-busy")).toBeNull();
     expect(container.textContent).toContain(
@@ -371,7 +369,9 @@ describe("template use flow", () => {
     expect(button(container, "Try again")).not.toBeNull();
 
     await act(async () => {
-      form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      form?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
     });
     expect(testState.instantiate).toHaveBeenCalledTimes(2);
     expect(testState.push).toHaveBeenCalledWith(

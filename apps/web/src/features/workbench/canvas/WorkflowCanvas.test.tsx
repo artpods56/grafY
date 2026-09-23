@@ -51,7 +51,9 @@ vi.mock("./handles", () => ({
   connectionIsValid: vi.fn(() => true),
 }));
 vi.mock("./edges/ArtifactViewerEdge", () => ({ default: () => null }));
-vi.mock("./edges/ArtifactViewerInteractionEdge", () => ({ default: () => null }));
+vi.mock("./edges/ArtifactViewerInteractionEdge", () => ({
+  default: () => null,
+}));
 vi.mock("./edges/WorkflowEdge", () => ({ default: () => null }));
 vi.mock("./nodes/AnnotationNode", () => ({ default: () => null }));
 vi.mock("./nodes/ArtifactViewerNode", () => ({ default: () => null }));

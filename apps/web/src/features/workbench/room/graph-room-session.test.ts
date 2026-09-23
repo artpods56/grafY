@@ -201,7 +201,15 @@ describe("shouldReplaceCollaborativeHead", () => {
       shouldReplaceCollaborativeHead(base, {
         ...base,
         collaboration_sequence: 4,
-        document: { ...base.document, presentation: { viewers: [], links: [], bindings: [], annotations: [] } },
+        document: {
+          ...base.document,
+          presentation: {
+            viewers: [],
+            links: [],
+            bindings: [],
+            annotations: [],
+          },
+        },
       }),
     ).toBe(false);
   });
@@ -796,18 +804,20 @@ describe("GraphRoomSession", () => {
     expect(session.getHead()?.collaboration_sequence).toBe(5);
     expect(session.getHead()?.document.presentation?.viewers).toHaveLength(1);
 
-    session.replaceHead(collaborativeHeadFromLegacy({
-      graph_id: GRAPH_ID,
-      room_epoch: ROOM_EPOCH,
-      collaboration_sequence: 4,
-      checkpoint_sequence: 1,
-      checkpoint_revision: 1,
-      name: "Room graph",
-      updated_at: "2026-08-07T10:00:00Z",
-      nodes: [],
-      edges: [],
-      presentation: { viewers: [], links: [], bindings: [] },
-    }));
+    session.replaceHead(
+      collaborativeHeadFromLegacy({
+        graph_id: GRAPH_ID,
+        room_epoch: ROOM_EPOCH,
+        collaboration_sequence: 4,
+        checkpoint_sequence: 1,
+        checkpoint_revision: 1,
+        name: "Room graph",
+        updated_at: "2026-08-07T10:00:00Z",
+        nodes: [],
+        edges: [],
+        presentation: { viewers: [], links: [], bindings: [] },
+      }),
+    );
 
     expect(session.getHead()?.collaboration_sequence).toBe(5);
     expect(session.getHead()?.document.presentation?.viewers).toHaveLength(1);
@@ -877,12 +887,14 @@ describe("GraphRoomSession", () => {
       nodes: [],
       edges: [],
       presentation: {
-        viewers: [{
-          id: "e2-viewer",
-          position: { x: 30, y: 40 },
-          layout: null,
-          mode: null,
-        }],
+        viewers: [
+          {
+            id: "e2-viewer",
+            position: { x: 30, y: 40 },
+            layout: null,
+            mode: null,
+          },
+        ],
         links: [],
         bindings: [],
         annotations: [],
@@ -895,23 +907,26 @@ describe("GraphRoomSession", () => {
       head: resetHead,
     });
 
-    const effectiveHead = session.reconcileCheckpointHead(collaborativeHeadFromLegacy({
-      graph_id: GRAPH_ID,
-      room_epoch: ROOM_EPOCH,
-      collaboration_sequence: 5,
-      checkpoint_sequence: 5,
-      checkpoint_revision: 2,
-      name: "Checkpointed in E1",
-      updated_at: "2026-08-07T10:30:00Z",
-      nodes: [],
-      edges: [],
-      presentation: {
-        viewers: [],
-        links: [],
-        bindings: [],
-        annotations: [],
-      },
-    }), ROOM_EPOCH);
+    const effectiveHead = session.reconcileCheckpointHead(
+      collaborativeHeadFromLegacy({
+        graph_id: GRAPH_ID,
+        room_epoch: ROOM_EPOCH,
+        collaboration_sequence: 5,
+        checkpoint_sequence: 5,
+        checkpoint_revision: 2,
+        name: "Checkpointed in E1",
+        updated_at: "2026-08-07T10:30:00Z",
+        nodes: [],
+        edges: [],
+        presentation: {
+          viewers: [],
+          links: [],
+          bindings: [],
+          annotations: [],
+        },
+      }),
+      ROOM_EPOCH,
+    );
 
     expect(effectiveHead).toEqual(collaborativeHeadFromLegacy(resetHead));
     expect(session.getHead()).toEqual(collaborativeHeadFromLegacy(resetHead));
@@ -1217,33 +1232,41 @@ describe("GraphRoomSession", () => {
     [CLOSE_PERMISSIONS_CHANGED, "permissions_changed"],
     [CLOSE_PROTOCOL_ERROR, "protocol_error"],
     [CLOSE_SLOW_CONSUMER, "slow_consumer"],
-  ] as const)("rehydrates after recoverable %s room closure", async (code, reason) => {
-    vi.useFakeTimers();
-    const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      graphId: GRAPH_ID,
-      reconnectDelayMs: 10,
-    });
+  ] as const)(
+    "rehydrates after recoverable %s room closure",
+    async (code, reason) => {
+      vi.useFakeTimers();
+      const { session, socket } = connectReadySession({
+        workspaceId: WORKSPACE_ID,
+        graphId: GRAPH_ID,
+        reconnectDelayMs: 10,
+      });
 
-    socket.emitClose(code, reason);
+      socket.emitClose(code, reason);
 
-    expect(session.getStatus()).toBe("unsynchronized");
-    expect(session.getTerminalReason()).toBeNull();
-    expect(session.getHead()?.graph_id).toBe(GRAPH_ID);
-    expect(session.canSubmitCommands()).toBe(false);
-    expect(session.getLastFailure()).toMatchObject({ reason, retryable: true });
+      expect(session.getStatus()).toBe("unsynchronized");
+      expect(session.getTerminalReason()).toBeNull();
+      expect(session.getHead()?.graph_id).toBe(GRAPH_ID);
+      expect(session.canSubmitCommands()).toBe(false);
+      expect(session.getLastFailure()).toMatchObject({
+        reason,
+        retryable: true,
+      });
 
-    await vi.advanceTimersByTimeAsync(10);
-    const reconnect = FakeWebSocket.instances.at(-1)!;
-    reconnect.open();
-    reconnect.emitMessage(roomReady({
-      head: { ...roomReady().head, collaboration_sequence: 5 },
-    }));
+      await vi.advanceTimersByTimeAsync(10);
+      const reconnect = FakeWebSocket.instances.at(-1)!;
+      reconnect.open();
+      reconnect.emitMessage(
+        roomReady({
+          head: { ...roomReady().head, collaboration_sequence: 5 },
+        }),
+      );
 
-    expect(session.getStatus()).toBe("ready");
-    expect(session.getLastFailure()).toBeNull();
-    expect(session.getHead()?.collaboration_sequence).toBe(5);
-  });
+      expect(session.getStatus()).toBe("ready");
+      expect(session.getLastFailure()).toBeNull();
+      expect(session.getHead()?.collaboration_sequence).toBe(5);
+    },
+  );
 
   it("ignores unknown additive version-1 server messages", () => {
     const { session, socket } = connectReadySession();
@@ -1269,9 +1292,14 @@ describe("GraphRoomSession", () => {
     });
 
     const incompatible = connectReadySession();
-    incompatible.socket.emitMessage({ protocol_version: 2, type: "room.ready" });
+    incompatible.socket.emitMessage({
+      protocol_version: 2,
+      type: "room.ready",
+    });
     expect(incompatible.session.getStatus()).toBe("stopped");
-    expect(incompatible.session.getTerminalReason()).toBe("protocol_incompatible");
+    expect(incompatible.session.getTerminalReason()).toBe(
+      "protocol_incompatible",
+    );
     expect(incompatible.session.getLastFailure()).toMatchObject({
       retryable: false,
       protocolVersion: 2,
@@ -1335,12 +1363,14 @@ describe("GraphRoomSession", () => {
     });
     expect(socket.sent).toHaveLength(1);
 
-    const queued = Array.from({ length: ROOM_COMMAND_QUEUE_CAP - 1 }, (_, index) =>
-      session.submitCommand({
-        kind: "rename_graph",
-        name: `Queued ${index}`,
-        expected_name: "Room graph",
-      }),
+    const queued = Array.from(
+      { length: ROOM_COMMAND_QUEUE_CAP - 1 },
+      (_, index) =>
+        session.submitCommand({
+          kind: "rename_graph",
+          name: `Queued ${index}`,
+          expected_name: "Room graph",
+        }),
     );
     await expect(
       session.submitCommand({
@@ -1419,8 +1449,13 @@ describe("GraphRoomSession", () => {
         transient_node_positions: [],
       },
     });
-    expect(session.getRemoteParticipants()[0]?.cursor).toEqual({ x: 10, y: 20 });
-    expect(session.getRemoteParticipants()[0]?.selected_node_ids).toEqual(["n1"]);
+    expect(session.getRemoteParticipants()[0]?.cursor).toEqual({
+      x: 10,
+      y: 20,
+    });
+    expect(session.getRemoteParticipants()[0]?.selected_node_ids).toEqual([
+      "n1",
+    ]);
 
     expect(session.publishPresence({ cursor: { x: 1, y: 2 } })).toBe(true);
     expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({

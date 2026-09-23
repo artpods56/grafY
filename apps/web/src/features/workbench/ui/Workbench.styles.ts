@@ -33,8 +33,15 @@ export const workbenchStyles = stylex.create({
     paddingInline: "9px",
     borderWidth: 0,
     borderRadius: "5px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover, ":disabled": "transparent" },
-    color: { default: tokens.colorMuted, ":disabled": tokens.colorTextDisabled },
+    backgroundColor: {
+      default: "transparent",
+      ":hover": tokens.colorHover,
+      ":disabled": "transparent",
+    },
+    color: {
+      default: tokens.colorMuted,
+      ":disabled": tokens.colorTextDisabled,
+    },
     cursor: { default: "pointer", ":disabled": "not-allowed" },
     fontSize: tokens.fontSizeSm,
   },
@@ -44,7 +51,10 @@ export const workbenchStyles = stylex.create({
       ":hover": tokens.colorAccentHover,
       ":disabled": tokens.colorAccentDisabled,
     },
-    color: { default: tokens.colorOnAccent, ":disabled": tokens.colorTextDisabled },
+    color: {
+      default: tokens.colorOnAccent,
+      ":disabled": tokens.colorTextDisabled,
+    },
     fontWeight: 700,
   },
   /* Canvas tools dock over the canvas; the left edge belongs to app navigation. */

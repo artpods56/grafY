@@ -88,10 +88,7 @@ export function LayoutResizeHandle({
     (next: WorkflowNodeLayout | null, drafting: boolean, bypass: boolean) => {
       const clamped = clampNodeLayout(next);
       const settings = grid?.settings;
-      if (
-        !settings ||
-        !shouldSnapSize(settings, { drafting, bypass })
-      ) {
+      if (!settings || !shouldSnapSize(settings, { drafting, bypass })) {
         return clamped;
       }
       return snapNodeLayout(clamped, axes, settings.cellSize) ?? clamped;

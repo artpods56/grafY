@@ -54,7 +54,9 @@ const WORKSPACE = "workspace-folders";
 async function paintedRows(): Promise<string[]> {
   const { folders, items } = await mockLibraryFolders.listTree(WORKSPACE);
   return flattenLibraryRows(buildLibraryTree({ folders, items })).map((node) =>
-    node.kind === "folder" ? `${node.name}@${node.depth}` : `${node.item.name}@${node.depth}`,
+    node.kind === "folder"
+      ? `${node.name}@${node.depth}`
+      : `${node.item.name}@${node.depth}`,
   );
 }
 
@@ -124,7 +126,10 @@ describe("mockLibraryFolders", () => {
     });
 
     await expect(
-      mockLibraryFolders.deleteFolder({ workspaceId: WORKSPACE, folderId: parent.folder_id }),
+      mockLibraryFolders.deleteFolder({
+        workspaceId: WORKSPACE,
+        folderId: parent.folder_id,
+      }),
     ).rejects.toBeInstanceOf(LibraryFolderNotEmptyError);
 
     await mockLibraryFolders.deleteFolder({

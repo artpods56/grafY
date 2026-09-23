@@ -18,7 +18,12 @@ const mocks = vi.hoisted(() => ({
   refreshWorkspaces: vi.fn(),
   members: [
     {
-      user: { id: "user-2", display_name: "Second User", email: "second@example.com", active: true },
+      user: {
+        id: "user-2",
+        display_name: "Second User",
+        email: "second@example.com",
+        active: true,
+      },
       role: "viewer",
       authorization_version: 1,
       revoked_at: null,
@@ -70,11 +75,21 @@ vi.mock("./WorkspaceLayout", () => ({
 vi.mock("@/components/ui/dialog", () => ({
   Dialog: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
     open ? <div role="dialog">{children}</div> : null,
-  DialogBody: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DialogDescription: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
-  DialogHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DialogTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
+  DialogBody: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogContent: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogDescription: ({ children }: { children: React.ReactNode }) => (
+    <p>{children}</p>
+  ),
+  DialogHeader: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogTitle: ({ children }: { children: React.ReactNode }) => (
+    <h2>{children}</h2>
+  ),
 }));
 
 import { WorkspaceMembersDialog } from "./WorkspaceMembersDialog";
@@ -94,15 +109,22 @@ async function openDialog(container: HTMLElement) {
 }
 
 function fillEmail(value: string) {
-  const input = document.body.querySelector('input[placeholder="person@example.com"]');
+  const input = document.body.querySelector(
+    'input[placeholder="person@example.com"]',
+  );
   expect(input).toBeInstanceOf(HTMLInputElement);
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
+  Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set?.call(input, value);
   input?.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 async function submitForm() {
   await act(async () => {
-    document.body.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    document.body
+      .querySelector("form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await Promise.resolve();
   });
 }
@@ -148,11 +170,17 @@ describe("WorkspaceMembersDialog invitation behavior", () => {
     fillEmail("invitee@example.com");
     await submitForm();
 
-    expect(mocks.resolveCandidate).toHaveBeenCalledWith("workspace-1", { email: "invitee@example.com" });
+    expect(mocks.resolveCandidate).toHaveBeenCalledWith("workspace-1", {
+      email: "invitee@example.com",
+    });
     expect(mocks.createInvitation).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("grants no access until accepted");
+    expect(document.body.textContent).toContain(
+      "grants no access until accepted",
+    );
 
-    const send = [...document.body.querySelectorAll("button")].find((button) => button.textContent === "Send invitation");
+    const send = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Send invitation",
+    );
     await act(async () => {
       send?.click();
       await Promise.resolve();
@@ -163,7 +191,9 @@ describe("WorkspaceMembersDialog invitation behavior", () => {
       role: "viewer",
     });
     expect(mocks.mutateInvitations).toHaveBeenCalledOnce();
-    expect(document.body.textContent).toContain("Access will begin only after it is accepted");
+    expect(document.body.textContent).toContain(
+      "Access will begin only after it is accepted",
+    );
 
     await act(async () => root.unmount());
   });
@@ -173,23 +203,34 @@ describe("WorkspaceMembersDialog invitation behavior", () => {
     await act(async () => root.render(<WorkspaceMembersDialog />));
     await openDialog(container);
 
-    const select = document.body.querySelector('select[aria-label="Role for Second User"]');
+    const select = document.body.querySelector(
+      'select[aria-label="Role for Second User"]',
+    );
     expect(select).toBeInstanceOf(HTMLSelectElement);
-    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(select, "editor");
+    Object.getOwnPropertyDescriptor(
+      HTMLSelectElement.prototype,
+      "value",
+    )?.set?.call(select, "editor");
     await act(async () => {
       select?.dispatchEvent(new Event("change", { bubbles: true }));
       await Promise.resolve();
     });
 
     expect(mocks.changeRole).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("Confirm change for Second User");
-    const confirm = [...document.body.querySelectorAll("button")].find((button) => button.textContent === "Confirm change");
+    expect(document.body.textContent).toContain(
+      "Confirm change for Second User",
+    );
+    const confirm = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Confirm change",
+    );
     await act(async () => {
       confirm?.click();
       await Promise.resolve();
     });
 
-    expect(mocks.changeRole).toHaveBeenCalledWith("workspace-1", "user-2", { role: "editor" });
+    expect(mocks.changeRole).toHaveBeenCalledWith("workspace-1", "user-2", {
+      role: "editor",
+    });
     expect(mocks.mutateMembers).toHaveBeenCalledOnce();
     expect(mocks.refreshWorkspaces).not.toHaveBeenCalled();
 
