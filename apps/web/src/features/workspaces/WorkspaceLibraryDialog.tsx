@@ -34,7 +34,9 @@ import { useAuthSession } from "@/features/auth/AuthSessionBoundary";
 import { workbenchGraphPath } from "@/features/workbench/routes";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-function artifactTypeLabel(port: NonNullable<ModuleLibraryEntry["inputs"]>[number]) {
+function artifactTypeLabel(
+  port: NonNullable<ModuleLibraryEntry["inputs"]>[number],
+) {
   return `${port.artifact_type.id}@${port.artifact_type.schema_version}`;
 }
 
@@ -58,11 +60,15 @@ export function filterWorkspaceModules(
 ): readonly ModuleLibraryEntry[] {
   const normalized = query.trim().toLocaleLowerCase();
   if (!normalized) return modules;
-  return modules.filter((module) => moduleSearchText(module).includes(normalized));
+  return modules.filter((module) =>
+    moduleSearchText(module).includes(normalized),
+  );
 }
 
 function libraryLabel(workspace: Workspace): string {
-  return workspace.kind === "personal" ? "My Module library" : `${workspace.name} Team Modules`;
+  return workspace.kind === "personal"
+    ? "My Module library"
+    : `${workspace.name} Team Modules`;
 }
 
 function destinationLabel(workspace: Workspace): string {
@@ -337,12 +343,22 @@ function ContractPorts({
   return (
     <div {...stylex.props(s.contractGroup)}>
       <p {...stylex.props(s.contractLabel)}>{label}</p>
-      <ul aria-label={`Module ${label.toLocaleLowerCase()}`} {...stylex.props(s.portList)}>
+      <ul
+        aria-label={`Module ${label.toLocaleLowerCase()}`}
+        {...stylex.props(s.portList)}
+      >
         {ports.length ? (
           ports.map((port) => (
-            <li key={`${port.direction}:${port.name}`} {...stylex.props(s.port)}>
+            <li
+              key={`${port.direction}:${port.name}`}
+              {...stylex.props(s.port)}
+            >
               {port.name} · {artifactTypeLabel(port)}
-              {label === "Inputs" ? (port.required ? " · required" : " · optional") : ""}
+              {label === "Inputs"
+                ? port.required
+                  ? " · required"
+                  : " · optional"
+                : ""}
             </li>
           ))
         ) : (
@@ -371,9 +387,8 @@ export function WorkspaceModuleLibrary({
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [message, setMessage] = React.useState<string | null>(null);
-  const [importTarget, setImportTarget] = React.useState<ModuleLibraryEntry | null>(
-    null,
-  );
+  const [importTarget, setImportTarget] =
+    React.useState<ModuleLibraryEntry | null>(null);
   const [withdrawTarget, setWithdrawTarget] =
     React.useState<ModuleLibraryEntry | null>(null);
   const [destinationId, setDestinationId] = React.useState("");
@@ -383,9 +398,8 @@ export function WorkspaceModuleLibrary({
     error: libraryError,
     mutate,
     isLoading,
-  } = useSWR(
-    ["workspace-modules", workspace.id],
-    () => listWorkspaceModules(workspace.id),
+  } = useSWR(["workspace-modules", workspace.id], () =>
+    listWorkspaceModules(workspace.id),
   );
   const modules = data?.modules ?? [];
   const visibleModules = filterWorkspaceModules(modules, query);
@@ -405,7 +419,9 @@ export function WorkspaceModuleLibrary({
         if (!current) return { modules: [updated] };
         if (updated.publication_state === "withdrawn") {
           return {
-            modules: current.modules.filter((module) => module.id !== updated.id),
+            modules: current.modules.filter(
+              (module) => module.id !== updated.id,
+            ),
           };
         }
         return {
@@ -426,7 +442,9 @@ export function WorkspaceModuleLibrary({
     try {
       const updated = await deprecateModule(workspace.id, module.id);
       await applyModuleUpdate(updated);
-      setMessage(`${module.name} is deprecated. Existing pinned calls keep working.`);
+      setMessage(
+        `${module.name} is deprecated. Existing pinned calls keep working.`,
+      );
     } catch (err) {
       setError(
         err instanceof Error
@@ -542,8 +560,8 @@ export function WorkspaceModuleLibrary({
         <div role="status" {...stylex.props(s.empty)}>
           <p {...stylex.props(s.emptyTitle)}>Loading Modules…</p>
           <p {...stylex.props(s.copyText)}>
-            Reading {workspace.kind === "personal" ? "your" : "the Team"} library
-            and its published contracts.
+            Reading {workspace.kind === "personal" ? "your" : "the Team"}{" "}
+            library and its published contracts.
           </p>
         </div>
       ) : modules.length === 0 ? (
@@ -555,7 +573,9 @@ export function WorkspaceModuleLibrary({
           </p>
           <ol {...stylex.props(s.steps)}>
             <li>Add and connect at least one Module Output boundary.</li>
-            <li>Add Module Input boundaries for values callers should provide.</li>
+            <li>
+              Add Module Input boundaries for values callers should provide.
+            </li>
             <li>Save the graph, then Publish release from Module setup.</li>
             {canPublish ? null : (
               <li>Publishing requires Editor or Owner access here.</li>
@@ -564,9 +584,12 @@ export function WorkspaceModuleLibrary({
         </div>
       ) : visibleModules.length === 0 ? (
         <div {...stylex.props(s.empty)}>
-          <p {...stylex.props(s.emptyTitle)}>No Modules match “{query.trim()}”</p>
+          <p {...stylex.props(s.emptyTitle)}>
+            No Modules match “{query.trim()}”
+          </p>
           <p {...stylex.props(s.copyText)}>
-            Search by Module name, port, artifact type, release, or source graph.
+            Search by Module name, port, artifact type, release, or source
+            graph.
           </p>
           <button
             type="button"
@@ -612,16 +635,23 @@ export function WorkspaceModuleLibrary({
                       Current release {module.current_library_release ?? "—"}
                     </span>
                     <span>
-                      {releaseCount} immutable release{releaseCount === 1 ? "" : "s"}
+                      {releaseCount} immutable release
+                      {releaseCount === 1 ? "" : "s"}
                     </span>
                     <span>Source graph {module.source_graph_id}</span>
                   </div>
                   {module.description ? (
                     <p {...stylex.props(s.copyText)}>{module.description}</p>
                   ) : null}
-                  <div aria-label={`${module.name} contract`} {...stylex.props(s.contract, s.mobileContract)}>
+                  <div
+                    aria-label={`${module.name} contract`}
+                    {...stylex.props(s.contract, s.mobileContract)}
+                  >
                     <ContractPorts label="Inputs" ports={module.inputs ?? []} />
-                    <ContractPorts label="Outputs" ports={module.outputs ?? []} />
+                    <ContractPorts
+                      label="Outputs"
+                      ports={module.outputs ?? []}
+                    />
                   </div>
                 </div>
 
@@ -633,7 +663,10 @@ export function WorkspaceModuleLibrary({
                       onOpenSourceGraph
                         ? onOpenSourceGraph(module.source_graph_id)
                         : router.push(
-                            workbenchGraphPath(workspace.slug, module.source_graph_id),
+                            workbenchGraphPath(
+                              workspace.slug,
+                              module.source_graph_id,
+                            ),
                           )
                     }
                   >
@@ -690,7 +723,10 @@ export function WorkspaceModuleLibrary({
       )}
 
       {withdrawTarget ? (
-        <section aria-labelledby="withdraw-module-heading" {...stylex.props(s.actionPanel)}>
+        <section
+          aria-labelledby="withdraw-module-heading"
+          {...stylex.props(s.actionPanel)}
+        >
           <div {...stylex.props(s.panelHeading)}>
             <div>
               <h3 id="withdraw-module-heading" {...stylex.props(s.panelTitle)}>
@@ -698,7 +734,8 @@ export function WorkspaceModuleLibrary({
               </h3>
               <p {...stylex.props(s.copyText)}>
                 It will disappear from browse and new inserts. Existing Module
-                calls keep resolving their pinned releases. This is not a hard delete.
+                calls keep resolving their pinned releases. This is not a hard
+                delete.
               </p>
             </div>
           </div>
@@ -717,23 +754,29 @@ export function WorkspaceModuleLibrary({
               disabled={busyId === withdrawTarget.id}
               onClick={() => void runWithdraw()}
             >
-              {busyId === withdrawTarget.id ? "Withdrawing…" : "Confirm withdraw"}
+              {busyId === withdrawTarget.id
+                ? "Withdrawing…"
+                : "Confirm withdraw"}
             </button>
           </div>
         </section>
       ) : null}
 
       {importTarget ? (
-        <section aria-labelledby="import-module-heading" {...stylex.props(s.actionPanel)}>
+        <section
+          aria-labelledby="import-module-heading"
+          {...stylex.props(s.actionPanel)}
+        >
           <div {...stylex.props(s.panelHeading)}>
             <div>
               <h3 id="import-module-heading" {...stylex.props(s.panelTitle)}>
                 Import copy of {importTarget.name}
               </h3>
               <p {...stylex.props(s.copyText)}>
-                This copies release {importTarget.current_library_release ?? "—"}{" "}
-                into the destination as a new source graph and published Module.
-                It is independent—not a live cross-Team link.
+                This copies release{" "}
+                {importTarget.current_library_release ?? "—"} into the
+                destination as a new source graph and published Module. It is
+                independent—not a live cross-Team link.
               </p>
             </div>
           </div>
@@ -766,7 +809,9 @@ export function WorkspaceModuleLibrary({
               disabled={!destinationId || busyId === importTarget.id}
               onClick={() => void runImport()}
             >
-              {busyId === importTarget.id ? "Importing copy…" : "Confirm import"}
+              {busyId === importTarget.id
+                ? "Importing copy…"
+                : "Confirm import"}
             </button>
           </div>
         </section>
@@ -816,9 +861,11 @@ export function WorkspaceLibraryDialog({
             <DialogTitle>{libraryLabel(workspace)}</DialogTitle>
             <DialogDescription>
               Search published contracts, open source graphs, and steward what
-              {workspace.kind === "personal" ? " you keep" : " this Team offers"}
-              {" "}for reuse. Withdrawn Modules leave browse while pinned calls
-              keep working.
+              {workspace.kind === "personal"
+                ? " you keep"
+                : " this Team offers"}{" "}
+              for reuse. Withdrawn Modules leave browse while pinned calls keep
+              working.
             </DialogDescription>
           </DialogHeader>
           <DialogBody>

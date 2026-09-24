@@ -20,9 +20,7 @@ describe("schemaOutline", () => {
 
   it("expands oneOf source kinds", () => {
     const source = outline.find((node) => node.name === "source");
-    expect(source?.typeLabel).toBe(
-      "feature_collection | raster_scan | wms",
-    );
+    expect(source?.typeLabel).toBe("feature_collection | raster_scan | wms");
     expect(source?.children.map((node) => node.name)).toEqual([
       "as feature_collection",
       "as raster_scan",

@@ -50,7 +50,9 @@ export function libraryFileKey(artifactId: string): string {
 }
 
 function artifactTypeId(item: PlacedLibraryItem): string {
-  return item.artifact.artifact_type.split("@")[0] ?? item.artifact.artifact_type;
+  return (
+    item.artifact.artifact_type.split("@")[0] ?? item.artifact.artifact_type
+  );
 }
 
 /**
@@ -82,7 +84,10 @@ export function libraryFileIcon(item: PlacedLibraryItem): LibraryFileIcon {
   if (mapped) return mapped;
   const contentType = (item.artifact.content_type ?? "").toLowerCase();
   if (contentType.startsWith("image/")) return "image";
-  if (contentType.startsWith("text/csv") || contentType.includes("tab-separated")) {
+  if (
+    contentType.startsWith("text/csv") ||
+    contentType.includes("tab-separated")
+  ) {
     return "table";
   }
   if (
@@ -163,10 +168,16 @@ export function buildLibraryTree(input: {
    * is revealed whole — that is the folder the user asked for — while a folder
    * that only holds matches is kept as a path to them.
    */
-  function build(folder: LibraryFolder, depth: number, revealedByAncestor: boolean): Built {
+  function build(
+    folder: LibraryFolder,
+    depth: number,
+    revealedByAncestor: boolean,
+  ): Built {
     const selfMatches = needle === "" || folderMatches(folder, needle);
     const revealed = revealedByAncestor || selfMatches;
-    const foldersHere = [...(childFolders.get(folder.folder_id) ?? [])].sort(byName);
+    const foldersHere = [...(childFolders.get(folder.folder_id) ?? [])].sort(
+      byName,
+    );
     const itemsHere = [...(childItems.get(folder.folder_id) ?? [])].sort(
       sort === "recent" ? byRecent : byName,
     );
@@ -216,7 +227,10 @@ export function buildLibraryTree(input: {
   const roots = [...(childFolders.get(null) ?? [])]
     .sort(byName)
     .map((folder) => build(folder, 0, false))
-    .filter(({ node, selfMatches }) => needle === "" || selfMatches || node.matched > 0)
+    .filter(
+      ({ node, selfMatches }) =>
+        needle === "" || selfMatches || node.matched > 0,
+    )
     .map(({ node }) => node);
 
   const rootItems = [...(childItems.get(null) ?? [])]
@@ -310,7 +324,8 @@ export function libraryFileDisplayName(item: PlacedLibraryItem): string {
 /** The secondary line under a file name: size, then where it came from. */
 export function libraryFileSubtitle(item: PlacedLibraryItem): string {
   const size = formatLibraryByteSize(item.artifact.byte_size);
-  const origin = item.provenance.source === "upload" ? "uploaded" : "from a run";
+  const origin =
+    item.provenance.source === "upload" ? "uploaded" : "from a run";
   return size ? `${size} · ${origin}` : origin;
 }
 

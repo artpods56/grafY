@@ -48,7 +48,8 @@ export function TemplatesPanel({
   const listRef = React.useRef<HTMLDivElement>(null);
 
   const templates = React.useMemo(
-    () => (data?.templates ?? []).filter((item) => matchesTemplate(item, query)),
+    () =>
+      (data?.templates ?? []).filter((item) => matchesTemplate(item, query)),
     [data, query],
   );
   const tabbableKey = focusKey ?? templates[0]?.id ?? null;
@@ -85,8 +86,7 @@ export function TemplatesPanel({
     if (list.length === 0) return;
     const active = document.activeElement;
     const current = list.findIndex(
-      (action) =>
-        action === active || action.dataset.templateId === focusKey,
+      (action) => action === active || action.dataset.templateId === focusKey,
     );
     const next = list[Math.min(list.length - 1, Math.max(0, current + step))];
     if (!next) return;
@@ -142,8 +142,8 @@ export function TemplatesPanel({
             <ScrollArea.Content {...stylex.props(s.listContent)}>
               {isLoading ? (
                 <span role="status" {...stylex.props(s.notice)}>
-                  <LoaderCircle size={12} {...stylex.props(s.spinner)} /> Loading
-                  templates…
+                  <LoaderCircle size={12} {...stylex.props(s.spinner)} />{" "}
+                  Loading templates…
                 </span>
               ) : null}
               {error && !isLoading ? (

@@ -84,7 +84,8 @@ describe("useMediaQuery", () => {
     if (!phoneState) throw new Error("Phone media query was not created");
     phoneState.setMatches(true);
     await React.act(async () => {
-      for (const listener of phoneState.listeners) listener(new Event("change"));
+      for (const listener of phoneState.listeners)
+        listener(new Event("change"));
     });
     expect(container.textContent).toBe("mobile");
 

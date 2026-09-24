@@ -113,7 +113,11 @@ function EdgeOption({
   return (
     <button
       type="button"
-      {...stylex.props(overlay.item, s.option, active ? overlay.itemActive : null)}
+      {...stylex.props(
+        overlay.item,
+        s.option,
+        active ? overlay.itemActive : null,
+      )}
       onClick={onSelect}
     >
       <span {...stylex.props(s.optionCopy)}>
@@ -154,7 +158,8 @@ export default function ArtifactViewerEdgeControl({
   const { deleteElements } = useReactFlow<CanvasNode, CanvasEdge>();
   const docked = useEdgeIsDocked(id);
   const cellSize =
-    useOptionalCanvasGridSettings()?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
+    useOptionalCanvasGridSettings()?.settings.cellSize ??
+    GRID_CELL_SIZE_DEFAULT;
   const edgeData: ArtifactViewerEdgeData = data ?? { sourcePortName: "output" };
   const sourcePortName = edgeData.sourcePortName || "output";
   const fan = useEdgeFanOffsets(id, sourcePosition, targetPosition);
@@ -203,17 +208,17 @@ export default function ArtifactViewerEdgeControl({
       ? (offset) => edgeData.onRouteOffsetChange?.(id, offset)
       : undefined,
   });
-  const routeOptions: readonly WorkflowEdgeRouteOption[] =
-    edgeData.routeOptions?.length
-      ? edgeData.routeOptions
-      : [
-          {
-            projection: edgeData.projection,
-            conversionPath: [],
-            conversionTitles: [],
-            projectionTitle: edgeData.projectionTitle,
-          },
-        ];
+  const routeOptions: readonly WorkflowEdgeRouteOption[] = edgeData.routeOptions
+    ?.length
+    ? edgeData.routeOptions
+    : [
+        {
+          projection: edgeData.projection,
+          conversionPath: [],
+          conversionTitles: [],
+          projectionTitle: edgeData.projectionTitle,
+        },
+      ];
   const feedChoices = feedChoicesFromRouteOptions(sourcePortName, routeOptions);
   const activeProjectionTitle = routeOptions.find((route) =>
     projectionsEqual(route.projection, edgeData.projection),
@@ -224,9 +229,7 @@ export default function ArtifactViewerEdgeControl({
     activeProjectionTitle ?? edgeData.projectionTitle,
   );
   const onUpdate = edgeData.onUpdate;
-  const bridge = docked
-    ? dockedBridgeLayout(source, target, cellSize)
-    : null;
+  const bridge = docked ? dockedBridgeLayout(source, target, cellSize) : null;
 
   return (
     <>

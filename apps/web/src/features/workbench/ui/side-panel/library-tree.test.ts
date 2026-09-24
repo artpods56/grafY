@@ -35,7 +35,9 @@ function item(
       sha256: `hash-${id}`,
       content_url: `/v1/artifacts/${id}/content`,
       content_type:
-        overrides.content_type === undefined ? "image/png" : overrides.content_type,
+        overrides.content_type === undefined
+          ? "image/png"
+          : overrides.content_type,
       byte_size: overrides.byte_size === undefined ? 2048 : overrides.byte_size,
     },
     name: overrides.name ?? id,
@@ -51,7 +53,11 @@ function item(
   };
 }
 
-function folder(id: string, name: string, parentId: string | null): LibraryFolder {
+function folder(
+  id: string,
+  name: string,
+  parentId: string | null,
+): LibraryFolder {
   return {
     folder_id: id,
     workspace_id: "ws",
@@ -97,14 +103,17 @@ describe("buildLibraryTree", () => {
 
   it("lists folders before artifacts inside a folder", () => {
     const tree = buildLibraryTree({
-      folders: [folder("field", "Fieldwork", null), folder("zeta", "Zeta", "field")],
+      folders: [
+        folder("field", "Fieldwork", null),
+        folder("zeta", "Zeta", "field"),
+      ],
       items: [item("aaa", { folder_id: "field" })],
     });
 
     const fieldwork = tree[0];
-    expect(fieldwork?.kind === "folder" && fieldwork.nodes.map((n) => n.key)).toEqual(
-      ["folder:zeta", "file:aaa"],
-    );
+    expect(
+      fieldwork?.kind === "folder" && fieldwork.nodes.map((n) => n.key),
+    ).toEqual(["folder:zeta", "file:aaa"]);
   });
 
   it("counts every artifact under a folder, however deeply filed", () => {
@@ -126,7 +135,10 @@ describe("buildLibraryTree", () => {
 
   it("drops folders with nothing matching under a filter", () => {
     const tree = buildLibraryTree({
-      folders: [folder("field", "Fieldwork", null), folder("rep", "Reports", null)],
+      folders: [
+        folder("field", "Fieldwork", null),
+        folder("rep", "Reports", null),
+      ],
       items: [item("plot.png", { folder_id: "rep" })],
       query: "plot",
     });
@@ -140,7 +152,12 @@ describe("buildLibraryTree", () => {
         folder("field", "Fieldwork", null),
         folder("sep", "September", "field"),
       ],
-      items: [item("core-samples.csv", { folder_id: "sep", content_type: "text/csv" })],
+      items: [
+        item("core-samples.csv", {
+          folder_id: "sep",
+          content_type: "text/csv",
+        }),
+      ],
       query: "core",
     });
 
@@ -160,9 +177,9 @@ describe("buildLibraryTree", () => {
     });
 
     const fieldwork = tree[0];
-    expect(fieldwork?.kind === "folder" && fieldwork.nodes.map((n) => n.key)).toEqual(
-      ["file:photo.png"],
-    );
+    expect(
+      fieldwork?.kind === "folder" && fieldwork.nodes.map((n) => n.key),
+    ).toEqual(["file:photo.png"]);
   });
 
   it("sorts by name or by most recently saved", () => {
@@ -221,10 +238,17 @@ describe("libraryFileIcon", () => {
   it("follows the bytes, not the folder", () => {
     expect(libraryFileIcon(item("a"))).toBe("image");
     expect(
-      libraryFileIcon(item("b", { artifact_type: "table.csv@1", content_type: "text/csv" })),
+      libraryFileIcon(
+        item("b", { artifact_type: "table.csv@1", content_type: "text/csv" }),
+      ),
     ).toBe("table");
     expect(
-      libraryFileIcon(item("c", { artifact_type: "scalar.text@1", content_type: "text/plain" })),
+      libraryFileIcon(
+        item("c", {
+          artifact_type: "scalar.text@1",
+          content_type: "text/plain",
+        }),
+      ),
     ).toBe("text");
     expect(
       libraryFileIcon(
@@ -235,7 +259,12 @@ describe("libraryFileIcon", () => {
       ),
     ).toBe("model");
     expect(
-      libraryFileIcon(item("e", { artifact_type: "file.blob@1", content_type: "application/octet-stream" })),
+      libraryFileIcon(
+        item("e", {
+          artifact_type: "file.blob@1",
+          content_type: "application/octet-stream",
+        }),
+      ),
     ).toBe("other");
   });
 });
@@ -247,7 +276,10 @@ describe("libraryFolderPath", () => {
   ];
 
   it("names the route to a folder from the root", () => {
-    expect(libraryFolderPath(folders, "sep")).toEqual(["Fieldwork", "September"]);
+    expect(libraryFolderPath(folders, "sep")).toEqual([
+      "Fieldwork",
+      "September",
+    ]);
     expect(libraryFolderPath(folders, null)).toEqual([]);
   });
 });
@@ -255,14 +287,17 @@ describe("libraryFolderPath", () => {
 describe("the rows keep the Library's file naming", () => {
   it("prefers the filename an upload arrived with", () => {
     expect(
-      libraryFileDisplayName(item("photo", { original_filename: "IMG_0042.png" })),
+      libraryFileDisplayName(
+        item("photo", { original_filename: "IMG_0042.png" }),
+      ),
     ).toBe("IMG_0042.png");
     expect(
       libraryFileDisplayName(
-        item(
-          "run",
-          { name: "Scan result", source: "run", original_filename: null },
-        ),
+        item("run", {
+          name: "Scan result",
+          source: "run",
+          original_filename: null,
+        }),
       ),
     ).toBe("Scan result");
   });
@@ -273,7 +308,11 @@ describe("the rows keep the Library's file naming", () => {
     );
     expect(
       libraryFileSubtitle(
-        item("run", { source: "run", byte_size: null, original_filename: null }),
+        item("run", {
+          source: "run",
+          byte_size: null,
+          original_filename: null,
+        }),
       ),
     ).toBe("from a run");
   });

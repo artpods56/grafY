@@ -6,19 +6,17 @@ import { Search } from "lucide-react";
 import { useStore, ViewportPortal } from "@xyflow/react";
 
 import type { NodeRegistry } from "@/lib/api";
-import {
-  FINE_POINTER_QUERY,
-  useMediaQuery,
-} from "@/hooks/use-media-query";
+import { FINE_POINTER_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { overlay } from "@/lib/stylex/overlay.stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { schemaFields } from "../canvas/config-schema";
-import { DEFAULT_NODE_PLACEMENT_HEIGHT, DEFAULT_NODE_WIDTH } from "../canvas/node-layout";
+import {
+  DEFAULT_NODE_PLACEMENT_HEIGHT,
+  DEFAULT_NODE_WIDTH,
+} from "../canvas/node-layout";
 import { artifactTypeColor } from "../canvas/nodes.css";
 import { portArtifactType } from "../canvas/types";
-import {
-  connectionRouteTitle,
-} from "../model/graph-authoring";
+import { connectionRouteTitle } from "../model/graph-authoring";
 import {
   catalogNodeKey,
   catalogNodePortSummary,
@@ -94,7 +92,9 @@ function readViewportGeometry(): ViewportGeometry {
       .getPropertyValue("--grafy-mobile-overlay-top"),
   );
   if (!Number.isFinite(mobileOverlayTop)) {
-    throw new Error("--grafy-mobile-overlay-top must resolve to a pixel length");
+    throw new Error(
+      "--grafy-mobile-overlay-top must resolve to a pixel length",
+    );
   }
   return {
     layoutWidth,
@@ -113,13 +113,11 @@ const s = stylex.create({
     },
     width: {
       default: `min(${POPUP_WIDTH}px, calc(100vw - ${POPUP_MARGIN * 2}px))`,
-      "@media (max-width: 620px)":
-        `min(${POPUP_WIDTH}px, calc(100vw - ${POPUP_MARGIN * 2}px - ${SAFE_AREA_LEFT} - ${SAFE_AREA_RIGHT}))`,
+      "@media (max-width: 620px)": `min(${POPUP_WIDTH}px, calc(100vw - ${POPUP_MARGIN * 2}px - ${SAFE_AREA_LEFT} - ${SAFE_AREA_RIGHT}))`,
     },
     maxHeight: {
       default: `min(${POPUP_MAX_HEIGHT}px, calc(100svh - ${POPUP_MARGIN * 2}px))`,
-      "@media (max-width: 620px)":
-        `min(${POPUP_MAX_HEIGHT}px, calc(100svh - ${MOBILE_OVERLAY_TOP} - ${POPUP_MARGIN}px - ${SAFE_AREA_TOP}))`,
+      "@media (max-width: 620px)": `min(${POPUP_MAX_HEIGHT}px, calc(100svh - ${MOBILE_OVERLAY_TOP} - ${POPUP_MARGIN}px - ${SAFE_AREA_TOP}))`,
     },
     display: "flex",
     flexDirection: "column",
@@ -272,7 +270,10 @@ export function popupPositionBesidePreview(
   viewport: { width: number; height: number },
 ): { left: number; top: number } {
   const maxLeft = Math.max(POPUP_MARGIN, viewport.width - width - POPUP_MARGIN);
-  const maxTop = Math.max(POPUP_MARGIN, viewport.height - height - POPUP_MARGIN);
+  const maxTop = Math.max(
+    POPUP_MARGIN,
+    viewport.height - height - POPUP_MARGIN,
+  );
 
   if (!preview) {
     return {
@@ -355,19 +356,24 @@ export function ContextualNodeDiscovery({
     if (!node) return null;
     const origin = node.internals.positionAbsolute;
     const downstream = session.direction === "downstream";
-    const handle = (downstream
-      ? node.internals.handleBounds?.source
-      : node.internals.handleBounds?.target
+    const handle = (
+      downstream
+        ? node.internals.handleBounds?.source
+        : node.internals.handleBounds?.target
     )?.find((candidate) => candidate.id === session.sourceHandle);
     if (!handle) {
       return downstream
         ? {
             x: origin.x + (node.measured.width ?? DEFAULT_NODE_WIDTH),
-            y: origin.y + (node.measured.height ?? DEFAULT_NODE_PLACEMENT_HEIGHT) / 2,
+            y:
+              origin.y +
+              (node.measured.height ?? DEFAULT_NODE_PLACEMENT_HEIGHT) / 2,
           }
         : {
             x: origin.x,
-            y: origin.y + (node.measured.height ?? DEFAULT_NODE_PLACEMENT_HEIGHT) / 2,
+            y:
+              origin.y +
+              (node.measured.height ?? DEFAULT_NODE_PLACEMENT_HEIGHT) / 2,
           };
     }
     return {
@@ -473,7 +479,9 @@ export function ContextualNodeDiscovery({
 
   const previewedCandidate =
     pendingCandidate ??
-    candidates.find((candidate) => catalogNodeKey(candidate.spec) === previewedKey) ??
+    candidates.find(
+      (candidate) => catalogNodeKey(candidate.spec) === previewedKey,
+    ) ??
     candidates[0] ??
     null;
   const previewedChoice =
@@ -482,7 +490,8 @@ export function ContextualNodeDiscovery({
         hoveredChoiceIndex,
         Math.max(0, (previewedCandidate?.choices.length ?? 1) - 1),
       )
-    ] ?? previewedCandidate?.choices[0] ??
+    ] ??
+    previewedCandidate?.choices[0] ??
     null;
   const previewPosition = previewFlowPosition(session.flowPosition);
   const targetOffset = previewedCandidate
@@ -503,8 +512,10 @@ export function ContextualNodeDiscovery({
   const representativePort =
     previewedChoice?.candidatePort ??
     (session.direction === "upstream"
-      ? previewedCandidate?.spec.outputs[0] ?? previewedCandidate?.spec.inputs[0]
-      : previewedCandidate?.spec.inputs[0] ?? previewedCandidate?.spec.outputs[0]);
+      ? (previewedCandidate?.spec.outputs[0] ??
+        previewedCandidate?.spec.inputs[0])
+      : (previewedCandidate?.spec.inputs[0] ??
+        previewedCandidate?.spec.outputs[0]));
   const representativeArtifact = representativePort
     ? portArtifactType(representativePort)
     : null;
@@ -524,10 +535,7 @@ export function ContextualNodeDiscovery({
   const popupTopMargin = viewport.visualTop + popupTopOffset;
   const popupHeight = Math.max(
     0,
-    Math.min(
-      POPUP_MAX_HEIGHT,
-      viewportBottom - popupTopMargin - POPUP_MARGIN,
-    ),
+    Math.min(POPUP_MAX_HEIGHT, viewportBottom - popupTopMargin - POPUP_MARGIN),
   );
   const unclampedPosition = popupPositionBesidePreview(
     previewBox,
@@ -540,12 +548,9 @@ export function ContextualNodeDiscovery({
     left: unclampedPosition.left,
     top: Math.max(popupTopMargin, unclampedPosition.top),
   };
-  const compactPopupTop =
-    `max(${position.top}px, calc(${MOBILE_OVERLAY_TOP} + ${SAFE_AREA_TOP}))`;
-  const compactPopupLeft =
-    `max(${position.left}px, calc(${POPUP_MARGIN}px + ${SAFE_AREA_LEFT}))`;
-  const compactPopupMaxHeight =
-    `min(${popupHeight}px, calc(100dvh - ${MOBILE_OVERLAY_TOP} - ${POPUP_MARGIN}px - ${SAFE_AREA_TOP} - ${SAFE_AREA_BOTTOM}))`;
+  const compactPopupTop = `max(${position.top}px, calc(${MOBILE_OVERLAY_TOP} + ${SAFE_AREA_TOP}))`;
+  const compactPopupLeft = `max(${position.left}px, calc(${POPUP_MARGIN}px + ${SAFE_AREA_LEFT}))`;
+  const compactPopupMaxHeight = `min(${popupHeight}px, calc(100dvh - ${MOBILE_OVERLAY_TOP} - ${POPUP_MARGIN}px - ${SAFE_AREA_TOP} - ${SAFE_AREA_BOTTOM}))`;
 
   const selectCandidate = (candidate: ContextualCandidate) => {
     if (!canInsert) return;
@@ -587,7 +592,10 @@ export function ContextualNodeDiscovery({
     resultRefs.current.get(key)?.focus();
   };
 
-  const dx = Math.max(48, Math.abs(targetPoint.x - (sourcePoint?.x ?? 0)) * 0.45);
+  const dx = Math.max(
+    48,
+    Math.abs(targetPoint.x - (sourcePoint?.x ?? 0)) * 0.45,
+  );
   const edgePath =
     sourcePoint && previewedCandidate
       ? `M ${sourcePoint.x} ${sourcePoint.y} C ${sourcePoint.x + dx} ${sourcePoint.y}, ${targetPoint.x - dx} ${targetPoint.y}, ${targetPoint.x} ${targetPoint.y}`
@@ -698,7 +706,11 @@ export function ContextualNodeDiscovery({
                   role="option"
                   aria-selected={active}
                   disabled={!canInsert}
-                  {...stylex.props(overlay.item, s.item, active ? overlay.itemActive : null)}
+                  {...stylex.props(
+                    overlay.item,
+                    s.item,
+                    active ? overlay.itemActive : null,
+                  )}
                   onMouseEnter={() => setHoveredChoiceIndex(index)}
                   onFocus={() => setHoveredChoiceIndex(index)}
                   onClick={() => selectChoice(choice)}
@@ -707,7 +719,11 @@ export function ContextualNodeDiscovery({
                     {choice.candidatePort.title ?? choice.candidatePort.name}
                   </span>
                   <span {...stylex.props(s.itemDescription)}>
-                    {choiceLabel(session.direction, session.sourcePortTitle, choice)}
+                    {choiceLabel(
+                      session.direction,
+                      session.sourcePortTitle,
+                      choice,
+                    )}
                   </span>
                 </button>
               );
@@ -725,7 +741,11 @@ export function ContextualNodeDiscovery({
                   role="option"
                   aria-selected={active}
                   disabled={!canInsert}
-                  {...stylex.props(overlay.item, s.item, active ? overlay.itemActive : null)}
+                  {...stylex.props(
+                    overlay.item,
+                    s.item,
+                    active ? overlay.itemActive : null,
+                  )}
                   ref={(element) => {
                     if (element) resultRefs.current.set(key, element);
                     else resultRefs.current.delete(key);
@@ -748,13 +768,17 @@ export function ContextualNodeDiscovery({
                       focusCandidateAt(candidates.length - 1);
                     } else if (event.key === "Enter") {
                       event.preventDefault();
-                      if (previewedCandidate) selectCandidate(previewedCandidate);
+                      if (previewedCandidate)
+                        selectCandidate(previewedCandidate);
                     }
                   }}
                 >
-                  <span {...stylex.props(s.itemTitle)}>{candidate.spec.title}</span>
+                  <span {...stylex.props(s.itemTitle)}>
+                    {candidate.spec.title}
+                  </span>
                   <span {...stylex.props(s.itemDescription)}>
-                    {candidate.spec.description || "No description is available."}
+                    {candidate.spec.description ||
+                      "No description is available."}
                     {candidate.choices.length > 1
                       ? ` · ${candidate.choices.length} ways to connect`
                       : ""}
@@ -764,7 +788,8 @@ export function ContextualNodeDiscovery({
             })
           ) : (
             <div {...stylex.props(s.empty)}>
-              No compatible nodes match this {session.direction === "upstream" ? "input" : "output"}
+              No compatible nodes match this{" "}
+              {session.direction === "upstream" ? "input" : "output"}
               {normalized ? " and search" : ""}.
             </div>
           )}
@@ -783,7 +808,11 @@ export function ContextualNodeDiscovery({
               Back
             </button>
           ) : (
-            <button type="button" {...stylex.props(s.ghostButton)} onClick={onClose}>
+            <button
+              type="button"
+              {...stylex.props(s.ghostButton)}
+              onClick={onClose}
+            >
               Cancel
             </button>
           )}

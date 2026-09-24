@@ -31,7 +31,10 @@ import {
 import type { SchemaBuilderField } from "./schema-builder";
 import type { WorkflowNodeSecretStatuses } from "./node-secrets";
 
-export type { WorkflowInputPlug, WorkflowInputPlugBinding } from "./input-plugs";
+export type {
+  WorkflowInputPlug,
+  WorkflowInputPlugBinding,
+} from "./input-plugs";
 export type { WorkflowNodeLayout } from "./node-layout";
 
 export type WorkflowEdgeProjection = RunEdgeProjectionInput;
@@ -97,9 +100,7 @@ export function serializeWorkflowEdgeTransport(
 ): WorkflowEdgeTransport {
   return {
     collection_mode: data?.collectionMode ?? "direct",
-    projection: data?.projection
-      ? { path: [...data.projection.path] }
-      : null,
+    projection: data?.projection ? { path: [...data.projection.path] } : null,
     conversion_path: (data?.conversionPath ?? []).map((conversion) => ({
       id: conversion.id,
       version: conversion.version,
@@ -109,8 +110,7 @@ export function serializeWorkflowEdgeTransport(
 
 /** Connect-time feed intent on output catalog satellite handles. */
 export type HandleFeedIntent =
-  | { kind: "whole" }
-  | { kind: "projection"; path: readonly string[] };
+  { kind: "whole" } | { kind: "projection"; path: readonly string[] };
 
 interface PortMetaBase {
   portName: string;
@@ -262,10 +262,7 @@ export interface WorkflowNodeData extends Record<string, unknown> {
     name: string,
     value: string,
   ) => Promise<boolean>;
-  onRemoveNodeSecret?: (
-    nodeId: string,
-    name: string,
-  ) => Promise<boolean>;
+  onRemoveNodeSecret?: (nodeId: string, name: string) => Promise<boolean>;
   onResetArtifactTypeBinding?: (nodeId: string, variable: string) => void;
   onBindArtifactTypeBinding?: (
     nodeId: string,
@@ -300,9 +297,7 @@ export function compatibilityHandleId(
   direction: "input" | "output",
   endpoint: WorkflowCompatibilityEndpoint,
 ): string {
-  const plugId = endpoint.plugId
-    ? encodeURIComponent(endpoint.plugId)
-    : "";
+  const plugId = endpoint.plugId ? encodeURIComponent(endpoint.plugId) : "";
   return [
     "$compatibility",
     direction,
@@ -324,9 +319,7 @@ function schemaRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-export function defaultNodeConfig(
-  spec: NodeSpec,
-): WorkflowNodeConfig {
+export function defaultNodeConfig(spec: NodeSpec): WorkflowNodeConfig {
   const schema = schemaRecord(spec.config_schema);
   const properties = schemaRecord(schema?.properties);
   const config: WorkflowNodeConfig = {};
@@ -354,10 +347,7 @@ export function createWorkflowNodeData(
       }))
     : initialInputPlugs(spec);
   const config = defaultNodeConfig(spec);
-  if (
-    !savedInputPlugs &&
-    spec.operator_id === ARTIFACT_QUERY_OPERATOR_ID
-  ) {
+  if (!savedInputPlugs && spec.operator_id === ARTIFACT_QUERY_OPERATOR_ID) {
     const relationPlug = inputPlugs.find(
       (plug) => plug.portName === ARTIFACT_QUERY_RELATIONS_PORT,
     );
@@ -365,10 +355,9 @@ export function createWorkflowNodeData(
       ? createArtifactQueryRelation(0, relationPlug.id)
       : createArtifactQueryRelation(0);
     config.relations = [relation];
-    inputPlugs = reconcileArtifactQueryRelationInputPlugs(
-      inputPlugs,
-      [relation],
-    );
+    inputPlugs = reconcileArtifactQueryRelationInputPlugs(inputPlugs, [
+      relation,
+    ]);
   }
   return {
     spec,
@@ -376,12 +365,12 @@ export function createWorkflowNodeData(
     artifactTypeBindings: {},
     pluginReleasePin:
       spec.origin === "plugin" && spec.plugin_release
-      ? {
-          scope: spec.plugin_release.scope,
-          slug: spec.plugin_release.slug,
-          revision: spec.plugin_release.revision,
-        }
-      : null,
+        ? {
+            scope: spec.plugin_release.scope,
+            slug: spec.plugin_release.slug,
+            revision: spec.plugin_release.revision,
+          }
+        : null,
     inputPlugs,
     inputPlugBindings: {},
     mappedInputPort: null,
@@ -430,9 +419,7 @@ export function serializeRunNode(
   };
 }
 
-export function serializeInputPlugs(
-  data: WorkflowNodeData,
-): InputPlugInput[] {
+export function serializeInputPlugs(data: WorkflowNodeData): InputPlugInput[] {
   return data.inputPlugs.map((plug) => ({
     id: plug.id,
     port: plug.portName,
@@ -581,7 +568,7 @@ export function resolvedPortArtifactType(
   if (artifactType) return artifactType;
 
   const variable = portArtifactTypeVariable(port);
-  return variable ? artifactTypeBindings[variable] ?? null : null;
+  return variable ? (artifactTypeBindings[variable] ?? null) : null;
 }
 
 export function acceptedPortShapes(port: Port): readonly Port["shape"][] {

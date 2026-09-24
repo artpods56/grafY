@@ -24,7 +24,11 @@ type MockState = {
   placements: Record<string, string>;
 };
 
-const SEED_FOLDERS: readonly { id: string; name: string; parent: string | null }[] = [
+const SEED_FOLDERS: readonly {
+  id: string;
+  name: string;
+  parent: string | null;
+}[] = [
   { id: "seed-fieldwork", name: "Fieldwork", parent: null },
   { id: "seed-september", name: "September", parent: "seed-fieldwork" },
   { id: "seed-raw-photos", name: "Raw photos", parent: "seed-september" },
@@ -40,7 +44,9 @@ function now(): string {
 }
 
 function newFolderId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `folder-${Date.now().toString(36)}`;
+  return (
+    globalThis.crypto?.randomUUID?.() ?? `folder-${Date.now().toString(36)}`
+  );
 }
 
 function readState(workspaceId: string): MockState {
@@ -66,7 +72,10 @@ function readState(workspaceId: string): MockState {
 
 function writeState(workspaceId: string, state: MockState): void {
   try {
-    globalThis.localStorage?.setItem(stateKey(workspaceId), JSON.stringify(state));
+    globalThis.localStorage?.setItem(
+      stateKey(workspaceId),
+      JSON.stringify(state),
+    );
   } catch {
     // Storage can be full or blocked; the in-memory tree still works.
   }
@@ -111,7 +120,8 @@ function assertNameFree(
       folder.folder_id !== exceptFolderId &&
       folder.name.trim().toLowerCase() === name.trim().toLowerCase(),
   );
-  if (taken) throw new LibraryFolderNameTakenError({ parentId, folderName: name });
+  if (taken)
+    throw new LibraryFolderNameTakenError({ parentId, folderName: name });
 }
 
 export const mockLibraryFolders: LibraryFoldersApi = {

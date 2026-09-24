@@ -6,17 +6,16 @@ import {
   listWorkspaceTemplates,
 } from "./templates";
 
-
 afterEach(() => vi.unstubAllGlobals());
-
 
 describe("template API client", () => {
   it("addresses source and destination through the typed copy contract", async () => {
-    const fetchMock = vi.fn().mockImplementation(async () =>
-      new Response("{}", {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+    const fetchMock = vi.fn().mockImplementation(
+      async () =>
+        new Response("{}", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
     );
     vi.stubGlobal("fetch", fetchMock);
 

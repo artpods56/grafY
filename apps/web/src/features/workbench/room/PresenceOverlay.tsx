@@ -67,9 +67,11 @@ const s = stylex.create({
     padding: "2px 8px 2px 6px",
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: "light-dark(rgba(15, 23, 42, 0.12), rgba(255, 255, 255, 0.14))",
+    borderColor:
+      "light-dark(rgba(15, 23, 42, 0.12), rgba(255, 255, 255, 0.14))",
     borderRadius: "999px",
-    backgroundColor: "light-dark(rgba(255, 255, 255, 0.88), rgba(24, 26, 30, 0.88))",
+    backgroundColor:
+      "light-dark(rgba(255, 255, 255, 0.88), rgba(24, 26, 30, 0.88))",
     color: "light-dark(#1f2937, #e5e7eb)",
     fontSize: "11px",
     fontWeight: 600,
@@ -88,7 +90,9 @@ const s = stylex.create({
   },
 });
 
-function activityLabel(activity: PresenceParticipant["activity"]): string | null {
+function activityLabel(
+  activity: PresenceParticipant["activity"],
+): string | null {
   if (activity === "moving_nodes") return "moving";
   if (activity === "editing_node") return "editing";
   if (activity === "connecting") return "connecting";
@@ -154,15 +158,17 @@ export function PresenceOverlay({
       opacity: track.motion.opacity,
     }));
     setCursorTracks((current) => {
-      const unchanged = current.length === next.length && current.every(
-        (track, index) => {
+      const unchanged =
+        current.length === next.length &&
+        current.every((track, index) => {
           const candidate = next[index];
-          return candidate !== undefined &&
+          return (
+            candidate !== undefined &&
             track.sessionId === candidate.sessionId &&
             track.displayName === candidate.displayName &&
-            track.color === candidate.color;
-        },
-      );
+            track.color === candidate.color
+          );
+        });
       return unchanged ? current : next;
     });
   }, []);
@@ -187,8 +193,7 @@ export function PresenceOverlay({
         track.motion = next;
         const element = track.element;
         if (element) {
-          element.style.transform =
-            `translate3d(${next.x}px, ${next.y}px, 0)`;
+          element.style.transform = `translate3d(${next.x}px, ${next.y}px, 0)`;
           element.style.opacity = String(next.opacity);
         }
       }
@@ -290,7 +295,10 @@ export function PresenceOverlay({
                 {...stylex.props(s.chip)}
                 title={participant.actor.display_name}
               >
-                <span {...stylex.props(s.dot)} style={{ backgroundColor: color }} />
+                <span
+                  {...stylex.props(s.dot)}
+                  style={{ backgroundColor: color }}
+                />
                 {participant.actor.display_name}
                 {activity ? (
                   <span {...stylex.props(s.activity)}>{activity}</span>
@@ -310,19 +318,14 @@ export function PresenceOverlay({
                 if (current) current.element = element;
                 if (element) {
                   const motion = current?.motion ?? track;
-                  element.style.transform =
-                    `translate3d(${motion.x}px, ${motion.y}px, 0)`;
+                  element.style.transform = `translate3d(${motion.x}px, ${motion.y}px, 0)`;
                   element.style.opacity = String(motion.opacity);
                 }
               }}
               {...stylex.props(s.cursor)}
               aria-hidden
             >
-              <svg
-                {...stylex.props(s.pointer)}
-                viewBox="0 0 24 24"
-                aria-hidden
-              >
+              <svg {...stylex.props(s.pointer)} viewBox="0 0 24 24" aria-hidden>
                 {/* Classic OS-style pointer; tip is the hotspot at (0,0). */}
                 <path
                   d="M0.6 0.6v17.4l4.9-4.7 3.5 8.1 2.9-1.3-3.6-7.9H18z"

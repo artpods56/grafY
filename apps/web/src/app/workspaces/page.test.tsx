@@ -75,7 +75,9 @@ it("presents the workspace directory as separate administration", async () => {
   const root = createRoot(container);
   await act(async () => root.render(<WorkspacesPage />));
 
-  expect(container.querySelector("h1")?.textContent).toBe("Workspace directory");
+  expect(container.querySelector("h1")?.textContent).toBe(
+    "Workspace directory",
+  );
   expect(container.textContent).toContain("My graphs");
   expect(container.textContent).toContain("Atlas");
   expect(container.textContent).not.toContain("hidden-personal-slug");

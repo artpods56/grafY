@@ -29,24 +29,27 @@ import { renderHook } from "./test/renderHook";
 import { useRunExecution } from "./useRunExecution";
 
 const apiMocks = vi.hoisted(() => ({
-  cancelRunExecution: vi.fn<(
-    workspaceId: string,
-    executionId: string,
-  ) => Promise<RunExecution>>(),
+  cancelRunExecution:
+    vi.fn<
+      (workspaceId: string, executionId: string) => Promise<RunExecution>
+    >(),
   getGraphMaterializations: vi.fn(),
-  getRunExecution: vi.fn<(
-    workspaceId: string,
-    executionId: string,
-  ) => Promise<RunExecution>>(),
-  startRunExecution: vi.fn<(
-    workspaceId: string,
-    request: RunRequest,
-  ) => Promise<RunExecution>>(),
-  subscribeRunExecutionEvents: vi.fn<(
-    workspaceId: string,
-    executionId: string,
-    handlers: RunExecutionEventHandlers,
-  ) => RunExecutionEventSubscription>(),
+  getRunExecution:
+    vi.fn<
+      (workspaceId: string, executionId: string) => Promise<RunExecution>
+    >(),
+  startRunExecution:
+    vi.fn<
+      (workspaceId: string, request: RunRequest) => Promise<RunExecution>
+    >(),
+  subscribeRunExecutionEvents:
+    vi.fn<
+      (
+        workspaceId: string,
+        executionId: string,
+        handlers: RunExecutionEventHandlers,
+      ) => RunExecutionEventSubscription
+    >(),
 }));
 
 vi.mock("@/lib/api", () => apiMocks);
@@ -56,16 +59,18 @@ const executionDraft: CreateSavedGraphRequest = {
   name: "Execution snapshot",
   document: {
     schema_version: 7,
-    nodes: [{
-      id: "node-1",
-      kind: "builtin",
-      operator_id: "test.operator",
-      operator_version: 1,
-      config: {},
-      input_plugs: [],
-      artifact_type_bindings: [],
-      position: { x: 0, y: 0 },
-    }],
+    nodes: [
+      {
+        id: "node-1",
+        kind: "builtin",
+        operator_id: "test.operator",
+        operator_version: 1,
+        config: {},
+        input_plugs: [],
+        artifact_type_bindings: [],
+        position: { x: 0, y: 0 },
+      },
+    ],
     edges: [],
     origins: [],
     presentation: {
@@ -102,7 +107,9 @@ const changedExecutionFingerprint = savedGraphExecutionFingerprint({
 const liveSubscriptions: Array<{
   executionId: string;
   handlers: RunExecutionEventHandlers;
-  subscription: RunExecutionEventSubscription & { close: ReturnType<typeof vi.fn> };
+  subscription: RunExecutionEventSubscription & {
+    close: ReturnType<typeof vi.fn>;
+  };
 }> = [];
 
 function nodeSpec(): NodeSpec {
@@ -140,35 +147,39 @@ function connectedSelection(): {
   source.data.spec = {
     ...source.data.spec,
     title: "Source",
-    outputs: [{
-      name: "output",
-      title: "Output",
-      description: null,
-      direction: "output",
-      artifact_type: { id: "text.plain", schema_version: 1 },
-      shape: "one",
-      accepted_shapes: ["one"],
-      instance_plugs: false,
-      variadic: false,
-      required: true,
-    }],
+    outputs: [
+      {
+        name: "output",
+        title: "Output",
+        description: null,
+        direction: "output",
+        artifact_type: { id: "text.plain", schema_version: 1 },
+        shape: "one",
+        accepted_shapes: ["one"],
+        instance_plugs: false,
+        variadic: false,
+        required: true,
+      },
+    ],
   };
   const target = { ...workflowNode("target"), selected: true };
   target.data.spec = {
     ...target.data.spec,
     title: "Target",
-    inputs: [{
-      name: "input",
-      title: "Input",
-      description: null,
-      direction: "input",
-      artifact_type: { id: "text.plain", schema_version: 1 },
-      shape: "one",
-      accepted_shapes: ["one"],
-      instance_plugs: false,
-      variadic: false,
-      required: true,
-    }],
+    inputs: [
+      {
+        name: "input",
+        title: "Input",
+        description: null,
+        direction: "input",
+        artifact_type: { id: "text.plain", schema_version: 1 },
+        shape: "one",
+        accepted_shapes: ["one"],
+        instance_plugs: false,
+        variadic: false,
+        required: true,
+      },
+    ],
   };
   const edge: WorkflowEdge = {
     id: "source-to-target",
@@ -198,16 +209,18 @@ function materializedRun(nodeId: string, artifactId: string): RunNodeResult {
     node_id: nodeId,
     status: "succeeded",
     error: null,
-    outputs: [{
-      port: "output",
-      kind: "single",
-      value: {
-        artifact_id: artifactId,
-        artifact_type: "text.plain",
-        schema_version: 1,
+    outputs: [
+      {
+        port: "output",
+        kind: "single",
+        value: {
+          artifact_id: artifactId,
+          artifact_type: "text.plain",
+          schema_version: 1,
+        },
+        artifacts: [],
       },
-      artifacts: [],
-    }],
+    ],
   };
 }
 
@@ -218,9 +231,8 @@ function execution(
   return {
     execution_id: executionId,
     status,
-    active_node_id: status === "running" || status === "cancelling"
-      ? "node-1"
-      : null,
+    active_node_id:
+      status === "running" || status === "cancelling" ? "node-1" : null,
     result: null,
     error: null,
     ...overrides,
@@ -231,27 +243,33 @@ function succeededExecution(nodeId = "node-1"): RunExecution {
   return execution("succeeded", {
     result: {
       status: "succeeded",
-      node_runs: [{
-        node_id: nodeId,
-        status: "succeeded",
-        outputs: [{
-          port: "output",
-          kind: "single",
-          value: {
-            artifact_id: "artifact-1",
-            artifact_type: "text.plain",
-            schema_version: 1,
-          },
-          artifacts: [{
-            artifact_id: "artifact-1",
-            artifact_type: "text.plain",
-            content_type: "text/plain",
-            schema_version: 1,
-            byte_size: 4,
-          }],
-        }],
-        error: null,
-      }],
+      node_runs: [
+        {
+          node_id: nodeId,
+          status: "succeeded",
+          outputs: [
+            {
+              port: "output",
+              kind: "single",
+              value: {
+                artifact_id: "artifact-1",
+                artifact_type: "text.plain",
+                schema_version: 1,
+              },
+              artifacts: [
+                {
+                  artifact_id: "artifact-1",
+                  artifact_type: "text.plain",
+                  content_type: "text/plain",
+                  schema_version: 1,
+                  byte_size: 4,
+                },
+              ],
+            },
+          ],
+          error: null,
+        },
+      ],
     },
   });
 }
@@ -271,9 +289,8 @@ function roomExecution(
       display_name: "Owner",
       color: "emerald",
     },
-    active_node_id: status === "running" || status === "cancelling"
-      ? "node-1"
-      : null,
+    active_node_id:
+      status === "running" || status === "cancelling" ? "node-1" : null,
     overlays_compatible: true,
     cancellable: true,
     ...overrides,
@@ -282,9 +299,7 @@ function roomExecution(
 
 type HookOptions = Parameters<typeof useRunExecution>[0];
 
-function hookHarness(
-  options: Partial<HookOptions> = {},
-) {
+function hookHarness(options: Partial<HookOptions> = {}) {
   let nodes = options.nodes ? [...options.nodes] : [workflowNode()];
   let runError: string | null = null;
   let setNodesCallCount = 0;
@@ -319,7 +334,11 @@ function hookHarness(
 }
 
 async function launchRun(
-  result: Awaited<ReturnType<typeof renderHook<HookOptions, ReturnType<typeof useRunExecution>>>>["result"],
+  result: Awaited<
+    ReturnType<
+      typeof renderHook<HookOptions, ReturnType<typeof useRunExecution>>
+    >
+  >["result"],
 ) {
   let runPromise!: Promise<void>;
   await React.act(async () => {
@@ -473,9 +492,11 @@ describe("useRunExecution", () => {
   });
 
   it("routes replayed module progress while guarding identity, sequence, and graph snapshot", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(execution("running", {
-      active_node_id: "module-1",
-    }));
+    apiMocks.startRunExecution.mockResolvedValue(
+      execution("running", {
+        active_node_id: "module-1",
+      }),
+    );
     apiMocks.getRunExecution.mockResolvedValue(succeededExecution("module-1"));
     const harness = hookHarness({
       nodes: [workflowNode("module-1")],
@@ -485,51 +506,63 @@ describe("useRunExecution", () => {
     const live = latestLiveSubscription();
 
     await React.act(async () => {
-      live.handlers.onEvent(nodeProgressEvent(10, {
-        execution_id: "another-execution",
-        node_path: ["module-1", "inner-1"],
-        node_id: "inner-1",
-      }));
-      live.handlers.onEvent(nodeProgressEvent(2, {
-        node_path: ["module-1", "nested-a", "inner-1"],
-        node_id: "inner-1",
-        invocation_index: 3,
-        invocation_path: [2, 1],
-        message: "Preparing the payload",
-        current: 2,
-        total: 5,
-      }));
-      live.handlers.onEvent(nodeProgressEvent(2, {
-        node_path: ["module-1", "nested-a", "inner-1"],
-        node_id: "inner-1",
-        message: "Duplicate",
-      }));
-      live.handlers.onEvent(nodeProgressEvent(1, {
-        node_path: ["module-1"],
-        message: "Out of order",
-      }));
+      live.handlers.onEvent(
+        nodeProgressEvent(10, {
+          execution_id: "another-execution",
+          node_path: ["module-1", "inner-1"],
+          node_id: "inner-1",
+        }),
+      );
+      live.handlers.onEvent(
+        nodeProgressEvent(2, {
+          node_path: ["module-1", "nested-a", "inner-1"],
+          node_id: "inner-1",
+          invocation_index: 3,
+          invocation_path: [2, 1],
+          message: "Preparing the payload",
+          current: 2,
+          total: 5,
+        }),
+      );
+      live.handlers.onEvent(
+        nodeProgressEvent(2, {
+          node_path: ["module-1", "nested-a", "inner-1"],
+          node_id: "inner-1",
+          message: "Duplicate",
+        }),
+      );
+      live.handlers.onEvent(
+        nodeProgressEvent(1, {
+          node_path: ["module-1"],
+          message: "Out of order",
+        }),
+      );
       await vi.advanceTimersByTimeAsync(20);
     });
 
     expect(live.executionId).toBe(executionId);
     expect(harness.nodes()[0]?.data.progress).toEqual({
       omittedCount: 0,
-      entries: [{
-        sequence: 2,
-        message: "Preparing the payload",
-        current: 2,
-        total: 5,
-        sourceNodePath: ["nested-a", "inner-1"],
-        invocationIndex: 3,
-        invocationPath: [2, 1],
-      }],
+      entries: [
+        {
+          sequence: 2,
+          message: "Preparing the payload",
+          current: 2,
+          total: 5,
+          sourceNodePath: ["nested-a", "inner-1"],
+          invocationIndex: 3,
+          invocationPath: [2, 1],
+        },
+      ],
     });
 
     await React.act(async () => {
-      live.handlers.onEvent(nodeProgressEvent(3, {
-        node_path: ["module-1"],
-        message: "Stale graph",
-      }));
+      live.handlers.onEvent(
+        nodeProgressEvent(3, {
+          node_path: ["module-1"],
+          message: "Stale graph",
+        }),
+      );
     });
     await hook.rerender({
       ...harness.hookOptions,
@@ -540,15 +573,17 @@ describe("useRunExecution", () => {
     });
     expect(harness.nodes()[0]?.data.progress).toEqual({
       omittedCount: 0,
-      entries: [{
-        sequence: 2,
-        message: "Preparing the payload",
-        current: 2,
-        total: 5,
-        sourceNodePath: ["nested-a", "inner-1"],
-        invocationIndex: 3,
-        invocationPath: [2, 1],
-      }],
+      entries: [
+        {
+          sequence: 2,
+          message: "Preparing the payload",
+          current: 2,
+          total: 5,
+          sourceNodePath: ["nested-a", "inner-1"],
+          invocationIndex: 3,
+          invocationPath: [2, 1],
+        },
+      ],
     });
 
     await hook.rerender(harness.hookOptions);
@@ -556,7 +591,10 @@ describe("useRunExecution", () => {
       live.handlers.onEvent(executionStatusEvent(4, "succeeded"));
       await runPromise;
     });
-    expect(apiMocks.getRunExecution).toHaveBeenCalledWith("workspace-1", executionId);
+    expect(apiMocks.getRunExecution).toHaveBeenCalledWith(
+      "workspace-1",
+      executionId,
+    );
     expect(live.subscription.close).toHaveBeenCalled();
     expect(harness.nodes()[0]?.data.progress?.entries).toHaveLength(1);
   });
@@ -610,10 +648,12 @@ describe("useRunExecution", () => {
         live.handlers.onEvent(nodeProgressEvent(sequence));
       }
       for (let sequence = 101; sequence <= 200; sequence += 1) {
-        live.handlers.onEvent(nodeProgressEvent(sequence, {
-          node_path: ["node-2"],
-          node_id: "node-2",
-        }));
+        live.handlers.onEvent(
+          nodeProgressEvent(sequence, {
+            node_path: ["node-2"],
+            node_id: "node-2",
+          }),
+        );
       }
     });
     expect(harness.nodes()[0]?.data.progress).toBeNull();
@@ -645,9 +685,11 @@ describe("useRunExecution", () => {
   });
 
   it("keeps nested node statuses detail-only until the outer module reports", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(execution("running", {
-      active_node_id: "module-1",
-    }));
+    apiMocks.startRunExecution.mockResolvedValue(
+      execution("running", {
+        active_node_id: "module-1",
+      }),
+    );
     apiMocks.getRunExecution.mockResolvedValue(succeededExecution("module-1"));
     const harness = hookHarness({ nodes: [workflowNode("module-1")] });
     const hook = await renderHook(useRunExecution, harness.hookOptions);
@@ -695,9 +737,11 @@ describe("useRunExecution", () => {
   it("does not regress terminal nodes while later nodes run or cancellation completes", async () => {
     apiMocks.startRunExecution.mockResolvedValue(execution("running"));
     apiMocks.getRunExecution
-      .mockResolvedValueOnce(execution("running", {
-        active_node_id: "node-2",
-      }))
+      .mockResolvedValueOnce(
+        execution("running", {
+          active_node_id: "node-2",
+        }),
+      )
       .mockResolvedValueOnce(execution("cancelled"));
     const harness = hookHarness({
       nodes: [workflowNode("node-1"), workflowNode("node-2")],
@@ -812,15 +856,17 @@ describe("useRunExecution", () => {
     unselected.data.execution = { status: "succeeded" };
     unselected.data.progress = {
       omittedCount: 0,
-      entries: [{
-        sequence: 7,
-        message: "Previous execution",
-        current: null,
-        total: null,
-        sourceNodePath: [],
-        invocationIndex: null,
-        invocationPath: [],
-      }],
+      entries: [
+        {
+          sequence: 7,
+          message: "Previous execution",
+          current: null,
+          total: null,
+          sourceNodePath: [],
+          invocationIndex: null,
+          invocationPath: [],
+        },
+      ],
     };
     const previousRun = unselected.data.run;
     const harness = hookHarness({ nodes: [selected, unselected] });
@@ -1068,17 +1114,20 @@ describe("useRunExecution", () => {
     expect(apiMocks.startRunExecution).toHaveBeenCalledWith(
       "workspace-1",
       expect.objectContaining({
-        pinned_outputs: [expect.objectContaining({
-          from_node: "source",
-          value: expect.objectContaining({ artifact_id: "current-artifact" }),
-        })],
+        pinned_outputs: [
+          expect.objectContaining({
+            from_node: "source",
+            value: expect.objectContaining({ artifact_id: "current-artifact" }),
+          }),
+        ],
       }),
     );
-    expect(harness.nodes().find((node) => node.id === failed.id)?.data)
-      .toMatchObject({
-        run: { status: "failed", error: "Previous failure" },
-        execution: { status: "failed", error: "Previous failure" },
-      });
+    expect(
+      harness.nodes().find((node) => node.id === failed.id)?.data,
+    ).toMatchObject({
+      run: { status: "failed", error: "Previous failure" },
+      execution: { status: "failed", error: "Previous failure" },
+    });
     expect(harness.hookOptions.onMaterializationsLoaded).toHaveBeenCalledOnce();
   });
 
@@ -1108,9 +1157,11 @@ describe("useRunExecution", () => {
     expect(apiMocks.startRunExecution).toHaveBeenCalledWith(
       "workspace-1",
       expect.objectContaining({
-        pinned_outputs: [expect.objectContaining({
-          value: expect.objectContaining({ artifact_id: "local-artifact" }),
-        })],
+        pinned_outputs: [
+          expect.objectContaining({
+            value: expect.objectContaining({ artifact_id: "local-artifact" }),
+          }),
+        ],
       }),
     );
   });
@@ -1169,13 +1220,15 @@ describe("useRunExecution", () => {
     expect(apiMocks.startRunExecution).toHaveBeenCalledWith(
       "workspace-1",
       expect.objectContaining({
-        origins: [{
-          to_node: "node-1",
-          to_port: "input",
-          to_plug: null,
-          value: origin.value,
-          conversion_path: [],
-        }],
+        origins: [
+          {
+            to_node: "node-1",
+            to_port: "input",
+            to_plug: null,
+            value: origin.value,
+            conversion_path: [],
+          },
+        ],
       }),
     );
   });
@@ -1234,14 +1287,16 @@ describe("useRunExecution", () => {
     const { runPromise } = await launchRun(hook.result);
     const live = latestLiveSubscription();
 
-    harness.hookOptions.setNodes((current) => current.map((node) => ({
-      ...node,
-      data: {
-        ...node.data,
-        run: null,
-        execution: { status: "idle" },
-      },
-    })));
+    harness.hookOptions.setNodes((current) =>
+      current.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          run: null,
+          execution: { status: "idle" },
+        },
+      })),
+    );
     await hook.rerender({
       ...harness.hookOptions,
       currentExecutionFingerprint: changedExecutionFingerprint,
@@ -1281,7 +1336,9 @@ describe("useRunExecution", () => {
     });
     const hook = await renderHook(useRunExecution, harness.hookOptions);
 
-    expect(hook.result.current.announcement).toContain("Observing shared execution");
+    expect(hook.result.current.announcement).toContain(
+      "Observing shared execution",
+    );
     expect(apiMocks.subscribeRunExecutionEvents).toHaveBeenCalledOnce();
     expect(harness.nodes()[0]?.data.execution.status).toBe("running");
 
@@ -1303,8 +1360,9 @@ describe("useRunExecution", () => {
     });
 
     expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
-    expect(harness.nodes()[0]?.data.run?.outputs[0]?.artifacts[0]?.artifact_id)
-      .toBe("artifact-1");
+    expect(
+      harness.nodes()[0]?.data.run?.outputs[0]?.artifacts[0]?.artifact_id,
+    ).toBe("artifact-1");
     expect(hook.result.current.announcement).toBe(
       "Shared execution completed successfully.",
     );
@@ -1362,7 +1420,9 @@ describe("useRunExecution", () => {
     });
 
     expect(harness.nodes()[0]?.data.execution.status).toBe("cancelled");
-    expect(hook.result.current.announcement).toBe("Shared execution cancelled.");
+    expect(hook.result.current.announcement).toBe(
+      "Shared execution cancelled.",
+    );
   });
 
   it("restores cancellation failures and permits retries after mismatched responses", async () => {
@@ -1370,9 +1430,11 @@ describe("useRunExecution", () => {
     apiMocks.getRunExecution.mockResolvedValue(execution("cancelled"));
     apiMocks.cancelRunExecution
       .mockRejectedValueOnce(new Error("Cancellation service unavailable."))
-      .mockResolvedValueOnce(execution("cancelling", {
-        execution_id: "00000000-0000-4000-8000-000000000002",
-      }))
+      .mockResolvedValueOnce(
+        execution("cancelling", {
+          execution_id: "00000000-0000-4000-8000-000000000002",
+        }),
+      )
       .mockResolvedValueOnce(execution("cancelling"));
     const harness = hookHarness();
     const hook = await renderHook(useRunExecution, harness.hookOptions);

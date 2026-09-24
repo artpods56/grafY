@@ -204,7 +204,8 @@ export function EdgeSelectorBlock({
   const cellSize = grid?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
   const routed = edgeSelectorBlockSize(cellSize);
   const width = widthOverride ?? routed.width;
-  const height = heightOverride ?? (docked ? EDGE_SELECTOR_PILL_HEIGHT : routed.height);
+  const height =
+    heightOverride ?? (docked ? EDGE_SELECTOR_PILL_HEIGHT : routed.height);
 
   return (
     <div

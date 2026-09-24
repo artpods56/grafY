@@ -275,7 +275,10 @@ function valueKind(values: readonly CategoryValue[]): CategoryValueKind {
 }
 
 function parseValues(value: string, kind: CategoryValueKind): CategoryValue[] {
-  const parts = value.split(",").map((part) => part.trim()).filter(Boolean);
+  const parts = value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
   if (kind === "number") {
     return parts.flatMap((part) => {
       const number = Number(part);
@@ -313,9 +316,7 @@ function LabelPropertyField({
         onChange={(event) => {
           const property = event.currentTarget.value;
           onChange(
-            property
-              ? { ...(label ?? DEFAULT_LABEL_STYLE), property }
-              : null,
+            property ? { ...(label ?? DEFAULT_LABEL_STYLE), property } : null,
           );
         }}
       />
@@ -568,7 +569,7 @@ export function VectorLayerStyleBody({
                 commit({
                   ...style,
                   categories: style.categories.map((candidate, index) =>
-                    index === categoryIndex ? next : candidate
+                    index === categoryIndex ? next : candidate,
                   ),
                 });
               return (

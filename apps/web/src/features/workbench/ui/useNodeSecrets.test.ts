@@ -9,22 +9,14 @@ import type {
   NodeSpec,
   SavedGraphNode,
 } from "@/lib/api";
-import {
-  WORKFLOW_NODE_TYPE,
-  createWorkflowNodeData,
-} from "../canvas/types";
+import { WORKFLOW_NODE_TYPE, createWorkflowNodeData } from "../canvas/types";
 import type { WorkflowNode } from "../model/execution-plan";
 import { deferred } from "./test/deferred";
 import { renderHook } from "./test/renderHook";
-import {
-  useNodeSecrets,
-  type NodeSecretGraph,
-} from "./useNodeSecrets";
+import { useNodeSecrets, type NodeSecretGraph } from "./useNodeSecrets";
 
 const api = vi.hoisted(() => ({
-  getGraphNodeSecrets: vi.fn<
-    typeof import("@/lib/api").getGraphNodeSecrets
-  >(),
+  getGraphNodeSecrets: vi.fn<typeof import("@/lib/api").getGraphNodeSecrets>(),
   applyNodeSecret: vi.fn<typeof import("@/lib/api").applyNodeSecret>(),
   removeNodeSecret: vi.fn<typeof import("@/lib/api").removeNodeSecret>(),
 }));
@@ -50,19 +42,18 @@ function secretNodeSpec(): NodeSpec {
     output_schema: {},
     inputs: [],
     outputs: [],
-    secret_inputs: [{
-      name: secretName,
-      title: "API key",
-      description: "OpenAI-compatible bearer credential.",
-      config_dependencies: ["base_url"],
-    }],
+    secret_inputs: [
+      {
+        name: secretName,
+        title: "API key",
+        description: "OpenAI-compatible bearer credential.",
+        config_dependencies: ["base_url"],
+      },
+    ],
   };
 }
 
-function workflowNode(
-  baseUrl = savedBaseUrl,
-  id = nodeId,
-): WorkflowNode {
+function workflowNode(baseUrl = savedBaseUrl, id = nodeId): WorkflowNode {
   return {
     id,
     type: WORKFLOW_NODE_TYPE,
@@ -74,10 +65,7 @@ function workflowNode(
   };
 }
 
-function savedNode(
-  baseUrl = savedBaseUrl,
-  id = nodeId,
-): SavedGraphNode {
+function savedNode(baseUrl = savedBaseUrl, id = nodeId): SavedGraphNode {
   return {
     id,
     kind: "builtin",
@@ -126,12 +114,10 @@ describe("useNodeSecrets", () => {
       outputs: [],
       persistedNode: savedNode(),
     };
-    const activeGraph = graph(
-      "00000000-0000-4000-8000-000000000001",
-      1,
-    );
+    const activeGraph = graph("00000000-0000-4000-8000-000000000001", 1);
     const hook = await renderHook(
-      ({ nodes }: { nodes: readonly WorkflowNode[] }) => useNodeSecrets("workspace-1", nodes),
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets("workspace-1", nodes),
       { nodes: [node] },
     );
 
@@ -158,23 +144,22 @@ describe("useNodeSecrets", () => {
       .mockReturnValueOnce(olderResponse.promise)
       .mockReturnValueOnce(newerResponse.promise);
     const hook = await renderHook(
-      ({ nodes }: { nodes: readonly WorkflowNode[] }) => useNodeSecrets("workspace-1", nodes),
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets("workspace-1", nodes),
       { nodes: [node] },
     );
 
     let olderRefresh!: Promise<boolean>;
     await React.act(() => {
-      olderRefresh = hook.result.current.refreshNodeSecretStatuses(
-        olderGraph,
-        [node],
-      );
+      olderRefresh = hook.result.current.refreshNodeSecretStatuses(olderGraph, [
+        node,
+      ]);
     });
     let newerRefresh!: Promise<boolean>;
     await React.act(() => {
-      newerRefresh = hook.result.current.refreshNodeSecretStatuses(
-        newerGraph,
-        [node],
-      );
+      newerRefresh = hook.result.current.refreshNodeSecretStatuses(newerGraph, [
+        node,
+      ]);
     });
 
     let newerRefreshed = false;
@@ -200,23 +185,20 @@ describe("useNodeSecrets", () => {
 
   it("does not restore statuses after the active graph is cleared", async () => {
     const node = workflowNode();
-    const activeGraph = graph(
-      "00000000-0000-4000-8000-000000000003",
-      2,
-    );
+    const activeGraph = graph("00000000-0000-4000-8000-000000000003", 2);
     const response = deferred<GraphNodeSecrets>();
     api.getGraphNodeSecrets.mockReturnValue(response.promise);
     const hook = await renderHook(
-      ({ nodes }: { nodes: readonly WorkflowNode[] }) => useNodeSecrets("workspace-1", nodes),
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets("workspace-1", nodes),
       { nodes: [node] },
     );
 
     let refresh!: Promise<boolean>;
     await React.act(() => {
-      refresh = hook.result.current.refreshNodeSecretStatuses(
-        activeGraph,
-        [node],
-      );
+      refresh = hook.result.current.refreshNodeSecretStatuses(activeGraph, [
+        node,
+      ]);
     });
     expect(hook.result.current.nodeSecretStatuses).toEqual({
       [nodeId]: { [secretName]: { state: "loading" } },
@@ -233,23 +215,20 @@ describe("useNodeSecrets", () => {
 
   it("does not repopulate a forgotten node when a refresh finishes", async () => {
     const node = workflowNode();
-    const activeGraph = graph(
-      "00000000-0000-4000-8000-000000000006",
-      5,
-    );
+    const activeGraph = graph("00000000-0000-4000-8000-000000000006", 5);
     const response = deferred<GraphNodeSecrets>();
     api.getGraphNodeSecrets.mockReturnValue(response.promise);
     const hook = await renderHook(
-      ({ nodes }: { nodes: readonly WorkflowNode[] }) => useNodeSecrets("workspace-1", nodes),
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets("workspace-1", nodes),
       { nodes: [node] },
     );
 
     let refresh!: Promise<boolean>;
     await React.act(() => {
-      refresh = hook.result.current.refreshNodeSecretStatuses(
-        activeGraph,
-        [node],
-      );
+      refresh = hook.result.current.refreshNodeSecretStatuses(activeGraph, [
+        node,
+      ]);
     });
     await React.act(() => {
       hook.result.current.forgetNodeSecretStatuses(nodeId);
@@ -286,15 +265,16 @@ describe("useNodeSecrets", () => {
       .mockReturnValueOnce(refreshResponse.promise);
     api.applyNodeSecret.mockReturnValue(applyResponse.promise);
     const hook = await renderHook(
-      ({ nodes }: { nodes: readonly WorkflowNode[] }) => useNodeSecrets("workspace-1", nodes),
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets("workspace-1", nodes),
       { nodes: [firstNode, otherNode] },
     );
 
     await React.act(async () => {
-      await hook.result.current.refreshNodeSecretStatuses(
-        activeGraph,
-        [firstNode, otherNode],
-      );
+      await hook.result.current.refreshNodeSecretStatuses(activeGraph, [
+        firstNode,
+        otherNode,
+      ]);
     });
     let applying!: Promise<boolean>;
     await React.act(() => {
@@ -306,10 +286,10 @@ describe("useNodeSecrets", () => {
     });
     let refresh!: Promise<boolean>;
     await React.act(() => {
-      refresh = hook.result.current.refreshNodeSecretStatuses(
-        activeGraph,
-        [firstNode, otherNode],
-      );
+      refresh = hook.result.current.refreshNodeSecretStatuses(activeGraph, [
+        firstNode,
+        otherNode,
+      ]);
     });
     expect(
       hook.result.current.nodeSecretStatuses[nodeId]?.[secretName]?.state,
@@ -356,24 +336,17 @@ describe("useNodeSecrets", () => {
 
   it("sends the exact write-only value and stores only lifecycle metadata", async () => {
     const node = workflowNode();
-    const activeGraph = graph(
-      "00000000-0000-4000-8000-000000000004",
-      7,
-    );
-    api.getGraphNodeSecrets.mockResolvedValue(
-      graphSecrets(activeGraph, false),
-    );
+    const activeGraph = graph("00000000-0000-4000-8000-000000000004", 7);
+    api.getGraphNodeSecrets.mockResolvedValue(graphSecrets(activeGraph, false));
     const applyResponse = deferred<AppliedNodeSecret>();
     api.applyNodeSecret.mockReturnValue(applyResponse.promise);
     const hook = await renderHook(
-      ({ nodes }: { nodes: readonly WorkflowNode[] }) => useNodeSecrets("workspace-1", nodes),
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets("workspace-1", nodes),
       { nodes: [node] },
     );
     await React.act(async () => {
-      await hook.result.current.refreshNodeSecretStatuses(
-        activeGraph,
-        [node],
-      );
+      await hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]);
     });
 
     const plaintext = "sk-test-plaintext-value";
@@ -396,8 +369,9 @@ describe("useNodeSecrets", () => {
     expect(hook.result.current.nodeSecretStatuses).toEqual({
       [nodeId]: { [secretName]: { state: "applying" } },
     });
-    expect(JSON.stringify(hook.result.current.nodeSecretStatuses))
-      .not.toContain(plaintext);
+    expect(
+      JSON.stringify(hook.result.current.nodeSecretStatuses),
+    ).not.toContain(plaintext);
 
     let applied = false;
     await React.act(async () => {
@@ -412,28 +386,22 @@ describe("useNodeSecrets", () => {
     expect(hook.result.current.nodeSecretStatuses).toEqual({
       [nodeId]: { [secretName]: { state: "configured" } },
     });
-    expect(JSON.stringify(hook.result.current.nodeSecretStatuses))
-      .not.toContain(plaintext);
+    expect(
+      JSON.stringify(hook.result.current.nodeSecretStatuses),
+    ).not.toContain(plaintext);
   });
 
   it("fails closed when a secret dependency no longer matches the saved node", async () => {
     const node = workflowNode("https://openrouter.ai/api/v1");
-    const activeGraph = graph(
-      "00000000-0000-4000-8000-000000000005",
-      4,
-    );
-    api.getGraphNodeSecrets.mockResolvedValue(
-      graphSecrets(activeGraph, true),
-    );
+    const activeGraph = graph("00000000-0000-4000-8000-000000000005", 4);
+    api.getGraphNodeSecrets.mockResolvedValue(graphSecrets(activeGraph, true));
     const hook = await renderHook(
-      ({ nodes }: { nodes: readonly WorkflowNode[] }) => useNodeSecrets("workspace-1", nodes),
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets("workspace-1", nodes),
       { nodes: [node] },
     );
     await React.act(async () => {
-      await hook.result.current.refreshNodeSecretStatuses(
-        activeGraph,
-        [node],
-      );
+      await hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]);
     });
 
     await expect(

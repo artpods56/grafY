@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Workspace } from "@/lib/api";
 
-
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const testState = vi.hoisted(() => ({
@@ -77,7 +76,6 @@ vi.mock("@/lib/api", async (importOriginal) => {
 
 import { SaveAsTemplate } from "./SaveAsTemplate";
 
-
 async function renderSaveFlow(
   source: Parameters<typeof SaveAsTemplate>[0]["source"] = {
     workspaceId: location.id,
@@ -96,7 +94,6 @@ async function renderSaveFlow(
   return { container, root };
 }
 
-
 beforeEach(() => {
   testState.push.mockReset();
   testState.create.mockReset();
@@ -110,7 +107,6 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   document.body.replaceChildren();
 });
-
 
 describe("save as template flow", () => {
   it.each([
@@ -139,14 +135,18 @@ describe("save as template flow", () => {
 
     const form = container.querySelector("form");
     await act(async () => {
-      form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      form?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
     });
     expect(container.textContent).toContain(
       "Your template is unchanged; try again.",
     );
 
     await act(async () => {
-      form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      form?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
     });
     expect(testState.create).toHaveBeenLastCalledWith("personal-location", {
       source_graph_id: "source-graph",
@@ -162,9 +162,8 @@ describe("save as template flow", () => {
   it("resets draft state when the exact source revision changes", async () => {
     const { container, root } = await renderSaveFlow();
     const nameInput = container.querySelector<HTMLInputElement>("input");
-    const descriptionInput = container.querySelector<HTMLTextAreaElement>(
-      "textarea",
-    );
+    const descriptionInput =
+      container.querySelector<HTMLTextAreaElement>("textarea");
 
     await act(async () => {
       if (nameInput) {
@@ -195,9 +194,9 @@ describe("save as template flow", () => {
     expect(container.querySelector<HTMLInputElement>("input")?.value).toBe(
       "Quarterly analysis",
     );
-    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
-      "",
-    );
+    expect(
+      container.querySelector<HTMLTextAreaElement>("textarea")?.value,
+    ).toBe("");
     expect(container.textContent).toContain("revision 8 · My graphs");
   });
 

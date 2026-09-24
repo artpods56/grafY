@@ -37,13 +37,19 @@ const session = {
 
 let logoutControl: (() => Promise<void>) | undefined;
 
-function ProtectedSurface({ onLogoutReady }: { onLogoutReady: (logout: () => Promise<void>) => void }) {
+function ProtectedSurface({
+  onLogoutReady,
+}: {
+  onLogoutReady: (logout: () => Promise<void>) => void;
+}) {
   const { logout } = useAuthSession();
   React.useEffect(() => onLogoutReady(logout), [logout, onLogoutReady]);
   return (
     <div>
       <div data-protected="true">protected</div>
-      <button type="button" onClick={() => void logout()}>Log out</button>
+      <button type="button" onClick={() => void logout()}>
+        Log out
+      </button>
     </div>
   );
 }
@@ -69,7 +75,13 @@ describe("AuthSessionBoundary lifecycle", () => {
     authMocks.getSession.mockResolvedValue(session);
     const container = document.createElement("div");
     const root = createRoot(container);
-    await act(async () => root.render(<AuthSessionBoundary><ProtectedSurface onLogoutReady={captureLogout} /></AuthSessionBoundary>));
+    await act(async () =>
+      root.render(
+        <AuthSessionBoundary>
+          <ProtectedSurface onLogoutReady={captureLogout} />
+        </AuthSessionBoundary>,
+      ),
+    );
     expect(container.querySelector("[data-protected]")).not.toBeNull();
 
     let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined;
@@ -82,13 +94,20 @@ describe("AuthSessionBoundary lifecycle", () => {
         return new Promise<void>(() => undefined);
       },
     });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 401 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(body, { status: 401 })),
+    );
 
     let requestSettled = false;
     const unauthorizedRequest = request("GET", "/v1/protected");
     const observedRequest = unauthorizedRequest.then(
-      () => { requestSettled = true; },
-      () => { requestSettled = true; },
+      () => {
+        requestSettled = true;
+      },
+      () => {
+        requestSettled = true;
+      },
     );
     await act(async () => {
       await Promise.resolve();
@@ -99,7 +118,9 @@ describe("AuthSessionBoundary lifecycle", () => {
     expect(container.textContent).toContain("Your session has expired");
     expect(requestSettled).toBe(false);
 
-    bodyController?.error(new Error("body intentionally left pending after boundary cleanup"));
+    bodyController?.error(
+      new Error("body intentionally left pending after boundary cleanup"),
+    );
     await observedRequest;
     await expect(unauthorizedRequest).rejects.toMatchObject({ status: 401 });
     await act(async () => root.unmount());
@@ -108,12 +129,21 @@ describe("AuthSessionBoundary lifecycle", () => {
   it("shows a non-interactive signing-out state and ignores overlapping logout calls", async () => {
     authMocks.getSession.mockResolvedValue(session);
     let resolveDelete: (() => void) | undefined;
-    authMocks.deleteSession.mockImplementation(() => new Promise<void>((resolve) => {
-      resolveDelete = resolve;
-    }));
+    authMocks.deleteSession.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveDelete = resolve;
+        }),
+    );
     const container = document.createElement("div");
     const root = createRoot(container);
-    await act(async () => root.render(<AuthSessionBoundary><ProtectedSurface onLogoutReady={captureLogout} /></AuthSessionBoundary>));
+    await act(async () =>
+      root.render(
+        <AuthSessionBoundary>
+          <ProtectedSurface onLogoutReady={captureLogout} />
+        </AuthSessionBoundary>,
+      ),
+    );
 
     const firstAttempt = logoutControl?.();
     logoutControl?.();
@@ -133,7 +163,13 @@ describe("AuthSessionBoundary lifecycle", () => {
     authMocks.deleteSession.mockRejectedValue(new ApiError(401, "expired"));
     const container = document.createElement("div");
     const root = createRoot(container);
-    await act(async () => root.render(<AuthSessionBoundary><ProtectedSurface onLogoutReady={captureLogout} /></AuthSessionBoundary>));
+    await act(async () =>
+      root.render(
+        <AuthSessionBoundary>
+          <ProtectedSurface onLogoutReady={captureLogout} />
+        </AuthSessionBoundary>,
+      ),
+    );
 
     await act(async () => logoutControl?.());
     expect(container.textContent).toContain("Continue with SSO");
@@ -148,12 +184,20 @@ describe("AuthSessionBoundary lifecycle", () => {
       .mockRejectedValueOnce(new ApiError(401, "already revoked"));
     const container = document.createElement("div");
     const root = createRoot(container);
-    await act(async () => root.render(<AuthSessionBoundary><ProtectedSurface onLogoutReady={captureLogout} /></AuthSessionBoundary>));
+    await act(async () =>
+      root.render(
+        <AuthSessionBoundary>
+          <ProtectedSurface onLogoutReady={captureLogout} />
+        </AuthSessionBoundary>,
+      ),
+    );
 
     await act(async () => logoutControl?.());
     expect(container.textContent).toContain("Sign out could not be completed");
     await act(async () => {
-      container.querySelector("button")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      container
+        .querySelector("button")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(authMocks.deleteSession).toHaveBeenCalledTimes(2);
     expect(container.textContent).toContain("Continue with SSO");
@@ -167,13 +211,21 @@ describe("AuthSessionBoundary lifecycle", () => {
       .mockResolvedValueOnce(undefined);
     const container = document.createElement("div");
     const root = createRoot(container);
-    await act(async () => root.render(<AuthSessionBoundary><ProtectedSurface onLogoutReady={captureLogout} /></AuthSessionBoundary>));
+    await act(async () =>
+      root.render(
+        <AuthSessionBoundary>
+          <ProtectedSurface onLogoutReady={captureLogout} />
+        </AuthSessionBoundary>,
+      ),
+    );
 
     await act(async () => logoutControl?.());
     expect(container.textContent).toContain("Sign out could not be completed");
     expect(container.textContent).not.toContain("private server detail");
     await act(async () => {
-      container.querySelector("button")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      container
+        .querySelector("button")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(container.textContent).toContain("Continue with SSO");
     await act(async () => root.unmount());
@@ -184,24 +236,40 @@ describe("AuthSessionBoundary lifecycle", () => {
       .mockResolvedValueOnce(session)
       .mockResolvedValueOnce({ ...session, id: "session-2" });
     let resolveStale: ((value: string) => void) | undefined;
-    const staleRequest = new Promise<string>((resolve) => { resolveStale = resolve; });
-    const fetcher = vi.fn()
+    const staleRequest = new Promise<string>((resolve) => {
+      resolveStale = resolve;
+    });
+    const fetcher = vi
+      .fn()
       .mockReturnValueOnce(staleRequest)
       .mockResolvedValueOnce("fresh response");
     const outerCache = new Map<string, State<unknown>>();
     const container = document.createElement("div");
     const root = createRoot(container);
     const renderBoundary = (key: string) => (
-      <SWRConfig value={{ provider: () => outerCache, fetcher, revalidateOnFocus: false }}>
-        <AuthSessionBoundary key={key}><ProtectedData /></AuthSessionBoundary>
+      <SWRConfig
+        value={{
+          provider: () => outerCache,
+          fetcher,
+          revalidateOnFocus: false,
+        }}
+      >
+        <AuthSessionBoundary key={key}>
+          <ProtectedData />
+        </AuthSessionBoundary>
       </SWRConfig>
     );
 
     await act(async () => root.render(renderBoundary("first")));
     await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 401 })));
-    const unauthorizedRequest = request("GET", "/v1/protected").catch((error: unknown) => error);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("", { status: 401 })),
+    );
+    const unauthorizedRequest = request("GET", "/v1/protected").catch(
+      (error: unknown) => error,
+    );
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();

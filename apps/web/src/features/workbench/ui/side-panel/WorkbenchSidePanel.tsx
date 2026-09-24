@@ -146,7 +146,10 @@ const s = stylex.create({
     borderWidth: 0,
     borderStyle: "none",
     borderRadius: "6px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceSunken },
+    backgroundColor: {
+      default: "transparent",
+      ":hover": tokens.colorSurfaceSunken,
+    },
     color: { default: tokens.colorMuted, ":hover": tokens.colorText },
     cursor: "pointer",
   },
@@ -265,7 +268,8 @@ function SidePanelBody({
   onOpenRun: (graphId: string, executionId: string) => void;
   onOpenGraph: (graphId: string) => void;
 }) {
-  const active = PANEL_VIEWS.find((entry) => entry.id === view) ?? PANEL_VIEWS[0]!;
+  const active =
+    PANEL_VIEWS.find((entry) => entry.id === view) ?? PANEL_VIEWS[0]!;
   const context: PanelContext = { workspaceId, onOpenRun, onOpenGraph };
 
   function onTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void {
@@ -282,7 +286,11 @@ function SidePanelBody({
   return (
     <>
       <header {...stylex.props(s.header)}>
-        <div role="tablist" aria-label="Workbench panels" {...stylex.props(s.tablist)}>
+        <div
+          role="tablist"
+          aria-label="Workbench panels"
+          {...stylex.props(s.tablist)}
+        >
           {PANEL_VIEWS.map((entry) => {
             const selected = entry.id === active.id;
             return (
@@ -337,9 +345,11 @@ function SidePanelResizer({
   onPreview: (width: number) => void;
   onCommit: (width: number) => void;
 }) {
-  const dragRef = React.useRef<{ pointerId: number; startX: number; startWidth: number } | null>(
-    null,
-  );
+  const dragRef = React.useRef<{
+    pointerId: number;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
 
   React.useEffect(() => endSidePanelResize, []);
 
@@ -365,7 +375,9 @@ function SidePanelResizer({
       onPointerMove={(event) => {
         const drag = dragRef.current;
         if (!drag || drag.pointerId !== event.pointerId) return;
-        onPreview(clampSidePanelWidth(drag.startWidth + (event.clientX - drag.startX)));
+        onPreview(
+          clampSidePanelWidth(drag.startWidth + (event.clientX - drag.startX)),
+        );
       }}
       onPointerUp={(event) => {
         const drag = dragRef.current;
@@ -375,7 +387,9 @@ function SidePanelResizer({
         }
         dragRef.current = null;
         endSidePanelResize();
-        onCommit(clampSidePanelWidth(drag.startWidth + (event.clientX - drag.startX)));
+        onCommit(
+          clampSidePanelWidth(drag.startWidth + (event.clientX - drag.startX)),
+        );
       }}
       onKeyDown={(event) => {
         if (event.key === "ArrowLeft") {

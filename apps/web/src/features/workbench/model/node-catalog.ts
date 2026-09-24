@@ -114,7 +114,9 @@ function portDeclaresArtifact(port: Port, key: ArtifactTypeKey): boolean {
 }
 
 function portIsAnyArtifact(port: Port): boolean {
-  return portArtifactTypeVariable(port) != null && portArtifactType(port) == null;
+  return (
+    portArtifactTypeVariable(port) != null && portArtifactType(port) == null
+  );
 }
 
 function nodeDeclaresArtifact(spec: NodeSpec, key: ArtifactTypeKey): boolean {
@@ -123,10 +125,7 @@ function nodeDeclaresArtifact(spec: NodeSpec, key: ArtifactTypeKey): boolean {
   );
 }
 
-function nodeMatchesShapeFilter(
-  spec: NodeSpec,
-  shape: Port["shape"],
-): boolean {
+function nodeMatchesShapeFilter(spec: NodeSpec, shape: Port["shape"]): boolean {
   if (spec.outputs.some((port) => port.shape === shape)) return true;
   return spec.inputs.some((port) => acceptedPortShapes(port).includes(shape));
 }
@@ -136,13 +135,12 @@ function nodeMatchesAnyArtifact(spec: NodeSpec): boolean {
 }
 
 function isWorkspaceLibraryNode(spec: NodeSpec): boolean {
-  return Boolean(spec.module_graph_id || spec.plugin_slug === MODULE_PLUGIN_SLUG);
+  return Boolean(
+    spec.module_graph_id || spec.plugin_slug === MODULE_PLUGIN_SLUG,
+  );
 }
 
-function artifactTitle(
-  registry: NodeRegistry,
-  key: ArtifactTypeKey,
-): string {
+function artifactTitle(registry: NodeRegistry, key: ArtifactTypeKey): string {
   return (
     registry.artifact_types.find(
       (artifact) =>
@@ -161,8 +159,7 @@ export function buildSourceFilters(
   );
   const sources = registry.plugins
     .filter(
-      (plugin) =>
-        plugin.origin !== "module" && slugsWithNodes.has(plugin.slug),
+      (plugin) => plugin.origin !== "module" && slugsWithNodes.has(plugin.slug),
     )
     .slice()
     .sort(
@@ -173,14 +170,12 @@ export function buildSourceFilters(
 
   return [
     { id: "all", kind: "all", title: "All" },
-    ...sources.map(
-      (plugin): CatalogFilter => ({
-        id: sourceFilterId(plugin.slug),
-        kind: "source",
-        title: plugin.title || "System",
-        sourceKey: plugin.slug,
-      }),
-    ),
+    ...sources.map((plugin): CatalogFilter => ({
+      id: sourceFilterId(plugin.slug),
+      kind: "source",
+      title: plugin.title || "System",
+      sourceKey: plugin.slug,
+    })),
     {
       id: "workspace-library",
       kind: "workspace-library",
@@ -195,10 +190,7 @@ export function buildCatalogFilters(
 ): readonly CatalogFilter[] {
   const titleCounts = new Map<string, number>();
   for (const artifact of registry.artifact_types) {
-    titleCounts.set(
-      artifact.title,
-      (titleCounts.get(artifact.title) ?? 0) + 1,
-    );
+    titleCounts.set(artifact.title, (titleCounts.get(artifact.title) ?? 0) + 1);
   }
 
   const artifactFilters = [...registry.artifact_types]
@@ -245,7 +237,9 @@ export function catalogNodesForFilter(
       return nodes;
     case "artifact":
       return filter.artifactKey
-        ? nodes.filter((spec) => nodeDeclaresArtifact(spec, filter.artifactKey!))
+        ? nodes.filter((spec) =>
+            nodeDeclaresArtifact(spec, filter.artifactKey!),
+          )
         : [];
     case "single":
       return nodes.filter((spec) => nodeMatchesShapeFilter(spec, "one"));
@@ -406,7 +400,11 @@ export function moduleReleaseSpecs(
   return registry.nodes
     .filter((spec) => {
       if (moduleId && spec.module_id === moduleId) return true;
-      if (!moduleId && moduleGraphId && spec.module_graph_id === moduleGraphId) {
+      if (
+        !moduleId &&
+        moduleGraphId &&
+        spec.module_graph_id === moduleGraphId
+      ) {
         return true;
       }
       return false;
@@ -544,10 +542,7 @@ export function downstreamCandidatesFromOutput(options: {
         artifactTypes,
         conversions,
       );
-      const routes = routesForHandleFeed(
-        allRoutes,
-        sourceFeed ?? undefined,
-      );
+      const routes = routesForHandleFeed(allRoutes, sourceFeed ?? undefined);
       for (const route of routes) {
         choices.push({
           candidatePort: input as Port & { readonly direction: "input" },
@@ -645,14 +640,14 @@ function portsCanConnect(
 ): boolean {
   if (!shapesAreCompatible(source, target)) return false;
   if (portHasInstancePlugs(target) && !target.required) return false;
-  const plugId = portHasInstancePlugs(target)
-    ? "discovery-plug"
-    : undefined;
+  const plugId = portHasInstancePlugs(target) ? "discovery-plug" : undefined;
   return (
     connectionRoutesFor(
       {
         sourceHandle: encodeHandleId(portMetaForPort(source)),
-        targetHandle: encodeHandleId(portMetaForPort(target, target.shape, plugId)),
+        targetHandle: encodeHandleId(
+          portMetaForPort(target, target.shape, plugId),
+        ),
       },
       registry.artifact_types,
       registry.artifact_conversions,

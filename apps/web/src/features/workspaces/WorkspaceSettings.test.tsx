@@ -168,14 +168,18 @@ describe("WorkspaceSettings", () => {
       "input[maxlength='160']",
     );
     if (!labelInput) throw new Error("Token label input was not rendered");
-    await React.act(async () => setInputValue(labelInput, "Notarius publisher"));
+    await React.act(async () =>
+      setInputValue(labelInput, "Notarius publisher"),
+    );
 
     const form = container.querySelector<HTMLFormElement>(
       ".grafy-workspace-settings__token-form",
     );
     if (!form) throw new Error("Token form was not rendered");
     await React.act(async () => {
-      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      form.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
     });
 
     expect(mocks.createToken).toHaveBeenCalledWith("workspace-1", {
@@ -230,7 +234,9 @@ describe("WorkspaceSettings", () => {
     );
     if (!form) throw new Error("Token form was not rendered");
     await React.act(async () => {
-      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      form.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
     });
 
     expect(mocks.createToken).toHaveBeenCalledWith("workspace-1", {

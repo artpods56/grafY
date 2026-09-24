@@ -8,10 +8,7 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 import type { SchemaField } from "../canvas/config-schema";
 import { portMarkStyle } from "../canvas/handle-style";
 import { artifactTypeColor } from "../canvas/nodes.css";
-import {
-  portArtifactType,
-  portHasInstancePlugs,
-} from "../canvas/types";
+import { portArtifactType, portHasInstancePlugs } from "../canvas/types";
 
 export function portKey(port: Port): string {
   return `${port.direction}:${port.name}`;
@@ -20,11 +17,13 @@ export function portKey(port: Port): string {
 export function artifactTitleFor(registry: NodeRegistry, port: Port): string {
   const artifactType = portArtifactType(port);
   if (!artifactType) return "Any artifact";
-  return registry.artifact_types.find(
-    (artifact) =>
-      artifact.key.id === artifactType.id &&
-      artifact.key.schema_version === artifactType.schema_version,
-  )?.title ?? artifactType.id;
+  return (
+    registry.artifact_types.find(
+      (artifact) =>
+        artifact.key.id === artifactType.id &&
+        artifact.key.schema_version === artifactType.schema_version,
+    )?.title ?? artifactType.id
+  );
 }
 
 export function fieldTypeLabel(field: SchemaField): string {
@@ -352,15 +351,18 @@ export function CatalogNodePreview({
       </header>
       <div {...stylex.props(s.previewRail)}>
         {Array.from({ length: rowCount }, (_, index) => (
-          <div key={`preview-rail-${index}`} {...stylex.props(s.previewRailRow)}>
+          <div
+            key={`preview-rail-${index}`}
+            {...stylex.props(s.previewRailRow)}
+          >
             <PreviewPort
               port={spec.inputs[index]}
               direction="input"
               registry={registry}
-              selected={
-                Boolean(spec.inputs[index]
-                  && selectedPortKey === portKey(spec.inputs[index]!))
-              }
+              selected={Boolean(
+                spec.inputs[index] &&
+                selectedPortKey === portKey(spec.inputs[index]!),
+              )}
               onSelect={onSelectPort}
               emptyLabel={
                 index === 0 && spec.inputs.length === 0 ? "Start" : null
@@ -370,10 +372,10 @@ export function CatalogNodePreview({
               port={spec.outputs[index]}
               direction="output"
               registry={registry}
-              selected={
-                Boolean(spec.outputs[index]
-                  && selectedPortKey === portKey(spec.outputs[index]!))
-              }
+              selected={Boolean(
+                spec.outputs[index] &&
+                selectedPortKey === portKey(spec.outputs[index]!),
+              )}
               onSelect={onSelectPort}
               emptyLabel={
                 index === 0 && spec.outputs.length === 0 ? "End" : null

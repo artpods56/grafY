@@ -14,7 +14,10 @@ import type {
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const apiMocks = vi.hoisted(() => ({
-  getGraphExecution: vi.fn<(graphId: string, executionId: string) => Promise<GraphExecutionDetail>>(),
+  getGraphExecution:
+    vi.fn<
+      (graphId: string, executionId: string) => Promise<GraphExecutionDetail>
+    >(),
   listGraphExecutions: vi.fn<() => Promise<GraphExecutionList>>(),
 }));
 
@@ -43,7 +46,10 @@ vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
 }));
 
 vi.mock("@/lib/api", () => ({
-  artifactContentUrl: (_workspaceId: string, value: string | null | undefined) => value ?? null,
+  artifactContentUrl: (
+    _workspaceId: string,
+    value: string | null | undefined,
+  ) => value ?? null,
   getGraphExecution: apiMocks.getGraphExecution,
   listGraphExecutions: apiMocks.listGraphExecutions,
 }));
@@ -87,38 +93,45 @@ function summary(
 function detail(execution: GraphExecutionSummary): GraphExecutionDetail {
   return {
     ...execution,
-    node_results: [{
-      node_id: "node-1",
-      position: 0,
-      status: "succeeded",
-      error: null,
-      completed_at: "2026-07-18T08:00:02Z",
-      outputs: [{
-        port: "document",
-        kind: "single",
-        value: {
-          artifact_id: "artifact-1",
-          artifact_type: "scalar.text",
-          schema_version: 1,
-        },
-        artifacts: [{
-          artifact_id: "artifact-1",
-          artifact_type: "scalar.text",
-          schema_version: 1,
-          content_type: "text/plain",
-          text: "historical value",
-        }],
-      }, {
-        port: "lost_output",
-        kind: "single",
-        value: {
-          artifact_id: "artifact-missing",
-          artifact_type: "scalar.text",
-          schema_version: 1,
-        },
-        artifacts: [],
-      }],
-    }],
+    node_results: [
+      {
+        node_id: "node-1",
+        position: 0,
+        status: "succeeded",
+        error: null,
+        completed_at: "2026-07-18T08:00:02Z",
+        outputs: [
+          {
+            port: "document",
+            kind: "single",
+            value: {
+              artifact_id: "artifact-1",
+              artifact_type: "scalar.text",
+              schema_version: 1,
+            },
+            artifacts: [
+              {
+                artifact_id: "artifact-1",
+                artifact_type: "scalar.text",
+                schema_version: 1,
+                content_type: "text/plain",
+                text: "historical value",
+              },
+            ],
+          },
+          {
+            port: "lost_output",
+            kind: "single",
+            value: {
+              artifact_id: "artifact-missing",
+              artifact_type: "scalar.text",
+              schema_version: 1,
+            },
+            artifacts: [],
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -175,7 +188,9 @@ async function renderDrawer(
 
 function buttonNamed(container: HTMLElement, name: string): HTMLButtonElement {
   const button = [...container.querySelectorAll("button")].find(
-    (candidate) => candidate.textContent?.trim() === name || candidate.getAttribute("aria-label") === name,
+    (candidate) =>
+      candidate.textContent?.trim() === name ||
+      candidate.getAttribute("aria-label") === name,
   );
   if (!(button instanceof HTMLButtonElement)) {
     throw new Error(`Button ${name} was not rendered`);
@@ -218,7 +233,9 @@ describe("ExecutionHistoryDrawer", () => {
 
     await vi.waitFor(() => {
       expect(container.textContent).toContain("selected with dependencies");
-      expect(container.textContent).toContain("1 requested node · 2 nodes · 1 artifact");
+      expect(container.textContent).toContain(
+        "1 requested node · 2 nodes · 1 artifact",
+      );
       expect(container.textContent).toContain("Extract invoice");
       expect(container.textContent).toContain("document");
       expect(container.textContent).toContain("historical value");
@@ -282,15 +299,19 @@ describe("ExecutionHistoryDrawer", () => {
         "graph-1",
         "execution-requested",
       );
-      const executionButtons = [...container.querySelectorAll(
-        'button[role="listitem"]',
-      )];
-      expect(executionButtons.find((button) =>
-        button.textContent?.includes("execution-requested")
-      )?.getAttribute("aria-current")).toBe("true");
-      expect(executionButtons.find((button) =>
-        button.textContent?.includes("execution-latest")
-      )?.getAttribute("aria-current")).toBeNull();
+      const executionButtons = [
+        ...container.querySelectorAll('button[role="listitem"]'),
+      ];
+      expect(
+        executionButtons
+          .find((button) => button.textContent?.includes("execution-requested"))
+          ?.getAttribute("aria-current"),
+      ).toBe("true");
+      expect(
+        executionButtons
+          .find((button) => button.textContent?.includes("execution-latest"))
+          ?.getAttribute("aria-current"),
+      ).toBeNull();
     });
   });
 
@@ -309,9 +330,13 @@ describe("ExecutionHistoryDrawer", () => {
     const onClose = vi.fn();
     const { container } = await renderDrawer({ onClose });
 
-    await vi.waitFor(() => expect(container.textContent).toContain("Load more"));
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain("Load more"),
+    );
     await React.act(async () => buttonNamed(container, "Load more").click());
-    await vi.waitFor(() => expect(container.textContent).toContain("execution-2"));
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain("execution-2"),
+    );
     expect(apiMocks.listGraphExecutions).toHaveBeenNthCalledWith(
       3,
       "workspace-1",
@@ -408,8 +433,12 @@ describe("ExecutionHistoryDrawer", () => {
       .mockResolvedValueOnce({ items: [], next_cursor: null });
     const { container } = await renderDrawer();
 
-    await vi.waitFor(() => expect(container.textContent).toContain("History unavailable"));
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain("History unavailable"),
+    );
     await React.act(async () => buttonNamed(container, "Try again").click());
-    await vi.waitFor(() => expect(apiMocks.listGraphExecutions).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(apiMocks.listGraphExecutions).toHaveBeenCalledTimes(2),
+    );
   });
 });

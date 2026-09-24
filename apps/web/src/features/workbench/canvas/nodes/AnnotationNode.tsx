@@ -2,7 +2,12 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { NodeToolbar, Position, useViewport, type NodeProps } from "@xyflow/react";
+import {
+  NodeToolbar,
+  Position,
+  useViewport,
+  type NodeProps,
+} from "@xyflow/react";
 import { X } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
@@ -15,11 +20,7 @@ import {
   type AnnotationNode as AnnotationNodeType,
 } from "../annotations";
 import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
-import {
-  gridShellOutset,
-  shouldSnapSize,
-  snapLength,
-} from "../grid-layout";
+import { gridShellOutset, shouldSnapSize, snapLength } from "../grid-layout";
 import { SafeMarkdown } from "../safe-markdown";
 
 const s = stylex.create({

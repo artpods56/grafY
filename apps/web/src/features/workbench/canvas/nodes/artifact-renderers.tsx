@@ -1008,12 +1008,14 @@ function TableArtifactRendererState({
     offset: 0,
   });
   const [pageSize, setPageSize] = React.useState(DEFAULT_TABLE_PAGE_SIZE);
-  const [visibleColumnIds, setVisibleColumnIds] =
-    React.useState<readonly string[] | null>(null);
+  const [visibleColumnIds, setVisibleColumnIds] = React.useState<
+    readonly string[] | null
+  >(null);
   const [selectedCell, setSelectedCell] =
     React.useState<TableCellSelection | null>(null);
-  const [selectingRowIndex, setSelectingRowIndex] =
-    React.useState<number | null>(null);
+  const [selectingRowIndex, setSelectingRowIndex] = React.useState<
+    number | null
+  >(null);
   const selectionRequestRef = React.useRef<AbortController | null>(null);
   const selectionActivityTimerRef = React.useRef<number | null>(null);
   const activityChangeRef = React.useRef(interaction?.onActivityChange);
@@ -1033,8 +1035,8 @@ function TableArtifactRendererState({
     const availableColumnIds = new Set(
       tableSchema.columns.map((column) => column.id),
     );
-    const retainedColumnIds = visibleColumnIds?.filter(
-      (columnId) => availableColumnIds.has(columnId),
+    const retainedColumnIds = visibleColumnIds?.filter((columnId) =>
+      availableColumnIds.has(columnId),
     );
     if (retainedColumnIds?.length) return retainedColumnIds;
     return tableSchema.columns
@@ -1042,20 +1044,23 @@ function TableArtifactRendererState({
       .map((column) => column.id);
   }, [tableSchema, visibleColumnIds]);
   const selectedColumnSignature = selectedColumnIds.join("\u0000");
-  const filterGroups = interaction?.incoming.flatMap((binding) =>
-    binding.effects.includes("filter") && binding.rows.length
-      ? [{ rows: binding.rows.map((values) => ({ values })) }]
-      : []
-  ) ?? [];
-  const highlightGroups = interaction?.incoming.flatMap((binding) =>
-    binding.effects.includes("highlight") && binding.rows.length
-      ? [{ rows: binding.rows.map((values) => ({ values })) }]
-      : []
-  ) ?? [];
+  const filterGroups =
+    interaction?.incoming.flatMap((binding) =>
+      binding.effects.includes("filter") && binding.rows.length
+        ? [{ rows: binding.rows.map((values) => ({ values })) }]
+        : [],
+    ) ?? [];
+  const highlightGroups =
+    interaction?.incoming.flatMap((binding) =>
+      binding.effects.includes("highlight") && binding.rows.length
+        ? [{ rows: binding.rows.map((values) => ({ values })) }]
+        : [],
+    ) ?? [];
   const filterSignature = JSON.stringify(filterGroups);
-  const offset = requestedPage.filterSignature === filterSignature
-    ? requestedPage.offset
-    : 0;
+  const offset =
+    requestedPage.filterSignature === filterSignature
+      ? requestedPage.offset
+      : 0;
   const interactionQuery: TableQueryInput | null =
     filterGroups.length || highlightGroups.length
       ? {
@@ -1103,13 +1108,13 @@ function TableArtifactRendererState({
     { keepPreviousData: true },
   );
   const cellKey = selectedCell
-    ? [
+    ? ([
         "table-artifact-cell",
         workspace.id,
         artifact.artifact_id,
         selectedCell.rowIndex,
         selectedCell.columnId,
-      ] as const
+      ] as const)
     : null;
   const {
     data: fullCell,
@@ -1134,25 +1139,26 @@ function TableArtifactRendererState({
     activityChangeRef.current = interaction?.onActivityChange;
   }, [interaction?.onActivityChange]);
 
-  React.useEffect(() => () => {
-    const request = selectionRequestRef.current;
-    selectionRequestRef.current = null;
-    request?.abort();
-    if (selectionActivityTimerRef.current !== null) {
-      window.clearTimeout(selectionActivityTimerRef.current);
-      selectionActivityTimerRef.current = null;
-    }
-    activityChangeRef.current?.(null);
-  }, []);
+  React.useEffect(
+    () => () => {
+      const request = selectionRequestRef.current;
+      selectionRequestRef.current = null;
+      request?.abort();
+      if (selectionActivityTimerRef.current !== null) {
+        window.clearTimeout(selectionActivityTimerRef.current);
+        selectionActivityTimerRef.current = null;
+      }
+      activityChangeRef.current?.(null);
+    },
+    [],
+  );
 
   if (!page) {
     return (
       <div {...stylex.props(s.tablePreview)}>
         <span
           role={tableSchemaError || pageError ? "alert" : "status"}
-          aria-live={
-            tableSchemaError || pageError ? undefined : "polite"
-          }
+          aria-live={tableSchemaError || pageError ? undefined : "polite"}
           {...stylex.props(s.tableLimit)}
         >
           {tableSchemaError
@@ -1180,12 +1186,10 @@ function TableArtifactRendererState({
     ? Math.max(120, availableHeight - 92)
     : undefined;
   const contentUrl = artifactContentUrl(workspace.id, artifact.content_url);
-  const fullCellText = fullCell
-    ? tableCellText(fullCell.value)
-    : "";
+  const fullCellText = fullCell ? tableCellText(fullCell.value) : "";
   const selectedSourceIndices = new Set(
     interaction?.selection.items.flatMap((item) =>
-      item.sourceIndex === undefined ? [] : [item.sourceIndex]
+      item.sourceIndex === undefined ? [] : [item.sourceIndex],
     ) ?? [],
   );
   const highlightedSourceIndices = new Set(page.highlighted_row_indices);
@@ -1249,7 +1253,7 @@ function TableArtifactRendererState({
             rowIndex,
             fieldName,
             request.signal,
-          )
+          ),
         ),
       );
       if (selectionRequestRef.current !== request) return;
@@ -1270,9 +1274,10 @@ function TableArtifactRendererState({
             typeof cell.display === "number" ||
             typeof cell.display === "boolean")
         ) {
-          values[column.id] = column.value_type === "integer"
-            ? interactionScalarFromIntegerEncoding(cell.display)
-            : cell.display;
+          values[column.id] =
+            column.value_type === "integer"
+              ? interactionScalarFromIntegerEncoding(cell.display)
+              : cell.display;
         }
       }
       interaction.onSelectionChange({
@@ -1280,16 +1285,14 @@ function TableArtifactRendererState({
         items: [{ values, sourceIndex: rowIndex }],
       });
     } catch (error) {
-      if (
-        request.signal.aborted ||
-        selectionRequestRef.current !== request
-      ) {
+      if (request.signal.aborted || selectionRequestRef.current !== request) {
         return;
       }
       selectionFailed = true;
-      const message = error instanceof Error
-        ? error.message
-        : "Could not read the selected row.";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not read the selected row.";
       interaction.onActivityChange({
         state: "error",
         title: "Could not read selected row",
@@ -1316,16 +1319,15 @@ function TableArtifactRendererState({
       {pageError ? (
         <span role="alert" {...stylex.props(s.tableLimit)}>
           Could not load the requested table page. The previous page is still
-          available. <button type="button" onClick={() => void retryPage()}>
+          available.{" "}
+          <button type="button" onClick={() => void retryPage()}>
             Retry
           </button>
         </span>
       ) : null}
       <div {...stylex.props(s.tableSummary)}>
         <span {...stylex.props(s.tableSummaryMeta)}>
-          <span {...stylex.props(s.tableSummaryStrong)}>
-            {page.total_rows}
-          </span>
+          <span {...stylex.props(s.tableSummaryStrong)}>{page.total_rows}</span>
           <span>{page.total_rows === 1 ? "row" : "rows"}</span>
           <span aria-hidden="true" {...stylex.props(s.tableSummaryDivider)}>
             ·
@@ -1393,104 +1395,109 @@ function TableArtifactRendererState({
               </tr>
             </thead>
             <tbody>
-            {page.rows.map((row, pageRowIndex) => {
-              const rowIndex =
-                page.row_indices?.[pageRowIndex] ??
-                page.offset + pageRowIndex;
-              const selected = selectedSourceIndices.has(rowIndex);
-              const highlighted = highlightedSourceIndices.has(rowIndex);
-              return (
-              <tr
-                key={rowIndex}
-                tabIndex={interaction ? 0 : undefined}
-                aria-selected={interaction ? selected : undefined}
-                {...stylex.props(
-                  interaction ? s.tableRowInteractive : null,
-                )}
-                onClick={() => void selectRow(rowIndex, row)}
-                onKeyDown={(event) => {
-                  if (
-                    interaction &&
-                    (event.key === "Enter" || event.key === " ")
-                  ) {
-                    event.preventDefault();
-                    void selectRow(rowIndex, row);
-                  }
-                }}
-              >
-                <th
-                  scope="row"
-                  {...stylex.props(
-                    s.tableIndexCell,
-                    selected ? s.tableCellSelected : null,
-                    !selected && highlighted
-                      ? s.tableCellHighlighted
-                      : null,
-                  )}
-                >
-                  {rowIndex + 1}
-                </th>
-                {page.columns.map((column) => {
-                  const cell = row[column.id];
-                  const text = tableCellText(cell.display);
-                  const code =
-                    column.value_type !== "text" &&
-                    column.value_type !== "boolean";
-                  return (
-                    <td
-                      key={column.id}
-                      title={cell.truncated ? "Preview truncated; click to inspect" : undefined}
+              {page.rows.map((row, pageRowIndex) => {
+                const rowIndex =
+                  page.row_indices?.[pageRowIndex] ??
+                  page.offset + pageRowIndex;
+                const selected = selectedSourceIndices.has(rowIndex);
+                const highlighted = highlightedSourceIndices.has(rowIndex);
+                return (
+                  <tr
+                    key={rowIndex}
+                    tabIndex={interaction ? 0 : undefined}
+                    aria-selected={interaction ? selected : undefined}
+                    {...stylex.props(
+                      interaction ? s.tableRowInteractive : null,
+                    )}
+                    onClick={() => void selectRow(rowIndex, row)}
+                    onKeyDown={(event) => {
+                      if (
+                        interaction &&
+                        (event.key === "Enter" || event.key === " ")
+                      ) {
+                        event.preventDefault();
+                        void selectRow(rowIndex, row);
+                      }
+                    }}
+                  >
+                    <th
+                      scope="row"
                       {...stylex.props(
-                        s.tableCell,
-                        code ? s.tableCellCode : null,
-                        cell.display === null
-                          ? s.tableCellNull
-                          : null,
+                        s.tableIndexCell,
                         selected ? s.tableCellSelected : null,
                         !selected && highlighted
                           ? s.tableCellHighlighted
                           : null,
                       )}
                     >
-                      {cell.truncated ? (
-                        <button
-                          type="button"
-                          aria-expanded={
-                            selectedCell?.rowIndex === rowIndex &&
-                            selectedCell.columnId === column.id
+                      {rowIndex + 1}
+                    </th>
+                    {page.columns.map((column) => {
+                      const cell = row[column.id];
+                      const text = tableCellText(cell.display);
+                      const code =
+                        column.value_type !== "text" &&
+                        column.value_type !== "boolean";
+                      return (
+                        <td
+                          key={column.id}
+                          title={
+                            cell.truncated
+                              ? "Preview truncated; click to inspect"
+                              : undefined
                           }
-                          aria-controls={cellDetailId}
-                          {...stylex.props(s.tableTruncatedCellButton)}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            cellTriggerRef.current = event.currentTarget;
-                            setSelectedCell({
-                              rowIndex,
-                              columnId: column.id,
-                              columnTitle: column.title || column.id,
-                            });
-                          }}
+                          {...stylex.props(
+                            s.tableCell,
+                            code ? s.tableCellCode : null,
+                            cell.display === null ? s.tableCellNull : null,
+                            selected ? s.tableCellSelected : null,
+                            !selected && highlighted
+                              ? s.tableCellHighlighted
+                              : null,
+                          )}
                         >
-                          {text}
-                        </button>
-                      ) : text}
-                    </td>
-                  );
-                })}
-              </tr>
-            )})}
-            {!page.rows.length ? (
-              <tr>
-                <td
-                  colSpan={Math.max(1, page.columns.length + 1)}
-                  {...stylex.props(s.tableEmpty)}
-                >
-                  {page.columns.length
-                    ? "This table has no rows"
-                    : "This table has no columns or rows"}
-                </td>
-              </tr>
-            ) : null}
+                          {cell.truncated ? (
+                            <button
+                              type="button"
+                              aria-expanded={
+                                selectedCell?.rowIndex === rowIndex &&
+                                selectedCell.columnId === column.id
+                              }
+                              aria-controls={cellDetailId}
+                              {...stylex.props(s.tableTruncatedCellButton)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                cellTriggerRef.current = event.currentTarget;
+                                setSelectedCell({
+                                  rowIndex,
+                                  columnId: column.id,
+                                  columnTitle: column.title || column.id,
+                                });
+                              }}
+                            >
+                              {text}
+                            </button>
+                          ) : (
+                            text
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+              {!page.rows.length ? (
+                <tr>
+                  <td
+                    colSpan={Math.max(1, page.columns.length + 1)}
+                    {...stylex.props(s.tableEmpty)}
+                  >
+                    {page.columns.length
+                      ? "This table has no rows"
+                      : "This table has no columns or rows"}
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
@@ -1534,7 +1541,11 @@ function TableArtifactRendererState({
             </button>
           </div>
           {fullCellLoading ? (
-            <span role="status" aria-live="polite" {...stylex.props(s.tableLimit)}>
+            <span
+              role="status"
+              aria-live="polite"
+              {...stylex.props(s.tableLimit)}
+            >
               Loading full cell…
             </span>
           ) : fullCellError ? (
@@ -1563,10 +1574,7 @@ function TableArtifactRenderer(props: {
   interaction?: ArtifactViewerInteractionContext;
 }) {
   return (
-    <TableArtifactRendererState
-      key={props.artifact.artifact_id}
-      {...props}
-    />
+    <TableArtifactRendererState key={props.artifact.artifact_id} {...props} />
   );
 }
 
@@ -1619,10 +1627,7 @@ function MarkdownCode({
     <code
       {...props}
       className={className}
-      {...stylex.props(
-        s.markdownCode,
-        block ? null : s.markdownInlineCode,
-      )}
+      {...stylex.props(s.markdownCode, block ? null : s.markdownInlineCode)}
     >
       {children}
     </code>
@@ -1736,7 +1741,9 @@ const jsonRenderer: ArtifactRendererSpec = {
     const value = payload === undefined ? artifactMeta(artifact) : payload;
     if (mode === "raw") {
       return (
-        <pre {...stylex.props(s.jsonCode)}>{JSON.stringify(value, null, 2)}</pre>
+        <pre {...stylex.props(s.jsonCode)}>
+          {JSON.stringify(value, null, 2)}
+        </pre>
       );
     }
     return <PrettyValue value={value} />;
@@ -1765,8 +1772,9 @@ export function rendererFor(
   payload?: unknown,
 ): ArtifactRendererSpec {
   return (
-    ARTIFACT_RENDERERS.find((renderer) => renderer.matches(artifact, payload)) ??
-    META_ARTIFACT_RENDERER
+    ARTIFACT_RENDERERS.find((renderer) =>
+      renderer.matches(artifact, payload),
+    ) ?? META_ARTIFACT_RENDERER
   );
 }
 
@@ -1778,6 +1786,6 @@ export function rendererCanBrush(
   const interaction = rendererFor(artifact).interaction;
   return Boolean(
     interaction &&
-      (interaction.emits.length > 0 || interaction.accepts.length > 0),
+    (interaction.emits.length > 0 || interaction.accepts.length > 0),
   );
 }

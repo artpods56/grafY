@@ -94,9 +94,7 @@ describe("typed handle ids", () => {
       direction: "output",
       feed: { kind: "projection", path: ["body", "text"] },
     });
-    expect(canonicalHandleId(withFeed)).toBe(
-      "result::doc.ocr::1::one::output",
-    );
+    expect(canonicalHandleId(withFeed)).toBe("result::doc.ocr::1::one::output");
   });
 });
 
@@ -380,9 +378,10 @@ describe("conversion route discovery", () => {
 
     expect(routes).toHaveLength(1);
     expect(routes[0]?.kind).toBe("conversion");
-    expect(
-      routes[0]?.conversionPath.map((step) => step.key.id),
-    ).toEqual(["x-to-y", "y-to-z"]);
+    expect(routes[0]?.conversionPath.map((step) => step.key.id)).toEqual([
+      "x-to-y",
+      "y-to-z",
+    ]);
   });
 
   it("retains equal-depth alternatives in stable id order", () => {
@@ -437,9 +436,10 @@ describe("conversion route discovery", () => {
         conversion("a-to-z", "a", "z"),
       ],
     );
-    expect(
-      cyclicRoutes[0]?.conversionPath.map((step) => step.key.id),
-    ).toEqual(["x-to-a", "a-to-z"]);
+    expect(cyclicRoutes[0]?.conversionPath.map((step) => step.key.id)).toEqual([
+      "x-to-a",
+      "a-to-z",
+    ]);
 
     const withinBound = Array.from(
       { length: MAX_CONVERSION_PATH_LENGTH },
@@ -521,10 +521,7 @@ describe("conversion route discovery", () => {
       connectionRoutesFor(
         connection("x", "z"),
         [artifactType("x", [singleProjection])],
-        [
-          ...overflowing,
-          conversion("projected-to-z", "projected", "z"),
-        ],
+        [...overflowing, conversion("projected-to-z", "projected", "z")],
       ),
     ).toEqual([]);
   });

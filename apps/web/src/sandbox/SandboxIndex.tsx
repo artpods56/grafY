@@ -70,9 +70,9 @@ export function SandboxIndex() {
       <div {...stylex.props(s.kicker)}>Development only</div>
       <h1 {...stylex.props(s.title)}>Sandbox</h1>
       <p {...stylex.props(s.lead)}>
-        Spikes against real Grafy chrome. Nothing here is a product surface.
-        Add a folder under <code>src/sandbox/spikes</code> and register it in
-        the catalog.
+        Spikes against real Grafy chrome. Nothing here is a product surface. Add
+        a folder under <code>src/sandbox/spikes</code> and register it in the
+        catalog.
       </p>
       <div {...stylex.props(s.list)}>
         {SPIKES.map((spike) => (

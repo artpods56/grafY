@@ -12,7 +12,11 @@ import {
 
 describe("canvas annotations", () => {
   it("round-trips text and shape annotations", () => {
-    const text = createAnnotationNode("text", { x: 12, y: 34 }, "annotation-text");
+    const text = createAnnotationNode(
+      "text",
+      { x: 12, y: 34 },
+      "annotation-text",
+    );
     const rect = createAnnotationNode(
       "rectangle",
       { x: 50, y: 60 },

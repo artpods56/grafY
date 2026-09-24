@@ -28,14 +28,18 @@ export const tokens = stylex.defineVars({
   colorOnAccent: "light-dark(#FFFFFF, #111111)",
   // interaction
   colorHover: "light-dark(rgba(17, 17, 17, 0.05), rgba(255, 255, 255, 0.07))",
-  colorHoverStrong: "light-dark(rgba(17, 17, 17, 0.08), rgba(255, 255, 255, 0.1))",
-  colorDangerHover: "light-dark(rgba(220, 92, 92, 0.1), rgba(232, 105, 105, 0.12))",
+  colorHoverStrong:
+    "light-dark(rgba(17, 17, 17, 0.08), rgba(255, 255, 255, 0.1))",
+  colorDangerHover:
+    "light-dark(rgba(220, 92, 92, 0.1), rgba(232, 105, 105, 0.12))",
   // accents — primary ink, not a brand hue
   colorAccent: "light-dark(#111111, #FFFFFF)",
   colorAccentHover: "light-dark(#2A2A2A, #E8E8E8)",
   colorAccentDisabled: "light-dark(#D9D9D9, #333333)",
-  colorAccentSoft: "light-dark(rgba(17, 17, 17, 0.06), rgba(255, 255, 255, 0.1))",
-  colorAccentBorder: "light-dark(rgba(17, 17, 17, 0.35), rgba(255, 255, 255, 0.4))",
+  colorAccentSoft:
+    "light-dark(rgba(17, 17, 17, 0.06), rgba(255, 255, 255, 0.1))",
+  colorAccentBorder:
+    "light-dark(rgba(17, 17, 17, 0.35), rgba(255, 255, 255, 0.4))",
   colorProjectionPath: "light-dark(#111111, #D9D9D9)",
   // status (functional, not brand)
   colorSuccess: "light-dark(#2a9d7c, #43c59e)",

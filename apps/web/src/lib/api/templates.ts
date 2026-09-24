@@ -9,14 +9,12 @@ import type {
   UpdateTemplateMetadataRequest,
 } from "./contract";
 
-
 export function listWorkspaceGraphFolders(workspaceId: string) {
   return request<GraphFolderList>(
     "GET",
     `/v1/workspaces/${encodeURIComponent(workspaceId)}/graph-folders`,
   );
 }
-
 
 export function listWorkspaceTemplates(
   workspaceId: string,

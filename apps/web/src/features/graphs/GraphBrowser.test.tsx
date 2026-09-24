@@ -76,19 +76,20 @@ vi.mock("@/hooks/use-api", () => ({
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
-  Dialog: ({
-    open,
-    children,
-  }: {
-    open: boolean;
-    children: React.ReactNode;
-  }) => (open ? <>{children}</> : null),
+  Dialog: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
+    open ? <>{children}</> : null,
   DialogContent: ({ children }: { children: React.ReactNode }) => (
     <section role="dialog">{children}</section>
   ),
-  DialogHeader: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  DialogTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
-  DialogDescription: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
+  DialogHeader: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
+  DialogTitle: ({ children }: { children: React.ReactNode }) => (
+    <h2>{children}</h2>
+  ),
+  DialogDescription: ({ children }: { children: React.ReactNode }) => (
+    <p>{children}</p>
+  ),
   DialogBody: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
@@ -146,8 +147,8 @@ async function renderBrowser() {
 }
 
 function button(container: ParentNode, name: string): HTMLButtonElement {
-  const match = Array.from(container.querySelectorAll("button")).find((candidate) =>
-    candidate.textContent?.includes(name),
+  const match = Array.from(container.querySelectorAll("button")).find(
+    (candidate) => candidate.textContent?.includes(name),
   );
   if (!match) throw new Error(`Button not found: ${name}`);
   return match;
@@ -159,13 +160,19 @@ async function click(element: Element) {
   });
 }
 
-async function change(element: HTMLInputElement | HTMLSelectElement, value: string) {
+async function change(
+  element: HTMLInputElement | HTMLSelectElement,
+  value: string,
+) {
   await act(async () => {
     const prototype =
       element instanceof HTMLSelectElement
         ? HTMLSelectElement.prototype
         : HTMLInputElement.prototype;
-    Object.getOwnPropertyDescriptor(prototype, "value")?.set?.call(element, value);
+    Object.getOwnPropertyDescriptor(prototype, "value")?.set?.call(
+      element,
+      value,
+    );
     element.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }

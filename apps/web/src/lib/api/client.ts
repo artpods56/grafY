@@ -33,13 +33,19 @@ function isUnsafeMethod(method: string): boolean {
   return !SAFE_METHODS.has(method.toUpperCase());
 }
 
-function redactSensitiveValue(value: string, sensitiveValue: string | undefined): string {
+function redactSensitiveValue(
+  value: string,
+  sensitiveValue: string | undefined,
+): string {
   if (!sensitiveValue) return value;
   return value.replaceAll(sensitiveValue, "[REDACTED]");
 }
 
 function boundedDetail(value: string, csrfToken: string | undefined): string {
-  return redactSensitiveValue(value, csrfToken).slice(0, MAX_ERROR_DETAIL_CHARACTERS);
+  return redactSensitiveValue(value, csrfToken).slice(
+    0,
+    MAX_ERROR_DETAIL_CHARACTERS,
+  );
 }
 
 async function readBoundedResponseText(
@@ -51,10 +57,9 @@ async function readBoundedResponseText(
   }
 
   const reader = response.body.getReader();
-  const maxBytes = MAX_ERROR_BODY_CHARACTERS + Math.min(
-    csrfToken?.length ?? 0,
-    MAX_ERROR_TOKEN_READ_AHEAD,
-  );
+  const maxBytes =
+    MAX_ERROR_BODY_CHARACTERS +
+    Math.min(csrfToken?.length ?? 0, MAX_ERROR_TOKEN_READ_AHEAD);
   const decoder = new TextDecoder();
   let bytesRead = 0;
   let streamComplete = false;
@@ -69,9 +74,10 @@ async function readBoundedResponseText(
       }
 
       const remainingBytes = maxBytes - bytesRead;
-      const chunk = result.value.byteLength > remainingBytes
-        ? result.value.subarray(0, remainingBytes)
-        : result.value;
+      const chunk =
+        result.value.byteLength > remainingBytes
+          ? result.value.subarray(0, remainingBytes)
+          : result.value;
       text += decoder.decode(chunk, { stream: true });
       bytesRead += chunk.byteLength;
       if (chunk.byteLength < result.value.byteLength) break;
@@ -172,7 +178,10 @@ export async function putUploadBytes(
       redirect: "error",
     });
     if (!response.ok) {
-      throw new ApiError(response.status, await responseErrorDetail(response, csrfToken));
+      throw new ApiError(
+        response.status,
+        await responseErrorDetail(response, csrfToken),
+      );
     }
     return;
   }
@@ -186,10 +195,12 @@ export async function putUploadBytes(
     redirect: "error",
   });
   if (!response.ok) {
-    throw new ApiError(response.status, await responseErrorDetail(response, undefined));
+    throw new ApiError(
+      response.status,
+      await responseErrorDetail(response, undefined),
+    );
   }
 }
-
 
 export async function request<T>(
   method: string,

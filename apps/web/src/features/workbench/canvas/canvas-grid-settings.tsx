@@ -71,9 +71,14 @@ export function CanvasGridSettingsProvider({
     };
   }, []);
 
-  const patchSettings = React.useCallback((patch: Partial<CanvasGridSettings>) => {
-    setSettings((current) => normalizeCanvasGridSettings({ ...current, ...patch }));
-  }, []);
+  const patchSettings = React.useCallback(
+    (patch: Partial<CanvasGridSettings>) => {
+      setSettings((current) =>
+        normalizeCanvasGridSettings({ ...current, ...patch }),
+      );
+    },
+    [],
+  );
 
   const resetSettings = React.useCallback(() => {
     setSettings({ ...DEFAULT_CANVAS_GRID_SETTINGS });
@@ -89,13 +94,7 @@ export function CanvasGridSettingsProvider({
       panelOpen,
       setPanelOpen,
     }),
-    [
-      bypassSnap,
-      panelOpen,
-      patchSettings,
-      resetSettings,
-      settings,
-    ],
+    [bypassSnap, panelOpen, patchSettings, resetSettings, settings],
   );
 
   return (

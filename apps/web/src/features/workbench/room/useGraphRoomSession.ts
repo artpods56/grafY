@@ -261,41 +261,44 @@ export function useGraphRoomSession({
     [graphId],
   );
 
-  const replaceHead = React.useCallback((nextHead: CollaborativeHead) => {
-    if (!graphId) {
-      throw new Error("Graph room is not connected.");
-    }
-    const session = sessionRef.current;
-    if (!session) {
-      throw new Error("Graph room is not connected.");
-    }
-    session.replaceHead(nextHead);
-    const effectiveHead = session.getHead();
-    if (!effectiveHead) {
-      throw new Error("Graph room head is unavailable after reconciliation.");
-    }
-    setHead(effectiveHead);
-    return effectiveHead;
-  }, [graphId]);
+  const replaceHead = React.useCallback(
+    (nextHead: CollaborativeHead) => {
+      if (!graphId) {
+        throw new Error("Graph room is not connected.");
+      }
+      const session = sessionRef.current;
+      if (!session) {
+        throw new Error("Graph room is not connected.");
+      }
+      session.replaceHead(nextHead);
+      const effectiveHead = session.getHead();
+      if (!effectiveHead) {
+        throw new Error("Graph room head is unavailable after reconciliation.");
+      }
+      setHead(effectiveHead);
+      return effectiveHead;
+    },
+    [graphId],
+  );
 
-  const reconcileCheckpointHead = React.useCallback((
-    checkpointHead: CollaborativeHead,
-    expectedRoomEpoch: string,
-  ) => {
-    if (!graphId) {
-      throw new Error("Graph room is not connected.");
-    }
-    const session = sessionRef.current;
-    if (!session) {
-      throw new Error("Graph room is not connected.");
-    }
-    const effectiveHead = session.reconcileCheckpointHead(
-      checkpointHead,
-      expectedRoomEpoch,
-    );
-    setHead(effectiveHead);
-    return effectiveHead;
-  }, [graphId]);
+  const reconcileCheckpointHead = React.useCallback(
+    (checkpointHead: CollaborativeHead, expectedRoomEpoch: string) => {
+      if (!graphId) {
+        throw new Error("Graph room is not connected.");
+      }
+      const session = sessionRef.current;
+      if (!session) {
+        throw new Error("Graph room is not connected.");
+      }
+      const effectiveHead = session.reconcileCheckpointHead(
+        checkpointHead,
+        expectedRoomEpoch,
+      );
+      setHead(effectiveHead);
+      return effectiveHead;
+    },
+    [graphId],
+  );
 
   const publishPresence = React.useCallback(
     (update: Omit<PresenceUpdateSubmit, "presence_sequence">): boolean => {

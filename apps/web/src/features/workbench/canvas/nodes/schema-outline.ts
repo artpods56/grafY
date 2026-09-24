@@ -244,10 +244,7 @@ export function outlineCrumbLabel(node: OutlineNode): string {
     : node.name;
 }
 
-export function schemaTitle(
-  schema: Schema,
-  fallback = "Payload",
-): string {
+export function schemaTitle(schema: Schema, fallback = "Payload"): string {
   return typeof schema.title === "string" && schema.title
     ? schema.title
     : fallback;

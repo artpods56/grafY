@@ -109,61 +109,61 @@ export function ImageArtifactBody({
   const visible = images.slice(0, 3);
   return (
     <div
-        aria-label={sequence ? `${images.length} items in sequence` : undefined}
-        {...stylex.props(s.stack)}
-        style={{
-          height: mediaHeight + (sequence ? (visible.length - 1) * 8 : 0),
-        }}
-      >
-        {visible.map((image, index) => (
-          <div
-            key={image.id}
-            data-artifact-media="true"
-            data-artifact-shadow-scope={sequence ? "sequence-item" : "image"}
-            {...stylex.props(
-              s.media,
-              sequence ? s.stacked : null,
-              tier === "active" ? s.raised : null,
-              tier === "dragged" ? s.dragged : null,
-            )}
-            style={{
-              height: mediaHeight,
-              ...(sequence
-                ? {
-                    width: `calc(100% - ${(visible.length - 1) * 12}px)`,
-                    left: (visible.length - 1 - index) * 12,
-                    top: index * 8,
-                    zIndex: visible.length - index,
-                  }
-                : {}),
-            }}
-          >
-            {!selected && remoteSelectionColor && index === 0 ? (
-              <RemoteSelectionRing color={remoteSelectionColor} radius={5} />
-            ) : null}
-            {image.failed ? (
-              <div {...stylex.props(s.unavailable)}>
-                <ImageOff size={18} /> Preview unavailable
-              </div>
-            ) : (
-              /* eslint-disable-next-line @next/next/no-img-element -- workspace artifact bytes bypass the public image optimizer */
-              <img
-                src={image.url}
-                alt={image.name}
-                loading="lazy"
-                decoding="async"
-                draggable={false}
-                onLoad={(event) => {
-                  const { naturalWidth, naturalHeight } = event.currentTarget;
-                  if (naturalWidth && naturalHeight)
-                    onSize(image.id, naturalWidth, naturalHeight);
-                }}
-                onError={() => onError(image.id)}
-                {...stylex.props(s.image)}
-              />
-            )}
-          </div>
-        ))}
+      aria-label={sequence ? `${images.length} items in sequence` : undefined}
+      {...stylex.props(s.stack)}
+      style={{
+        height: mediaHeight + (sequence ? (visible.length - 1) * 8 : 0),
+      }}
+    >
+      {visible.map((image, index) => (
+        <div
+          key={image.id}
+          data-artifact-media="true"
+          data-artifact-shadow-scope={sequence ? "sequence-item" : "image"}
+          {...stylex.props(
+            s.media,
+            sequence ? s.stacked : null,
+            tier === "active" ? s.raised : null,
+            tier === "dragged" ? s.dragged : null,
+          )}
+          style={{
+            height: mediaHeight,
+            ...(sequence
+              ? {
+                  width: `calc(100% - ${(visible.length - 1) * 12}px)`,
+                  left: (visible.length - 1 - index) * 12,
+                  top: index * 8,
+                  zIndex: visible.length - index,
+                }
+              : {}),
+          }}
+        >
+          {!selected && remoteSelectionColor && index === 0 ? (
+            <RemoteSelectionRing color={remoteSelectionColor} radius={5} />
+          ) : null}
+          {image.failed ? (
+            <div {...stylex.props(s.unavailable)}>
+              <ImageOff size={18} /> Preview unavailable
+            </div>
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element -- workspace artifact bytes bypass the public image optimizer */
+            <img
+              src={image.url}
+              alt={image.name}
+              loading="lazy"
+              decoding="async"
+              draggable={false}
+              onLoad={(event) => {
+                const { naturalWidth, naturalHeight } = event.currentTarget;
+                if (naturalWidth && naturalHeight)
+                  onSize(image.id, naturalWidth, naturalHeight);
+              }}
+              onError={() => onError(image.id)}
+              {...stylex.props(s.image)}
+            />
+          )}
+        </div>
+      ))}
     </div>
   );
 }

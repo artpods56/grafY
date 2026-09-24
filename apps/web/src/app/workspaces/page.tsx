@@ -1,7 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUpRight, Plus, Search, Share2, Users, Workflow } from "lucide-react";
+import {
+  ArrowUpRight,
+  Plus,
+  Search,
+  Share2,
+  Users,
+  Workflow,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -66,7 +73,8 @@ function LocationSection({
       <div className="grafy-workspace-section__heading">
         <h2>{title}</h2>
         <span className="grafy-workspace-section__meta">
-          {workspaces.length} {workspaces.length === 1 ? "location" : "locations"}
+          {workspaces.length}{" "}
+          {workspaces.length === 1 ? "location" : "locations"}
         </span>
       </div>
       <div className="grafy-workspace-list">
@@ -132,7 +140,9 @@ export default function WorkspacesPage() {
         ),
     [normalizedQuery, workspaces],
   );
-  const personal = filtered.filter((workspace) => workspace.kind === "personal");
+  const personal = filtered.filter(
+    (workspace) => workspace.kind === "personal",
+  );
   const teams = filtered.filter((workspace) => workspace.kind === "shared");
 
   return (
@@ -273,7 +283,10 @@ export default function WorkspacesPage() {
           </>
         )}
 
-        <aside className="grafy-workspace-edu" aria-label="About graph locations">
+        <aside
+          className="grafy-workspace-edu"
+          aria-label="About graph locations"
+        >
           <div>
             <h2>How locations work</h2>
             <p>

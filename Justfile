@@ -39,7 +39,11 @@ lint:
 
 # Format the web app with Prettier. See apps/web/.prettierrc.
 format:
-    npm --prefix apps/web exec prettier -- --write "src/**/*.{ts,tsx,css,md,json}"
+    cd apps/web && npm exec prettier -- --write "src/**/*.{ts,tsx,css,md,json}" "e2e/**/*.{ts,tsx}"
+
+# Fail when the web app is not formatted. CI runs this.
+format-check:
+    cd apps/web && npm exec prettier -- --check "src/**/*.{ts,tsx,css,md,json}" "e2e/**/*.{ts,tsx}"
 
 # Run Python and TypeScript type checks.
 typecheck:

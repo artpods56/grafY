@@ -17,7 +17,9 @@ function objectRecord(value: unknown): Record<string, unknown> | null {
 }
 
 /** Reads persisted relation config without manufacturing new plug identities. */
-export function artifactQueryRelations(value: unknown): ArtifactQueryRelation[] {
+export function artifactQueryRelations(
+  value: unknown,
+): ArtifactQueryRelation[] {
   if (!Array.isArray(value)) return [];
 
   const seenIds = new Set<string>();

@@ -95,7 +95,10 @@ export const VECTOR_LAYER_FIELDS: readonly SchemaField[] = [
   },
 ];
 
-export const GEO_MAP_LAYER_SCHEMA = geoMapLayerSchema as Record<string, unknown>;
+export const GEO_MAP_LAYER_SCHEMA = geoMapLayerSchema as Record<
+  string,
+  unknown
+>;
 
 export const VECTOR_LAYER_REGISTRY: NodeRegistry = {
   plugins: [

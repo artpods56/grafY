@@ -4,7 +4,9 @@ export class MemberListRefreshError extends Error {
   readonly cause: unknown;
 
   constructor(cause: unknown) {
-    super("Member change was saved, but the member list could not be refreshed.");
+    super(
+      "Member change was saved, but the member list could not be refreshed.",
+    );
     this.name = "MemberListRefreshError";
     this.cause = cause;
   }

@@ -156,7 +156,13 @@ export function stepRemoteCursorMotion(
     y: nextY,
     opacity,
     // Decay stored velocity when samples go stale so prediction winds down.
-    vx: ageMs > REMOTE_CURSOR_STALE_MS ? motion.vx * Math.exp(-dtSeconds * 8) : motion.vx,
-    vy: ageMs > REMOTE_CURSOR_STALE_MS ? motion.vy * Math.exp(-dtSeconds * 8) : motion.vy,
+    vx:
+      ageMs > REMOTE_CURSOR_STALE_MS
+        ? motion.vx * Math.exp(-dtSeconds * 8)
+        : motion.vx,
+    vy:
+      ageMs > REMOTE_CURSOR_STALE_MS
+        ? motion.vy * Math.exp(-dtSeconds * 8)
+        : motion.vy,
   };
 }

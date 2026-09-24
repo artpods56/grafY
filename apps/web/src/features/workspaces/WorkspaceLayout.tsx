@@ -598,9 +598,7 @@ export function WorkspaceRail({
     selectedWorkspace,
   );
   const activeGraphId = workspaceRouteGraphId(pathname);
-  const { data: savedGraphs } = useSavedGraphs(
-    activeWorkspace?.id,
-  );
+  const { data: savedGraphs } = useSavedGraphs(activeWorkspace?.id);
   const refreshGraphSummaries = useGraphSummaryRefresh();
   const recentGraphs = React.useMemo(
     () =>

@@ -16,7 +16,11 @@ import {
   type ArtifactCardValue,
 } from "./artifact-card";
 
-function ref(id: string, artifactType = "file.jpg", schemaVersion = 1): ArtifactRef {
+function ref(
+  id: string,
+  artifactType = "file.jpg",
+  schemaVersion = 1,
+): ArtifactRef {
   return {
     artifact_id: id,
     artifact_type: artifactType,
@@ -99,12 +103,12 @@ describe("artifact card value", () => {
       original,
     );
 
-    expect(cardArtifactRefs(reordered).map((item) => item.artifact_id)).toEqual([
-      "cccc",
-      "aaaa",
-      "bbbb",
-    ]);
-    expect(reordered).toMatchObject({ sequence_id: (original as never as { sequence_id: string }).sequence_id });
+    expect(cardArtifactRefs(reordered).map((item) => item.artifact_id)).toEqual(
+      ["cccc", "aaaa", "bbbb"],
+    );
+    expect(reordered).toMatchObject({
+      sequence_id: (original as never as { sequence_id: string }).sequence_id,
+    });
   });
 
   it("clamps a reorder at the ends of the run", () => {
@@ -162,10 +166,13 @@ describe("artifact card value", () => {
 
   it("will not merge cards of different artifact types", () => {
     expect(
-      canMergeIntoCard(artifactCardValue([ref("aaaa")]), ref("zzzz", "scalar.text")),
+      canMergeIntoCard(
+        artifactCardValue([ref("aaaa")]),
+        ref("zzzz", "scalar.text"),
+      ),
     ).toBe(false);
-    expect(canMergeIntoCard(artifactCardValue([ref("aaaa")]), ref("zzzz"))).toBe(
-      true,
-    );
+    expect(
+      canMergeIntoCard(artifactCardValue([ref("aaaa")]), ref("zzzz")),
+    ).toBe(true);
   });
 });

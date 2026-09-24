@@ -2069,10 +2069,7 @@ function WorkbenchBody({
     () =>
       artifactViewers.nodes.flatMap((node) => {
         const value = node.data.artifactRef;
-        if (
-          !node.selected ||
-          !value
-        ) {
+        if (!node.selected || !value) {
           return [];
         }
         return [{ node, value }];
@@ -2718,19 +2715,26 @@ function WorkbenchBody({
 
   const collectSelectedArtifacts = React.useCallback(() => {
     if (!localAuthoringEnabled || groupingDisabledReason) return;
-    commitArtifactViewers((state) => collectArtifactCards({
-      state,
-      origins: authoredDocumentRef.current.origins,
-    }));
+    commitArtifactViewers((state) =>
+      collectArtifactCards({
+        state,
+        origins: authoredDocumentRef.current.origins,
+      }),
+    );
   }, [commitArtifactViewers, groupingDisabledReason, localAuthoringEnabled]);
 
-  const ungroupArtifacts = React.useCallback((nodeId: string) => {
-    commitArtifactViewers((state) => ungroupArtifactCard({
-      state,
-      origins: authoredDocumentRef.current.origins,
-      nodeId,
-    }));
-  }, [commitArtifactViewers]);
+  const ungroupArtifacts = React.useCallback(
+    (nodeId: string) => {
+      commitArtifactViewers((state) =>
+        ungroupArtifactCard({
+          state,
+          origins: authoredDocumentRef.current.origins,
+          nodeId,
+        }),
+      );
+    },
+    [commitArtifactViewers],
+  );
 
   const tidySelectedArtifacts = React.useCallback(() => {
     commitArtifactViewers(tidyArtifactCards);
@@ -3298,7 +3302,8 @@ function WorkbenchBody({
       const materializedOutput =
         !upstream && fromNode.data.run?.status === "succeeded"
           ? fromNode.data.run.outputs.find(
-              (output) => output.port === port.name && output.artifacts.length > 0,
+              (output) =>
+                output.port === port.name && output.artifacts.length > 0,
             )
           : null;
       if (materializedOutput && canvasAtPoint(clientPoint.x, clientPoint.y)) {
@@ -4556,9 +4561,7 @@ function WorkbenchBody({
                         : "Unavailable or invalid upstream dependencies cannot run"
                   }
                   {...stylex.props(s.toolButton)}
-                  onClick={() =>
-                    void runWorkflow("selected-with-dependencies")
-                  }
+                  onClick={() => void runWorkflow("selected-with-dependencies")}
                 >
                   {runningScope === "selected-with-dependencies" ? (
                     <LoaderCircle size={13} {...stylex.props(s.spinner)} />

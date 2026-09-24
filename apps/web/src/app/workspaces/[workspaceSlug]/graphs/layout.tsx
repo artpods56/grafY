@@ -3,9 +3,7 @@
 import type { ReactNode } from "react";
 import { useParams } from "next/navigation";
 
-import {
-  Workbench,
-} from "@/features/workbench";
+import { Workbench } from "@/features/workbench";
 import {
   NEW_GRAPH_ROUTE_ID,
   isSupportedWorkbenchGraphRoute,

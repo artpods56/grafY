@@ -33,8 +33,7 @@ const httpLibraryFolders: LibraryFoldersApi = {
       folders: folders.folders,
       items: library.items.map((item) => ({
         ...item,
-        folder_id:
-          (item as { folder_id?: string | null }).folder_id ?? null,
+        folder_id: (item as { folder_id?: string | null }).folder_id ?? null,
       })),
     };
   },

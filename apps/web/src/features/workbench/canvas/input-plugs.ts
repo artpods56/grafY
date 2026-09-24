@@ -90,9 +90,7 @@ export function reorderInputPlug(
 
   let nextPortIndex = 0;
   return inputPlugs.map((plug) =>
-    plug.portName === portName
-      ? reorderedPortPlugs[nextPortIndex++]
-      : plug,
+    plug.portName === portName ? reorderedPortPlugs[nextPortIndex++] : plug,
   );
 }
 
@@ -143,8 +141,7 @@ function collectSegments(run: RunNodeResult | null): CollectSegment[] {
         !Number.isInteger(segment.input_index) ||
         !Number.isInteger(segment.start_index) ||
         !Number.isInteger(segment.item_count) ||
-        (segment.source_kind !== "single" &&
-          segment.source_kind !== "sequence")
+        (segment.source_kind !== "single" && segment.source_kind !== "sequence")
       ) {
         continue;
       }
