@@ -27,6 +27,33 @@ api: db-upgrade
 web port="":
     npm --prefix apps/web run dev {{ if port != "" {"--port=" + port} else {""} }}
 
+# Rebuild the vendored Grafy Plugin SDK wheel from libs/core into every Plugin
+# project. Plugins resolve grafy_core from these committed wheels, never from the
+# monorepo, so run this whenever libs/core changes a module a Plugin imports and
+# commit the rebuilt wheel with that change. tests/unit/architecture pins the
+# resulting digest; update it when this recipe prints a new one.
+sdk-wheel:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    shopt -s nullglob
+    # setuptools stamps the wheel with the build clock, so an unpinned epoch
+    # rewrites every tracked wheel with new bytes on every run. This makes the
+    # vendored wheel a pure function of libs/core source content.
+    export SOURCE_DATE_EPOCH=0
+    output="$(mktemp -d)"
+    trap 'rm -rf "$output"' EXIT
+    uv build --wheel --package grafy-core --out-dir "$output"
+    wheels=( "$output"/grafy_core-*.whl )
+    if (( ${#wheels[@]} != 1 )); then
+        printf 'expected one grafy-core wheel, found %d\n' "${#wheels[@]}" >&2
+        exit 1
+    fi
+    for directory in plugins/*/wheels; do
+        cp "${wheels[0]}" "$directory/"
+        printf 'vendored %s\n' "$directory/$(basename "${wheels[0]}")"
+    done
+    (sha256sum "${wheels[0]}" 2>/dev/null || shasum -a 256 "${wheels[0]}")
+
 # Run backend and web tests.
 test:
     uv run --all-extras pytest

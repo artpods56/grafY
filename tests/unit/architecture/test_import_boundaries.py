@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 from typing import cast
+from zipfile import ZipFile
 
 import pytest
 import tomllib
@@ -480,3 +481,70 @@ def test_baseline_compatibility_exports_preserve_shared_contract_identity() -> N
         assert getattr(system_plugin_inventory, name) is getattr(
             inventory_contracts, name
         )
+def _modules_in_wheel(wheel: Path) -> set[str]:
+    with ZipFile(wheel) as archive:
+        names = archive.namelist()
+
+    modules: set[str] = set()
+    for name in names:
+        if not name.endswith(".py"):
+            continue
+        parts = name.removesuffix(".py").split("/")
+        if parts[-1] == "__init__":
+            parts.pop()
+        if parts:
+            modules.add(".".join(parts))
+    return modules
+
+
+def _imported_core_modules(source: str) -> set[str]:
+    """Absolute ``grafy_core`` modules imported by one source file.
+
+    Imported names are deliberately not expanded into attribute paths:
+    ``from grafy_core.artifacts import ArtifactKind`` names one module and one
+    symbol, and only the module belongs to the wheel's module list.
+    """
+
+    modules: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            modules.add(node.module)
+    return {
+        module
+        for module in modules
+        if module == "grafy_core" or module.startswith("grafy_core.")
+    }
+
+
+def test_vendored_sdk_wheels_contain_every_module_their_plugins_import() -> None:
+    """A Plugin resolves ``grafy_core`` from its committed vendored wheel.
+
+    The monorepo copy under ``libs/core`` is not on the Plugin's path, so a
+    stale wheel stays invisible until Plugin publication runs the candidate's
+    tests inside the publisher sandbox. Run ``just sdk-wheel`` and commit the
+    rebuilt wheel whenever ``libs/core`` gains a module a Plugin imports.
+    """
+
+    missing: list[str] = []
+    for wheel_root in sorted((REPO_ROOT / "plugins").glob("*/wheels")):
+        project = wheel_root.parent
+        wheels = sorted(wheel_root.glob("grafy_core-*.whl"))
+        assert len(wheels) <= 1, f"{project.name} vendors {len(wheels)} SDK wheels"
+        if not wheels:
+            continue
+
+        available = _modules_in_wheel(wheels[0])
+        for source in sorted((project / "src").rglob("*.py")):
+            for module in sorted(_imported_core_modules(source.read_text())):
+                if module not in available:
+                    missing.append(
+                        f"{project.name}: {module} (imported by {source.name})"
+                    )
+
+    assert not missing, (
+        "Vendored SDK wheels are missing grafy_core modules their Plugins "
+        "import. Run `just sdk-wheel` and commit the rebuilt wheels:\n  "
+        + "\n  ".join(sorted(set(missing)))
+    )

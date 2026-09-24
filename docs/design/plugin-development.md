@@ -145,6 +145,19 @@ uv lock --no-sources --find-links wheels
 uv sync --locked --no-sources --find-links wheels
 ```
 
+The vendored SDK wheel is a committed artifact, so it goes stale whenever
+`libs/core` changes a module a Plugin imports. Run `just sdk-wheel` from the
+repository root to rebuild it into every `plugins/*/wheels` directory, and commit
+the rebuilt wheel with the `libs/core` change. The recipe pins
+`SOURCE_DATE_EPOCH=0`, so the wheel's contents are a function of `libs/core`
+source alone -- but not its bytes: deflate output differs between build
+environments, so rebuilding on another machine changes the file digest while
+leaving every packaged file identical. Expect to update the digest pinned in
+`tests/unit/architecture/test_import_boundaries.py` when you rebuild. The durable
+checks are the module-coverage guard there and the wheel-is-runnable guard beside
+it; both are portable, and `tests/unit/architecture` fails when a Plugin imports
+a `grafy_core` module that its vendored wheel does not contain.
+
 Path dependencies may not escape a publishable snapshot. The root development
 environment may depend on System project paths for integration tests, but that
 does not participate in the project's independent lock. Python package and
