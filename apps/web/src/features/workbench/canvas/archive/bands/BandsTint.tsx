@@ -1,12 +1,7 @@
 "use client";
 
 import * as stylex from "@stylexjs/stylex";
-import {
-  Handle,
-  Position,
-  type Node,
-  type NodeProps,
-} from "@xyflow/react";
+import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 
 import type { Port } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
@@ -179,9 +174,7 @@ function PortBand({
               )}
               style={handleStyle("50%", color, port.shape === "many")}
             />
-            <span {...stylex.props(s.bandName)}>
-              {port.title ?? port.name}
-            </span>
+            <span {...stylex.props(s.bandName)}>{port.title ?? port.name}</span>
             <span {...stylex.props(s.bandType, isInput ? null : s.bandTypeOut)}>
               {portTypeLabel(port, artifactTypeBindings)}
             </span>
@@ -209,8 +202,7 @@ export default function BandsTint({ data, selected }: BandsTintProps) {
         </span>
       </header>
       <div {...stylex.props(s.body)}>
-        {data.spec.description ||
-          "No description is available for this node."}
+        {data.spec.description || "No description is available for this node."}
       </div>
       <PortBand
         ports={data.spec.outputs}

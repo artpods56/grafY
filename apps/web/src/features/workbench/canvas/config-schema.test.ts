@@ -103,7 +103,10 @@ describe("schemaFields", () => {
         properties: {
           title: { type: "string", minLength: 1 },
           opacity: {
-            anyOf: [{ type: "number", minimum: 0, maximum: 1 }, { type: "null" }],
+            anyOf: [
+              { type: "number", minimum: 0, maximum: 1 },
+              { type: "null" },
+            ],
           },
           tags: {
             type: "array",

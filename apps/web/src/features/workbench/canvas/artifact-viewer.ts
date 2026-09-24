@@ -1,3 +1,4 @@
+import type { ArtifactOriginEdge } from "./artifact-connections";
 import type { Edge, Node } from "@xyflow/react";
 
 import type { CollaborativeHead, SavedGraphDocument } from "@/lib/api";
@@ -20,6 +21,7 @@ import {
   type WorkflowEdgeRouteOption,
   type WorkflowNodeData,
 } from "./types";
+import type { ArtifactCardValue } from "./artifact-card";
 import type {
   ArtifactInteractionField,
   ArtifactKeySelection,
@@ -28,9 +30,7 @@ import type {
   ArtifactViewerIncomingBinding,
 } from "./artifact-interactions";
 
-export type GraphPresentation = NonNullable<
-  SavedGraphDocument["presentation"]
->;
+export type GraphPresentation = NonNullable<SavedGraphDocument["presentation"]>;
 
 export const ARTIFACT_VIEWER_NODE_TYPE = "grafyArtifactViewerNode";
 export const ARTIFACT_VIEWER_EDGE_TYPE = "grafyArtifactViewerEdge";
@@ -45,29 +45,24 @@ export const ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE =
 export interface ArtifactViewerNodeData extends Record<string, unknown> {
   layout: WorkflowNodeLayout | null;
   mode: string | null;
-  artifactRef?: NonNullable<GraphPresentation["viewers"]>[number]["artifact_ref"];
+  /** A node-less card: the artifacts it presents, in the order it passes them. */
+  artifactRef?: ArtifactCardValue | null;
   outgoingFields?: string[];
   selection?: ArtifactKeySelection;
   incomingBindings?: ArtifactViewerIncomingBinding[];
   fields?: ArtifactInteractionField[];
-  onLayoutChange?: (
-    nodeId: string,
-    layout: WorkflowNodeLayout | null,
-  ) => void;
+  onLayoutChange?: (nodeId: string, layout: WorkflowNodeLayout | null) => void;
   onModeChange?: (nodeId: string, mode: string) => void;
-  onSelectionChange?: (
-    nodeId: string,
-    selection: ArtifactKeySelection,
-  ) => void;
-  onFieldsChange?: (
-    nodeId: string,
-    fields: ArtifactInteractionField[],
-  ) => void;
+  onSelectionChange?: (nodeId: string, selection: ArtifactKeySelection) => void;
+  onFieldsChange?: (nodeId: string, fields: ArtifactInteractionField[]) => void;
   onActivityChange?: (
     nodeId: string,
     activity: ArtifactViewerActivity | null,
   ) => void;
+  onRefsChange?: (nodeId: string, value: ArtifactCardValue | null) => void;
   onRemoveNode?: (nodeId: string) => void;
+  onUngroup?: (nodeId: string) => void;
+  ungroupDisabledReason?: string | null;
   /** Ephemeral collaborator selection tint; never persisted. */
   remoteSelectionColor?: string | null;
 }
@@ -99,15 +94,14 @@ export type ArtifactViewerEdge = Edge<
   typeof ARTIFACT_VIEWER_EDGE_TYPE
 >;
 
-export interface ArtifactViewerInteractionEdgeData
-  extends Record<string, unknown> {
+export interface ArtifactViewerInteractionEdgeData extends Record<
+  string,
+  unknown
+> {
   binding: ArtifactViewerBinding;
   sourceFields?: ArtifactInteractionField[];
   targetFields?: ArtifactInteractionField[];
-  onBindingChange?: (
-    bindingId: string,
-    binding: ArtifactViewerBinding,
-  ) => void;
+  onBindingChange?: (bindingId: string, binding: ArtifactViewerBinding) => void;
 }
 
 export type ArtifactViewerInteractionEdge = Edge<
@@ -120,10 +114,9 @@ export type CanvasWorkflowNode = Node<
   typeof WORKFLOW_NODE_TYPE
 >;
 export type CanvasNode =
-  | CanvasWorkflowNode
-  | ArtifactViewerNode
-  | AnnotationNode;
+  CanvasWorkflowNode | ArtifactViewerNode | AnnotationNode;
 export type CanvasEdge =
+  | ArtifactOriginEdge
   | WorkflowEdge
   | ArtifactViewerEdge
   | ArtifactViewerInteractionEdge;
@@ -267,17 +260,17 @@ export function artifactViewersFromPresentation(
     }
     const mappings = (binding.mappings ?? []).flatMap((mapping) =>
       mapping.source_field && mapping.target_field
-        ? [{
-            sourceField: mapping.source_field,
-            targetField: mapping.target_field,
-          }]
+        ? [
+            {
+              sourceField: mapping.source_field,
+              targetField: mapping.target_field,
+            },
+          ]
         : [],
     );
     const effects = [...new Set(binding.effects ?? [])].filter(
       (effect): effect is ArtifactViewerBinding["effects"][number] =>
-        effect === "filter" ||
-        effect === "highlight" ||
-        effect === "focus",
+        effect === "filter" || effect === "highlight" || effect === "focus",
     );
     if (effects.length === 0) continue;
     bindingIds.add(binding.id);

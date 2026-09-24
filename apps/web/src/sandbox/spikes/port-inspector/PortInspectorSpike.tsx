@@ -20,10 +20,7 @@ import {
   VECTOR_LAYER_REGISTRY,
   VECTOR_LAYER_SPEC,
 } from "../../fixtures/vector-map-layer";
-import {
-  schemaOutline,
-  type OutlineNode,
-} from "./schema-outline";
+import { schemaOutline, type OutlineNode } from "./schema-outline";
 
 type CardId = "today" | "unions" | "fold" | "drill" | "guides";
 

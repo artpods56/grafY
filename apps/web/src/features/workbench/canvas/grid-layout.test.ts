@@ -27,6 +27,10 @@ import {
   snapToCell,
   spanFromLength,
 } from "./grid-layout";
+import {
+  ARTIFACT_CARD_WIDTH_MIN,
+  DEFAULT_ARTIFACT_CARD_WIDTH,
+} from "./artifact-card";
 
 describe("grid layout", () => {
   it("defaults to a 50px cell and 6-cell standard width", () => {
@@ -114,11 +118,41 @@ describe("grid layout", () => {
   });
 
   it("outsets annotation shapes by the same gutter cards inset", () => {
-    expect(gridShellOutset(DEFAULT_CANVAS_GRID_SETTINGS)).toBe(GRID_SHELL_GUTTER);
+    expect(gridShellOutset(DEFAULT_CANVAS_GRID_SETTINGS)).toBe(
+      GRID_SHELL_GUTTER,
+    );
     expect(gridShellOutset(DEFAULT_CANVAS_GRID_SETTINGS, true)).toBe(0);
     expect(
       gridShellOutset({ ...DEFAULT_CANVAS_GRID_SETTINGS, snapSize: false }),
     ).toBe(0);
+  });
+
+  it("snaps each shell to its own width floor", () => {
+    const cell = DEFAULT_CANVAS_GRID_SETTINGS.cellSize;
+    // A five-cell artifact card snaps back to five cells, not up to the
+    // six-cell workflow-node floor.
+    expect(
+      gridAlignedWidth(
+        DEFAULT_ARTIFACT_CARD_WIDTH,
+        DEFAULT_CANVAS_GRID_SETTINGS,
+        false,
+        ARTIFACT_CARD_WIDTH_MIN,
+      ),
+    ).toBe(DEFAULT_ARTIFACT_CARD_WIDTH);
+    expect(
+      gridAlignedWidth(
+        DEFAULT_ARTIFACT_CARD_WIDTH,
+        DEFAULT_CANVAS_GRID_SETTINGS,
+      ),
+    ).toBe(STANDARD_NODE_WIDTH_CELLS * cell);
+    expect(
+      gridAlignedWidth(
+        ARTIFACT_CARD_WIDTH_MIN - 20,
+        DEFAULT_CANVAS_GRID_SETTINGS,
+        false,
+        ARTIFACT_CARD_WIDTH_MIN,
+      ),
+    ).toBe(snapLength(ARTIFACT_CARD_WIDTH_MIN, cell, ARTIFACT_CARD_WIDTH_MIN));
   });
 
   it("aligns display width and shell fill with size-snap settings", () => {
@@ -170,9 +204,9 @@ describe("grid layout", () => {
     expect(
       shouldSnapPosition(settings, { dragging: false, bypass: true }),
     ).toBe(false);
-    expect(
-      shouldSnapSize(settings, { drafting: true, bypass: false }),
-    ).toBe(true);
+    expect(shouldSnapSize(settings, { drafting: true, bypass: false })).toBe(
+      true,
+    );
     expect(
       shouldSnapSize(
         { ...settings, enabled: false },

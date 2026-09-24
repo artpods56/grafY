@@ -443,6 +443,7 @@ def test_upload_endpoint_reserves_then_completes(
 
     body = uploads.complete_ok(target.upload_id)
     assert body.upload_key == target.upload_id
+    assert body.artifact_id is not None
     assert body.filename == "page.png"
     assert body.byte_size == len(PNG_BYTES)
     assert body.artifact_type == "file.png@1"

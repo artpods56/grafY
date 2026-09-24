@@ -40,7 +40,9 @@ vi.mock("./WorkspaceLibraryDialog", () => ({
 }));
 
 vi.mock("next/link", () => ({
-  default: ({ children, ...props }: React.ComponentProps<"a">) => <a {...props}>{children}</a>,
+  default: ({ children, ...props }: React.ComponentProps<"a">) => (
+    <a {...props}>{children}</a>
+  ),
 }));
 
 import { WorkspaceOverview } from "./WorkspaceOverview";
@@ -64,7 +66,10 @@ describe("WorkspaceOverview capability transition", () => {
     expect(container.textContent).not.toContain("manage_members");
     expect(container.textContent).not.toContain("user-1");
 
-    workspaceState.workspace = { ...workspaceState.workspace, capabilities: [] };
+    workspaceState.workspace = {
+      ...workspaceState.workspace,
+      capabilities: [],
+    };
     await act(async () => root.render(<WorkspaceOverview />));
     expect(container.querySelector("[data-member-dialog]")).toBeNull();
 

@@ -376,6 +376,7 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
     assert {
         "$ref": "#/components/schemas/UpdateNodePluginReleaseCommand"
     } in command_schema["oneOf"]
+    # TODO: Revisit this exact schema assertion; it duplicates the response model by hand.
     assert schema["components"]["schemas"]["ImageUploadItemResponse"] == {
         "properties": {
             "upload_key": {
@@ -389,6 +390,10 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
             "byte_size": {
                 "title": "Byte Size",
                 "type": "integer",
+            },
+            "artifact_id": {
+                "anyOf": [{"format": "uuid", "type": "string"}, {"type": "null"}],
+                "title": "Artifact Id",
             },
             "artifact_type": {
                 "anyOf": [{"type": "string"}, {"type": "null"}],

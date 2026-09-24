@@ -199,6 +199,51 @@ def test_standard_library_logs_use_the_structured_pipeline(
     _remove_diagnostics_handler()
 
 
+def test_console_renderer_keeps_the_last_line_of_an_oversized_message(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _remove_diagnostics_handler()
+    configure_diagnostics(level="INFO", renderer="console")
+
+    logging.getLogger("foreign.library").error(
+        f"{'filler frame ' * 900}RuntimeError: another owner holds the lease"
+    )
+
+    output = capsys.readouterr().err
+    assert "filler frame" in output
+    assert "chars omitted" in output
+    assert "RuntimeError: another owner holds the lease" in output
+    _remove_diagnostics_handler()
+
+
+def test_console_renderer_keeps_line_breaks_in_messages(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _remove_diagnostics_handler()
+    configure_diagnostics(level="INFO", renderer="console")
+
+    logging.getLogger("foreign.library").error("first line\nlast line")
+
+    output = capsys.readouterr().err
+    assert "first line\nlast line" in output
+    assert "\\n" not in output
+    _remove_diagnostics_handler()
+
+
+def test_json_renderer_keeps_records_on_one_line_with_real_newlines(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _remove_diagnostics_handler()
+    configure_diagnostics(level="INFO", renderer="json")
+
+    logging.getLogger("foreign.library").error("first line\nlast line")
+
+    lines = capsys.readouterr().err.splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0])["event"] == "first line\nlast line"
+    _remove_diagnostics_handler()
+
+
 def test_console_renderer_handles_sanitized_standard_library_exceptions(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

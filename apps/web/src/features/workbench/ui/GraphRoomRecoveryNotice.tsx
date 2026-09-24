@@ -28,7 +28,11 @@ export function GraphRoomRecoveryNotice({
 }: GraphRoomRecoveryNoticeProps) {
   if (readiness === "current") {
     return (
-      <span role="status" aria-live="polite" {...stylex.props(s.visuallyHidden)}>
+      <span
+        role="status"
+        aria-live="polite"
+        {...stylex.props(s.visuallyHidden)}
+      >
         Graph current. Graph operations are available according to your
         workspace permissions.
       </span>
@@ -38,9 +42,7 @@ export function GraphRoomRecoveryNotice({
   const incompatible = terminalReason === "protocol_incompatible";
   const exhausted = terminalReason === "reconnect_exhausted";
   const title =
-    readiness === "stale"
-      ? "Stale graph — read only"
-      : "Graph unavailable";
+    readiness === "stale" ? "Stale graph — read only" : "Graph unavailable";
   const preservation =
     readiness === "stale"
       ? "The last confirmed graph is shown. Server-accepted work is preserved; visible local changes stay on this device until reconnection confirms them."
@@ -102,7 +104,11 @@ const s = stylex.create({
   },
   copy: { display: "grid", gap: "3px", minWidth: 0 },
   title: { color: tokens.colorTextEmphasis, fontSize: tokens.fontSizeSm },
-  message: { color: tokens.colorMuted, fontSize: tokens.fontSizeXs, lineHeight: 1.45 },
+  message: {
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.45,
+  },
   detail: { color: tokens.colorSubtle, fontSize: tokens.fontSizeXs },
   action: {
     flexShrink: 0,

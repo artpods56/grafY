@@ -49,9 +49,9 @@ describe("AnnotationNodeCard", () => {
 
     React.act(() => root.render(<AnnotationNodeCard {...props} />));
     React.act(() => {
-      container.querySelector<HTMLElement>(
-        '[aria-label="Annotation text"]',
-      )?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      container
+        .querySelector<HTMLElement>('[aria-label="Annotation text"]')
+        ?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     });
     expect(
       container.querySelector('[aria-label="Edit annotation markdown"]'),
@@ -67,6 +67,8 @@ describe("AnnotationNodeCard", () => {
     React.act(() => {
       root.render(<AnnotationNodeCard {...props} selected />);
     });
-    expect(container.querySelector('[aria-label="Annotation text"]')).not.toBeNull();
+    expect(
+      container.querySelector('[aria-label="Annotation text"]'),
+    ).not.toBeNull();
   });
 });

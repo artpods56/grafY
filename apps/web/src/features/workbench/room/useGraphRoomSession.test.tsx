@@ -22,10 +22,7 @@ class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
 
   readyState = FakeWebSocket.CONNECTING;
-  private readonly listeners = new Map<
-    string,
-    Set<(event: unknown) => void>
-  >();
+  private readonly listeners = new Map<string, Set<(event: unknown) => void>>();
 
   constructor(readonly url: string) {
     FakeWebSocket.instances.push(this);
@@ -50,7 +47,9 @@ class FakeWebSocket {
   }
 }
 
-function readyMessage(graphId: string): Omit<RoomReadyMessage, "head"> & { head: LegacyCollaborativeHead } {
+function readyMessage(
+  graphId: string,
+): Omit<RoomReadyMessage, "head"> & { head: LegacyCollaborativeHead } {
   return {
     protocol_version: 1,
     type: "room.ready",
@@ -216,12 +215,14 @@ describe("useGraphRoomSession", () => {
         command: {
           kind: "replace_presentation",
           presentation: {
-            viewers: [{
-              id: "peer-viewer",
-              position: { x: 80, y: 120 },
-              layout: null,
-              mode: null,
-            }],
+            viewers: [
+              {
+                id: "peer-viewer",
+                position: { x: 80, y: 120 },
+                layout: null,
+                mode: null,
+              },
+            ],
             links: [],
             bindings: [],
             annotations: [],
@@ -247,7 +248,9 @@ describe("useGraphRoomSession", () => {
       checkpoint_sequence: 4,
       checkpoint_revision: 2,
       document: {
-        presentation: { viewers: [expect.objectContaining({ id: "peer-viewer" })] },
+        presentation: {
+          viewers: [expect.objectContaining({ id: "peer-viewer" })],
+        },
       },
     });
     expect(latest?.head).toEqual(effectiveHead);

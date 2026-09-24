@@ -14,6 +14,7 @@ from pydantic import (
     ConfigDict,
     Field,
     TypeAdapter,
+    ValidationError,
     field_validator,
 )
 
@@ -494,7 +495,66 @@ def _annotation_or_raise(
     )
 
 
+def _surviving_edges_and_origins(
+    document: SavedGraphDocument,
+    *,
+    node_id: str,
+    retained_plug_ids: set[str],
+) -> tuple[tuple[SavedGraphEdge, ...], tuple[SavedGraphOrigin, ...]]:
+    """Return the edges and origins left after a node's input plugs are replaced.
+
+    Replacing a node's input plugs is a topology change: edges and origins that
+    targeted a removed plug have to fall away in the same mutation, or the
+    resulting document cannot validate. Both plug-replacing commands share this
+    rule.
+    """
+
+    surviving_edges = tuple(
+        edge
+        for edge in document.edges
+        if edge.to_node != node_id
+        or edge.to_plug is None
+        or edge.to_plug in retained_plug_ids
+    )
+    surviving_origins = tuple(
+        origin
+        for origin in document.origins
+        if origin.to_node != node_id
+        or origin.to_plug is None
+        or origin.to_plug in retained_plug_ids
+    )
+    return surviving_edges, surviving_origins
+
+
 def apply_graph_command(
+    *,
+    name: str,
+    document: SavedGraphDocument,
+    command: GraphCommand,
+) -> tuple[str, SavedGraphDocument]:
+    """Apply one authoring command, or reject it with the rule it would break.
+
+    Every command leaves the document self-consistent. A command that would
+    strand an edge or an origin on a removed input must surface as a rejection:
+    an exception escaping here tears down the caller's graph-room session.
+    """
+
+    try:
+        return _apply_graph_command(name=name, document=document, command=command)
+    except ValidationError as exc:
+        violations = "; ".join(
+            error["msg"].removeprefix("Value error, ") for error in exc.errors()
+        )
+        raise CollaborationCommandRejectedError(
+            code="invalid_document",
+            message=(
+                f"Graph command {command.kind} would leave the graph "
+                f"invalid: {violations}"
+            ),
+        ) from exc
+
+
+def _apply_graph_command(
     *,
     name: str,
     document: SavedGraphDocument,
@@ -652,6 +712,12 @@ def apply_graph_command(
         current_ids = tuple(plug.id for plug in node.input_plugs)
         if current_ids != command.expected_plug_ids:
             raise _field_conflict(f"Input plugs on node {command.node_id} changed")
+        retained_plug_ids = {plug.id for plug in command.input_plugs}
+        surviving_edges, surviving_origins = _surviving_edges_and_origins(
+            document,
+            node_id=command.node_id,
+            retained_plug_ids=retained_plug_ids,
+        )
         return name, document.with_topology(
             nodes=tuple(
                 candidate.model_copy(update={"input_plugs": command.input_plugs})
@@ -659,6 +725,8 @@ def apply_graph_command(
                 else candidate
                 for candidate in document.nodes
             ),
+            edges=surviving_edges,
+            origins=surviving_origins,
         )
 
     if isinstance(command, UpdateNodeConfigurationAndInputPlugsCommand):
@@ -669,6 +737,11 @@ def apply_graph_command(
         if current_ids != command.expected_plug_ids:
             raise _field_conflict(f"Input plugs on node {command.node_id} changed")
         retained_plug_ids = {plug.id for plug in command.input_plugs}
+        surviving_edges, surviving_origins = _surviving_edges_and_origins(
+            document,
+            node_id=command.node_id,
+            retained_plug_ids=retained_plug_ids,
+        )
         return name, document.with_topology(
             nodes=tuple(
                 candidate.model_copy(
@@ -681,20 +754,8 @@ def apply_graph_command(
                 else candidate
                 for candidate in document.nodes
             ),
-            edges=tuple(
-                edge
-                for edge in document.edges
-                if edge.to_node != command.node_id
-                or edge.to_plug is None
-                or edge.to_plug in retained_plug_ids
-            ),
-            origins=tuple(
-                origin
-                for origin in document.origins
-                if origin.to_node != command.node_id
-                or origin.to_plug is None
-                or origin.to_plug in retained_plug_ids
-            ),
+            edges=surviving_edges,
+            origins=surviving_origins,
         )
 
     if isinstance(command, SetNodeArtifactTypeBindingCommand):

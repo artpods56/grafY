@@ -927,6 +927,7 @@
         "description": "Reserve one upload before the bytes leave the client.",
         "properties": {
           "byte_size": {
+            "maximum": 67108864.0,
             "minimum": 0.0,
             "title": "Byte Size",
             "type": "integer"
@@ -3083,9 +3084,13 @@
                 "$ref": "#/components/schemas/ArtifactRef"
               },
               {
+                "$ref": "#/components/schemas/ArtifactRefSequence"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Artifact Ref"
           },
           "id": {
             "maxLength": 255,
@@ -3135,9 +3140,13 @@
                 "$ref": "#/components/schemas/ArtifactRef"
               },
               {
+                "$ref": "#/components/schemas/ArtifactRefSequence"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Artifact Ref"
           },
           "id": {
             "maxLength": 255,
@@ -3193,6 +3202,18 @@
       },
       "ImageUploadItemResponse": {
         "properties": {
+          "artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          },
           "artifact_type": {
             "anyOf": [
               {

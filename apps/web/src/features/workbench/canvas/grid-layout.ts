@@ -211,19 +211,21 @@ export function ceilToCell(value: number, cellSize: number): number {
   return Math.max(cell, Math.ceil(value / cell) * cell);
 }
 
-/** Display width forced onto the lattice when size snap is active. */
+/**
+ * Display width forced onto the lattice when size snap is active. `minWidth` is
+ * the floor a shell may not snap below; workflow nodes and artifact cards have
+ * different floors, so the caller passes its own.
+ */
 export function gridAlignedWidth(
   width: number,
   settings: CanvasGridSettings | null | undefined,
   bypass = false,
+  minWidth: number = NODE_WIDTH_MIN,
 ): number {
-  if (
-    !settings ||
-    !shouldSnapSize(settings, { drafting: false, bypass })
-  ) {
+  if (!settings || !shouldSnapSize(settings, { drafting: false, bypass })) {
     return width;
   }
-  return snapLength(width, settings.cellSize, NODE_WIDTH_MIN);
+  return snapLength(width, settings.cellSize, minWidth);
 }
 
 /** Whether card shells should pad their measured size up to whole cells. */

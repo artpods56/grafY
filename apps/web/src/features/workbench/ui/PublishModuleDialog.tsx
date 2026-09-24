@@ -371,7 +371,11 @@ function StatusIcon({ status }: { status: ModuleSetupCheck["status"] }) {
   }
   if (status === "blocked") {
     return (
-      <AlertTriangle size={15} aria-hidden="true" {...stylex.props(s.blocked)} />
+      <AlertTriangle
+        size={15}
+        aria-hidden="true"
+        {...stylex.props(s.blocked)}
+      />
     );
   }
   return (
@@ -434,12 +438,13 @@ export function PublishModuleDialog({
     error: moduleListError,
     isLoading: moduleListLoading,
     mutate,
-  } = useSWR(
-    open ? ["workspace-modules", workspaceId] : null,
-    () => listWorkspaceModules(workspaceId),
+  } = useSWR(open ? ["workspace-modules", workspaceId] : null, () =>
+    listWorkspaceModules(workspaceId),
   );
   const listedModule = sourceGraphId
-    ? data?.modules.find((module) => module.source_graph_id === sourceGraphId) ?? null
+    ? (data?.modules.find(
+        (module) => module.source_graph_id === sourceGraphId,
+      ) ?? null)
     : null;
   const existingModule =
     publishedModule?.source_graph_id === sourceGraphId
@@ -465,9 +470,9 @@ export function PublishModuleDialog({
   );
   const revisionWasValidated = Boolean(
     existingModule &&
-      revision !== null &&
-      existingModule.current_library_release === revision &&
-      !isDirty,
+    revision !== null &&
+    existingModule.current_library_release === revision &&
+    !isDirty,
   );
   const checks = moduleSetupReadiness({
     graphSaved: sourceGraphId !== null && revision !== null,
@@ -480,7 +485,7 @@ export function PublishModuleDialog({
         ? "failed"
         : "unchecked",
     publishedRelease: revisionWasValidated
-      ? existingModule?.current_library_release ?? null
+      ? (existingModule?.current_library_release ?? null)
       : null,
   });
   const isLaterRelease = Boolean(existingModule?.releases?.length);
@@ -521,7 +526,9 @@ export function PublishModuleDialog({
           return {
             modules: alreadyListed
               ? current.modules.map((candidate) =>
-                  candidate.id === publishedEntry.id ? publishedEntry : candidate,
+                  candidate.id === publishedEntry.id
+                    ? publishedEntry
+                    : candidate,
                 )
               : [...current.modules, publishedEntry],
           };
@@ -554,7 +561,10 @@ export function PublishModuleDialog({
         <DialogBody>
           <div {...stylex.props(s.layout, s.mobileLayout)}>
             <div {...stylex.props(s.flow)}>
-              <section aria-labelledby="module-details-heading" {...stylex.props(s.section)}>
+              <section
+                aria-labelledby="module-details-heading"
+                {...stylex.props(s.section)}
+              >
                 <div {...stylex.props(s.sectionHeading)}>
                   <h3 id="module-details-heading" {...stylex.props(s.heading)}>
                     Details
@@ -568,7 +578,9 @@ export function PublishModuleDialog({
                 </p>
                 {isLaterRelease ? (
                   <div>
-                    <p {...stylex.props(s.boundaryName)}>{existingModule?.name}</p>
+                    <p {...stylex.props(s.boundaryName)}>
+                      {existingModule?.name}
+                    </p>
                     <p {...stylex.props(s.copy)}>
                       {existingModule?.description ?? "No Module description."}
                     </p>
@@ -591,7 +603,9 @@ export function PublishModuleDialog({
                         rows={3}
                         maxLength={1000}
                         value={description}
-                        onChange={(event) => setDescription(event.currentTarget.value)}
+                        onChange={(event) =>
+                          setDescription(event.currentTarget.value)
+                        }
                       />
                     </label>
                   </div>
@@ -603,15 +617,18 @@ export function PublishModuleDialog({
                 {...stylex.props(s.section, s.dividedSection)}
               >
                 <div {...stylex.props(s.sectionHeading)}>
-                  <h3 id="module-interface-heading" {...stylex.props(s.heading)}>
+                  <h3
+                    id="module-interface-heading"
+                    {...stylex.props(s.heading)}
+                  >
                     Interface
                   </h3>
                   <span {...stylex.props(s.sectionIndex)}>02</span>
                 </div>
                 <p {...stylex.props(s.copy)}>
-                  Module Input and Module Output nodes define the contract ports. Add
-                  boundaries here, then configure their names, types, and wiring on
-                  the canvas.
+                  Module Input and Module Output nodes define the contract
+                  ports. Add boundaries here, then configure their names, types,
+                  and wiring on the canvas.
                 </p>
                 <div {...stylex.props(s.boundaryToolbar)}>
                   <button
@@ -647,39 +664,55 @@ export function PublishModuleDialog({
                     workflow result to it, then save the graph.
                   </p>
                 ) : (
-                  <div aria-label="Module boundaries" {...stylex.props(s.boundaryList)}>
-                    {[...inputBoundaries, ...outputBoundaries].map((boundary) => (
-                      <div key={boundary.id} {...stylex.props(s.boundaryRow)}>
-                        {boundary.direction === "input" ? (
-                          <ArrowDownToLine size={15} aria-hidden="true" {...stylex.props(s.boundaryIcon)} />
-                        ) : (
-                          <ArrowUpFromLine size={15} aria-hidden="true" {...stylex.props(s.boundaryIcon)} />
-                        )}
-                        <div>
-                          <p {...stylex.props(s.boundaryName)}>
-                            {boundary.portName ?? `Unconfigured ${boundary.direction}`}
-                          </p>
-                          <p {...stylex.props(s.boundaryMeta)}>
-                            {boundary.direction} · {boundary.artifactType ?? "type not bound"} · {boundaryConnectionLabel(boundary)}
-                          </p>
-                          {boundary.description ? (
-                            <p {...stylex.props(s.boundaryMeta)}>
-                              {boundary.description}
+                  <div
+                    aria-label="Module boundaries"
+                    {...stylex.props(s.boundaryList)}
+                  >
+                    {[...inputBoundaries, ...outputBoundaries].map(
+                      (boundary) => (
+                        <div key={boundary.id} {...stylex.props(s.boundaryRow)}>
+                          {boundary.direction === "input" ? (
+                            <ArrowDownToLine
+                              size={15}
+                              aria-hidden="true"
+                              {...stylex.props(s.boundaryIcon)}
+                            />
+                          ) : (
+                            <ArrowUpFromLine
+                              size={15}
+                              aria-hidden="true"
+                              {...stylex.props(s.boundaryIcon)}
+                            />
+                          )}
+                          <div>
+                            <p {...stylex.props(s.boundaryName)}>
+                              {boundary.portName ??
+                                `Unconfigured ${boundary.direction}`}
                             </p>
-                          ) : null}
+                            <p {...stylex.props(s.boundaryMeta)}>
+                              {boundary.direction} ·{" "}
+                              {boundary.artifactType ?? "type not bound"} ·{" "}
+                              {boundaryConnectionLabel(boundary)}
+                            </p>
+                            {boundary.description ? (
+                              <p {...stylex.props(s.boundaryMeta)}>
+                                {boundary.description}
+                              </p>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            className="grafy-workspace-button"
+                            onClick={() => {
+                              setDialogOpen(false);
+                              onSelectBoundary?.(boundary.id);
+                            }}
+                          >
+                            Edit on canvas
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          className="grafy-workspace-button"
-                          onClick={() => {
-                            setDialogOpen(false);
-                            onSelectBoundary?.(boundary.id);
-                          }}
-                        >
-                          Edit on canvas
-                        </button>
-                      </div>
-                    ))}
+                      ),
+                    )}
                   </div>
                 )}
               </section>
@@ -695,7 +728,11 @@ export function PublishModuleDialog({
                   <span {...stylex.props(s.sectionIndex)}>03</span>
                 </div>
                 <div {...stylex.props(s.validationNote)}>
-                  <CircleDashed size={15} aria-hidden="true" {...stylex.props(s.pending)} />
+                  <CircleDashed
+                    size={15}
+                    aria-hidden="true"
+                    {...stylex.props(s.pending)}
+                  />
                   <p {...stylex.props(s.copy)}>
                     The backend is the source of truth for the Module contract.
                     Validation runs with Publish and checks this exact saved
@@ -737,10 +774,15 @@ export function PublishModuleDialog({
 
                 {publishedModule ? (
                   <div role="status" {...stylex.props(s.success)}>
-                    <Check size={16} aria-hidden="true" {...stylex.props(s.complete)} />
+                    <Check
+                      size={16}
+                      aria-hidden="true"
+                      {...stylex.props(s.complete)}
+                    />
                     <div>
                       <p {...stylex.props(s.successTitle)}>
-                        Published release {publishedModule.current_library_release}
+                        Published release{" "}
+                        {publishedModule.current_library_release}
                       </p>
                       <p {...stylex.props(s.copy)}>
                         This exact revision is now the current library release.
@@ -760,7 +802,9 @@ export function PublishModuleDialog({
                         <button
                           type="button"
                           className="grafy-workspace-button"
-                          onClick={() => onOpenSourceGraph?.(publishedModule.source_graph_id)}
+                          onClick={() =>
+                            onOpenSourceGraph?.(publishedModule.source_graph_id)
+                          }
                         >
                           Open source
                         </button>
@@ -770,7 +814,9 @@ export function PublishModuleDialog({
                 ) : (
                   <div {...stylex.props(s.publishActions)}>
                     <span {...stylex.props(s.copy)}>
-                      {revision === null ? "No saved revision" : `Source revision ${revision}`}
+                      {revision === null
+                        ? "No saved revision"
+                        : `Source revision ${revision}`}
                     </span>
                     <button
                       type="button"
@@ -789,10 +835,17 @@ export function PublishModuleDialog({
               </section>
             </div>
 
-            <aside aria-label="Module readiness checklist" {...stylex.props(s.checklist, s.mobileChecklist)}>
+            <aside
+              aria-label="Module readiness checklist"
+              {...stylex.props(s.checklist, s.mobileChecklist)}
+            >
               <h3 {...stylex.props(s.heading)}>Readiness</h3>
               {checks.map((check) => (
-                <div key={check.id} data-status={check.status} {...stylex.props(s.checkRow)}>
+                <div
+                  key={check.id}
+                  data-status={check.status}
+                  {...stylex.props(s.checkRow)}
+                >
                   <StatusIcon status={check.status} />
                   <div>
                     <p {...stylex.props(s.checkLabel)}>{check.label}</p>

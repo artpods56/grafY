@@ -36,7 +36,10 @@ interface DockedSets {
 
 const dockedCache = new WeakMap<object, DockedSets>();
 
-function dockedSetsForState(state: DockedStoreState, cellSize: number): DockedSets {
+function dockedSetsForState(
+  state: DockedStoreState,
+  cellSize: number,
+): DockedSets {
   const cached = dockedCache.get(state);
   if (cached && cached.cellSize === cellSize) return cached;
   const computed = dockedConnections(
@@ -77,9 +80,9 @@ export function useHandleIsDocked(
     (state) =>
       Boolean(
         handleId &&
-          dockedSetsForState(state, cellSize).handleKeys.has(
-            dockedHandleKey(nodeId, handleId),
-          ),
+        dockedSetsForState(state, cellSize).handleKeys.has(
+          dockedHandleKey(nodeId, handleId),
+        ),
       ),
     Object.is,
   );

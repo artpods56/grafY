@@ -7,16 +7,14 @@ export type User = Schemas["UserResponse"];
 export type Workspace = Schemas["WorkspaceResponse"];
 export type WorkspaceCreateRequest = Schemas["WorkspaceCreateRequest"];
 export type WorkspaceMember = Schemas["WorkspaceMemberResponse"];
-export type WorkspaceMemberRoleRequest =
-  Schemas["WorkspaceMemberRoleRequest"];
+export type WorkspaceMemberRoleRequest = Schemas["WorkspaceMemberRoleRequest"];
 export type WorkspaceInvitationCandidateRequest =
   Schemas["WorkspaceInvitationCandidateRequest"];
 export type WorkspaceInvitationCandidate =
   Schemas["WorkspaceInvitationCandidateResponse"];
 export type WorkspaceInvitationCreateRequest =
   Schemas["WorkspaceInvitationCreateRequest"];
-export type WorkspaceInvitation =
-  Schemas["WorkspaceInvitationOwnerResponse"];
+export type WorkspaceInvitation = Schemas["WorkspaceInvitationOwnerResponse"];
 export type WorkspaceInvitationForRecipient =
   Schemas["WorkspaceInvitationRecipientResponse"];
 export type WorkspaceCapability = Schemas["WorkspaceCapability"];
@@ -27,41 +25,29 @@ export type PersonalAccessTokenCreated =
 export type PersonalAccessTokenCreateRequest =
   Schemas["PersonalAccessTokenCreateRequest"];
 
-export type ArtifactTypeKey =
-  Schemas["ArtifactTypeKeyResponse"];
-export type ArtifactTypeSpec =
-  Schemas["ArtifactTypeSpecResponse"];
-export type ArtifactConversionSpec =
-  Schemas["ArtifactConversionSpecResponse"];
-export type ArtifactConversionInput =
-  Schemas["ArtifactConversionRequest"];
-export type FieldProjection =
-  Schemas["FieldProjectionResponse"];
+export type ArtifactTypeKey = Schemas["ArtifactTypeKeyResponse"];
+export type ArtifactTypeSpec = Schemas["ArtifactTypeSpecResponse"];
+export type ArtifactConversionSpec = Schemas["ArtifactConversionSpecResponse"];
+export type ArtifactConversionInput = Schemas["ArtifactConversionRequest"];
+export type FieldProjection = Schemas["FieldProjectionResponse"];
 export type Port = Schemas["PortResponse"];
 export type NodeSpec = Schemas["NodeSpecResponse"];
 export type PluginReleasePin = Schemas["PluginReleasePinModel"];
 export type PluginReleaseScope = Schemas["PluginReleaseScope"];
-export type ImageUploadItem =
-  Schemas["ImageUploadItemResponse"];
+export type ImageUploadItem = Schemas["ImageUploadItemResponse"];
 export type InputPlugInput = Schemas["RunInputPlugRequest"];
 export type RunNodeInput = Schemas["RunNodeRequest"];
-export type NodeConfigInput = NonNullable<
-  RunNodeInput["config"]
->;
+export type NodeConfigInput = NonNullable<RunNodeInput["config"]>;
 export type RunEdgeInput = Schemas["RunEdgeRequest"];
 export type ArtifactConversionPathInput = NonNullable<
   RunEdgeInput["conversion_path"]
 >;
 export type RunEdgeCollectionMode = RunEdgeInput["collection_mode"];
-export type RunEdgeProjectionInput = NonNullable<
-  RunEdgeInput["projection"]
->;
+export type RunEdgeProjectionInput = NonNullable<RunEdgeInput["projection"]>;
 export type PinnedOutputInput = Schemas["PinnedOutputRequest"];
 export type RunOriginInput = Schemas["RunOriginRequest"];
-export type ArtifactSummary =
-  Schemas["ArtifactSummaryResponse"];
-export type ArtifactExportFormat =
-  Schemas["ArtifactExportFormatResponse"];
+export type ArtifactSummary = Schemas["ArtifactSummaryResponse"];
+export type ArtifactExportFormat = Schemas["ArtifactExportFormatResponse"];
 export type TablePage = Schemas["TablePageResponse"];
 export type TableCell = Schemas["TableCellResponse"];
 export type TableSchema = Schemas["TableSchemaResponse"];
@@ -80,15 +66,10 @@ export type GeoRenderRasterStyle = Schemas["GeoRasterStyle"];
 export type GeoRenderLayer = Schemas["GeoRenderLayerResponse"];
 export type GeoRenderDescriptor = Schemas["GeoRenderResponse"];
 export type GeoFeatureQuery = Schemas["GeoFeatureQueryResponse"];
-export type RunPortOutput =
-  Schemas["RunPortOutputResponse"];
-export type RunNodeResult =
-  Schemas["RunNodeResponse"];
-export type RunExecution =
-  Schemas["RunExecutionResponse"];
-export type RunExecutionNodeStatus =
-  | NodeRunStatus
-  | "running";
+export type RunPortOutput = Schemas["RunPortOutputResponse"];
+export type RunNodeResult = Schemas["RunNodeResponse"];
+export type RunExecution = Schemas["RunExecutionResponse"];
+export type RunExecutionNodeStatus = NodeRunStatus | "running";
 
 interface RunExecutionEventBase {
   sequence: number;
@@ -110,14 +91,12 @@ export interface RunExecutionStatusEvent extends RunExecutionEventBase {
   active_node_id: string | null;
 }
 
-export interface RunExecutionNodeStatusEvent
-  extends RunExecutionNodeEventBase {
+export interface RunExecutionNodeStatusEvent extends RunExecutionNodeEventBase {
   kind: "node.status";
   status: RunExecutionNodeStatus;
 }
 
-export interface RunExecutionNodeProgressEvent
-  extends RunExecutionNodeEventBase {
+export interface RunExecutionNodeProgressEvent extends RunExecutionNodeEventBase {
   kind: "node.progress";
   message: string;
   current: number | null;
@@ -129,22 +108,21 @@ export type RunExecutionEvent =
   | RunExecutionNodeStatusEvent
   | RunExecutionNodeProgressEvent;
 export type GraphExecutionStatus = Schemas["GraphExecutionStatus"];
-export type GraphExecutionSummary =
-  Schemas["GraphExecutionSummaryResponse"];
+export type GraphExecutionSummary = Schemas["GraphExecutionSummaryResponse"];
 export type GraphExecutionNodeResult =
   Schemas["GraphExecutionNodeResultResponse"];
 export type GraphExecutionDetail =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions/{execution_id}"]["get"]["responses"][200]["content"]["application/json"];
 export type GraphExecutionList =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions"]["get"]["responses"][200]["content"]["application/json"];
-export type GraphMaterializations =
-  Schemas["GraphMaterializationsResponse"];
+export type GraphMaterializations = Schemas["GraphMaterializationsResponse"];
 export type SavedGraphDocument = Schemas["SavedGraphDocument"];
 export type SavedGraphNode = Schemas["SavedGraphNode"];
 export type SavedGraphEdge = Schemas["SavedGraphEdge"];
 export type SavedGraphOrigin = Schemas["SavedGraphOrigin"];
-export type SavedGraphSummary =
-  Schemas["SavedGraphSummaryResponse"];
+export type ArtifactRef = Schemas["ArtifactRef"];
+export type ArtifactRefSequence = Schemas["ArtifactRefSequence"];
+export type SavedGraphSummary = Schemas["SavedGraphSummaryResponse"];
 export type GraphBrowserGraph = Schemas["GraphBrowserItemResponse"];
 export type GraphBrowserList = Schemas["GraphBrowserListResponse"];
 export type GraphFolder = Schemas["GraphFolderResponse"];
@@ -157,29 +135,27 @@ export type AppliedNodeSecret = NodeSecretStatus;
 
 export type NodeRegistry =
   paths["/v1/workspaces/{workspace_id}/nodes"]["get"]["responses"][200]["content"]["application/json"];
-export type UnavailableGraphModule =
-  Schemas["UnavailableGraphModuleResponse"];
+export type UnavailableGraphModule = Schemas["UnavailableGraphModuleResponse"];
 export type ModulePublicationState = Schemas["ModulePublicationState"];
 export type ModuleLibraryEntry = Schemas["ModuleResponse"];
 export type ModuleRelease = Schemas["ModuleReleaseResponse"];
 export type ModuleList = Schemas["ModuleListResponse"];
-export type PublishModuleReleaseRequest = Schemas["PublishModuleReleaseRequest"];
+export type PublishModuleReleaseRequest =
+  Schemas["PublishModuleReleaseRequest"];
 export type ImportModuleReleaseRequest = Schemas["ImportModuleReleaseRequest"];
-export type ImportModuleReleaseResponse = Schemas["ImportModuleReleaseResponse"];
+export type ImportModuleReleaseResponse =
+  Schemas["ImportModuleReleaseResponse"];
 export type TemplateState = Schemas["TemplateState"];
 export type GraphTemplate = Schemas["TemplateResponse"];
 export type TemplateList = Schemas["TemplateListResponse"];
 export type CreateTemplateRequest = Schemas["CreateTemplateRequest"];
 export type UpdateTemplateMetadataRequest =
   Schemas["UpdateTemplateMetadataRequest"];
-export type InstantiateTemplateRequest =
-  Schemas["InstantiateTemplateRequest"];
+export type InstantiateTemplateRequest = Schemas["InstantiateTemplateRequest"];
 export type TemplateInstantiationResponse =
   Schemas["TemplateInstantiationResponse"];
-export type UploadResponse =
-  Schemas["ImageUploadItemResponse"];
-export type UploadTarget =
-  Schemas["UploadTargetResponse"];
+export type UploadResponse = Schemas["ImageUploadItemResponse"];
+export type UploadTarget = Schemas["UploadTargetResponse"];
 export type RunScopeInput = Schemas["GraphExecutionScope"];
 export type RunRequest =
   paths["/v1/workspaces/{workspace_id}/runs"]["post"]["requestBody"]["content"]["application/json"];
@@ -207,10 +183,16 @@ export type CheckpointGraphRequest =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/checkpoint"]["post"]["requestBody"]["content"]["application/json"];
 export type LegacyCheckpointGraphResponse =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/checkpoint"]["post"]["responses"][200]["content"]["application/json"];
-export type SubmitGraphCommandResponse = Omit<LegacySubmitGraphCommandResponse, "head"> & {
+export type SubmitGraphCommandResponse = Omit<
+  LegacySubmitGraphCommandResponse,
+  "head"
+> & {
   readonly head: CollaborativeHead;
 };
-export type CheckpointGraphResponse = Omit<LegacyCheckpointGraphResponse, "head"> & {
+export type CheckpointGraphResponse = Omit<
+  LegacyCheckpointGraphResponse,
+  "head"
+> & {
   readonly head: CollaborativeHead;
 };
 export type CopyExactHeadRequest =

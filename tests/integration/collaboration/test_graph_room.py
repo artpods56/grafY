@@ -7,14 +7,14 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from queue import Queue
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
-from starlette.testclient import WebSocketDenialResponse
+from starlette.testclient import WebSocketDenialResponse, WebSocketTestSession
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from grafy_api.settings import Settings
@@ -49,6 +49,8 @@ from grafy_core.domain.plugin_identity import PluginReleaseScope
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     SavedGraphDocument,
+    SavedGraphEdge,
+    SavedGraphInputPlug,
     SavedGraphNode,
     SavedGraphPluginReleasePin,
 )
@@ -186,6 +188,21 @@ def _receive_execution_active_status(
     raise AssertionError(
         f"did not receive execution.active status={status!r} within {limit} messages"
     )
+
+
+def _receive_next(
+    websocket: WebSocketTestSession, expected_type: str
+) -> dict[str, Any]:
+    """Read the next room message, failing fast when it is not the expected one.
+
+    These tests sit alone in their room with heartbeats disabled, so the
+    expected message always follows immediately; a closed room raises
+    ``WebSocketDisconnect`` instead of blocking.
+    """
+
+    message = websocket.receive_json()
+    assert message["type"] == expected_type, message
+    return message
 
 
 def _room_session(
@@ -446,6 +463,162 @@ def test_two_sessions_converge_on_accepted_sequence_and_head(
     head = workspace_api.graphs.get_head_ok(graph.id)
     assert head.collaboration_sequence == expected_sequence
     assert head.name == "Renamed live"
+
+
+def _submit_room_command(
+    websocket: WebSocketTestSession,
+    ready: dict[str, Any],
+    command_id: UUID,
+    command: dict[str, Any],
+) -> None:
+    websocket.send_json(
+        {
+            "protocol_version": 1,
+            "type": "graph.command.submit",
+            "command_id": str(command_id),
+            "room_epoch": ready["head"]["room_epoch"],
+            "observed_sequence": ready["head"]["collaboration_sequence"],
+            "command": command,
+        }
+    )
+
+
+def _wired_collect_graph() -> SavedGraphDocument:
+    """One wired input plug on a variadic node, as the Workbench builds it."""
+
+    return SavedGraphDocument(
+        nodes=(
+            SavedGraphNode(
+                kind="builtin",
+                id="source",
+                operator_id="text.literal",
+                operator_version=1,
+                position=GraphPoint(x=0, y=0),
+            ),
+            SavedGraphNode(
+                kind="builtin",
+                id="collect",
+                operator_id="sequence.collect",
+                operator_version=1,
+                position=GraphPoint(x=200, y=0),
+                input_plugs=(
+                    SavedGraphInputPlug(id="plug-a", port="items"),
+                    SavedGraphInputPlug(id="plug-b", port="items"),
+                ),
+            ),
+        ),
+        edges=(
+            SavedGraphEdge(
+                id="e1",
+                from_node="source",
+                from_port="value",
+                to_node="collect",
+                to_port="items",
+                to_plug="plug-b",
+                enabled=True,
+            ),
+        ),
+    )
+
+
+def test_removing_a_wired_input_plug_keeps_the_room_open(
+    room_client: RoomClient,
+) -> None:
+    """Removing a wired input converges instead of closing the room.
+
+    The workbench removes an input plug as one ``set_node_input_plugs``
+    command; a room that dies on that command resurfaces as a repeating
+    "Stale graph -- read only" loop, because the client reconnects and
+    resubmits the same command.
+    """
+
+    api, _switcher, population = room_client
+    workspace_api = api.workspace(population.workspace.id)
+    graph = workspace_api.graphs.create_ok(
+        CreateSavedGraphRequest(name="Room graph", document=_wired_collect_graph())
+    )
+    command_id = uuid4()
+
+    with _connect_room(api, population.workspace.id, graph.id) as websocket:
+        ready = websocket.receive_json()
+        _submit_room_command(
+            websocket,
+            ready,
+            command_id,
+            {
+                "kind": "set_node_input_plugs",
+                "node_id": "collect",
+                "input_plugs": [{"id": "plug-a", "port": "items"}],
+                "expected_plug_ids": ["plug-a", "plug-b"],
+            },
+        )
+        accepted = _receive_next(websocket, "graph.command.accepted")
+        receipt = _receive_next(websocket, "graph.command.receipt")
+
+    assert accepted["command_id"] == str(command_id)
+    assert receipt["accepted_sequence"] == accepted["sequence"]
+
+    head = workspace_api.graphs.get_head_ok(graph.id)
+    assert [plug.id for plug in head.nodes[1].input_plugs] == ["plug-a"]
+    assert head.edges == []
+
+
+def test_command_that_invalidates_the_graph_is_rejected_without_closing_room(
+    room_client: RoomClient,
+) -> None:
+    """An unapplicable command is answered with a rejection, not a room close."""
+
+    api, _switcher, population = room_client
+    workspace_api = api.workspace(population.workspace.id)
+    graph = workspace_api.graphs.create_ok(
+        CreateSavedGraphRequest(name="Room graph", document=_wired_collect_graph())
+    )
+    rejected_command_id = uuid4()
+    accepted_command_id = uuid4()
+
+    with _connect_room(api, population.workspace.id, graph.id) as websocket:
+        ready = websocket.receive_json()
+        _submit_room_command(
+            websocket,
+            ready,
+            rejected_command_id,
+            {
+                "kind": "add_edge",
+                "edge": {
+                    "id": "e-missing-plug",
+                    "from_node": "source",
+                    "from_port": "value",
+                    "to_node": "collect",
+                    "to_port": "items",
+                    "to_plug": "plug-absent",
+                    "enabled": True,
+                },
+            },
+        )
+        rejected = _receive_next(websocket, "graph.command.rejected")
+        assert rejected["command_id"] == str(rejected_command_id)
+        assert rejected["error_code"] == "command_rejected"
+        assert "plug-absent" in rejected["detail"]
+
+        # The room must survive the rejection and keep serving commands.
+        _submit_room_command(
+            websocket,
+            ready,
+            accepted_command_id,
+            {
+                "kind": "rename_graph",
+                "name": "Still alive",
+                "expected_name": ready["head"]["name"],
+            },
+        )
+        accepted = _receive_next(websocket, "graph.command.accepted")
+
+    assert accepted["command_id"] == str(accepted_command_id)
+    head = workspace_api.graphs.get_head_ok(graph.id)
+    assert head.name == "Still alive"
+    # The rejected command left no trace: the wired plug is still wired.
+    assert [edge.id for edge in head.edges] == ["e1"]
+    assert [plug.id for plug in head.nodes[1].input_plugs] == ["plug-a", "plug-b"]
 
 
 def test_reconnect_idempotent_retry_does_not_double_apply(

@@ -24,8 +24,8 @@ api: db-upgrade
     uv run --exact --no-dev --package grafy-api uvicorn grafy_api.main:app --reload --host 0.0.0.0 --port 8000
 
 # Start the web development server.
-web:
-    npm --prefix apps/web run dev
+web port="":
+    npm --prefix apps/web run dev {{ if port != "" {"--port=" + port} else {""} }}
 
 # Run backend and web tests.
 test:
@@ -39,7 +39,11 @@ lint:
 
 # Format the web app with Prettier. See apps/web/.prettierrc.
 format:
-    npm --prefix apps/web exec prettier -- --write "src/**/*.{ts,tsx,css,md,json}"
+    cd apps/web && npm exec prettier -- --write "src/**/*.{ts,tsx,css,md,json}" "e2e/**/*.{ts,tsx}"
+
+# Fail when the web app is not formatted. CI runs this.
+format-check:
+    cd apps/web && npm exec prettier -- --check "src/**/*.{ts,tsx,css,md,json}" "e2e/**/*.{ts,tsx}"
 
 # Run Python and TypeScript type checks.
 typecheck:

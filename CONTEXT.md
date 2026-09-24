@@ -691,12 +691,29 @@ revision, not fields inside the saved graph. Upstream output pins belong to an
 individual run request and remain transient. Drafts may be saved before they
 are executable.
 
-A presentation viewer may carry one artifact reference instead of a link to a
-node output. Such a viewer is a node-less artifact card: it presents that
-exact artifact and executes nothing. The reference is durable document state
-and is never dropped when the artifact is deleted, becomes inaccessible, or
-cannot cross a Workspace or Template boundary; the card stays and reports the
-reference as missing until the user removes the card deliberately.
+A presentation viewer may carry artifact references instead of a link to a node
+output. Such a viewer is a node-less artifact card: it presents those exact
+artifacts and executes nothing. One reference presents one artifact; a sequence
+presents them in the order the card passes them on, and two artifact types never
+share one card. Passing a card into a node writes an origin on that input, and
+the origin stays the executable truth: the card owns the order, so reordering a
+bound card rewrites the origin that carries it, and removing the card removes
+what it passed in. The reference is durable document state and is never dropped
+when the artifact is deleted, becomes inaccessible, or cannot cross a Workspace
+or Template boundary; the card stays and reports the reference as missing until
+the user removes the card deliberately.
+
+Collect replaces selected, unconnected artifact cards with one sequence card.
+It requires the same artifact type and schema version, orders cards top to
+bottom then left to right, and keeps each artifact reference once. Ungroup
+replaces that sequence with individual cards in its current order. Neither
+operation deletes artifacts. Cards with producer links, viewer bindings, or
+input origins must be disconnected before grouping or ungrouping. Tidy-up
+changes card positions without changing references or sequence order.
+
+Image cards keep the filename and artifact contract above the image, dimmed
+when unselected. Info and action controls sit outside the image. Single values
+use one connector ring; sequences use two, including a sequence of one item.
 
 Saved graphs use optimistic revisions. Replacing a graph requires the revision
 last read by the caller so competing edits are reported instead of silently

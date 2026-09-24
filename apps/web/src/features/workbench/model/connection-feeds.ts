@@ -45,17 +45,12 @@ export function routesMatchingProjectionPath(
   path: readonly string[],
 ): ConnectionRoute[] {
   return routes.filter((route) => {
-    if (
-      route.kind !== "projection" &&
-      route.kind !== "projection-conversion"
-    ) {
+    if (route.kind !== "projection" && route.kind !== "projection-conversion") {
       return false;
     }
     return (
       route.projection.path.length === path.length &&
-      route.projection.path.every(
-        (segment, index) => segment === path[index],
-      )
+      route.projection.path.every((segment, index) => segment === path[index])
     );
   });
 }
@@ -63,7 +58,10 @@ export function routesMatchingProjectionPath(
 /** Prefer routes that match a catalog satellite's feed intent. */
 export function routesForHandleFeed(
   routes: readonly ConnectionRoute[],
-  feed: { kind: "whole" } | { kind: "projection"; path: readonly string[] } | undefined,
+  feed:
+    | { kind: "whole" }
+    | { kind: "projection"; path: readonly string[] }
+    | undefined,
 ): ConnectionRoute[] {
   if (!feed) return [...routes];
   if (feed.kind === "whole") {

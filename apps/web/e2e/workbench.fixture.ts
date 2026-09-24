@@ -1,9 +1,11 @@
 import { expect, test as base } from "@playwright/test";
 
 import type {
+  LibraryList,
   NodeRegistry,
   SavedGraphList,
   Session,
+  TemplateList,
   Workspace,
   WorkspaceInvitationForRecipient,
 } from "../src/lib/api/contract";
@@ -54,6 +56,8 @@ const workspace = {
 } satisfies Workspace;
 
 const savedGraphs = { graphs: [] } satisfies SavedGraphList;
+const libraryArtifacts = { items: [] } satisfies LibraryList;
+const templates = { templates: [] } satisfies TemplateList;
 export const nodeRegistry = {
   artifact_conversions: [],
   artifact_types: [],
@@ -144,6 +148,8 @@ export const test = base.extend<{ registry: NodeRegistry }>({
         | Session
         | readonly Workspace[]
         | SavedGraphList
+        | LibraryList
+        | TemplateList
         | NodeRegistry
         | readonly WorkspaceInvitationForRecipient[]
         | undefined;
@@ -163,6 +169,16 @@ export const test = base.extend<{ registry: NodeRegistry }>({
         path === `/api/v1/workspaces/${WORKSPACE_ID}/nodes`
       ) {
         body = registry;
+      } else if (
+        method === "GET" &&
+        path === `/api/v1/workspaces/${WORKSPACE_ID}/library/artifacts`
+      ) {
+        body = libraryArtifacts;
+      } else if (
+        method === "GET" &&
+        path === `/api/v1/workspaces/${WORKSPACE_ID}/templates`
+      ) {
+        body = templates;
       }
 
       if (body !== undefined) {

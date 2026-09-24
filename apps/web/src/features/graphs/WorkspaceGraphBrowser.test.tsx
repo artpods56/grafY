@@ -13,8 +13,7 @@ const browserState = vi.hoisted(() => ({
   push: vi.fn(),
   mutate: vi.fn(async () => undefined),
   data: { graphs: [] as SavedGraphSummary[] } as
-    | { graphs: SavedGraphSummary[] }
-    | undefined,
+    { graphs: SavedGraphSummary[] } | undefined,
   error: undefined as Error | undefined,
   isLoading: false,
   workspace: {
@@ -96,10 +95,10 @@ async function click(element: Element) {
 
 async function change(element: HTMLInputElement, value: string) {
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
-      element,
-      value,
-    );
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set?.call(element, value);
     element.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
@@ -148,14 +147,18 @@ describe("workspace graph browser", () => {
 
     expect(apiMocks.useSavedGraphs).toHaveBeenCalledWith("workspace-atlas");
     expect(container.textContent).toContain("Atlas");
-    expect(container.querySelector('[aria-label="Filter by location"]')).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Filter by location"]'),
+    ).toBeNull();
     expect(container.querySelectorAll(".grafy-graphs__row")).toHaveLength(8);
 
     await click(button(container, "All"));
     expect(container.querySelectorAll(".grafy-graphs__row")).toHaveLength(9);
     expect(
       container
-        .querySelector<HTMLAnchorElement>('[aria-label="Open Graph 8 in Atlas"]')
+        .querySelector<HTMLAnchorElement>(
+          '[aria-label="Open Graph 8 in Atlas"]',
+        )
         ?.getAttribute("href"),
     ).toBe("/workspaces/atlas/graphs/graph-8");
   });

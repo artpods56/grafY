@@ -12,15 +12,16 @@ import { WorkspaceRail } from "@/features/workspaces/WorkspaceLayout";
 import { useSavedGraphs, useWorkspaces } from "@/hooks/use-api";
 import { FINE_POINTER_QUERY } from "@/hooks/use-media-query";
 import { createWorkspaceTemplate } from "@/lib/api";
-import { templateLocationLabel, templateUseErrorMessage } from "./TemplateLibrary";
-
+import {
+  templateLocationLabel,
+  templateUseErrorMessage,
+} from "./TemplateLibrary";
 
 export interface SaveAsTemplateSource {
   workspaceId: string;
   graphId: string;
   revision: number;
 }
-
 
 export function SaveAsTemplate({
   source,
@@ -34,7 +35,6 @@ export function SaveAsTemplate({
   return <SaveAsTemplateFlow key={sourceKey} source={source} />;
 }
 
-
 function SaveAsTemplateFlow({
   source,
 }: {
@@ -46,9 +46,12 @@ function SaveAsTemplateFlow({
   const location = workspaces?.find(
     (workspace) => workspace.id === source?.workspaceId,
   );
-  const { data: graphList, error, isLoading, mutate } = useSavedGraphs(
-    source?.workspaceId,
-  );
+  const {
+    data: graphList,
+    error,
+    isLoading,
+    mutate,
+  } = useSavedGraphs(source?.workspaceId);
   const graph = graphList?.graphs.find((item) => item.id === source?.graphId);
   const [nameOverride, setNameOverride] = React.useState<string | null>(null);
   const [description, setDescription] = React.useState("");
@@ -120,7 +123,9 @@ function SaveAsTemplateFlow({
           <span className="grafy-save-template__mark">
             <FileStack size={20} aria-hidden="true" />
           </span>
-          <p className="grafy-template-library__eyebrow">Graph / Save as template</p>
+          <p className="grafy-template-library__eyebrow">
+            Graph / Save as template
+          </p>
           <h1>Save as template</h1>
           <p>
             Capture one exact revision as a reusable starting point. Graphs
@@ -131,7 +136,9 @@ function SaveAsTemplateFlow({
         {!source ? (
           <section className="grafy-template-state" role="alert">
             <h2>Source graph is missing</h2>
-            <p>Open Save as template from a graph so its exact revision is known.</p>
+            <p>
+              Open Save as template from a graph so its exact revision is known.
+            </p>
             <Link className="grafy-workspace-button" href="/">
               Go to My graphs
             </Link>
@@ -161,7 +168,10 @@ function SaveAsTemplateFlow({
         ) : !location.capabilities.includes("create_template") ? (
           <section className="grafy-template-state" role="alert">
             <h2>Template permission required</h2>
-            <p>You can view this graph, but cannot save templates in this location.</p>
+            <p>
+              You can view this graph, but cannot save templates in this
+              location.
+            </p>
           </section>
         ) : (
           <form className="grafy-save-template__form" onSubmit={submit}>
@@ -206,7 +216,9 @@ function SaveAsTemplateFlow({
                 className="grafy-workspace-button grafy-workspace-button--primary"
                 disabled={busy || !name.trim()}
               >
-                {busy ? <LoaderCircle className="grafy-template-spin" size={14} /> : null}
+                {busy ? (
+                  <LoaderCircle className="grafy-template-spin" size={14} />
+                ) : null}
                 {busy ? "Saving…" : message ? "Try again" : "Save template"}
               </button>
             </div>

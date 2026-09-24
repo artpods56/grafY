@@ -48,22 +48,31 @@ describe("saved graph HTTP API", () => {
     };
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify(saved), {
-        status: 201,
-        headers: { "Content-Type": "application/json" },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(saved), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        ...saved,
-        revision: 2,
-        name: "Renamed vision graph",
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }));
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(saved), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(saved), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...saved,
+            revision: 2,
+            name: "Renamed vision graph",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     await createSavedGraph(WORKSPACE_ID, {
@@ -211,10 +220,10 @@ describe("collaboration HTTP API", () => {
         ),
       )
       .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify(copiedGraph),
-          { status: 201, headers: { "Content-Type": "application/json" } },
-        ),
+        new Response(JSON.stringify(copiedGraph), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        }),
       )
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -256,20 +265,27 @@ describe("collaboration HTTP API", () => {
 
 describe("execution history API", () => {
   it("serializes list filters and opaque cursors", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(
-      JSON.stringify({ items: [], next_cursor: null }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    ));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ items: [], next_cursor: null }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const controller = new AbortController();
 
-    await listGraphExecutions(WORKSPACE_ID, "graph/1", {
-      limit: 50,
-      cursor: "timestamp+execution/id",
-      graphRevision: 7,
-      status: "failed",
-      nodeId: "extract/1",
-    }, controller.signal);
+    await listGraphExecutions(
+      WORKSPACE_ID,
+      "graph/1",
+      {
+        limit: 50,
+        cursor: "timestamp+execution/id",
+        graphRevision: 7,
+        status: "failed",
+        nodeId: "extract/1",
+      },
+      controller.signal,
+    );
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/workspaces/workspace%2F1/graphs/graph%2F1/executions?limit=50&cursor=timestamp%2Bexecution%2Fid&graph_revision=7&status=failed&node_id=extract%2F1",
@@ -278,10 +294,14 @@ describe("execution history API", () => {
   });
 
   it("addresses one graph execution without conflating it with live polling", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(
-      JSON.stringify({ execution_id: "execution/1", node_results: [] }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    ));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ execution_id: "execution/1", node_results: [] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     await getGraphExecution(WORKSPACE_ID, "graph/1", "execution/1");
@@ -295,19 +315,21 @@ describe("execution history API", () => {
 
 describe("table artifact API", () => {
   it("serializes page bounds and preview limits", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(
-      JSON.stringify({
-        columns: [],
-        rows: [],
-        offset: 50,
-        limit: 25,
-        total_rows: 0,
-        column_offset: 10,
-        column_limit: 20,
-        total_columns: 0,
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    ));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          columns: [],
+          rows: [],
+          offset: 50,
+          limit: 25,
+          total_rows: 0,
+          column_offset: 10,
+          column_limit: 20,
+          total_columns: 0,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     await getArtifactTablePage(
@@ -326,15 +348,17 @@ describe("table artifact API", () => {
   });
 
   it("keeps arbitrary column ids in the cell query", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(
-      JSON.stringify({
-        row_index: 3,
-        column_id: "geometry/wkt",
-        value: "full",
-        encoding: "native",
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    ));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          row_index: 3,
+          column_id: "geometry/wkt",
+          value: "full",
+          encoding: "native",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     await getArtifactTableCell(WORKSPACE_ID, "artifact/1", 3, "geometry/wkt");
@@ -348,16 +372,18 @@ describe("table artifact API", () => {
 
 describe("GIS artifact API", () => {
   it("addresses the immutable render descriptor without paging", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(
-      JSON.stringify({
-        artifact_id: "artifact/1",
-        kind: "map_document",
-        basemap: "openstreetmap",
-        initial_bounds: null,
-        layers: [],
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    ));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          artifact_id: "artifact/1",
+          kind: "map_document",
+          basemap: "openstreetmap",
+          initial_bounds: null,
+          layers: [],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const controller = new AbortController();
 
@@ -408,7 +434,10 @@ describe("file upload API", () => {
     const item = await uploadFile(WORKSPACE_ID, file);
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    const [reserveUrl, reserveInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [reserveUrl, reserveInit] = fetchMock.mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
     expect(reserveUrl).toBe("/api/v1/workspaces/workspace%2F1/uploads");
     expect(reserveInit.method).toBe("POST");
     expect(JSON.parse(reserveInit.body as string)).toEqual({
@@ -424,9 +453,14 @@ describe("file upload API", () => {
     expect(putInit.method).toBe("PUT");
     expect(putInit.body).toBe(file);
     expect(putInit.credentials).toBe("same-origin");
-    expect((putInit.headers as Record<string, string>)["Content-Type"]).toBe("image/tiff");
+    expect((putInit.headers as Record<string, string>)["Content-Type"]).toBe(
+      "image/tiff",
+    );
 
-    const [completeUrl, completeInit] = fetchMock.mock.calls[2] as [string, RequestInit];
+    const [completeUrl, completeInit] = fetchMock.mock.calls[2] as [
+      string,
+      RequestInit,
+    ];
     expect(completeUrl).toBe(
       "/api/v1/workspaces/workspace%2F1/uploads/3f1a2b4c-5d6e-4f70-8192-a3b4c5d6e7f8/complete",
     );
@@ -459,33 +493,49 @@ describe("file upload API", () => {
     const [putUrl, putInit] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(putUrl).toBe(signed.url);
     expect(putInit.credentials).toBe("omit");
-    expect((putInit.headers as Record<string, string>)["X-CSRF-Token"]).toBeUndefined();
-    expect((putInit.headers as Record<string, string>)["If-None-Match"]).toBe("*");
+    expect(
+      (putInit.headers as Record<string, string>)["X-CSRF-Token"],
+    ).toBeUndefined();
+    expect((putInit.headers as Record<string, string>)["If-None-Match"]).toBe(
+      "*",
+    );
     expect(putInit.body).toBe(file);
   });
 });
 
 describe("artifact content URLs", () => {
   it("resolves relative and API-owned paths under the workspace-scoped API base", () => {
-    expect(artifactContentUrl(WORKSPACE_ID, "./artifacts/artifact-1/content"))
-      .toBe("/api/v1/workspaces/workspace%2F1/artifacts/artifact-1/content");
-    expect(artifactContentUrl(WORKSPACE_ID, "/v1/workspaces/workspace%2F1/artifacts/artifact-1/content"))
-      .toBe("/api/v1/workspaces/workspace%2F1/artifacts/artifact-1/content");
+    expect(
+      artifactContentUrl(WORKSPACE_ID, "./artifacts/artifact-1/content"),
+    ).toBe("/api/v1/workspaces/workspace%2F1/artifacts/artifact-1/content");
+    expect(
+      artifactContentUrl(
+        WORKSPACE_ID,
+        "/v1/workspaces/workspace%2F1/artifacts/artifact-1/content",
+      ),
+    ).toBe("/api/v1/workspaces/workspace%2F1/artifacts/artifact-1/content");
   });
 
   it("preserves absolute HTTP and custom-scheme URLs", () => {
-    expect(artifactContentUrl(WORKSPACE_ID, "https://private.example/artifact"))
-      .toBe("https://private.example/artifact");
-    expect(artifactContentUrl(WORKSPACE_ID, "pmtiles://private.example/archive.pmtiles"))
-      .toBe("pmtiles://private.example/archive.pmtiles");
+    expect(
+      artifactContentUrl(WORKSPACE_ID, "https://private.example/artifact"),
+    ).toBe("https://private.example/artifact");
+    expect(
+      artifactContentUrl(
+        WORKSPACE_ID,
+        "pmtiles://private.example/archive.pmtiles",
+      ),
+    ).toBe("pmtiles://private.example/archive.pmtiles");
   });
 });
 
 describe("artifact download URLs", () => {
   it("resolves the download path with a format query under the API base", () => {
-    expect(artifactDownloadUrl(WORKSPACE_ID, "artifact-1", "json"))
-      .toBe("/api/v1/workspaces/workspace%2F1/artifacts/artifact-1/download?format=json");
-    expect(artifactDownloadUrl(WORKSPACE_ID, "artifact-1", "txt"))
-      .toBe("/api/v1/workspaces/workspace%2F1/artifacts/artifact-1/download?format=txt");
+    expect(artifactDownloadUrl(WORKSPACE_ID, "artifact-1", "json")).toBe(
+      "/api/v1/workspaces/workspace%2F1/artifacts/artifact-1/download?format=json",
+    );
+    expect(artifactDownloadUrl(WORKSPACE_ID, "artifact-1", "txt")).toBe(
+      "/api/v1/workspaces/workspace%2F1/artifacts/artifact-1/download?format=txt",
+    );
   });
 });

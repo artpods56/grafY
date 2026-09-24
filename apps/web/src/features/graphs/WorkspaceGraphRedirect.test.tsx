@@ -30,9 +30,8 @@ vi.mock("@/features/auth/AuthSessionBoundary", () => ({
 }));
 
 vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
-  resolveSelectedWorkspace: (
-    workspaces: typeof redirectState.workspaces,
-  ) => workspaces?.find((workspace) => workspace.kind === "personal"),
+  resolveSelectedWorkspace: (workspaces: typeof redirectState.workspaces) =>
+    workspaces?.find((workspace) => workspace.kind === "personal"),
 }));
 
 vi.mock("@/hooks/use-api", () => ({

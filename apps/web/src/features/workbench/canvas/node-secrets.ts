@@ -71,16 +71,18 @@ export function nodeSecretInputs(spec: NodeSpec): WorkflowNodeSecretInput[] {
     }
 
     seen.add(input.name);
-    return [{
-      name: input.name,
-      title:
-        typeof input.title === "string" && input.title.length > 0
-          ? input.title
-          : input.name.replaceAll("_", " "),
-      description:
-        typeof input.description === "string" ? input.description : undefined,
-      configDependencies: input.config_dependencies,
-    }];
+    return [
+      {
+        name: input.name,
+        title:
+          typeof input.title === "string" && input.title.length > 0
+            ? input.title
+            : input.name.replaceAll("_", " "),
+        description:
+          typeof input.description === "string" ? input.description : undefined,
+        configDependencies: input.config_dependencies,
+      },
+    ];
   });
 }
 
@@ -116,8 +118,10 @@ export function nodeSecretBindingReady(
     return false;
   }
 
-  return nodeSecretDependencyRevision(input, currentNode.config ?? {}) ===
-    nodeSecretDependencyRevision(input, savedNode.config ?? {});
+  return (
+    nodeSecretDependencyRevision(input, currentNode.config ?? {}) ===
+    nodeSecretDependencyRevision(input, savedNode.config ?? {})
+  );
 }
 
 export function reconciledNodeSecretStatuses(

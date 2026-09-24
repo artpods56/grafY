@@ -21,9 +21,7 @@ export function WorkspaceGraphRedirect() {
       router.replace("/workspaces");
       return;
     }
-    router.replace(
-      `/workspaces/${encodeURIComponent(workspace.slug)}/graphs`,
-    );
+    router.replace(`/workspaces/${encodeURIComponent(workspace.slug)}/graphs`);
   }, [router, workspaces]);
 
   if (error) {

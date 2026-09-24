@@ -50,44 +50,57 @@ describe("artifact viewer interaction mapping", () => {
   });
 
   it("does not emit a partial key when a mapped field is missing", () => {
-    expect(targetRowsForBinding(BINDING, {
-      kind: "key-selection",
-      items: [{ values: { normalized_name: "belynichi" } }],
-    })).toEqual([]);
+    expect(
+      targetRowsForBinding(BINDING, {
+        kind: "key-selection",
+        items: [{ values: { normalized_name: "belynichi" } }],
+      }),
+    ).toEqual([]);
   });
 
   it("treats an unfinished field mapping as inactive", () => {
-    expect(targetRowsForBinding({
-      ...BINDING,
-      mappings: [{ sourceField: "normalized_name", targetField: "" }],
-    }, {
-      kind: "key-selection",
-      items: [{ values: { normalized_name: "belynichi" } }],
-    })).toEqual([]);
+    expect(
+      targetRowsForBinding(
+        {
+          ...BINDING,
+          mappings: [{ sourceField: "normalized_name", targetField: "" }],
+        },
+        {
+          kind: "key-selection",
+          items: [{ values: { normalized_name: "belynichi" } }],
+        },
+      ),
+    ).toEqual([]);
   });
 });
 
 describe("table cell integer encoding", () => {
   it("restores safe integers so linked tables can match on numeric keys", () => {
-    expect(interactionScalarFromTableCell({
-      encoding: "integer",
-      value: "12",
-    })).toBe(12);
+    expect(
+      interactionScalarFromTableCell({
+        encoding: "integer",
+        value: "12",
+      }),
+    ).toBe(12);
     expect(interactionScalarFromIntegerEncoding("12")).toBe(12);
   });
 
   it("keeps integers outside the JS safe range as strings", () => {
     const large = String(2 ** 60 + 95);
-    expect(interactionScalarFromTableCell({
-      encoding: "integer",
-      value: large,
-    })).toBe(large);
+    expect(
+      interactionScalarFromTableCell({
+        encoding: "integer",
+        value: large,
+      }),
+    ).toBe(large);
   });
 
   it("drops json-encoded cells from selection keys", () => {
-    expect(interactionScalarFromTableCell({
-      encoding: "json",
-      value: '{"index":1}',
-    })).toBeUndefined();
+    expect(
+      interactionScalarFromTableCell({
+        encoding: "json",
+        value: '{"index":1}',
+      }),
+    ).toBeUndefined();
   });
 });

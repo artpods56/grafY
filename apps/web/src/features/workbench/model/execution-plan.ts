@@ -20,10 +20,7 @@ import type {
   SavedGraphOrigin,
 } from "@/lib/api";
 
-export type WorkflowNode = Node<
-  WorkflowNodeData,
-  typeof WORKFLOW_NODE_TYPE
->;
+export type WorkflowNode = Node<WorkflowNodeData, typeof WORKFLOW_NODE_TYPE>;
 
 export type RunScope = RunScopeInput;
 
@@ -37,9 +34,10 @@ function workflowEdgeEndpoints(edge: WorkflowEdge): {
   const sourcePortName = edge.data?.sourcePortName ?? source?.portName;
   const targetPortName = edge.data?.targetPortName ?? target?.portName;
   if (!sourcePortName || !targetPortName) return null;
-  const targetPlugId = edge.data?.targetPlugId !== undefined
-    ? edge.data.targetPlugId
-    : (target?.plugId ?? null);
+  const targetPlugId =
+    edge.data?.targetPlugId !== undefined
+      ? edge.data.targetPlugId
+      : (target?.plugId ?? null);
   return { sourcePortName, targetPortName, targetPlugId };
 }
 
@@ -76,9 +74,11 @@ function originSatisfiesSlot(
   portName: string,
   plugId: string | null,
 ): boolean {
-  return origin.to_node === nodeId
-    && origin.to_port === portName
-    && (origin.to_plug ?? null) === plugId;
+  return (
+    origin.to_node === nodeId &&
+    origin.to_port === portName &&
+    (origin.to_plug ?? null) === plugId
+  );
 }
 
 function serializeRunOrigin(origin: SavedGraphOrigin): RunOriginInput {
@@ -174,11 +174,13 @@ export function missingRequiredInputsFor(
         if (!port.required) return [];
         const plugs = inputPlugsForPort(node.data.inputPlugs, port.name);
         if (!plugs.length) {
-          return [{
-            nodeId: node.id,
-            nodeTitle: node.data.spec.title,
-            portName: port.name,
-          }];
+          return [
+            {
+              nodeId: node.id,
+              nodeTitle: node.data.spec.title,
+              portName: port.name,
+            },
+          ];
         }
         return plugs.flatMap((plug, index) =>
           edges.some(
@@ -186,15 +188,18 @@ export function missingRequiredInputsFor(
               edge.data?.enabled !== false &&
               edge.target === node.id &&
               decodeHandleId(edge.targetHandle)?.plugId === plug.id,
-          ) || origins.some((origin) =>
-            originSatisfiesSlot(origin, node.id, port.name, plug.id)
+          ) ||
+          origins.some((origin) =>
+            originSatisfiesSlot(origin, node.id, port.name, plug.id),
           )
             ? []
-            : [{
-                nodeId: node.id,
-                nodeTitle: node.data.spec.title,
-                portName: `${port.name} input ${index + 1}`,
-              }],
+            : [
+                {
+                  nodeId: node.id,
+                  nodeTitle: node.data.spec.title,
+                  portName: `${port.name} input ${index + 1}`,
+                },
+              ],
         );
       }
       if (!port.required) return [];
@@ -203,15 +208,18 @@ export function missingRequiredInputsFor(
           edge.data?.enabled !== false &&
           edge.target === node.id &&
           decodeHandleId(edge.targetHandle)?.portName === port.name,
-      ) || origins.some((origin) =>
-        originSatisfiesSlot(origin, node.id, port.name, null)
-      )
+      ) ||
+        origins.some((origin) =>
+          originSatisfiesSlot(origin, node.id, port.name, null),
+        )
         ? []
-        : [{
-            nodeId: node.id,
-            nodeTitle: node.data.spec.title,
-            portName: port.name,
-          }];
+        : [
+            {
+              nodeId: node.id,
+              nodeTitle: node.data.spec.title,
+              portName: port.name,
+            },
+          ];
     }),
   );
 }
@@ -225,9 +233,10 @@ export function executionValidationIssue(
   if (!executionNodes.length) {
     return {
       nodeId: null,
-      message: scope !== "all"
-        ? "Select at least one node before running a selection."
-        : "Add at least one node before running the workflow.",
+      message:
+        scope !== "all"
+          ? "Select at least one node before running a selection."
+          : "Add at least one node before running the workflow.",
     };
   }
 
@@ -236,9 +245,10 @@ export function executionValidationIssue(
   );
   if (incompatibleNode) {
     const compatibility = incompatibleNode.data.compatibility;
-    const issue = compatibility.status === "supported"
-      ? "The node is unavailable."
-      : compatibility.issues.join(" ");
+    const issue =
+      compatibility.status === "supported"
+        ? "The node is unavailable."
+        : compatibility.issues.join(" ");
     return {
       nodeId: incompatibleNode.id,
       message: `Cannot run ${incompatibleNode.data.spec.title}: ${issue}`,
@@ -255,8 +265,7 @@ export function executionValidationIssue(
   if (incompatibleEdge) {
     return {
       nodeId: incompatibleEdge.target,
-      message:
-        `Cannot run connection ${incompatibleEdge.id}: ${incompatibleEdge.data?.compatibilityIssues?.join(" ")}`,
+      message: `Cannot run connection ${incompatibleEdge.id}: ${incompatibleEdge.data?.compatibilityIssues?.join(" ")}`,
     };
   }
 
@@ -270,8 +279,7 @@ export function executionValidationIssue(
   const first = missingInputs[0];
   return {
     nodeId: first.nodeId,
-    message:
-      `${first.nodeTitle}.${first.portName} is required but unconnected in this run.`,
+    message: `${first.nodeTitle}.${first.portName} is required but unconnected in this run.`,
   };
 }
 
@@ -295,27 +303,26 @@ export function executionRequestPlan(
       if (!endpoints) {
         return {
           status: "invalid",
-          message:
-            `Cannot run the selection because edge ${edge.id} does not identify both source and target ports.`,
+          message: `Cannot run the selection because edge ${edge.id} does not identify both source and target ports.`,
         };
       }
 
-      const sourcePorts = pinnedSourcePorts.get(edge.source) ?? new Set<string>();
+      const sourcePorts =
+        pinnedSourcePorts.get(edge.source) ?? new Set<string>();
       if (sourcePorts.has(endpoints.sourcePortName)) continue;
       sourcePorts.add(endpoints.sourcePortName);
       pinnedSourcePorts.set(edge.source, sourcePorts);
 
       const sourceNode = nodesById.get(edge.source);
-      const output = sourceNode?.data.run?.status === "succeeded"
-        ? sourceNode.data.run.outputs.find(
-            (candidate) => candidate.port === endpoints.sourcePortName,
-          )
-        : undefined;
+      const output =
+        sourceNode?.data.run?.status === "succeeded"
+          ? sourceNode.data.run.outputs.find(
+              (candidate) => candidate.port === endpoints.sourcePortName,
+            )
+          : undefined;
       if (!output) {
         const sourceName = sourceNode?.data.spec.title ?? edge.source;
-        missingPinnedOutputs.push(
-          `${sourceName}.${endpoints.sourcePortName}`,
-        );
+        missingPinnedOutputs.push(`${sourceName}.${endpoints.sourcePortName}`);
         continue;
       }
 
@@ -330,8 +337,7 @@ export function executionRequestPlan(
       const endpoints = missingPinnedOutputs.join(", ");
       return {
         status: "invalid",
-        message:
-          `Cannot run the selection because no accessible materialized output is available for ${endpoints}. Select the missing upstream nodes too, or choose “Run with dependencies”.`,
+        message: `Cannot run the selection because no accessible materialized output is available for ${endpoints}. Select the missing upstream nodes too, or choose “Run with dependencies”.`,
       };
     }
   }
@@ -339,14 +345,16 @@ export function executionRequestPlan(
   const runEdges = execution.edges.flatMap<RunEdgeInput>((edge) => {
     const endpoints = workflowEdgeEndpoints(edge);
     if (!endpoints) return [];
-    return [{
-      from_node: edge.source,
-      from_port: endpoints.sourcePortName,
-      to_node: edge.target,
-      to_port: endpoints.targetPortName,
-      to_plug: endpoints.targetPlugId,
-      ...serializeWorkflowEdgeTransport(edge.data),
-    }];
+    return [
+      {
+        from_node: edge.source,
+        from_port: endpoints.sourcePortName,
+        to_node: edge.target,
+        to_port: endpoints.targetPortName,
+        to_plug: endpoints.targetPlugId,
+        ...serializeWorkflowEdgeTransport(edge.data),
+      },
+    ];
   });
 
   const runOrigins = origins
@@ -356,9 +364,10 @@ export function executionRequestPlan(
   const activeInputPlugIdsByNode = new Map<string, Set<string>>();
   for (const edge of execution.edges) {
     const target = decodeHandleId(edge.targetHandle);
-    const targetPlugId = edge.data?.targetPlugId !== undefined
-      ? edge.data.targetPlugId
-      : target?.plugId;
+    const targetPlugId =
+      edge.data?.targetPlugId !== undefined
+        ? edge.data.targetPlugId
+        : target?.plugId;
     if (!targetPlugId) continue;
     const plugIds = activeInputPlugIdsByNode.get(edge.target) ?? new Set();
     plugIds.add(targetPlugId);

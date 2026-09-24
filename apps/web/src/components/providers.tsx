@@ -9,10 +9,7 @@ import { AuthSessionBoundary } from "@/features/auth/AuthSessionBoundary";
 const apiFetcher = (path: string) => request<unknown>("GET", path);
 
 export function shouldRetryApiError(error: unknown): boolean {
-  return !(
-    error instanceof ApiError &&
-    [401, 403, 404].includes(error.status)
-  );
+  return !(error instanceof ApiError && [401, 403, 404].includes(error.status));
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {

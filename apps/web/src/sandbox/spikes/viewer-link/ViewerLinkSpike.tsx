@@ -473,7 +473,9 @@ function ViewerHeader({
             <Popover.Trigger
               type="button"
               aria-label="About Artifact Viewer"
-              {...canvasNodeInteractionProps(stylex.props(nodeChrome.headerButton))}
+              {...canvasNodeInteractionProps(
+                stylex.props(nodeChrome.headerButton),
+              )}
             >
               <CircleHelp size={13} />
             </Popover.Trigger>
@@ -499,7 +501,9 @@ function ViewerHeader({
             <Popover.Trigger
               type="button"
               aria-label="Actions for Artifact Viewer"
-              {...canvasNodeInteractionProps(stylex.props(nodeChrome.headerButton))}
+              {...canvasNodeInteractionProps(
+                stylex.props(nodeChrome.headerButton),
+              )}
             >
               <MoreHorizontal size={13} />
             </Popover.Trigger>
@@ -614,7 +618,11 @@ function MapPreview({
   ];
   return (
     <svg viewBox="0 0 276 136" width="100%" height="136">
-      <rect width="276" height="136" fill="var(--grafy-map-land, transparent)" />
+      <rect
+        width="276"
+        height="136"
+        fill="var(--grafy-map-land, transparent)"
+      />
       <path
         d="M0 68 H276"
         stroke="currentColor"
@@ -699,10 +707,18 @@ function MappingSheet({
         </label>
       </div>
       <div {...stylex.props(s.mappingActions)}>
-        <button type="button" {...stylex.props(s.ghostButton)} onClick={onCancel}>
+        <button
+          type="button"
+          {...stylex.props(s.ghostButton)}
+          onClick={onCancel}
+        >
           Cancel
         </button>
-        <button type="button" {...stylex.props(s.primaryButton)} onClick={onDone}>
+        <button
+          type="button"
+          {...stylex.props(s.primaryButton)}
+          onClick={onDone}
+        >
           Link
         </button>
       </div>
@@ -771,7 +787,11 @@ function ViewerCard({
   onDrop?: () => void;
 }) {
   const color =
-    kind === "table" ? TABLE_COLOR : kind === "map" ? MAP_COLOR : MARKDOWN_COLOR;
+    kind === "table"
+      ? TABLE_COLOR
+      : kind === "map"
+        ? MAP_COLOR
+        : MARKDOWN_COLOR;
   return (
     <article
       aria-label="Artifact viewer"
@@ -919,14 +939,14 @@ export function ViewerLinkSpike() {
       </div>
 
       <div {...stylex.props(s.board, s.pair)}>
-          <div {...stylex.props(s.column)}>
-            <CatalogNodePreview
-              spec={pair ? QUERY_PARCELS_SPEC : SURVEY_NOTES_SPEC}
-              registry={PARCELS_REGISTRY}
-              fields={pair ? QUERY_PARCELS_FIELDS : []}
-              selectedPortKey={portKey(pair ? ROWS_PORT : NOTES_PORT)}
-            />
-            <div style={{ position: "relative" }}>
+        <div {...stylex.props(s.column)}>
+          <CatalogNodePreview
+            spec={pair ? QUERY_PARCELS_SPEC : SURVEY_NOTES_SPEC}
+            registry={PARCELS_REGISTRY}
+            fields={pair ? QUERY_PARCELS_FIELDS : []}
+            selectedPortKey={portKey(pair ? ROWS_PORT : NOTES_PORT)}
+          />
+          <div style={{ position: "relative" }}>
             <ViewerCard
               kind={leftKind}
               selected={selected === "left" || bothSelected}
@@ -996,88 +1016,82 @@ export function ViewerLinkSpike() {
                 </button>
               </div>
             ) : null}
-            </div>
           </div>
+        </div>
 
-          <div {...stylex.props(s.gutter)}>
-            {mapping ? (
-              <MappingSheet
-                onDone={() => setPhase("live")}
-                onCancel={reset}
-              />
-            ) : live ? (
-              <MappingChip
-                onOpen={() => setPhase("mapping")}
-                onUnlink={reset}
-              />
-            ) : approach === "rail" && bothSelected ? (
-              <div {...stylex.props(workbenchStyles.selectionToolbar)}>
-                <span {...stylex.props(workbenchStyles.selectionLabel)}>
-                  2 selected
-                </span>
-                <span {...stylex.props(workbenchStyles.selectionDivider)} />
-                <button
-                  type="button"
-                  disabled={!pair}
-                  {...stylex.props(
-                    workbenchStyles.toolButton,
-                    workbenchStyles.primaryButton,
-                  )}
-                  onClick={() => {
-                    if (pair) setPhase("mapping");
-                  }}
-                >
-                  <Link2 size={13} />
-                  Link views
-                </button>
-                <button
-                  type="button"
-                  {...stylex.props(workbenchStyles.toolButton)}
-                >
-                  <Copy size={13} />
-                  Duplicate
-                </button>
-              </div>
-            ) : carrying || aiming ? (
-              <span {...stylex.props(s.hint)}>
-                {carrying ? "Drop on the map" : "Click the map"}
+        <div {...stylex.props(s.gutter)}>
+          {mapping ? (
+            <MappingSheet onDone={() => setPhase("live")} onCancel={reset} />
+          ) : live ? (
+            <MappingChip onOpen={() => setPhase("mapping")} onUnlink={reset} />
+          ) : approach === "rail" && bothSelected ? (
+            <div {...stylex.props(workbenchStyles.selectionToolbar)}>
+              <span {...stylex.props(workbenchStyles.selectionLabel)}>
+                2 selected
               </span>
-            ) : null}
-          </div>
+              <span {...stylex.props(workbenchStyles.selectionDivider)} />
+              <button
+                type="button"
+                disabled={!pair}
+                {...stylex.props(
+                  workbenchStyles.toolButton,
+                  workbenchStyles.primaryButton,
+                )}
+                onClick={() => {
+                  if (pair) setPhase("mapping");
+                }}
+              >
+                <Link2 size={13} />
+                Link views
+              </button>
+              <button
+                type="button"
+                {...stylex.props(workbenchStyles.toolButton)}
+              >
+                <Copy size={13} />
+                Duplicate
+              </button>
+            </div>
+          ) : carrying || aiming ? (
+            <span {...stylex.props(s.hint)}>
+              {carrying ? "Drop on the map" : "Click the map"}
+            </span>
+          ) : null}
+        </div>
 
-          <div {...stylex.props(s.column)}>
-            <CatalogNodePreview
-              spec={MAP_DOCUMENT_SPEC}
-              registry={PARCELS_REGISTRY}
-              fields={[]}
-              selectedPortKey={portKey(MAP_PORT)}
-            />
-            <ViewerCard
-              kind="map"
-              selected={selected === "map" || bothSelected}
-              dropTarget={(carrying || aiming) && pair}
-              following={live}
-              selectedRow={selectedRow}
-              carrying={false}
-              live={live}
-              showLinkAction={false}
-              draggableRows={false}
-              onSelect={() => {
-                if (approach === "rail" && selected === "left") {
-                  setSelected("both");
-                  setPhase("aim");
-                  return;
-                }
-                if ((carrying || aiming) && pair) {
-                  finishDrop();
-                  return;
-                }
-                setSelected("map");
-              }}
-              onFollow={() => setPhase("mapping")}
-              onDrop={pair ? finishDrop : undefined}
-            />
-          </div>
+        <div {...stylex.props(s.column)}>
+          <CatalogNodePreview
+            spec={MAP_DOCUMENT_SPEC}
+            registry={PARCELS_REGISTRY}
+            fields={[]}
+            selectedPortKey={portKey(MAP_PORT)}
+          />
+          <ViewerCard
+            kind="map"
+            selected={selected === "map" || bothSelected}
+            dropTarget={(carrying || aiming) && pair}
+            following={live}
+            selectedRow={selectedRow}
+            carrying={false}
+            live={live}
+            showLinkAction={false}
+            draggableRows={false}
+            onSelect={() => {
+              if (approach === "rail" && selected === "left") {
+                setSelected("both");
+                setPhase("aim");
+                return;
+              }
+              if ((carrying || aiming) && pair) {
+                finishDrop();
+                return;
+              }
+              setSelected("map");
+            }}
+            onFollow={() => setPhase("mapping")}
+            onDrop={pair ? finishDrop : undefined}
+          />
+        </div>
       </div>
     </SandboxShell>
   );

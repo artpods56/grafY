@@ -77,11 +77,12 @@ function nodeSpec(
     module_id: options.moduleId ?? null,
     is_current_library_release: options.isCurrentLibraryRelease ?? null,
     catalog_visible: catalogVisible,
-    origin: pluginSlug === "graph.module" || moduleGraphId
-      ? "module"
-      : pluginSlug === "external"
-        ? "plugin"
-        : "builtin",
+    origin:
+      pluginSlug === "graph.module" || moduleGraphId
+        ? "module"
+        : pluginSlug === "external"
+          ? "plugin"
+          : "builtin",
     runnable: true,
   };
 }
@@ -367,7 +368,9 @@ describe("artifact catalog filters", () => {
   it("matches exact artifact, shape, any-artifact, and library filters", () => {
     const nodes = catalogNodeSpecs(registry(), null);
     const filters = buildCatalogFilters(registry());
-    const byId = Object.fromEntries(filters.map((filter) => [filter.id, filter]));
+    const byId = Object.fromEntries(
+      filters.map((filter) => [filter.id, filter]),
+    );
 
     expect(
       catalogNodesForFilter(
@@ -382,7 +385,9 @@ describe("artifact catalog filters", () => {
     ]);
 
     expect(
-      catalogNodesForFilter(nodes, byId.sequence!).map((spec) => spec.operator_id),
+      catalogNodesForFilter(nodes, byId.sequence!).map(
+        (spec) => spec.operator_id,
+      ),
     ).toEqual(["table.batch"]);
 
     expect(

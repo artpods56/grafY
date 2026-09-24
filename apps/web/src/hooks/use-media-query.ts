@@ -7,8 +7,7 @@ export const FINE_POINTER_QUERY = "(pointer: fine)";
 export function useMediaQuery(query: string): boolean {
   const media = React.useMemo(
     () =>
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function"
+      typeof window !== "undefined" && typeof window.matchMedia === "function"
         ? window.matchMedia(query)
         : null,
     [query],
@@ -22,10 +21,7 @@ export function useMediaQuery(query: string): boolean {
     },
     [media],
   );
-  const getSnapshot = React.useCallback(
-    () => media?.matches ?? false,
-    [media],
-  );
+  const getSnapshot = React.useCallback(() => media?.matches ?? false, [media]);
 
   return React.useSyncExternalStore(subscribe, getSnapshot, () => false);
 }

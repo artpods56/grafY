@@ -22,10 +22,14 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("workspace API client", () => {
   it("uses UUID workspace paths and generated request bodies", async () => {
-    const fetchMock = vi.fn().mockImplementation((_: string, init: RequestInit) => {
-      const status = init.method === "DELETE" ? 204 : 200;
-      return Promise.resolve(new Response(status === 204 ? null : "{}", { status }));
-    });
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((_: string, init: RequestInit) => {
+        const status = init.method === "DELETE" ? 204 : 200;
+        return Promise.resolve(
+          new Response(status === 204 ? null : "{}", { status }),
+        );
+      });
     vi.stubGlobal("fetch", fetchMock);
     const workspaceId = "workspace-uuid";
     const userId = "user-uuid";
@@ -33,8 +37,13 @@ describe("workspace API client", () => {
     await listWorkspaces();
     await createWorkspace({ name: "Shared", slug: "shared" });
     await listWorkspaceMembers(workspaceId);
-    await resolveWorkspaceInvitationCandidate(workspaceId, { email: "person@example.com" });
-    await createWorkspaceInvitation(workspaceId, { email: "person@example.com", role: "viewer" });
+    await resolveWorkspaceInvitationCandidate(workspaceId, {
+      email: "person@example.com",
+    });
+    await createWorkspaceInvitation(workspaceId, {
+      email: "person@example.com",
+      role: "viewer",
+    });
     await listWorkspaceInvitations(workspaceId);
     await cancelWorkspaceInvitation(workspaceId, "invite-uuid");
     await listMyWorkspaceInvitations();
@@ -67,10 +76,20 @@ describe("workspace API client", () => {
       "/api/v1/workspaces/workspace-uuid/personal-access-tokens",
       "/api/v1/workspaces/workspace-uuid/personal-access-tokens/token-uuid",
     ]);
-    expect(JSON.parse(fetchMock.mock.calls[1]?.[1].body as string)).toEqual({ name: "Shared", slug: "shared" });
-    expect(JSON.parse(fetchMock.mock.calls[3]?.[1].body as string)).toEqual({ email: "person@example.com" });
-    expect(JSON.parse(fetchMock.mock.calls[4]?.[1].body as string)).toEqual({ email: "person@example.com", role: "viewer" });
-    expect(JSON.parse(fetchMock.mock.calls[10]?.[1].body as string)).toEqual({ role: "editor" });
+    expect(JSON.parse(fetchMock.mock.calls[1]?.[1].body as string)).toEqual({
+      name: "Shared",
+      slug: "shared",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[3]?.[1].body as string)).toEqual({
+      email: "person@example.com",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[4]?.[1].body as string)).toEqual({
+      email: "person@example.com",
+      role: "viewer",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[10]?.[1].body as string)).toEqual({
+      role: "editor",
+    });
     expect(JSON.parse(fetchMock.mock.calls[13]?.[1].body as string)).toEqual({
       label: "Plugin publishing",
       scopes: ["publish_plugin"],

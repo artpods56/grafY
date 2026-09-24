@@ -15,11 +15,7 @@ import { BrandLoader } from "@/components/brand";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 export type WorkbenchActivityTone =
-  | "working"
-  | "cancelling"
-  | "success"
-  | "warning"
-  | "error";
+  "working" | "cancelling" | "success" | "warning" | "error";
 
 export interface WorkbenchActivityAction {
   kind: "cancel" | "retry" | "dismiss";
@@ -82,11 +78,13 @@ const s = stylex.create({
     color: tokens.colorText,
   },
   indicatorSuccess: {
-    backgroundColor: "light-dark(rgba(42, 157, 124, 0.12), rgba(67, 197, 158, 0.15))",
+    backgroundColor:
+      "light-dark(rgba(42, 157, 124, 0.12), rgba(67, 197, 158, 0.15))",
     color: tokens.colorSuccess,
   },
   indicatorWarning: {
-    backgroundColor: "light-dark(rgba(201, 146, 15, 0.12), rgba(251, 191, 36, 0.15))",
+    backgroundColor:
+      "light-dark(rgba(201, 146, 15, 0.12), rgba(251, 191, 36, 0.15))",
     color: tokens.colorWarning,
   },
   indicatorError: {

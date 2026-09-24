@@ -64,7 +64,9 @@ vi.mock("@base-ui/react/popover", () => ({
       </button>
     ),
     Portal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    Positioner: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Positioner: ({ children }: { children: React.ReactNode }) => (
+      <>{children}</>
+    ),
     Popup: ({ children }: { children: React.ReactNode }) => (
       <div role="dialog">{children}</div>
     ),
@@ -145,10 +147,7 @@ import {
   type ArtifactViewerNodeData,
   type CanvasWorkflowNode,
 } from "../artifact-viewer";
-import {
-  WORKFLOW_NODE_TYPE,
-  createWorkflowNodeData,
-} from "../types";
+import { WORKFLOW_NODE_TYPE, createWorkflowNodeData } from "../types";
 import ArtifactViewerNodeCard from "./ArtifactViewerNode";
 
 const roots: Root[] = [];
@@ -223,15 +222,16 @@ function runOutput(
   return {
     port,
     kind,
-    value: kind === "single"
-      ? ref
-      : {
-          artifact_type: item.artifact_type,
-          schema_version: item.schema_version,
-          index_key: "order_index",
-          ordered: true,
-          item_refs: [ref],
-        },
+    value:
+      kind === "single"
+        ? ref
+        : {
+            artifact_type: item.artifact_type,
+            schema_version: item.schema_version,
+            index_key: "order_index",
+            ordered: true,
+            item_refs: [ref],
+          },
     artifacts: [item],
   };
 }
@@ -319,15 +319,18 @@ describe("ArtifactViewerNode", () => {
     const dragging = renderViewer({}, false, true);
 
     expect(
-      resting.querySelector('[data-node-pickup-shadow="true"]')
+      resting
+        .querySelector('[data-node-pickup-shadow="true"]')
         ?.getAttribute("data-picked-up"),
     ).toBe("false");
     expect(
-      selected.querySelector('[data-node-pickup-shadow="true"]')
+      selected
+        .querySelector('[data-node-pickup-shadow="true"]')
         ?.getAttribute("data-picked-up"),
     ).toBe("true");
     expect(
-      dragging.querySelector('[data-node-pickup-shadow="true"]')
+      dragging
+        .querySelector('[data-node-pickup-shadow="true"]')
         ?.getAttribute("data-dragging"),
     ).toBe("true");
   });
@@ -342,14 +345,14 @@ describe("ArtifactViewerNode", () => {
     expect(container.textContent).not.toContain("Follow selection");
     expect(container.querySelector('[data-testid="port-rail"]')).not.toBeNull();
     expect(
-      container.querySelector('[aria-label="Input port Artifact, accepts Any artifact"]'),
+      container.querySelector(
+        '[aria-label="Input port Artifact, accepts Any artifact"]',
+      ),
     ).not.toBeNull();
     expect(
       container.querySelector('[aria-label="Remove Artifact viewer"]'),
     ).toBeNull();
-    expect(
-      container.querySelector('[data-testid="corner-resize"]'),
-    ).toBeNull();
+    expect(container.querySelector('[data-testid="corner-resize"]')).toBeNull();
     expect(previewMocks.render).not.toHaveBeenCalled();
   });
 
@@ -364,9 +367,9 @@ describe("ArtifactViewerNode", () => {
     expect(
       container.querySelector('[aria-label="Actions for Artifact Viewer"]'),
     ).not.toBeNull();
-    const deleteNode = [
-      ...selected.querySelectorAll("button"),
-    ].find((button) => button.textContent === "Delete node");
+    const deleteNode = [...selected.querySelectorAll("button")].find(
+      (button) => button.textContent === "Delete node",
+    );
     expect(deleteNode).toBeDefined();
     React.act(() => {
       deleteNode?.click();
@@ -386,15 +389,19 @@ describe("ArtifactViewerNode", () => {
     const artifactWithFormats: ArtifactSummary = {
       ...artifact("download-artifact", "text.markdown"),
       download_formats: [
-        { format: "json", content_type: "application/json", filename: "artifact.json" },
-        { format: "txt", content_type: "text/plain; charset=utf-8", filename: "text.txt" },
+        {
+          format: "json",
+          content_type: "application/json",
+          filename: "artifact.json",
+        },
+        {
+          format: "txt",
+          content_type: "text/plain; charset=utf-8",
+          filename: "text.txt",
+        },
       ],
     };
-    const preview = runOutput(
-      "preview",
-      "single",
-      artifactWithFormats,
-    );
+    const preview = runOutput("preview", "single", artifactWithFormats);
     flowMocks.edges = [viewerEdge()];
     flowMocks.nodes.set(
       "source-node",
@@ -429,7 +436,7 @@ describe("ArtifactViewerNode", () => {
       "/api/v1/workspaces/workspace-1/artifacts/download-artifact/download?format=json",
     );
     expect(clickedHadDownload).toBe(true);
-    expect(document.querySelector('a[download]')).toBeNull();
+    expect(document.querySelector("a[download]")).toBeNull();
   });
 
   it("shows provenance but no preview until the named output succeeds", () => {
@@ -487,10 +494,13 @@ describe("ArtifactViewerNode", () => {
       );
       const onModeChange = vi.fn();
 
-      const container = renderViewer({
-        mode: "map",
-        onModeChange,
-      }, true);
+      const container = renderViewer(
+        {
+          mode: "map",
+          onModeChange,
+        },
+        true,
+      );
 
       expect(container.textContent).toContain("Prepare map → Raster preview");
       expect(container.textContent).toContain(`image.raster@1 · ${kind}`);
@@ -499,7 +509,8 @@ describe("ArtifactViewerNode", () => {
         container.querySelector('[data-testid="artifact-port-preview"]'),
       ).not.toBeNull();
       expect(
-        container.querySelector('[data-testid="artifact-port-preview"]')
+        container
+          .querySelector('[data-testid="artifact-port-preview"]')
           ?.getAttribute("data-port"),
       ).toBe("preview");
       const previewProps = previewMocks.render.mock.calls.at(-1)?.[0];

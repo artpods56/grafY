@@ -1,8 +1,4 @@
-import type {
-  Connection,
-  EdgeChange,
-  NodeChange,
-} from "@xyflow/react";
+import type { Connection, EdgeChange, NodeChange } from "@xyflow/react";
 
 import {
   applyGraphCommandNormalized,
@@ -50,11 +46,14 @@ export function nodeOverlaysFromNodes(
   nodes: readonly WorkflowNode[],
 ): NodeOverlays {
   return Object.fromEntries(
-    nodes.map((node) => [node.id, {
-      run: node.data.run,
-      execution: node.data.execution,
-      progress: node.data.progress,
-    }]),
+    nodes.map((node) => [
+      node.id,
+      {
+        run: node.data.run,
+        execution: node.data.execution,
+        progress: node.data.progress,
+      },
+    ]),
   );
 }
 
@@ -63,7 +62,9 @@ export function reduceWorkbenchAuthoringState(
   action: WorkbenchAuthoringAction,
 ): WorkbenchAuthoringState {
   if (action.kind === "replace_document") {
-    const document = authoredGraphDocument(createSavedGraphRequest(action.document));
+    const document = authoredGraphDocument(
+      createSavedGraphRequest(action.document),
+    );
     return {
       document,
       nodeOverlays: action.nodeOverlays,
@@ -164,13 +165,14 @@ export function addNodeCommand(
       layout: serializeNodeLayout(data.layout),
       operator_id: data.spec.operator_id,
       operator_version: data.spec.operator_version,
-      plugin_release_pin: data.spec.origin === "plugin" && data.pluginReleasePin
-        ? {
-            scope: data.pluginReleasePin.scope,
-            slug: data.pluginReleasePin.slug,
-            revision: data.pluginReleasePin.revision,
-          }
-        : null,
+      plugin_release_pin:
+        data.spec.origin === "plugin" && data.pluginReleasePin
+          ? {
+              scope: data.pluginReleasePin.scope,
+              slug: data.pluginReleasePin.slug,
+              revision: data.pluginReleasePin.revision,
+            }
+          : null,
       position: { x: position.x, y: position.y },
     },
   };
@@ -183,7 +185,12 @@ export function addEdgeCommand(
 ): GraphCommand {
   const source = decodeHandleId(connection.sourceHandle);
   const target = decodeHandleId(connection.targetHandle);
-  if (!connection.source || !connection.target || !source?.portName || !target?.portName) {
+  if (
+    !connection.source ||
+    !connection.target ||
+    !source?.portName ||
+    !target?.portName
+  ) {
     throw new Error("Cannot author an edge without typed endpoint handles");
   }
   return {
@@ -197,9 +204,7 @@ export function addEdgeCommand(
       to_plug: target.plugId ?? null,
       enabled: data?.enabled ?? true,
       collection_mode: data?.collectionMode ?? "direct",
-      projection: data?.projection
-        ? { path: [...data.projection.path] }
-        : null,
+      projection: data?.projection ? { path: [...data.projection.path] } : null,
       conversion_path: (data?.conversionPath ?? []).map((conversion) => ({
         id: conversion.id,
         version: conversion.version,

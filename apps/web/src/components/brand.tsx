@@ -25,7 +25,9 @@ export function BrandIcon({
       width={size}
       height={size}
       alt={alt}
-      className={className ? `grafy-brand-icon ${className}` : "grafy-brand-icon"}
+      className={
+        className ? `grafy-brand-icon ${className}` : "grafy-brand-icon"
+      }
       draggable={false}
     />
   );
@@ -48,7 +50,9 @@ export function BrandWordmark({
       width={width}
       height={height}
       alt={alt}
-      className={className ? `grafy-brand-wordmark ${className}` : "grafy-brand-wordmark"}
+      className={
+        className ? `grafy-brand-wordmark ${className}` : "grafy-brand-wordmark"
+      }
       draggable={false}
     />
   );
@@ -64,7 +68,11 @@ export function BrandLockup({
   className?: string;
 }) {
   return (
-    <span className={className ? `grafy-brand-lockup ${className}` : "grafy-brand-lockup"}>
+    <span
+      className={
+        className ? `grafy-brand-lockup ${className}` : "grafy-brand-lockup"
+      }
+    >
       <BrandIcon size={iconSize} alt="" />
       <BrandWordmark height={wordmarkHeight} />
     </span>
@@ -108,7 +116,9 @@ export function BrandLoader({
 
   return (
     <span
-      className={className ? `grafy-brand-loader ${className}` : "grafy-brand-loader"}
+      className={
+        className ? `grafy-brand-loader ${className}` : "grafy-brand-loader"
+      }
       style={style}
       role={decorative ? undefined : "status"}
       aria-live={decorative ? undefined : "polite"}

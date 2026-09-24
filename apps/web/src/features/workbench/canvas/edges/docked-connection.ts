@@ -113,8 +113,7 @@ function handleCenter(
       y: node.internals.positionAbsolute.y + handle.y + handle.height / 2,
     },
     position:
-      handle.position ??
-      (type === "source" ? Position.Right : Position.Left),
+      handle.position ?? (type === "source" ? Position.Right : Position.Left),
   };
 }
 
@@ -163,7 +162,12 @@ export function dockedConnections(
       edge.targetHandle,
       "target",
     );
-    if (!sourceHandle || !targetHandle || !edge.sourceHandle || !edge.targetHandle) {
+    if (
+      !sourceHandle ||
+      !targetHandle ||
+      !edge.sourceHandle ||
+      !edge.targetHandle
+    ) {
       continue;
     }
     if (
@@ -174,9 +178,11 @@ export function dockedConnections(
         targetPosition: targetHandle.position,
         cellSize,
         sourceDegree:
-          degree.get(endpointKey(edge.source, edge.sourceHandle, "source")) ?? 0,
+          degree.get(endpointKey(edge.source, edge.sourceHandle, "source")) ??
+          0,
         targetDegree:
-          degree.get(endpointKey(edge.target, edge.targetHandle, "target")) ?? 0,
+          degree.get(endpointKey(edge.target, edge.targetHandle, "target")) ??
+          0,
       })
     ) {
       continue;

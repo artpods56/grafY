@@ -185,9 +185,7 @@ export function createSavedGraphRequest(
   };
 }
 
-export function projectSavedGraphNode(
-  node: SavedGraphNode,
-): SavedGraphNode {
+export function projectSavedGraphNode(node: SavedGraphNode): SavedGraphNode {
   const pluginReleasePin = node.plugin_release_pin;
   return {
     artifact_type_bindings: (node.artifact_type_bindings ?? []).map(
@@ -245,9 +243,7 @@ function projectArtifactTypeBinding(
   };
 }
 
-export function projectSavedGraphEdge(
-  edge: SavedGraphEdge,
-): SavedGraphEdge {
+export function projectSavedGraphEdge(edge: SavedGraphEdge): SavedGraphEdge {
   return {
     collection_mode: edge.collection_mode ?? "direct",
     conversion_path: (edge.conversion_path ?? []).map((conversion) => ({
@@ -336,7 +332,9 @@ function projectSavedGraphOriginUpdate(
   update: SavedGraphOriginUpdate,
 ): SavedGraphOriginUpdate {
   const projected = {} as {
-    -readonly [Key in keyof SavedGraphOriginUpdate]: SavedGraphOriginUpdate[Key];
+    -readonly [
+      Key in keyof SavedGraphOriginUpdate
+    ]: SavedGraphOriginUpdate[Key];
   };
   if (Object.prototype.hasOwnProperty.call(update, "to_node")) {
     projected.to_node = update.to_node;
@@ -701,21 +699,14 @@ export function applyGraphCommandNormalized(
       };
     }
     case "add_origin":
-      if (
-        document.origins.some(
-          (origin) => origin.id === command.origin.id,
-        )
-      ) {
+      if (document.origins.some((origin) => origin.id === command.origin.id)) {
         throw new Error(
           `Graph command adds duplicate origin ${command.origin.id}`,
         );
       }
       return {
         ...document,
-        origins: [
-          ...document.origins,
-          projectSavedGraphOrigin(command.origin),
-        ],
+        origins: [...document.origins, projectSavedGraphOrigin(command.origin)],
       };
     case "update_origin": {
       originOrThrow(document, command.origin_id);

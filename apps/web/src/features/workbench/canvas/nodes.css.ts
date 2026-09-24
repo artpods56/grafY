@@ -48,7 +48,9 @@ export function artifactTypeColor(
   fallback: string,
 ): string {
   const family = artifactTypeId.split(".", 1)[0];
-  return ARTIFACT_TYPE_COLOR[artifactTypeId] ??
+  return (
+    ARTIFACT_TYPE_COLOR[artifactTypeId] ??
     (family ? ARTIFACT_TYPE_FAMILY_COLOR[family] : undefined) ??
-    fallback;
+    fallback
+  );
 }

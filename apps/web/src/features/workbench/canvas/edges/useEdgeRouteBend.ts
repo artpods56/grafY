@@ -86,21 +86,12 @@ export function useEdgeRouteBendHandlers({
       const { grid: currentGrid, naturalAnchor: mid } = liveRef.current;
       const settings = currentGrid?.settings;
       const bypass = currentGrid?.bypassSnap ?? false;
-      if (
-        !settings ||
-        !shouldSnapPosition(settings, { dragging, bypass })
-      ) {
+      if (!settings || !shouldSnapPosition(settings, { dragging, bypass })) {
         return offset;
       }
       const cellSize = settings.cellSize;
       const { width, height } = edgeSelectorBlockSize(cellSize);
-      return snapEdgeSelectorRouteOffset(
-        mid,
-        offset,
-        width,
-        height,
-        cellSize,
-      );
+      return snapEdgeSelectorRouteOffset(mid, offset, width, height, cellSize);
     },
     [],
   );
@@ -125,17 +116,12 @@ export function useEdgeRouteBendHandlers({
         const settings = currentGrid?.settings;
         const bypass = currentGrid?.bypassSnap ?? false;
         const snapping = Boolean(
-          settings &&
-            shouldSnapPosition(settings, { dragging: false, bypass }),
+          settings && shouldSnapPosition(settings, { dragging: false, bypass }),
         );
         const pitch = snapping
           ? edgeSelectorSnapPitch(settings!.cellSize)
           : (event.shiftKey ? 24 : 8) / Math.max(currentZoom, 0.01);
-        const step = snapping
-          ? event.shiftKey
-            ? pitch * 2
-            : pitch
-          : pitch;
+        const step = snapping ? (event.shiftKey ? pitch * 2 : pitch) : pitch;
         let nextOffset: WorkflowEdgeRouteOffset | null = null;
         if (event.key === "Home") {
           nextOffset = { x: 0, y: 0 };
@@ -199,13 +185,9 @@ export function useEdgeRouteBendHandlers({
         });
         const nextOffset = {
           x:
-            pointer.x -
-            drag.grabOffset.x -
-            (currentAnchor.x - currentOffset.x),
+            pointer.x - drag.grabOffset.x - (currentAnchor.x - currentOffset.x),
           y:
-            pointer.y -
-            drag.grabOffset.y -
-            (currentAnchor.y - currentOffset.y),
+            pointer.y - drag.grabOffset.y - (currentAnchor.y - currentOffset.y),
         };
         const snapped = snapOffset(nextOffset, true);
         drag.latestOffset = snapped;

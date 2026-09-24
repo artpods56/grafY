@@ -37,12 +37,14 @@ const edge = {
 };
 
 function document(): AuthoredGraphDocument {
-  return authoredGraphDocument(createSavedGraphRequest({
-    name: "Draft",
-    nodes: [node("source"), node("target")],
-    edges: [edge],
-    origins: [],
-  }));
+  return authoredGraphDocument(
+    createSavedGraphRequest({
+      name: "Draft",
+      nodes: [node("source"), node("target")],
+      edges: [edge],
+      origins: [],
+    }),
+  );
 }
 
 describe("authored graph document", () => {
@@ -143,53 +145,53 @@ describe("authored graph document", () => {
       document: {
         schema_version: 7,
         nodes: [
-        {
-          id: "legacy-node",
-          kind: "builtin",
-          operator_id: "unavailable.operator",
-          operator_version: 7,
-          config: {
-            nested: {
-              ordered: ["first", { value: 2 }],
-              arbitrary: true,
+          {
+            id: "legacy-node",
+            kind: "builtin",
+            operator_id: "unavailable.operator",
+            operator_version: 7,
+            config: {
+              nested: {
+                ordered: ["first", { value: 2 }],
+                arbitrary: true,
+              },
             },
+            input_plugs: [
+              { id: "plug-first", port: "items" },
+              { id: "plug-second", port: "items" },
+            ],
+            artifact_type_bindings: [
+              {
+                variable: "Z",
+                artifact_type: { id: "artifact.z", schema_version: 3 },
+              },
+              {
+                variable: "A",
+                artifact_type: { id: "artifact.a", schema_version: 1 },
+              },
+            ],
+            plugin_release_pin: null,
+            position: { x: 120, y: 240 },
+            layout: { width: 420, body_height: 180, appendix_height: 320 },
           },
-          input_plugs: [
-            { id: "plug-first", port: "items" },
-            { id: "plug-second", port: "items" },
-          ],
-          artifact_type_bindings: [
-            {
-              variable: "Z",
-              artifact_type: { id: "artifact.z", schema_version: 3 },
-            },
-            {
-              variable: "A",
-              artifact_type: { id: "artifact.a", schema_version: 1 },
-            },
-          ],
-          plugin_release_pin: null,
-          position: { x: 120, y: 240 },
-          layout: { width: 420, body_height: 180, appendix_height: 320 },
-        },
         ],
         edges: [
-        {
-          id: "legacy-edge",
-          from_node: "legacy-node",
-          from_port: "output",
-          to_node: "target-node",
-          to_port: "items",
-          to_plug: "plug-second",
-          enabled: false,
-          collection_mode: "map",
-          projection: { path: ["properties", "value"] },
-          conversion_path: [
-            { id: "convert-a", version: 1 },
-            { id: "convert-b", version: 2 },
-          ],
-          route_offset: { x: 18, y: -6 },
-        },
+          {
+            id: "legacy-edge",
+            from_node: "legacy-node",
+            from_port: "output",
+            to_node: "target-node",
+            to_port: "items",
+            to_plug: "plug-second",
+            enabled: false,
+            collection_mode: "map",
+            projection: { path: ["properties", "value"] },
+            conversion_path: [
+              { id: "convert-a", version: 1 },
+              { id: "convert-b", version: 2 },
+            ],
+            route_offset: { x: 18, y: -6 },
+          },
         ],
         origins: [],
         presentation: {
@@ -236,12 +238,8 @@ describe("authored graph document", () => {
       name: "Adversarial graph",
       document: {
         schema_version: 7,
-        nodes: [
-          runtimeNode as unknown as SavedGraphDocument["nodes"][number],
-        ],
-        edges: [
-          runtimeEdge as unknown as SavedGraphDocument["edges"][number],
-        ],
+        nodes: [runtimeNode as unknown as SavedGraphDocument["nodes"][number]],
+        edges: [runtimeEdge as unknown as SavedGraphDocument["edges"][number]],
         origins: [],
         presentation: {
           viewers: [],
@@ -661,29 +659,31 @@ describe("authored graph document", () => {
   });
 
   it("moves only the selected exact Plugin release pin", () => {
-    const original = authoredGraphDocument(createSavedGraphRequest({
-      name: "Pinned Plugins",
-      nodes: [
-        {
-          ...node("source"),
-          plugin_release_pin: {
-            scope: "system",
-            slug: "notes",
-            revision: 1,
+    const original = authoredGraphDocument(
+      createSavedGraphRequest({
+        name: "Pinned Plugins",
+        nodes: [
+          {
+            ...node("source"),
+            plugin_release_pin: {
+              scope: "system",
+              slug: "notes",
+              revision: 1,
+            },
           },
-        },
-        {
-          ...node("target"),
-          plugin_release_pin: {
-            scope: "workspace",
-            slug: "notes",
-            revision: 4,
+          {
+            ...node("target"),
+            plugin_release_pin: {
+              scope: "workspace",
+              slug: "notes",
+              revision: 4,
+            },
           },
-        },
-      ],
-      edges: [edge],
-      origins: [],
-    }));
+        ],
+        edges: [edge],
+        origins: [],
+      }),
+    );
 
     const upgraded = applyGraphCommand(original, {
       kind: "update_node_plugin_release",

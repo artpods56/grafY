@@ -19,20 +19,22 @@ import type { WorkflowNodeProgressEntry } from "../types";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const apiMocks = vi.hoisted(() => ({
-  getGraphExecution: vi.fn<
-    (
-      workspaceId: string,
-      graphId: string,
-      executionId: string,
-    ) => Promise<GraphExecutionDetail>
-  >(),
-  listGraphExecutions: vi.fn<
-    (
-      workspaceId: string,
-      graphId: string,
-      options: { limit: number; nodeId: string },
-    ) => Promise<GraphExecutionList>
-  >(),
+  getGraphExecution:
+    vi.fn<
+      (
+        workspaceId: string,
+        graphId: string,
+        executionId: string,
+      ) => Promise<GraphExecutionDetail>
+    >(),
+  listGraphExecutions:
+    vi.fn<
+      (
+        workspaceId: string,
+        graphId: string,
+        options: { limit: number; nodeId: string },
+      ) => Promise<GraphExecutionList>
+    >(),
 }));
 
 vi.mock("@stylexjs/stylex", () => ({
@@ -97,19 +99,20 @@ function output(port: string, artifactIds: readonly string[]): RunPortOutput {
   return {
     port,
     kind: artifactIds.length > 1 ? "sequence" : "single",
-    value: artifactIds.length > 1
-      ? {
-          artifact_type: "scalar.text",
-          schema_version: 1,
-          index_key: "order_index",
-          ordered: true,
-          item_refs: refs,
-        }
-      : refs[0] ?? {
-          artifact_id: `${port}-missing`,
-          artifact_type: "scalar.text",
-          schema_version: 1,
-        },
+    value:
+      artifactIds.length > 1
+        ? {
+            artifact_type: "scalar.text",
+            schema_version: 1,
+            index_key: "order_index",
+            ordered: true,
+            item_refs: refs,
+          }
+        : (refs[0] ?? {
+            artifact_id: `${port}-missing`,
+            artifact_type: "scalar.text",
+            schema_version: 1,
+          }),
     artifacts,
   };
 }
@@ -169,9 +172,7 @@ function detail(
   return { ...execution, node_results: nodeResults };
 }
 
-async function renderAppendix(
-  props: Partial<NodeExecutionAppendixProps> = {},
-) {
+async function renderAppendix(props: Partial<NodeExecutionAppendixProps> = {}) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -233,9 +234,11 @@ describe("NodeExecutionAppendix", () => {
 
   it("does not mount loading chrome while checking saved history for an idle node", async () => {
     let resolveHistory!: (value: GraphExecutionList) => void;
-    apiMocks.listGraphExecutions.mockReturnValue(new Promise((resolve) => {
-      resolveHistory = resolve;
-    }));
+    apiMocks.listGraphExecutions.mockReturnValue(
+      new Promise((resolve) => {
+        resolveHistory = resolve;
+      }),
+    );
     const { container } = await renderAppendix({
       expanded: true,
       execution: { status: "idle" },
@@ -270,9 +273,11 @@ describe("NodeExecutionAppendix", () => {
       items: [previousExecution],
       next_cursor: null,
     });
-    apiMocks.getGraphExecution.mockResolvedValue(detail(previousExecution, [
-      nodeResult("node-a", [output("result", ["historic-artifact"])]),
-    ]));
+    apiMocks.getGraphExecution.mockResolvedValue(
+      detail(previousExecution, [
+        nodeResult("node-a", [output("result", ["historic-artifact"])]),
+      ]),
+    );
 
     const { container } = await renderAppendix({
       expanded: true,
@@ -327,7 +332,8 @@ describe("NodeExecutionAppendix", () => {
   });
 
   it("renders nested events latest-first, discloses +N, and keeps message text inert", async () => {
-    const unsafeMessage = '<script>window.__appendixXss = true</script> & "exact"';
+    const unsafeMessage =
+      '<script>window.__appendixXss = true</script> & "exact"';
     const { container } = await renderAppendix({
       expanded: true,
       execution: { status: "running" },
@@ -348,9 +354,7 @@ describe("NodeExecutionAppendix", () => {
     });
 
     expect(container.textContent).toContain("Events 4");
-    expect(container.textContent).toContain(
-      "module-a › child-b · items 3 › 2",
-    );
+    expect(container.textContent).toContain("module-a › child-b · items 3 › 2");
     expect(container.textContent).toContain(unsafeMessage);
     expect(container.querySelector("script")).toBeNull();
     expect(container.textContent).not.toContain("Preparing");
@@ -374,28 +378,42 @@ describe("NodeExecutionAppendix", () => {
       items: [first, second, third],
       next_cursor: null,
     });
-    apiMocks.getGraphExecution.mockImplementation((_workspaceId, _graphId, executionId) => {
-      if (executionId === first.execution_id) {
-        return Promise.resolve(detail(first, [
-          nodeResult("node-a", [output("target", ["target-1", "target-2"])]),
-          nodeResult("node-ab", [output("other", ["other-1", "other-2", "other-3"])]),
-        ]));
-      }
-      if (executionId === second.execution_id) {
-        return Promise.resolve(detail(second, [
-          nodeResult("node-a", [output("empty", [])]),
-        ]));
-      }
-      return Promise.resolve(detail(third, [
-        nodeResult("other-node", [output("other", ["other-4"])]),
-      ]));
-    });
+    apiMocks.getGraphExecution.mockImplementation(
+      (_workspaceId, _graphId, executionId) => {
+        if (executionId === first.execution_id) {
+          return Promise.resolve(
+            detail(first, [
+              nodeResult("node-a", [
+                output("target", ["target-1", "target-2"]),
+              ]),
+              nodeResult("node-ab", [
+                output("other", ["other-1", "other-2", "other-3"]),
+              ]),
+            ]),
+          );
+        }
+        if (executionId === second.execution_id) {
+          return Promise.resolve(
+            detail(second, [nodeResult("node-a", [output("empty", [])])]),
+          );
+        }
+        return Promise.resolve(
+          detail(third, [
+            nodeResult("other-node", [output("other", ["other-4"])]),
+          ]),
+        );
+      },
+    );
     const onOpenHistory = vi.fn();
     const { container } = await renderAppendix({
       expanded: true,
       execution: { status: "succeeded" },
       run: runWithArtifacts("node-a", ["temporary-1"]),
-      historyContext: { workspaceId: "workspace-1", graphId: "graph-1", isDirty: true },
+      historyContext: {
+        workspaceId: "workspace-1",
+        graphId: "graph-1",
+        isDirty: true,
+      },
       onOpenHistory,
     });
 
@@ -434,7 +452,11 @@ describe("NodeExecutionAppendix", () => {
       expanded: true,
       execution: { status: "succeeded" },
       run: runWithArtifacts("node-a", ["temporary-1", "temporary-2"]),
-      historyContext: { workspaceId: "workspace-1", graphId: null, isDirty: true },
+      historyContext: {
+        workspaceId: "workspace-1",
+        graphId: null,
+        isDirty: true,
+      },
     });
 
     expect(apiMocks.listGraphExecutions).not.toHaveBeenCalled();
@@ -457,7 +479,11 @@ describe("NodeExecutionAppendix", () => {
     });
     const { rerender } = await renderAppendix({
       expanded: true,
-      historyContext: { workspaceId: "workspace-1", graphId: "graph-1", isDirty: false },
+      historyContext: {
+        workspaceId: "workspace-1",
+        graphId: "graph-1",
+        isDirty: false,
+      },
     });
     await vi.waitFor(() => {
       expect(apiMocks.listGraphExecutions).toHaveBeenCalledTimes(1);

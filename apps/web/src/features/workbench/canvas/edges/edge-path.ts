@@ -102,18 +102,17 @@ function fanGroups(
   >();
   for (const edge of edges) {
     const nodeId = edge[endpoint];
-    const handleId = endpoint === "source"
-      ? edge.sourceHandle
-      : edge.targetHandle;
+    const handleId =
+      endpoint === "source" ? edge.sourceHandle : edge.targetHandle;
     const groupsByHandle = groupsByNode.get(nodeId) ?? new Map();
     const group = groupsByHandle.get(handleId) ?? [];
     group.push(edge);
     groupsByHandle.set(handleId, group);
     groupsByNode.set(nodeId, groupsByHandle);
   }
-  return [...groupsByNode.values()].flatMap((groupsByHandle) =>
-    [...groupsByHandle.values()]
-  );
+  return [...groupsByNode.values()].flatMap((groupsByHandle) => [
+    ...groupsByHandle.values(),
+  ]);
 }
 
 /** Compute every edge's fan slots together so callers can share the group work. */
@@ -139,15 +138,17 @@ export function edgeFanOffsetsById(
   }
 
   for (const group of fanGroups(edges, "source")) {
-    const sorted = group.slice().sort((left, right) =>
-      compareFanOrder(
-        sourceOrderPoints.get(left.id),
-        sourceOrderPoints.get(right.id),
-        sourceAxis,
-        left.id,
-        right.id,
-      )
-    );
+    const sorted = group
+      .slice()
+      .sort((left, right) =>
+        compareFanOrder(
+          sourceOrderPoints.get(left.id),
+          sourceOrderPoints.get(right.id),
+          sourceAxis,
+          left.id,
+          right.id,
+        ),
+      );
     for (const [index, edge] of sorted.entries()) {
       const offsets = offsetsById.get(edge.id);
       if (offsets) {
@@ -157,15 +158,17 @@ export function edgeFanOffsetsById(
   }
 
   for (const group of fanGroups(edges, "target")) {
-    const sorted = group.slice().sort((left, right) =>
-      compareFanOrder(
-        targetOrderPoints.get(left.id),
-        targetOrderPoints.get(right.id),
-        targetAxis,
-        left.id,
-        right.id,
-      )
-    );
+    const sorted = group
+      .slice()
+      .sort((left, right) =>
+        compareFanOrder(
+          targetOrderPoints.get(left.id),
+          targetOrderPoints.get(right.id),
+          targetAxis,
+          left.id,
+          right.id,
+        ),
+      );
     for (const [index, edge] of sorted.entries()) {
       const offsets = offsetsById.get(edge.id);
       if (offsets) {
@@ -201,13 +204,15 @@ export function edgeFanOffsets(
     spacing?: number;
   } = {},
 ): EdgeFanOffsets {
-  return edgeFanOffsetsById(edges, {
-    sourceOrderPoints,
-    targetOrderPoints,
-    sourceAxis,
-    targetAxis,
-    spacing,
-  }).get(edgeId) ?? { source: 0, target: 0 };
+  return (
+    edgeFanOffsetsById(edges, {
+      sourceOrderPoints,
+      targetOrderPoints,
+      sourceAxis,
+      targetAxis,
+      spacing,
+    }).get(edgeId) ?? { source: 0, target: 0 }
+  );
 }
 
 /** Shift a handle point along the axis perpendicular to its exit direction. */

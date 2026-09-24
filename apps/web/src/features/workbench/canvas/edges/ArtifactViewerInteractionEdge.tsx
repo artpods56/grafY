@@ -138,12 +138,8 @@ function FieldSelect({
       {...stylex.props(s.select)}
       onChange={(event) => onChange(event.currentTarget.value)}
     >
-      <option value="">
-        {empty ? "No fields yet" : "Choose field"}
-      </option>
-      {!known && value ? (
-        <option value={value}>{value}</option>
-      ) : null}
+      <option value="">{empty ? "No fields yet" : "Choose field"}</option>
+      {!known && value ? <option value={value}>{value}</option> : null}
       {fields.map((field) => (
         <option key={field.id} value={field.id}>
           {fieldOptionLabel(field)}
@@ -169,7 +165,8 @@ export default function ArtifactViewerInteractionEdgeControl({
   const { deleteElements } = useReactFlow<CanvasNode, CanvasEdge>();
   const docked = useEdgeIsDocked(id);
   const cellSize =
-    useOptionalCanvasGridSettings()?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
+    useOptionalCanvasGridSettings()?.settings.cellSize ??
+    GRID_CELL_SIZE_DEFAULT;
   const fan = useEdgeFanOffsets(id, sourcePosition, targetPosition);
   const source = applyHandleFanOffset(
     { x: sourceX, y: sourceY },
@@ -204,14 +201,10 @@ export default function ArtifactViewerInteractionEdgeControl({
   const sourceFields = data?.sourceFields ?? [];
   const targetFields = data?.targetFields ?? [];
   const label = interactionChipLabel(binding.effects);
-  const bridge = docked
-    ? dockedBridgeLayout(source, target, cellSize)
-    : null;
+  const bridge = docked ? dockedBridgeLayout(source, target, cellSize) : null;
 
   const updateBinding = (
-    update: Partial<
-      Pick<typeof binding, "mappings" | "effects">
-    >,
+    update: Partial<Pick<typeof binding, "mappings" | "effects">>,
   ) => {
     data?.onBindingChange?.(binding.id, { ...binding, ...update });
   };
@@ -221,9 +214,7 @@ export default function ArtifactViewerInteractionEdgeControl({
       <BaseEdge
         id={id}
         path={
-          docked
-            ? `M${source.x},${source.y} L${target.x},${target.y}`
-            : path
+          docked ? `M${source.x},${source.y} L${target.x},${target.y}` : path
         }
         markerEnd={docked ? undefined : markerEnd}
         interactionWidth={24}
@@ -268,7 +259,9 @@ export default function ArtifactViewerInteractionEdgeControl({
                     updateBinding({ mappings });
                   }}
                 />
-                <span aria-hidden="true" {...stylex.props(s.arrow)}>→</span>
+                <span aria-hidden="true" {...stylex.props(s.arrow)}>
+                  →
+                </span>
                 <FieldSelect
                   ariaLabel={`Target field ${index + 1}`}
                   value={mapping.targetField}
@@ -294,7 +287,8 @@ export default function ArtifactViewerInteractionEdgeControl({
                       mappings: binding.mappings.filter(
                         (_, candidateIndex) => candidateIndex !== index,
                       ),
-                    })}
+                    })
+                  }
                 >
                   <Trash2 size={11} aria-hidden="true" />
                 </button>
@@ -332,7 +326,8 @@ export default function ArtifactViewerInteractionEdgeControl({
                       ...binding.mappings,
                       { sourceField: "", targetField: "" },
                     ],
-                  })}
+                  })
+                }
               >
                 <Plus size={12} aria-hidden="true" />
               </button>

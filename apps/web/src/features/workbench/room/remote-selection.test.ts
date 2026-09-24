@@ -59,5 +59,4 @@ describe("remote selection helpers", () => {
     expect(remoteSelectionColor(participants, "local", "n1")).toBe("#0d9488");
     expect(remoteSelectionColor(participants, "local", "missing")).toBeNull();
   });
-
 });

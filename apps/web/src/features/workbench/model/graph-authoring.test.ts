@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  encodeHandleId,
-  type ConnectionRoute,
-} from "../canvas/handles";
-import {
-  createWorkflowNodeData,
-  type WorkflowEdge,
-} from "../canvas/types";
+import { encodeHandleId, type ConnectionRoute } from "../canvas/handles";
+import { createWorkflowNodeData, type WorkflowEdge } from "../canvas/types";
 import type { NodeSpec, Port } from "@/lib/api";
 import {
   collectionModeForConnection,
@@ -111,12 +105,7 @@ function edge({
     source,
     sourceHandle: handle(sourcePort, "output", sourceShape),
     target,
-    targetHandle: handle(
-      targetPort,
-      "input",
-      targetShape,
-      targetPlugId,
-    ),
+    targetHandle: handle(targetPort, "input", targetShape, targetPlugId),
     data: {
       enabled,
       collectionMode,
@@ -163,9 +152,7 @@ describe("connection route presentation", () => {
     );
     expect(workflowEdgeRouteOption(route)).toEqual({
       projection: { path: ["profile", "age"] },
-      conversionPath: [
-        { id: "builtin.scalar.integer_to_text", version: 1 },
-      ],
+      conversionPath: [{ id: "builtin.scalar.integer_to_text", version: 1 }],
       projectionTitle: "Age",
       conversionTitles: ["Integer to text"],
     });
@@ -179,11 +166,7 @@ describe("connection collection policy", () => {
       [port("mapped", "input", "one")],
       [port("result", "output", "one")],
     );
-    const target = node(
-      "target",
-      [port("input", "input", "one")],
-      [],
-    );
+    const target = node("target", [port("input", "input", "one")], []);
     const disabledMapEdge = edge({
       id: "driver-source",
       source: "driver",
@@ -201,9 +184,9 @@ describe("connection collection policy", () => {
     };
 
     expect(mappedInputPortForNode(source.id, [disabledMapEdge])).toBeNull();
-    expect(
-      mappedInputPortForNode(source.id, [disabledMapEdge], true),
-    ).toBe("mapped");
+    expect(mappedInputPortForNode(source.id, [disabledMapEdge], true)).toBe(
+      "mapped",
+    );
     expect(
       collectionModeForConnection(
         connection,
@@ -214,11 +197,7 @@ describe("connection collection policy", () => {
   });
 
   it("prefers direct transport when the target explicitly accepts the source shape", () => {
-    const source = node(
-      "source",
-      [],
-      [port("output", "output", "many")],
-    );
+    const source = node("source", [], [port("output", "output", "many")]);
     const target = node(
       "target",
       [
@@ -244,11 +223,7 @@ describe("connection collection policy", () => {
   });
 
   it("does not turn a sequence into map transport for an instance-plug input", () => {
-    const source = node(
-      "source",
-      [],
-      [port("output", "output", "many")],
-    );
+    const source = node("source", [], [port("output", "output", "many")]);
     const target = node(
       "target",
       [port("items", "input", "one", { instance_plugs: true })],
@@ -272,16 +247,8 @@ describe("connection collection policy", () => {
 
 describe("connection acceptance policy", () => {
   it("requires a compatible route before accepting an otherwise free input", () => {
-    const source = node(
-      "source",
-      [],
-      [port("output", "output", "one")],
-    );
-    const target = node(
-      "target",
-      [port("input", "input", "one")],
-      [],
-    );
+    const source = node("source", [], [port("output", "output", "one")]);
+    const target = node("target", [port("input", "input", "one")], []);
     const incompatibleTarget = node(
       "incompatible",
       [
@@ -329,22 +296,14 @@ describe("connection acceptance policy", () => {
   });
 
   it("accepts only declared instance plugs and rejects plugs on ordinary ports", () => {
-    const source = node(
-      "source",
-      [],
-      [port("output", "output", "one")],
-    );
+    const source = node("source", [], [port("output", "output", "one")]);
     const collect = node(
       "collect",
       [port("items", "input", "one", { instance_plugs: true })],
       [],
     );
     collect.data.inputPlugs = [{ id: "item-1", portName: "items" }];
-    const ordinary = node(
-      "ordinary",
-      [port("input", "input", "one")],
-      [],
-    );
+    const ordinary = node("ordinary", [port("input", "input", "one")], []);
     const sourceHandle = handle("output", "output", "one");
 
     for (const targetHandle of [
@@ -398,11 +357,7 @@ describe("connection acceptance policy", () => {
   });
 
   it("allows only one map driver for a node", () => {
-    const source = node(
-      "source",
-      [],
-      [port("output", "output", "many")],
-    );
+    const source = node("source", [], [port("output", "output", "many")]);
     const target = node(
       "target",
       [
@@ -438,11 +393,7 @@ describe("connection acceptance policy", () => {
   });
 
   it("prevents cycles through existing edges, including disabled edges", () => {
-    const source = node(
-      "leaf",
-      [],
-      [port("output", "output", "one")],
-    );
+    const source = node("leaf", [], [port("output", "output", "one")]);
     const target = node(
       "root",
       [port("input", "input", "one")],
@@ -472,16 +423,8 @@ describe("connection acceptance policy", () => {
   });
 
   it("enforces port and plug occupancy while leaving variadic ports open", () => {
-    const source = node(
-      "source",
-      [],
-      [port("output", "output", "one")],
-    );
-    const ordinary = node(
-      "ordinary",
-      [port("input", "input", "one")],
-      [],
-    );
+    const source = node("source", [], [port("output", "output", "one")]);
+    const ordinary = node("ordinary", [port("input", "input", "one")], []);
     const variadic = node(
       "variadic",
       [port("input", "input", "one", { variadic: true })],
@@ -566,16 +509,8 @@ describe("connection acceptance policy", () => {
   });
 
   it("excludes the edge being reconnected from cycle and occupancy checks", () => {
-    const source = node(
-      "source",
-      [],
-      [port("output", "output", "one")],
-    );
-    const target = node(
-      "target",
-      [port("input", "input", "one")],
-      [],
-    );
+    const source = node("source", [], [port("output", "output", "one")]);
+    const target = node("target", [port("input", "input", "one")], []);
     const currentEdge = edge({
       id: "current-edge",
       source: source.id,
@@ -589,13 +524,7 @@ describe("connection acceptance policy", () => {
     };
 
     expect(
-      isConnectionAccepted(
-        connection,
-        [source, target],
-        [currentEdge],
-        [],
-        [],
-      ),
+      isConnectionAccepted(connection, [source, target], [currentEdge], [], []),
     ).toBe(false);
     expect(
       isConnectionAccepted(

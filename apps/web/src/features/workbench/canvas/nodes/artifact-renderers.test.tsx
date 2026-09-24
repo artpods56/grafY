@@ -42,7 +42,9 @@ const maplibreMock = vi.hoisted(() => {
       this.options = options;
       const style = options.style as { layers?: Array<{ id: string }> };
       const layerIds = new Set((style.layers ?? []).map((layer) => layer.id));
-      this.getLayer = vi.fn((id: string) => layerIds.has(id) ? { id } : undefined);
+      this.getLayer = vi.fn((id: string) =>
+        layerIds.has(id) ? { id } : undefined,
+      );
       instances.push(this as unknown as Record<string, unknown>);
     }
 
@@ -52,10 +54,7 @@ const maplibreMock = vi.hoisted(() => {
       }
     }
 
-    on(
-      event: string,
-      callback: (event: Record<string, unknown>) => void,
-    ) {
+    on(event: string, callback: (event: Record<string, unknown>) => void) {
       this.eventListeners[event] ??= [];
       this.eventListeners[event].push(callback);
       if (event === "load") callback({});
@@ -316,23 +315,30 @@ describe("rendererCanBrush", () => {
 describe("Table artifact rendering", () => {
   async function renderTablePage(page: TablePage, mode = "table") {
     const renderer = rendererFor(TABLE_ARTIFACT);
-    vi.stubGlobal("fetch", vi.fn().mockImplementation(() =>
-      Promise.resolve(new Response(
-        JSON.stringify(page),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ))
-    ));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(page), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      ),
+    );
     const container = document.createElement("div");
     const root = createRoot(container);
     await act(async () => {
-      root.render(createElement(
-        SWRConfig,
-        { value: { provider: () => new Map(), shouldRetryOnError: false } },
-        createElement(renderer.Component, {
-          artifact: TABLE_ARTIFACT,
-          mode,
-        }),
-      ));
+      root.render(
+        createElement(
+          SWRConfig,
+          { value: { provider: () => new Map(), shouldRetryOnError: false } },
+          createElement(renderer.Component, {
+            artifact: TABLE_ARTIFACT,
+            mode,
+          }),
+        ),
+      );
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     const markup = container.innerHTML;
@@ -361,7 +367,11 @@ describe("Table artifact rendering", () => {
       ],
       rows: [
         {
-          column_1: { display: "Invoice", truncated: false, original_length: null },
+          column_1: {
+            display: "Invoice",
+            truncated: false,
+            original_length: null,
+          },
           column_2: { display: 42, truncated: false, original_length: null },
         },
         {
@@ -419,13 +429,15 @@ describe("Table artifact rendering", () => {
   it("renders only bounded cell previews and makes full retrieval explicit", async () => {
     const page: TablePage = {
       columns: [{ id: "geometry", title: "Geometry", value_type: "text" }],
-      rows: [{
-        geometry: {
-          display: "MULTIPOLYGON (((preview…",
-          truncated: true,
-          original_length: 125_000,
+      rows: [
+        {
+          geometry: {
+            display: "MULTIPOLYGON (((preview…",
+            truncated: true,
+            original_length: 125_000,
+          },
         },
-      }],
+      ],
       offset: 0,
       limit: 50,
       total_rows: 1,
@@ -444,9 +456,11 @@ describe("Table artifact rendering", () => {
   it("keeps row navigation and column visibility available in raw mode", async () => {
     const page: TablePage = {
       columns: [{ id: "value", title: "Value", value_type: "text" }],
-      rows: [{
-        value: { display: "first", truncated: false, original_length: null },
-      }],
+      rows: [
+        {
+          value: { display: "first", truncated: false, original_length: null },
+        },
+      ],
       offset: 0,
       limit: 50,
       total_rows: 75,
@@ -479,29 +493,36 @@ describe("Table artifact rendering", () => {
       column_limit: 25,
       total_columns: 1,
     };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify(page), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(page), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }))
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
       .mockRejectedValueOnce(new Error("page unavailable"));
     vi.stubGlobal("fetch", fetchMock);
     const renderer = rendererFor(TABLE_ARTIFACT);
     const container = document.createElement("div");
     const root = createRoot(container);
     await act(async () => {
-      root.render(createElement(
-        SWRConfig,
-        { value: { provider: () => new Map(), shouldRetryOnError: false } },
-        createElement(renderer.Component, {
-          artifact: TABLE_ARTIFACT,
-          mode: "table",
-        }),
-      ));
+      root.render(
+        createElement(
+          SWRConfig,
+          { value: { provider: () => new Map(), shouldRetryOnError: false } },
+          createElement(renderer.Component, {
+            artifact: TABLE_ARTIFACT,
+            mode: "table",
+          }),
+        ),
+      );
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     const nextButton = container.querySelector<HTMLButtonElement>(
@@ -527,13 +548,15 @@ describe("Table artifact rendering", () => {
   it("retrieves a full cell only after the truncated preview is activated", async () => {
     const page: TablePage = {
       columns: [{ id: "geometry/wkt", title: "Geometry", value_type: "text" }],
-      rows: [{
-        "geometry/wkt": {
-          display: "MULTIPOLYGON (((preview…",
-          truncated: true,
-          original_length: 125_000,
+      rows: [
+        {
+          "geometry/wkt": {
+            display: "MULTIPOLYGON (((preview…",
+            truncated: true,
+            original_length: 125_000,
+          },
         },
-      }],
+      ],
       offset: 0,
       limit: 50,
       total_rows: 1,
@@ -551,24 +574,28 @@ describe("Table artifact rendering", () => {
             encoding: "native",
           }
         : page;
-      return Promise.resolve(new Response(JSON.stringify(body), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }));
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     const renderer = rendererFor(TABLE_ARTIFACT);
     const container = document.createElement("div");
     const root = createRoot(container);
     await act(async () => {
-      root.render(createElement(
-        SWRConfig,
-        { value: { provider: () => new Map(), shouldRetryOnError: false } },
-        createElement(renderer.Component, {
-          artifact: TABLE_ARTIFACT,
-          mode: "table",
-        }),
-      ));
+      root.render(
+        createElement(
+          SWRConfig,
+          { value: { provider: () => new Map(), shouldRetryOnError: false } },
+          createElement(renderer.Component, {
+            artifact: TABLE_ARTIFACT,
+            mode: "table",
+          }),
+        ),
+      );
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
@@ -598,18 +625,20 @@ describe("Table artifact rendering", () => {
         { id: "place", title: "Place", value_type: "text" },
         { id: "district", title: "District", value_type: "text" },
       ],
-      rows: [{
-        place: {
-          display: "Belynichi",
-          truncated: false,
-          original_length: null,
+      rows: [
+        {
+          place: {
+            display: "Belynichi",
+            truncated: false,
+            original_length: null,
+          },
+          district: {
+            display: "Mohilev",
+            truncated: false,
+            original_length: null,
+          },
         },
-        district: {
-          display: "Mohilev",
-          truncated: false,
-          original_length: null,
-        },
-      }],
+      ],
       row_indices: [7],
       highlighted_row_indices: [7],
       offset: 0,
@@ -623,45 +652,59 @@ describe("Table artifact rendering", () => {
     const cellsReady = new Promise<void>((resolve) => {
       releaseCells = resolve;
     });
-    const fetchMock = vi.fn().mockImplementation((
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
-      const url = String(input);
-      if (url.includes("/table/schema")) {
-        return Promise.resolve(new Response(JSON.stringify({
-          columns: page.columns,
-          total_rows: 1,
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }));
-      }
-      if (url.includes("/table/cell?")) {
-        const columnId = new URL(url, "http://test.local").searchParams.get("column_id");
-        return cellsReady.then(() =>
-          new Response(JSON.stringify({
-            row_index: 7,
-            column_id: columnId,
-            value: columnId === "place" ? "Belynichi" : "Mohilev",
-            encoding: "native",
-          }), {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/table/schema")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                columns: page.columns,
+                total_rows: 1,
+              }),
+              {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              },
+            ),
+          );
+        }
+        if (url.includes("/table/cell?")) {
+          const columnId = new URL(url, "http://test.local").searchParams.get(
+            "column_id",
+          );
+          return cellsReady.then(
+            () =>
+              new Response(
+                JSON.stringify({
+                  row_index: 7,
+                  column_id: columnId,
+                  value: columnId === "place" ? "Belynichi" : "Mohilev",
+                  encoding: "native",
+                }),
+                {
+                  status: 200,
+                  headers: { "Content-Type": "application/json" },
+                },
+              ),
+          );
+        }
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          filter_groups: [
+            {
+              rows: [{ values: { status: "accepted" } }],
+            },
+          ],
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(page), {
             status: 200,
             headers: { "Content-Type": "application/json" },
-          })
+          }),
         );
-      }
-      expect(init?.method).toBe("POST");
-      expect(JSON.parse(String(init?.body))).toMatchObject({
-        filter_groups: [{
-          rows: [{ values: { status: "accepted" } }],
-        }],
       });
-      return Promise.resolve(new Response(JSON.stringify(page), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }));
-    });
     vi.stubGlobal("fetch", fetchMock);
     const onSelectionChange = vi.fn();
     const onFieldsChange = vi.fn();
@@ -669,12 +712,14 @@ describe("Table artifact rendering", () => {
     const interaction: ArtifactViewerInteractionContext = {
       outgoingFields: ["place", "district"],
       selection: { kind: "key-selection", items: [] },
-      incoming: [{
-        bindingId: "binding-1",
-        effects: ["filter", "highlight"],
-        sourceSelectionCount: 1,
-        rows: [{ status: "accepted" }],
-      }],
+      incoming: [
+        {
+          bindingId: "binding-1",
+          effects: ["filter", "highlight"],
+          sourceSelectionCount: 1,
+          rows: [{ status: "accepted" }],
+        },
+      ],
       onFieldsChange,
       onSelectionChange,
       onActivityChange,
@@ -683,21 +728,23 @@ describe("Table artifact rendering", () => {
     const container = document.createElement("div");
     const root = createRoot(container);
     await act(async () => {
-      root.render(createElement(
-        SWRConfig,
-        { value: { provider: () => new Map(), shouldRetryOnError: false } },
-        createElement(renderer.Component, {
-          artifact: TABLE_ARTIFACT,
-          mode: "table",
-          interaction,
-        }),
-      ));
+      root.render(
+        createElement(
+          SWRConfig,
+          { value: { provider: () => new Map(), shouldRetryOnError: false } },
+          createElement(renderer.Component, {
+            artifact: TABLE_ARTIFACT,
+            mode: "table",
+            interaction,
+          }),
+        ),
+      );
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
     expect(
       fetchMock.mock.calls.some(([input]) =>
-        String(input).includes("/table/query")
+        String(input).includes("/table/query"),
       ),
     ).toBe(true);
     expect(onFieldsChange).toHaveBeenCalledWith([
@@ -725,10 +772,12 @@ describe("Table artifact rendering", () => {
     });
     expect(onSelectionChange).toHaveBeenCalledWith({
       kind: "key-selection",
-      items: [{
-        sourceIndex: 7,
-        values: { place: "Belynichi", district: "Mohilev" },
-      }],
+      items: [
+        {
+          sourceIndex: 7,
+          values: { place: "Belynichi", district: "Mohilev" },
+        },
+      ],
     });
     expect(onActivityChange).toHaveBeenLastCalledWith(null);
     await act(async () => root.unmount());
@@ -762,50 +811,63 @@ describe("Table artifact rendering", () => {
       column_limit: 25,
       total_columns: 1,
     };
-    const fetchMock = vi.fn().mockImplementation((
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
-      const url = String(input);
-      if (url.includes("/table/schema")) {
-        return Promise.resolve(new Response(JSON.stringify({
-          columns: page.columns,
-          total_rows: 2,
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }));
-      }
-      if (url.includes("/table/cell?")) {
-        const rowIndex = Number(new URL(url, "http://test.local").searchParams.get("row_index"));
-        if (rowIndex === 0) {
-          return new Promise<Response>((_, reject) => {
-            const rejectAborted = () =>
-              reject(new DOMException("Aborted", "AbortError"));
-            if (init?.signal?.aborted) {
-              rejectAborted();
-            } else {
-              init?.signal?.addEventListener("abort", rejectAborted, {
-                once: true,
-              });
-            }
-          });
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/table/schema")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                columns: page.columns,
+                total_rows: 2,
+              }),
+              {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              },
+            ),
+          );
         }
-        return Promise.resolve(new Response(JSON.stringify({
-          row_index: 1,
-          column_id: "place",
-          value: "Second place",
-          encoding: "native",
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }));
-      }
-      return Promise.resolve(new Response(JSON.stringify(page), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }));
-    });
+        if (url.includes("/table/cell?")) {
+          const rowIndex = Number(
+            new URL(url, "http://test.local").searchParams.get("row_index"),
+          );
+          if (rowIndex === 0) {
+            return new Promise<Response>((_, reject) => {
+              const rejectAborted = () =>
+                reject(new DOMException("Aborted", "AbortError"));
+              if (init?.signal?.aborted) {
+                rejectAborted();
+              } else {
+                init?.signal?.addEventListener("abort", rejectAborted, {
+                  once: true,
+                });
+              }
+            });
+          }
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                row_index: 1,
+                column_id: "place",
+                value: "Second place",
+                encoding: "native",
+              }),
+              {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              },
+            ),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(page), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      });
     vi.stubGlobal("fetch", fetchMock);
     const onSelectionChange = vi.fn();
     const interaction: ArtifactViewerInteractionContext = {
@@ -820,15 +882,17 @@ describe("Table artifact rendering", () => {
     const container = document.createElement("div");
     const root = createRoot(container);
     await act(async () => {
-      root.render(createElement(
-        SWRConfig,
-        { value: { provider: () => new Map(), shouldRetryOnError: false } },
-        createElement(renderer.Component, {
-          artifact: TABLE_ARTIFACT,
-          mode: "table",
-          interaction,
-        }),
-      ));
+      root.render(
+        createElement(
+          SWRConfig,
+          { value: { provider: () => new Map(), shouldRetryOnError: false } },
+          createElement(renderer.Component, {
+            artifact: TABLE_ARTIFACT,
+            mode: "table",
+            interaction,
+          }),
+        ),
+      );
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
@@ -842,10 +906,12 @@ describe("Table artifact rendering", () => {
     expect(onSelectionChange).toHaveBeenCalledTimes(1);
     expect(onSelectionChange).toHaveBeenCalledWith({
       kind: "key-selection",
-      items: [{
-        sourceIndex: 1,
-        values: { place: "Second place" },
-      }],
+      items: [
+        {
+          sourceIndex: 1,
+          values: { place: "Second place" },
+        },
+      ],
     });
     await act(async () => root.unmount());
   });
@@ -853,13 +919,15 @@ describe("Table artifact rendering", () => {
   it("emits integer-encoded cells as numbers so linked tables can match", async () => {
     const page: TablePage = {
       columns: [{ id: "parcel_id", title: "Parcel ID", value_type: "integer" }],
-      rows: [{
-        parcel_id: {
-          display: "12",
-          truncated: false,
-          original_length: null,
+      rows: [
+        {
+          parcel_id: {
+            display: "12",
+            truncated: false,
+            original_length: null,
+          },
         },
-      }],
+      ],
       row_indices: [0],
       highlighted_row_indices: [],
       offset: 0,
@@ -872,29 +940,41 @@ describe("Table artifact rendering", () => {
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/table/schema")) {
-        return Promise.resolve(new Response(JSON.stringify({
-          columns: page.columns,
-          total_rows: 1,
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }));
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              columns: page.columns,
+              total_rows: 1,
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+        );
       }
       if (url.includes("/table/cell?")) {
-        return Promise.resolve(new Response(JSON.stringify({
-          row_index: 0,
-          column_id: "parcel_id",
-          value: "12",
-          encoding: "integer",
-        }), {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              row_index: 0,
+              column_id: "parcel_id",
+              value: "12",
+              encoding: "integer",
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(page), {
           status: 200,
           headers: { "Content-Type": "application/json" },
-        }));
-      }
-      return Promise.resolve(new Response(JSON.stringify(page), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }));
+        }),
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     const onSelectionChange = vi.fn();
@@ -910,31 +990,35 @@ describe("Table artifact rendering", () => {
     const container = document.createElement("div");
     const root = createRoot(container);
     await act(async () => {
-      root.render(createElement(
-        SWRConfig,
-        { value: { provider: () => new Map(), shouldRetryOnError: false } },
-        createElement(renderer.Component, {
-          artifact: TABLE_ARTIFACT,
-          mode: "table",
-          interaction,
-        }),
-      ));
+      root.render(
+        createElement(
+          SWRConfig,
+          { value: { provider: () => new Map(), shouldRetryOnError: false } },
+          createElement(renderer.Component, {
+            artifact: TABLE_ARTIFACT,
+            mode: "table",
+            interaction,
+          }),
+        ),
+      );
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
     await act(async () => {
-      container.querySelector("tbody tr")?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      container
+        .querySelector("tbody tr")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
     expect(onSelectionChange).toHaveBeenCalledWith({
       kind: "key-selection",
-      items: [{
-        sourceIndex: 0,
-        values: { parcel_id: 12 },
-      }],
+      items: [
+        {
+          sourceIndex: 0,
+          values: { parcel_id: 12 },
+        },
+      ],
     });
     await act(async () => root.unmount());
   });
@@ -942,13 +1026,15 @@ describe("Table artifact rendering", () => {
   it("keeps the visible table mounted while a linked highlight query loads", async () => {
     const page: TablePage = {
       columns: [{ id: "place", title: "Place", value_type: "text" }],
-      rows: [{
-        place: {
-          display: "Belynichi",
-          truncated: false,
-          original_length: null,
+      rows: [
+        {
+          place: {
+            display: "Belynichi",
+            truncated: false,
+            original_length: null,
+          },
         },
-      }],
+      ],
       row_indices: [0],
       highlighted_row_indices: [],
       offset: 0,
@@ -962,36 +1048,46 @@ describe("Table artifact rendering", () => {
     const queryReady = new Promise<void>((resolve) => {
       releaseQuery = resolve;
     });
-    const fetchMock = vi.fn().mockImplementation((
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
-      const url = String(input);
-      if (url.includes("/table/schema")) {
-        return Promise.resolve(new Response(JSON.stringify({
-          columns: page.columns,
-          total_rows: 1,
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }));
-      }
-      if (init?.method === "POST") {
-        return queryReady.then(() =>
-          new Response(JSON.stringify({
-            ...page,
-            highlighted_row_indices: [0],
-          }), {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/table/schema")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                columns: page.columns,
+                total_rows: 1,
+              }),
+              {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              },
+            ),
+          );
+        }
+        if (init?.method === "POST") {
+          return queryReady.then(
+            () =>
+              new Response(
+                JSON.stringify({
+                  ...page,
+                  highlighted_row_indices: [0],
+                }),
+                {
+                  status: 200,
+                  headers: { "Content-Type": "application/json" },
+                },
+              ),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(page), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           }),
         );
-      }
-      return Promise.resolve(new Response(JSON.stringify(page), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }));
-    });
+      });
     vi.stubGlobal("fetch", fetchMock);
     const cache = new Map();
     const renderer = rendererFor(TABLE_ARTIFACT);
@@ -1005,22 +1101,24 @@ describe("Table artifact rendering", () => {
       incoming: ArtifactViewerInteractionContext["incoming"],
     ) => {
       await act(async () => {
-        root.render(createElement(
-          SWRConfig,
-          { value: swrValue },
-          createElement(renderer.Component, {
-            artifact: TABLE_ARTIFACT,
-            mode: "table",
-            interaction: {
-              outgoingFields: [],
-              selection: { kind: "key-selection", items: [] },
-              incoming,
-              onFieldsChange: vi.fn(),
-              onSelectionChange: vi.fn(),
-              onActivityChange: vi.fn(),
-            },
-          }),
-        ));
+        root.render(
+          createElement(
+            SWRConfig,
+            { value: swrValue },
+            createElement(renderer.Component, {
+              artifact: TABLE_ARTIFACT,
+              mode: "table",
+              interaction: {
+                outgoingFields: [],
+                selection: { kind: "key-selection", items: [] },
+                incoming,
+                onFieldsChange: vi.fn(),
+                onSelectionChange: vi.fn(),
+                onActivityChange: vi.fn(),
+              },
+            }),
+          ),
+        );
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
     };
@@ -1029,12 +1127,14 @@ describe("Table artifact rendering", () => {
     expect(container.textContent).toContain("Belynichi");
     expect(container.textContent).not.toContain("Loading table page");
 
-    await renderWithIncoming([{
-      bindingId: "binding-1",
-      effects: ["highlight"],
-      sourceSelectionCount: 1,
-      rows: [{ place: "Belynichi" }],
-    }]);
+    await renderWithIncoming([
+      {
+        bindingId: "binding-1",
+        effects: ["highlight"],
+        sourceSelectionCount: 1,
+        rows: [{ place: "Belynichi" }],
+      },
+    ]);
     expect(container.textContent).toContain("Belynichi");
     expect(container.textContent).not.toContain("Loading table page");
     expect(
@@ -1057,43 +1157,48 @@ describe("GIS map artifact rendering", () => {
     descriptor = GEO_RENDER_DESCRIPTOR,
     interaction?: ArtifactViewerInteractionContext,
   ) {
-    const fetchMock = vi.fn().mockImplementation((
-      input: RequestInfo | URL,
-    ) => Promise.resolve(new Response(
-      JSON.stringify(
-        String(input).includes("/geo/query")
-          ? {
-              artifact_id: descriptor.artifact_id,
-              bounds: [29, 53, 29, 53],
-              matched_feature_count: 1,
-              source_artifact_ids: ["features-artifact"],
-            }
-          : descriptor,
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify(
+            String(input).includes("/geo/query")
+              ? {
+                  artifact_id: descriptor.artifact_id,
+                  bounds: [29, 53, 29, 53],
+                  matched_feature_count: 1,
+                  source_artifact_ids: ["features-artifact"],
+                }
+              : descriptor,
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
       ),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    )));
+    );
     vi.stubGlobal("fetch", fetchMock);
     const renderer = rendererFor(MAP_ARTIFACT);
     const container = document.createElement("div");
     const root = createRoot(container);
     await act(async () => {
-      root.render(createElement(
-        SWRConfig,
-        { value: { provider: () => new Map(), shouldRetryOnError: false } },
-        createElement(renderer.Component, {
-          artifact: MAP_ARTIFACT,
-          mode,
-          availableHeight: 480,
-          interaction,
-        }),
-      ));
+      root.render(
+        createElement(
+          SWRConfig,
+          { value: { provider: () => new Map(), shouldRetryOnError: false } },
+          createElement(renderer.Component, {
+            artifact: MAP_ARTIFACT,
+            mode,
+            availableHeight: 480,
+            interaction,
+          }),
+        ),
+      );
     });
     return { container, fetchMock, renderer, root };
   }
 
   async function clickButton(container: HTMLElement, name: string) {
     const button = [...container.querySelectorAll("button")].find(
-      (candidate) => candidate.textContent?.trim() === name ||
+      (candidate) =>
+        candidate.textContent?.trim() === name ||
         candidate.getAttribute("aria-label") === name,
     );
     expect(button, `button ${name}`).toBeDefined();
@@ -1174,7 +1279,10 @@ describe("GIS map artifact rendering", () => {
     for (const layer of layers.slice(1, 6)) {
       expect(layer["source-layer"]).toBe("features");
     }
-    expect(map.options.bounds).toEqual([[-12, 35], [22, 61]]);
+    expect(map.options.bounds).toEqual([
+      [-12, 35],
+      [22, 61],
+    ]);
     expect(map.options.fitBoundsOptions).toEqual({
       padding: 28,
       maxZoom: 14,
@@ -1189,12 +1297,14 @@ describe("GIS map artifact rendering", () => {
     const interaction: ArtifactViewerInteractionContext = {
       outgoingFields: [],
       selection: { kind: "key-selection", items: [] },
-      incoming: [{
-        bindingId: "binding-1",
-        effects: ["filter", "highlight", "focus"],
-        sourceSelectionCount: 1,
-        rows: [{ name: "Control point 23", district: "Mohilev" }],
-      }],
+      incoming: [
+        {
+          bindingId: "binding-1",
+          effects: ["filter", "highlight", "focus"],
+          sourceSelectionCount: 1,
+          rows: [{ name: "Control point 23", district: "Mohilev" }],
+        },
+      ],
       onFieldsChange: vi.fn(),
       onSelectionChange: vi.fn(),
       onActivityChange,
@@ -1218,16 +1328,19 @@ describe("GIS map artifact rendering", () => {
     };
     expect(
       map.setFilter.mock.calls.some(([, filter]) =>
-        JSON.stringify(filter).includes("Control point 23")
+        JSON.stringify(filter).includes("Control point 23"),
       ),
     ).toBe(true);
     expect(
-      map.setPaintProperty.mock.calls.some(([, , value]) =>
-        Array.isArray(value) && value[0] === "case"
+      map.setPaintProperty.mock.calls.some(
+        ([, , value]) => Array.isArray(value) && value[0] === "case",
       ),
     ).toBe(true);
     expect(map.fitBounds).toHaveBeenCalledWith(
-      [[28.98, 52.98], [29.02, 53.02]],
+      [
+        [28.98, 52.98],
+        [29.02, 53.02],
+      ],
       expect.objectContaining({ duration: 450 }),
     );
     expect(onActivityChange).toHaveBeenLastCalledWith({
@@ -1238,26 +1351,28 @@ describe("GIS map artifact rendering", () => {
 
     map.fitBounds.mockClear();
     await act(async () => {
-      root.render(createElement(
-        SWRConfig,
-        { value: { provider: () => new Map(), shouldRetryOnError: false } },
-        createElement(renderer.Component, {
-          artifact: MAP_ARTIFACT,
-          mode: "map",
-          availableHeight: 480,
-          interaction: {
-            ...interaction,
-            selection: {
-              kind: "key-selection",
-              items: [{ values: { name: "A different map feature" } }],
+      root.render(
+        createElement(
+          SWRConfig,
+          { value: { provider: () => new Map(), shouldRetryOnError: false } },
+          createElement(renderer.Component, {
+            artifact: MAP_ARTIFACT,
+            mode: "map",
+            availableHeight: 480,
+            interaction: {
+              ...interaction,
+              selection: {
+                kind: "key-selection",
+                items: [{ values: { name: "A different map feature" } }],
+              },
+              incoming: interaction.incoming.map((binding) => ({
+                ...binding,
+                rows: binding.rows.map((values) => ({ ...values })),
+              })),
             },
-            incoming: interaction.incoming.map((binding) => ({
-              ...binding,
-              rows: binding.rows.map((values) => ({ ...values })),
-            })),
-          },
-        }),
-      ));
+          }),
+        ),
+      );
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(map.fitBounds).not.toHaveBeenCalled();
@@ -1269,12 +1384,14 @@ describe("GIS map artifact rendering", () => {
     const interaction: ArtifactViewerInteractionContext = {
       outgoingFields: [],
       selection: { kind: "key-selection", items: [] },
-      incoming: [{
-        bindingId: "binding-1",
-        effects: ["focus"],
-        sourceSelectionCount: 1,
-        rows: [{ name: "Missing place" }],
-      }],
+      incoming: [
+        {
+          bindingId: "binding-1",
+          effects: ["focus"],
+          sourceSelectionCount: 1,
+          rows: [{ name: "Missing place" }],
+        },
+      ],
       onFieldsChange: vi.fn(),
       onSelectionChange: vi.fn(),
       onActivityChange,
@@ -1291,10 +1408,12 @@ describe("GIS map artifact rendering", () => {
           resolveQuery = resolve;
         });
       }
-      return Promise.resolve(new Response(
-        JSON.stringify(GEO_RENDER_DESCRIPTOR),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ));
+      return Promise.resolve(
+        new Response(JSON.stringify(GEO_RENDER_DESCRIPTOR), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
     });
 
     await clickButton(container, "Load interactive map");
@@ -1306,15 +1425,20 @@ describe("GIS map artifact rendering", () => {
       message: "Searching the map layers for matching features.",
     });
     await act(async () => {
-      resolveQuery?.(new Response(JSON.stringify({
-        artifact_id: GEO_RENDER_DESCRIPTOR.artifact_id,
-        bounds: null,
-        matched_feature_count: 0,
-        source_artifact_ids: [],
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }));
+      resolveQuery?.(
+        new Response(
+          JSON.stringify({
+            artifact_id: GEO_RENDER_DESCRIPTOR.artifact_id,
+            bounds: null,
+            matched_feature_count: 0,
+            source_artifact_ids: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(onActivityChange).toHaveBeenLastCalledWith({
@@ -1330,12 +1454,14 @@ describe("GIS map artifact rendering", () => {
     const interaction: ArtifactViewerInteractionContext = {
       outgoingFields: [],
       selection: { kind: "key-selection", items: [] },
-      incoming: [{
-        bindingId: "binding-1",
-        effects: ["focus"],
-        sourceSelectionCount: 1,
-        rows: [],
-      }],
+      incoming: [
+        {
+          bindingId: "binding-1",
+          effects: ["focus"],
+          sourceSelectionCount: 1,
+          rows: [],
+        },
+      ],
       onFieldsChange: vi.fn(),
       onSelectionChange: vi.fn(),
       onActivityChange,
@@ -1481,18 +1607,14 @@ describe("GIS map artifact rendering", () => {
   it("uses feature hit-testing to expose a pointer and inspect vector properties", async () => {
     const onSelectionChange = vi.fn();
     const onFieldsChange = vi.fn();
-    const { container, root } = await renderGeo(
-      "map",
-      GEO_RENDER_DESCRIPTOR,
-      {
-        outgoingFields: ["name", "sheet"],
-        selection: { kind: "key-selection", items: [] },
-        incoming: [],
-        onFieldsChange,
-        onSelectionChange,
-        onActivityChange: vi.fn(),
-      },
-    );
+    const { container, root } = await renderGeo("map", GEO_RENDER_DESCRIPTOR, {
+      outgoingFields: ["name", "sheet"],
+      selection: { kind: "key-selection", items: [] },
+      incoming: [],
+      onFieldsChange,
+      onSelectionChange,
+      onActivityChange: vi.fn(),
+    });
     await clickButton(container, "Load interactive map");
     expect(onFieldsChange).toHaveBeenCalledWith([
       { id: "name", title: "Name", valueType: "text" },
@@ -1519,23 +1641,25 @@ describe("GIS map artifact rendering", () => {
       point: { x: 420, y: 180 },
       lngLat: { lng: 19.93821, lat: 50.06143 },
     };
-    map.queryRenderedFeatures.mockReturnValue([{
-      type: "Feature",
-      id: 23,
-      properties: {
-        name: "Control point 23",
-        sheet: "A-17",
-        surveyed: true,
+    map.queryRenderedFeatures.mockReturnValue([
+      {
+        type: "Feature",
+        id: 23,
+        properties: {
+          name: "Control point 23",
+          sheet: "A-17",
+          surveyed: true,
+        },
+        geometry: {
+          type: "Point",
+          coordinates: [19.93821, 50.06143],
+        },
+        layer: { id: "grafy-geo-parcels-point" },
+        source: "grafy-geo-source-parcels",
+        sourceLayer: "features",
+        state: {},
       },
-      geometry: {
-        type: "Point",
-        coordinates: [19.93821, 50.06143],
-      },
-      layer: { id: "grafy-geo-parcels-point" },
-      source: "grafy-geo-source-parcels",
-      sourceLayer: "features",
-      state: {},
-    }]);
+    ]);
     map.isStyleLoaded.mockReturnValue(false);
 
     map.emit("mousemove", pointerEvent);
@@ -1573,13 +1697,15 @@ describe("GIS map artifact rendering", () => {
     ).toBeNull();
     expect(onSelectionChange).toHaveBeenCalledWith({
       kind: "key-selection",
-      items: [{
-        values: {
-          name: "Control point 23",
-          sheet: "A-17",
-          surveyed: true,
+      items: [
+        {
+          values: {
+            name: "Control point 23",
+            sheet: "A-17",
+            surveyed: true,
+          },
         },
-      }],
+      ],
     });
 
     map.queryRenderedFeatures.mockReturnValue([]);
@@ -1607,9 +1733,9 @@ describe("GIS map artifact rendering", () => {
     await clickButton(container, "2 layers");
     await clickButton(container, "1. Parcels");
 
-    const layerOpacity = [...container.querySelectorAll("label")].find(
-      (label) => label.textContent?.includes("Layer opacity"),
-    )?.querySelector<HTMLInputElement>('input[type="range"]');
+    const layerOpacity = [...container.querySelectorAll("label")]
+      .find((label) => label.textContent?.includes("Layer opacity"))
+      ?.querySelector<HTMLInputElement>('input[type="range"]');
     expect(layerOpacity).not.toBeNull();
     await act(async () => {
       if (layerOpacity) {
@@ -1652,9 +1778,9 @@ describe("GIS map artifact rendering", () => {
     );
 
     await clickButton(container, "2. Elevation");
-    const resampling = [...container.querySelectorAll("label")].find(
-      (label) => label.textContent?.includes("Resampling"),
-    )?.querySelector<HTMLSelectElement>("select");
+    const resampling = [...container.querySelectorAll("label")]
+      .find((label) => label.textContent?.includes("Resampling"))
+      ?.querySelector<HTMLSelectElement>("select");
     expect(resampling).not.toBeNull();
     await act(async () => {
       if (resampling) {
@@ -1688,8 +1814,7 @@ describe("GIS map artifact rendering", () => {
 describe("JSON Schema artifact rendering", () => {
   it("unwraps and indents the schema value for the pretty view", () => {
     const payload = {
-      value:
-        '{"type":"object","properties":{"invoice_id":{"type":"string"}}}',
+      value: '{"type":"object","properties":{"invoice_id":{"type":"string"}}}',
     };
 
     expect(formatJsonSchemaPayload(payload)).toBe(
@@ -1733,9 +1858,9 @@ describe("JSON Schema artifact rendering", () => {
       artifact_type: "scalar.text",
     };
 
-    expect(
-      rendererFor(textArtifact, { value: '{"type":"object"}' }).id,
-    ).toBe("json");
+    expect(rendererFor(textArtifact, { value: '{"type":"object"}' }).id).toBe(
+      "json",
+    );
   });
 
   it("keeps raw mode on the stored payload envelope", () => {

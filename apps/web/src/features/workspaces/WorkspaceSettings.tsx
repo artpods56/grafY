@@ -99,9 +99,8 @@ export function WorkspaceSettings() {
     error: tokensError,
     isLoading: tokensLoading,
     mutate: mutateTokens,
-  } = useSWR(
-    ["personal-access-tokens", workspace.id],
-    ([, workspaceId]) => listPersonalAccessTokens(workspaceId),
+  } = useSWR(["personal-access-tokens", workspace.id], ([, workspaceId]) =>
+    listPersonalAccessTokens(workspaceId),
   );
   const [tokenPurpose, setTokenPurpose] = React.useState<TokenPurpose>(
     () => availableTokenPurposes[0]?.id ?? "graph-automation",
@@ -231,7 +230,9 @@ export function WorkspaceSettings() {
           <div className="grafy-workspace-settings__section-heading">
             <div>
               <h2 id="workspace-access-heading">Members and access</h2>
-              <p>Control who can work in this workspace and what they can do.</p>
+              <p>
+                Control who can work in this workspace and what they can do.
+              </p>
             </div>
             <Users size={18} aria-hidden="true" />
           </div>
@@ -326,12 +327,15 @@ export function WorkspaceSettings() {
         )}
 
         {createdToken ? (
-          <div className="grafy-workspace-settings__created-token" role="status">
+          <div
+            className="grafy-workspace-settings__created-token"
+            role="status"
+          >
             <div>
               <strong>Copy this token now</strong>
               <span>
-                {createdToken.label} will not be shown again after you leave this
-                page.
+                {createdToken.label} will not be shown again after you leave
+                this page.
               </span>
             </div>
             <div className="grafy-workspace-settings__token-secret">
@@ -363,7 +367,10 @@ export function WorkspaceSettings() {
           {tokensLoading ? (
             <p className="grafy-workspace-settings__muted">Loading tokens…</p>
           ) : tokensError ? (
-            <div className="grafy-workspace-settings__inline-error" role="alert">
+            <div
+              className="grafy-workspace-settings__inline-error"
+              role="alert"
+            >
               <span>Tokens could not be loaded.</span>
               <button
                 type="button"
@@ -377,7 +384,10 @@ export function WorkspaceSettings() {
             tokens.map((token) => {
               const status = tokenState(token, renderedAt);
               return (
-                <div className="grafy-workspace-settings__token-row" key={token.id}>
+                <div
+                  className="grafy-workspace-settings__token-row"
+                  key={token.id}
+                >
                   <div className="grafy-workspace-settings__token-row-main">
                     <div>
                       <strong>{token.label}</strong>
@@ -402,7 +412,9 @@ export function WorkspaceSettings() {
                     className="grafy-workspace-settings__icon-button grafy-workspace-settings__icon-button--danger"
                     aria-label={`Revoke ${token.label}`}
                     title="Revoke token"
-                    disabled={status.state !== "active" || revokingId === token.id}
+                    disabled={
+                      status.state !== "active" || revokingId === token.id
+                    }
                     onClick={() => void revokeToken(token)}
                   >
                     <Trash2 size={15} aria-hidden="true" />
@@ -431,7 +443,10 @@ export function WorkspaceSettings() {
         </div>
         <div className="grafy-workspace-settings__section-action">
           <span>Manage modules published for this workspace.</span>
-          <WorkspaceLibraryDialog workspace={workspace} triggerLabel="Open library" />
+          <WorkspaceLibraryDialog
+            workspace={workspace}
+            triggerLabel="Open library"
+          />
         </div>
       </section>
     </main>

@@ -1,8 +1,5 @@
 import type { SchemaField } from "../config-schema";
-import {
-  STANDARD_NODE_WIDTH_CELLS,
-  clampCellSize,
-} from "../grid-layout";
+import { STANDARD_NODE_WIDTH_CELLS, clampCellSize } from "../grid-layout";
 
 /**
  * Config fields are laid out as bricks on the canvas lattice. Every footprint
@@ -62,8 +59,18 @@ const FOOTPRINTS: Record<ConfigControlKind, FieldFootprint> = {
   number: { columns: HALF_WIDTH_CELLS, rows: 1, growX: true },
   select: { columns: HALF_WIDTH_CELLS, rows: 1, growX: true },
   checkbox: { columns: HALF_WIDTH_CELLS, rows: 1, growX: true },
-  textarea: { columns: STANDARD_NODE_WIDTH_CELLS, rows: 2, growX: true, growY: true },
-  code: { columns: STANDARD_NODE_WIDTH_CELLS, rows: 2, growX: true, growY: true },
+  textarea: {
+    columns: STANDARD_NODE_WIDTH_CELLS,
+    rows: 2,
+    growX: true,
+    growY: true,
+  },
+  code: {
+    columns: STANDARD_NODE_WIDTH_CELLS,
+    rows: 2,
+    growX: true,
+    growY: true,
+  },
   // Base brick holds one row of tuple inputs; extra pairs are added per field.
   "number-tuple": { columns: STANDARD_NODE_WIDTH_CELLS, rows: 1, growX: true },
   "string-list": { columns: STANDARD_NODE_WIDTH_CELLS, rows: 2, growX: true },
@@ -75,11 +82,14 @@ export function configControlKind(field: SchemaField): ConfigControlKind {
   if (field.type === "string-list") return "string-list";
   if (field.type === "boolean") return "checkbox";
   if (field.enumValues?.length) return "select";
-  if (field.format === "textarea") return field.codeLanguage ? "code" : "textarea";
+  if (field.format === "textarea")
+    return field.codeLanguage ? "code" : "textarea";
   return field.type === "string" ? "text" : "number";
 }
 
-export function footprintForControlKind(kind: ConfigControlKind): FieldFootprint {
+export function footprintForControlKind(
+  kind: ConfigControlKind,
+): FieldFootprint {
   return FOOTPRINTS[kind];
 }
 
@@ -154,7 +164,10 @@ export function packFieldFootprints(
   let cursor = 0;
 
   for (const [index, footprint] of footprints.entries()) {
-    const w = Math.min(boardColumns, Math.max(1, Math.floor(footprint.columns)));
+    const w = Math.min(
+      boardColumns,
+      Math.max(1, Math.floor(footprint.columns)),
+    );
     const h = Math.max(1, Math.floor(footprint.rows));
     let shelf = shelves.at(-1);
     if (!shelf || cursor + w > boardColumns) {

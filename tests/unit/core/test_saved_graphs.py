@@ -270,6 +270,45 @@ def test_artifact_card_reference_round_trips_without_a_link() -> None:
     assert SavedGraphDocument.model_validate(payload) == document
 
 
+def test_artifact_card_sequence_round_trips_in_order() -> None:
+    # A card that carries many artifacts keeps their order, because that order
+    # is what the card passes on.
+    card = GraphPresentationViewer(
+        id="artifact-viewer-card",
+        position=GraphPoint(x=0.0, y=0.0),
+        artifact_ref=ArtifactRefSequence(
+            artifact_type="file.jpg",
+            schema_version=1,
+            item_refs=[
+                ArtifactRef(
+                    artifact_id=UUID("00000000-0000-0000-0000-000000000001"),
+                    artifact_type="file.jpg",
+                    schema_version=1,
+                ),
+                ArtifactRef(
+                    artifact_id=UUID("00000000-0000-0000-0000-000000000002"),
+                    artifact_type="file.jpg",
+                    schema_version=1,
+                ),
+            ],
+        ),
+    )
+    document = SavedGraphDocument(
+        presentation=GraphPresentationDocument(viewers=(card,))
+    )
+
+    payload = document.model_dump(mode="json")
+
+    assert [
+        item["artifact_id"]
+        for item in payload["presentation"]["viewers"][0]["artifact_ref"]["item_refs"]
+    ] == [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002",
+    ]
+    assert SavedGraphDocument.model_validate(payload) == document
+
+
 def test_artifact_card_keeps_its_reference_when_the_artifact_is_missing() -> None:
     # Loading a document never consults the artifact store, so a deleted or
     # inaccessible artifact leaves the stored reference untouched.

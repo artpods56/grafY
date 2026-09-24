@@ -91,20 +91,17 @@ describe("useResolvedEdgeRouteOffset", () => {
 
   it("keeps live snapping when the grid explicitly enables it", async () => {
     gridMocks.snapWhileDragging = true;
-    const hook = await renderHook(
-      () => {
-        flowMocks.sourceDragging = true;
-        flowMocks.targetDragging = false;
-        return useResolvedEdgeRouteOffset(
-          { x: 13, y: 17 },
-          { x: 4, y: 6 },
-          false,
-          "source",
-          "target",
-        );
-      },
-      undefined,
-    );
+    const hook = await renderHook(() => {
+      flowMocks.sourceDragging = true;
+      flowMocks.targetDragging = false;
+      return useResolvedEdgeRouteOffset(
+        { x: 13, y: 17 },
+        { x: 4, y: 6 },
+        false,
+        "source",
+        "target",
+      );
+    }, undefined);
 
     expect(hook.result.current).toEqual({ x: 12, y: 8 });
   });

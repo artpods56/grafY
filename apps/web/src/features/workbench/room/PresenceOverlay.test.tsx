@@ -52,7 +52,10 @@ describe("PresenceOverlay", () => {
   });
 
   it("renders cursor snapshots without reading the mutable track ref", () => {
-    vi.stubGlobal("requestAnimationFrame", vi.fn(() => 1));
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn(() => 1),
+    );
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
     const container = document.createElement("div");
     document.body.append(container);

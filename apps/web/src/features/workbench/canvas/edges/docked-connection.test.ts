@@ -13,7 +13,9 @@ import {
 const cellSize = 50;
 const dockableTypes = new Set(["workflow", "viewer"]);
 
-function dockedInput(overrides: Partial<Parameters<typeof connectionIsDocked>[0]> = {}) {
+function dockedInput(
+  overrides: Partial<Parameters<typeof connectionIsDocked>[0]> = {},
+) {
   return connectionIsDocked({
     source: { x: 294, y: 80 },
     target: { x: 306, y: 80 },
@@ -118,23 +120,29 @@ describe("dockedConnections", () => {
     const nodes = new Map<string, DockedGraphNode>([
       [
         "left",
-        nodeWithHandle({ x: 0, y: 0 }, {
-          id: sourceHandle,
-          type: "source",
-          x: 279,
-          y: 65,
-          position: Position.Right,
-        }),
+        nodeWithHandle(
+          { x: 0, y: 0 },
+          {
+            id: sourceHandle,
+            type: "source",
+            x: 279,
+            y: 65,
+            position: Position.Right,
+          },
+        ),
       ],
       [
         "right",
-        nodeWithHandle({ x: 300, y: 0 }, {
-          id: targetHandle,
-          type: "target",
-          x: -9,
-          y: 65,
-          position: Position.Left,
-        }),
+        nodeWithHandle(
+          { x: 300, y: 0 },
+          {
+            id: targetHandle,
+            type: "target",
+            x: -9,
+            y: 65,
+            position: Position.Left,
+          },
+        ),
       ],
     ]);
 
@@ -168,23 +176,29 @@ describe("dockedConnections", () => {
     const nodes = new Map<string, DockedGraphNode>([
       [
         "left",
-        nodeWithHandle({ x: 0, y: 0 }, {
-          id: sourceHandle,
-          type: "source",
-          x: 279,
-          y: 65,
-          position: Position.Right,
-        }),
+        nodeWithHandle(
+          { x: 0, y: 0 },
+          {
+            id: sourceHandle,
+            type: "source",
+            x: 279,
+            y: 65,
+            position: Position.Right,
+          },
+        ),
       ],
       [
         "right",
-        nodeWithHandle({ x: 300, y: 0 }, {
-          id: plugHandle,
-          type: "target",
-          x: -9,
-          y: 65,
-          position: Position.Left,
-        }),
+        nodeWithHandle(
+          { x: 300, y: 0 },
+          {
+            id: plugHandle,
+            type: "target",
+            x: -9,
+            y: 65,
+            position: Position.Left,
+          },
+        ),
       ],
     ]);
 
@@ -220,23 +234,29 @@ describe("dockedConnections", () => {
     const nodes = new Map<string, DockedGraphNode>([
       [
         "left",
-        nodeWithHandle({ x: 0, y: 0 }, {
-          id: sourceHandle,
-          type: "source",
-          x: 279,
-          y: 65,
-          position: Position.Right,
-        }),
+        nodeWithHandle(
+          { x: 0, y: 0 },
+          {
+            id: sourceHandle,
+            type: "source",
+            x: 279,
+            y: 65,
+            position: Position.Right,
+          },
+        ),
       ],
       [
         "right",
-        nodeWithHandle({ x: 300, y: 0 }, {
-          id: targetHandle,
-          type: "target",
-          x: -9,
-          y: 65,
-          position: Position.Left,
-        }),
+        nodeWithHandle(
+          { x: 300, y: 0 },
+          {
+            id: targetHandle,
+            type: "target",
+            x: -9,
+            y: 65,
+            position: Position.Left,
+          },
+        ),
       ],
     ]);
 

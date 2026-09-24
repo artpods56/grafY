@@ -23,8 +23,9 @@ vi.mock("@xyflow/react", () => ({
   ViewportPortal: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="canvas-preview">{children}</div>
   ),
-  useStore: (selector: (state: { nodeLookup: Map<string, unknown> }) => unknown) =>
-    selector({ nodeLookup: new Map() }),
+  useStore: (
+    selector: (state: { nodeLookup: Map<string, unknown> }) => unknown,
+  ) => selector({ nodeLookup: new Map() }),
 }));
 
 import {
@@ -36,7 +37,10 @@ import {
 const roots = new Map<Root, HTMLElement>();
 
 beforeEach(() => {
-  document.documentElement.style.setProperty("--grafy-mobile-overlay-top", "68px");
+  document.documentElement.style.setProperty(
+    "--grafy-mobile-overlay-top",
+    "68px",
+  );
 });
 
 function port(
@@ -113,9 +117,7 @@ function registry(): NodeRegistry {
   };
 }
 
-function sessionFor(
-  registryValue: NodeRegistry,
-): ContextualDiscoverySession {
+function sessionFor(registryValue: NodeRegistry): ContextualDiscoverySession {
   const source = port("text", "output");
   const sourceHandle = encodeHandleId(portMetaForPort(source));
   const candidates = downstreamCandidatesFromOutput({
@@ -222,13 +224,10 @@ describe("popupPositionBesidePreview", () => {
 
   it("keeps a compact menu inside a phone viewport", () => {
     expect(
-      popupPositionBesidePreview(
-        null,
-        { x: 300, y: 460 },
-        296,
-        456,
-        { width: 320, height: 480 },
-      ),
+      popupPositionBesidePreview(null, { x: 300, y: 460 }, 296, 456, {
+        width: 320,
+        height: 480,
+      }),
     ).toEqual({ left: 12, top: 12 });
   });
 });
@@ -310,7 +309,10 @@ describe("ContextualNodeDiscovery", () => {
   });
 
   it("uses the root mobile overlay token for compact geometry", async () => {
-    document.documentElement.style.setProperty("--grafy-mobile-overlay-top", "92px");
+    document.documentElement.style.setProperty(
+      "--grafy-mobile-overlay-top",
+      "92px",
+    );
     vi.stubGlobal("innerWidth", 320);
     vi.stubGlobal("innerHeight", 480);
 
@@ -391,7 +393,9 @@ describe("ContextualNodeDiscovery", () => {
     expect(document.body.textContent).toContain("Replace text description");
     expect(document.body.textContent).toContain("Annotate text description");
     expect(document.body.textContent).not.toContain("Built-in ·");
-    const preview = document.querySelector('[data-testid="canvas-preview"] article');
+    const preview = document.querySelector(
+      '[data-testid="canvas-preview"] article',
+    );
     expect(preview).toBeTruthy();
     expect(preview?.getAttribute("aria-label")).toMatch(/text/i);
   });
@@ -403,9 +407,7 @@ describe("ContextualNodeDiscovery", () => {
       button.textContent?.includes("Annotate text"),
     );
     await React.act(async () => {
-      annotate?.dispatchEvent(
-        new MouseEvent("mouseenter", { bubbles: true }),
-      );
+      annotate?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     });
 
     const preview = document.querySelector('[data-testid="canvas-preview"]');

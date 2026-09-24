@@ -29,7 +29,9 @@ export function ThresholdStatus({
         <div className="grafy-auth-threshold__copy">
           <h1>{title}</h1>
           <p className="grafy-auth-threshold__detail">{detail}</p>
-          {action ? <div className="grafy-auth-threshold__action">{action}</div> : null}
+          {action ? (
+            <div className="grafy-auth-threshold__action">{action}</div>
+          ) : null}
         </div>
       </div>
     </main>

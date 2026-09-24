@@ -70,6 +70,16 @@ const s = stylex.create({
     backgroundColor: tokens.colorSurfaceMuted,
     boxShadow: tokens.shadowNode,
   },
+  /**
+   * A node whose content is the thing itself: no border, plate, or shadow of
+   * its own, so an image sits on the canvas and only the pickup layer moves.
+   */
+  bareShell: {
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    boxShadow: "none",
+    borderRadius: tokens.radiusLg,
+  },
   content: {
     boxSizing: "border-box",
     flexShrink: 0,
@@ -120,6 +130,8 @@ interface UseCanvasNodeShellOptions {
   selected: boolean | undefined;
   dragging: boolean | undefined;
   naturalWidth: number;
+  /** Lattice floor for the shell width; artifact cards are narrower than nodes. */
+  minWidth?: number;
   updateNodeInternals: (id: string) => void;
 }
 
@@ -128,6 +140,7 @@ export function useCanvasNodeShell({
   selected,
   dragging,
   naturalWidth,
+  minWidth,
   updateNodeInternals,
 }: UseCanvasNodeShellOptions) {
   const lift = usePickupLift({
@@ -136,7 +149,7 @@ export function useCanvasNodeShell({
     dragging,
     updateNodeInternals,
   });
-  const grid = useShellGridFill(naturalWidth);
+  const grid = useShellGridFill(naturalWidth, minWidth);
   return { ...lift, ...grid };
 }
 
@@ -146,7 +159,7 @@ interface CanvasNodeShellProps {
   state: CanvasNodeShellState;
   selected: boolean | undefined;
   remoteSelectionColor?: string | null;
-  variant?: "default" | "incompatible";
+  variant?: "default" | "incompatible" | "bare";
   ariaLabel?: string;
   testId?: string;
   children: React.ReactNode;
@@ -213,6 +226,7 @@ export function CanvasNodeShell({
             variant === "incompatible" ? s.incompatibleShell : null,
             pickedUp ? s.pickedUp : null,
             draggedTier ? s.dragging : null,
+            variant === "bare" ? s.bareShell : null,
           )}
           style={shellStyle}
         >
