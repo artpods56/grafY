@@ -2210,10 +2210,9 @@ body.grafy-rail-resizing .grafy-workspace-settings {
 
 .grafy-graphs__row {
   display: grid;
-  grid-template-columns: 32px minmax(170px, 1fr) minmax(
-      120px,
-      0.55fr
-    ) 86px 174px 18px;
+  grid-template-columns:
+    32px minmax(170px, 1fr) minmax(120px, 0.55fr)
+    86px 174px 18px;
   align-items: center;
   gap: 12px;
   min-height: 64px;

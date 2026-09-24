@@ -265,14 +265,12 @@ describe("collaboration HTTP API", () => {
 
 describe("execution history API", () => {
   it("serializes list filters and opaque cursors", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ items: [], next_cursor: null }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ items: [], next_cursor: null }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const controller = new AbortController();
 

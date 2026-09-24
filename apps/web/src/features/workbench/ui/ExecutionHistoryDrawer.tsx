@@ -732,8 +732,9 @@ export function ExecutionHistoryDrawer({
                         r{execution.graph_revision} ·{" "}
                         {execution.scope.replaceAll("-", " ")} ·{" "}
                         {execution.requested_node_ids.length} requested node
-                        {execution.requested_node_ids.length === 1 ? "" : "s"} ·{" "}
-                        {execution.node_count} node
+                        {execution.requested_node_ids.length === 1
+                          ? ""
+                          : "s"} · {execution.node_count} node
                         {execution.node_count === 1 ? "" : "s"} ·{" "}
                         {execution.artifact_count} artifact
                         {execution.artifact_count === 1 ? "" : "s"}

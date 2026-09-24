@@ -145,16 +145,14 @@ describe("artifact payload loading policy", () => {
     "geo.map_layer",
     "geo.map_document",
   ])("never loads generic content for %s previews", async (artifactType) => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            detail: "Render descriptor unavailable in this policy test",
-          }),
-          { status: 500, headers: { "Content-Type": "application/json" } },
-        ),
-      );
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          detail: "Render descriptor unavailable in this policy test",
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const artifact: ArtifactSummary = {
       artifact_id: `map-${artifactType}`,

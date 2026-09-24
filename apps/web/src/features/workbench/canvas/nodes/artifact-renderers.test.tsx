@@ -317,16 +317,14 @@ describe("Table artifact rendering", () => {
     const renderer = rendererFor(TABLE_ARTIFACT);
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockImplementation(() =>
-          Promise.resolve(
-            new Response(JSON.stringify(page), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            }),
-          ),
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(page), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
         ),
+      ),
     );
     const container = document.createElement("div");
     const root = createRoot(container);
