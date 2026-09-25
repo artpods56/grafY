@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { RunExecution, RunNodeResult } from "@/lib/api";
+import type { NodeSpec, RunExecution, RunNodeResult } from "@/lib/api";
 import type { WorkflowNode } from "../../model/execution-plan";
 import {
   WORKFLOW_NODE_TYPE,
@@ -15,7 +15,7 @@ import {
 
 const executionId = "00000000-0000-4000-8000-000000000001";
 
-function nodeSpec() {
+function nodeSpec(): NodeSpec {
   return {
     operator_id: "test.operator",
     operator_version: 1,
