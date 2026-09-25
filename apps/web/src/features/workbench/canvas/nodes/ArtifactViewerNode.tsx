@@ -43,7 +43,7 @@ import {
 import { ArtifactCardBody } from "./ArtifactCardBody";
 import { ArtifactPortPreview } from "./ArtifactsAppendix";
 import { presentsArtifacts } from "../artifact-card";
-import { rendererCanBrush } from "./artifact-renderers";
+import { rendererCanBrush } from "./artifact-renderers/registry";
 import {
   type CanvasNodeOverflowItem,
   CanvasNodeHeader,
