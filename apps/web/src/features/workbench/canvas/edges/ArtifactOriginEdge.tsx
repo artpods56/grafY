@@ -9,7 +9,7 @@ import {
 import * as stylex from "@stylexjs/stylex";
 import { Unplug } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import type { ArtifactOriginEdge } from "../artifact-connections";
+import type { ArtifactOriginEdge } from "../artifact-origin-edge";
 
 const s = stylex.create({
   disconnect: {

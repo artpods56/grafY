@@ -163,9 +163,9 @@ import {
   type CanvasNode,
   type GraphPresentation,
 } from "../canvas/artifact-viewer";
+import { ARTIFACT_ORIGIN_EDGE_TYPE } from "../canvas/artifact-origin-edge";
 import {
   ARTIFACT_CARD_OUTPUT_HANDLE,
-  ARTIFACT_ORIGIN_EDGE_TYPE,
   artifactOriginConnections,
   resolveArtifactCardConnection,
 } from "../canvas/artifact-connections";
