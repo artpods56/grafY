@@ -161,6 +161,19 @@ import {
   type CanvasNode,
   type GraphPresentation,
 } from "../canvas/artifact-viewer";
+import {
+  withAnnotationColor,
+  withAnnotationLayout,
+  withAnnotationText,
+  withViewerBinding,
+  withViewerEdge,
+  withViewerEdgeRoute,
+  withViewerLayout,
+  withViewerMode,
+  withoutAnnotation,
+  withoutViewer,
+  withoutViewerEdgesFrom,
+} from "../canvas/artifact-viewer-edits";
 import { ARTIFACT_ORIGIN_EDGE_TYPE } from "../canvas/artifact-origin-edge";
 import {
   ARTIFACT_CARD_OUTPUT_HANDLE,
@@ -688,71 +701,34 @@ function WorkbenchBody({
 
   const updateArtifactViewerLayout = React.useCallback(
     (nodeId: string, layout: ArtifactViewerNode["data"]["layout"]) => {
-      commitArtifactViewers((current) => ({
-        ...current,
-        nodes: current.nodes.map((node) =>
-          node.id === nodeId
-            ? { ...node, data: { ...node.data, layout } }
-            : node,
-        ),
-      }));
+      commitArtifactViewers((current) =>
+        withViewerLayout(current, nodeId, layout),
+      );
     },
     [commitArtifactViewers],
   );
 
   const updateArtifactViewerEdge = React.useCallback(
     (edgeId: string, update: ArtifactViewerEdgeUpdate) => {
-      commitArtifactViewers((current) => ({
-        ...current,
-        edges: current.edges.map((edge) => {
-          if (edge.id !== edgeId) return edge;
-          const nextProjection =
-            update.projection === undefined
-              ? edge.data?.projection
-              : (update.projection ?? undefined);
-          return {
-            ...edge,
-            data: {
-              ...edge.data,
-              sourcePortName: edge.data?.sourcePortName ?? "",
-              projection: nextProjection,
-            },
-          };
-        }),
-      }));
+      commitArtifactViewers((current) =>
+        withViewerEdge(current, edgeId, update),
+      );
     },
     [commitArtifactViewers],
   );
 
   const updateArtifactViewerEdgeRoute = React.useCallback(
     (edgeId: string, routeOffset: WorkflowEdgeRouteOffset) => {
-      commitArtifactViewers((current) => ({
-        ...current,
-        edges: current.edges.map((edge) =>
-          edge.id === edgeId
-            ? {
-                ...edge,
-                data: {
-                  ...edge.data,
-                  sourcePortName: edge.data?.sourcePortName ?? "",
-                  routeOffset,
-                },
-              }
-            : edge,
-        ),
-      }));
+      commitArtifactViewers((current) =>
+        withViewerEdgeRoute(current, edgeId, routeOffset),
+      );
     },
     [commitArtifactViewers],
   );
 
   const updateArtifactViewerMode = React.useCallback(
     (nodeId: string, mode: string) => {
-      commitArtifactViewers((current) => ({
-        ...current,
-        nodes: current.nodes.map((node) =>
-          node.id === nodeId ? { ...node, data: { ...node.data, mode } } : node,
-        ),
-      }));
+      commitArtifactViewers((current) => withViewerMode(current, nodeId, mode));
     },
     [commitArtifactViewers],
   );
@@ -807,12 +783,9 @@ function WorkbenchBody({
 
   const updateArtifactViewerBinding = React.useCallback(
     (bindingId: string, binding: ArtifactViewerBinding) => {
-      commitArtifactViewers((current) => ({
-        ...current,
-        bindings: current.bindings.map((candidate) =>
-          candidate.id === bindingId ? binding : candidate,
-        ),
-      }));
+      commitArtifactViewers((current) =>
+        withViewerBinding(current, bindingId, binding),
+      );
     },
     [commitArtifactViewers],
   );
@@ -847,18 +820,7 @@ function WorkbenchBody({
       dropOriginsCarriedByCards([
         artifactViewers.nodes.find((node) => node.id === nodeId),
       ]);
-      commitArtifactViewers((current) => ({
-        ...current,
-        nodes: current.nodes.filter((node) => node.id !== nodeId),
-        edges: current.edges.filter(
-          (edge) => edge.source !== nodeId && edge.target !== nodeId,
-        ),
-        bindings: current.bindings.filter(
-          (binding) =>
-            binding.sourceViewerId !== nodeId &&
-            binding.targetViewerId !== nodeId,
-        ),
-      }));
+      commitArtifactViewers((current) => withoutViewer(current, nodeId));
       setArtifactViewerSelections((current) => {
         const next = { ...current };
         delete next[nodeId];
@@ -881,50 +843,34 @@ function WorkbenchBody({
 
   const updateAnnotationLayout = React.useCallback(
     (nodeId: string, layout: AnnotationLayout) => {
-      commitArtifactViewers((current) => ({
-        ...current,
-        annotations: current.annotations.map((node) =>
-          node.id === nodeId
-            ? { ...node, data: { ...node.data, layout } }
-            : node,
-        ),
-      }));
+      commitArtifactViewers((current) =>
+        withAnnotationLayout(current, nodeId, layout),
+      );
     },
     [commitArtifactViewers],
   );
 
   const updateAnnotationText = React.useCallback(
     (nodeId: string, text: string) => {
-      commitArtifactViewers((current) => ({
-        ...current,
-        annotations: current.annotations.map((node) =>
-          node.id === nodeId ? { ...node, data: { ...node.data, text } } : node,
-        ),
-      }));
+      commitArtifactViewers((current) =>
+        withAnnotationText(current, nodeId, text),
+      );
     },
     [commitArtifactViewers],
   );
 
   const updateAnnotationColor = React.useCallback(
     (nodeId: string, color: AnnotationColor) => {
-      commitArtifactViewers((current) => ({
-        ...current,
-        annotations: current.annotations.map((node) =>
-          node.id === nodeId
-            ? { ...node, data: { ...node.data, color } }
-            : node,
-        ),
-      }));
+      commitArtifactViewers((current) =>
+        withAnnotationColor(current, nodeId, color),
+      );
     },
     [commitArtifactViewers],
   );
 
   const removeAnnotation = React.useCallback(
     (nodeId: string) => {
-      commitArtifactViewers((current) => ({
-        ...current,
-        annotations: current.annotations.filter((node) => node.id !== nodeId),
-      }));
+      commitArtifactViewers((current) => withoutAnnotation(current, nodeId));
     },
     [commitArtifactViewers],
   );
@@ -932,10 +878,9 @@ function WorkbenchBody({
   const removeNode = React.useCallback(
     (nodeId: string) => {
       applyAuthoringCommands([{ kind: "remove_nodes", node_ids: [nodeId] }]);
-      commitArtifactViewers((current) => ({
-        ...current,
-        edges: current.edges.filter((edge) => edge.source !== nodeId),
-      }));
+      commitArtifactViewers((current) =>
+        withoutViewerEdgesFrom(current, nodeId),
+      );
       forgetNodeSecretStatuses(nodeId);
       setPendingConnectionRoute(null);
       setRunError(null);
