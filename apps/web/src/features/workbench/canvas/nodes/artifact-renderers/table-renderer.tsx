@@ -33,8 +33,10 @@ import {
   type ArtifactViewerInteractionContext,
 } from "../../artifact-interactions";
 
-import type { ArtifactRendererSpec } from "./registry";
-import { MONO, sharedStyles } from "./styles";
+import type { ArtifactRendererSpec } from "./spec";
+import { sharedStyles } from "./styles";
+
+const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
 const s = stylex.create({
   tablePreview: {

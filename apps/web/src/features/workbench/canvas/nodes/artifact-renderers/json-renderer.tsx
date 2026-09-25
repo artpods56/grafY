@@ -5,7 +5,7 @@ import * as stylex from "@stylexjs/stylex";
 import { artifactMeta } from "./artifact-meta";
 import { formatJsonSchemaPayload } from "./payload";
 import { PrettyValue } from "./pretty-value";
-import type { ArtifactRendererSpec } from "./registry";
+import type { ArtifactRendererSpec } from "./spec";
 import { sharedStyles } from "./styles";
 
 export const jsonSchemaRenderer: ArtifactRendererSpec = {

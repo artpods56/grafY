@@ -5,7 +5,8 @@ import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { record } from "./payload";
-import { MONO } from "./styles";
+
+const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
 const s = stylex.create({
   prettyGrid: { display: "grid", gap: "6px" },

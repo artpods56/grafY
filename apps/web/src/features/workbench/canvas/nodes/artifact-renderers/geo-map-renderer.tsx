@@ -2,7 +2,7 @@
 
 import { GeoMapArtifactRenderer } from "../geo-map-artifact-renderer";
 
-import type { ArtifactRendererSpec } from "./registry";
+import type { ArtifactRendererSpec } from "./spec";
 
 export const geoMapRenderer: ArtifactRendererSpec = {
   id: "geo-map",
