@@ -157,7 +157,6 @@ import {
   type CanvasNode,
   type GraphPresentation,
 } from "../canvas/artifact-viewer";
-import { withoutViewerEdgesFrom } from "../canvas/artifact-viewer-edits";
 import { ARTIFACT_ORIGIN_EDGE_TYPE } from "../canvas/artifact-origin-edge";
 import {
   ARTIFACT_CARD_OUTPUT_HANDLE,
@@ -197,14 +196,11 @@ import {
   encodeHandleId,
   type ConnectionRoute,
 } from "../canvas/handles";
-import { appendInputPlug } from "../canvas/input-plugs";
 import {
   nodeSecretBindingReady,
   nodeSecretInputs,
 } from "../canvas/node-secrets";
 import { artifactTypeColor } from "../canvas/nodes.css";
-import type { ArtifactQueryRelation } from "../canvas/query-artifact-tables";
-import type { SchemaBuilderField } from "../canvas/schema-builder";
 import {
   WORKFLOW_EDGE_TYPE,
   WORKFLOW_NODE_TYPE,
@@ -217,7 +213,6 @@ import {
   type WorkflowEdgeUpdate,
   type WorkflowArtifactTypeBindings,
   type WorkflowNodeData,
-  type WorkflowInputPlug,
   portMetaForPort,
   workflowNodeIsSupported,
 } from "../canvas/types";
@@ -264,6 +259,7 @@ import {
 } from "./artifact-drop-hit-test";
 import { useWorkbenchFitViewOptions } from "./useWorkbenchFitViewOptions";
 import { useArtifactViewerCommands } from "./workbench-artifact-viewers";
+import { useNodeCommands } from "./workbench-node-commands";
 import {
   type ArtifactTypeKey,
   type NodeSpec,
@@ -692,157 +688,24 @@ function WorkbenchBody({
     setRunError,
   });
 
-  const removeNode = React.useCallback(
-    (nodeId: string) => {
-      applyAuthoringCommands([{ kind: "remove_nodes", node_ids: [nodeId] }]);
-      commitArtifactViewers((current) =>
-        withoutViewerEdgesFrom(current, nodeId),
-      );
-      forgetNodeSecretStatuses(nodeId);
-      setPendingConnectionRoute(null);
-      setRunError(null);
-    },
-    [applyAuthoringCommands, commitArtifactViewers, forgetNodeSecretStatuses],
-  );
-
-  const addNodeInputPlug = React.useCallback(
-    (nodeId: string, portName: string) => {
-      const node = nodes.find((candidate) => candidate.id === nodeId);
-      if (!node) return;
-      const inputPlugs = appendInputPlug(node.data.inputPlugs, portName);
-      const plug = inputPlugs[inputPlugs.length - 1];
-      if (!plug) return;
-      applyAuthoringCommands([
-        {
-          kind: "add_input_plug",
-          node_id: nodeId,
-          plug: { id: plug.id, port: plug.portName },
-        },
-      ]);
-    },
-    [applyAuthoringCommands, nodes],
-  );
-
-  const removeNodeInputPlug = React.useCallback(
-    (nodeId: string, plugId: string) => {
-      applyAuthoringCommands([
-        {
-          kind: "remove_input_plug",
-          node_id: nodeId,
-          plug_id: plugId,
-        },
-      ]);
-      setPendingConnectionRoute(null);
-      setRunError(null);
-    },
-    [applyAuthoringCommands],
-  );
-
-  const reorderNodeInputPlug = React.useCallback(
-    (nodeId: string, portName: string, plugId: string, toIndex: number) => {
-      applyAuthoringCommands([
-        {
-          kind: "reorder_input_plug",
-          node_id: nodeId,
-          port: portName,
-          plug_id: plugId,
-          to_index: toIndex,
-        },
-      ]);
-    },
-    [applyAuthoringCommands],
-  );
-
-  const updateSchemaBuilderFields = React.useCallback(
-    (
-      nodeId: string,
-      fields: readonly SchemaBuilderField[],
-      inputPlugs: readonly WorkflowInputPlug[],
-    ) => {
-      const node = nodes.find((candidate) => candidate.id === nodeId);
-      if (!node) return;
-      applyAuthoringCommands([
-        {
-          kind: "update_node_configuration_and_input_plugs",
-          node_id: nodeId,
-          config: { ...node.data.config, fields },
-          input_plugs: inputPlugs.map((plug) => ({
-            id: plug.id,
-            port: plug.portName,
-          })),
-        },
-      ]);
-      setPendingConnectionRoute(null);
-      setRunError(null);
-    },
-    [applyAuthoringCommands, nodes],
-  );
-
-  const updateArtifactQueryRelations = React.useCallback(
-    (
-      nodeId: string,
-      relations: readonly ArtifactQueryRelation[],
-      inputPlugs: readonly WorkflowInputPlug[],
-    ) => {
-      const node = nodes.find((candidate) => candidate.id === nodeId);
-      if (!node) return;
-      applyAuthoringCommands([
-        {
-          kind: "update_node_configuration_and_input_plugs",
-          node_id: nodeId,
-          config: { ...node.data.config, relations },
-          input_plugs: inputPlugs.map((plug) => ({
-            id: plug.id,
-            port: plug.portName,
-          })),
-        },
-      ]);
-      setPendingConnectionRoute(null);
-      setRunError(null);
-    },
-    [applyAuthoringCommands, nodes],
-  );
-
-  const resetNodeArtifactTypeBinding = React.useCallback(
-    (nodeId: string, variable: string) => {
-      const hasIncidentEdges = edges.some(
-        (edge) => edge.source === nodeId || edge.target === nodeId,
-      );
-      if (hasIncidentEdges) return;
-
-      applyAuthoringCommands([
-        {
-          kind: "reset_artifact_type_binding",
-          node_id: nodeId,
-          variable,
-        },
-      ]);
-      setPendingConnectionRoute(null);
-      setRunError(null);
-    },
-    [applyAuthoringCommands, edges],
-  );
-
-  const bindNodeArtifactTypeBinding = React.useCallback(
-    (nodeId: string, variable: string, artifactType: ArtifactTypeKey) => {
-      const hasIncidentEdges = edges.some(
-        (edge) => edge.source === nodeId || edge.target === nodeId,
-      );
-      if (hasIncidentEdges) return;
-
-      applyAuthoringCommands([
-        {
-          kind: "bind_artifact_type",
-          node_id: nodeId,
-          variable,
-          artifact_type: artifactType,
-        },
-      ]);
-      setPendingConnectionRoute(null);
-      setRunError(null);
-    },
-    [applyAuthoringCommands, edges],
-  );
+  const {
+    addNodeInputPlug,
+    bindNodeArtifactTypeBinding,
+    removeNode,
+    removeNodeInputPlug,
+    reorderNodeInputPlug,
+    resetNodeArtifactTypeBinding,
+    updateArtifactQueryRelations,
+    updateSchemaBuilderFields,
+  } = useNodeCommands({
+    applyAuthoringCommands,
+    commitArtifactViewers,
+    edges,
+    forgetNodeSecretStatuses,
+    nodes,
+    setPendingConnectionRoute,
+    setRunError,
+  });
 
   const openGraphInNewTab = React.useCallback(
     (graphId: string) => {
