@@ -183,20 +183,53 @@ Each was investigated and stopped on purpose, not overlooked.
    `grafy-tabs-trigger` as orphans too, and both are false positives - `workspace-layout__
    nav-toggle--select-item` contains the first as a substring of a different class.
    Verify any sweep with `npm run build` plus a screenshot pass on the workspaces pages.
-2. **`Workbench.tsx` is still 1878 lines.** The order-neutral pieces are out. What is
-   left is the selection / viewer-edit / connection-preview / import-state cluster: four
-   `useState` groups sharing `onNodesChanged` and the graph ref. That wants a test-first
-   extraction against `Workbench.test.tsx`, not a night shift.
+2. **`Workbench.tsx` is 4432 lines and nothing in the repository renders it.** An earlier
+   entry here recorded "1878"; that number belongs to `useRunExecution.ts` and was
+   attached to the wrong file. `WorkbenchBody` is one function of roughly 3,900 lines
+   containing 67 `useCallback`s, 14 `useEffect`s and 16 `useRef`s, and there is no
+   `Workbench.test.tsx`. Deleting the authoring gate out of the viewer-commit path left
+   every one of the 653 workbench tests green. That is the real defect: not the line count
+   but the absence of any seam through which the wiring can be tested. The two clusters
+   moved out in round two below each arrived with their own falsified tests for exactly
+   that reason.
 3. **The secret-module label override is inert.** `.grafy-node-card__label--secret` is
    emitted after `.grafy-node-card__type-tag--library` with equal specificity and no
    `!important`, so the library colour wins when both classes land on one element. A
    browser pass confirmed the computed colour either way. Decide with the product owner
    whether secret nodes should look different, then delete or fix the specificity.
-4. **Remaining hotspots**, all verified with `grep -c ''`: `Workbench.tsx` 1878,
-   `room/graph-room-session.ts` 1034, `ExecutionHistoryDrawer.tsx` 928,
-   `useSavedGraphLifecycle.ts` 890, `ContextualNodeDiscovery.tsx` 835. The style-free ones
-   (`graph-room-session`, `useSavedGraphLifecycle`) are the safe next splits, because a
-   split that touches no `stylex.create` block cannot change the bundle.
+4. **Remaining hotspots**, measured with `wc -l` over non-test, non-sandbox, non-generated
+   source: `Workbench.tsx` 4432, `useRunExecution.ts` 1870,
+   `artifact-renderers/table-renderer.tsx` 1265, `NodeSelector.tsx` 1214,
+   `WorkspaceLayout.tsx` 1172 (see the revert note: its importers resolve through relative
+   paths), `ExecutionHistoryDrawer.tsx` 928,
+   `canvas/nodes/workflow/config-fields.tsx` 910, `useSavedGraphLifecycle.ts` 882,
+   `ContextualNodeDiscovery.tsx` 835. A split that touches no `stylex.create` block cannot
+   change the bundle, so the style-free ones remain the safe order of attack.
+
+## Round two: the two style-free files and the first two Workbench clusters
+
+| Commit | Package | Evidence |
+| --- | --- | --- |
+| `35d8570d` | `ui/workbench-artifact-viewers.ts` - the viewer/annotation commit rule | `Workbench.tsx` 4754 -> 4569; 4 new tests, 5 mutations killed |
+| `0f0aa1d3` | `ui/workbench-node-commands.ts` - node gestures, with the duplicated config-and-plugs block written once | `Workbench.tsx` 4569 -> 4432; 6 new tests, 5 mutations killed |
+| `de911dd6` | `ui/saved-graph-dirtiness.ts` - the unsaved-work policy as one pure function | 9 new tests, 4 mutations killed; no existing test edited |
+| `1a7908b0` | `room/command-outbox.ts` - command correlation out of the socket session | `graph-room-session.ts` 1034 -> 827; 6 new tests, 3 mutations killed |
+
+Gate after `1a7908b0`: typecheck 0 errors, **108 files / 815 tests**, eslint silent,
+prettier clean, `check:stylex` clean over 332 modules, `npm run build` green, and the
+three stylex bundles still byte-identical to the build at `d4078a10`.
+
+Two things worth keeping from this round:
+
+- The room worker's outbox boundary is the pattern to reuse: a class that owns a transport
+  *and* the correlation of in-flight work should hand correlation a read-only pointer plus
+  a readiness gate, take messages in, and return frames and settle-decisions out. The
+  extracted module then needs no socket to be tested.
+- `saved-graph-dirtiness.ts` exists mainly to say out loud that `isDirty` and `workAtRisk`
+  are different questions. A canvas that differs from the last checkpoint may still be safe
+  to reload because the room journal holds those edits; a canvas the disconnected room
+  refused to take is not. That distinction decides whether a reload warns the user, and it
+  was previously four inline expressions.
 
 ## What did not go well
 
