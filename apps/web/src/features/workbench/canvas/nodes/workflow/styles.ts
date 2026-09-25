@@ -1,0 +1,140 @@
+import * as stylex from "@stylexjs/stylex";
+
+import { tokens } from "@/lib/stylex/tokens.stylex";
+
+/** Style keys used by more than one workflow node module. */
+export const sharedStyles = stylex.create({
+  operatorCopy: {
+    minWidth: 0,
+    overflow: "hidden",
+    color: tokens.colorSubtle,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    fontSize: tokens.fontSizeXs,
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  tabs: {
+    display: "grid",
+    gap: "5px",
+    paddingBlock: "2px",
+  },
+  tabsOutput: {
+    display: "grid",
+    gap: "5px",
+    paddingTop: "2px",
+    paddingBottom: "14px",
+  },
+  plugSource: {
+    overflow: "hidden",
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 600,
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  plugSourceEmpty: { color: tokens.colorMuted, fontWeight: 550 },
+  /** Structural schema metadata, so it stays out of the port/type colour range. */
+  required: { color: tokens.colorSubtle, fontSize: tokens.fontSizeSm },
+  schemaBody: {
+    display: "grid",
+    gap: "10px",
+    padding: "0 8px 12px",
+  },
+  schemaCompactInput: {
+    width: "100%",
+    minWidth: 0,
+    height: "28px",
+    paddingInline: "8px",
+    borderWidth: 0,
+    borderRadius: "7px",
+    outline: {
+      default: "none",
+      ":focus": `2px solid ${tokens.colorAccentBorder}`,
+    },
+    backgroundColor: tokens.colorSurfaceMuted,
+    color: tokens.colorText,
+    fontSize: tokens.fontSizeXs,
+  },
+  schemaFieldsSection: { display: "grid", gap: "5px" },
+  schemaFieldsHeader: {
+    minHeight: "24px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    paddingInline: "5px",
+  },
+  schemaFieldsTitle: {
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 600,
+  },
+  schemaFieldsCount: { color: tokens.colorSubtle, fontSize: "10px" },
+  schemaFieldList: {
+    display: "grid",
+    gap: "5px",
+  },
+  schemaFieldRow: {
+    position: "relative",
+    minWidth: 0,
+    display: "grid",
+    gap: "5px",
+    padding: "6px 6px 6px 28px",
+    borderRadius: tokens.radiusMd,
+    backgroundColor: tokens.colorSurfaceMuted,
+  },
+  schemaFieldIndex: {
+    color: tokens.colorSubtle,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    fontSize: "10px",
+    textAlign: "center",
+  },
+  schemaFieldActions: { display: "flex", alignItems: "center", gap: "1px" },
+  schemaFieldAction: {
+    width: "18px",
+    height: "22px",
+    display: "grid",
+    placeItems: "center",
+    padding: 0,
+    borderWidth: 0,
+    borderRadius: "5px",
+    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
+    color: { default: tokens.colorSubtle, ":hover": tokens.colorText },
+    cursor: "pointer",
+  },
+  schemaFieldActionDisabled: {
+    color: tokens.colorTextDisabled,
+    cursor: "default",
+    opacity: 0.45,
+  },
+  schemaFieldRemove: {
+    backgroundColor: {
+      default: "transparent",
+      ":hover": tokens.colorDangerHover,
+    },
+    color: { default: tokens.colorSubtle, ":hover": tokens.colorDanger },
+  },
+  schemaAddField: {
+    minHeight: "28px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "5px",
+    borderWidth: 0,
+    borderRadius: tokens.radiusMd,
+    backgroundColor: {
+      default: tokens.colorSurfaceMuted,
+      ":hover": tokens.colorHoverStrong,
+    },
+    color: tokens.colorMuted,
+    cursor: "pointer",
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 600,
+  },
+  spinner: {
+    animationName: "grafy-spin",
+    animationDuration: "900ms",
+    animationIterationCount: "infinite",
+    animationTimingFunction: "linear",
+  },
+});
