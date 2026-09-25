@@ -8,7 +8,7 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { artifactMeta } from "./artifact-meta";
 import { PrettyValue } from "./pretty-value";
-import type { ArtifactRendererSpec } from "./registry";
+import type { ArtifactRendererSpec } from "./spec";
 
 const s = stylex.create({
   image: {

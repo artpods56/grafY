@@ -3,10 +3,6 @@
 import * as React from "react";
 
 import type { ArtifactSummary } from "@/lib/api";
-import type {
-  ArtifactViewerEffect,
-  ArtifactViewerInteractionContext,
-} from "../../artifact-interactions";
 
 import { artifactMeta } from "./artifact-meta";
 import { geoMapRenderer } from "./geo-map-renderer";
@@ -14,28 +10,8 @@ import { imageRenderer } from "./image-renderer";
 import { jsonRenderer, jsonSchemaRenderer } from "./json-renderer";
 import { markdownRenderer } from "./markdown-renderer";
 import { PrettyValue } from "./pretty-value";
+import type { ArtifactRendererSpec } from "./spec";
 import { tableRenderer } from "./table-renderer";
-
-export interface ArtifactRenderProps {
-  artifact: ArtifactSummary;
-  payload?: unknown;
-  mode: string;
-  availableHeight?: number;
-  interaction?: ArtifactViewerInteractionContext;
-}
-
-export interface ArtifactRendererInteractionCapabilities {
-  emits: readonly "key-selection"[];
-  accepts: readonly ArtifactViewerEffect[];
-}
-
-export interface ArtifactRendererSpec {
-  id: string;
-  modes: readonly string[];
-  interaction?: ArtifactRendererInteractionCapabilities;
-  matches(artifact: ArtifactSummary, payload?: unknown): boolean;
-  Component: React.ComponentType<ArtifactRenderProps>;
-}
 
 export const META_ARTIFACT_RENDERER: ArtifactRendererSpec = {
   id: "meta",

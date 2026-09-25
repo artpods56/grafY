@@ -11,6 +11,7 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "lint": "eslint",
+    "check:stylex": "node scripts/check-stylex.mjs",
     "typecheck": "tsc --noEmit --incremental false",
     "generate:api:schema": "uv run --directory ../.. --package grafy-api python -m grafy_api.openapi apps/web/openapi/grafy.json",
     "generate:api": "npm run generate:api:schema && openapi-typescript openapi/grafy.json --immutable --alphabetize --empty-objects-unknown -o src/lib/api/generated/grafy.ts",

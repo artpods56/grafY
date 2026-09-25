@@ -12,8 +12,10 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 import { artifactMeta } from "./artifact-meta";
 import { markdownPayload } from "./payload";
 import { PrettyValue } from "./pretty-value";
-import type { ArtifactRendererSpec } from "./registry";
-import { MONO, sharedStyles } from "./styles";
+import type { ArtifactRendererSpec } from "./spec";
+import { sharedStyles } from "./styles";
+
+const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
 const s = stylex.create({
   markdown: {
