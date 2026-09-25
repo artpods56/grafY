@@ -111,6 +111,59 @@ Verification the orchestrator uses on a worker result before committing:
 3. Style parity: every `stylex` `key: value` pair of the old file survives unchanged, and
    no key is defined twice across the new modules.
 
+## Gate
+
+A step is done only when all of these pass from `apps/web`:
+
+```bash
+npm run typecheck
+npm test
+npm run lint
+npm run check:stylex                                   # added by this refactor
+npx prettier --check "src/**/*.{ts,tsx}"
+npm run build
+```
+
+`check:stylex` and `build` are not optional. The StyleX Babel plugin fails the
+production build on imports that `tsc` and Vitest both accept, and that is how commit
+`109abe59` shipped a broken build (fixed in `a0730fcc`).
+
+**Visual-parity oracle.** The StyleX bundle filename is a content hash. Build the tree at
+the last pre-split commit into a scratch directory (`git archive <sha> apps/web | tar -x
+-C /tmp/base && ln -s <repo>/apps/web/node_modules /tmp/base/apps/web/node_modules`) and
+compare `.next/static/css/*.css`. Byte-identical bundles mean no rule and no cascade order
+changed, which is the only proof that matters when StyleX rules of equal specificity are
+involved. Verified at `596739a3`: the tree emits `fcb709c66d72cbd5.css`, byte-identical to
+the build at `d4078a10`, so every split since the dead-code deletion changed no CSS at all.
+
 ## Log
 
-Work is appended here as packages land, with the verification result for each step.
+| Commit | Package | Evidence |
+| --- | --- | --- |
+| `d4078a10` | WP1 dead code: `SavedGraphBrowser`, `WorkspaceOverview` + test, `templates/routes.ts`, `sandbox/fixtures/chat-completion.ts`, `canvas/archive/bands` | −890 lines; ADR 0001 naming example repointed |
+| `ba68bb3f` | WP2 cycle: `canvas/artifact-origin-edge.ts` | module graph reported 1 cycle → 0 |
+| `109abe59` | WP7 `artifact-renderers/` split | build was broken by it, fixed in `a0730fcc` |
+| `e92a6329` | WP5 `NodeSelector` → `ui/node-selector/` | 2450 → 1214 lines |
+| `80c7d5ac` | WP4a fit-view geometry, drop hit-tests, module boundaries | `Workbench.tsx` −174; new `model/module-boundary.ts` + 3 tests, falsified |
+| `d4e295c8` | WP6 `useRunExecution` → `ui/run-execution/state.ts` | 2021 → 1871; 22 new tests |
+| `0ff7349f` | WP12a lint config + two memo fixes | `Workbench.tsx` −2 lint warnings; edges dep removed, `activeArtifactViewers` memoised |
+| `a0730fcc` | registry cycle + StyleX-resolvable constants + `check:stylex` | 3 modules failing the StyleX compile → 0 |
+| `9ad17bb9` | `src/architecture.test.ts` | cycles, features→app/sandbox, generated-types entry point |
+| `30adc841` | WP9a `LibraryPanel` → `side-panel/library/` | 1296 → 571; no importer or test path changed |
+| `59f3c6b2` | WP3 `WorkflowNode` → `canvas/nodes/workflow/` | 3778 → 26 lines in the entry file |
+| `596739a3` | WP8 geo-map → `canvas/nodes/geo-map/` | 2694 → 166 lines in the entry file |
+
+After `596739a3`: typecheck 0 errors, 104 files / 790 tests green, eslint silent,
+`check:stylex` clean over 324 modules, prettier clean, `npm run build` green.
+
+## Notes for whoever continues
+
+- Workers write confident nonsense as often as they write code. Every claim in this file
+  was re-checked against the tree or a build before it was recorded here. Do the same.
+- `artifactTypeKeyDisplay`, `ArtifactTypeFormat`, and `artifact-renderers.tsx` do not
+  exist. Two workers independently reported breakage caused by them. Trust `git grep`.
+- A shared style module may export a `stylex.create` result, never that result plus a
+  plain constant: the StyleX plugin cannot resolve the plain constant across modules and
+  the build fails.
+- `docs/design/frontend-navigation-graph.md` is stale: it says `/workspaces/[slug]` renders
+  `WorkspaceOverview`, which this pass deleted; the route redirects to `/settings`.
