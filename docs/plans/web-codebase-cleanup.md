@@ -167,3 +167,70 @@ After `596739a3`: typecheck 0 errors, 104 files / 790 tests green, eslint silent
   the build fails.
 - `docs/design/frontend-navigation-graph.md` is stale: it says `/workspaces/[slug]` renders
   `WorkspaceOverview`, which this pass deleted; the route redirects to `/settings`.
+
+## Follow-ups deliberately left open
+
+Each was investigated and stopped on purpose, not overlooked.
+
+1. **~200 lines of orphaned `.grafy-*` CSS** in `src/app/globals.css`:
+   `grafy-auth-threshold__eyebrow`, `grafy-flow-controls`, `grafy-workspace-create__hint`,
+   `grafy-workspace-empty__mark`, `grafy-workspace-member-form`,
+   `grafy-workspace-overview__actions`, `grafy-workspace-overview__copy`,
+   `grafy-workspace-overview__header`, `grafy-workspace-overview__section`,
+   `grafy-workspace-overview__section-heading`, `grafy-workspace-sort`. The
+   `workspace-overview` group is what `WorkspaceOverview` left behind in `d4078a10`.
+   Caution before deleting: a naive substring scan reports `grafy-select-item` and
+   `grafy-tabs-trigger` as orphans too, and both are false positives - `workspace-layout__
+   nav-toggle--select-item` contains the first as a substring of a different class.
+   Verify any sweep with `npm run build` plus a screenshot pass on the workspaces pages.
+2. **`Workbench.tsx` is still 1878 lines.** The order-neutral pieces are out. What is
+   left is the selection / viewer-edit / connection-preview / import-state cluster: four
+   `useState` groups sharing `onNodesChanged` and the graph ref. That wants a test-first
+   extraction against `Workbench.test.tsx`, not a night shift.
+3. **The secret-module label override is inert.** `.grafy-node-card__label--secret` is
+   emitted after `.grafy-node-card__type-tag--library` with equal specificity and no
+   `!important`, so the library colour wins when both classes land on one element. A
+   browser pass confirmed the computed colour either way. Decide with the product owner
+   whether secret nodes should look different, then delete or fix the specificity.
+4. **Remaining hotspots**, all verified with `grep -c ''`: `Workbench.tsx` 1878,
+   `room/graph-room-session.ts` 1034, `ExecutionHistoryDrawer.tsx` 928,
+   `useSavedGraphLifecycle.ts` 890, `ContextualNodeDiscovery.tsx` 835. The style-free ones
+   (`graph-room-session`, `useSavedGraphLifecycle`) are the safe next splits, because a
+   split that touches no `stylex.create` block cannot change the bundle.
+
+## What did not go well
+
+- A worker split `WorkflowCanvas.tsx` at 02:30 and the app build failed. Typecheck,
+  vitest, eslint and prettier were all green. Cause: a style module that exported `MONO`
+  next to `stylex.create` results, which the StyleX Babel plugin cannot resolve across
+  modules - it inlined the class name in one file and left `styles.mono` in another.
+  `scripts/check-stylex.mjs` (`npm run check:stylex`) compiles every style module and
+  fails on unresolved `styles.x`.
+- Two workers reported a repo-wide breakage caused by `artifactTypeKeyDisplay`,
+  `ArtifactTypeFormat` and `artifact-renderers.tsx`, none of which exist, and one of them
+  reverted clean committed work on the strength of it. Both also "found" that
+  `WorkspaceRail`'s styles had been changed to `!important` and had to restore values they
+  had never touched.
+- Consequence: workers get verification commands filtered to their own files and a direct
+  instruction never to revert. Even then a revert happened, which is why nothing was
+  committed without the whole gate running over the shared tree first.
+- Useful output: 4 splits landed (LibraryPanel, WorkflowNode 3778 lines into
+  `canvas/nodes/workflow/`, geo-map 2694 into `canvas/nodes/geo-map/`, NodeSelector,
+  `useRunExecution`) and one worker correctly concluded, after reproducing emitted-rule
+  order changing, that `WorkspaceRail` must not be split - and left the styles alone.
+
+## Reverted: the WorkspaceLayout split
+
+A worker landed `WorkspaceContext.tsx`, `WorkspaceRail.tsx`, `WorkspaceRouteStatus.tsx`,
+`workspace-presentation.ts`, `session-presentation.ts` and `workspace-rail-preferences.ts`
+at 05:50. The move preserved every literal (compared as a sorted multiset of string and
+numeric literals against `git show HEAD:...`) and the built CSS came back byte-identical,
+so it was not a styling problem. It was left with 103 typecheck errors because importers
+still pulled the moved symbols from `WorkspaceLayout`, and the worker kept editing while
+the gate ran. Reverted to `78889ca7` for the source tree; the gate is green again.
+
+If this split is retried, the missing step is the importer pass: `useWorkspaceContext`,
+`workspaceDisplayName`, `resolveSelectedWorkspace`, `WorkspaceRail` and friends are
+imported from `./WorkspaceLayout` by relative paths across `src/app/workspaces`,
+`src/features/graphs` and `src/features/workbench`, so a `grep` for the `@/` alias form
+finds none of them.
