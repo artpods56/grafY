@@ -64,12 +64,7 @@ import type {
 import { PublishModuleDialog } from "./PublishModuleDialog";
 import { moduleBoundaries } from "../model/module-boundary";
 import { createUuid } from "@/features/workbench/model/uuid";
-import {
-  artifactGroupingDisabledReason,
-  collectArtifactCards,
-  ungroupArtifactCard,
-  tidyArtifactCards,
-} from "../model/artifact-grouping";
+import { artifactGroupingDisabledReason } from "../model/artifact-grouping";
 import { WorkspaceLibraryDialog } from "@/features/workspaces/WorkspaceLibraryDialog";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { usePublishWorkbenchChrome } from "./WorkbenchChromeContext";
@@ -167,11 +162,8 @@ import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
   artifactCardContract,
   artifactCardMediaHeight,
-  artifactCardValue,
-  originCarriesCardArtifacts,
   cardArtifactRefs,
   collectArtifactCardRefs,
-  type ArtifactCardValue,
 } from "../canvas/artifact-card";
 import {
   hydrateAuthoredGraphDocument,
@@ -260,6 +252,10 @@ import {
 import { useWorkbenchFitViewOptions } from "./useWorkbenchFitViewOptions";
 import { useArtifactViewerCommands } from "./workbench-artifact-viewers";
 import { useNodeCommands } from "./workbench-node-commands";
+import {
+  artifactCardDropPosition,
+  useArtifactCardCommands,
+} from "./workbench-artifact-cards";
 import {
   type ArtifactTypeKey,
   type NodeSpec,
@@ -2157,56 +2153,20 @@ function WorkbenchBody({
    * same way from the library and from a node's output, because both carry one
    * artifact value.
    */
-  const addArtifactCard = React.useCallback(
-    (value: ArtifactCardValue, position: { x: number; y: number }) => {
-      commitArtifactViewers((current) => ({
-        ...current,
-        nodes: [
-          ...current.nodes.map((node) => ({ ...node, selected: false })),
-          {
-            id: `artifact-viewer-${createUuid()}`,
-            type: ARTIFACT_VIEWER_NODE_TYPE,
-            position,
-            selected: true,
-            data: {
-              // No width: the card takes the one that suits its artifact.
-              layout: null,
-              mode: null,
-              artifactRef: value,
-            },
-          },
-        ],
-      }));
-    },
-    [commitArtifactViewers],
-  );
-
-  const collectSelectedArtifacts = React.useCallback(() => {
-    if (!localAuthoringEnabled || groupingDisabledReason) return;
-    commitArtifactViewers((state) =>
-      collectArtifactCards({
-        state,
-        origins: authoredDocumentRef.current.origins,
-      }),
-    );
-  }, [commitArtifactViewers, groupingDisabledReason, localAuthoringEnabled]);
-
-  const ungroupArtifacts = React.useCallback(
-    (nodeId: string) => {
-      commitArtifactViewers((state) =>
-        ungroupArtifactCard({
-          state,
-          origins: authoredDocumentRef.current.origins,
-          nodeId,
-        }),
-      );
-    },
-    [commitArtifactViewers],
-  );
-
-  const tidySelectedArtifacts = React.useCallback(() => {
-    commitArtifactViewers(tidyArtifactCards);
-  }, [commitArtifactViewers]);
+  const {
+    addArtifactCard,
+    collectSelectedArtifacts,
+    tidySelectedArtifacts,
+    ungroupArtifacts,
+    updateArtifactCardRefs,
+  } = useArtifactCardCommands({
+    applyAuthoringCommands,
+    artifactViewers,
+    authoredDocumentRef,
+    commitArtifactViewers,
+    groupingDisabledReason,
+    localAuthoringEnabled,
+  });
 
   const dropArtifactOnCanvas = React.useCallback(
     (event: DragEvent | React.DragEvent<HTMLElement>) => {
@@ -2221,10 +2181,10 @@ function WorkbenchBody({
         y: event.clientY,
       }) ?? { x: 0, y: 0 };
       const refs = cardArtifactRefs(payload.value);
-      addArtifactCard(payload.value, {
-        x: point.x - DEFAULT_ARTIFACT_CARD_WIDTH / 2,
-        y: point.y - (refs.length > 1 ? 76 : 24),
-      });
+      addArtifactCard(
+        payload.value,
+        artifactCardDropPosition(point, refs.length),
+      );
     },
     [addArtifactCard, flow],
   );
@@ -2233,42 +2193,6 @@ function WorkbenchBody({
    * The card owns the order its artifacts are passed in, and an origin carries
    * what it was handed, so a reorder rewrites the origin beside the card.
    */
-  const updateArtifactCardRefs = React.useCallback(
-    (nodeId: string, value: ArtifactCardValue | null) => {
-      const card = artifactViewers.nodes.find((node) => node.id === nodeId);
-      if (!card) return;
-      const carried = authoredDocumentRef.current.origins.filter((origin) =>
-        originCarriesCardArtifacts(origin.value, card.data.artifactRef),
-      );
-      commitArtifactViewers((current) => ({
-        ...current,
-        nodes: value
-          ? current.nodes.map((node) =>
-              node.id === nodeId
-                ? { ...node, data: { ...node.data, artifactRef: value } }
-                : node,
-            )
-          : current.nodes.filter((node) => node.id !== nodeId),
-      }));
-      if (!value || !carried.length) return;
-      applyAuthoringCommands(
-        carried.flatMap((origin) => {
-          const next = artifactCardValue(cardArtifactRefs(value), origin.value);
-          return next
-            ? [
-                {
-                  kind: "update_origin" as const,
-                  origin_id: origin.id,
-                  update: { value: next },
-                },
-              ]
-            : [];
-        }),
-      );
-    },
-    [applyAuthoringCommands, artifactViewers.nodes, commitArtifactViewers],
-  );
-
   const dragOverArtifactDrop = React.useCallback(
     (event: DragEvent | React.DragEvent<HTMLElement>) => {
       if (!event.dataTransfer || !isArtifactDrop(event.dataTransfer)) return;
