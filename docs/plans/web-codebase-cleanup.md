@@ -58,19 +58,58 @@ Ordered. Each is independently committable.
 | ID | Package | State |
 | --- | --- | --- |
 | WP0 | Baseline checks recorded | done |
-| WP1 | Delete dead files and their orphan tests | in progress |
-| WP2 | Break the `artifact-connections` ↔ `artifact-viewer` import cycle | todo |
-| WP3 | Split `WorkflowNode.tsx` into `canvas/nodes/workflow/` (one component per file) | todo |
-| WP4 | Extract `Workbench.tsx` hook clusters (safe-area, artifact viewers, annotations, node plugs, presence, global issues, drop target, connect handlers) | todo |
-| WP5 | Split `NodeSelector.tsx` | todo |
-| WP6 | Split `useRunExecution.ts` (transport / polling / result mapping) | todo |
-| WP7 | Split `artifact-renderers.tsx` into a registry plus per-type modules | todo |
+| WP1 | Delete dead files and their orphan tests | done (`d4078a10`) |
+| WP2 | Break the `artifact-connections` ↔ `artifact-viewer` import cycle | done (`ba68bb3f`) |
+| WP3 | Split `WorkflowNode.tsx` into `canvas/nodes/workflow/` | in progress (worker W1) |
+| WP4 | Extract `Workbench.tsx` hook clusters | in progress |
+| WP5 | Split `NodeSelector.tsx` | done (`e92a6329`) |
+| WP6 | Split `useRunExecution.ts` (state algebra out of the hook) | in progress (worker W3) |
+| WP7 | Split `artifact-renderers.tsx` into a registry plus per-type modules | done (`109abe59`) |
+| WP7b | Split `artifact-renderers/table-renderer.tsx` (1263 lines still) | todo |
 | WP8 | Split `geo-map-artifact-renderer.tsx` (map lifecycle vs per-layer rendering) | todo |
-| WP9 | Split `LibraryPanel.tsx` and `WorkspaceLayout.tsx` | todo |
+| WP9 | Split `LibraryPanel.tsx` (worker W2) and `WorkspaceLayout.tsx` | in progress (W2) |
 | WP10 | Untangle cross-feature imports behind narrow shared modules | todo |
 | WP11 | `globals.css` organisation and duplicate-rule sweep | todo |
-| WP12 | Lint-warning cleanup, inline-style and raw-hex cleanup | todo |
+| WP12 | Lint-warning cleanup, inline-style, raw-hex, orphaned CSS rule sets | todo |
 | WP13 | `lib/api` barrel review; drop re-export indirection that hides nothing | todo |
+
+## Worker roster (super.engineering, provider `pi`, model `ihpan/qwen3.8-flash-next-gguf`)
+
+Workers are quiet chats, not panes. They do not commit; the orchestrator verifies and
+commits. Their thread ids:
+
+| Worker | Task | Thread id |
+| --- | --- | --- |
+| W1 | `WorkflowNode.tsx` → `canvas/nodes/workflow/` | `52eb5005-63d8-557e-8c54-7775ee575906` |
+| W2 | `LibraryPanel.tsx` → `side-panel/library/` | `fb71841a-…` was stopped and closed; re-created per need |
+| W3 | `useRunExecution.ts` → `ui/run-execution/` | `9487a5ee-e396-549d-8327-f32bf6841d2d` |
+
+Dispatch and collect:
+
+```bash
+export PATH="$HOME/.superconductor/bin:$PATH"
+sc chat new --provider pi --model ihpan/qwen3.8-flash-next-gguf --json
+sc chat send <thread_id> --stdin < /tmp/prompt.md
+sc chat stop <thread_id> --output json      # a stuck turn
+sc chat list --json                          # active_turn flags
+```
+
+What the workers have proven:
+
+- They are reliable at verbatim file splits and they respect a written protocol.
+- They stall when a shared tree shows another worker's transient errors, and they
+  invent confident bug reports about code they did not read. Always re-check a worker
+  claim against the tree before acting on it.
+- Therefore every worker prompt must say: verify with a **filtered** typecheck
+  (`npx tsc --noEmit --incremental false 2>&1 | grep <your path>`) and never wait for
+  the whole tree to be green.
+
+Verification the orchestrator uses on a worker result before committing:
+
+1. `npm run typecheck`, `npm test`, `npm run lint`, `npx prettier --check "src/**/*.{ts,tsx}"`.
+2. Symbol parity: every top-level symbol of the old file exists exactly once afterwards.
+3. Style parity: every `stylex` `key: value` pair of the old file survives unchanged, and
+   no key is defined twice across the new modules.
 
 ## Log
 
