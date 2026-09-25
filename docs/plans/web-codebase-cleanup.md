@@ -1,0 +1,77 @@
+# Web codebase cleanup plan
+
+- **Status:** In progress.
+- **Scope:** `apps/web` only. Backend, plugins, and generated API types are out of scope.
+- **Branch:** `refactor/web-codebase-cleanup`.
+- **Method:** Small behaviour-preserving steps. Every step must leave
+  `typecheck`, `npm test`, `lint`, and `prettier --check` green before it is committed.
+
+## Ground rules for this refactor
+
+1. **Extract, do not redesign.** No prop contract changes, no state-model changes,
+   no visual changes. Structural moves only, so a reviewer can diff a rename.
+2. **One responsibility per file.** A file earns its name when its contents can be
+   described in one sentence.
+3. **Dead code is deleted, not commented.** A file with no importer and no route is
+   removed together with its test.
+4. **Tests are not rewritten to fit new internals.** If a move breaks a test import,
+   only the import path changes.
+5. **No `any`, no `@ts-ignore`, no new `eslint-disable`.**
+6. **Verification gate for every commit:**
+
+   ```bash
+   cd apps/web
+   npm run typecheck && npm test && npm run lint
+   npx prettier --check "src/**/*.{ts,tsx,css,md,json}"
+   ```
+
+## Baseline (recorded before any change)
+
+| Check | Result |
+| --- | --- |
+| `npm run typecheck` | exit 0 |
+| `npm test` | 101 files / 760 tests passed |
+| `npm run lint` | exit 0, 5 warnings (3 unused `_`, 2 `react-hooks/exhaustive-deps`) |
+| Largest files | `Workbench.tsx` 4967, `WorkflowNode.tsx` 3779, `globals.css` 3407, `geo-map-artifact-renderer.tsx` 2694, `NodeSelector.tsx` 2450, `useRunExecution.ts` 2020 |
+
+## Findings that drive the work
+
+- **One import cycle:** `canvas/artifact-connections.ts` ↔ `canvas/artifact-viewer.ts`.
+- **One god component:** `ui/Workbench.tsx` holds 174 hook calls and 52 local imports;
+  logic spans ~4 000 lines before its JSX starts at line 4415.
+- **Files that are really many components:** `canvas/nodes/WorkflowNode.tsx` holds ~20
+  components; `canvas/nodes/artifact-renderers.tsx` and `geo-map-artifact-renderer.tsx`
+  mix a renderer registry with per-type rendering.
+- **Cross-feature tangles:** `workbench ↔ workspaces` (11 imports one way, 4 the other),
+  `graphs → workbench`, `templates → workbench`.
+- **Dead files** (no importer anywhere, no route):
+  `features/templates/routes.ts`, `features/workbench/ui/SavedGraphBrowser.tsx`,
+  `features/workbench/canvas/archive/bands/BandsTint.tsx`,
+  `sandbox/fixtures/chat-completion.ts`,
+  `features/workspaces/WorkspaceOverview.tsx` (only its own test imports it; the route
+  redirects to `/settings`).
+
+## Work packages
+
+Ordered. Each is independently committable.
+
+| ID | Package | State |
+| --- | --- | --- |
+| WP0 | Baseline checks recorded | done |
+| WP1 | Delete dead files and their orphan tests | in progress |
+| WP2 | Break the `artifact-connections` ↔ `artifact-viewer` import cycle | todo |
+| WP3 | Split `WorkflowNode.tsx` into `canvas/nodes/workflow/` (one component per file) | todo |
+| WP4 | Extract `Workbench.tsx` hook clusters (safe-area, artifact viewers, annotations, node plugs, presence, global issues, drop target, connect handlers) | todo |
+| WP5 | Split `NodeSelector.tsx` | todo |
+| WP6 | Split `useRunExecution.ts` (transport / polling / result mapping) | todo |
+| WP7 | Split `artifact-renderers.tsx` into a registry plus per-type modules | todo |
+| WP8 | Split `geo-map-artifact-renderer.tsx` (map lifecycle vs per-layer rendering) | todo |
+| WP9 | Split `LibraryPanel.tsx` and `WorkspaceLayout.tsx` | todo |
+| WP10 | Untangle cross-feature imports behind narrow shared modules | todo |
+| WP11 | `globals.css` organisation and duplicate-rule sweep | todo |
+| WP12 | Lint-warning cleanup, inline-style and raw-hex cleanup | todo |
+| WP13 | `lib/api` barrel review; drop re-export indirection that hides nothing | todo |
+
+## Log
+
+Work is appended here as packages land, with the verification result for each step.
