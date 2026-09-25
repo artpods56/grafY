@@ -267,3 +267,39 @@ If this split is retried, the missing step is the importer pass: `useWorkspaceCo
 imported from `./WorkspaceLayout` by relative paths across `src/app/workspaces`,
 `src/features/graphs` and `src/features/workbench`, so a `grep` for the `@/` alias form
 finds none of them.
+
+## Round three: three more files, and the drawer's styles move proved by hash
+
+| Commit | Package | Evidence |
+| --- | --- | --- |
+| `3e0c9568` | `ui/workbench-artifact-cards.ts` - card placement, grouping, drop position | `Workbench.tsx` 4432 -> 4356; 7 tests, 5 mutations killed |
+| `73667029` | `ExecutionHistoryDrawer.styles.ts` + `execution-history-query.ts` + `execution-history-display.ts` | drawer 928 -> 490; 10 tests, 4 mutations killed; **CSS byte-identical** |
+| `ee80e736` | `artifact-renderers/table/{column-picker,page-navigation,styles,constants}` | `table-renderer.tsx` 1265 -> 662; **CSS byte-identical** |
+
+Gate after `ee80e736`: typecheck 0 errors, 110 files / 832 tests green, eslint silent,
+prettier clean, `check:stylex` clean over 342 modules, `npm run build` green, and the three
+stylex bundles byte-identical to the build at `d4078a10`.
+
+Two things this round settled:
+
+- **A `stylex.create` block can move between modules safely, but only the hash says so.**
+  Two packages moved whole styles files and both came back byte-identical. That does not
+  make it generally safe - the same specificity hazard from `WorkspaceRail` still applies -
+  it means the check is cheap enough that nobody may skip it.
+- **A "query" module must not import a stylesheet.** The drawer worker first put the
+  display helpers (`statusStyle` reads the style object) next to the SWR loaders in one file
+  named `execution-history-query.ts`. The modules were split again into `...-query.ts` and
+  `...-display.ts`; the second now owns the styles import and the first has none.
+
+### Where to go next, measured
+
+`wc -l` over non-test, non-sandbox, non-generated source, with `grep -c stylex` as the risk
+flag:
+
+| File | Lines | stylex | Note |
+| --- | --- | --- | --- |
+| `ui/Workbench.tsx` | 4356 | 0 | still no test renders it; ~60 `useCallback`s left in `WorkbenchBody` |
+| `ui/useRunExecution.ts` | 1870 | 0 | safest large target next; `ui/run-execution/state.ts` already shows the shape |
+| `ui/NodeSelector.tsx` | 1214 | 100 | `ui/node-selector/styles.ts` already exists; the rest is one component |
+| `workspaces/WorkspaceLayout.tsx` | 1172 | 0 | safe, but do the importer pass (see the revert note) |
+| `canvas/nodes/workflow/config-fields.tsx` | 910 | 43 | split inside `workflow/`, styles move must be hash-checked |
