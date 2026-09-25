@@ -1863,7 +1863,7 @@ function WorkbenchBody({
         }
         return [{ node, value }];
       }),
-    [artifactViewers.edges, artifactViewers.nodes],
+    [artifactViewers.nodes],
   );
   const collectedArtifactRefs = React.useMemo(
     () =>
@@ -1934,16 +1934,21 @@ function WorkbenchBody({
     },
     [dismissPersistenceError, dismissRunError],
   );
-  const activeArtifactViewers =
-    artifactViewers.graphId === (activeGraph?.id ?? null)
-      ? artifactViewers
-      : {
-          graphId: activeGraph?.id ?? null,
-          nodes: [],
-          edges: [],
-          bindings: [],
-          annotations: [],
-        };
+  // A viewer state from another graph must not leak into this one, and the empty
+  // stand-in has to keep its identity or every presentation memo below it re-runs.
+  const activeArtifactViewers = React.useMemo<ArtifactViewerCanvasState>(
+    () =>
+      artifactViewers.graphId === (activeGraph?.id ?? null)
+        ? artifactViewers
+        : {
+            graphId: activeGraph?.id ?? null,
+            nodes: [],
+            edges: [],
+            bindings: [],
+            annotations: [],
+          },
+    [artifactViewers, activeGraph?.id],
+  );
 
   const onNodesChange: OnNodesChange<CanvasNode> = React.useCallback(
     (changes) => {
