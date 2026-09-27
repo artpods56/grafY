@@ -153,7 +153,6 @@ class StoredJsonCollections:
     manifest_sha256: str
     storage_byte_size: int
     total_items: int
-    collection_count: int
 
 
 async def save_json_collections(
@@ -286,7 +285,6 @@ async def save_json_collections(
         manifest_sha256=stored_manifest.sha256,
         storage_byte_size=stored_byte_size + stored_manifest.byte_size,
         total_items=manifest.total_items,
-        collection_count=len(manifest.collections),
     )
 
 
