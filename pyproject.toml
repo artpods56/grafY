@@ -51,10 +51,16 @@ grafy-persistence = { workspace = true }
 grafy-storage = { workspace = true }
 grafy-workbench = { workspace = true }
 grafy-shared = { workspace = true }
-grafy-plugin-llm = { path = "plugins/llm" }
-grafy-plugin-ocr = { path = "plugins/ocr" }
-grafy-plugin-gis = { path = "plugins/gis" }
-grafy-plugin-sql = { path = "plugins/sql" }
+# The Plugin projects stay out of the workspace so their own environments keep
+# resolving grafy_core from the vendored wheels in plugins/*/wheels. The root
+# workspace still imports them for tests, lint, and type checks, and a
+# non-editable path install is a snapshot: uv reports "Checked 110 packages"
+# and never rebuilds it after plugins/*/src changes, so the monorepo silently
+# tests stale Plugin code. Editable keeps the root import pointed at source.
+grafy-plugin-llm = { path = "plugins/llm", editable = true }
+grafy-plugin-ocr = { path = "plugins/ocr", editable = true }
+grafy-plugin-gis = { path = "plugins/gis", editable = true }
+grafy-plugin-sql = { path = "plugins/sql", editable = true }
 
 [dependency-groups]
 dev = [
