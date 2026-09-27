@@ -18,8 +18,10 @@ build/
 .coverage.*
 htmlcov/
 
+# node_modules is nested-safe on purpose: an apps/<name>/ copy was committed
+# once while this rule was apps/web-only.
+node_modules/
 apps/web/.next/
-apps/web/node_modules/
 apps/web/out/
 apps/web/output/
 *.tsbuildinfo
