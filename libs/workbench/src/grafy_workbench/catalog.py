@@ -64,13 +64,6 @@ class BuiltinNodeCatalog:
             build_digest=build_digest,
         )
 
-    def reserved_operator_ids(self) -> frozenset[str]:
-        return frozenset(
-            registration.node_class.operator_id
-            for registration in self.registry.nodes
-            if registration.plugin_slug != "graph.module"
-        )
-
     def node_registration(self, operator_id: str, operator_version: int):
         try:
             return self.registry.node_registration(operator_id, operator_version)

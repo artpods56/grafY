@@ -162,7 +162,6 @@ class _SandboxKey:
 class _Sandbox:
     key: _SandboxKey
     container_id: str
-    scratch_root: Path
     egress_broker_id: str | None = None
     guest_network: str | None = None
     egress_network: str | None = None
@@ -1316,7 +1315,6 @@ class DockerPluginRuntime(
             return _Sandbox(
                 key=key,
                 container_id=sandbox_container_id,
-                scratch_root=scratch_root,
                 egress_broker_id=broker_container_id,
                 guest_network=guest_network,
                 egress_network=egress_network,

@@ -604,28 +604,6 @@ class GraphPresentationDocument(SavedGraphValue):
             annotations=self.annotations,
         )
 
-    def prune_for_removed_viewers(
-        self,
-        removed_viewer_ids: set[str],
-    ) -> "GraphPresentationDocument":
-        if not removed_viewer_ids:
-            return self
-        viewers = tuple(
-            viewer for viewer in self.viewers if viewer.id not in removed_viewer_ids
-        )
-        known = {viewer.id for viewer in viewers}
-        return GraphPresentationDocument(
-            viewers=viewers,
-            links=tuple(link for link in self.links if link.target_viewer_id in known),
-            bindings=tuple(
-                binding
-                for binding in self.bindings
-                if binding.source_viewer_id in known
-                and binding.target_viewer_id in known
-            ),
-            annotations=self.annotations,
-        )
-
 
 def empty_presentation() -> GraphPresentationDocument:
     return GraphPresentationDocument()

@@ -58,13 +58,6 @@ class PluginReleasePinModel(ApiResponse):
     ) -> "PluginReleasePinModel":
         return cls(scope=pin.scope, slug=pin.slug, revision=pin.revision)
 
-    def to_saved_pin(self) -> SavedGraphPluginReleasePin:
-        return SavedGraphPluginReleasePin(
-            scope=self.scope,
-            slug=self.slug,
-            revision=self.revision,
-        )
-
 
 __all__ = [
     "ApiResponse",

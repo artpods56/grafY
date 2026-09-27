@@ -77,12 +77,11 @@ async def test_live_sandbox_capacity_waits_without_holding_runtime_lock(
         scratch_root: Path,
         **_kwargs: object,
     ) -> _Sandbox:
-        del artifact
+        del artifact, scratch_root
         created.append(key)
         return _Sandbox(
             key=key,
             container_id=f"container-{key.release_revision}",
-            scratch_root=scratch_root,
         )
 
     async def remove_container(container_id: str) -> None:
@@ -155,12 +154,11 @@ async def test_sandbox_identity_includes_the_effective_node_capability_profile(
         scratch_root: Path,
         **_kwargs: object,
     ) -> _Sandbox:
-        del artifact
+        del artifact, scratch_root
         created.append(key)
         return _Sandbox(
             key=key,
             container_id=f"container-{len(created)}",
-            scratch_root=scratch_root,
         )
 
     async def remove_container(container_id: str) -> None:
@@ -212,11 +210,10 @@ async def test_one_execution_cannot_deadlock_on_excess_distinct_releases(
         scratch_root: Path,
         **_kwargs: object,
     ) -> _Sandbox:
-        del artifact
+        del artifact, scratch_root
         return _Sandbox(
             key=key,
             container_id=f"container-{key.release_revision}",
-            scratch_root=scratch_root,
         )
 
     async def remove_container(container_id: str) -> None:
@@ -271,11 +268,10 @@ async def test_origin_variants_use_the_variant_limit_not_the_release_limit(
         scratch_root: Path,
         **_kwargs: object,
     ) -> _Sandbox:
-        del artifact
+        del artifact, scratch_root
         return _Sandbox(
             key=key,
             container_id="variant-container",
-            scratch_root=scratch_root,
         )
 
     async def remove_container(container_id: str) -> None:

@@ -713,7 +713,6 @@ class IdentityService:
                 await unit_of_work.commit()
                 return IdentityProvisioningResult(
                     user=user,
-                    oidc_identity=identity,
                     personal_workspace=personal_workspace,
                 )
 
@@ -752,7 +751,6 @@ class IdentityService:
             await unit_of_work.commit()
         return IdentityProvisioningResult(
             user=user,
-            oidc_identity=identity,
             personal_workspace=personal_workspace,
         )
 
@@ -1243,16 +1241,6 @@ class IdentityService:
         if user is None:
             raise NotFoundError("User", str(user_id))
         return user
-
-    async def _require_workspace(
-        self,
-        unit_of_work: IdentityUnitOfWorkPort,
-        workspace_id: UUID,
-    ) -> Workspace:
-        workspace = await unit_of_work.identity.get_workspace(workspace_id)
-        if workspace is None:
-            raise NotFoundError("Workspace", str(workspace_id))
-        return workspace
 
     async def _require_membership(
         self,
