@@ -713,7 +713,6 @@ class IdentityService:
                 await unit_of_work.commit()
                 return IdentityProvisioningResult(
                     user=user,
-                    oidc_identity=identity,
                     personal_workspace=personal_workspace,
                 )
 
@@ -752,7 +751,6 @@ class IdentityService:
             await unit_of_work.commit()
         return IdentityProvisioningResult(
             user=user,
-            oidc_identity=identity,
             personal_workspace=personal_workspace,
         )
 

@@ -680,7 +680,6 @@ class WorkspaceAccess:
 @dataclass(frozen=True, slots=True)
 class IdentityProvisioningResult:
     user: User
-    oidc_identity: OidcIdentity
     personal_workspace: Workspace
 
 
