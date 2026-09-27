@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 from fastapi import FastAPI
 from grafy_core.application.collaboration import CollaborationService
@@ -40,7 +39,6 @@ class AppIdentity:
 
 @dataclass(frozen=True, slots=True)
 class CapacityDiagnostics:
-    captured_at: datetime
     execution_admission: ExecutionAdmissionDiagnostics
     execution_queue: RunExecutionQueueDiagnostics
     plugin_invocations: PluginInvocationCapacityDiagnostics | None
@@ -61,7 +59,6 @@ class AppResources:
 
     async def capacity_diagnostics(self) -> CapacityDiagnostics:
         return CapacityDiagnostics(
-            captured_at=datetime.now(UTC),
             execution_admission=self.workbench.execution_admission.diagnostics(),
             execution_queue=await self.workbench.execution_manager.diagnostics(),
             plugin_invocations=(
