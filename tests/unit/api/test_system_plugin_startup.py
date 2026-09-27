@@ -1,5 +1,8 @@
+from tests.testkit import with_setting_values
 from pathlib import Path
 from unittest.mock import AsyncMock
+from grafy_shared.config import AppConfig, KeysConfig, RealtimeConfig
+
 from grafy_api.plugins.runtime.docker import DockerPluginRuntime
 from grafy_api.app_state import get_resources
 
@@ -23,12 +26,17 @@ async def startup_settings(tmp_path: Path) -> Settings:
         await connection.run_sync(metadata.create_all)
     await database.dispose()
     return Settings(
-        _env_file=None,  # pyright: ignore[reportCallIssue]
-        workspace=tmp_path / "workbench",
-        database_url=SecretStr(database_url),
-        command_hmac_key=SecretStr("test-builtin-startup-hmac-key"),
-        require_single_api_owner=False,
-        graph_room_heartbeat_seconds=0,
+        app=AppConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            workspace=tmp_path / "workbench",
+            database_url=SecretStr(database_url),
+            require_single_api_owner=False,
+        ),
+        keys=KeysConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            command_hmac_key=SecretStr("test-builtin-startup-hmac-key"),  # pyright: ignore[reportCallIssue]
+        ),
+        realtime=RealtimeConfig(_env_file=None, graph_room_heartbeat_seconds=0),  # pyright: ignore[reportCallIssue]
     )
 
 
@@ -60,8 +68,9 @@ async def test_configured_host_deployment_manifest_is_ignored(
     manifest_path = tmp_path / "deployment" / "system-plugins.json"
     manifest_path.parent.mkdir()
     manifest_path.write_text("{}", encoding="utf-8")
-    configured = startup_settings.model_copy(
-        update={"system_plugin_deployment_manifest": manifest_path}
+    configured = with_setting_values(
+        startup_settings,
+        system_plugin_deployment_manifest=manifest_path,
     )
     application = create_app(configured)
 
@@ -88,7 +97,7 @@ async def test_runtime_startup_without_owner_does_not_reap_other_workers(
     monkeypatch.setattr(DockerPluginRuntime, "recover_orphans", orphan_recovery)
     monkeypatch.setattr(DockerPluginRuntime, "shutdown", AsyncMock())
     application = create_app(
-        startup_settings.model_copy(update={"plugin_runtime_enabled": True})
+        with_setting_values(startup_settings, plugin_runtime_enabled=True)
     )
     async with LifespanManager(application):
         assert get_resources(application).workbench.plugin_runtime is not None

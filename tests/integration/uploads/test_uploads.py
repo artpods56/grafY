@@ -9,10 +9,10 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from fastapi import FastAPI
-from grafy_api.settings import (
-    STAGED_UPLOAD_HARD_MAX_BYTES,
-    Settings,
-)
+
+from grafy_shared.config import UploadConfig
+
+from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES, Settings
 from grafy_api.uploads import (
     FileFormatMismatchError,
     PresigningStorage,
@@ -137,12 +137,14 @@ async def _artifacts(
 def test_staged_upload_settings_enforce_release_bounds() -> None:
     settings = Settings.model_validate({})
 
-    assert settings.staged_upload_max_bytes == 64 * 1024 * 1024
+    assert settings.uploads.staged_upload_max_bytes == 64 * 1024 * 1024
     with pytest.raises(ValidationError):
-        Settings(staged_upload_max_bytes=1024 * 1024 - 1)
+        Settings(uploads=UploadConfig(staged_upload_max_bytes=1024 * 1024 - 1))
     with pytest.raises(ValidationError):
         Settings(
-            staged_upload_max_bytes=STAGED_UPLOAD_HARD_MAX_BYTES + 1,
+            uploads=UploadConfig(
+                staged_upload_max_bytes=STAGED_UPLOAD_HARD_MAX_BYTES + 1
+            )
         )
 
 

@@ -14,6 +14,7 @@ import json
 import re
 from pathlib import Path
 from typing import Mapping
+import warnings
 from uuid import UUID
 
 import tomllib
@@ -33,6 +34,7 @@ from grafy_api.plugins.runtime.egress import (
     PluginEgressLimits,
     PluginEgressProtocol,
 )
+from grafy_shared.config import EgressConfig
 
 
 class NetworkPolicyError(ValueError):
@@ -124,9 +126,10 @@ class NetworkCaBundle:
     sha256: str
 
     def __post_init__(self) -> None:
-        if not self.path.is_absolute() or self.sha256 != sha256(
-            self.content
-        ).hexdigest():
+        if (
+            not self.path.is_absolute()
+            or self.sha256 != sha256(self.content).hexdigest()
+        ):
             raise NetworkPolicyError("Network CA bundle identity is invalid")
         _validate_ca_bundle_content(self.content)
 
@@ -155,7 +158,7 @@ def _validate_ca_bundle_content(content: bytes) -> None:
     offset = 0
     certificate_count = 0
     for match in _CERTIFICATE_PEM_BLOCK.finditer(content):
-        if content[offset:match.start()].strip():
+        if content[offset : match.start()].strip():
             raise NetworkPolicyError(
                 "Network CA bundle must contain certificate PEM blocks only"
             )
@@ -186,18 +189,16 @@ class NetworkProfileLimits:
     idle_timeout_seconds: int = PLUGIN_EGRESS_IDLE_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
-        _check_range("max_origins_per_execution", self.max_origins_per_execution, 1, 128)
+        _check_range(
+            "max_origins_per_execution", self.max_origins_per_execution, 1, 128
+        )
         _check_range("connection_limit", self.connection_limit, 1, 1_024)
         _check_range("max_header_bytes", self.max_header_bytes, 1_024, 1_048_576)
-        _check_range(
-            "max_request_bytes", self.max_request_bytes, 1_024, 1_073_741_824
-        )
+        _check_range("max_request_bytes", self.max_request_bytes, 1_024, 1_073_741_824)
         _check_range(
             "max_response_bytes", self.max_response_bytes, 1_024, 1_073_741_824
         )
-        _check_range(
-            "connect_timeout_seconds", self.connect_timeout_seconds, 1, 60
-        )
+        _check_range("connect_timeout_seconds", self.connect_timeout_seconds, 1, 60)
         _check_range("idle_timeout_seconds", self.idle_timeout_seconds, 1, 900)
 
     def broker_limits(self) -> PluginEgressLimits:
@@ -242,10 +243,7 @@ class NetworkAccessProfile:
     description: str | None = None
 
     def __post_init__(self) -> None:
-        if (
-            not _PROFILE_NAME.fullmatch(self.name)
-            or len(self.name) > 100
-        ):
+        if not _PROFILE_NAME.fullmatch(self.name) or len(self.name) > 100:
             raise NetworkPolicyError(
                 "Network profile names must match ^[a-z][a-z0-9-]*$"
             )
@@ -272,13 +270,14 @@ class NetworkAccessProfile:
             raise NetworkPolicyError(
                 "Network CA bundles require exact curated Plugin execution origins"
             )
-        if any(origin.protocol is PluginEgressProtocol.POSTGRESQL for origin in origins):
+        if any(
+            origin.protocol is PluginEgressProtocol.POSTGRESQL for origin in origins
+        ):
             raise NetworkPolicyError(
                 "Network profiles may only authorize HTTP(S) origins"
             )
         if self.https_only and any(
-            origin.protocol is not PluginEgressProtocol.HTTPS
-            for origin in origins
+            origin.protocol is not PluginEgressProtocol.HTTPS for origin in origins
         ):
             raise NetworkPolicyError(
                 f"Profile {self.name!r} is HTTPS-only but declares plain HTTP origins"
@@ -352,7 +351,10 @@ class NetworkProfileAssignment:
             raise NetworkPolicyError(
                 "Assignment profile names must match ^[a-z][a-z0-9-]*$"
             )
-        if self.workspace_id is not None and self.scope is not PluginReleaseScope.WORKSPACE:
+        if (
+            self.workspace_id is not None
+            and self.scope is not PluginReleaseScope.WORKSPACE
+        ):
             raise NetworkPolicyError(
                 "Only workspace-scope assignments may name a Workspace"
             )
@@ -411,15 +413,18 @@ class NetworkPolicy:
     def __init__(
         self,
         *,
-        profiles: Mapping[tuple[NetworkAccessPlane, str], NetworkAccessProfile] | None = None,
+        profiles: Mapping[tuple[NetworkAccessPlane, str], NetworkAccessProfile]
+        | None = None,
         assignments: tuple[NetworkProfileAssignment, ...] = (),
         defaults: Mapping[NetworkAccessPlane, str] | None = None,
     ) -> None:
-        self._profiles: dict[
-            tuple[NetworkAccessPlane, str], NetworkAccessProfile
-        ] = dict(profiles or {})
+        self._profiles: dict[tuple[NetworkAccessPlane, str], NetworkAccessProfile] = (
+            dict(profiles or {})
+        )
         for plane in NetworkAccessPlane:
-            self._profiles.setdefault((plane, "offline"), built_in_offline_profile(plane))
+            self._profiles.setdefault(
+                (plane, "offline"), built_in_offline_profile(plane)
+            )
         self._assignments = tuple(assignments)
         self._defaults: dict[NetworkAccessPlane, str] = {
             plane: "offline" for plane in NetworkAccessPlane
@@ -428,6 +433,38 @@ class NetworkPolicy:
             for plane, name in defaults.items():
                 self._defaults[plane] = name
         self._validate()
+
+    @classmethod
+    def from_config(cls, egress: EgressConfig) -> "NetworkPolicy":
+        """The deployment-owned network policy, manifest-first.
+
+        Without a manifest the legacy egress environment variables translate
+        into an in-memory curated execution profile so historical
+        ``network.egress`` releases keep their exact previous authority.
+        """
+
+        manifest = egress.resolved_network_policy_manifest
+        if manifest is not None:
+            try:
+                return load_network_policy_manifest(manifest)
+            except NetworkPolicyError as exc:
+                raise NetworkPolicyError(
+                    f"GRAFY_NETWORK_POLICY_MANIFEST {manifest} is invalid: {exc}"
+                ) from exc
+        legacy_destinations = tuple(
+            PluginEgressDestination.parse(value)
+            for value in egress.plugin_http_egress_destinations
+        )
+        if legacy_destinations:
+            warnings.warn(
+                "GRAFY_PLUGIN_HTTP_EGRESS_DESTINATIONS is deprecated and "
+                "translates into the legacy-curated execution profile; set "
+                "GRAFY_NETWORK_POLICY_MANIFEST to assign named network access "
+                "profiles.",
+                category=DeprecationWarning,
+                stacklevel=2,
+            )
+        return legacy_network_policy(http_destinations=legacy_destinations)
 
     def _validate(self) -> None:
         for (plane, name), profile in self._profiles.items():
@@ -575,7 +612,9 @@ def resolve_http_egress_authority(
     http_egress = contract.http_egress
     if http_egress is None:
         if profile.mode is NetworkProfileMode.CURATED and profile.allowed_origins:
-            return HttpEgressResolution(profile=profile, origins=profile.allowed_origins)
+            return HttpEgressResolution(
+                profile=profile, origins=profile.allowed_origins
+            )
         return HttpEgressResolution(
             profile=profile,
             reason=NetworkRejectionReason.DESTINATION_UNDECLARED,
@@ -615,8 +654,7 @@ def resolve_http_egress_authority(
             profile=profile,
             reason=NetworkRejectionReason.DESTINATION_NOT_ALLOWLISTED,
             detail=(
-                "Assigned profile "
-                f"{profile.name!r} only allows HTTPS destinations."
+                f"Assigned profile {profile.name!r} only allows HTTPS destinations."
             ),
         )
     if profile.mode is NetworkProfileMode.CURATED:
@@ -704,7 +742,9 @@ def render_effective_network_policy(
         f"Node: {node_operator}",
     ]
     if configured_fields:
-        rendered_fields = ", ".join(f"`{field_name}`" for field_name in configured_fields)
+        rendered_fields = ", ".join(
+            f"`{field_name}`" for field_name in configured_fields
+        )
         lines.append(f"Requested: configured fields {rendered_fields}")
     elif profile is not None:
         lines.append("Requested: no HTTP egress contract")
@@ -728,9 +768,7 @@ def render_effective_network_policy(
             else "Address policy: public and exact curated RFC1918"
         )
         if profile is not None and profile.ca_bundle is not None:
-            lines.append(
-                f"TLS trust bundle: sha256:{profile.ca_bundle.sha256}"
-            )
+            lines.append(f"TLS trust bundle: sha256:{profile.ca_bundle.sha256}")
         lines.append("Status: runnable")
     else:
         lines.append(f"Status: denied ({resolution.reason.value})")
@@ -744,7 +782,9 @@ def load_network_policy_manifest(path: Path) -> NetworkPolicy:
     try:
         document = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise NetworkPolicyError(f"Network policy manifest is unreadable: {exc}") from exc
+        raise NetworkPolicyError(
+            f"Network policy manifest is unreadable: {exc}"
+        ) from exc
     if document.get("schema_version") != 1:
         raise NetworkPolicyError("Network policy manifest schema_version must be 1")
 
@@ -793,9 +833,7 @@ def load_network_policy_manifest(path: Path) -> NetworkPolicy:
     for raw_assignment in raw_assignments:
         if not isinstance(raw_assignment, dict):
             raise NetworkPolicyError("Each assignment must be a table")
-        assignments.append(
-            _assignment_from_manifest(raw_assignment)
-        )
+        assignments.append(_assignment_from_manifest(raw_assignment))
 
     return NetworkPolicy(
         profiles=profiles,
@@ -818,19 +856,19 @@ def legacy_network_policy(
     profiles: dict[tuple[NetworkAccessPlane, str], NetworkAccessProfile] = {}
     defaults: dict[NetworkAccessPlane, str] = {}
     if http_destinations:
-        profiles[
-            (NetworkAccessPlane.PLUGIN_EXECUTION, "legacy-curated")
-        ] = NetworkAccessProfile(
-            name="legacy-curated",
-            plane=NetworkAccessPlane.PLUGIN_EXECUTION,
-            mode=NetworkProfileMode.CURATED,
-            https_only=False,
-            allowed_origins=http_destinations,
-            label="Legacy GRAFY_PLUGIN_HTTP_EGRESS_DESTINATIONS",
-            description=(
-                "Translated from legacy egress environment variables; migrate to "
-                "GRAFY_NETWORK_POLICY_MANIFEST."
-            ),
+        profiles[(NetworkAccessPlane.PLUGIN_EXECUTION, "legacy-curated")] = (
+            NetworkAccessProfile(
+                name="legacy-curated",
+                plane=NetworkAccessPlane.PLUGIN_EXECUTION,
+                mode=NetworkProfileMode.CURATED,
+                https_only=False,
+                allowed_origins=http_destinations,
+                label="Legacy GRAFY_PLUGIN_HTTP_EGRESS_DESTINATIONS",
+                description=(
+                    "Translated from legacy egress environment variables; migrate to "
+                    "GRAFY_NETWORK_POLICY_MANIFEST."
+                ),
+            )
         )
         defaults[NetworkAccessPlane.PLUGIN_EXECUTION] = "legacy-curated"
     return NetworkPolicy(profiles=profiles, defaults=defaults)
@@ -847,7 +885,9 @@ def _load_domain_sets(
     if not isinstance(raw, dict):
         raise NetworkPolicyError("[domain_sets] must be a table")
     for name, raw_set in raw.items():
-        if not isinstance(raw_set, dict) or not isinstance(raw_set.get("origins"), list):
+        if not isinstance(raw_set, dict) or not isinstance(
+            raw_set.get("origins"), list
+        ):
             raise NetworkPolicyError(
                 f"Domain set {name!r} must declare an origins array"
             )
@@ -885,9 +925,7 @@ def _profile_from_manifest(
         allowed_origins.add(_origin_from_value(origin, context=f"profile {name!r}"))
     raw_domain_sets = raw_profile.get("domain_sets", [])
     if not isinstance(raw_domain_sets, list):
-        raise NetworkPolicyError(
-            f"Profile {name!r} domain_sets must be an array"
-        )
+        raise NetworkPolicyError(f"Profile {name!r} domain_sets must be an array")
     for domain_set in raw_domain_sets:
         if not isinstance(domain_set, str) or domain_set not in domain_sets:
             raise NetworkPolicyError(
@@ -898,14 +936,10 @@ def _profile_from_manifest(
     raw_public = raw_profile.get("public_address_only", True)
     raw_https_only = raw_profile.get("https_only", True)
     if not isinstance(raw_public, bool) or not isinstance(raw_https_only, bool):
-        raise NetworkPolicyError(
-            f"Profile {name!r} address flags must be booleans"
-        )
+        raise NetworkPolicyError(f"Profile {name!r} address flags must be booleans")
     raw_ca_bundle_path = raw_profile.get("ca_bundle_path")
     if raw_ca_bundle_path is not None and not isinstance(raw_ca_bundle_path, str):
-        raise NetworkPolicyError(
-            f"Profile {name!r} ca_bundle_path must be a string"
-        )
+        raise NetworkPolicyError(f"Profile {name!r} ca_bundle_path must be a string")
     ca_bundle = (
         None
         if raw_ca_bundle_path is None
@@ -927,7 +961,9 @@ def _profile_from_manifest(
     )
 
 
-def _limits_from_manifest(raw_profile: Mapping[str, object], *, context: str) -> NetworkProfileLimits:
+def _limits_from_manifest(
+    raw_profile: Mapping[str, object], *, context: str
+) -> NetworkProfileLimits:
     known = {
         "max_origins_per_execution",
         "connection_limit",
@@ -959,7 +995,10 @@ def _limits_from_manifest(raw_profile: Mapping[str, object], *, context: str) ->
     defaults = NetworkProfileLimits()
     return NetworkProfileLimits(
         max_origins_per_execution=_manifest_int(
-            values, "max_origins_per_execution", defaults.max_origins_per_execution, context
+            values,
+            "max_origins_per_execution",
+            defaults.max_origins_per_execution,
+            context,
         ),
         connection_limit=_manifest_int(
             values, "connection_limit", defaults.connection_limit, context
@@ -1004,9 +1043,7 @@ def _assignment_from_manifest(raw: Mapping[str, object]) -> NetworkProfileAssign
         try:
             workspace_id = UUID(str(raw_workspace))
         except ValueError as exc:
-            raise NetworkPolicyError(
-                "Assignment workspace_id must be a UUID"
-            ) from exc
+            raise NetworkPolicyError("Assignment workspace_id must be a UUID") from exc
     raw_slug = raw.get("slug")
     slug: str | None = None
     if raw_slug is not None:
@@ -1039,7 +1076,9 @@ def _origin_from_value(value: object, *, context: str) -> PluginEgressDestinatio
     try:
         return PluginEgressDestination.parse(value)
     except ValueError as exc:
-        raise NetworkPolicyError(f"{context} origin {value!r} is invalid: {exc}") from exc
+        raise NetworkPolicyError(
+            f"{context} origin {value!r} is invalid: {exc}"
+        ) from exc
 
 
 def _plane_from_key(value: object) -> NetworkAccessPlane:

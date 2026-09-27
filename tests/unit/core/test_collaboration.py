@@ -553,7 +553,9 @@ def test_add_update_and_remove_origins() -> None:
         )
     assert conflict.value.error_code == "field_conflict"
 
-    repointed = origin.model_copy(update={"value": origin.value.model_copy(update={"content_hash": "b" * 64})})
+    repointed = origin.model_copy(
+        update={"value": origin.value.model_copy(update={"content_hash": "b" * 64})}
+    )
     _, updated = apply_graph_command(
         name="Graph",
         document=with_origin,
@@ -653,9 +655,7 @@ def test_add_edge_and_sanitize_copy_document() -> None:
     assert exc.value.error_code == "foreign_module_reference"
 
 
-def test_cross_workspace_copy_keeps_an_unsatisfied_artifact_card_reference() -> (
-    None
-):
+def test_cross_workspace_copy_keeps_an_unsatisfied_artifact_card_reference() -> None:
     reference = ArtifactRef.from_key(
         artifact_id=uuid4(),
         key=ArtifactTypeKey("table.data", 1),
@@ -685,9 +685,7 @@ def test_cross_workspace_copy_preserves_system_pins_and_rejects_workspace_pins()
         slug="arithmetic",
         revision=3,
     )
-    system_document = SavedGraphDocument(
-        nodes=(_node(plugin_release_pin=system_pin),)
-    )
+    system_document = SavedGraphDocument(nodes=(_node(plugin_release_pin=system_pin),))
 
     copied = sanitize_document_for_cross_workspace_copy(system_document)
 
@@ -857,7 +855,9 @@ def test_schema_builder_compound_rejects_partial_field_conflict() -> None:
     assert document.nodes[0].input_plugs[0].id == "a"
 
 
-def test_saved_graph_document_rejects_legacy_schema_versions_without_migration() -> None:
+def test_saved_graph_document_rejects_legacy_schema_versions_without_migration() -> (
+    None
+):
     with pytest.raises(ValidationError, match="is not supported"):
         SavedGraphDocument.model_validate(
             {"schema_version": 3, "nodes": [], "edges": []}

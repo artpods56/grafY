@@ -17,6 +17,8 @@ from grafy_workbench.table.persistence import TableArtifactWriter
 from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
+from grafy_shared.config import AppConfig
+
 from grafy_api.services.composition import (
     WorkbenchComponents,
     build_workbench_components,
@@ -58,8 +60,10 @@ def builtin_client(tmp_path: Path) -> Iterator[TestClient]:
     try:
         with client_with_overrides(
             settings=Settings(
-                workspace=tmp_path / "workbench",
-                database_url=SecretStr(database_url),
+                app=AppConfig(
+                    workspace=tmp_path / "workbench",
+                    database_url=SecretStr(database_url),
+                )
             ),
             overrides=workbench_dependency_overrides(components),
         ) as client:
@@ -93,8 +97,9 @@ def table_artifact_client(
     )
     with client_with_overrides(
         settings=Settings(
-            workspace=tmp_path / "workbench",
-            database_url=SecretStr(database_url),
+            app=AppConfig(
+                workspace=tmp_path / "workbench", database_url=SecretStr(database_url)
+            )
         ),
         overrides=workbench_dependency_overrides(components),
     ) as client:
@@ -122,8 +127,9 @@ def conversion_path_client(
     )
     with client_with_overrides(
         settings=Settings(
-            workspace=tmp_path / "workbench",
-            database_url=SecretStr(database_url),
+            app=AppConfig(
+                workspace=tmp_path / "workbench", database_url=SecretStr(database_url)
+            )
         ),
         overrides=workbench_dependency_overrides(components),
     ) as client:
@@ -143,8 +149,9 @@ def structural_projection_client(tmp_path: Path) -> Iterator[TestClient]:
     )
     with client_with_overrides(
         settings=Settings(
-            workspace=tmp_path / "workbench",
-            database_url=SecretStr(database_url),
+            app=AppConfig(
+                workspace=tmp_path / "workbench", database_url=SecretStr(database_url)
+            )
         ),
         overrides=workbench_dependency_overrides(components),
     ) as client:

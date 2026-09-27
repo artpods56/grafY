@@ -47,6 +47,8 @@ from grafy_persistence.database import Database, create_database
 from grafy_persistence.orm import metadata
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
+from grafy_shared.config import AppConfig
+
 from grafy_api.execution.requests import (
     RunNodeRequest,
     RunRequest,
@@ -1225,8 +1227,10 @@ def test_node_secret_routes_never_return_secret_value(tmp_path: Path) -> None:
     try:
         with client_with_overrides(
             settings=Settings(
-                workspace=tmp_path / "workbench",
-                database_url=SecretStr(database_url),
+                app=AppConfig(
+                    workspace=tmp_path / "workbench",
+                    database_url=SecretStr(database_url),
+                )
             ),
             overrides=overrides,
         ) as client:

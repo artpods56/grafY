@@ -200,7 +200,9 @@ def test_gis_registers_exact_sources_lightweight_layers_and_documents() -> None:
         .node_class.input_contract.ports["file"]
         .accepted_types,
     )
-    assert all(BLOB_FILE.key not in accepted for accepted in accepted_by_typed_importers)
+    assert all(
+        BLOB_FILE.key not in accepted for accepted in accepted_by_typed_importers
+    )
 
 
 def test_wfs_import_declares_its_configured_http_egress_contract() -> None:

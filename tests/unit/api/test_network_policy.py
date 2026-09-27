@@ -41,11 +41,7 @@ SLUG = "external.llm"
 
 def _e2e_ca_bytes() -> bytes:
     return (
-        Path(__file__).resolve().parents[3]
-        / "infra"
-        / "e2e"
-        / "tls"
-        / "ca.crt"
+        Path(__file__).resolve().parents[3] / "infra" / "e2e" / "tls" / "ca.crt"
     ).read_bytes()
 
 
@@ -118,9 +114,7 @@ def _public_profile(
         allowed_origins=tuple(
             PluginEgressDestination.parse(origin) for origin in origins
         ),
-        limits=NetworkProfileLimits(
-            max_origins_per_execution=max_origins
-        ),
+        limits=NetworkProfileLimits(max_origins_per_execution=max_origins),
     )
 
 
@@ -211,9 +205,7 @@ profile = "deps"
     )
     policy = load_network_policy_manifest(path)
 
-    profile = policy.profile(
-        NetworkAccessPlane.PLUGIN_EXECUTION, "llm-public"
-    )
+    profile = policy.profile(NetworkAccessPlane.PLUGIN_EXECUTION, "llm-public")
     assert profile is not None
     assert len(profile.allowed_origins) == 1
 
@@ -244,7 +236,7 @@ profile = "deps"
 
 
 def test_manifest_requires_schema_version_one(tmp_path: Path) -> None:
-    path = _write_manifest(tmp_path, 'schema_version = 2\n')
+    path = _write_manifest(tmp_path, "schema_version = 2\n")
     with pytest.raises(NetworkPolicyError, match="schema_version must be 1"):
         load_network_policy_manifest(path)
 
@@ -395,9 +387,7 @@ def test_builtin_offline_profile_exists_on_every_plane() -> None:
             NetworkProfileMode.OFFLINE,
         }
         assert offline.grants_http_authority is False
-        assert (
-            policy.profile(plane, "offline") == built_in_offline_profile(plane)
-        )
+        assert policy.profile(plane, "offline") == built_in_offline_profile(plane)
 
 
 def test_resolution_precedence_is_revision_over_slug_over_scope_over_default() -> None:
@@ -413,15 +403,22 @@ def test_resolution_precedence_is_revision_over_slug_over_scope_over_default() -
         },
         assignments=(
             NetworkProfileAssignment(
-                plane=execution, profile="exact", scope=PluginReleaseScope.SYSTEM,
-                slug=SLUG, revision=3,
+                plane=execution,
+                profile="exact",
+                scope=PluginReleaseScope.SYSTEM,
+                slug=SLUG,
+                revision=3,
             ),
             NetworkProfileAssignment(
-                plane=execution, profile="family", scope=PluginReleaseScope.SYSTEM,
+                plane=execution,
+                profile="family",
+                scope=PluginReleaseScope.SYSTEM,
                 slug=SLUG,
             ),
             NetworkProfileAssignment(
-                plane=execution, profile="scoped", scope=PluginReleaseScope.SYSTEM,
+                plane=execution,
+                profile="scoped",
+                scope=PluginReleaseScope.SYSTEM,
             ),
         ),
         defaults={execution: "default"},
@@ -471,11 +468,15 @@ def test_ambiguous_assignments_are_rejected() -> None:
             },
             assignments=(
                 NetworkProfileAssignment(
-                    plane=execution, profile="one", scope=PluginReleaseScope.SYSTEM,
+                    plane=execution,
+                    profile="one",
+                    scope=PluginReleaseScope.SYSTEM,
                     slug=SLUG,
                 ),
                 NetworkProfileAssignment(
-                    plane=execution, profile="two", scope=PluginReleaseScope.SYSTEM,
+                    plane=execution,
+                    profile="two",
+                    scope=PluginReleaseScope.SYSTEM,
                     slug=SLUG,
                 ),
             ),
@@ -492,9 +493,7 @@ def test_workspace_assignments_require_workspace_scope() -> None:
 
 
 def test_curated_profile_may_allow_rfc1918_for_exact_origins() -> None:
-    destination = PluginEgressDestination.parse(
-        "https://openai-e2e:8443"
-    )
+    destination = PluginEgressDestination.parse("https://openai-e2e:8443")
 
     profile = NetworkAccessProfile(
         name="e2e-provider",
@@ -670,9 +669,8 @@ def test_historical_node_without_contract_runs_only_under_curated() -> None:
 
     resolution = _resolve(policy, _contract(), {})
     assert resolution.allowed
-    assert (
-        resolution.origins
-        == (PluginEgressDestination.parse("https://api.example.com:443"),)
+    assert resolution.origins == (
+        PluginEgressDestination.parse("https://api.example.com:443"),
     )
 
     disabled = _policy(_public_profile(), slug=SLUG)
@@ -774,7 +772,9 @@ def test_resolver_denies_dynamic_destinations_until_open_public() -> None:
         profile = _public_profile(name=f"mode-{mode.value}", mode=mode)
         policy = _policy(profile, slug=SLUG)
         resolution = _resolve(policy, _contract(dynamic=True), {})
-        assert resolution.reason is NetworkRejectionReason.DYNAMIC_DESTINATION_DENIED, mode
+        assert resolution.reason is NetworkRejectionReason.DYNAMIC_DESTINATION_DENIED, (
+            mode
+        )
 
     open_public = NetworkAccessProfile(
         name="open-public",
@@ -829,12 +829,11 @@ def test_documentation_manifest_example_stays_valid(
     )
     policy = load_network_policy_manifest(manifest)
 
-    assert policy.profile(
-        NetworkAccessPlane.PLUGIN_EXECUTION, "configured-public"
-    ) is not None
-    dependencies = policy.profile(
-        NetworkAccessPlane.PUBLICATION, "dependencies"
+    assert (
+        policy.profile(NetworkAccessPlane.PLUGIN_EXECUTION, "configured-public")
+        is not None
     )
+    dependencies = policy.profile(NetworkAccessPlane.PUBLICATION, "dependencies")
     assert dependencies is not None
     assert {origin.host for origin in dependencies.allowed_origins} == {
         "pypi.org",

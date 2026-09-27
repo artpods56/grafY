@@ -11,6 +11,7 @@ import grafy_api.main as main_module
 from grafy_api.settings import Settings, get_settings
 from grafy_persistence.database import Database
 from tests.testkit import client_with_overrides, create_db_url, db
+from tests.testkit import with_setting_values
 
 
 class _SwitchableReadinessEngine:
@@ -46,8 +47,8 @@ async def test_readiness_reports_database_failure_without_breaking_liveness(
             "create_database",
             lambda _database_url: readiness_database,
         )
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
 
         with client_with_overrides(settings=app_settings) as client:
@@ -74,14 +75,14 @@ async def test_readiness_uses_the_settings_attached_to_its_application(
 ) -> None:
     database_url = create_db_url(tmp_path, "readiness-settings.sqlite3")
     async with db(database_url):
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         monkeypatch.setenv("GRAFY_MAP_MAX_CONCURRENCY", "7")
         get_settings.cache_clear()
 
         try:
-            assert get_settings().map_max_concurrency == 7
+            assert get_settings().execution.map_max_concurrency == 7
 
             with client_with_overrides(settings=app_settings) as client:
                 response = client.get("/ready")
@@ -98,8 +99,8 @@ async def test_readiness_translates_uninitialized_resources_to_unavailable(
 ) -> None:
     database_url = create_db_url(tmp_path, "readiness-uninitialized.sqlite3")
     async with db(database_url):
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
 
         with client_with_overrides(settings=app_settings) as client:

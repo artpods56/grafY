@@ -62,7 +62,7 @@ class LibraryService:
             return spec.title
         return f"{artifact.artifact_type}@{artifact.schema_version}"
 
-    #[TODO] performance is shit here because of the run lookups, think how we can track whats the provenance of an artifact easier
+    # [TODO] performance is shit here because of the run lookups, think how we can track whats the provenance of an artifact easier
     async def list_items(self, workspace_id: UUID) -> list[LibraryItemResponse]:
         items: list[LibraryItem] = []
         async with self._unit_of_work as unit_of_work:
@@ -75,7 +75,9 @@ class LibraryService:
                     LibraryItem(
                         artifact=artifact,
                         provenance=provenance,
-                        run=await self._retained_run(unit_of_work, artifact, provenance),
+                        run=await self._retained_run(
+                            unit_of_work, artifact, provenance
+                        ),
                     )
                 )
         items.sort(
@@ -84,7 +86,7 @@ class LibraryService:
         )
         return [self._present(item) for item in items]
 
-    #[TODO] do we really need this?
+    # [TODO] do we really need this?
     @staticmethod
     async def _retained_run(
         unit_of_work: WorkbenchUnitOfWorkPort,
@@ -114,7 +116,6 @@ class LibraryService:
         node_id: str,
         node_title: str,
     ) -> LibraryItemResponse:
-
         async with self._unit_of_work as unit_of_work:
             detail = await unit_of_work.execution_history.get(
                 workspace_id,
@@ -176,7 +177,7 @@ class LibraryService:
         )
         return await self._record(workspace_id, artifact_id, provenance, None)
 
-    #[TODO] theres something wrong with the check being made in this uow, theres a race condition on two concurent saves
+    # [TODO] theres something wrong with the check being made in this uow, theres a race condition on two concurent saves
     async def _record(
         self,
         workspace_id: UUID,

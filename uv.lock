@@ -451,6 +451,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "grafy-core" },
     { name = "grafy-persistence" },
+    { name = "grafy-shared" },
     { name = "grafy-storage" },
     { name = "grafy-workbench" },
     { name = "httpx" },
@@ -473,6 +474,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.123.0" },
     { name = "grafy-core", editable = "libs/core" },
     { name = "grafy-persistence", editable = "libs/persistence" },
+    { name = "grafy-shared", editable = "libs/shared" },
     { name = "grafy-storage", editable = "libs/storage" },
     { name = "grafy-workbench", editable = "libs/workbench" },
     { name = "httpx", specifier = ">=0.28.0" },
@@ -645,11 +647,15 @@ name = "grafy-shared"
 version = "0.1.0"
 source = { editable = "libs/shared" }
 dependencies = [
-    { name = "grafy-core" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "grafy-core", editable = "libs/core" }]
+requires-dist = [
+    { name = "pydantic" },
+    { name = "pydantic-settings", specifier = ">=2.12.0" },
+]
 
 [[package]]
 name = "grafy-storage"

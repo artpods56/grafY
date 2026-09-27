@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from types import SimpleNamespace
 import sys
 from uuid import UUID
 
@@ -16,6 +15,10 @@ from grafy_persistence.system_cutover import (
     SystemCutoverCommand,
     SystemCutoverReport,
 )
+from grafy_shared.config import AppConfig
+from pydantic import SecretStr
+from grafy_api.settings import Settings
+
 from grafy_api.system_cutover_operations import (
     RollbackUnitVerificationResult,
     RollbackUnitWriteResult,
@@ -189,7 +192,12 @@ def test_cli_renders_typed_cutover_reports_and_passes_apply_token(
     monkeypatch.setattr(
         cli,
         "get_settings",
-        lambda: SimpleNamespace(resolved_database_url="sqlite+aiosqlite:///:memory:"),
+        lambda: Settings(
+            app=AppConfig(
+                _env_file=None,  # pyright: ignore[reportCallIssue]
+                database_url=SecretStr("sqlite+aiosqlite:///:memory:"),  # pyright: ignore[reportCallIssue]
+            )
+        ),
     )
     monkeypatch.setattr(cli.SystemBaselineCutoverService, "execute", execute)
     arguments = [
@@ -275,7 +283,12 @@ def test_cli_passes_static_and_exact_manifests_to_baseline_generation(
     monkeypatch.setattr(
         cli,
         "get_settings",
-        lambda: SimpleNamespace(resolved_database_url="sqlite+aiosqlite:///:memory:"),
+        lambda: Settings(
+            app=AppConfig(
+                _env_file=None,  # pyright: ignore[reportCallIssue]
+                database_url=SecretStr("sqlite+aiosqlite:///:memory:"),  # pyright: ignore[reportCallIssue]
+            )
+        ),
     )
     monkeypatch.setattr(cli, "generate_system_baseline_file", generate)
     monkeypatch.setattr(

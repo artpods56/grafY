@@ -128,9 +128,7 @@ def _artifact_identity(
             {
                 "path": list(reference.path),
                 "shape": reference.shape,
-                "target": (
-                    f"{reference.target.id}@{reference.target.schema_version}"
-                ),
+                "target": (f"{reference.target.id}@{reference.target.schema_version}"),
             }
             for reference in artifact.references
         ],

@@ -335,9 +335,7 @@ def test_artifact_card_keeps_its_reference_when_the_artifact_is_missing() -> Non
 
     card = document.presentation.viewers[0]
     assert card.artifact_ref is not None
-    assert card.artifact_ref.artifact_id == UUID(
-        "00000000-0000-0000-0000-00000000dead"
-    )
+    assert card.artifact_ref.artifact_id == UUID("00000000-0000-0000-0000-00000000dead")
     reloaded = SavedGraphDocument.model_validate(document.model_dump(mode="json"))
     assert reloaded.presentation.viewers[0].artifact_ref == card.artifact_ref
 
@@ -361,9 +359,7 @@ def test_presentation_viewer_without_artifact_reference_reads_as_unset() -> None
 
     assert document.presentation.viewers[0].artifact_ref is None
     assert (
-        document.model_dump(mode="json")["presentation"]["viewers"][0][
-            "artifact_ref"
-        ]
+        document.model_dump(mode="json")["presentation"]["viewers"][0]["artifact_ref"]
         is None
     )
 
@@ -628,9 +624,7 @@ def test_saved_graph_origin_round_trips_an_exact_reference() -> None:
     payload = document.model_dump(mode="json")
 
     assert payload["origins"][0]["value"]["artifact_type"] == "image.raster"
-    assert payload["origins"][0]["conversion_path"] == [
-        {"id": "as-text", "version": 1}
-    ]
+    assert payload["origins"][0]["conversion_path"] == [{"id": "as-text", "version": 1}]
     assert SavedGraphDocument.model_validate(payload).origins[0].value == origin.value
 
 
@@ -716,9 +710,7 @@ def test_saved_graph_document_origin_conflicts_with_enabled_edge_only() -> None:
         input_plugs=(SavedGraphInputPlug(id="item", port="items"),),
     )
     origin = _origin(to_port="items", to_plug="item")
-    edge = _edge("plugged").model_copy(
-        update={"to_port": "items", "to_plug": "item"}
-    )
+    edge = _edge("plugged").model_copy(update={"to_port": "items", "to_plug": "item"})
 
     disabled_edge_document = SavedGraphDocument(
         nodes=(_node("source"), target),
@@ -888,6 +880,4 @@ def test_saved_graph_plugin_release_pin_rejects_extra_or_missing_fields() -> Non
 
 def test_saved_graph_plugin_release_pin_rejects_legacy_workspace_shape() -> None:
     with pytest.raises(ValidationError, match="scope"):
-        SavedGraphPluginReleasePin.model_validate(
-            {"slug": "notes", "revision": 4}
-        )
+        SavedGraphPluginReleasePin.model_validate({"slug": "notes", "revision": 4})

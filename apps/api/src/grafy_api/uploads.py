@@ -30,7 +30,7 @@ from grafy_core.ports.uploads import UploadUnitOfWorkPort
 from grafy_storage.adapters.local import LocalFileObjectStore
 
 from grafy_api.services.errors import WorkbenchOperationError
-from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES, Settings
+from grafy_shared.config import STAGED_UPLOAD_HARD_MAX_BYTES, UploadConfig
 from grafy_api.upload_inspection import (
     FileFormatMismatchError,
     UploadInspectionError,
@@ -62,13 +62,13 @@ class UploadServiceConfig(BaseModel):
         return self
 
     @classmethod
-    def from_settings(cls, settings: Settings) -> Self:
+    def from_settings(cls, cfg: UploadConfig) -> Self:
         return cls(
-            max_upload_bytes=settings.staged_upload_max_bytes,
-            upload_lifetime=timedelta(seconds=settings.upload_lifetime_seconds),
-            upload_target_ttl=timedelta(seconds=settings.upload_target_ttl_seconds),
+            max_upload_bytes=cfg.staged_upload_max_bytes,
+            upload_lifetime=timedelta(seconds=cfg.upload_lifetime_seconds),
+            upload_target_ttl=timedelta(seconds=cfg.upload_target_ttl_seconds),
             upload_receive_timeout=timedelta(
-                seconds=settings.upload_receive_timeout_seconds
+                seconds=cfg.upload_receive_timeout_seconds
             ),
         )
 
@@ -425,7 +425,9 @@ class UploadService:
         # window have both elapsed, so a late PUT cannot recreate orphan bytes.
         # An explicit shorter ``older_than`` (tests/maintenance) may tighten that
         # grace so reclaim stays useful when the caller asks for immediate sweep.
-        deletion_grace = self._config.upload_target_ttl + self._config.upload_receive_timeout
+        deletion_grace = (
+            self._config.upload_target_ttl + self._config.upload_receive_timeout
+        )
         if older_than is not None and older_than < deletion_grace:
             deletion_grace = older_than
         terminal_before = now - deletion_grace

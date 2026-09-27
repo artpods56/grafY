@@ -5,13 +5,14 @@ from uuid import uuid4
 import pytest
 import structlog
 
+from grafy_shared.config import AppConfig
+
 from grafy_api.diagnostics import (
     DiagnosticContext,
     configure_diagnostics,
     diagnostic_scope,
     record_failure,
 )
-from grafy_api.settings import Settings
 from grafy_core.domain.errors import FailureKind, NotFoundError
 from grafy_core.domain.templates import TemplateCopyRejectedError
 
@@ -35,10 +36,10 @@ def _remove_diagnostics_handler() -> None:
 
 
 def test_settings_have_safe_local_logging_defaults() -> None:
-    settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+    config = AppConfig(_env_file=None)  # pyright: ignore[reportCallIssue]
 
-    assert settings.log_level == "INFO"
-    assert settings.log_renderer == "console"
+    assert config.log_level == "INFO"
+    assert config.log_renderer == "console"
 
 
 def test_record_failure_projects_expected_error_safely(

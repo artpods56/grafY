@@ -24,7 +24,7 @@ from grafy_core.domain.identity import (
     WorkspaceCapability,
 )
 
-from grafy_api.app_state import get_resources
+from grafy_api.app_state import get_identity, get_resources
 from grafy_api.v1.routes.auth.dependencies import browser_actor
 from grafy_api.v1.routes.auth.services import SESSION_COOKIE
 from grafy_api.v1.routes.collaboration.dependencies import (
@@ -94,7 +94,7 @@ async def websocket_browser_actor(
 
 def _require_websocket_origin(websocket: WebSocket) -> None:
     origin = websocket.headers.get("origin")
-    public_origin = websocket.app.state.settings.public_origin
+    public_origin = get_identity(websocket.app).public_origin
     if origin != public_origin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -226,7 +226,7 @@ async def graph_room(
             participants=participants,
             active_execution=active_execution,
         )
-        heartbeat_seconds = websocket.app.state.settings.graph_room_heartbeat_seconds
+        heartbeat_seconds = hub.heartbeat_seconds
         await websocket.send_json(ready.model_dump(mode="json"))
         await hub.activate(session)
         while True:

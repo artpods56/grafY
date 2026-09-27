@@ -63,14 +63,18 @@ class SavedGraphInputPlugModel(SavedGraphApiModel):
 
 class SavedGraphNodeLayoutModel(SavedGraphApiModel):
     width: float | None = Field(default=None, ge=260, le=GRAPH_LAYOUT_DIMENSION_MAX)
-    body_height: float | None = Field(default=None, ge=96, le=GRAPH_LAYOUT_DIMENSION_MAX)
+    body_height: float | None = Field(
+        default=None, ge=96, le=GRAPH_LAYOUT_DIMENSION_MAX
+    )
     appendix_height: float | None = Field(
         default=None, ge=120, le=GRAPH_LAYOUT_DIMENSION_MAX
     )
 
     @model_validator(mode="after")
     def require_at_least_one_dimension(self) -> Self:
-        validate_graph_layout_dimensions(self.width, self.body_height, self.appendix_height)
+        validate_graph_layout_dimensions(
+            self.width, self.body_height, self.appendix_height
+        )
         return self
 
 
@@ -97,9 +101,10 @@ class SavedGraphNodeModel(SavedGraphApiModel):
 
     @model_validator(mode="after")
     def validate_kind_and_pin(self) -> Self:
-        validate_graph_node_release_pin(self.kind, has_pin=self.plugin_release is not None)
+        validate_graph_node_release_pin(
+            self.kind, has_pin=self.plugin_release is not None
+        )
         return self
-
 
 
 class SavedGraphProjectionModel(SavedGraphApiModel):
@@ -142,7 +147,6 @@ class SavedGraphOriginModel(SavedGraphApiModel):
         default_factory=list,
         max_length=MAX_ARTIFACT_CONVERSION_HOPS,
     )
-
 
 
 class GraphPresentationViewerModel(SavedGraphApiModel):
@@ -203,7 +207,6 @@ class GraphPresentationDocumentModel(SavedGraphApiModel):
     links: list[GraphPresentationLinkModel] = Field(default_factory=list)
     bindings: list[GraphPresentationBindingModel] = Field(default_factory=list)
     annotations: list[GraphPresentationAnnotationModel] = Field(default_factory=list)
-
 
 
 class SavedGraphWriteRequest(SavedGraphApiModel):

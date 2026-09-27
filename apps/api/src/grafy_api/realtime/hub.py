@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
 from fastapi import WebSocket
+from grafy_shared.config import RealtimeConfig
 from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
@@ -84,6 +85,7 @@ class GraphRoomHub:
         *,
         presence_ttl_seconds: float = DEFAULT_PRESENCE_TTL_SECONDS,
         presence_max_updates_per_second: float = DEFAULT_PRESENCE_MAX_UPDATES_PER_SECOND,
+        heartbeat_seconds: float = 0.0,
     ) -> None:
         self._rooms: dict[tuple[UUID, UUID], dict[UUID, _RoomMember]] = {}
         self._lock = asyncio.Lock()
@@ -93,6 +95,25 @@ class GraphRoomHub:
             if presence_max_updates_per_second <= 0
             else 1.0 / presence_max_updates_per_second
         )
+        self._heartbeat_seconds = heartbeat_seconds
+
+    @classmethod
+    def from_settings(cls, cfg: RealtimeConfig) -> "GraphRoomHub":
+        """Build the hub from the deployment's realtime section."""
+
+        return cls(
+            presence_ttl_seconds=cfg.graph_room_presence_ttl_seconds,
+            presence_max_updates_per_second=(
+                cfg.graph_room_presence_max_updates_per_second
+            ),
+            heartbeat_seconds=cfg.graph_room_heartbeat_seconds,
+        )
+
+    @property
+    def heartbeat_seconds(self) -> float:
+        """How often a room revalidates membership. Zero disables heartbeats."""
+
+        return self._heartbeat_seconds
 
     async def join(self, session: GraphRoomSession) -> None:
         """Register a session while keeping outbound delivery gated.

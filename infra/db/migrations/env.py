@@ -21,7 +21,7 @@ target_metadata = metadata
 
 
 def _database_url() -> str:
-    database_url = prepare_database_url(get_settings().resolved_database_url)
+    database_url = prepare_database_url(get_settings().app.resolved_database_url)
     return database_url.replace("%", "%%")
 
 

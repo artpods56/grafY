@@ -42,7 +42,9 @@ async def test_content_length_validator_rejects_bad_and_oversize_headers() -> No
     validator = ContentLengthValidator(1024)
 
     bad = Request({"type": "http", "headers": [(b"content-length", b"nope")]})
-    with pytest.raises(DomainValidationError, match="Content-Length must be an integer"):
+    with pytest.raises(
+        DomainValidationError, match="Content-Length must be an integer"
+    ):
         await validator.validate(bad)
 
     oversize = Request({"type": "http", "headers": [(b"content-length", b"2048")]})

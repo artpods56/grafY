@@ -1,36 +1,25 @@
 import asyncio
-import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from grafy_core.application.collaboration import CollaborationService
-from grafy_core.application.identity import IdentityService
-from grafy_core.application.modules import ModuleLibraryService
-from grafy_core.application.plugin_releases import PluginReleaseService
-from grafy_core.application.saved_graphs import SavedGraphService
-from grafy_core.application.templates import TemplateService
 from grafy_persistence.database import create_database
-from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
-from grafy_workbench import BuiltinNodeCatalog
 
-from grafy_api.app_state import AppIdentity, AppResources, get_identity
+from grafy_api.app_state import get_identity
 from grafy_api.diagnostics import configure_diagnostics
 from grafy_api.health import HealthResponse, health, readiness
 from grafy_api.http_errors import register_http_error_handlers
-from grafy_api.node_secrets import NodeSecretService
-from grafy_api.plugins.profiles import runtime_profile
-from grafy_api.plugins.runtime.docker import DockerPluginRuntime
-from grafy_api.realtime.hub import GraphRoomHub
-from grafy_api.services.composition import build_workbench_components
+from grafy_api.plugins.runtime.egress import PluginEgressBrokerPolicy
+from grafy_api.services.application import (
+    acquire_api_owner_lease,
+    build_app_identity,
+    build_app_resources,
+    run_periodic_cleanup,
+)
 from grafy_api.settings import Settings, get_settings
-from grafy_api.single_owner import ApiOwnerLease
-from grafy_api.storage import configured_file_storage
-from grafy_api.uploads import UploadServiceConfig
 from grafy_api.v1.routes.artifacts.views import router as artifacts_router
-from grafy_api.v1.routes.auth.services import AuthService
 from grafy_api.v1.routes.auth.views import router as auth_router
 from grafy_api.v1.routes.catalog.views import router as catalog_router
 from grafy_api.v1.routes.collaboration.views import router as collaboration_router
@@ -52,217 +41,43 @@ from grafy_api.v1.routes.uploads.views import router as uploads_router
 from grafy_api.v1.routes.workspaces.views import me_router
 from grafy_api.v1.routes.workspaces.views import router as workspaces_router
 
-logger = logging.getLogger(__name__)
-
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or get_settings()
     configure_diagnostics(
-        level=resolved_settings.log_level,
-        renderer=resolved_settings.log_renderer,
+        level=resolved_settings.app.log_level,
+        renderer=resolved_settings.app.log_renderer,
     )
-    database = create_database(resolved_settings.resolved_database_url)
+    # Reaching an egress policy is what proves the configured destinations parse
+    # and the broker image is pinned. Config no longer imports the Plugin runtime,
+    # so this composition root builds that policy up front: a deployment with
+    # half-wired egress still fails before it serves a request.
+    egress_policy = PluginEgressBrokerPolicy.from_config(resolved_settings.egress)
+    database = create_database(resolved_settings.app.resolved_database_url)
+    identity = build_app_identity(resolved_settings, database)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-        owner_lease: ApiOwnerLease | None = None
+        owner_lease = acquire_api_owner_lease(
+            resolved_settings.app.workspace,
+            required=resolved_settings.app.require_single_api_owner,
+        )
         try:
-            if resolved_settings.require_single_api_owner:
-                owner_lease = ApiOwnerLease(
-                    resolved_settings.workspace / ".grafy-api-owner.lock"
-                )
-                owner_lease.acquire()
-            builtin_catalog = BuiltinNodeCatalog.load(
-                resolved_settings.resolved_build_digest
-            )
-            registry = builtin_catalog.registry
-            storage = configured_file_storage(resolved_settings)
-            saved_graphs = SavedGraphService(
-                lambda: SqlAlchemyUnitOfWork(database.sessions),
-                registry,
-            )
-            module_library = ModuleLibraryService(
-                lambda: SqlAlchemyUnitOfWork(database.sessions),
-                registry,
-            )
-            plugin_releases = PluginReleaseService(
-                lambda: SqlAlchemyUnitOfWork(database.sessions),
-                storage,
-                bucket=resolved_settings.storage_bucket,
-            )
-            plugin_runtime: DockerPluginRuntime | None = None
-            orphan_cleanup_confirmed = False
-            network_policy = resolved_settings.resolved_network_policy
-            if resolved_settings.plugin_runtime_enabled:
-                seccomp_profile = resolved_settings.resolved_plugin_seccomp_profile
-                if seccomp_profile is not None and not seccomp_profile.is_file():
-                    raise RuntimeError(
-                        "Configured Plugin seccomp profile is not a regular file"
-                    )
-                plugin_runtime = DockerPluginRuntime(
-                    releases=plugin_releases,
-                    storage=storage,
-                    bucket=resolved_settings.storage_bucket,
-                    profile=runtime_profile(
-                        resolved_settings.plugin_runtime_profile,
-                        native_base_image=(
-                            resolved_settings.plugin_runtime_native_base_image
-                        ),
-                        native_base_image_digest=(
-                            resolved_settings.plugin_runtime_native_base_image_digest
-                        ),
-                    ),
-                    scratch_root=(
-                        resolved_settings.workspace / "plugin-runtime" / "scratch"
-                    ),
-                    docker_binary=resolved_settings.plugin_docker_binary,
-                    seccomp_profile=seccomp_profile,
-                    max_live_sandboxes=(resolved_settings.max_live_plugin_sandboxes),
-                    max_distinct_releases_per_scope=(
-                        resolved_settings.max_distinct_plugin_releases_per_graph
-                    ),
-                    max_sandbox_variants_per_scope=(
-                        resolved_settings.max_plugin_sandbox_variants_per_execution
-                    ),
-                    egress_policy=(resolved_settings.resolved_plugin_egress_policy),
-                    network_policy=network_policy,
-                )
-                await plugin_runtime.check_ready()
-                if owner_lease is not None:
-                    await plugin_runtime.recover_orphans()
-                    orphan_cleanup_confirmed = True
-                for profile in network_policy.profiles:
-                    logger.info(
-                        "network_profile plane=%s name=%s mode=%s digest=%s",
-                        profile.plane.value,
-                        profile.name,
-                        profile.mode.value,
-                        profile.policy_digest,
-                    )
-            templates = TemplateService(lambda: SqlAlchemyUnitOfWork(database.sessions))
-            collaboration = CollaborationService(
-                lambda: SqlAlchemyUnitOfWork(database.sessions),
-                registry,
-                command_hmac_key=resolved_settings.resolved_command_hmac_key(),
-                command_hmac_key_version=resolved_settings.command_hmac_key_version,
-                saved_graphs=saved_graphs,
-            )
-            node_secrets = NodeSecretService(
-                unit_of_work_factory=lambda: SqlAlchemyUnitOfWork(database.sessions),
-                plugin_registry=registry,
-                plugin_release_lookup=plugin_releases,
-                encryption_key=resolved_settings.credential_encryption_key,
-            )
-            components = build_workbench_components(
-                plugin_registry=registry,
-                workspace=resolved_settings.workspace,
-                unit_of_work=SqlAlchemyUnitOfWork(database.sessions),
-                storage=storage,
-                map_max_concurrency=resolved_settings.map_max_concurrency,
-                max_active_executions=resolved_settings.max_active_executions,
-                max_pending_graphs=resolved_settings.max_pending_graphs,
-                max_active_plugin_invocations=(
-                    resolved_settings.max_active_plugin_invocations
-                ),
-                plugin_invocation_wall_time_seconds_by_slug=(
-                    resolved_settings.plugin_invocation_wall_time_seconds_by_slug
-                ),
-                storage_backend=resolved_settings.storage_backend,
-                bucket=resolved_settings.storage_bucket,
-                upload_config=UploadServiceConfig.from_settings(resolved_settings),
-                saved_graphs=saved_graphs,
-                module_library=module_library,
-                plugin_releases=plugin_releases,
-                plugin_runtime=plugin_runtime,
-                node_secrets=node_secrets,
-                graph_room_hub=graph_room_hub,
-                network_policy=network_policy,
-                build_digest=resolved_settings.resolved_build_digest,
-            )
-            resources = AppResources(
+            resources = await build_app_resources(
+                settings=resolved_settings,
                 database=database,
-                workbench=components,
-                templates=templates,
-                saved_graphs=saved_graphs,
-                collaboration=collaboration,
-                node_secrets=node_secrets,
-                graph_room_hub=graph_room_hub,
+                egress_policy=egress_policy,
+                owner_lease=owner_lease,
             )
             try:
-                await components.execution_history.recover_transient(
-                    exclusive_owner=owner_lease is not None,
-                    orphan_cleanup_confirmed=orphan_cleanup_confirmed,
-                )
-                await components.execution_history.interrupt_started()
-                await components.execution_manager.recover_queued()
-                capacity = await resources.capacity_diagnostics()
-                logger.info(
-                    "capacity_diagnostics active_executions=%s "
-                    "max_active_executions=%s pending_graphs=%s "
-                    "max_pending_graphs=%s active_plugin_invocations=%s "
-                    "max_active_plugin_invocations=%s live_plugin_sandboxes=%s "
-                    "max_live_plugin_sandboxes=%s",
-                    capacity.execution_admission.active_executions,
-                    capacity.execution_admission.max_active_executions,
-                    capacity.execution_queue.pending_graphs,
-                    capacity.execution_queue.max_pending_graphs,
-                    (
-                        None
-                        if capacity.plugin_invocations is None
-                        else capacity.plugin_invocations.active_invocations
-                    ),
-                    (
-                        None
-                        if capacity.plugin_invocations is None
-                        else capacity.plugin_invocations.max_active_invocations
-                    ),
-                    (
-                        None
-                        if capacity.plugin_sandboxes is None
-                        else capacity.plugin_sandboxes.live_sandboxes
-                    ),
-                    (
-                        None
-                        if capacity.plugin_sandboxes is None
-                        else capacity.plugin_sandboxes.max_live_sandboxes
-                    ),
-                )
-                # Migration 0009 backfills heads; refuse to serve if any graph still lacks one.
-                await collaboration.verify_every_graph_has_head()
                 app.state.resources = resources
-
-                async def cleanup_expired_state() -> None:
-                    # One maintenance interval for every periodic sweep.
-                    cleanups = (
-                        (
-                            "auth_cleanup_failed",
-                            "cleanup_expired",
-                            auth_service.cleanup_expired,
-                        ),
-                        (
-                            "upload_cleanup_failed",
-                            "cleanup_abandoned",
-                            components.uploads.cleanup_abandoned,
-                        ),
+                cleanup_task = asyncio.create_task(
+                    run_periodic_cleanup(
+                        settings=resolved_settings,
+                        auth_service=identity.auth_service,
+                        resources=resources,
                     )
-                    while True:
-                        await asyncio.sleep(
-                            resolved_settings.auth_cleanup_interval_seconds
-                        )
-                        for event, operation, cleanup in cleanups:
-                            try:
-                                _ = await cleanup()
-                            except asyncio.CancelledError:
-                                raise
-                            except Exception as error:
-                                logger.warning(
-                                    "%s operation=%s error_class=%s",
-                                    event,
-                                    operation,
-                                    type(error).__name__,
-                                )
-
-                cleanup_task = asyncio.create_task(cleanup_expired_state())
+                )
                 try:
                     yield
                 finally:
@@ -306,34 +121,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.middleware("http")(browser_abuse_cookie_boundary)
 
-    def identity_uow_factory() -> SqlAlchemyUnitOfWork:
-        return SqlAlchemyUnitOfWork(database.sessions)
-
-    identity_service = IdentityService(
-        identity_uow_factory,
-        domain_workspace_grants=resolved_settings.oidc_domain_workspaces,
-    )
-    auth_service = AuthService(
-        settings=resolved_settings,
-        unit_of_work_factory=identity_uow_factory,
-        identity_service=identity_service,
-    )
-    graph_room_hub = GraphRoomHub(
-        presence_ttl_seconds=resolved_settings.graph_room_presence_ttl_seconds,
-        presence_max_updates_per_second=(
-            resolved_settings.graph_room_presence_max_updates_per_second
-        ),
-    )
-    application.state.settings = resolved_settings
-    application.state.identity = AppIdentity(
-        identity_uow_factory=identity_uow_factory,
-        identity_service=identity_service,
-        auth_service=auth_service,
-    )
+    application.state.identity = identity
     register_http_error_handlers(application)
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=list(resolved_settings.allowed_cors_origins),
+        allow_origins=list(resolved_settings.app.allowed_cors_origins),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

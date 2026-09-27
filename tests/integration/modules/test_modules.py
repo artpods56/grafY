@@ -27,6 +27,8 @@ from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
+from grafy_shared.config import AppConfig
+
 from grafy_api.app_state import get_resources
 from grafy_api.node_secrets import NodeSecretService
 from grafy_api.services.composition import (
@@ -228,8 +230,9 @@ def module_client(tmp_path: Path) -> Iterator[TestClient]:
     }
     with client_with_overrides(
         settings=Settings(
-            workspace=tmp_path / "workbench",
-            database_url=SecretStr(database_url),
+            app=AppConfig(
+                workspace=tmp_path / "workbench", database_url=SecretStr(database_url)
+            )
         ),
         overrides=overrides,
     ) as client:

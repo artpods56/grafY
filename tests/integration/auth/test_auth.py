@@ -48,6 +48,7 @@ from tests.testkit import (
     create_db_url,
     db,
     seed,
+    with_setting_values,
 )
 
 
@@ -60,7 +61,8 @@ def _auth_service(settings: Settings, database: Database) -> AuthService:
         return SqlAlchemyUnitOfWork(database.sessions)
 
     return AuthService(
-        settings=settings,
+        auth=settings.auth,
+        public_origin=settings.app.public_origin,
         unit_of_work_factory=unit_of_work_factory,
         identity_service=IdentityService(unit_of_work_factory),
     )
@@ -85,7 +87,7 @@ async def _seed_oidc_transaction(
             "verifier",
             transaction_id,
         ),
-        pkce_key_version=settings.oidc_auth_wrapping_key_version,
+        pkce_key_version=settings.auth.oidc_auth_wrapping_key_version,
         return_path="/",
         expires_at=expires_at,
     )
@@ -99,8 +101,8 @@ async def test_v1_routes_fail_closed_but_health_is_public(
 ) -> None:
     database_url = create_db_url(tmp_path, "auth.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         _, workspace, _ = await seed(database.sessions)
 
@@ -117,8 +119,8 @@ async def test_unauthenticated_workspace_failure_is_audited_once(
 ) -> None:
     database_url = create_db_url(tmp_path, "workspace-auth-failure.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         _, _, _ = await seed(database.sessions)
 
@@ -152,11 +154,10 @@ async def test_session_verification_failures_are_rate_limited(
 ) -> None:
     database_url = create_db_url(tmp_path, "auth-rate.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "auth_session_failure_rate_limit": 1,
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            auth_session_failure_rate_limit=1,
         )
         _, _, _ = await seed(database.sessions)
 
@@ -172,8 +173,8 @@ async def test_cookie_requests_require_exact_origin_and_csrf(
 ) -> None:
     database_url = create_db_url(tmp_path, "csrf.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         user, _, _ = await seed(database.sessions)
         issued = await _auth_service(app_settings, database).issue_session(user.id)
@@ -217,8 +218,8 @@ async def test_authenticated_csrf_failure_is_audited_once_at_auth_boundary(
 ) -> None:
     database_url = create_db_url(tmp_path, "csrf-single-audit.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         user, _, _ = await seed(database.sessions)
         issued = await _auth_service(app_settings, database).issue_session(user.id)
@@ -258,8 +259,8 @@ async def test_session_idle_expiry_is_enforced_at_boundary(
 ) -> None:
     database_url = create_db_url(tmp_path, "idle.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         user, _, _ = await seed(database.sessions)
         issued = await _auth_service(app_settings, database).issue_session(user.id)
@@ -267,7 +268,7 @@ async def test_session_idle_expiry_is_enforced_at_boundary(
             stored = await unit_of_work.identity.get_auth_session(issued.session.id)
             assert stored is not None
             stored.last_used_at = datetime.now(UTC) - timedelta(
-                seconds=app_settings.auth_session_idle_seconds
+                seconds=app_settings.auth.auth_session_idle_seconds
             )
             await unit_of_work.commit()
 
@@ -283,8 +284,8 @@ async def test_session_absolute_expiry_is_enforced(
 ) -> None:
     database_url = create_db_url(tmp_path, "absolute.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         user, _, _ = await seed(database.sessions)
         issued = await _auth_service(app_settings, database).issue_session(user.id)
@@ -306,8 +307,8 @@ async def test_logout_revokes_the_current_session(
 ) -> None:
     database_url = create_db_url(tmp_path, "logout.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         user, _, _ = await seed(database.sessions)
         issued = await _auth_service(app_settings, database).issue_session(user.id)
@@ -331,14 +332,13 @@ async def test_expired_callback_consumes_transaction_and_releases_reservation(
 ) -> None:
     database_url = create_db_url(tmp_path, "expired-callback.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "oidc_issuer": "https://issuer.example.test",
-                "oidc_client_id": "grafy-client",
-                "oidc_auth_wrapping_key": SecretStr("expired-callback-key"),
-                "auth_outstanding_login_limit": 1,
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            oidc_issuer="https://issuer.example.test",
+            oidc_client_id="grafy-client",
+            oidc_auth_wrapping_key=SecretStr("expired-callback-key"),
+            auth_outstanding_login_limit=1,
         )
         _, _, _ = await seed(database.sessions)
         application = app_with_overrides(settings=app_settings)
@@ -358,7 +358,7 @@ async def test_expired_callback_consumes_transaction_and_releases_reservation(
         await auth.reserve_login("expired-browser", transaction_id)
 
         with TestClient(application) as client:
-            configured_key = app_settings.oidc_auth_wrapping_key
+            configured_key = app_settings.auth.oidc_auth_wrapping_key
             assert configured_key is not None
             wrapping_key = configured_key.get_secret_value().encode("utf-8")
             client.cookies.set(
@@ -392,14 +392,13 @@ async def test_callback_failure_before_consumption_preserves_transaction_and_slo
 ) -> None:
     database_url = create_db_url(tmp_path, "callback-before-consume.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "oidc_issuer": "https://issuer.example.test",
-                "oidc_client_id": "grafy-client",
-                "oidc_auth_wrapping_key": SecretStr("before-consume-key"),
-                "auth_outstanding_login_limit": 1,
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            oidc_issuer="https://issuer.example.test",
+            oidc_client_id="grafy-client",
+            oidc_auth_wrapping_key=SecretStr("before-consume-key"),
+            auth_outstanding_login_limit=1,
         )
         _, _, _ = await seed(database.sessions)
         application = app_with_overrides(settings=app_settings)
@@ -424,7 +423,7 @@ async def test_callback_failure_before_consumption_preserves_transaction_and_slo
         monkeypatch.setattr(auth, "_consume_transaction", fail_before_consumption)
 
         with TestClient(application, raise_server_exceptions=False) as client:
-            configured_key = app_settings.oidc_auth_wrapping_key
+            configured_key = app_settings.auth.oidc_auth_wrapping_key
             assert configured_key is not None
             wrapping_key = configured_key.get_secret_value().encode("utf-8")
             client.cookies.set(
@@ -459,14 +458,13 @@ async def test_callback_failure_after_consumption_clears_transaction_and_release
 ) -> None:
     database_url = create_db_url(tmp_path, "callback-after-consume.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "oidc_issuer": "https://issuer.example.test",
-                "oidc_client_id": "grafy-client",
-                "oidc_auth_wrapping_key": SecretStr("after-consume-key"),
-                "auth_outstanding_login_limit": 1,
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            oidc_issuer="https://issuer.example.test",
+            oidc_client_id="grafy-client",
+            oidc_auth_wrapping_key=SecretStr("after-consume-key"),
+            auth_outstanding_login_limit=1,
         )
         _, _, _ = await seed(database.sessions)
         application = app_with_overrides(settings=app_settings)
@@ -491,7 +489,7 @@ async def test_callback_failure_after_consumption_clears_transaction_and_release
         monkeypatch.setattr(auth, "_exchange_code", fail_after_consumption)
 
         with TestClient(application, raise_server_exceptions=False) as client:
-            configured_key = app_settings.oidc_auth_wrapping_key
+            configured_key = app_settings.auth.oidc_auth_wrapping_key
             assert configured_key is not None
             wrapping_key = configured_key.get_secret_value().encode("utf-8")
             client.cookies.set(
@@ -525,8 +523,8 @@ async def test_pat_create_shows_secret_once_and_revoke_is_audited(
 ) -> None:
     database_url = create_db_url(tmp_path, "pat.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         user, workspace, _ = await seed(database.sessions)
         issued = await _auth_service(app_settings, database).issue_session(user.id)
@@ -605,8 +603,8 @@ async def test_workspace_route_accepts_personal_access_token_without_browser_coo
 ) -> None:
     database_url = create_db_url(tmp_path, "workspace-pat-http.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         user, workspace, _ = await seed(database.sessions)
         issued = await _auth_service(app_settings, database).issue_session(user.id)
@@ -638,8 +636,8 @@ async def test_owner_can_issue_manage_secrets_personal_access_token(
 ) -> None:
     database_url = create_db_url(tmp_path, "manage-secrets-pat.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         user, workspace, _ = await seed(database.sessions)
         seeder = IdentitySeeder(lambda: SqlAlchemyUnitOfWork(database.sessions))
@@ -689,11 +687,10 @@ async def test_workspace_pat_scope_limits_writes_and_bearer_write_skips_csrf(
 ) -> None:
     database_url = create_db_url(tmp_path, "workspace-pat-scope.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "workspace": tmp_path / "workbench",
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            workspace=tmp_path / "workbench",
         )
         user, workspace, _ = await seed(database.sessions)
         issued = await _auth_service(app_settings, database).issue_session(user.id)
@@ -744,8 +741,8 @@ async def test_workspace_route_rejects_ambiguous_and_cross_workspace_pat_use(
 ) -> None:
     database_url = create_db_url(tmp_path, "workspace-pat-boundary.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         user, workspace, _ = await seed(database.sessions)
         issued = await _auth_service(app_settings, database).issue_session(user.id)
@@ -785,8 +782,8 @@ async def test_workspace_pat_capability_failure_audit_uses_token_actor(
 ) -> None:
     database_url = create_db_url(tmp_path, "workspace-pat-audit.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         user, workspace, _ = await seed(database.sessions)
         issued = await _auth_service(app_settings, database).issue_session(user.id)
@@ -836,14 +833,13 @@ async def test_callback_validation_is_bounded_and_consumes_transaction(
 ) -> None:
     database_url = create_db_url(tmp_path, "callback-validation.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "oidc_issuer": "https://issuer.example.test",
-                "oidc_client_id": "grafy-client",
-                "oidc_auth_wrapping_key": SecretStr("callback-test-key"),
-                "auth_callback_rate_limit": 1,
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            oidc_issuer="https://issuer.example.test",
+            oidc_client_id="grafy-client",
+            oidc_auth_wrapping_key=SecretStr("callback-test-key"),
+            auth_callback_rate_limit=1,
         )
         _, _, _ = await seed(database.sessions)
         application = app_with_overrides(settings=app_settings)
@@ -864,7 +860,7 @@ async def test_callback_validation_is_bounded_and_consumes_transaction(
         state_sentinel = "S" * 513
 
         with TestClient(application) as client:
-            configured_key = app_settings.oidc_auth_wrapping_key
+            configured_key = app_settings.auth.oidc_auth_wrapping_key
             assert configured_key is not None
             wrapping_key = configured_key.get_secret_value().encode("utf-8")
             client.cookies.set(
@@ -916,11 +912,10 @@ async def test_login_validation_is_bounded_and_audited(
 ) -> None:
     database_url = create_db_url(tmp_path, "login-validation.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "auth_login_start_rate_limit": 1,
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            auth_login_start_rate_limit=1,
         )
         _, _, _ = await seed(database.sessions)
         sentinel = "R" * 2049
@@ -959,8 +954,8 @@ async def test_oidc_query_sentinels_are_absent_from_request_logs(
 ) -> None:
     database_url = create_db_url(tmp_path, "oidc-query-logs.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         _, _, _ = await seed(database.sessions)
         return_path = "/after?one-time=return-path-sentinel"
@@ -1007,8 +1002,8 @@ async def test_auth_http_exception_is_audited_as_authenticated_failure(
 ) -> None:
     database_url = create_db_url(tmp_path, "auth-http-error.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         user, _, _ = await seed(database.sessions)
         issued = await _auth_service(app_settings, database).issue_session(user.id)
@@ -1049,8 +1044,8 @@ async def test_workspace_and_pat_request_validation_is_bounded(
 ) -> None:
     database_url = create_db_url(tmp_path, "dto-validation.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         user, workspace, _ = await seed(database.sessions)
         issued = await _auth_service(app_settings, database).issue_session(user.id)
@@ -1111,8 +1106,8 @@ async def test_workspace_failure_audits_preserve_route_metadata(
 ) -> None:
     database_url = create_db_url(tmp_path, "workspace-failure-metadata.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
         owner, workspace, _ = await seed(database.sessions)
         seeder = IdentitySeeder(lambda: SqlAlchemyUnitOfWork(database.sessions))

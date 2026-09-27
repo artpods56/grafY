@@ -37,7 +37,9 @@ class LibraryProvenanceResponse(ApiResponse):
     original_filename: str | None = None
 
     @classmethod
-    def from_provenance(cls, provenance: LibraryProvenance) -> "LibraryProvenanceResponse":
+    def from_provenance(
+        cls, provenance: LibraryProvenance
+    ) -> "LibraryProvenanceResponse":
         return cls(
             source=provenance.source,
             saved_at=provenance.saved_at,

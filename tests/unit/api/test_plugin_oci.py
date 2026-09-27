@@ -48,7 +48,7 @@ def test_dockerfile_sync_uses_bundled_plugin_wheels() -> None:
         "COPY --chmod=0444 plugin-loader.json /opt/grafy/plugin/plugin-loader.json"
     ) in dockerfile
     assert (
-        "/opt/grafy/plugin/.venv/bin/python -I -c \"from pathlib import Path; "
+        '/opt/grafy/plugin/.venv/bin/python -I -c "from pathlib import Path; '
         "from grafy_core.runtime.plugin_loader import PluginGuestLoaderManifest; "
         "PluginGuestLoaderManifest.from_json_bytes("
         "Path('/opt/grafy/plugin/plugin-loader.json').read_bytes())\""

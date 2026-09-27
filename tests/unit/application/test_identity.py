@@ -257,11 +257,11 @@ async def test_ihpan_login_joins_the_shared_workspace_even_when_email_is_unverif
         memberships = await unit_of_work.identity.list_memberships_for_user(
             provisioned.user.id
         )
-    shared = next(workspace for workspace in workspaces if workspace.kind is WorkspaceKind.SHARED)
+    shared = next(
+        workspace for workspace in workspaces if workspace.kind is WorkspaceKind.SHARED
+    )
     shared_membership = next(
-        membership
-        for membership in memberships
-        if membership.workspace_id == shared.id
+        membership for membership in memberships if membership.workspace_id == shared.id
     )
 
     assert {workspace.kind for workspace in workspaces} == {
@@ -301,12 +301,18 @@ async def test_foreign_email_does_not_join_the_shared_workspace(
         lookalike_workspaces = await unit_of_work.identity.list_workspaces_for_user(
             lookalike.user.id
         )
-        shared = await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
-            "ihpan"
+        shared = (
+            await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
+                "ihpan"
+            )
         )
 
-    assert all(workspace.kind is WorkspaceKind.PERSONAL for workspace in outsider_workspaces)
-    assert all(workspace.kind is WorkspaceKind.PERSONAL for workspace in lookalike_workspaces)
+    assert all(
+        workspace.kind is WorkspaceKind.PERSONAL for workspace in outsider_workspaces
+    )
+    assert all(
+        workspace.kind is WorkspaceKind.PERSONAL for workspace in lookalike_workspaces
+    )
     assert shared is None
 
 
@@ -345,8 +351,10 @@ async def test_later_ihpan_logins_join_as_editors_and_revoked_members_stay_out(
     )
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        shared = await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
-            "ihpan"
+        shared = (
+            await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
+                "ihpan"
+            )
         )
         assert shared is not None
         owner_membership = await unit_of_work.identity.get_membership(

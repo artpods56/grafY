@@ -15,6 +15,8 @@ from grafy_persistence.unit_of_work import (
 )
 
 from tests.support.identity import browser_actor_override
+from grafy_shared.config import AppConfig
+
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 from grafy_api.v1.routes.executions.models import RunExecutionResponse
 from grafy_api.execution.requests import RunRequest
@@ -470,8 +472,9 @@ def test_application_startup_marks_stale_active_execution_failed(
     graph_id, execution_id = asyncio.run(_seed_active_execution(database_url))
     with client_with_overrides(
         settings=Settings(
-            workspace=tmp_path / "workbench",
-            database_url=SecretStr(database_url),
+            app=AppConfig(
+                workspace=tmp_path / "workbench", database_url=SecretStr(database_url)
+            )
         ),
         overrides={
             browser_actor: browser_actor_override,
@@ -496,8 +499,9 @@ def test_conflicting_start_reports_existing_execution_without_leaking(
     graph_id, execution_id = asyncio.run(_seed_active_execution(database_url))
     with client_with_overrides(
         settings=Settings(
-            workspace=tmp_path / "workbench",
-            database_url=SecretStr(database_url),
+            app=AppConfig(
+                workspace=tmp_path / "workbench", database_url=SecretStr(database_url)
+            )
         ),
         overrides={
             browser_actor: browser_actor_override,

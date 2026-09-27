@@ -60,14 +60,10 @@ def test_publication_requires_a_contract_for_every_egress_node() -> None:
         match="without an HTTP egress contract",
     ):
         require_network_contract(
-            _catalog(
-                _node(capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,))
-            )
+            _catalog(_node(capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,)))
         )
 
-    require_network_contract(
-        _catalog(_node())
-    )
+    require_network_contract(_catalog(_node()))
 
 
 def test_capability_diff_reports_added_egress_authority() -> None:
@@ -75,9 +71,7 @@ def test_capability_diff_reports_added_egress_authority() -> None:
     proposed = _catalog(
         _node(
             capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,),
-            http_egress=PluginNodeHttpEgressContract(
-                configured_inputs=("base_url",)
-            ),
+            http_egress=PluginNodeHttpEgressContract(configured_inputs=("base_url",)),
         )
     )
 
@@ -93,9 +87,7 @@ def test_capability_diff_reports_removed_and_widened_egress_authority() -> None:
     previous = _catalog(
         _node(
             capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,),
-            http_egress=PluginNodeHttpEgressContract(
-                configured_inputs=("base_url",)
-            ),
+            http_egress=PluginNodeHttpEgressContract(configured_inputs=("base_url",)),
         )
     )
     proposed = _catalog(
@@ -112,9 +104,7 @@ def test_capability_diff_reports_removed_and_widened_egress_authority() -> None:
     assert "now declares configured URL field 'fallback_url'" in joined
     assert "now requests dynamic destinations" in joined
 
-    stripped = _catalog(
-        _node(capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,))
-    )
+    stripped = _catalog(_node(capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,)))
     joined = " | ".join(render_plugin_capability_diff(previous, stripped))
     assert "no longer declares HTTP egress" in joined
 
@@ -123,16 +113,12 @@ def test_capability_diff_reports_new_nodes_and_removed_nodes() -> None:
     proposed = _catalog(
         _node(
             capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,),
-            http_egress=PluginNodeHttpEgressContract(
-                configured_inputs=("base_url",)
-            ),
+            http_egress=PluginNodeHttpEgressContract(configured_inputs=("base_url",)),
         )
     )
 
     first_publication = render_plugin_capability_diff(None, proposed)
-    assert "new node llm.chat@1 requests capabilities" in " | ".join(
-        first_publication
-    )
+    assert "new node llm.chat@1 requests capabilities" in " | ".join(first_publication)
 
     previous_node = PluginNodeContract(
         operator_id="llm.other",

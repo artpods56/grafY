@@ -8,6 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
+from grafy_shared.config import AppConfig, AuthConfig
+
 from grafy_api.settings import Settings
 from grafy_api.app_state import get_resources
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
@@ -270,9 +272,10 @@ def template_client(
     actor = ActorSwitcher(user_id=OWNER_ID)
     with client_with_overrides(
         settings=Settings(
-            workspace=tmp_path / "workbench",
-            database_url=SecretStr(database_url),
-            auth_cookie_secure=False,
+            app=AppConfig(
+                workspace=tmp_path / "workbench", database_url=SecretStr(database_url)
+            ),
+            auth=AuthConfig(auth_cookie_secure=False),
         ),
         overrides={browser_actor: actor.actor, workspace_actor: actor.actor},
     ) as client:

@@ -50,7 +50,14 @@ def test_run_provenance_strips_titles() -> None:
 
 @pytest.mark.parametrize(
     "missing",
-    ["graph_id", "graph_title", "node_id", "node_title", "graph_revision", "execution_id"],
+    [
+        "graph_id",
+        "graph_title",
+        "node_id",
+        "node_title",
+        "graph_revision",
+        "execution_id",
+    ],
 )
 def test_run_provenance_requires_every_producing_fact(missing: str) -> None:
     fields: dict[str, object] = {

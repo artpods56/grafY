@@ -194,6 +194,81 @@ def test_core_does_not_import_outer_layers_or_domain_adapters() -> None:
     assert offenders == []
 
 
+FORBIDDEN_SHARED_IMPORTS = (
+    "grafy_api",
+    "grafy_client",
+    "grafy_core",
+    "grafy_mcp",
+    "grafy_persistence",
+    "grafy_storage",
+    "grafy_workbench",
+    *SYSTEM_PLUGIN_IMPORTS,
+)
+
+
+def test_shared_configuration_is_a_leaf_package() -> None:
+    """`grafy_shared` imports nothing from this workspace (ADR 0011).
+
+    The point of the shared config package is that any layer, including `grafy_core`
+    and `libs/storage`, can import its own configuration. One workspace import in the
+    other direction makes that a cycle and the package stops being a leaf.
+    """
+
+    shared_root = REPO_ROOT / "libs/shared/src/grafy_shared"
+    offenders: list[str] = []
+
+    for path in shared_root.rglob("*.py"):
+        package = ".".join(path.parent.relative_to(shared_root.parent).parts)
+        for module in _imported_modules(path.read_text(), package):
+            if any(
+                module == forbidden or module.startswith(f"{forbidden}.")
+                for forbidden in FORBIDDEN_SHARED_IMPORTS
+            ):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+
+    assert offenders == []
+
+
+def test_configuration_does_not_build_the_runtime_it_configures() -> None:
+    """The composed `Settings` never imports the plugin runtime (ADR 0011).
+
+    `settings.py` used to construct `NetworkPolicy` and `PluginEgressBrokerPolicy`, so
+    configuration imported the thing it configures and the runtime could not read its
+    own section without a cycle. The runtime builds those objects with `from_config`.
+    """
+
+    api_source_root = REPO_ROOT / "apps/api/src"
+    path = api_source_root / "grafy_api/settings.py"
+    package = ".".join(path.parent.relative_to(api_source_root).parts)
+    offenders = [
+        module
+        for module in _imported_modules(path.read_text(), package)
+        if module == "grafy_api.plugins.runtime"
+        or module.startswith("grafy_api.plugins.runtime.")
+    ]
+
+    assert offenders == []
+
+
+def test_system_plugin_implementations_do_not_import_shared_configuration() -> None:
+    """A Plugin sandbox is configured by its host and never reads `grafy_shared`.
+
+    Plugin environments resolve `grafy_core` from the wheel vendored in
+    `plugins/*/wheels`, so a `grafy_shared` import would not resolve at runtime and
+    would let guest code read host environment configuration.
+    """
+
+    offenders: list[str] = []
+
+    for family in SYSTEM_PLUGIN_FAMILIES:
+        plugin_root = REPO_ROOT / "plugins" / family / "src" / f"grafy_plugin_{family}"
+        for path in plugin_root.rglob("*.py"):
+            if "import grafy_shared" in path.read_text():
+                offenders.append(str(path.relative_to(REPO_ROOT)))
+
+    assert offenders == []
+
+
 def test_persistence_does_not_import_api_or_plugins() -> None:
     persistence_root = REPO_ROOT / "libs/persistence/src/grafy_persistence"
     offenders: list[str] = []
@@ -481,6 +556,8 @@ def test_baseline_compatibility_exports_preserve_shared_contract_identity() -> N
         assert getattr(system_plugin_inventory, name) is getattr(
             inventory_contracts, name
         )
+
+
 def _modules_in_wheel(wheel: Path) -> set[str]:
     with ZipFile(wheel) as archive:
         names = archive.namelist()

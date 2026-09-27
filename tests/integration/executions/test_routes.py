@@ -17,6 +17,7 @@ from grafy_api.execution.manager import RunExecutionIdempotencyConflictError
 from grafy_api.execution.models import GraphExecutionResult
 from grafy_api.execution.requests import RunRequest
 from grafy_api.settings import Settings
+from grafy_shared.config import AppConfig
 from grafy_api.uploads import UploadService, UploadServiceConfig
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
@@ -78,9 +79,11 @@ def test_application_lifespan_builds_and_releases_workbench_components(
     asyncio.run(prepare_schema())
     application = app_with_overrides(
         settings=Settings(
-            _env_file=None,  # pyright: ignore[reportCallIssue]
-            workspace=tmp_path / "workbench",
-            database_url=SecretStr(database_url),
+            app=AppConfig(
+                _env_file=None,  # pyright: ignore[reportCallIssue]
+                workspace=tmp_path / "workbench",
+                database_url=SecretStr(database_url),
+            ),
         ),
         overrides={
             browser_actor: browser_actor_override,

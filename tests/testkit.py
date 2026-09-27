@@ -236,3 +236,31 @@ async def db(database_url: str) -> AsyncGenerator[Database]:
 
 def create_db_url(tmp_path: Path, test_name: str) -> str:
     return f"sqlite+aiosqlite:///{tmp_path / test_name}"
+
+
+def with_setting_values(settings: Settings, **values: object) -> Settings:
+    """Return ``settings`` with flat field values applied to their owning sections.
+
+    ``Settings`` composes nine sections, so a test that only wants to move one knob
+    still has to say which section owns it. This routes by field name derived from
+    the sections themselves, so it cannot drift from them: an unknown or renamed
+    field raises instead of silently leaving the old value in place.
+    """
+
+    field_owners = {
+        name: section_name
+        for section_name in Settings.model_fields
+        for name in getattr(settings, section_name).model_fields
+    }
+    updates: dict[str, dict[str, object]] = {}
+    for name, value in values.items():
+        section_name = field_owners[name]
+        updates.setdefault(section_name, {})[name] = value
+    return settings.model_copy(
+        update={
+            section_name: getattr(settings, section_name).model_copy(
+                update=section_values
+            )
+            for section_name, section_values in updates.items()
+        }
+    )
