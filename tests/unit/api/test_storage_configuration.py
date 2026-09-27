@@ -5,19 +5,18 @@ from unittest.mock import patch
 import pytest
 from pydantic import SecretStr
 
-from grafy_api.settings import Settings
+from grafy_shared.config import StorageConfig
+
 from grafy_api.storage import configured_file_storage
 from grafy_core.ports.storage import SaveFileCommand
-from grafy_storage import S3ObjectStore
+from grafy_storage import LocalFileObjectStore, S3ObjectStore
 
 
 @pytest.mark.asyncio
 async def test_configured_local_storage_uses_workspace_objects_root(
     tmp_path: Path,
 ) -> None:
-    storage = configured_file_storage(
-        Settings(workspace=tmp_path, storage_backend="local")
-    )
+    storage = configured_file_storage(StorageConfig(storage_backend="local"), tmp_path)
     await storage.save(
         SaveFileCommand(
             bucket="test",
@@ -37,7 +36,7 @@ async def test_configured_local_storage_uses_workspace_objects_root(
 
 @pytest.mark.parametrize("blank", [False, True])
 def test_configured_s3_storage_preserves_credential_normalization(blank: bool) -> None:
-    settings = Settings(
+    cfg = StorageConfig(
         storage_backend="s3",
         s3_endpoint_url="" if blank else "http://minio:9000",
         s3_region="eu-central-1",
@@ -46,7 +45,7 @@ def test_configured_s3_storage_preserves_credential_normalization(blank: bool) -
         s3_force_path_style=True,
     )
     with patch("grafy_api.storage.S3ObjectStore", wraps=S3ObjectStore) as constructor:
-        assert isinstance(configured_file_storage(settings), S3ObjectStore)
+        assert isinstance(configured_file_storage(cfg, Path("/unused")), S3ObjectStore)
     constructor.assert_called_once_with(
         endpoint_url=None if blank else "http://minio:9000",
         region="eu-central-1",
@@ -55,3 +54,15 @@ def test_configured_s3_storage_preserves_credential_normalization(blank: bool) -
         force_path_style=True,
         signing_endpoint_url=None,
     )
+
+
+def test_local_storage_never_reads_s3_credentials() -> None:
+    # The adapter is chosen from StorageConfig alone; AppConfig.workspace is the only
+    # value borrowed from another section.
+    with patch("grafy_api.storage.S3ObjectStore") as constructor:
+        storage = configured_file_storage(
+            StorageConfig(storage_backend="local"), Path("/workbench")
+        )
+
+    assert isinstance(storage, LocalFileObjectStore)
+    constructor.assert_not_called()

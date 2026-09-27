@@ -16,6 +16,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import SecretStr
 
+from grafy_shared.config import AppConfig, AuthConfig
+
 from grafy_api.settings import Settings
 from grafy_api.v1.routes.auth import services as auth_services
 from grafy_api.v1.routes.auth.services import (
@@ -39,13 +41,16 @@ from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 def _auth_service() -> AuthService:
     settings = Settings(
-        public_origin="https://app.example.test",
-        oidc_issuer="https://issuer.example.test",
-        oidc_client_id="grafy-client",
-        oidc_auth_wrapping_key=SecretStr("test-wrapping-key"),
+        app=AppConfig(public_origin="https://app.example.test"),
+        auth=AuthConfig(
+            oidc_issuer="https://issuer.example.test",
+            oidc_client_id="grafy-client",
+            oidc_auth_wrapping_key=SecretStr("test-wrapping-key"),
+        ),
     )
     return AuthService(
-        settings=settings,
+        auth=settings.auth,
+        public_origin=settings.app.public_origin,
         unit_of_work_factory=cast(Callable[[], IdentityUnitOfWorkPort], lambda: None),
         identity_service=IdentityService(
             cast(Callable[[], IdentityUnitOfWorkPort], lambda: None)
@@ -456,15 +461,20 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
         await unit_of_work.commit()
 
     settings = Settings(
-        public_origin="https://app.example.test",
-        oidc_issuer="https://issuer.example.test",
-        oidc_client_id="grafy-client",
-        oidc_auth_wrapping_key=SecretStr("protocol-wrapping-key"),
-        auth_cookie_secure=False,
-        database_url=SecretStr(database_url),
+        app=AppConfig(
+            public_origin="https://app.example.test",
+            database_url=SecretStr(database_url),
+        ),
+        auth=AuthConfig(
+            oidc_issuer="https://issuer.example.test",
+            oidc_client_id="grafy-client",
+            oidc_auth_wrapping_key=SecretStr("protocol-wrapping-key"),
+            auth_cookie_secure=False,
+        ),
     )
     auth = AuthService(
-        settings=settings,
+        auth=settings.auth,
+        public_origin=settings.app.public_origin,
         unit_of_work_factory=lambda: SqlAlchemyUnitOfWork(database.sessions),
         identity_service=identity_service,
     )

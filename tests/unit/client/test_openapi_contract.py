@@ -151,10 +151,13 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
         )
         if request_contract is not None:
             media_type, request_model = request_contract
-            assert _operation_request_schema_ref(
-                operation,
-                media_type=media_type,
-            ) == f"#/components/schemas/{request_model}"
+            assert (
+                _operation_request_schema_ref(
+                    operation,
+                    media_type=media_type,
+                )
+                == f"#/components/schemas/{request_model}"
+            )
 
     components = cast(dict[str, object], schema["components"])
     models = cast(dict[str, dict[str, object]], components["schemas"])
@@ -207,9 +210,7 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
 
     execute_operation = cast(
         dict[str, object],
-        paths[
-            "/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions"
-        ]["post"],
+        paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions"]["post"],
     )
     execute_parameters = cast(
         list[dict[str, object]],

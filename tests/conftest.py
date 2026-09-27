@@ -3,6 +3,8 @@
 import pytest
 from pydantic import SecretStr
 
+from grafy_shared.config import AppConfig, AuthConfig
+
 from grafy_api.settings import Settings
 from tests.support.identity import TEST_COMMAND_HMAC_KEY
 
@@ -43,8 +45,12 @@ DEFAULT_COOKIE_SECURE = False
 @pytest.fixture()
 def settings() -> Settings:
     return Settings(
-        public_origin=DEFAULT_PUBLIC_ORIGIN,
-        auth_cookie_secure=DEFAULT_COOKIE_SECURE,
-        auth_session_idle_seconds=DEFAULT_IDLE_SECONDS,
-        database_url=SecretStr(DEFAULT_DATABASE_URL),
+        app=AppConfig(
+            public_origin=DEFAULT_PUBLIC_ORIGIN,
+            database_url=SecretStr(DEFAULT_DATABASE_URL),
+        ),
+        auth=AuthConfig(
+            auth_cookie_secure=DEFAULT_COOKIE_SECURE,
+            auth_session_idle_seconds=DEFAULT_IDLE_SECONDS,
+        ),
     )

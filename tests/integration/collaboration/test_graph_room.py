@@ -60,6 +60,7 @@ from tests.support.clients import GrafyApi
 from tests.support.factories.identity import IdentitySeeder
 from tests.support.identity import TEST_USER_ID, WORKSPACE_ID, ActorSwitcher
 from tests.testkit import client_with_overrides, create_db_url, db
+from tests.testkit import with_setting_values
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
 
@@ -110,12 +111,11 @@ def room_client(tmp_path: Path, settings: Settings) -> Iterator[RoomClient]:
     switcher = ActorSwitcher(population.owner.id)
 
     with client_with_overrides(
-        settings=settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "workspace": tmp_path / "workbench",
-                "graph_room_heartbeat_seconds": 0.0,
-            }
+        settings=with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            workspace=tmp_path / "workbench",
+            graph_room_heartbeat_seconds=0.0,
         ),
         overrides={
             browser_actor: switcher.actor,
@@ -133,12 +133,11 @@ def heartbeat_room_client(tmp_path: Path, settings: Settings) -> Iterator[RoomCl
     switcher = ActorSwitcher(population.owner.id)
 
     with client_with_overrides(
-        settings=settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "workspace": tmp_path / "workbench",
-                "graph_room_heartbeat_seconds": 0.05,
-            }
+        settings=with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            workspace=tmp_path / "workbench",
+            graph_room_heartbeat_seconds=0.05,
         ),
         overrides={
             browser_actor: switcher.actor,

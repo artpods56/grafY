@@ -8,9 +8,7 @@ from grafy_api.v1.models import PluginReleasePinModel
 
 def test_plugin_release_pin_requires_explicit_scope() -> None:
     with pytest.raises(ValidationError, match="scope"):
-        PluginReleasePinModel.model_validate(
-            {"slug": "notes", "revision": 4}
-        )
+        PluginReleasePinModel.model_validate({"slug": "notes", "revision": 4})
 
 
 def test_plugin_release_pin_round_trips_exact_scoped_identity() -> None:

@@ -277,8 +277,10 @@ def test_interpret_declares_an_explicit_format_output_and_a_blob_input() -> None
         ("image.decode", "files"),
         ("table.import", "file"),
     ):
-        accepted = registry.node_registration(
-            operator_id, 1
-        ).node_class.input_contract.ports[port_name].accepted_types
+        accepted = (
+            registry.node_registration(operator_id, 1)
+            .node_class.input_contract.ports[port_name]
+            .accepted_types
+        )
         assert BLOB_FILE.key not in accepted
     assert InterpretFileInput.model_fields["file"].is_required()

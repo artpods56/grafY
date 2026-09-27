@@ -33,7 +33,9 @@ UPLOAD_EXTENSION_CLAIMS = build_extension_table(
 )
 
 
-def _service(tmp_path: Path, **kwargs) -> tuple[UploadService, InMemoryUnitOfWork, LocalFileObjectStore]:
+def _service(
+    tmp_path: Path, **kwargs
+) -> tuple[UploadService, InMemoryUnitOfWork, LocalFileObjectStore]:
     unit_of_work = kwargs.pop("unit_of_work", None) or InMemoryUnitOfWork()
     storage = LocalFileObjectStore(tmp_path / "objects")
     max_upload_bytes = kwargs.pop("max_upload_bytes", 1024 * 1024)
@@ -50,7 +52,9 @@ def _service(tmp_path: Path, **kwargs) -> tuple[UploadService, InMemoryUnitOfWor
     return service, unit_of_work, storage
 
 
-async def test_local_create_only_writes_cannot_replace_each_other(tmp_path: Path) -> None:
+async def test_local_create_only_writes_cannot_replace_each_other(
+    tmp_path: Path,
+) -> None:
     storage = LocalFileObjectStore(tmp_path)
     first = await storage.save(
         SaveFileCommand(
@@ -99,7 +103,9 @@ async def test_local_overflow_leaves_no_ordinary_temporary_file(tmp_path: Path) 
     assert await storage.stat(BUCKET, f"objects/{target.upload_id}") is None
 
 
-async def test_concurrent_completions_create_exactly_one_artifact(tmp_path: Path) -> None:
+async def test_concurrent_completions_create_exactly_one_artifact(
+    tmp_path: Path,
+) -> None:
     service, unit_of_work, _ = _service(tmp_path)
     target = await service.create_upload(
         workspace_id=WORKSPACE_ID,

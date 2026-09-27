@@ -5,6 +5,10 @@ from uuid import UUID
 
 import pytest
 
+
+from grafy_shared.config import AppConfig, EgressConfig, PluginsConfig, StorageConfig
+from pydantic import SecretStr
+
 from grafy_api.plugins.compatibility.loader import SystemPluginDeploymentError
 from grafy_api.settings import Settings
 from grafy_api import cli
@@ -115,8 +119,8 @@ def create_fake_database(database_url: str) -> FakeDatabase:
     return FakeDatabase()
 
 
-def configured_fake_storage(settings: object) -> object:
-    del settings
+def configured_fake_storage(cfg: object, workspace: object) -> object:
+    del cfg, workspace
     return object()
 
 
@@ -129,10 +133,12 @@ def test_check_valid_plugin_is_read_only_and_reports_the_verified_contract(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    settings = SimpleNamespace(
-        plugin_runtime_profile="python-uv",
-        resolved_plugin_roots=(Path("examples"),),
-        resolved_plugin_wheelhouse=None,
+    settings = Settings(
+        plugins=PluginsConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            plugin_runtime_profile="python-uv",
+            plugin_roots=(Path("examples"),),
+        )
     )
 
     def fail_if_database_is_opened(_database_url: str) -> object:
@@ -170,10 +176,12 @@ def test_check_incomplete_plugin_reports_the_missing_requirement(
         "[project]\nname = 'incomplete'\nversion = '0.1.0'\n",
         encoding="utf-8",
     )
-    settings = SimpleNamespace(
-        plugin_runtime_profile="python-uv",
-        resolved_plugin_roots=(tmp_path,),
-        resolved_plugin_wheelhouse=None,
+    settings = Settings(
+        plugins=PluginsConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            plugin_runtime_profile="python-uv",
+            plugin_roots=(tmp_path,),
+        )
     )
 
     def fail_if_database_is_opened(_database_url: str) -> object:
@@ -206,10 +214,12 @@ def test_check_rejects_a_plugin_outside_the_configured_roots(
     allowed_root.mkdir()
     project = tmp_path / "outside"
     project.mkdir()
-    settings = SimpleNamespace(
-        plugin_runtime_profile="python-uv",
-        resolved_plugin_roots=(allowed_root,),
-        resolved_plugin_wheelhouse=None,
+    settings = Settings(
+        plugins=PluginsConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            plugin_runtime_profile="python-uv",
+            plugin_roots=(allowed_root,),
+        )
     )
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
     monkeypatch.setattr(
@@ -240,10 +250,12 @@ def test_check_rejects_a_symlinked_source_directory(
     (project / "tests").mkdir()
     (project / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
     (project / "uv.lock").write_text("version = 1\n", encoding="utf-8")
-    settings = SimpleNamespace(
-        plugin_runtime_profile="python-uv",
-        resolved_plugin_roots=(tmp_path,),
-        resolved_plugin_wheelhouse=None,
+    settings = Settings(
+        plugins=PluginsConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            plugin_runtime_profile="python-uv",
+            plugin_roots=(tmp_path,),
+        )
     )
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
     monkeypatch.setattr(
@@ -377,18 +389,20 @@ def test_global_publish_inspects_with_checked_in_loader_target(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     publisher_scratch_root = Path("/docker-visible/plugin-publisher")
-    settings = SimpleNamespace(
-        resolved_database_url="sqlite+aiosqlite://",
-        storage_bucket="plugins",
-        plugin_runtime_profile="python-uv",
-        plugin_runtime_native_base_image=None,
-        plugin_runtime_native_base_image_digest=None,
-        plugin_docker_binary="docker",
-        resolved_plugin_roots=(),
-        resolved_plugin_wheelhouse=None,
-        resolved_plugin_publisher_scratch_root=publisher_scratch_root,
-        resolved_plugin_egress_policy=object(),
-        resolved_network_policy=object(),
+    settings = Settings(
+        app=AppConfig(_env_file=None, database_url=SecretStr("sqlite+aiosqlite://")),  # pyright: ignore[reportCallIssue]
+        storage=StorageConfig(_env_file=None, storage_bucket="plugins"),  # pyright: ignore[reportCallIssue]
+        plugins=PluginsConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            plugin_runtime_profile="python-uv",
+            plugin_roots=(),
+            plugin_publisher_scratch_root=publisher_scratch_root,
+        ),
+        egress=EgressConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            plugin_egress_broker_image=("registry.example/grafy@sha256:" + "a" * 64),
+            plugin_http_egress_destinations=("https://api.example.com:443",),
+        ),
     )
     RecordingSystemPublisher.observed_loader_target = None
     RecordingSystemPublisher.observed_scratch_root = None
@@ -446,15 +460,14 @@ def test_workspace_publish_derives_workspace_and_actor_from_the_pat(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    settings = SimpleNamespace(
-        resolved_database_url="sqlite+aiosqlite://",
-        storage_bucket="plugins",
-        plugin_runtime_profile="python-uv",
-        plugin_runtime_native_base_image=None,
-        plugin_runtime_native_base_image_digest=None,
-        plugin_docker_binary="docker",
-        resolved_plugin_roots=(),
-        resolved_plugin_wheelhouse=None,
+    settings = Settings(
+        app=AppConfig(_env_file=None, database_url=SecretStr("sqlite+aiosqlite://")),  # pyright: ignore[reportCallIssue]
+        storage=StorageConfig(_env_file=None, storage_bucket="plugins"),  # pyright: ignore[reportCallIssue]
+        plugins=PluginsConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            plugin_runtime_profile="python-uv",
+            plugin_roots=(),  # pyright: ignore[reportCallIssue]
+        ),
     )
     RecordingWorkspacePublicationWorkflow.observed = None
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
@@ -661,8 +674,7 @@ def test_global_promotion_still_validates_supplied_compatibility_manifest(
     manifest = tmp_path / "deployment.json"
     manifest.write_text(manifest_contents)
     settings = Settings(
-        _env_file=None,  # pyright: ignore[reportCallIssue]
-        workspace=tmp_path / "workspace",
+        app=AppConfig(_env_file=None, workspace=tmp_path / "workspace"),  # pyright: ignore[reportCallIssue]
     )
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
     monkeypatch.setattr(cli, "create_database", create_fake_database)

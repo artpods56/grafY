@@ -85,9 +85,7 @@ def _runtime(tmp_path: Path, *, with_egress: bool = True) -> DockerPluginRuntime
     destinations = (
         (
             PluginEgressDestination.parse("https://api.example.com:443"),
-            PluginEgressDestination.parse(
-                "postgresql://database.example.com:5432"
-            ),
+            PluginEgressDestination.parse("postgresql://database.example.com:5432"),
         )
         if with_egress
         else ()
@@ -165,14 +163,20 @@ async def test_runtime_readiness_rejects_incompatible_egress_broker(
         if record.message == "plugin_egress_broker_incompatible"
     )
     assert cast(str, failure_record.__dict__["broker_image"]) == _BROKER_IMAGE
-    assert cast(
-        int,
-        failure_record.__dict__["expected_contract_version"],
-    ) == 2
-    assert cast(
-        str,
-        failure_record.__dict__["actual_contract_version"],
-    ) == "1"
+    assert (
+        cast(
+            int,
+            failure_record.__dict__["expected_contract_version"],
+        )
+        == 2
+    )
+    assert (
+        cast(
+            str,
+            failure_record.__dict__["actual_contract_version"],
+        )
+        == "1"
+    )
     assert cast(str, failure_record.__dict__["reason"]) == "version_mismatch"
 
 
@@ -230,10 +234,13 @@ async def test_runtime_readiness_logs_safe_broker_contract_failure_reason(
     )
     assert cast(str, failure_record.__dict__["broker_image"]) == _BROKER_IMAGE
     assert cast(str, failure_record.__dict__["reason"]) == reason
-    assert cast(
-        str,
-        failure_record.__dict__["actual_contract_version"],
-    ) == actual
+    assert (
+        cast(
+            str,
+            failure_record.__dict__["actual_contract_version"],
+        )
+        == actual
+    )
 
 
 @pytest.mark.asyncio
@@ -470,19 +477,22 @@ async def test_broker_readiness_failure_keeps_safe_deployment_diagnostics(
         )
 
     assert ("rm", "-f", "broker-id") in commands
-    assert len(
-        [command for command in commands if command[:2] == ("network", "rm")]
-    ) == 2
+    assert (
+        len([command for command in commands if command[:2] == ("network", "rm")]) == 2
+    )
     failure_record = next(
         record
         for record in caplog.records
         if record.message == "plugin_egress_broker_readiness_failed"
     )
     assert cast(str, failure_record.__dict__["broker_image"]) == _BROKER_IMAGE
-    assert cast(
-        int,
-        failure_record.__dict__["broker_contract_version"],
-    ) == 2
+    assert (
+        cast(
+            int,
+            failure_record.__dict__["broker_contract_version"],
+        )
+        == 2
+    )
     assert cast(int, failure_record.__dict__["ready_exit_code"]) == 137
     expected_status = "unknown" if diagnostic_probes_fail else "exited"
     expected_exit_code = None if diagnostic_probes_fail else 1
@@ -671,10 +681,13 @@ def test_postgresql_keeps_original_transport_identity_and_artifact_query_has_no_
     )
 
     assert postgresql_environment == ()
-    assert runtime._guest_egress_environment(  # pyright: ignore[reportPrivateUsage]
-        artifact_query,
-        request,
-    ) == ()
+    assert (
+        runtime._guest_egress_environment(  # pyright: ignore[reportPrivateUsage]
+            artifact_query,
+            request,
+        )
+        == ()
+    )
 
 
 def test_sandbox_key_separates_capability_profiles_and_scopes() -> None:
@@ -760,8 +773,10 @@ async def test_egress_plan_covers_only_effective_destinations(
         **_kwargs: object,
     ) -> DockerPluginRuntime._Completed:  # pyright: ignore[reportPrivateUsage]
         commands.append(arguments)
-        stdout = b"" if arguments[0] != "create" else (
-            b"broker-id\n" if _BROKER_IMAGE in arguments else b"sandbox-id\n"
+        stdout = (
+            b""
+            if arguments[0] != "create"
+            else (b"broker-id\n" if _BROKER_IMAGE in arguments else b"sandbox-id\n")
         )
         return DockerPluginRuntime._Completed(0, stdout, b"")  # pyright: ignore[reportPrivateUsage]
 
@@ -791,8 +806,7 @@ async def test_egress_plan_covers_only_effective_destinations(
 
     assert sandbox.egress_plan is not None
     plan_hosts = {
-        destination.destination.host
-        for destination in sandbox.egress_plan.destinations
+        destination.destination.host for destination in sandbox.egress_plan.destinations
     }
     # The deployment also allowlists database.example.com for PostgreSQL, but
     # this HTTP-only sandbox plan must not carry it.
@@ -816,8 +830,10 @@ async def test_curated_runtime_carries_rfc1918_scope_into_broker_plan(
         **_kwargs: object,
     ) -> DockerPluginRuntime._Completed:  # pyright: ignore[reportPrivateUsage]
         commands.append(arguments)
-        stdout = b"" if arguments[0] != "create" else (
-            b"broker-id\n" if _BROKER_IMAGE in arguments else b"sandbox-id\n"
+        stdout = (
+            b""
+            if arguments[0] != "create"
+            else (b"broker-id\n" if _BROKER_IMAGE in arguments else b"sandbox-id\n")
         )
         return DockerPluginRuntime._Completed(0, stdout, b"")  # pyright: ignore[reportPrivateUsage]
 
@@ -834,11 +850,7 @@ async def test_curated_runtime_carries_rfc1918_scope_into_broker_plan(
     ca_path = tmp_path / "provider-ca.crt"
     ca_path.write_bytes(
         (
-            Path(__file__).resolve().parents[4]
-            / "infra"
-            / "e2e"
-            / "tls"
-            / "ca.crt"
+            Path(__file__).resolve().parents[4] / "infra" / "e2e" / "tls" / "ca.crt"
         ).read_bytes()
     )
     ca_bundle = NetworkCaBundle.load(ca_path)
@@ -867,9 +879,7 @@ async def test_curated_runtime_carries_rfc1918_scope_into_broker_plan(
         if command[0] == "create" and _BROKER_IMAGE not in command
     )
     ca_mount = sandbox_create[sandbox_create.index("--mount") + 1]
-    assert ca_mount.endswith(
-        ",target=/run/grafy/network-ca.pem,readonly"
-    )
+    assert ca_mount.endswith(",target=/run/grafy/network-ca.pem,readonly")
     staged_path = Path(ca_mount.partition("source=")[2].split(",", 1)[0])
     assert staged_path.read_bytes() == ca_bundle.content
     environment = runtime._guest_egress_environment(  # pyright: ignore[reportPrivateUsage]

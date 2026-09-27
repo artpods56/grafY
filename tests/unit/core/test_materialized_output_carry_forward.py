@@ -322,9 +322,7 @@ def test_placing_an_origin_invalidates_target_and_descendants() -> None:
         pytest.param(
             _origin().model_copy(
                 update={
-                    "conversion_path": (
-                        SavedGraphConversion(id="as-text", version=1),
-                    )
+                    "conversion_path": (SavedGraphConversion(id="as-text", version=1),)
                 }
             ),
             id="conversion",

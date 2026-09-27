@@ -33,6 +33,7 @@ from tests.support.clients import GrafyApi
 from tests.support.factories.identity import IdentitySeeder
 from tests.support.identity import ActorSwitcher
 from tests.testkit import client_with_overrides, create_db_url, db
+from tests.testkit import with_setting_values
 
 
 def _connect_room(
@@ -98,12 +99,11 @@ def test_phase7_two_session_collaboration_acceptance_journey(
     switcher = ActorSwitcher(owner.id)
 
     with client_with_overrides(
-        settings=settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "workspace": tmp_path / "workbench",
-                "graph_room_heartbeat_seconds": 0.0,
-            }
+        settings=with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            workspace=tmp_path / "workbench",
+            graph_room_heartbeat_seconds=0.0,
         ),
         overrides={
             browser_actor: switcher.actor,

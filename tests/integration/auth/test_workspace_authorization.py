@@ -38,6 +38,7 @@ from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from tests.support.clients import GrafyApi
 from tests.support.factories.identity import IdentitySeeder
 from tests.testkit import client_with_overrides, create_db_url, db
+from tests.testkit import with_setting_values
 
 
 def _csrf_headers(issued: IssuedSession) -> dict[str, str]:
@@ -49,7 +50,8 @@ def _auth_service(settings: Settings, database: Database) -> AuthService:
         return SqlAlchemyUnitOfWork(database.sessions)
 
     return AuthService(
-        settings=settings,
+        auth=settings.auth,
+        public_origin=settings.app.public_origin,
         unit_of_work_factory=unit_of_work_factory,
         identity_service=IdentityService(unit_of_work_factory),
     )
@@ -137,11 +139,10 @@ async def test_global_graph_browser_is_authorized_and_keeps_user_state_private(
 ) -> None:
     database_url = create_db_url(tmp_path, "workspace-authz-browser.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "workspace": tmp_path / "workbench",
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            workspace=tmp_path / "workbench",
         )
         matrix = await _seed_authorization_matrix(database)
         auth = _auth_service(app_settings, database)
@@ -303,11 +304,10 @@ async def test_folder_assignment_cannot_cross_workspace_and_delete_unfiles_graph
 ) -> None:
     database_url = create_db_url(tmp_path, "workspace-authz-folders.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "workspace": tmp_path / "workbench",
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            workspace=tmp_path / "workbench",
         )
         matrix = await _seed_authorization_matrix(database)
         auth = _auth_service(app_settings, database)
@@ -392,11 +392,10 @@ async def test_non_member_cannot_read_or_write_other_workspace_by_uuid(
 ) -> None:
     database_url = create_db_url(tmp_path, "workspace-authz-idor.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "workspace": tmp_path / "workbench",
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            workspace=tmp_path / "workbench",
         )
         matrix = await _seed_authorization_matrix(database)
         auth = _auth_service(app_settings, database)
@@ -541,11 +540,10 @@ async def test_viewer_can_read_but_cannot_mutate_execute_or_manage_secrets(
 ) -> None:
     database_url = create_db_url(tmp_path, "workspace-authz-viewer.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "workspace": tmp_path / "workbench",
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            workspace=tmp_path / "workbench",
         )
         matrix = await _seed_authorization_matrix(database)
         auth = _auth_service(app_settings, database)
@@ -690,11 +688,10 @@ async def test_editor_can_edit_and_execute_but_not_manage_secrets_delete_or_memb
 ) -> None:
     database_url = create_db_url(tmp_path, "workspace-authz-editor.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "workspace": tmp_path / "workbench",
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            workspace=tmp_path / "workbench",
         )
         matrix = await _seed_authorization_matrix(database)
         auth = _auth_service(app_settings, database)
@@ -801,11 +798,10 @@ async def test_owner_can_manage_secrets_delete_graph_and_members(
 ) -> None:
     database_url = create_db_url(tmp_path, "workspace-authz-owner.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "workspace": tmp_path / "workbench",
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            workspace=tmp_path / "workbench",
         )
         matrix = await _seed_authorization_matrix(database)
         auth = _auth_service(app_settings, database)
@@ -856,11 +852,10 @@ async def test_cross_workspace_resource_ids_do_not_authorize_via_wrong_path(
 ) -> None:
     database_url = create_db_url(tmp_path, "workspace-authz-cross-path.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "workspace": tmp_path / "workbench",
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            workspace=tmp_path / "workbench",
         )
         matrix = await _seed_authorization_matrix(database)
         auth = _auth_service(app_settings, database)
@@ -956,11 +951,10 @@ async def test_target_bound_pat_cannot_copy_graph_from_another_workspace(
 ) -> None:
     database_url = create_db_url(tmp_path, "pat-cross-workspace-copy.sqlite3")
     async with db(database_url) as database:
-        app_settings = settings.model_copy(
-            update={
-                "database_url": SecretStr(database_url),
-                "workspace": tmp_path / "workbench",
-            }
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            workspace=tmp_path / "workbench",
         )
         matrix = await _seed_authorization_matrix(database)
         issued = await _auth_service(app_settings, database).issue_session(

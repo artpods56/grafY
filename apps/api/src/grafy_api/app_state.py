@@ -24,7 +24,6 @@ from grafy_api.plugins.runtime.docker import (
 )
 from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.services.composition import WorkbenchComponents
-from grafy_api.settings import Settings
 from grafy_api.v1.routes.auth.services import AuthService
 
 
@@ -35,6 +34,9 @@ class AppIdentity:
     identity_uow_factory: Callable[[], SqlAlchemyUnitOfWork]
     identity_service: IdentityService
     auth_service: AuthService
+    # The one AppConfig value a request handler needs: the Origin header of the
+    # browser this deployment serves. Routes read this instead of app.state.settings.
+    public_origin: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,10 +95,3 @@ def get_resources(app: FastAPI) -> AppResources:
     if not isinstance(resources, AppResources):
         raise RuntimeError("Application resources are not initialized")
     return resources
-
-
-def get_app_settings(app: FastAPI) -> Settings:
-    settings = getattr(app.state, "settings", None)
-    if not isinstance(settings, Settings):
-        raise RuntimeError("Application settings are not initialized")
-    return settings

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, RootModel, field_validator
 
 from grafy_core.file_contracts import BLOB_FILE
 
-from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES
+from grafy_shared.config import STAGED_UPLOAD_HARD_MAX_BYTES
 from grafy_api.uploads import UploadResult, UploadTarget
 from grafy_api.v1.models import ApiResponse
 

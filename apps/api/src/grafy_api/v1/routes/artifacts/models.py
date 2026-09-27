@@ -68,7 +68,12 @@ class ArtifactSummaryResponse(ApiResponse):
     metadata: dict[str, object] = Field(default_factory=dict)
 
     @classmethod
-    def from_artifact(cls, artifact: ArtifactObject, *, download_formats: list[ArtifactExportFormatResponse]) -> Self:
+    def from_artifact(
+        cls,
+        artifact: ArtifactObject,
+        *,
+        download_formats: list[ArtifactExportFormatResponse],
+    ) -> Self:
         return cls(
             artifact_id=artifact.id,
             artifact_type=artifact.artifact_type,

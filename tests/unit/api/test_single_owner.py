@@ -2,6 +2,8 @@
 
 from pathlib import Path
 from uuid import uuid4
+from grafy_shared.config import AppConfig, KeysConfig, PluginsConfig
+
 from grafy_api.execution.history import ExecutionHistoryService
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from unittest.mock import AsyncMock
@@ -27,7 +29,7 @@ def test_require_single_api_owner_defaults_true(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("GRAFY_REQUIRE_SINGLE_API_OWNER", raising=False)
-    assert Settings().require_single_api_owner is True
+    assert AppConfig(_env_file=None).require_single_api_owner is True  # pyright: ignore[reportCallIssue]
 
 
 def test_assert_single_http_worker_rejects_multi_worker_env(
@@ -65,12 +67,20 @@ async def test_create_app_startup_acquires_owner_lease(
     await database.dispose()
 
     settings = Settings(
-        _env_file=None,  # pyright: ignore[reportCallIssue]
-        workspace=workspace,
-        database_url=SecretStr(database_url),
-        command_hmac_key=SecretStr("test-single-owner-hmac-key"),
-        require_single_api_owner=True,
-        plugin_runtime_enabled=plugin_runtime_enabled,
+        app=AppConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            workspace=workspace,
+            database_url=SecretStr(database_url),
+            require_single_api_owner=True,
+        ),
+        keys=KeysConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            command_hmac_key=SecretStr("test-single-owner-hmac-key"),  # pyright: ignore[reportCallIssue]
+        ),
+        plugins=PluginsConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            plugin_runtime_enabled=plugin_runtime_enabled,  # pyright: ignore[reportCallIssue]
+        ),
     )
     shutdown_order: list[str] = []
     original_hub_shutdown = GraphRoomHub.shutdown
@@ -168,12 +178,20 @@ async def test_startup_recovers_transient_activity_only_after_exclusive_orphan_c
     monkeypatch.setattr(DockerPluginRuntime, "recover_orphans", recover_orphans)
     monkeypatch.setattr(DockerPluginRuntime, "shutdown", AsyncMock())
     settings = Settings(
-        _env_file=None,  # pyright: ignore[reportCallIssue]
-        workspace=workspace,
-        database_url=SecretStr(database_url),
-        command_hmac_key=SecretStr("test-transient-recovery-key"),
-        require_single_api_owner=mode != "owner_disabled",
-        plugin_runtime_enabled=mode != "runtime_disabled",
+        app=AppConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            workspace=workspace,
+            database_url=SecretStr(database_url),
+            require_single_api_owner=mode != "owner_disabled",
+        ),
+        keys=KeysConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            command_hmac_key=SecretStr("test-transient-recovery-key"),  # pyright: ignore[reportCallIssue]
+        ),
+        plugins=PluginsConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            plugin_runtime_enabled=mode != "runtime_disabled",  # pyright: ignore[reportCallIssue]
+        ),
     )
     app = create_app(settings)
     lock = ApiOwnerLease(workspace / ".grafy-api-owner.lock")

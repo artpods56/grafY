@@ -47,9 +47,7 @@ def runtime_profile(
         return PluginRuntimeProfile()
     native_profiles = {
         "python-uv-gdal": frozenset({PluginRuntimeCapability.NATIVE_GDAL}),
-        "python-uv-tesseract": frozenset(
-            {PluginRuntimeCapability.NATIVE_TESSERACT}
-        ),
+        "python-uv-tesseract": frozenset({PluginRuntimeCapability.NATIVE_TESSERACT}),
         "python-uv-gdal-tesseract": frozenset(
             {
                 PluginRuntimeCapability.NATIVE_GDAL,
@@ -69,7 +67,10 @@ def runtime_profile(
         native_base_image.strip() == ""
         or "@" in native_base_image
         or len(native_base_image_digest) != 64
-        or any(character not in "0123456789abcdef" for character in native_base_image_digest)
+        or any(
+            character not in "0123456789abcdef"
+            for character in native_base_image_digest
+        )
     ):
         raise ValueError("Native Plugin runtime base image configuration is invalid")
     return PluginRuntimeProfile(

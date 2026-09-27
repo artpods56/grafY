@@ -112,8 +112,7 @@ PLUGIN.register_artifact_type_dependency(TEXT_VALUE)
 PLUGIN.register_artifact_conversion(INTEGER_TO_PORTABLE_VALUE)
 
 
-def _release(
-) -> PluginRelease:
+def _release() -> PluginRelease:
     catalog = PluginCatalogManifest.from_plugin(PLUGIN)
     capabilities = PluginCapabilityManifest()
     return PluginRelease(
@@ -364,8 +363,9 @@ def test_catalog_manifest_leaves_conversion_authority_to_publication() -> None:
     )
 
 
-def test_workspace_publication_accepts_only_exact_canonical_conversion_references(
-) -> None:
+def test_workspace_publication_accepts_only_exact_canonical_conversion_references() -> (
+    None
+):
     catalog = PluginCatalogManifest.from_plugin(PLUGIN).model_copy(
         update={
             "artifact_conversions": (
@@ -576,7 +576,9 @@ def test_installation_scope_requires_exactly_the_matching_workspace_owner() -> N
     assert system.execution_policy is PluginExecutionPolicy.HOST_ELIGIBLE
 
 
-def test_untrusted_artifact_query_cannot_gain_network_secrets_or_native_access() -> None:
+def test_untrusted_artifact_query_cannot_gain_network_secrets_or_native_access() -> (
+    None
+):
     with pytest.raises(ValueError, match="must require exactly sql.untrusted"):
         PluginNodeContract(
             operator_id="sql.artifacts.query",
@@ -666,9 +668,7 @@ def test_node_http_egress_contract_validates_declared_fields() -> None:
     assert contract.dynamic_destinations is False
 
     with pytest.raises(ValueError, match="must be unique"):
-        PluginNodeHttpEgressContract(
-            configured_inputs=("base_url", "base_url")
-        )
+        PluginNodeHttpEgressContract(configured_inputs=("base_url", "base_url"))
 
     with pytest.raises(ValueError, match="more than eight"):
         PluginNodeHttpEgressContract(
@@ -694,9 +694,7 @@ def test_plugin_node_contract_http_egress_requires_network_egress() -> None:
 
 
 def test_contract_digest_stays_stable_for_catalogs_without_http_egress() -> None:
-    node = _http_egress_node(
-        capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,)
-    )
+    node = _http_egress_node(capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,))
     catalog = _catalog_with(node)
     serialized = catalog.model_dump_json()
     assert ',"http_egress":null' in serialized
@@ -710,9 +708,7 @@ def test_contract_digest_changes_when_http_egress_is_declared() -> None:
 
     baseline = plugin_contract_digest(
         _catalog_with(
-            _http_egress_node(
-                capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,)
-            )
+            _http_egress_node(capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,))
         )
     )
     declared = plugin_contract_digest(
@@ -823,9 +819,7 @@ def _contract_catalog(
     )
 
 
-def test_contract_digest_stays_stable_for_catalogs_without_extension_defaults() -> (
-    None
-):
+def test_contract_digest_stays_stable_for_catalogs_without_extension_defaults() -> None:
     catalog = _contract_catalog()
     serialized = catalog.model_dump_json()
     for fragment in _CATALOG_BYTES_BEFORE_EXTENSION_CONTRACT:
@@ -834,9 +828,10 @@ def test_contract_digest_stays_stable_for_catalogs_without_extension_defaults() 
     before_extension_contract = serialized
     for fragment in _CATALOG_BYTES_BEFORE_EXTENSION_CONTRACT:
         before_extension_contract = before_extension_contract.replace(fragment, "")
-    assert plugin_contract_digest(catalog) == sha256(
-        before_extension_contract.encode("utf-8")
-    ).hexdigest()
+    assert (
+        plugin_contract_digest(catalog)
+        == sha256(before_extension_contract.encode("utf-8")).hexdigest()
+    )
 
 
 def test_contract_digest_changes_when_an_extension_claim_is_declared() -> None:

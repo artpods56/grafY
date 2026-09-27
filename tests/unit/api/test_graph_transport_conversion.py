@@ -32,16 +32,29 @@ from pydantic import ValidationError
 @pytest.fixture
 def head() -> CollaborativeGraphHead:
     return CollaborativeGraphHead(
-        workspace_id=UUID(int=1), graph_id=UUID(int=2), room_epoch=UUID(int=3),
-        collaboration_sequence=8, checkpoint_sequence=3, checkpoint_revision=2,
-        name="Uncheckpointed changes", updated_at=datetime(2026, 9, 9, tzinfo=UTC),
-        document=SavedGraphDocument(nodes=tuple(
-            SavedGraphNode.model_validate({
-                "id": node_id, "kind": "builtin", "operator_id": "example",
-                "operator_version": 1, "position": {"x": 0, "y": 0},
-                "input_plugs": [{"id": "plug", "port": "input"}],
-            }) for node_id in ["node", "source", "target"]
-        )),
+        workspace_id=UUID(int=1),
+        graph_id=UUID(int=2),
+        room_epoch=UUID(int=3),
+        collaboration_sequence=8,
+        checkpoint_sequence=3,
+        checkpoint_revision=2,
+        name="Uncheckpointed changes",
+        updated_at=datetime(2026, 9, 9, tzinfo=UTC),
+        document=SavedGraphDocument(
+            nodes=tuple(
+                SavedGraphNode.model_validate(
+                    {
+                        "id": node_id,
+                        "kind": "builtin",
+                        "operator_id": "example",
+                        "operator_version": 1,
+                        "position": {"x": 0, "y": 0},
+                        "input_plugs": [{"id": "plug", "port": "input"}],
+                    }
+                )
+                for node_id in ["node", "source", "target"]
+            )
+        ),
     )
 
 
@@ -105,7 +118,9 @@ def test_node_conversion_preserves_pin_name_and_copies_nested_config(
     ]
 
 
-def test_edge_conversion_retains_projection_conversion_order_and_routing(head: CollaborativeGraphHead) -> None:
+def test_edge_conversion_retains_projection_conversion_order_and_routing(
+    head: CollaborativeGraphHead,
+) -> None:
     payload = {
         "id": "edge",
         "enabled": False,
@@ -119,7 +134,9 @@ def test_edge_conversion_retains_projection_conversion_order_and_routing(head: C
         "conversion_path": [{"id": "one", "version": 1}, {"id": "two", "version": 2}],
         "route_offset": {"x": -5, "y": 10},
     }
-    head.document = SavedGraphDocument(nodes=head.document.nodes, edges=(SavedGraphEdge.model_validate(payload),))
+    head.document = SavedGraphDocument(
+        nodes=head.document.nodes, edges=(SavedGraphEdge.model_validate(payload),)
+    )
     wire = CollaborativeHeadResponse.from_head(head).edges[0]
     assert wire.model_dump(mode="json") == payload
 
@@ -174,20 +191,29 @@ def test_presentation_round_trip_retains_all_nested_fields_and_is_independent(
     presentation: GraphPresentationDocument,
     head: CollaborativeGraphHead,
 ) -> None:
-    head.document = SavedGraphDocument(nodes=head.document.nodes, presentation=presentation)
+    head.document = SavedGraphDocument(
+        nodes=head.document.nodes, presentation=presentation
+    )
     wire = CollaborativeHeadResponse.from_head(head).presentation
     assert wire.model_dump(mode="json") == presentation.model_dump(mode="json")
     assert GraphPresentationDocument.model_validate(wire.model_dump()) == presentation
     wire.viewers[0].position.x = 999
     assert presentation.viewers[0].position.x == 1
-    assert GraphPresentationDocument.model_validate(wire.model_dump()).viewers[0].position.x == 999
+    assert (
+        GraphPresentationDocument.model_validate(wire.model_dump())
+        .viewers[0]
+        .position.x
+        == 999
+    )
 
 
 def test_presentation_conversion_still_enforces_domain_relationships(
     presentation: GraphPresentationDocument,
     head: CollaborativeGraphHead,
 ) -> None:
-    head.document = SavedGraphDocument(nodes=head.document.nodes, presentation=presentation)
+    head.document = SavedGraphDocument(
+        nodes=head.document.nodes, presentation=presentation
+    )
     wire = CollaborativeHeadResponse.from_head(head).presentation
     wire.bindings[0].target_viewer_id = "artifact-viewer-missing"
     with pytest.raises(ValidationError, match="references missing target viewer"):
@@ -203,7 +229,12 @@ def test_presentation_conversion_still_enforces_domain_relationships(
         ({"conversion": {"id": "one", "version": 1}}, [{"id": "one", "version": 1}]),
         ({"conversion_path": []}, []),
         (
-            {"conversion_path": [{"id": "one", "version": 1}, {"id": "two", "version": 2}]},
+            {
+                "conversion_path": [
+                    {"id": "one", "version": 1},
+                    {"id": "two", "version": 2},
+                ]
+            },
             [{"id": "one", "version": 1}, {"id": "two", "version": 2}],
         ),
     ],
@@ -236,16 +267,20 @@ def test_edge_models_reject_both_conversion_forms_even_when_empty(
     model: type[SavedGraphEdge] | type[SavedGraphEdgeModel],
     conversion: object,
 ) -> None:
-    with pytest.raises(ValidationError, match="cannot declare both conversion and conversion_path"):
-        model.model_validate({
-            "id": "edge",
-            "from_node": "source",
-            "from_port": "output",
-            "to_node": "target",
-            "to_port": "input",
-            "conversion": conversion,
-            "conversion_path": [],
-        })
+    with pytest.raises(
+        ValidationError, match="cannot declare both conversion and conversion_path"
+    ):
+        model.model_validate(
+            {
+                "id": "edge",
+                "from_node": "source",
+                "from_port": "output",
+                "to_node": "target",
+                "to_port": "input",
+                "conversion": conversion,
+                "conversion_path": [],
+            }
+        )
 
 
 @pytest.mark.parametrize("model", [SavedGraphNodeLayout, SavedGraphNodeLayoutModel])
@@ -258,7 +293,9 @@ def test_graph_layout_accepts_each_dimension_independently(
 
 
 @pytest.mark.parametrize("model", [SavedGraphNodeLayout, SavedGraphNodeLayoutModel])
-@pytest.mark.parametrize("payload", [{}, {"width": None, "body_height": None, "appendix_height": None}])
+@pytest.mark.parametrize(
+    "payload", [{}, {"width": None, "body_height": None, "appendix_height": None}]
+)
 def test_graph_layout_rejects_absent_dimensions(
     model: type[SavedGraphNodeLayout] | type[SavedGraphNodeLayoutModel],
     payload: dict[str, object],
@@ -277,14 +314,23 @@ def test_node_models_require_release_pins_only_for_plugins(
 ) -> None:
     pin_field = "plugin_release_pin" if model is SavedGraphNode else "plugin_release"
     payload = {
-        "id": "node", "kind": kind, "operator_id": "example", "operator_version": 1,
+        "id": "node",
+        "kind": kind,
+        "operator_id": "example",
+        "operator_version": 1,
         "position": {"x": 0, "y": 0},
-        pin_field: {"scope": "system", "slug": "example", "revision": 1} if has_pin else None,
+        pin_field: {"scope": "system", "slug": "example", "revision": 1}
+        if has_pin
+        else None,
     }
     if (kind == "plugin") == has_pin:
         assert model.model_validate(payload).kind == kind
     else:
-        message = "Plugin node must pin an exact Plugin release" if kind == "plugin" else f"{kind} node cannot carry a Plugin release pin"
+        message = (
+            "Plugin node must pin an exact Plugin release"
+            if kind == "plugin"
+            else f"{kind} node cannot carry a Plugin release pin"
+        )
         with pytest.raises(ValidationError, match=message):
             model.model_validate(payload)
 
@@ -314,7 +360,9 @@ def test_origin_conversion_retains_exact_value_and_conversion_path(
     wire = CollaborativeHeadResponse.from_head(head).origins[0]
 
     assert wire.model_dump(mode="json") == payload
-    assert SavedGraphOriginModel.model_validate(payload).model_dump(mode="json") == payload
+    assert (
+        SavedGraphOriginModel.model_validate(payload).model_dump(mode="json") == payload
+    )
 
 
 def test_origin_conversion_retains_an_artifact_ref_sequence(
@@ -351,7 +399,9 @@ def test_origin_conversion_retains_an_artifact_ref_sequence(
     assert wire.value.model_dump(mode="json") == payload["value"]
 
 
-def test_head_adapter_preserves_metadata_and_empty_document(head: CollaborativeGraphHead) -> None:
+def test_head_adapter_preserves_metadata_and_empty_document(
+    head: CollaborativeGraphHead,
+) -> None:
     head.document = SavedGraphDocument()
     canonical = CanonicalCollaborativeHeadResponse.from_head(head)
     legacy = CollaborativeHeadResponse.from_head(head)
@@ -364,12 +414,20 @@ def test_head_adapter_preserves_metadata_and_empty_document(head: CollaborativeG
     assert legacy.nodes == []
     assert legacy.edges == []
     assert legacy.origins == []
-    assert legacy.presentation.model_dump(mode="json") == {"viewers": [], "links": [], "bindings": [], "annotations": []}
+    assert legacy.presentation.model_dump(mode="json") == {
+        "viewers": [],
+        "links": [],
+        "bindings": [],
+        "annotations": [],
+    }
     payload = legacy.model_dump(mode="json")
     assert "document" not in payload
     assert "schema_version" not in payload
     assert "workspace_id" not in payload
-    assert CollaborativeHeadResponse.model_validate_json(legacy.model_dump_json()) == legacy
+    assert (
+        CollaborativeHeadResponse.model_validate_json(legacy.model_dump_json())
+        == legacy
+    )
 
 
 def test_artifact_card_reference_survives_head_transport(
@@ -398,9 +456,9 @@ def test_artifact_card_reference_survives_head_transport(
     assert canonical.document.presentation.viewers[0].artifact_ref == reference
     assert legacy.presentation.viewers[0].artifact_ref == reference
     assert (
-        legacy.model_dump(mode="json")["presentation"]["viewers"][0][
-            "artifact_ref"
-        ]["artifact_type"]
+        legacy.model_dump(mode="json")["presentation"]["viewers"][0]["artifact_ref"][
+            "artifact_type"
+        ]
         == "table.data"
     )
 

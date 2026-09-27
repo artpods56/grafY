@@ -46,7 +46,7 @@ from grafy_api.diagnostics import (
     diagnostic_scope,
     record_failure,
 )
-from grafy_api.settings import Settings
+from grafy_shared.config import AuthConfig
 from grafy_api.v1.routes.auth.abuse import (
     AuthAbuseControl,
     BrowserAbuseKeys,
@@ -96,36 +96,46 @@ class AuthService:
     def __init__(
         self,
         *,
-        settings: Settings,
+        auth: AuthConfig,
+        public_origin: str,
         unit_of_work_factory: Callable[[], IdentityUnitOfWorkPort],
         identity_service: IdentityService,
         abuse_control: AuthAbuseControl | None = None,
     ) -> None:
-        self._settings = settings
+        self._auth = auth
+        # public_origin is AppConfig and oidc_callback_path is AuthConfig; the
+        # browser redirect target is their only joint derivation, so it is resolved
+        # once here rather than giving either section a copy of the other's value.
+        self._public_origin = public_origin
+        self._oidc_callback_url = auth.resolved_callback_url(public_origin)
         self._unit_of_work_factory = unit_of_work_factory
         self._identity_service = identity_service
-        configured_browser_cookie_secret = settings.oidc_auth_wrapping_key
+        configured_browser_cookie_secret = auth.oidc_auth_wrapping_key
         self._browser_cookie_secret = (
             configured_browser_cookie_secret.get_secret_value().encode("utf-8")
             if configured_browser_cookie_secret is not None
             else token_bytes(32)
         )
         self._abuse_control = abuse_control or AuthAbuseControl(
-            window_seconds=settings.auth_rate_window_seconds,
-            login_start_limit=settings.auth_login_start_rate_limit,
-            callback_limit=settings.auth_callback_rate_limit,
-            session_failure_limit=settings.auth_session_failure_rate_limit,
-            pat_creation_limit=settings.auth_pat_creation_rate_limit,
-            outstanding_login_limit=settings.auth_outstanding_login_limit,
-            network_outstanding_login_limit=(
-                settings.auth_outstanding_login_network_limit
-            ),
-            outstanding_login_ttl_seconds=settings.oidc_login_transaction_ttl_seconds,
+            window_seconds=auth.auth_rate_window_seconds,
+            login_start_limit=auth.auth_login_start_rate_limit,
+            callback_limit=auth.auth_callback_rate_limit,
+            session_failure_limit=auth.auth_session_failure_rate_limit,
+            pat_creation_limit=auth.auth_pat_creation_rate_limit,
+            outstanding_login_limit=auth.auth_outstanding_login_limit,
+            network_outstanding_login_limit=(auth.auth_outstanding_login_network_limit),
+            outstanding_login_ttl_seconds=auth.oidc_login_transaction_ttl_seconds,
         )
         self._provider_metadata: ProviderMetadata | None = None
         self._provider_metadata_expires_at: datetime | None = None
         self._jwks: dict[str, object] | list[object] | None = None
         self._jwks_expires_at: datetime | None = None
+
+    @property
+    def pat_max_lifetime_seconds(self) -> int:
+        """The configured ceiling for one personal access token's expiry."""
+
+        return self._auth.personal_access_token_max_lifetime_seconds
 
     async def start_login(
         self,
@@ -149,11 +159,11 @@ class AuthService:
                 verifier,
                 transaction_id,
             ),
-            pkce_key_version=self._settings.oidc_auth_wrapping_key_version,
+            pkce_key_version=self._auth.oidc_auth_wrapping_key_version,
             return_path=safe_return_path,
             created_at=now,
             expires_at=now
-            + timedelta(seconds=self._settings.oidc_login_transaction_ttl_seconds),
+            + timedelta(seconds=self._auth.oidc_login_transaction_ttl_seconds),
         )
         async with self._unit_of_work_factory() as unit_of_work:
             await unit_of_work.identity.add_login_transaction(transaction)
@@ -172,8 +182,8 @@ class AuthService:
         )
         authorization_params = {
             "response_type": "code",
-            "client_id": self._require_value(self._settings.oidc_client_id),
-            "redirect_uri": self._settings.oidc_callback_url,
+            "client_id": self._require_value(self._auth.oidc_client_id),
+            "redirect_uri": self._oidc_callback_url,
             "scope": "openid profile email",
             "state": state,
             "nonce": nonce,
@@ -222,7 +232,7 @@ class AuthService:
                     "provider_token_validation_failed",
                     transaction_consumed=True,
                 ) from exc
-            issuer = self._require_value(self._settings.oidc_issuer)
+            issuer = self._require_value(self._auth.oidc_issuer)
             subject = claims.get("sub")
             if not isinstance(subject, str) or not subject:
                 raise OidcProtocolError("missing_subject", transaction_consumed=True)
@@ -299,7 +309,7 @@ class AuthService:
             secret_digest=self.digest_secret(session_secret),
             csrf_digest=self.digest_secret(csrf_value),
             expires_at=datetime.now(UTC)
-            + timedelta(seconds=self._settings.auth_session_absolute_seconds),
+            + timedelta(seconds=self._auth.auth_session_absolute_seconds),
         )
         await self._persist_session_in_unit_of_work(
             unit_of_work,
@@ -404,7 +414,7 @@ class AuthService:
             now = datetime.now(UTC)
             last_activity = session.last_used_at or session.created_at
             idle_expired = now - last_activity >= timedelta(
-                seconds=self._settings.auth_session_idle_seconds
+                seconds=self._auth.auth_session_idle_seconds
             )
             if session.expires_at <= now or idle_expired:
                 session.revoke(revoked_at=now)
@@ -614,18 +624,18 @@ class AuthService:
         response.set_cookie(
             SESSION_COOKIE,
             issued.cookie_value,
-            max_age=self._settings.auth_session_absolute_seconds,
+            max_age=self._auth.auth_session_absolute_seconds,
             httponly=True,
-            secure=self._settings.auth_cookie_secure,
+            secure=self._auth.auth_cookie_secure,
             samesite="lax",
             path="/",
         )
         response.set_cookie(
             CSRF_COOKIE,
             issued.csrf_value,
-            max_age=self._settings.auth_session_absolute_seconds,
+            max_age=self._auth.auth_session_absolute_seconds,
             httponly=False,
-            secure=self._settings.auth_cookie_secure,
+            secure=self._auth.auth_cookie_secure,
             samesite="lax",
             path="/",
         )
@@ -644,9 +654,9 @@ class AuthService:
         response.set_cookie(
             OIDC_TRANSACTION_COOKIE,
             transaction_id,
-            max_age=self._settings.oidc_login_transaction_ttl_seconds,
+            max_age=self._auth.oidc_login_transaction_ttl_seconds,
             httponly=True,
-            secure=self._settings.auth_cookie_secure,
+            secure=self._auth.auth_cookie_secure,
             samesite="lax",
             path="/api/v1/auth/oidc",
         )
@@ -678,7 +688,7 @@ class AuthService:
             response,
             browser_key,
             secret=self._browser_cookie_secret,
-            secure=self._settings.auth_cookie_secure,
+            secure=self._auth.auth_cookie_secure,
         )
 
     async def allow_login_start(
@@ -825,12 +835,12 @@ class AuthService:
         data = {
             "grant_type": "authorization_code",
             "code": code,
-            "redirect_uri": self._settings.oidc_callback_url,
-            "client_id": self._require_value(self._settings.oidc_client_id),
+            "redirect_uri": self._oidc_callback_url,
+            "client_id": self._require_value(self._auth.oidc_client_id),
             "code_verifier": verifier,
         }
-        if self._settings.oidc_client_secret is not None:
-            data["client_secret"] = self._settings.oidc_client_secret.get_secret_value()
+        if self._auth.oidc_client_secret is not None:
+            data["client_secret"] = self._auth.oidc_client_secret.get_secret_value()
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.post(metadata.token_endpoint, data=data)
         if response.status_code != 200:
@@ -854,7 +864,7 @@ class AuthService:
         nonce_digest: bytes,
     ) -> dict[str, object]:
         jwks = await self._keys()
-        decoder: Any = JsonWebToken(self._settings.oidc_allowed_signing_algorithms)
+        decoder: Any = JsonWebToken(self._auth.oidc_allowed_signing_algorithms)
         try:
             claims = decoder.decode(encoded, cast(Any, jwks))
         except (JoseError, ValueError, TypeError):
@@ -868,11 +878,11 @@ class AuthService:
         except (JoseError, ValueError, TypeError) as exc:
             raise OidcProtocolError("invalid_id_token") from exc
         values = cast(dict[str, object], dict(claims))
-        issuer = self._require_value(self._settings.oidc_issuer)
+        issuer = self._require_value(self._auth.oidc_issuer)
         if values.get("iss") != issuer:
             raise OidcProtocolError("invalid_issuer")
         audience = values.get("aud")
-        client_id = self._require_value(self._settings.oidc_client_id)
+        client_id = self._require_value(self._auth.oidc_client_id)
         if isinstance(audience, str):
             audiences = [audience]
         elif isinstance(audience, list):
@@ -929,7 +939,7 @@ class AuthService:
         ):
             if self._provider_metadata_expires_at > now:
                 return self._provider_metadata
-        issuer = self._require_value(self._settings.oidc_issuer)
+        issuer = self._require_value(self._auth.oidc_issuer)
         discovery_url = f"{issuer}/.well-known/openid-configuration"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
@@ -1013,10 +1023,7 @@ class AuthService:
         return nonce + ciphertext
 
     def _decrypt_verifier(self, transaction: OidcLoginTransaction) -> str:
-        if (
-            transaction.pkce_key_version
-            != self._settings.oidc_auth_wrapping_key_version
-        ):
+        if transaction.pkce_key_version != self._auth.oidc_auth_wrapping_key_version:
             raise OidcProtocolError("unsupported_key_version")
         encrypted = transaction.encrypted_pkce_verifier
         try:
@@ -1032,7 +1039,7 @@ class AuthService:
     def _check_cookie_request(self, request: Request) -> None:
         if request.method in {"GET", "HEAD", "OPTIONS"}:
             return
-        if request.headers.get("origin") != self._settings.public_origin:
+        if request.headers.get("origin") != self._public_origin:
             raise HTTPException(status_code=403, detail="Origin validation failed")
         csrf_cookie = request.cookies.get(CSRF_COOKIE)
         csrf_header = request.headers.get("x-csrf-token")
@@ -1112,7 +1119,7 @@ class AuthService:
             session.is_revoked
             or session.expires_at <= now
             or now - last_activity
-            >= timedelta(seconds=self._settings.auth_session_idle_seconds)
+            >= timedelta(seconds=self._auth.auth_session_idle_seconds)
         ):
             return None
         if not hmac.compare_digest(session.secret_digest, self.digest_secret(secret)):
@@ -1130,14 +1137,14 @@ class AuthService:
 
     def _wrapping_key(self) -> bytes:
         self._require_oidc_configuration()
-        configured_key = self._settings.oidc_auth_wrapping_key
+        configured_key = self._auth.oidc_auth_wrapping_key
         if configured_key is None:
             raise OidcProtocolError("oidc_not_configured")
         value = configured_key.get_secret_value()
         return hashlib.sha256(value.encode()).digest()
 
     def _require_oidc_configuration(self) -> None:
-        if not self._settings.oidc_is_configured:
+        if not self._auth.oidc_is_configured:
             raise OidcProtocolError("oidc_not_configured")
 
     @staticmethod

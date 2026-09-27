@@ -40,9 +40,7 @@ def test_candidate_command_is_networkless_read_only_and_resource_bounded(
     assert command[command.index("--memory-swap") + 1] == "1g"
     assert command[command.index("--cpus") + 1] == "1.0"
     mounts = [
-        command[index + 1]
-        for index, value in enumerate(command)
-        if value == "--mount"
+        command[index + 1] for index, value in enumerate(command) if value == "--mount"
     ]
     assert mounts == [
         f"type=bind,src={tmp_path / 'snapshot'},dst=/candidate,readonly",
@@ -67,9 +65,7 @@ def test_dependency_fetch_is_the_only_network_enabled_phase(tmp_path: Path) -> N
 
     assert command[command.index("--network") + 1] == "bridge"
     mounts = [
-        command[index + 1]
-        for index, value in enumerate(command)
-        if value == "--mount"
+        command[index + 1] for index, value in enumerate(command) if value == "--mount"
     ]
     assert mounts[0].endswith("dst=/candidate")
     assert mounts[1].endswith("dst=/venv")
@@ -101,9 +97,7 @@ def test_directory_publisher_resolves_the_locked_vendored_wheel(
         "def test_plugin() -> None:\n    assert True\n",
         encoding="utf-8",
     )
-    (project / "wheels" / "grafy_core-0.1.0-py3-none-any.whl").write_bytes(
-        b"wheel"
-    )
+    (project / "wheels" / "grafy_core-0.1.0-py3-none-any.whl").write_bytes(b"wheel")
     inspected = InspectionResult(
         catalog=PluginCatalogManifest(
             slug="candidate",
@@ -156,7 +150,9 @@ def test_directory_publisher_resolves_the_locked_vendored_wheel(
         loader_target="grafy_plugin_candidate.plugin:CANDIDATE",
     )
 
-    sync_command = next(command for command in commands if command[:2] == ("uv", "sync"))
+    sync_command = next(
+        command for command in commands if command[:2] == ("uv", "sync")
+    )
     assert "--no-editable" in sync_command
     assert sync_command[-2:] == ("--find-links", "/candidate/wheels")
     inspection_command = next(

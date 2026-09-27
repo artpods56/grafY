@@ -2,21 +2,22 @@
 
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from grafy_api import cli
+
+from grafy_shared.config import EgressConfig
+
 from grafy_api.plugins.runtime.network_policy import (
-    NetworkPolicy,
     NetworkPolicyError,
 )
+from grafy_api.settings import Settings
 
 
-def _settings_with(policy: NetworkPolicy, manifest: Path | None) -> SimpleNamespace:
-    return SimpleNamespace(
-        resolved_network_policy_manifest=manifest,
-        resolved_network_policy=policy,
+def _settings_with(manifest: Path | None) -> Settings:
+    return Settings(  # pyright: ignore[reportCallIssue]
+        egress=EgressConfig(_env_file=None, network_policy_manifest=manifest)  # pyright: ignore[reportCallIssue]
     )
 
 
@@ -24,7 +25,7 @@ def test_network_policy_validate_prints_profiles_and_assignments(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(cli, "get_settings", lambda: _settings_with(NetworkPolicy(), None))
+    monkeypatch.setattr(cli, "get_settings", lambda: _settings_with(None))
     monkeypatch.setattr(sys, "argv", ["grafy", "network-policy", "validate"])
 
     cli.main()
@@ -61,7 +62,7 @@ profile = "llm-public"
     monkeypatch.setattr(
         cli,
         "get_settings",
-        lambda: _settings_with(NetworkPolicy(), manifest),
+        lambda: _settings_with(manifest),
     )
     monkeypatch.setattr(
         sys,
@@ -89,7 +90,7 @@ def test_network_policy_validate_fails_closed_on_an_invalid_manifest(
     monkeypatch.setattr(
         cli,
         "get_settings",
-        lambda: _settings_with(NetworkPolicy(), manifest),
+        lambda: _settings_with(manifest),
     )
     monkeypatch.setattr(
         sys,

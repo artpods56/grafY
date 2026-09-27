@@ -15,7 +15,7 @@ from .models import (
 router = APIRouter(prefix="/workspaces/{workspace_id}/library", tags=["library"])
 
 
-#[TODO] we should probably check what are these services throwing and ensure that we handle these errors correctly
+# [TODO] we should probably check what are these services throwing and ensure that we handle these errors correctly
 
 
 @router.get("/artifacts", response_model=LibraryListResponse)

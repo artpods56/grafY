@@ -315,7 +315,6 @@ async def list_personal_access_tokens(
 async def create_personal_access_token(
     workspace_id: UUID,
     payload: PersonalAccessTokenCreateRequest,
-    request: Request,
     actor: Annotated[ActorContext, Depends(browser_actor)],
     identity: IdentityServiceDependency,
     auth: AuthServiceDependency,
@@ -323,9 +322,7 @@ async def create_personal_access_token(
     now = datetime.now(UTC)
     if payload.expires_at.tzinfo is None or payload.expires_at <= now:
         raise HTTPException(status_code=422, detail="PAT expiry must be in the future")
-    maximum_expiry = now + timedelta(
-        seconds=request.app.state.settings.personal_access_token_max_lifetime_seconds
-    )
+    maximum_expiry = now + timedelta(seconds=auth.pat_max_lifetime_seconds)
     if payload.expires_at > maximum_expiry:
         raise HTTPException(
             status_code=422, detail="PAT expiry exceeds configured lifetime"

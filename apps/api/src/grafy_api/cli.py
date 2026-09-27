@@ -52,7 +52,11 @@ from grafy_api.plugins.publication.source import (
 )
 from grafy_api.plugins.profiles import runtime_profile
 from grafy_api.plugins.publication.oci import PluginOciImageBuilder
-from grafy_api.plugins.runtime.network_policy import load_network_policy_manifest
+from grafy_api.plugins.runtime.egress import PluginEgressBrokerPolicy
+from grafy_api.plugins.runtime.network_policy import (
+    NetworkPolicy,
+    load_network_policy_manifest,
+)
 from grafy_api.settings import get_settings
 from grafy_api.storage import configured_file_storage
 from grafy_persistence.system_cutover import (
@@ -143,20 +147,20 @@ async def _authenticate_credential(
 async def _run_auth(args: argparse.Namespace) -> None:
     settings = get_settings()
     if args.command == "logout":
-        removed = delete_sensitive_cli_token(settings.resolved_database_url)
+        removed = delete_sensitive_cli_token(settings.app.resolved_database_url)
         print("Removed stored Grafy credential" if removed else "No stored credential")
         return
 
-    database = create_database(settings.resolved_database_url)
+    database = create_database(settings.app.resolved_database_url)
     try:
         identity = IdentityService(lambda: SqlAlchemyUnitOfWork(database.sessions))
         if args.command == "login":
             raw_token = getpass.getpass("Grafy token: ")
             credential = parse_sensitive_bearer_token(raw_token)
             principal = await _authenticate_credential(identity, credential)
-            store_sensitive_cli_token(settings.resolved_database_url, raw_token)
+            store_sensitive_cli_token(settings.app.resolved_database_url, raw_token)
         elif args.command == "status":
-            credential = _load_credential_digest(settings.resolved_database_url)
+            credential = _load_credential_digest(settings.app.resolved_database_url)
             principal = await _authenticate_credential(identity, credential)
         else:
             raise ValueError("Unsupported Grafy auth command")
@@ -176,7 +180,7 @@ async def _run_auth(args: argparse.Namespace) -> None:
 
 async def _run_admin(args: argparse.Namespace) -> None:
     settings = get_settings()
-    database = create_database(settings.resolved_database_url)
+    database = create_database(settings.app.resolved_database_url)
     try:
         identity = IdentityService(lambda: SqlAlchemyUnitOfWork(database.sessions))
         if args.admin_command == "disable-user":
@@ -257,7 +261,7 @@ async def _run_system_cutover(args: argparse.Namespace) -> None:
         return
 
     settings = get_settings()
-    database = create_database(settings.resolved_database_url)
+    database = create_database(settings.app.resolved_database_url)
     try:
         if args.command == "generate-baseline":
             result = await generate_system_baseline_file(
@@ -289,9 +293,9 @@ async def _run_network_policy(args: argparse.Namespace) -> None:
     """Validate the deployment network policy without mutating anything."""
 
     settings = get_settings()
-    manifest = args.manifest or settings.resolved_network_policy_manifest
+    manifest = args.manifest or settings.egress.resolved_network_policy_manifest
     if manifest is None:
-        policy = settings.resolved_network_policy
+        policy = NetworkPolicy.from_config(settings.egress)
         source = "legacy GRAFY_PLUGIN_*_EGRESS_DESTINATIONS translation"
     else:
         policy = load_network_policy_manifest(manifest)
@@ -352,9 +356,9 @@ async def _run(args: argparse.Namespace) -> None:
                 expected_slug = entry.slug
                 break
         publisher = PluginDirectoryPublisher(
-            settings.resolved_plugin_roots,
-            runtime_profile=settings.plugin_runtime_profile,
-            wheelhouse=settings.resolved_plugin_wheelhouse,
+            settings.plugins.resolved_plugin_roots,
+            runtime_profile=settings.plugins.plugin_runtime_profile,
+            wheelhouse=settings.plugins.resolved_plugin_wheelhouse,
         )
         try:
             verified = await asyncio.to_thread(
@@ -380,17 +384,17 @@ async def _run(args: argparse.Namespace) -> None:
         )
         print(report.model_dump_json(indent=2))
         return
-    database = create_database(settings.resolved_database_url)
+    database = create_database(settings.app.resolved_database_url)
     try:
         identity = IdentityService(lambda: SqlAlchemyUnitOfWork(database.sessions))
-        storage = configured_file_storage(settings)
+        storage = configured_file_storage(settings.storage, settings.app.workspace)
         releases = PluginReleaseService(
             lambda: SqlAlchemyUnitOfWork(database.sessions),
             storage,
-            bucket=settings.storage_bucket,
+            bucket=settings.storage.storage_bucket,
         )
         if args.command == "revoke":
-            credential = _load_credential_digest(settings.resolved_database_url)
+            credential = _load_credential_digest(settings.app.resolved_database_url)
             if credential.kind != "platform":
                 raise SystemExit("Global Plugin revocation requires a platform token")
             principal = await identity.authenticate_platform_access_token(
@@ -410,16 +414,17 @@ async def _run(args: argparse.Namespace) -> None:
                 f"{revocation.revision} for {revocation.reason.value}"
             )
             return
+        plugins = settings.plugins
         profile = runtime_profile(
-            settings.plugin_runtime_profile,
-            native_base_image=settings.plugin_runtime_native_base_image,
-            native_base_image_digest=(settings.plugin_runtime_native_base_image_digest),
+            plugins.plugin_runtime_profile,
+            native_base_image=plugins.plugin_runtime_native_base_image,
+            native_base_image_digest=plugins.plugin_runtime_native_base_image_digest,
         )
         image_builder = PluginOciImageBuilder(
             storage,
-            bucket=settings.storage_bucket,
+            bucket=settings.storage.storage_bucket,
             profile=profile,
-            docker_binary=settings.plugin_docker_binary,
+            docker_binary=settings.plugins.plugin_docker_binary,
         )
         system_inventory = load_system_plugin_inventory(
             CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH
@@ -439,7 +444,7 @@ async def _run(args: argparse.Namespace) -> None:
         if args.command == "promote" or (
             args.command == "publish" and args.global_scope
         ):
-            credential = _load_credential_digest(settings.resolved_database_url)
+            credential = _load_credential_digest(settings.app.resolved_database_url)
             if credential.kind != "platform":
                 raise SystemExit("Global Plugin operations require a platform token")
             required_scope = (
@@ -453,16 +458,14 @@ async def _run(args: argparse.Namespace) -> None:
                 required_scope=required_scope,
             )
             if args.command == "promote" and args.deployment_manifest is not None:
-                load_system_plugin_deployment_file(
-                    args.deployment_manifest
-                )
+                load_system_plugin_deployment_file(args.deployment_manifest)
             system_publication = SystemPluginPublicationWorkflow(
                 image_builder,
                 releases,
                 isolated_release_admission(
                     profile=profile,
-                    egress_policy=settings.resolved_plugin_egress_policy,
-                    network_policy=settings.resolved_network_policy,
+                    egress_policy=PluginEgressBrokerPolicy.from_config(settings.egress),
+                    network_policy=NetworkPolicy.from_config(settings.egress),
                 ),
                 system_inventory,
             )
@@ -473,18 +476,20 @@ async def _run(args: argparse.Namespace) -> None:
                         "--sandbox-image is required for global Plugin publication"
                     )
                 inventory_entry = system_inventory.entry_for(args.slug)
-                if settings.resolved_plugin_wheelhouse is not None:
+                if settings.plugins.resolved_plugin_wheelhouse is not None:
                     raise SystemExit(
                         "System sandbox publication requires dependencies to be "
                         "present in the frozen source or fetched from configured "
                         "package indexes; host wheelhouse mounts are not supported"
                     )
                 publisher = DockerPluginDirectoryPublisher(
-                    settings.resolved_plugin_roots,
-                    runtime_profile=settings.plugin_runtime_profile,
+                    settings.plugins.resolved_plugin_roots,
+                    runtime_profile=settings.plugins.plugin_runtime_profile,
                     image=args.sandbox_image,
-                    docker_binary=settings.plugin_docker_binary,
-                    scratch_root=(settings.resolved_plugin_publisher_scratch_root),
+                    docker_binary=settings.plugins.plugin_docker_binary,
+                    scratch_root=(
+                        settings.plugins.resolved_plugin_publisher_scratch_root
+                    ),
                 )
                 verified = await asyncio.to_thread(
                     publisher.verify,
@@ -514,9 +519,9 @@ async def _run(args: argparse.Namespace) -> None:
             )
             return
         publisher = PluginDirectoryPublisher(
-            settings.resolved_plugin_roots,
-            runtime_profile=settings.plugin_runtime_profile,
-            wheelhouse=settings.resolved_plugin_wheelhouse,
+            settings.plugins.resolved_plugin_roots,
+            runtime_profile=settings.plugins.plugin_runtime_profile,
+            wheelhouse=settings.plugins.resolved_plugin_wheelhouse,
         )
         publication = PluginPublicationWorkflow(
             publisher,
@@ -525,7 +530,7 @@ async def _run(args: argparse.Namespace) -> None:
             system_inventory,
         )
         if args.command == "publish":
-            credential = _load_credential_digest(settings.resolved_database_url)
+            credential = _load_credential_digest(settings.app.resolved_database_url)
             if credential.kind != "personal":
                 raise SystemExit(
                     "Workspace Plugin publication requires a personal token"
@@ -546,7 +551,7 @@ async def _run(args: argparse.Namespace) -> None:
                 f"for Workspace {release.installation.workspace_id}"
             )
             return
-        credential = _load_credential_digest(settings.resolved_database_url)
+        credential = _load_credential_digest(settings.app.resolved_database_url)
         if credential.kind != "personal":
             raise SystemExit("Plugin authoring requires a personal token")
         principal = await identity.authenticate_personal_access_token(
@@ -556,13 +561,13 @@ async def _run(args: argparse.Namespace) -> None:
         )
         workspace_id = principal.workspace_id
         authoring = PluginAuthoringService(
-            authoring_root=settings.resolved_plugin_authoring_root,
-            allowed_roots=settings.resolved_plugin_roots,
-            sdk_project=settings.resolved_plugin_sdk_project,
+            authoring_root=settings.plugins.resolved_plugin_authoring_root,
+            allowed_roots=settings.plugins.resolved_plugin_roots,
+            sdk_project=settings.plugins.resolved_plugin_sdk_project,
             publication=publication,
             releases=releases,
             storage=storage,
-            bucket=settings.storage_bucket,
+            bucket=settings.storage.storage_bucket,
         )
         actor_user_id = principal.actor.user_id
         if args.command == "scaffold":

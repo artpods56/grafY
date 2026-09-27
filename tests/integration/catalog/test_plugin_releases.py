@@ -4,6 +4,8 @@ import shutil
 
 from pydantic import SecretStr
 
+from grafy_shared.config import AppConfig
+
 from grafy_api.plugins.publication.source import PluginDirectoryPublisher
 from grafy_api.settings import Settings
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
@@ -168,8 +170,9 @@ def test_workspace_plugin_release_is_overlaid_in_node_catalog(tmp_path: Path) ->
     assert changed_release.release.revision == 5
 
     settings = Settings(
-        workspace=tmp_path / "workbench",
-        database_url=SecretStr(database_url),
+        app=AppConfig(
+            workspace=tmp_path / "workbench", database_url=SecretStr(database_url)
+        )
     )
     try:
         with client_with_overrides(

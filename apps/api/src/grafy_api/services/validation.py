@@ -9,7 +9,6 @@ from grafy_core.ports.validator import Validator
 
 
 class FileValidator(abc.ABC, Validator[UploadFile]):
-
     @abc.abstractmethod
     async def validate(self, data: UploadFile) -> None:
         """Validate the uploaded file, raising a domain exception on failure."""

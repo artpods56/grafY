@@ -5,6 +5,7 @@ from grafy_api.settings import Settings
 from pydantic import SecretStr
 
 from tests.testkit import app_with_overrides, client_with_overrides, create_db_url, db
+from tests.testkit import with_setting_values
 
 
 def test_public_routes_are_registered_once(settings: Settings) -> None:
@@ -470,8 +471,8 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
 async def test_app_health_is_ok(tmp_path: Path, settings: Settings) -> None:
     database_url = create_db_url(tmp_path, "health.sqlite3")
     async with db(database_url):
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
 
         with client_with_overrides(settings=app_settings) as client:
@@ -484,8 +485,8 @@ async def test_app_health_is_ok(tmp_path: Path, settings: Settings) -> None:
 async def test_app_allows_local_web_origin(tmp_path: Path, settings: Settings) -> None:
     database_url = create_db_url(tmp_path, "cors-origin.sqlite3")
     async with db(database_url):
-        app_settings = settings.model_copy(
-            update={"database_url": SecretStr(database_url)}
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
         )
 
         with client_with_overrides(settings=app_settings) as client:

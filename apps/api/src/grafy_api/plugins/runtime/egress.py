@@ -11,6 +11,8 @@ from enum import StrEnum
 from ipaddress import IPv4Address, IPv6Address, IPv4Network, ip_address
 from urllib.parse import urlsplit
 
+from grafy_shared.config import EgressConfig
+
 
 _PINNED_IMAGE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 _DNS_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -81,7 +83,9 @@ class PluginEgressDestination:
         if literal is not None:
             raise ValueError("Plugin egress destinations must use an exact DNS name")
         if not 1 <= self.port <= 65_535:
-            raise ValueError("Plugin egress destination port must be between 1 and 65535")
+            raise ValueError(
+                "Plugin egress destination port must be between 1 and 65535"
+            )
         object.__setattr__(self, "host", normalized_host)
 
     @classmethod
@@ -149,15 +153,11 @@ class PluginEgressDestination:
                 "HTTP egress destination must use an exact public DNS name"
             )
         try:
-            literal = ip_address(
-                normalized_host.removeprefix("[").removesuffix("]")
-            )
+            literal = ip_address(normalized_host.removeprefix("[").removesuffix("]"))
         except ValueError:
             literal = None
         if literal is not None:
-            raise ValueError(
-                "HTTP egress destination must use an exact DNS name"
-            )
+            raise ValueError("HTTP egress destination must use an exact DNS name")
         protocol = PluginEgressProtocol(parsed.scheme.casefold())
         try:
             port = parsed.port
@@ -175,14 +175,58 @@ class PluginEgressBrokerPolicy:
     broker_image: str | None = None
     destinations: tuple[PluginEgressDestination, ...] = ()
 
+    @classmethod
+    def from_config(cls, egress: EgressConfig) -> "PluginEgressBrokerPolicy":
+        """Build the broker policy from one deployment's egress configuration.
+
+        With a network policy manifest, plugin-execution HTTP authority comes from
+        the manifest and legacy HTTP destinations are excluded here; PostgreSQL
+        keeps its separate destination-scoped allowlist either way.
+        """
+
+        if egress.network_policy_manifest is None:
+            legacy_http = tuple(
+                PluginEgressDestination.parse(value)
+                for value in egress.plugin_http_egress_destinations
+            )
+            if any(
+                destination.protocol is PluginEgressProtocol.POSTGRESQL
+                for destination in legacy_http
+            ):
+                raise ValueError(
+                    "plugin_http_egress_destinations accepts only HTTP or HTTPS"
+                )
+        else:
+            legacy_http = ()
+        parsed_postgresql = tuple(
+            PluginEgressDestination.parse(value)
+            for value in egress.plugin_postgresql_egress_destinations
+        )
+        if any(
+            destination.protocol is not PluginEgressProtocol.POSTGRESQL
+            for destination in parsed_postgresql
+        ):
+            raise ValueError(
+                "plugin_postgresql_egress_destinations accepts only PostgreSQL"
+            )
+        return cls(
+            broker_image=egress.plugin_egress_broker_image,
+            destinations=(*legacy_http, *parsed_postgresql),
+        )
+
     def __post_init__(self) -> None:
         normalized = tuple(sorted(set(self.destinations)))
         if len(normalized) != len(self.destinations):
             raise ValueError("Plugin egress destinations must be unique")
         if len(normalized) > 128:
             raise ValueError("Plugin egress supports at most 128 destinations")
-        if self.broker_image is not None and _PINNED_IMAGE.fullmatch(self.broker_image) is None:
-            raise ValueError("Plugin egress broker image must be pinned by sha256 digest")
+        if (
+            self.broker_image is not None
+            and _PINNED_IMAGE.fullmatch(self.broker_image) is None
+        ):
+            raise ValueError(
+                "Plugin egress broker image must be pinned by sha256 digest"
+            )
         object.__setattr__(self, "destinations", normalized)
 
     @property
@@ -246,13 +290,17 @@ class PluginEgressBrokerPlan:
             for resolved in destinations
             if resolved.destination.protocol is PluginEgressProtocol.POSTGRESQL
         )
-        if postgresql_destinations and any(
-            resolved.destination.protocol
-            in {PluginEgressProtocol.HTTP, PluginEgressProtocol.HTTPS}
-            for resolved in destinations
-        ) and any(
-            destination.port == PLUGIN_HTTP_PROXY_PORT
-            for destination in postgresql_destinations
+        if (
+            postgresql_destinations
+            and any(
+                resolved.destination.protocol
+                in {PluginEgressProtocol.HTTP, PluginEgressProtocol.HTTPS}
+                for resolved in destinations
+            )
+            and any(
+                destination.port == PLUGIN_HTTP_PROXY_PORT
+                for destination in postgresql_destinations
+            )
         ):
             raise ValueError("PostgreSQL relay port conflicts with the HTTP proxy")
         return cls(
@@ -320,9 +368,7 @@ class PluginEgressBrokerPlan:
                 "host": destination.host,
                 "port": destination.port,
                 "address_scope": resolved.address_scope.value,
-                "connect_addresses": [
-                    str(address) for address in resolved.addresses
-                ],
+                "connect_addresses": [str(address) for address in resolved.addresses],
             }
             if destination.protocol is PluginEgressProtocol.POSTGRESQL:
                 serialized["listen_port"] = relay_ports[destination]

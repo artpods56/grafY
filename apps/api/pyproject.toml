@@ -16,6 +16,7 @@ dependencies = [
     "grafy-persistence",
     "grafy-workbench",
     "grafy-storage",
+    "grafy-shared",
     "pillow",
     "pydantic",
     "pydantic-settings>=2.12.0",
@@ -35,6 +36,7 @@ grafy-core = { workspace = true }
 grafy-persistence = { workspace = true }
 grafy-workbench = { workspace = true }
 grafy-storage = { workspace = true }
+grafy-shared = { workspace = true }
 
 [tool.basedpyright]
 extends = "../../pyproject.toml"

@@ -22,6 +22,8 @@ from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_storage import LocalFileObjectStore
 
+from grafy_shared.config import AppConfig
+
 from grafy_api.services.composition import build_workbench_components
 from grafy_api.settings import Settings
 from grafy_api.v1.models import (
@@ -151,8 +153,9 @@ def durable_api(tmp_path: Path) -> DurableApiFixture:
     asyncio.run(prepare())
     return DurableApiFixture(
         settings=Settings(
-            workspace=tmp_path / "workbench",
-            database_url=SecretStr(database_url),
+            app=AppConfig(
+                workspace=tmp_path / "workbench", database_url=SecretStr(database_url)
+            )
         ),
         database_url=database_url,
         deployment=deployment,
@@ -167,19 +170,19 @@ def _durable_client(fixture: DurableApiFixture) -> Iterator[TestClient]:
         lambda: SqlAlchemyUnitOfWork(database.sessions),
         deployment.registry,
     )
-    storage = LocalFileObjectStore(fixture.settings.workspace / "objects")
+    storage = LocalFileObjectStore(fixture.settings.app.workspace / "objects")
     plugin_releases = PluginReleaseService(
         lambda: SqlAlchemyUnitOfWork(database.sessions),
         storage,
-        bucket=fixture.settings.storage_bucket,
+        bucket=fixture.settings.storage.storage_bucket,
     )
     components = build_workbench_components(
         plugin_registry=deployment.registry,
-        workspace=fixture.settings.workspace,
+        workspace=fixture.settings.app.workspace,
         unit_of_work=SqlAlchemyUnitOfWork(database.sessions),
         storage=storage,
-        storage_backend=fixture.settings.storage_backend,
-        bucket=fixture.settings.storage_bucket,
+        storage_backend=fixture.settings.storage.storage_backend,
+        bucket=fixture.settings.storage.storage_bucket,
         saved_graphs=saved_graphs,
         plugin_releases=plugin_releases,
     )

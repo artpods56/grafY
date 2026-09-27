@@ -112,9 +112,7 @@ async def test_dns_resolution_returns_only_numeric_public_connect_targets(
 
     resolved = await resolve_public_destination(destination)
 
-    assert tuple(str(address) for address in resolved.addresses) == (
-        "93.184.216.34",
-    )
+    assert tuple(str(address) for address in resolved.addresses) == ("93.184.216.34",)
 
 
 @pytest.mark.asyncio
@@ -173,9 +171,7 @@ async def test_curated_rfc1918_scope_rejects_other_non_public_addresses(
 
 def test_broker_plan_is_non_secret_numeric_and_separated_by_sandbox_key() -> None:
     http = PluginEgressDestination.parse("https://api.example.com:443")
-    postgresql = PluginEgressDestination.parse(
-        "postgresql://database.example.com:5432"
-    )
+    postgresql = PluginEgressDestination.parse("postgresql://database.example.com:5432")
     resolved = (
         ResolvedPluginEgressDestination(http, (ip_address("93.184.216.34"),)),
         ResolvedPluginEgressDestination(postgresql, (ip_address("8.8.8.8"),)),
@@ -201,12 +197,12 @@ def test_broker_plan_is_non_secret_numeric_and_separated_by_sandbox_key() -> Non
     assert document["http_proxy"] == {
         "listen_port": 3128,
         "destinations": [
-                {
-                    "protocol": "https",
-                    "host": "api.example.com",
-                    "port": 443,
-                    "address_scope": "public",
-                    "connect_addresses": ["93.184.216.34"],
+            {
+                "protocol": "https",
+                "host": "api.example.com",
+                "port": 443,
+                "address_scope": "public",
+                "connect_addresses": ["93.184.216.34"],
             }
         ],
         "dns_resolution": "forbidden",
@@ -241,10 +237,13 @@ def test_postgresql_relay_requires_the_exact_declared_destination() -> None:
         ),
     )
 
-    assert plan.postgresql_relay_for(
-        host="database.example.com",
-        port=5432,
-    ).listen_port == 5432
+    assert (
+        plan.postgresql_relay_for(
+            host="database.example.com",
+            port=5432,
+        ).listen_port
+        == 5432
+    )
     with pytest.raises(PermissionError, match="not in the deployment"):
         plan.postgresql_relay_for(host="other.example.com", port=5432)
 

@@ -1,8 +1,7 @@
 """Composition root for workbench-facing application components."""
 
-import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from grafy_core.application.modules import ModuleLibraryService
@@ -29,6 +28,7 @@ from grafy_core.runtime.persistence import (
 )
 from grafy_core.runtime.persistent_invocation_cache import PersistentInvocationCache
 from grafy_core.runtime.resolvers import ResolverRegistry
+from grafy_shared.config import ExecutionConfig, PluginsConfig
 from grafy_storage import LocalFileObjectStore
 
 from grafy_api.artifact_availability import ArtifactAvailability
@@ -78,15 +78,43 @@ class WorkbenchComponents:
     release_admission: ReleaseExecutionAdmission | None
 
 
+@dataclass(frozen=True, slots=True)
+class ExecutionLimits:
+    """How much concurrent work one workbench instance is allowed to admit.
+
+    The deployment supplies this from ExecutionConfig and PluginsConfig; the
+    literal defaults keep a standalone composition independent of the operator
+    environment instead of silently reading GRAFY_* variables.
+    """
+
+    map_max_concurrency: int = 4
+    max_active_executions: int = 2
+    max_pending_graphs: int = 20
+    max_active_plugin_invocations: int = 4
+    plugin_invocation_wall_time_seconds_by_slug: Mapping[str, int] = field(
+        default_factory=dict
+    )
+
+    @classmethod
+    def from_config(
+        cls, execution: ExecutionConfig, plugins: PluginsConfig
+    ) -> "ExecutionLimits":
+        return cls(
+            map_max_concurrency=execution.map_max_concurrency,
+            max_active_executions=execution.max_active_executions,
+            max_pending_graphs=execution.max_pending_graphs,
+            max_active_plugin_invocations=plugins.max_active_plugin_invocations,
+            plugin_invocation_wall_time_seconds_by_slug=(
+                plugins.plugin_invocation_wall_time_seconds_by_slug
+            ),
+        )
+
+
 def build_workbench_components(
     *,
     plugin_registry: PluginRegistry,
-    map_max_concurrency: int = 4,
-    max_active_executions: int = 2,
-    max_pending_graphs: int = 20,
-    max_active_plugin_invocations: int = 4,
-    plugin_invocation_wall_time_seconds_by_slug: Mapping[str, int] | None = None,
-    workspace: Path | None = None,
+    workspace: Path,
+    limits: ExecutionLimits | None = None,
     unit_of_work: WorkbenchUnitOfWorkPort | None = None,
     storage: FileStoragePort | None = None,
     storage_backend: str = "local",
@@ -104,19 +132,8 @@ def build_workbench_components(
     ),
     build_digest: str = "a" * 64,
 ) -> WorkbenchComponents:
-    resolved_workspace = (
-        (
-            workspace
-            or Path(
-                os.getenv(
-                    "GRAFY_WORKSPACE",
-                    ".grafy-artifacts/workbench",
-                )
-            )
-        )
-        .expanduser()
-        .resolve()
-    )
+    resolved_limits = limits or ExecutionLimits()
+    resolved_workspace = workspace.expanduser().resolve()
     resolved_unit_of_work = unit_of_work or InMemoryUnitOfWork()
     resolved_storage = storage or LocalFileObjectStore(resolved_workspace / "objects")
     artifact_types = {
@@ -198,9 +215,9 @@ def build_workbench_components(
                 storage=resolved_storage,
                 bucket=bucket,
                 storage_backend=storage_backend,
-                max_concurrent_invocations=max_active_plugin_invocations,
+                max_concurrent_invocations=resolved_limits.max_active_plugin_invocations,
                 wall_time_seconds_by_plugin_slug=(
-                    plugin_invocation_wall_time_seconds_by_slug
+                    resolved_limits.plugin_invocation_wall_time_seconds_by_slug
                 ),
                 node_secrets=resolved_node_secrets,
             )
@@ -233,7 +250,7 @@ def build_workbench_components(
         runtime=runtime,
         edge_values=edge_values,
         node_secrets=resolved_node_secrets,
-        max_map_concurrency=map_max_concurrency,
+        max_map_concurrency=resolved_limits.map_max_concurrency,
     )
     coordinator = GraphExecutionCoordinator(node_execution=node_execution)
     if network_policy is not None:
@@ -256,12 +273,14 @@ def build_workbench_components(
         plugin_sandboxes=plugin_runtime,
     )
     execution_history = ExecutionHistoryService(resolved_unit_of_work, saved_graphs)
-    execution_admission = ExecutionAdmissionLimiter(max_active_executions)
+    execution_admission = ExecutionAdmissionLimiter(
+        resolved_limits.max_active_executions
+    )
     execution_manager = RunExecutionManager(
         run_graph,
         execution_history=execution_history,
         admission_limiter=execution_admission,
-        max_pending_graphs=max_pending_graphs,
+        max_pending_graphs=resolved_limits.max_pending_graphs,
         graph_room_hub=graph_room_hub,
     )
     return WorkbenchComponents(
@@ -284,4 +303,8 @@ def build_workbench_components(
     )
 
 
-__all__ = ["WorkbenchComponents", "build_workbench_components"]
+__all__ = [
+    "ExecutionLimits",
+    "WorkbenchComponents",
+    "build_workbench_components",
+]

@@ -6,12 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "grafy-shared"
 version = "0.1.0"
 requires-python = "==3.14.*"
+# grafy-shared is a leaf: it turns the environment into typed values and imports
+# nothing else from this workspace, so every other layer can import its own
+# configuration without a cycle. See docs/adr/0011.
 dependencies = [
-    "grafy-core",
+    "pydantic",
+    "pydantic-settings>=2.12.0",
 ]
-
-[tool.uv.sources]
-grafy-core = { workspace = true }
 
 [tool.basedpyright]
 extends = "../../pyproject.toml"
