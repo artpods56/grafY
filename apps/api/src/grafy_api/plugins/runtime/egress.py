@@ -199,55 +199,6 @@ class PluginEgressBrokerPolicy:
             if destination.protocol is protocol
         )
 
-    async def resolve_for_capabilities(
-        self,
-        *,
-        sandbox_key_sha256: str,
-        http_enabled: bool,
-        postgresql_enabled: bool,
-        postgresql_destination: PluginEgressDestination | None = None,
-    ) -> "PluginEgressBrokerPlan":
-        if not self.available or self.broker_image is None:
-            raise RuntimeError("Plugin egress broker policy is unavailable")
-        if re.fullmatch(r"[0-9a-f]{64}", sandbox_key_sha256) is None:
-            raise ValueError("Plugin sandbox key digest must be sha256")
-        selected = tuple(
-            destination
-            for destination in self.destinations
-            if (
-                http_enabled
-                and destination.protocol
-                in {PluginEgressProtocol.HTTP, PluginEgressProtocol.HTTPS}
-            )
-            or (
-                postgresql_enabled
-                and destination.protocol is PluginEgressProtocol.POSTGRESQL
-                and destination == postgresql_destination
-            )
-        )
-        if postgresql_enabled and (
-            postgresql_destination is None
-            or postgresql_destination not in self.destinations
-        ):
-            raise PermissionError(
-                "PostgreSQL destination is not in the deployment egress allowlist"
-            )
-        if not selected:
-            raise RuntimeError(
-                "Plugin egress broker has no destination for required capabilities"
-            )
-        resolved = await asyncio.wait_for(
-            asyncio.gather(
-                *(resolve_public_destination(destination) for destination in selected)
-            ),
-            timeout=10,
-        )
-        return PluginEgressBrokerPlan.from_resolved(
-            broker_image=self.broker_image,
-            sandbox_key_sha256=sandbox_key_sha256,
-            destinations=tuple(resolved),
-        )
-
 
 @dataclass(frozen=True, slots=True)
 class ResolvedPluginEgressDestination:
