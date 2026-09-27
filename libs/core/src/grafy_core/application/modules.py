@@ -46,10 +46,6 @@ class ModuleLibraryService:
         async with self._unit_of_work_factory() as unit_of_work:
             return await unit_of_work.modules.list_library(workspace_id)
 
-    async def list_all(self, workspace_id: UUID) -> list[Module]:
-        async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.modules.list_modules(workspace_id)
-
     async def get(self, workspace_id: UUID, module_id: UUID) -> Module:
         async with self._unit_of_work_factory() as unit_of_work:
             module = await unit_of_work.modules.get(workspace_id, module_id)
