@@ -653,13 +653,11 @@ def test_postgresql_keeps_original_transport_identity_and_artifact_query_has_no_
             postgresql_destination=destination,
         ),
         container_id="postgresql",
-        scratch_root=tmp_path,
         egress_plan=plan,
     )
     artifact_query = _Sandbox(
         key=_key(PluginRuntimeCapability.UNTRUSTED_SQL),
         container_id="artifact-query",
-        scratch_root=tmp_path,
         egress_plan=plan,
     )
     request = cast(
