@@ -7,15 +7,6 @@ from grafy_core.ports.artifacts import ArtifactRepositoryPort
 from grafy_core.ports.transactions import TransactionPort
 
 
-class UploadFinalizeFields(Protocol):
-    actual_size: int
-    sha256: str
-    artifact_type: str
-    artifact_schema_version: int
-    artifact_id: UUID
-    completed_at: datetime
-
-
 class UploadRepositoryPort(Protocol):
     """Lifecycle rows for client uploads.
 
