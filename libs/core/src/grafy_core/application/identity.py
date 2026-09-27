@@ -1244,16 +1244,6 @@ class IdentityService:
             raise NotFoundError("User", str(user_id))
         return user
 
-    async def _require_workspace(
-        self,
-        unit_of_work: IdentityUnitOfWorkPort,
-        workspace_id: UUID,
-    ) -> Workspace:
-        workspace = await unit_of_work.identity.get_workspace(workspace_id)
-        if workspace is None:
-            raise NotFoundError("Workspace", str(workspace_id))
-        return workspace
-
     async def _require_membership(
         self,
         unit_of_work: IdentityUnitOfWorkPort,
