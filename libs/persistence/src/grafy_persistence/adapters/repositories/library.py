@@ -66,18 +66,6 @@ class SqlModuleLibraryRepository(ModuleLibraryRepositoryPort):
         )
 
     @override
-    async def list_modules(self, workspace_id: UUID) -> list[Module]:
-        result = await self._session.scalars(
-            select(Module)
-            .where(schema.modules.c.workspace_id == workspace_id)
-            .order_by(
-                schema.modules.c.updated_at.desc(),
-                schema.modules.c.id.asc(),
-            )
-        )
-        return list(result)
-
-    @override
     async def list_library(self, workspace_id: UUID) -> list[Module]:
         result = await self._session.scalars(
             select(Module)
