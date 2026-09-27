@@ -551,7 +551,7 @@ source = { editable = "apps/plugin-egress-broker" }
 [[package]]
 name = "grafy-plugin-gis"
 version = "0.1.0"
-source = { directory = "plugins/gis" }
+source = { editable = "plugins/gis" }
 dependencies = [
     { name = "grafy-core" },
     { name = "httpx" },
@@ -577,7 +577,7 @@ dev = [{ name = "pytest", specifier = ">=8.4.2" }]
 [[package]]
 name = "grafy-plugin-llm"
 version = "0.1.0"
-source = { directory = "plugins/llm" }
+source = { editable = "plugins/llm" }
 dependencies = [
     { name = "grafy-core" },
     { name = "openai" },
@@ -597,7 +597,7 @@ dev = [{ name = "pytest", specifier = ">=8.4.2" }]
 [[package]]
 name = "grafy-plugin-ocr"
 version = "0.1.0"
-source = { directory = "plugins/ocr" }
+source = { editable = "plugins/ocr" }
 dependencies = [
     { name = "grafy-core" },
     { name = "pillow" },
@@ -617,7 +617,7 @@ dev = [{ name = "pytest", specifier = ">=8.4.2" }]
 [[package]]
 name = "grafy-plugin-sql"
 version = "0.1.0"
-source = { directory = "plugins/sql" }
+source = { editable = "plugins/sql" }
 dependencies = [
     { name = "asyncpg" },
     { name = "duckdb" },
@@ -737,10 +737,10 @@ requires-dist = [
     { name = "grafy-client", editable = "libs/client" },
     { name = "grafy-core", editable = "libs/core" },
     { name = "grafy-persistence", editable = "libs/persistence" },
-    { name = "grafy-plugin-gis", marker = "extra == 'gis'", directory = "plugins/gis" },
-    { name = "grafy-plugin-llm", marker = "extra == 'llm'", directory = "plugins/llm" },
-    { name = "grafy-plugin-ocr", marker = "extra == 'ocr'", directory = "plugins/ocr" },
-    { name = "grafy-plugin-sql", marker = "extra == 'sql'", directory = "plugins/sql" },
+    { name = "grafy-plugin-gis", marker = "extra == 'gis'", editable = "plugins/gis" },
+    { name = "grafy-plugin-llm", marker = "extra == 'llm'", editable = "plugins/llm" },
+    { name = "grafy-plugin-ocr", marker = "extra == 'ocr'", editable = "plugins/ocr" },
+    { name = "grafy-plugin-sql", marker = "extra == 'sql'", editable = "plugins/sql" },
     { name = "grafy-shared", editable = "libs/shared" },
     { name = "grafy-storage", editable = "libs/storage" },
     { name = "grafy-workbench", editable = "libs/workbench" },
