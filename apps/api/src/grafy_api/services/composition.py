@@ -53,6 +53,7 @@ from grafy_api.uploads import UploadService, UploadServiceConfig
 from grafy_core.ports.storage import PresigningStorage
 from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.v1.routes.executions.services import RunResultPresenter
+from grafy_api.v1.routes.library.folders import LibraryFoldersService
 from grafy_api.v1.routes.library.services import LibraryService
 
 _WORKBENCH_BUCKET = "workbench-artifacts"
@@ -73,6 +74,7 @@ class WorkbenchComponents:
     presenter: RunResultPresenter
     artifacts: ArtifactService
     library: LibraryService
+    library_folders: LibraryFoldersService
     plugin_invoker: ArtifactBundlePluginInvoker | None
     plugin_runtime: DockerPluginRuntime | None
     release_admission: ReleaseExecutionAdmission | None
@@ -198,6 +200,7 @@ def build_workbench_components(
         artifact_types=artifact_types,
         saved_graphs=saved_graphs,
     )
+    library_folders = LibraryFoldersService(resolved_unit_of_work)
     plugin_invoker = None
     artifact_plugin_invoker = None
     release_admission: ReleaseExecutionAdmission | None = None
@@ -297,6 +300,7 @@ def build_workbench_components(
         presenter=presenter,
         artifacts=artifacts,
         library=library,
+        library_folders=library_folders,
         plugin_invoker=artifact_plugin_invoker,
         plugin_runtime=plugin_runtime,
         release_admission=release_admission,

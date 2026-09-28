@@ -37,12 +37,15 @@ if TYPE_CHECKING:
 from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey
 from grafy_core.domain.errors import (
     CollaborationActiveExecutionError,
+    LibraryFolderNameConflictError,
     NotFoundError,
     ObjectAlreadyExistsError,
 )
 from grafy_core.domain.execution_history import TransientExecution
+from grafy_core.domain.library import LibraryFolder
 from grafy_core.domain.uploads import UploadStatus
 from grafy_core.ports.artifacts import ArtifactRepositoryPort, UnitOfWorkPort
+from grafy_core.ports.library_folders import LibraryFolderRepositoryPort
 
 
 def _clone[T](value: T) -> T:
@@ -84,6 +87,14 @@ class InMemoryDataStore:
             tuple[int, "GraphExecutionNodeResult | None"],
         ]
     )
+    library_folders: dict[UUID, LibraryFolder] = field(
+        default_factory=dict[UUID, LibraryFolder]
+    )
+    # (workspace_id, artifact_id) → folder_id. An artifact with no key sits at
+    # the Library root, exactly like the SQL placement table.
+    library_placements: dict[tuple[UUID, UUID], UUID] = field(
+        default_factory=dict[tuple[UUID, UUID], UUID]
+    )
 
     def clone(self) -> Self:
         return _clone(self)
@@ -96,6 +107,8 @@ class InMemoryDataStore:
         self.uploads = _clone(other.uploads)
         self.graph_executions = _clone(other.graph_executions)
         self.graph_execution_nodes = _clone(other.graph_execution_nodes)
+        self.library_folders = _clone(other.library_folders)
+        self.library_placements = _clone(other.library_placements)
 
 
 @final
@@ -163,6 +176,149 @@ class InMemoryArtifactRepository(ArtifactRepositoryPort):
             if artifact.workspace_id == workspace_id
             and artifact.library_provenance is not None
         ]
+
+
+@final
+class InMemoryLibraryFolderRepository(LibraryFolderRepositoryPort):
+    """The Library folder tree held in the shared in-memory store.
+
+    Folders are handed out as copies and written back whole, which is what the
+    SQL repository does with its detached dataclass. Placement rows cascade away
+    with their artifact in SQL through a foreign key; nothing here reaches into
+    the artifact repository to imitate that.
+    """
+
+    def __init__(self, store: InMemoryDataStore) -> None:
+        self._store = store
+
+    def _find_sibling(
+        self,
+        workspace_id: UUID,
+        parent_id: UUID | None,
+        name_key: str,
+        *,
+        except_folder_id: UUID | None = None,
+    ) -> LibraryFolder | None:
+        for folder in self._store.library_folders.values():
+            if folder.workspace_id != workspace_id:
+                continue
+            if folder.parent_id != parent_id or folder.name_key != name_key:
+                continue
+            if except_folder_id is not None and folder.id == except_folder_id:
+                continue
+            return folder
+        return None
+
+    @override
+    async def add(self, folder: LibraryFolder) -> None:
+        if (
+            self._find_sibling(
+                folder.workspace_id,
+                folder.parent_id,
+                folder.name_key,
+            )
+            is not None
+        ):
+            raise LibraryFolderNameConflictError(
+                workspace_id=folder.workspace_id,
+                parent_id=folder.parent_id,
+                name=folder.name,
+            )
+        self._store.library_folders[folder.id] = replace(folder)
+
+    @override
+    async def get(
+        self,
+        workspace_id: UUID,
+        folder_id: UUID,
+    ) -> LibraryFolder | None:
+        folder = self._store.library_folders.get(folder_id)
+        if folder is None or folder.workspace_id != workspace_id:
+            return None
+        return replace(folder)
+
+    @override
+    async def get_by_name(
+        self,
+        workspace_id: UUID,
+        parent_id: UUID | None,
+        name_key: str,
+    ) -> LibraryFolder | None:
+        folder = self._find_sibling(workspace_id, parent_id, name_key)
+        return None if folder is None else replace(folder)
+
+    @override
+    async def list(self, workspace_id: UUID) -> list[LibraryFolder]:
+        folders = [
+            replace(folder)
+            for folder in self._store.library_folders.values()
+            if folder.workspace_id == workspace_id
+        ]
+        folders.sort(key=lambda folder: (folder.name_key, str(folder.id)))
+        return folders
+
+    @override
+    async def save(self, folder: LibraryFolder) -> None:
+        if (
+            self._find_sibling(
+                folder.workspace_id,
+                folder.parent_id,
+                folder.name_key,
+                except_folder_id=folder.id,
+            )
+            is not None
+        ):
+            raise LibraryFolderNameConflictError(
+                workspace_id=folder.workspace_id,
+                parent_id=folder.parent_id,
+                name=folder.name,
+            )
+        self._store.library_folders[folder.id] = replace(folder)
+
+    @override
+    async def remove(self, folder: LibraryFolder) -> None:
+        _ = self._store.library_folders.pop(folder.id, None)
+
+    @override
+    async def count_children(self, workspace_id: UUID, folder_id: UUID) -> int:
+        return sum(
+            1
+            for folder in self._store.library_folders.values()
+            if folder.workspace_id == workspace_id and folder.parent_id == folder_id
+        )
+
+    @override
+    async def placements(self, workspace_id: UUID) -> dict[UUID, UUID]:
+        return {
+            artifact_id: folder_id
+            for (placement_workspace, artifact_id), folder_id in (
+                self._store.library_placements.items()
+            )
+            if placement_workspace == workspace_id
+        }
+
+    @override
+    async def count_placements(self, workspace_id: UUID, folder_id: UUID) -> int:
+        return sum(
+            1
+            for (placement_workspace, _), placed_folder in (
+                self._store.library_placements.items()
+            )
+            if placement_workspace == workspace_id and placed_folder == folder_id
+        )
+
+    @override
+    async def place(
+        self,
+        workspace_id: UUID,
+        artifact_ids: list[UUID],
+        folder_id: UUID | None,
+    ) -> None:
+        for artifact_id in artifact_ids:
+            key = (workspace_id, artifact_id)
+            _ = self._store.library_placements.pop(key, None)
+            if folder_id is not None:
+                self._store.library_placements[key] = folder_id
 
 
 @final
@@ -673,6 +829,7 @@ class _InMemoryUnitOfWorkState:
     materialized_outputs: "MaterializedNodeOutputsRepositoryPort"
     invocation_cache: "InvocationCacheRepositoryPort"
     uploads: "UploadRepositoryPort"
+    library_folders: "LibraryFolderRepositoryPort"
     execution_history: "GraphExecutionHistoryRepositoryPort"
 
 
@@ -705,6 +862,10 @@ class InMemoryUnitOfWork(UnitOfWorkPort):
         return self._entered_state().uploads
 
     @property
+    def library_folders(self) -> "LibraryFolderRepositoryPort":
+        return self._entered_state().library_folders
+
+    @property
     def execution_history(self) -> "GraphExecutionHistoryRepositoryPort":
         return self._entered_state().execution_history
 
@@ -725,6 +886,7 @@ class InMemoryUnitOfWork(UnitOfWorkPort):
                     ),
                     invocation_cache=InMemoryInvocationCacheRepository(working_store),
                     uploads=InMemoryUploadRepository(working_store),
+                    library_folders=InMemoryLibraryFolderRepository(working_store),
                     execution_history=InMemoryGraphExecutionHistoryRepository(
                         working_store
                     ),

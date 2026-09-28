@@ -14,6 +14,9 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from grafy_api.settings import get_settings
 from grafy_persistence.schema import (
+    NAMING_CONVENTION,
+    library_artifact_placements,
+    library_folders,
     plugin_installations,
     plugin_release_selections,
     plugin_releases,
@@ -373,6 +376,8 @@ def test_alembic_migration_upgrades_downgrades_and_has_no_schema_drift(
             "graph_folders",
             "graph_organizations",
             "invocation_cache_entries",
+            "library_artifact_placements",
+            "library_folders",
             "materialized_node_outputs",
             "module_releases",
             "modules",
@@ -424,6 +429,8 @@ def test_alembic_migration_upgrades_downgrades_and_has_no_schema_drift(
             "graph_folders",
             "graph_organizations",
             "invocation_cache_entries",
+            "library_artifact_placements",
+            "library_folders",
             "materialized_node_outputs",
             "module_releases",
             "modules",
@@ -456,6 +463,75 @@ def test_alembic_migration_upgrades_downgrades_and_has_no_schema_drift(
         )
 
     get_settings.cache_clear()
+
+
+def test_0031_library_migration_declares_what_the_library_schema_metadata_declares() -> None:
+    """Name and type every 0031 object against the metadata that describes it.
+
+    `command.check` above compares tables, columns, indexes, unique constraints
+    and foreign keys; it does not compare check-constraint names. So the check
+    below is what keeps a constraint the migration renames, an object either side
+    grows, or a column width that stops matching from surviving review.
+    """
+    migration = importlib.import_module(
+        "infra.db.migrations.versions.0031_library_folders"
+    )
+    created_tables: dict[str, Table] = {}
+    created_indexes: dict[str, set[str]] = {}
+
+    class CaptureOperations:
+        def f(self, name: str) -> str:
+            # op.f means the name is already final, exactly as in a real migration.
+            return name
+
+        def create_table(
+            self,
+            name: str,
+            *elements: SchemaItem,
+            **kwargs: object,
+        ) -> None:
+            del kwargs
+            # The naming convention is what renders a check constraint's declared
+            # name into the name the database ends up holding.
+            captured = MetaData(naming_convention=NAMING_CONVENTION)
+            created_tables[name] = Table(name, captured, *elements)
+
+        def create_index(
+            self,
+            name: str,
+            table_name: str,
+            columns: list[str],
+            *args: object,
+            **kwargs: object,
+        ) -> None:
+            del args, kwargs
+            created_indexes.setdefault(table_name, set()).add(name)
+
+    # ModuleType carries no typed `op`, so direct assignment fails the type
+    # checker; B010 is suppressed because there is no safe attribute access here.
+    setattr(migration, "op", CaptureOperations())  # noqa: B010
+    migration.upgrade()
+
+    assert set(created_tables) == {
+        "library_folders",
+        "library_artifact_placements",
+    }
+    for table in (library_folders, library_artifact_placements):
+        created = created_tables[table.name]
+        assert created is not table
+        assert [
+            (column.name, str(column.type.compile(dialect=postgresql.dialect())))
+            for column in created.columns
+        ] == [
+            (column.name, str(column.type.compile(dialect=postgresql.dialect())))
+            for column in table.columns
+        ], table.name
+        assert {constraint.name for constraint in created.constraints} == {
+            constraint.name for constraint in table.constraints
+        }, table.name
+        assert created_indexes.get(table.name, set()) == {
+            index.name for index in table.indexes
+        }, table.name
 
 
 def test_identity_migration_creates_sealed_local_workspace_and_audit_indexes(

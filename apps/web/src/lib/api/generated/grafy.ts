@@ -850,6 +850,82 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/library/folders": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Library Folders */
+        readonly get: operations["list_library_folders_v1_workspaces__workspace_id__library_folders_get"];
+        readonly put?: never;
+        /** Create Library Folder */
+        readonly post: operations["create_library_folder_v1_workspaces__workspace_id__library_folders_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/library/folders/{folder_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /**
+         * Delete Library Folder
+         * @description Delete one folder. A folder that still holds anything is refused.
+         */
+        readonly delete: operations["delete_library_folder_v1_workspaces__workspace_id__library_folders__folder_id__delete"];
+        readonly options?: never;
+        readonly head?: never;
+        /** Rename Library Folder */
+        readonly patch: operations["rename_library_folder_v1_workspaces__workspace_id__library_folders__folder_id__patch"];
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/library/folders/{folder_id}/parent": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /** Move Library Folder */
+        readonly put: operations["move_library_folder_v1_workspaces__workspace_id__library_folders__folder_id__parent_put"];
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/library/placements": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /**
+         * Move Library Artifacts
+         * @description File artifacts in one folder, or unfile them when ``folder_id`` is null.
+         */
+        readonly put: operations["move_library_artifacts_v1_workspaces__workspace_id__library_placements_put"];
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/members": {
         readonly parameters: {
             readonly query?: never;
@@ -1542,6 +1618,16 @@ export interface components {
              * Format: uuid
              */
             readonly source_workspace_id: string;
+        };
+        /**
+         * CreateLibraryFolderRequest
+         * @description Make a folder. ``parent_id: null`` makes it a root folder.
+         */
+        readonly CreateLibraryFolderRequest: {
+            /** Name */
+            readonly name: string;
+            /** Parent Id */
+            readonly parent_id: string | null;
         };
         /** CreateSavedGraphRequest */
         readonly CreateSavedGraphRequest: {
@@ -2386,9 +2472,46 @@ export interface components {
             /** Name */
             readonly name: string;
         };
+        /** LibraryFolderListResponse */
+        readonly LibraryFolderListResponse: {
+            /** Folders */
+            readonly folders: readonly components["schemas"]["LibraryFolderResponse"][];
+        };
+        /**
+         * LibraryFolderResponse
+         * @description One row of the Library tree. ``parent_id`` of ``null`` is the root.
+         */
+        readonly LibraryFolderResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Folder Id
+             * Format: uuid
+             */
+            readonly folder_id: string;
+            /** Name */
+            readonly name: string;
+            /** Parent Id */
+            readonly parent_id: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            readonly workspace_id: string;
+        };
         /** LibraryItemResponse */
         readonly LibraryItemResponse: {
             readonly artifact: components["schemas"]["ArtifactSummaryResponse"];
+            /** Folder Id */
+            readonly folder_id?: string | null;
             /** Name */
             readonly name: string;
             readonly provenance: components["schemas"]["LibraryProvenanceResponse"];
@@ -2577,6 +2700,24 @@ export interface components {
             readonly kind: "move_artifact_viewers";
             /** Positions */
             readonly positions: readonly components["schemas"]["MoveArtifactViewerPosition"][];
+        };
+        /**
+         * MoveLibraryArtifactsRequest
+         * @description File every listed artifact in ``folder_id``, or unfile them when null.
+         */
+        readonly MoveLibraryArtifactsRequest: {
+            /** Artifact Ids */
+            readonly artifact_ids: readonly string[];
+            /** Folder Id */
+            readonly folder_id: string | null;
+        };
+        /**
+         * MoveLibraryFolderRequest
+         * @description Move a folder. ``parent_id: null`` moves it to the root.
+         */
+        readonly MoveLibraryFolderRequest: {
+            /** Parent Id */
+            readonly parent_id: string | null;
         };
         /** MoveNodePosition */
         readonly MoveNodePosition: {
@@ -2934,6 +3075,11 @@ export interface components {
              * @enum {string}
              */
             readonly kind: "rename_graph";
+            /** Name */
+            readonly name: string;
+        };
+        /** RenameLibraryFolderRequest */
+        readonly RenameLibraryFolderRequest: {
             /** Name */
             readonly name: string;
         };
@@ -6450,6 +6596,207 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["LibraryItemResponse"];
                 };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly list_library_folders_v1_workspaces__workspace_id__library_folders_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["LibraryFolderListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly create_library_folder_v1_workspaces__workspace_id__library_folders_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CreateLibraryFolderRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["LibraryFolderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly delete_library_folder_v1_workspaces__workspace_id__library_folders__folder_id__delete: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly folder_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 204: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly rename_library_folder_v1_workspaces__workspace_id__library_folders__folder_id__patch: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly folder_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["RenameLibraryFolderRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["LibraryFolderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly move_library_folder_v1_workspaces__workspace_id__library_folders__folder_id__parent_put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly folder_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["MoveLibraryFolderRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["LibraryFolderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly move_library_artifacts_v1_workspaces__workspace_id__library_placements_put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["MoveLibraryArtifactsRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 204: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             readonly 422: {

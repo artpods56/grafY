@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LibraryPanel } from "./LibraryPanel";
 import { BLOB_ARTIFACT_NOTICE } from "../../model/blob-notice";
-import type { LibraryFolder, PlacedLibraryItem } from "@/lib/api";
+import {
+  LibraryFolderNotEmptyError,
+  type LibraryFolder,
+  type PlacedLibraryItem,
+} from "@/lib/api";
 
 const listTree = vi.hoisted(() => vi.fn());
 const createFolder = vi.hoisted(() => vi.fn());
@@ -172,6 +176,35 @@ function dropRegion(): HTMLElement {
   return region;
 }
 
+const FOLDER_DROP_TYPE = "application/x-grafy-library-folder";
+
+/**
+ * Opens a folder's row menu and returns its Delete item so a test can state
+ * whether the panel offered the delete. Base UI renders the menu in a portal on
+ * `document.body`, never inside the row.
+ */
+async function deleteItemOfFolder(folderId: string): Promise<HTMLElement> {
+  const label = folderRow(folderId).dataset.treeLabel ?? "";
+  const trigger = folderRow(folderId).querySelector<HTMLElement>(
+    `[aria-label="Actions for ${label}"]`,
+  );
+  if (!trigger) throw new Error(`No action trigger for folder ${folderId}`);
+  await React.act(async () => {
+    trigger.click();
+  });
+  const item = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ].find((element) => element.textContent?.startsWith("Delete folder"));
+  if (!item) throw new Error(`No Delete item in the menu for ${folderId}`);
+  return item;
+}
+
+async function selectMenuItem(item: HTMLElement): Promise<void> {
+  await React.act(async () => {
+    item.click();
+  });
+}
+
 /** React tracks input values, so a controlled input only changes through its setter. */
 function typeInto(input: HTMLInputElement, value: string): void {
   const setValue = Object.getOwnPropertyDescriptor(
@@ -223,7 +256,6 @@ function dropFiles(target: HTMLElement, files: File[]): void {
 }
 
 const ARTIFACT_DROP_TYPE = "application/x-grafy-artifact";
-const FOLDER_DROP_TYPE = "application/x-grafy-library-folder";
 
 function artifactDropValue(artifactId: string): string {
   return JSON.stringify({
@@ -405,6 +437,51 @@ describe("LibraryPanel", () => {
       folderId: "archive",
       name: "Cold store",
     });
+  });
+
+  it("refuses a folder delete and names what it still holds", async () => {
+    deleteFolder.mockRejectedValue(new LibraryFolderNotEmptyError("fieldwork"));
+
+    // Fieldwork holds nothing but the empty September folder, so its badge reads
+    // 0 and the row offers Delete; the server counts the child folder instead.
+    await renderPanel({ folders: [FIELDWORK, SEPTEMBER], items: [] });
+
+    const deleteItem = await deleteItemOfFolder("fieldwork");
+    expect(deleteItem.getAttribute("aria-disabled")).not.toBe("true");
+    await selectMenuItem(deleteItem);
+
+    await React.act(async () => {
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain(
+          "Move them out first — this folder still holds 1 folder.",
+        ),
+      );
+    });
+    expect(deleteFolder).toHaveBeenCalledWith({
+      workspaceId: expect.any(String),
+      folderId: "fieldwork",
+    });
+  });
+
+  it("refuses a folder delete the panel cannot count", async () => {
+    deleteFolder.mockRejectedValue(new LibraryFolderNotEmptyError("archive"));
+
+    // The last listing saw Archive as empty, so there is no number to state —
+    // another browser filed something in it. The refusal still says so.
+    await renderPanel({ folders: [EMPTY_FOLDER], items: [] });
+
+    await selectMenuItem(await deleteItemOfFolder("archive"));
+
+    await React.act(async () => {
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain(
+          "Move them out first — this folder is not empty.",
+        ),
+      );
+    });
+    expect(document.body.textContent).not.toContain(
+      "0 artifacts and 0 folders",
+    );
   });
 
   it("keeps the keyboard inside the tree", async () => {

@@ -67,6 +67,7 @@ class LibraryService:
         items: list[LibraryItem] = []
         async with self._unit_of_work as unit_of_work:
             artifacts = await unit_of_work.artifacts.list_library(workspace_id)
+            placements = await unit_of_work.library_folders.placements(workspace_id)
             for artifact in artifacts:
                 provenance = artifact.library_provenance
                 if provenance is None:
@@ -84,7 +85,10 @@ class LibraryService:
             key=lambda item: (item.provenance.saved_at, str(item.artifact.id)),
             reverse=True,
         )
-        return [self._present(item) for item in items]
+        return [
+            self._present(item, folder_id=placements.get(item.artifact.id))
+            for item in items
+        ]
 
     # [TODO] do we really need this?
     @staticmethod
@@ -190,7 +194,11 @@ class LibraryService:
             if artifact is None:
                 raise NotFoundError("Artifact", str(artifact_id))
             if artifact.library_provenance is not None:
-                # Provenance is a birth record; re-saving never rewrites it.
+                # Provenance is a birth record; re-saving never rewrites it, and
+                # the folder it already sits in is not moved either.
+                placements = await unit_of_work.library_folders.placements(
+                    workspace_id,
+                )
                 return self._present(
                     LibraryItem(
                         artifact=artifact,
@@ -200,7 +208,8 @@ class LibraryService:
                             artifact,
                             artifact.library_provenance,
                         ),
-                    )
+                    ),
+                    folder_id=placements.get(artifact_id),
                 )
             artifact.library_provenance = provenance
             await unit_of_work.commit()
@@ -208,11 +217,17 @@ class LibraryService:
             LibraryItem(artifact=artifact, provenance=provenance, run=run)
         )
 
-    def _present(self, item: LibraryItem) -> LibraryItemResponse:
+    def _present(
+        self,
+        item: LibraryItem,
+        *,
+        folder_id: UUID | None = None,
+    ) -> LibraryItemResponse:
         return LibraryItemResponse.from_item(
             item,
             name=self._artifact_name(item.artifact),
             download_formats=self._artifacts.export_formats(item.artifact),
+            folder_id=folder_id,
         )
 
 

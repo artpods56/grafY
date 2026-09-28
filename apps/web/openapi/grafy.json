@@ -864,6 +864,35 @@
         "title": "CopyExactHeadRequest",
         "type": "object"
       },
+      "CreateLibraryFolderRequest": {
+        "description": "Make a folder. ``parent_id: null`` makes it a root folder.",
+        "properties": {
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          }
+        },
+        "required": [
+          "name",
+          "parent_id"
+        ],
+        "title": "CreateLibraryFolderRequest",
+        "type": "object"
+      },
       "CreateSavedGraphRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3353,10 +3382,89 @@
         "title": "InstantiateTemplateRequest",
         "type": "object"
       },
+      "LibraryFolderListResponse": {
+        "properties": {
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryFolderResponse"
+            },
+            "title": "Folders",
+            "type": "array"
+          }
+        },
+        "required": [
+          "folders"
+        ],
+        "title": "LibraryFolderListResponse",
+        "type": "object"
+      },
+      "LibraryFolderResponse": {
+        "description": "One row of the Library tree. ``parent_id`` of ``null`` is the root.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "folder_id": {
+            "format": "uuid",
+            "title": "Folder Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "folder_id",
+          "workspace_id",
+          "parent_id",
+          "name",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "LibraryFolderResponse",
+        "type": "object"
+      },
       "LibraryItemResponse": {
         "properties": {
           "artifact": {
             "$ref": "#/components/schemas/ArtifactSummaryResponse"
+          },
+          "folder_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Id"
           },
           "name": {
             "title": "Name",
@@ -3833,6 +3941,61 @@
           "positions"
         ],
         "title": "MoveArtifactViewersCommand",
+        "type": "object"
+      },
+      "MoveLibraryArtifactsRequest": {
+        "description": "File every listed artifact in ``folder_id``, or unfile them when null.",
+        "properties": {
+          "artifact_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Artifact Ids",
+            "type": "array"
+          },
+          "folder_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Id"
+          }
+        },
+        "required": [
+          "artifact_ids",
+          "folder_id"
+        ],
+        "title": "MoveLibraryArtifactsRequest",
+        "type": "object"
+      },
+      "MoveLibraryFolderRequest": {
+        "description": "Move a folder. ``parent_id: null`` moves it to the root.",
+        "properties": {
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          }
+        },
+        "required": [
+          "parent_id"
+        ],
+        "title": "MoveLibraryFolderRequest",
         "type": "object"
       },
       "MoveNodePosition": {
@@ -4879,6 +5042,21 @@
           "expected_name"
         ],
         "title": "RenameGraphCommand",
+        "type": "object"
+      },
+      "RenameLibraryFolderRequest": {
+        "properties": {
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "RenameLibraryFolderRequest",
         "type": "object"
       },
       "ReplaceDocumentCommand": {
@@ -12455,6 +12633,366 @@
           }
         ],
         "summary": "Save Library Artifact From Upload",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/library/folders": {
+      "get": {
+        "operationId": "list_library_folders_v1_workspaces__workspace_id__library_folders_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryFolderListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Library Folders",
+        "tags": [
+          "library folders"
+        ]
+      },
+      "post": {
+        "operationId": "create_library_folder_v1_workspaces__workspace_id__library_folders_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLibraryFolderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryFolderResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Library Folder",
+        "tags": [
+          "library folders"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/library/folders/{folder_id}": {
+      "delete": {
+        "description": "Delete one folder. A folder that still holds anything is refused.",
+        "operationId": "delete_library_folder_v1_workspaces__workspace_id__library_folders__folder_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "folder_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Folder Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Library Folder",
+        "tags": [
+          "library folders"
+        ]
+      },
+      "patch": {
+        "operationId": "rename_library_folder_v1_workspaces__workspace_id__library_folders__folder_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "folder_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Folder Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameLibraryFolderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryFolderResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rename Library Folder",
+        "tags": [
+          "library folders"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/library/folders/{folder_id}/parent": {
+      "put": {
+        "operationId": "move_library_folder_v1_workspaces__workspace_id__library_folders__folder_id__parent_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "folder_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Folder Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveLibraryFolderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryFolderResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Move Library Folder",
+        "tags": [
+          "library folders"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/library/placements": {
+      "put": {
+        "description": "File artifacts in one folder, or unfile them when ``folder_id`` is null.",
+        "operationId": "move_library_artifacts_v1_workspaces__workspace_id__library_placements_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveLibraryArtifactsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Move Library Artifacts",
         "tags": [
           "library"
         ]

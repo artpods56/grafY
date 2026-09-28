@@ -144,19 +144,37 @@ libraryFoldersApi.listTree(workspaceId)
 `moveItems`, plus `LibraryFolderNotEmptyError`, `LibraryFolderCycleError` and
 `LibraryFolderNameTakenError` for the rules a type cannot express.
 
-**The backend for this does not exist yet.** Unless
-`NEXT_PUBLIC_LIBRARY_FOLDERS_API=real`, the api resolves to
-`library-folders.mock.ts`: the folder tree and artifact placements persist per
-workspace in `localStorage`, while the artifacts themselves still come from the
-real Library endpoint — real data in a made-up tree. Flipping the flag is the
-whole migration, because the HTTP calls are already written against the routes
-the server will expose. Nothing outside `src/lib/api` knows the mock is there.
+**The server holds the tree.** Six routes under the workspace answer for it, on
+the capability split the Library already used — `VIEW_ARTIFACTS` reads,
+`EDIT_GRAPH` changes:
+
+| Path under `/v1/workspaces/{workspace_id}` | Method | Says |
+| --- | --- | --- |
+| `/library/folders` | `GET` | every folder in this workspace |
+| `/library/folders` | `POST` | make one under `parent_id`; null means root |
+| `/library/folders/{folder_id}` | `PATCH` | rename |
+| `/library/folders/{folder_id}` | `DELETE` | delete it, if it holds nothing |
+| `/library/folders/{folder_id}/parent` | `PUT` | move it; a null parent means root |
+| `/library/placements` | `PUT` | file these artifacts here, or unfile them |
+
+`GET /library/artifacts` stamps every item with the `folder_id` it sits in, so
+`listTree` is two requests — the folders, and the artifacts already filed. The
+rows are `library_folders` (a `name_key` column keeps sibling names unique
+whatever their case) and `library_artifact_placements`.
+
+The three rules a signature cannot carry are refusals in the envelope every
+failure in this API already returns, `{detail, code, error_id}`:
+`library.folder_name_conflict` (409), `library.folder_not_empty` (409),
+`library.folder_cycle` (422). `library-folders.ts` maps each code to the error
+class the panel knows how to phrase and passes anything else through untouched.
+The envelope carries no counts, so `LibraryFolderNotEmptyError` carries the
+`folder_id` and the panel says what its own tree still holds.
 
 ```mermaid
 graph LR
-    A[LibraryPanel] --> B[libraryFoldersApi]
-    B -->|flag unset| C[mock: localStorage tree over real artifacts]
-    B -->|flag real| D[HTTP /library/folders]
+    A[LibraryPanel] -->|one seam| B[libraryFoldersApi]
+    B -->|HTTP| C["/library/folders · /library/placements"]
+    C --> D[("library_folders · library_artifact_placements")]
 ```
 
 ## 5. Decisions
@@ -210,13 +228,16 @@ graph LR
 
 ## 6. Verification
 
-- `npm --prefix apps/web test` — the folder mock and its rules, the recursive
-  projection and filter, the panel (create, rename, fold, move, preview), the
-  shell, and both views.
+- `npm --prefix apps/web test` — the refusal codes mapped to the panel's errors,
+  the recursive projection and filter, the panel (create, rename, fold, move,
+  preview, and a delete the server refuses), the shell, and both views.
 - `npm --prefix apps/web run typecheck`, `npm --prefix apps/web run lint`.
 - `npm --prefix apps/web test:e2e` — the panel opens docked, takes width, folds
   and unfolds; a folder is created, nested, filled by drag, emptied and deleted;
-  and a Library artifact drag still lands on an input port.
+  and a Library artifact drag still lands on an input port. The folder routes are
+  answered inside Node by `e2e/library-folders-stub.ts`, which keeps the same
+  three rules and belongs to one page, so no folder outlives the test that made
+  it.
 - Visual check at 1600px, 1280px, and 720px: the two columns must read as one
   surface at a glance; the canvas must not sit under the panel. StyleX errors and
   popup stacking only ever show up in a browser, so the browser is part of the

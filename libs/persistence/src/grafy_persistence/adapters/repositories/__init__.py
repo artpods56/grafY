@@ -31,6 +31,9 @@ from .identity import (
     SqlSecurityAuditRepository as SqlSecurityAuditRepository,
 )
 from .library import (
+    SqlLibraryFolderRepository as SqlLibraryFolderRepository,
+)
+from .library import (
     SqlModuleLibraryRepository as SqlModuleLibraryRepository,
 )
 from .library import (

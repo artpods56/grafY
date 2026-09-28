@@ -113,16 +113,39 @@ function isFileDrag(event: React.DragEvent): boolean {
   return Array.from(event.dataTransfer.types).includes("Files");
 }
 
-function operationErrorMessage(error: unknown): string {
+/**
+ * The sentence the panel shows under the toolbar when the server refused.
+ *
+ * A refusal carries a code, never counts, so the contents come from the rows the
+ * panel already renders. A folder whose badge reads 0 while it holds an empty
+ * subfolder still offers Delete and is still refused — that count comes from
+ * here, not from the error body.
+ */
+function operationErrorMessage(
+  error: unknown,
+  folders: readonly LibraryFolder[],
+  items: readonly PlacedLibraryItem[],
+): string {
   if (error instanceof LibraryFolderNotEmptyError) {
+    const artifactCount = items.filter(
+      (item) => item.folder_id === error.folderId,
+    ).length;
+    const childCount = folders.filter(
+      (folder) => folder.parent_id === error.folderId,
+    ).length;
     const parts = [
-      error.artifactCount > 0
-        ? `${error.artifactCount} artifact${error.artifactCount === 1 ? "" : "s"}`
+      artifactCount > 0
+        ? `${artifactCount} artifact${artifactCount === 1 ? "" : "s"}`
         : null,
-      error.childCount > 0
-        ? `${error.childCount} folder${error.childCount === 1 ? "" : "s"}`
+      childCount > 0
+        ? `${childCount} folder${childCount === 1 ? "" : "s"}`
         : null,
     ].filter((part): part is string => part !== null);
+    if (parts.length === 0) {
+      // The server counted something this listing never received — another
+      // browser filed it. The refusal stands; only the number is unknown.
+      return "Move them out first — this folder is not empty.";
+    }
     return `Move them out first — this folder still holds ${parts.join(" and ")}.`;
   }
   if (error instanceof LibraryFolderCycleError) {
@@ -190,7 +213,7 @@ export function LibraryPanel({
       setMessage(null);
       await mutate();
     } catch (operationError) {
-      setMessage(operationErrorMessage(operationError));
+      setMessage(operationErrorMessage(operationError, folders, items));
     }
   }
 
@@ -250,7 +273,7 @@ export function LibraryPanel({
       }
       await mutate();
     } catch (uploadCause) {
-      setMessage(operationErrorMessage(uploadCause));
+      setMessage(operationErrorMessage(uploadCause, folders, items));
     } finally {
       setUploading(false);
       setFileDragOver(false);

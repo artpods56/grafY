@@ -95,45 +95,62 @@ async function readBoundedResponseText(
   }
 }
 
-async function responseErrorDetail(
+type ResponseFailure = {
+  detail: string;
+  /** The server's machine-readable failure code, when it sent one. */
+  code?: string;
+};
+
+const MAX_ERROR_CODE_CHARACTERS = 120;
+
+function isFailurePayload(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+async function responseFailure(
   response: Response,
   csrfToken: string | undefined,
-): Promise<string> {
+): Promise<ResponseFailure> {
   const fallback = `${response.status} ${response.statusText}`;
   try {
     const body = await readBoundedResponseText(response, csrfToken);
-    if (!body) return fallback;
+    if (!body) return { detail: fallback };
 
     let detail = body;
+    let code: string | undefined;
     try {
       const payload: unknown = JSON.parse(body);
       if (typeof payload === "string") {
         detail = payload;
-      } else if (
-        typeof payload === "object" &&
-        payload !== null &&
-        "detail" in payload &&
-        typeof payload.detail === "string"
-      ) {
-        detail = payload.detail;
+      } else if (isFailurePayload(payload)) {
+        // The app's failure envelope is { detail, code, error_id }; a proxy that
+        // answers with FastAPI's plain { detail } simply carries no code.
+        const payloadDetail = payload["detail"];
+        const payloadCode = payload["code"];
+        if (typeof payloadDetail === "string") detail = payloadDetail;
+        if (typeof payloadCode === "string") {
+          code = payloadCode.slice(0, MAX_ERROR_CODE_CHARACTERS);
+        }
       }
     } catch {
       // Keep the bounded response text when it is not JSON.
     }
-    return boundedDetail(detail, csrfToken);
+    return { detail: boundedDetail(detail, csrfToken), code };
   } catch {
-    return fallback;
+    return { detail: fallback };
   }
 }
 
 export class ApiError extends Error {
   status: number;
   detail: string;
-  constructor(status: number, detail: string) {
+  code?: string;
+  constructor(status: number, detail: string, code?: string) {
     super(`API error ${status}: ${detail}`);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    this.code = code;
   }
 }
 
@@ -178,10 +195,8 @@ export async function putUploadBytes(
       redirect: "error",
     });
     if (!response.ok) {
-      throw new ApiError(
-        response.status,
-        await responseErrorDetail(response, csrfToken),
-      );
+      const failure = await responseFailure(response, csrfToken);
+      throw new ApiError(response.status, failure.detail, failure.code);
     }
     return;
   }
@@ -195,10 +210,8 @@ export async function putUploadBytes(
     redirect: "error",
   });
   if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      await responseErrorDetail(response, undefined),
-    );
+    const failure = await responseFailure(response, undefined);
+    throw new ApiError(response.status, failure.detail, failure.code);
   }
 }
 
@@ -234,8 +247,8 @@ export async function request<T>(
     if (res.status === 401 && path !== "/v1/auth/session") {
       for (const listener of unauthorizedListeners) listener();
     }
-    const detail = await responseErrorDetail(res, csrfToken);
-    throw new ApiError(res.status, detail);
+    const failure = await responseFailure(res, csrfToken);
+    throw new ApiError(res.status, failure.detail, failure.code);
   }
   if (res.status === 204) {
     return undefined as T;

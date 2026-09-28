@@ -1,8 +1,8 @@
 import type { LibraryItem } from "./contract";
 
 /**
- * The Workspace Library folder model, shared by whichever implementation of
- * `LibraryFoldersApi` is wired up.
+ * The Workspace Library folder model: the rows the server holds and the three
+ * rules its routes refuse to break.
  *
  * The Library is a filesystem-like tree the user owns: folders nest to any
  * depth, an artifact either sits in a folder or sits at the root, and nothing
@@ -54,26 +54,19 @@ export type LibraryFoldersApi = {
   }): Promise<void>;
 };
 
-/** A folder still holds artifacts or child folders. */
+/**
+ * A folder still holds artifacts or child folders.
+ *
+ * The counts are not part of it: the server refuses the delete by code alone, and
+ * the panel states the contents from the tree it already renders.
+ */
 export class LibraryFolderNotEmptyError extends Error {
   readonly folderId: string;
-  readonly artifactCount: number;
-  readonly childCount: number;
 
-  constructor(input: {
-    folderId: string;
-    artifactCount: number;
-    childCount: number;
-  }) {
-    super(
-      `Folder ${input.folderId} holds ${input.artifactCount} artifact${
-        input.artifactCount === 1 ? "" : "s"
-      } and ${input.childCount} folder${input.childCount === 1 ? "" : "s"}.`,
-    );
+  constructor(folderId: string) {
+    super(`Folder ${folderId} still holds artifacts or folders.`);
     this.name = "LibraryFolderNotEmptyError";
-    this.folderId = input.folderId;
-    this.artifactCount = input.artifactCount;
-    this.childCount = input.childCount;
+    this.folderId = folderId;
   }
 }
 
@@ -93,13 +86,11 @@ export class LibraryFolderCycleError extends Error {
 /** Another folder in the same parent already goes by that name. */
 export class LibraryFolderNameTakenError extends Error {
   readonly name: string;
-  readonly parentId: string | null;
   readonly folderName: string;
 
-  constructor(input: { parentId: string | null; folderName: string }) {
-    super(`A folder named ${input.folderName} already exists here.`);
+  constructor(folderName: string) {
+    super(`A folder named ${folderName} already exists here.`);
     this.name = "LibraryFolderNameTakenError";
-    this.parentId = input.parentId;
-    this.folderName = input.folderName;
+    this.folderName = folderName;
   }
 }
