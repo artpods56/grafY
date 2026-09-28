@@ -1,7 +1,7 @@
 import { expect, test as base } from "@playwright/test";
 
+import { libraryStub } from "./library-folders-stub";
 import type {
-  LibraryList,
   NodeRegistry,
   SavedGraphList,
   Session,
@@ -56,7 +56,6 @@ const workspace = {
 } satisfies Workspace;
 
 const savedGraphs = { graphs: [] } satisfies SavedGraphList;
-const libraryArtifacts = { items: [] } satisfies LibraryList;
 const templates = { templates: [] } satisfies TemplateList;
 export const nodeRegistry = {
   artifact_conversions: [],
@@ -148,7 +147,6 @@ export const test = base.extend<{ registry: NodeRegistry }>({
         | Session
         | readonly Workspace[]
         | SavedGraphList
-        | LibraryList
         | TemplateList
         | NodeRegistry
         | readonly WorkspaceInvitationForRecipient[]
@@ -171,11 +169,6 @@ export const test = base.extend<{ registry: NodeRegistry }>({
         body = registry;
       } else if (
         method === "GET" &&
-        path === `/api/v1/workspaces/${WORKSPACE_ID}/library/artifacts`
-      ) {
-        body = libraryArtifacts;
-      } else if (
-        method === "GET" &&
         path === `/api/v1/workspaces/${WORKSPACE_ID}/templates`
       ) {
         body = templates;
@@ -196,6 +189,11 @@ export const test = base.extend<{ registry: NodeRegistry }>({
         }),
       });
     });
+
+    // The Library folder tree is the server's now, so every workbench test needs
+    // it: the panel lists it on open and an artifact card reads its path from it.
+    // Registered after the catch-all above, so these routes win for /library.
+    await libraryStub(page);
 
     await page.goto(WORKBENCH_PATH);
     await expect(page.locator(".react-flow")).toBeVisible();

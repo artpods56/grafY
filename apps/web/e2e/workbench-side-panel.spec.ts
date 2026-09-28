@@ -1,4 +1,5 @@
 import { expect, nodeRegistry, test } from "./workbench.fixture";
+import { libraryStub } from "./library-folders-stub";
 import type {
   LibraryList,
   NodeRegistry,
@@ -104,21 +105,15 @@ function viewportWidth(page: Page): number {
 }
 
 /**
- * The Library folder tree lives in the browser until its routes land. Tests name
- * the folders they make after themselves, so they never collide with the tree
- * another test left in the same workspace.
+ * Seeds the Library this page's panel lists, then reloads so it reads the seed.
+ *
+ * Folders and placements are the fixture's stub, which belongs to this page and
+ * dies with it, so a folder named here is gone before a rerun names it again —
+ * these names do not have to be unique across runs.
  */
 async function stubResponses(page: Page, library: LibraryList): Promise<void> {
-  await page.route("**/api/v1/workspaces/*/library/artifacts", (route) =>
-    route.request().method() === "GET"
-      ? route.fulfill({ json: library })
-      : route.fallback(),
-  );
-  await page.route("**/api/v1/workspaces/*/templates", (route) =>
-    route.request().method() === "GET"
-      ? route.fulfill({ json: TEMPLATES })
-      : route.fallback(),
-  );
+  const stub = await libraryStub(page);
+  stub.artifacts(library);
   await page.reload();
   await expect(page.locator(".react-flow")).toBeVisible();
 }
@@ -332,6 +327,12 @@ test("the Templates tab lists graph templates", async ({ page }) => {
   await stubResponses(page, LIBRARY);
   await openPanel(page);
 
+  await page.route("**/api/v1/workspaces/*/templates", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ json: TEMPLATES })
+      : route.fallback(),
+  );
+  await page.reload();
   await panel(page).getByRole("tab", { name: "Templates" }).click();
 
   await expect(
