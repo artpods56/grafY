@@ -3,7 +3,8 @@ from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from grafy_core.artifacts import ArtifactExportFormat, LibraryProvenance
-from pydantic import StringConstraints
+from grafy_core.domain.library import LibraryFolder
+from pydantic import Field, StringConstraints
 
 from grafy_api.v1.models import ApiResponse
 from grafy_api.v1.routes.artifacts.models import (
@@ -20,6 +21,12 @@ BoundedNodeId = Annotated[
 BoundedFilename = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=255),
+]
+# The domain trims and bounds a folder name too; this only rejects a request the
+# service could never satisfy, before it opens a transaction.
+BoundedFolderName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=160),
 ]
 
 
@@ -76,6 +83,7 @@ class LibraryItemResponse(ApiResponse):
     name: str
     provenance: LibraryProvenanceResponse
     run: LibraryRunResponse | None = None
+    folder_id: UUID | None = None
 
     @classmethod
     def from_item(
@@ -84,6 +92,7 @@ class LibraryItemResponse(ApiResponse):
         *,
         name: str,
         download_formats: list[ArtifactExportFormat],
+        folder_id: UUID | None = None,
     ) -> Self:
         return cls(
             artifact=ArtifactSummaryResponse.from_artifact(
@@ -96,6 +105,7 @@ class LibraryItemResponse(ApiResponse):
             name=name,
             provenance=LibraryProvenanceResponse.from_provenance(item.provenance),
             run=None if item.run is None else LibraryRunResponse.from_run(item.run),
+            folder_id=folder_id,
         )
 
 
@@ -118,11 +128,67 @@ class SaveUploadedArtifactRequest(ApiResponse):
     original_filename: BoundedFilename
 
 
+class LibraryFolderResponse(ApiResponse):
+    """One row of the Library tree. ``parent_id`` of ``null`` is the root."""
+
+    folder_id: UUID
+    workspace_id: UUID
+    parent_id: UUID | None
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_folder(cls, folder: LibraryFolder) -> Self:
+        return cls(
+            folder_id=folder.id,
+            workspace_id=folder.workspace_id,
+            parent_id=folder.parent_id,
+            name=folder.name,
+            created_at=folder.created_at,
+            updated_at=folder.updated_at,
+        )
+
+
+class LibraryFolderListResponse(ApiResponse):
+    folders: list[LibraryFolderResponse]
+
+
+class CreateLibraryFolderRequest(ApiResponse):
+    """Make a folder. ``parent_id: null`` makes it a root folder."""
+
+    name: BoundedFolderName
+    parent_id: UUID | None
+
+
+class RenameLibraryFolderRequest(ApiResponse):
+    name: BoundedFolderName
+
+
+class MoveLibraryFolderRequest(ApiResponse):
+    """Move a folder. ``parent_id: null`` moves it to the root."""
+
+    parent_id: UUID | None
+
+
+class MoveLibraryArtifactsRequest(ApiResponse):
+    """File every listed artifact in ``folder_id``, or unfile them when null."""
+
+    artifact_ids: list[UUID] = Field(min_length=1, max_length=200)
+    folder_id: UUID | None
+
+
 __all__ = [
+    "CreateLibraryFolderRequest",
+    "LibraryFolderListResponse",
+    "LibraryFolderResponse",
     "LibraryItemResponse",
     "LibraryListResponse",
     "LibraryProvenanceResponse",
     "LibraryRunResponse",
+    "MoveLibraryArtifactsRequest",
+    "MoveLibraryFolderRequest",
+    "RenameLibraryFolderRequest",
     "SaveRunArtifactRequest",
     "SaveUploadedArtifactRequest",
 ]

@@ -15,7 +15,10 @@ from grafy_api.v1.routes.executions.dependencies import (
     run_execution_manager,
     run_result_presenter,
 )
-from grafy_api.v1.routes.library.dependencies import library_service
+from grafy_api.v1.routes.library.dependencies import (
+    library_folders_service,
+    library_service,
+)
 from grafy_api.v1.routes.modules.dependencies import module_library_service
 from grafy_api.v1.routes.uploads.dependencies import upload_service
 
@@ -38,6 +41,7 @@ def workbench_dependency_overrides(
         run_result_presenter: lambda: components.presenter,
         artifact_service: lambda: components.artifacts,
         library_service: lambda: components.library,
+        library_folders_service: lambda: components.library_folders,
         plugin_release_service: lambda: components.plugin_releases,
         graph_module_executor: lambda: components.run_graph,
         browser_actor: browser_actor_override,
