@@ -44,10 +44,10 @@ vi.mock("@/components/ui/dialog", () => ({
   ),
 }));
 
+import type { ModuleBoundarySummary } from "../model/module-boundary";
 import {
   moduleSetupReadiness,
   PublishModuleDialog,
-  type ModuleBoundarySummary,
 } from "./PublishModuleDialog";
 
 const roots = new Map<Root, HTMLElement>();

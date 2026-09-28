@@ -1,4 +1,4 @@
-import type { Connection, Edge } from "@xyflow/react";
+import type { Connection } from "@xyflow/react";
 import type {
   ArtifactConversionSpec,
   SavedGraphOrigin,
@@ -10,6 +10,10 @@ import {
   resolveArtifactDrop,
 } from "../model/artifact-drop";
 import { cardArtifactRefs, type ArtifactCardValue } from "./artifact-card";
+import {
+  ARTIFACT_ORIGIN_EDGE_TYPE,
+  type ArtifactOriginEdge,
+} from "./artifact-origin-edge";
 import type {
   ArtifactViewerEdge,
   ArtifactViewerNode,
@@ -24,15 +28,6 @@ import {
 } from "./types";
 
 export const ARTIFACT_CARD_OUTPUT_HANDLE = "artifact-card-output";
-export const ARTIFACT_ORIGIN_EDGE_TYPE = "grafyArtifactOriginEdge";
-interface ArtifactOriginEdgeData extends Record<string, unknown> {
-  originId: string;
-  onDisconnect?: (originId: string) => void;
-}
-export type ArtifactOriginEdge = Edge<
-  ArtifactOriginEdgeData,
-  typeof ARTIFACT_ORIGIN_EDGE_TYPE
-> & { data: ArtifactOriginEdgeData };
 
 type ArtifactCardSource =
   | { kind: "fixed"; value: ArtifactCardValue | null; output: null }
