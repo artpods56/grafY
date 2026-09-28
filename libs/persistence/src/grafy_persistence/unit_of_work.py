@@ -19,6 +19,7 @@ from grafy_core.ports.identity import (
     SecurityAuditRepositoryPort,
 )
 from grafy_core.ports.invocation_cache import InvocationCacheRepositoryPort
+from grafy_core.ports.library_folders import LibraryFolderRepositoryPort
 from grafy_core.ports.materialized_outputs import (
     MaterializedNodeOutputsRepositoryPort,
     WorkbenchUnitOfWorkPort,
@@ -53,6 +54,7 @@ from grafy_persistence.adapters.repositories import (
     SqlGraphExecutionHistoryRepository,
     SqlIdentityRepository,
     SqlInvocationCacheRepository,
+    SqlLibraryFolderRepository,
     SqlMaterializedNodeOutputsRepository,
     SqlModuleLibraryRepository,
     SqlNodeSecretRepository,
@@ -76,6 +78,7 @@ class _SqlAlchemyUnitOfWorkState:
     identity: IdentityRepositoryPort
     security_audit: SecurityAuditRepositoryPort
     uploads: UploadRepositoryPort
+    library_folders: LibraryFolderRepositoryPort
     collaboration: CollaborationRepositoryPort
     modules: ModuleLibraryRepositoryPort
     plugin_releases: PluginReleaseRepositoryPort
@@ -158,6 +161,11 @@ class SqlAlchemyUnitOfWork(
 
     @property
     @override
+    def library_folders(self) -> LibraryFolderRepositoryPort:
+        return self._entered_state().library_folders
+
+    @property
+    @override
     def collaboration(self) -> CollaborationRepositoryPort:
         return self._entered_state().collaboration
 
@@ -193,6 +201,7 @@ class SqlAlchemyUnitOfWork(
                 identity=SqlIdentityRepository(session),
                 security_audit=SqlSecurityAuditRepository(session),
                 uploads=SqlUploadRepository(session),
+                library_folders=SqlLibraryFolderRepository(session),
                 collaboration=SqlCollaborationRepository(session),
                 modules=SqlModuleLibraryRepository(session),
                 plugin_releases=SqlPluginReleaseRepository(session),

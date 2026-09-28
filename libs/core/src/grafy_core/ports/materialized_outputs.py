@@ -4,6 +4,7 @@ from uuid import UUID
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.ports.invocation_cache import InvocationCacheRepositoryPort
 from grafy_core.ports.execution_history import ExecutionHistoryUnitOfWorkPort
+from grafy_core.ports.library_folders import LibraryFolderRepositoryPort
 from grafy_core.ports.uploads import UploadRepositoryPort
 
 
@@ -36,3 +37,6 @@ class WorkbenchUnitOfWorkPort(ExecutionHistoryUnitOfWorkPort, Protocol):
 
     @property
     def uploads(self) -> UploadRepositoryPort: ...
+
+    @property
+    def library_folders(self) -> LibraryFolderRepositoryPort: ...

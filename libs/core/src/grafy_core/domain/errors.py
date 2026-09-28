@@ -233,6 +233,94 @@ class GraphFolderNameConflictError(GrafyCoreError):
         )
 
 
+class LibraryFolderNameConflictError(GrafyCoreError):
+    """Raised when another Library folder in the same parent has the name."""
+
+    failure_spec = FailureSpec(
+        code="library.folder_name_conflict",
+        kind=FailureKind.CONFLICT,
+        public_message="A folder with this name already exists here",
+    )
+
+    def __init__(
+        self,
+        *,
+        workspace_id: UUID,
+        parent_id: UUID | None,
+        name: str,
+    ) -> None:
+        self.workspace_id = workspace_id
+        self.parent_id = parent_id
+        self.name = name
+        super().__init__(
+            f"Library folder name {name!r} is already in use in workspace "
+            f"{workspace_id} under parent {parent_id}"
+        )
+
+    @property
+    def diagnostic_context(self) -> Mapping[str, object]:
+        return {
+            "workspace_id": self.workspace_id,
+            "parent_id": self.parent_id,
+            "name": self.name,
+        }
+
+
+class LibraryFolderNotEmptyError(GrafyCoreError):
+    """Raised when a Library folder still holds artifacts or child folders."""
+
+    failure_spec = FailureSpec(
+        code="library.folder_not_empty",
+        kind=FailureKind.CONFLICT,
+        public_message="Move the contents out before deleting this folder",
+    )
+
+    def __init__(
+        self,
+        *,
+        folder_id: UUID,
+        artifact_count: int,
+        child_count: int,
+    ) -> None:
+        self.folder_id = folder_id
+        self.artifact_count = artifact_count
+        self.child_count = child_count
+        super().__init__(
+            f"Library folder {folder_id} holds {artifact_count} artifact(s) and "
+            f"{child_count} folder(s)"
+        )
+
+    @property
+    def diagnostic_context(self) -> Mapping[str, object]:
+        return {
+            "folder_id": self.folder_id,
+            "artifact_count": self.artifact_count,
+            "child_count": self.child_count,
+        }
+
+
+class LibraryFolderCycleError(GrafyCoreError):
+    """Raised when a Library folder would become a descendant of itself."""
+
+    failure_spec = FailureSpec(
+        code="library.folder_cycle",
+        kind=FailureKind.VALIDATION,
+        public_message="A folder cannot be moved inside itself",
+    )
+
+    def __init__(self, *, folder_id: UUID, parent_id: UUID) -> None:
+        self.folder_id = folder_id
+        self.parent_id = parent_id
+        super().__init__(
+            f"Library folder {folder_id} cannot be moved inside itself "
+            f"(parent {parent_id})"
+        )
+
+    @property
+    def diagnostic_context(self) -> Mapping[str, object]:
+        return {"folder_id": self.folder_id, "parent_id": self.parent_id}
+
+
 class CollaborationError(GrafyCoreError):
     """Base error for collaborative head and command workflows."""
 

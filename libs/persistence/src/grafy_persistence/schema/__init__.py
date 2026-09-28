@@ -113,6 +113,12 @@ from .library import (
     TemplateStateType as TemplateStateType,
 )
 from .library import (
+    library_artifact_placements as library_artifact_placements,
+)
+from .library import (
+    library_folders as library_folders,
+)
+from .library import (
     module_releases as module_releases,
 )
 from .library import (
