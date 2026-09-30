@@ -28,7 +28,7 @@ import type {
   WorkflowEdgeRouteOption,
 } from "../types";
 import { dockedBridgeLayout } from "./docked-connection";
-import { EdgeSelectorBlock } from "./EdgeSelectorBlock";
+import { EdgeSelectorBlock, useHoverIntent } from "./EdgeSelectorBlock";
 import { applyHandleFanOffset, routedBezierPath } from "./edge-path";
 import { useEdgeIsDocked } from "./useDockedConnection";
 import { useEdgeFanOffsets } from "./useEdgeFanOffsets";
@@ -215,6 +215,7 @@ export default function WorkflowEdgeControl({
   });
 
   const sourcePortName = edgeData.sourcePortName ?? "output";
+  const hover = useHoverIntent();
   const activeRoute: WorkflowEdgeRoute = {
     projection: edgeData.projection,
     conversionPath: edgeData.conversionPath ?? [],
@@ -275,11 +276,29 @@ export default function WorkflowEdgeControl({
             docked || (compatible && enabled) ? style?.strokeDasharray : "7 5",
           strokeWidth: selected ? 2.7 : (style?.strokeWidth ?? 2),
         }}
-        interactionWidth={24}
+        // The hover-aware interaction path below takes clicks and hover.
+        interactionWidth={0}
+      />
+      <path
+        d={
+          docked
+            ? `M${source.x},${source.y} L${target.x},${target.y}`
+            : edgePath
+        }
+        fill="none"
+        stroke="transparent"
+        strokeWidth={24}
+        className="react-flow__edge-interaction"
+        style={{ pointerEvents: "stroke" }}
+        {...hover.handlers}
       />
       <EdgeLabelRenderer>
         <EdgeSelectorBlock
           anchor={bridge?.anchor ?? anchor}
+          // Idle, the edge shows only what its ports do not say.
+          rest={label === sourcePortName ? "hidden" : "label"}
+          hovered={hover.hovered}
+          hoverHandlers={hover.handlers}
           selected={selected}
           disabled={!(enabled && compatible)}
           label={label}

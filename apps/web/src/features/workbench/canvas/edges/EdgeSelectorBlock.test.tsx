@@ -67,6 +67,34 @@ afterEach(() => {
   gridMocks.cellSize = 50;
 });
 
+function renderRest(
+  props: Partial<React.ComponentProps<typeof EdgeSelectorBlock>>,
+) {
+  const container = document.createElement("div");
+  document.body.append(container);
+  containers.push(container);
+  const root = createRoot(container);
+  roots.push(root);
+  React.act(() => {
+    root.render(
+      <EdgeSelectorBlock
+        anchor={{ x: 10, y: 20 }}
+        label="items"
+        bendAriaLabel="Bend connection items"
+        bendHandlers={{}}
+        editAriaLabel="Edit connection items"
+        editTitle="Edit feed"
+        removeAriaLabel="Remove connection items"
+        onRemove={() => undefined}
+        {...props}
+      >
+        <span>menu</span>
+      </EdgeSelectorBlock>,
+    );
+  });
+  return container;
+}
+
 function renderBlock(cellSize: number) {
   gridMocks.cellSize = cellSize;
   const container = document.createElement("div");
@@ -96,6 +124,34 @@ function renderBlock(cellSize: number) {
 }
 
 describe("EdgeSelectorBlock", () => {
+  it("says nothing at rest when the label only repeats the port", () => {
+    const container = renderRest({ rest: "hidden" });
+    expect(
+      container.querySelector("[data-testid='edge-selector-block']"),
+    ).toBeNull();
+  });
+
+  it("shows only a quiet label at rest when the label adds something", () => {
+    const container = renderRest({ rest: "label", label: "rows → table" });
+    const block = container.querySelector<HTMLElement>(
+      "[data-testid='edge-selector-block']",
+    );
+    expect(block?.dataset.rest).toBe("label");
+    expect(block?.textContent).toBe("rows → table");
+    expect(
+      block?.querySelector('[aria-label="Remove connection items"]'),
+    ).toBeNull();
+  });
+
+  it("opens the full selector when selected or hovered", () => {
+    for (const props of [{ selected: true }, { hovered: true }]) {
+      const container = renderRest({ rest: "hidden", ...props });
+      expect(
+        container.querySelector('[aria-label="Remove connection items"]'),
+      ).not.toBeNull();
+    }
+  });
+
   it("occupies 3×1 cells from the live grid cell size", () => {
     const block = renderBlock(50);
     expect(block.style.width).toBe("150px");
