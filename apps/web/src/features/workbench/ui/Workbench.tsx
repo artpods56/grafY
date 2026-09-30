@@ -53,6 +53,17 @@ import { CanvasGridSettingsPanel } from "./CanvasGridSettingsPanel";
 import { workbenchStyles as s } from "./Workbench.styles";
 import { NodeSelector } from "./NodeSelector";
 import {
+  CanvasContextMenu,
+  type CanvasMenuActions,
+  type CanvasMenuSelection,
+} from "./canvas-menu/CanvasContextMenu";
+import type { CanvasMenuRequest } from "./canvas-menu/canvas-menu-target";
+import { useCanvasMenuTrigger } from "./canvas-menu/useCanvasMenuTrigger";
+import {
+  NodeMenuRegistry,
+  NodeMenuRegistryContext,
+} from "../canvas/nodes/node-menu-registry";
+import {
   ContextualNodeDiscovery,
   type ContextualDiscoverySession,
 } from "./ContextualNodeDiscovery";
@@ -613,6 +624,13 @@ function WorkbenchBody({
       annotations: [],
     });
   const [shapesMenuOpen, setShapesMenuOpen] = React.useState(false);
+  const [canvasMenu, setCanvasMenu] = React.useState<CanvasMenuRequest | null>(
+    null,
+  );
+  const [nodeMenus] = React.useState(() => new NodeMenuRegistry());
+  const canvasSectionRef = React.useRef<HTMLElement>(null);
+  /** Where the Add node picker inserts when the canvas menu opened it. */
+  const pickerInsertAtRef = React.useRef<{ x: number; y: number } | null>(null);
   const [artifactViewerSelections, setArtifactViewerSelections] =
     React.useState<Record<string, ArtifactKeySelection>>({});
   const [artifactViewerFields, setArtifactViewerFields] = React.useState<
@@ -3486,23 +3504,44 @@ function WorkbenchBody({
     ],
   );
 
+  /**
+   * The middle of the canvas, in flow coordinates: where new things land when
+   * nothing says where. The canvas, not the window — the rail and the side
+   * panel take the window's left.
+   */
+  const canvasCenter = React.useCallback(
+    (fallback: { x: number; y: number }) => {
+      const box = canvasSectionRef.current?.getBoundingClientRect();
+      const client =
+        box && box.width > 0
+          ? { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+          : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+      return flow?.screenToFlowPosition(client) ?? fallback;
+    },
+    [flow],
+  );
+
+  /** Adds a node with its corner at `at`, else centred on the canvas. */
   const addCatalogNode = React.useCallback(
-    (spec: NodeSpec) => {
+    (spec: NodeSpec, at?: { x: number; y: number }) => {
       const id = `node-${createUuid()}`;
-      const center = flow?.screenToFlowPosition({
-        x: window.innerWidth / 2,
-        y: window.innerHeight / 2,
-      }) ?? { x: 600, y: 280 };
+      const place = at ?? pickerInsertAtRef.current;
+      pickerInsertAtRef.current = null;
+      const center = canvasCenter({ x: 600, y: 280 });
       const data = attachNodeCallbacks(createWorkflowNodeData(spec));
       applyAuthoringCommands([
-        addNodeCommand(id, data, { x: center.x - 140, y: center.y - 110 }),
+        addNodeCommand(
+          id,
+          data,
+          place ?? { x: center.x - 140, y: center.y - 110 },
+        ),
       ]);
       setSelectedNodeIdSet(new Set([id]));
       setSelectedEdgeIdSet(new Set());
       setLibraryOpen(false);
       setContextualDiscovery(null);
     },
-    [applyAuthoringCommands, attachNodeCallbacks, flow],
+    [applyAuthoringCommands, attachNodeCallbacks, canvasCenter],
   );
 
   const onConnectEnd = React.useCallback<OnConnectEnd>(
@@ -3746,67 +3785,77 @@ function WorkbenchBody({
       ? contextualDiscovery
       : null;
 
-  const addArtifactViewer = React.useCallback(() => {
-    const id = `artifact-viewer-${createUuid()}`;
-    const center = flow?.screenToFlowPosition({
-      x: window.innerWidth / 2,
-      y: window.innerHeight / 2,
-    }) ?? { x: 600, y: 280 };
-    const selectedSource = nodes.find((node) => node.selected);
-    const position = selectedSource
-      ? {
-          x: selectedSource.position.x + 380,
-          y: selectedSource.position.y - 20,
-        }
-      : { x: center.x - 260, y: center.y - 180 };
-    setNodes((current) =>
-      current.map((node) => ({ ...node, selected: false })),
-    );
-    commitArtifactViewers((current) => ({
-      ...current,
-      nodes: [
-        ...current.nodes.map((node) => ({ ...node, selected: false })),
-        {
-          id,
-          type: ARTIFACT_VIEWER_NODE_TYPE,
-          position,
-          selected: true,
-          data: {
-            layout: { width: DEFAULT_NODE_WIDTH },
-            mode: null,
+  /** Adds a viewer at `at`, else beside the selected node or mid-canvas. */
+  const addArtifactViewer = React.useCallback(
+    (at?: { x: number; y: number }) => {
+      const id = `artifact-viewer-${createUuid()}`;
+      const center = canvasCenter({ x: 600, y: 280 });
+      const selectedSource = at
+        ? undefined
+        : nodes.find((node) => node.selected);
+      const position =
+        at ??
+        (selectedSource
+          ? {
+              x: selectedSource.position.x + 380,
+              y: selectedSource.position.y - 20,
+            }
+          : { x: center.x - 260, y: center.y - 180 });
+      setNodes((current) =>
+        current.map((node) => ({ ...node, selected: false })),
+      );
+      commitArtifactViewers((current) => ({
+        ...current,
+        nodes: [
+          ...current.nodes.map((node) => ({ ...node, selected: false })),
+          {
+            id,
+            type: ARTIFACT_VIEWER_NODE_TYPE,
+            position,
+            selected: true,
+            data: {
+              layout: { width: DEFAULT_NODE_WIDTH },
+              mode: null,
+            },
           },
-        },
-      ],
-      annotations: current.annotations.map((node) => ({
-        ...node,
-        selected: false,
-      })),
-    }));
-    setLibraryOpen(false);
-    setShapesMenuOpen(false);
-    closeGraphBrowser();
-    if (flow && selectedSource) {
-      window.requestAnimationFrame(() => {
-        void flow.fitView({
-          nodes: [{ id: selectedSource.id }, { id }],
-          padding: 0.22,
-          maxZoom: 0.94,
-          duration: 220,
+        ],
+        annotations: current.annotations.map((node) => ({
+          ...node,
+          selected: false,
+        })),
+      }));
+      setLibraryOpen(false);
+      setShapesMenuOpen(false);
+      closeGraphBrowser();
+      if (flow && selectedSource) {
+        window.requestAnimationFrame(() => {
+          void flow.fitView({
+            nodes: [{ id: selectedSource.id }, { id }],
+            padding: 0.22,
+            maxZoom: 0.94,
+            duration: 220,
+          });
         });
-      });
-    }
-  }, [closeGraphBrowser, commitArtifactViewers, flow, nodes, setNodes]);
+      }
+    },
+    [
+      canvasCenter,
+      closeGraphBrowser,
+      commitArtifactViewers,
+      flow,
+      nodes,
+      setNodes,
+    ],
+  );
 
+  /** Adds an annotation with its corner at `at`, else mid-canvas. */
   const addAnnotation = React.useCallback(
-    (kind: AnnotationKind) => {
-      const center = flow?.screenToFlowPosition({
-        x: window.innerWidth / 2,
-        y: window.innerHeight / 2,
-      }) ?? { x: 480, y: 240 };
-      const annotation = createAnnotationNode(kind, {
-        x: center.x - 80,
-        y: center.y - 60,
-      });
+    (kind: AnnotationKind, at?: { x: number; y: number }) => {
+      const center = canvasCenter({ x: 480, y: 240 });
+      const annotation = createAnnotationNode(
+        kind,
+        at ?? { x: center.x - 80, y: center.y - 60 },
+      );
       setNodes((current) =>
         current.map((node) => ({ ...node, selected: false })),
       );
@@ -3822,7 +3871,7 @@ function WorkbenchBody({
       setLibraryOpen(false);
       closeGraphBrowser();
     },
-    [closeGraphBrowser, commitArtifactViewers, flow, setNodes],
+    [canvasCenter, closeGraphBrowser, commitArtifactViewers, setNodes],
   );
 
   const duplicateSelectedNodes = React.useCallback(() => {
@@ -4634,6 +4683,129 @@ function WorkbenchBody({
         }
       : null;
 
+  // --- The canvas right-click menu --------------------------------------------
+
+  const openCanvasMenu = React.useCallback(
+    (request: CanvasMenuRequest) => {
+      setLibraryOpen(false);
+      setShapesMenuOpen(false);
+      setGridPanelOpen(false);
+      setContextualDiscovery(null);
+      closeGraphBrowser();
+      let { target } = request;
+      if (target.kind === "node") {
+        const nodeId = target.nodeId;
+        const selection = selectedNodeIdsRef.current;
+        if (selection.length > 1 && selection.includes(nodeId)) {
+          target = { kind: "selection" };
+        } else {
+          // The menu speaks about the node under the pointer, so that node
+          // becomes the selection, as a left click would make it.
+          onNodesChange(
+            allCanvasNodes.map((node) => ({
+              id: node.id,
+              type: "select" as const,
+              selected: node.id === nodeId,
+            })),
+          );
+          onEdgesChange(
+            allCanvasEdges
+              .filter((edge) => edge.selected)
+              .map((edge) => ({
+                id: edge.id,
+                type: "select" as const,
+                selected: false,
+              })),
+          );
+        }
+      }
+      const focused = document.activeElement;
+      setCanvasMenu({
+        ...request,
+        target,
+        returnFocus: focused instanceof HTMLElement ? focused : null,
+      });
+    },
+    [
+      allCanvasEdges,
+      allCanvasNodes,
+      closeGraphBrowser,
+      onEdgesChange,
+      onNodesChange,
+      setGridPanelOpen,
+    ],
+  );
+  const canvasMenuTrigger = useCanvasMenuTrigger(openCanvasMenu);
+  const canvasMenuPoint =
+    canvasMenu && flow ? flow.screenToFlowPosition(canvasMenu.point) : null;
+  const canvasMenuSelection: CanvasMenuSelection = {
+    count: selectedNodeCount,
+    workflowCount: selectedWorkflowCount,
+    canRun: !runSelectedDisabled,
+    canDuplicate:
+      Boolean(selectedWorkflowCount || selectedViewerCount) &&
+      localAuthoringEnabled,
+    canDelete: Boolean(flow) && selectedNodeCount > 0 && localAuthoringEnabled,
+    collect: collectSpec
+      ? selectedCollectionSources.length > 1
+        ? {
+            disabled:
+              !localAuthoringEnabled || Boolean(collectionDisabledReason),
+            title: collectionDisabledReason ?? undefined,
+          }
+        : null
+      : selectedArtifactCards.length > 1
+        ? {
+            disabled:
+              !collectedArtifactRefs ||
+              !localAuthoringEnabled ||
+              Boolean(groupingDisabledReason),
+            title: groupingDisabledReason ?? undefined,
+          }
+        : null,
+    canTidy:
+      !selectedWorkflowCount &&
+      selectedArtifactCards.length > 1 &&
+      localAuthoringEnabled,
+  };
+  const canvasMenuActions: CanvasMenuActions = {
+    searchNodes: () => {
+      pickerInsertAtRef.current = canvasMenuPoint;
+      setLibraryOpen(true);
+    },
+    addNodeHere: (spec) => addCatalogNode(spec, canvasMenuPoint ?? undefined),
+    addViewerHere: () => addArtifactViewer(canvasMenuPoint ?? undefined),
+    addAnnotationHere: (kind) =>
+      addAnnotation(kind, canvasMenuPoint ?? undefined),
+    selectAll: () =>
+      onNodesChange(
+        allCanvasNodes.map((node) => ({
+          id: node.id,
+          type: "select" as const,
+          selected: true,
+        })),
+      ),
+    fitView: () =>
+      void flow?.fitView({ ...workbenchFitViewOptions, duration: 220 }),
+    openCanvasSettings: () => setGridPanelOpen(true),
+    runSelection: () => void runWorkflow("selected"),
+    collect: collectSelectedArtifacts,
+    tidy: tidySelectedArtifacts,
+    duplicate: duplicateSelectedNodes,
+    remove: deleteSelectedNodes,
+    fitSelection: () =>
+      void flow?.fitView({
+        nodes: selectedNodeIds.map((id) => ({ id })),
+        padding: 0.3,
+        maxZoom: 1.2,
+        duration: 220,
+      }),
+    deleteEdge: (edgeId) => {
+      if (!flow || !localAuthoringEnabled || running) return;
+      void flow.deleteElements({ edges: [{ id: edgeId }] });
+    },
+  };
+
   const toggleSidePanel = sidePanel.toggle;
   const chromeValue = React.useMemo(
     () => ({
@@ -4729,8 +4901,12 @@ function WorkbenchBody({
         />
       ) : null}
       <section
+        ref={canvasSectionRef}
         {...stylex.props(s.canvas)}
         aria-label="Workflow canvas"
+        onPointerDownCapture={canvasMenuTrigger.onPointerDownCapture}
+        onContextMenu={canvasMenuTrigger.onContextMenu}
+        onKeyDown={canvasMenuTrigger.onKeyDown}
         onPointerMove={(event) => {
           if (!graphRoom.canPublishPresence || !flow) return;
           presenceOverCanvasRef.current = true;
@@ -4749,62 +4925,84 @@ function WorkbenchBody({
           schedulePresenceSnapshot();
         }}
       >
-        <WorkflowCanvas
-          fitViewOptions={workbenchFitViewOptions}
-          nodes={allCanvasNodes}
-          edges={allCanvasEdges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onConnectEnd={onConnectEnd}
-          isValidConnection={isValidConnection}
-          editable={localAuthoringEnabled}
-          onPaneReady={setFlow}
-          onPaneClick={() => {
-            setLibraryOpen(false);
-            setContextualDiscovery(null);
-            closeGraphBrowser();
-            setGridPanelOpen(false);
-          }}
-          animateEdges={running}
-          gridGap={
-            canvasGridSettings.showBackground
-              ? canvasGridSettings.cellSize
-              : null
-          }
-          onlyRenderVisibleElements={
-            canvasGridSettings.onlyRenderVisibleElements
-          }
-        >
-          <PresenceOverlay
-            participants={graphRoom.participants}
-            localSessionId={graphRoom.localSessionId}
-          />
-          {selectedWorkflowCount ||
-          selectedArtifactCards.length > 1 ||
-          selectedCollectionSources.length > 1 ? (
-            <NodeToolbar
-              nodeId={selectedNodeIds}
-              isVisible
-              position={Position.Top}
-              offset={20}
-              className={`grafy-node-detail ${stylex.props(s.selectionToolbar).className}`}
-            >
-              <span {...stylex.props(s.selectionLabel)}>
-                {selectedNodeCount} selected
-              </span>
-              <span {...stylex.props(s.selectionDivider)} />
-              {collectSpec ? (
-                selectedCollectionSources.length > 1 ? (
+        <NodeMenuRegistryContext.Provider value={nodeMenus}>
+          <WorkflowCanvas
+            fitViewOptions={workbenchFitViewOptions}
+            nodes={allCanvasNodes}
+            edges={allCanvasEdges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onConnectEnd={onConnectEnd}
+            isValidConnection={isValidConnection}
+            editable={localAuthoringEnabled}
+            onPaneReady={setFlow}
+            onPaneClick={() => {
+              setLibraryOpen(false);
+              setContextualDiscovery(null);
+              closeGraphBrowser();
+              setGridPanelOpen(false);
+            }}
+            animateEdges={running}
+            gridGap={
+              canvasGridSettings.showBackground
+                ? canvasGridSettings.cellSize
+                : null
+            }
+            onlyRenderVisibleElements={
+              canvasGridSettings.onlyRenderVisibleElements
+            }
+          >
+            <PresenceOverlay
+              participants={graphRoom.participants}
+              localSessionId={graphRoom.localSessionId}
+            />
+            {selectedWorkflowCount ||
+            selectedArtifactCards.length > 1 ||
+            selectedCollectionSources.length > 1 ? (
+              <NodeToolbar
+                nodeId={selectedNodeIds}
+                isVisible
+                position={Position.Top}
+                offset={20}
+                className={`grafy-node-detail ${stylex.props(s.selectionToolbar).className}`}
+              >
+                <span {...stylex.props(s.selectionLabel)}>
+                  {selectedNodeCount} selected
+                </span>
+                <span {...stylex.props(s.selectionDivider)} />
+                {collectSpec ? (
+                  selectedCollectionSources.length > 1 ? (
+                    <button
+                      type="button"
+                      disabled={
+                        !localAuthoringEnabled ||
+                        Boolean(collectionDisabledReason)
+                      }
+                      title={
+                        collectionDisabledReason ??
+                        `Collect ${selectedCollectionSources.length} selected artifacts into one collection`
+                      }
+                      {...stylex.props(s.toolButton, s.primaryButton)}
+                      onClick={collectSelectedArtifacts}
+                    >
+                      <Layers size={13} />
+                      Collect
+                    </button>
+                  ) : null
+                ) : selectedArtifactCards.length > 1 ? (
                   <button
                     type="button"
                     disabled={
+                      !collectedArtifactRefs ||
                       !localAuthoringEnabled ||
-                      Boolean(collectionDisabledReason)
+                      Boolean(groupingDisabledReason)
                     }
                     title={
-                      collectionDisabledReason ??
-                      `Collect ${selectedCollectionSources.length} selected artifacts into one collection`
+                      groupingDisabledReason ??
+                      (collectedArtifactRefs
+                        ? `Collect ${selectedArtifactCards.length} selected artifacts into an ordered sequence`
+                        : "Select artifacts of the same type to collect")
                     }
                     {...stylex.props(s.toolButton, s.primaryButton)}
                     onClick={collectSelectedArtifacts}
@@ -4812,98 +5010,80 @@ function WorkbenchBody({
                     <Layers size={13} />
                     Collect
                   </button>
-                ) : null
-              ) : selectedArtifactCards.length > 1 ? (
-                <button
-                  type="button"
-                  disabled={
-                    !collectedArtifactRefs ||
-                    !localAuthoringEnabled ||
-                    Boolean(groupingDisabledReason)
-                  }
-                  title={
-                    groupingDisabledReason ??
-                    (collectedArtifactRefs
-                      ? `Collect ${selectedArtifactCards.length} selected artifacts into an ordered sequence`
-                      : "Select artifacts of the same type to collect")
-                  }
-                  {...stylex.props(s.toolButton, s.primaryButton)}
-                  onClick={collectSelectedArtifacts}
-                >
-                  <Layers size={13} />
-                  Collect
-                </button>
-              ) : null}
-              {!selectedWorkflowCount && selectedArtifactCards.length > 1 ? (
-                <button
-                  type="button"
-                  disabled={!localAuthoringEnabled}
-                  {...stylex.props(s.toolButton)}
-                  onClick={tidySelectedArtifacts}
-                >
-                  Tidy-up
-                </button>
-              ) : null}
-              {selectedWorkflowCount ? (
-                <button
-                  type="button"
-                  disabled={runSelectedDisabled}
-                  title={
-                    !graphOperationsTrusted
-                      ? "Run is unavailable until the displayed graph is current"
-                      : selectedNodesAreRunnable
-                        ? "Run only the selected nodes; latest accessible upstream outputs are pinned"
-                        : "Unavailable or invalid selected nodes cannot run"
-                  }
-                  {...stylex.props(s.toolButton, s.primaryButton)}
-                  onClick={() => void runWorkflow("selected")}
-                >
-                  {runningScope === "selected" ? (
-                    <LoaderCircle size={13} {...stylex.props(s.spinner)} />
-                  ) : (
-                    <Play size={13} />
-                  )}
-                  {runningScope === "selected" ? "Running…" : "Run"}
-                </button>
-              ) : null}
-              {selectedWorkflowCount ? (
-                <button
-                  type="button"
-                  disabled={runSelectedWithDependenciesDisabled}
-                  title={
-                    !graphOperationsTrusted
-                      ? "Run is unavailable until the displayed graph is current"
-                      : selectedWithDependenciesAreRunnable
-                        ? `Run the selection and every upstream dependency (${selectedWithDependenciesCount} total)`
-                        : "Unavailable or invalid upstream dependencies cannot run"
-                  }
-                  {...stylex.props(s.toolButton)}
-                  onClick={() => void runWorkflow("selected-with-dependencies")}
-                >
-                  {runningScope === "selected-with-dependencies" ? (
-                    <LoaderCircle size={13} {...stylex.props(s.spinner)} />
-                  ) : (
-                    <Workflow size={13} />
-                  )}
-                  {runningScope === "selected-with-dependencies"
-                    ? "Running…"
-                    : "With dependencies"}
-                </button>
-              ) : null}
-            </NodeToolbar>
-          ) : null}
-          {registry && activeContextualDiscovery ? (
-            <ContextualNodeDiscovery
-              key={`${activeContextualDiscovery.sourceNodeId}:${activeContextualDiscovery.sourceHandle}:${activeContextualDiscovery.flowPosition.x}:${activeContextualDiscovery.flowPosition.y}`}
-              session={activeContextualDiscovery}
-              registry={registry}
-              canInsert={localAuthoringEnabled}
-              insertDisabledReason={localAuthoringBlockedMessage}
-              onClose={() => setContextualDiscovery(null)}
-              onConfirm={confirmContextualDiscovery}
-            />
-          ) : null}
-        </WorkflowCanvas>
+                ) : null}
+                {!selectedWorkflowCount && selectedArtifactCards.length > 1 ? (
+                  <button
+                    type="button"
+                    disabled={!localAuthoringEnabled}
+                    {...stylex.props(s.toolButton)}
+                    onClick={tidySelectedArtifacts}
+                  >
+                    Tidy-up
+                  </button>
+                ) : null}
+                {selectedWorkflowCount ? (
+                  <button
+                    type="button"
+                    disabled={runSelectedDisabled}
+                    title={
+                      !graphOperationsTrusted
+                        ? "Run is unavailable until the displayed graph is current"
+                        : selectedNodesAreRunnable
+                          ? "Run only the selected nodes; latest accessible upstream outputs are pinned"
+                          : "Unavailable or invalid selected nodes cannot run"
+                    }
+                    {...stylex.props(s.toolButton, s.primaryButton)}
+                    onClick={() => void runWorkflow("selected")}
+                  >
+                    {runningScope === "selected" ? (
+                      <LoaderCircle size={13} {...stylex.props(s.spinner)} />
+                    ) : (
+                      <Play size={13} />
+                    )}
+                    {runningScope === "selected" ? "Running…" : "Run"}
+                  </button>
+                ) : null}
+                {selectedWorkflowCount ? (
+                  <button
+                    type="button"
+                    disabled={runSelectedWithDependenciesDisabled}
+                    title={
+                      !graphOperationsTrusted
+                        ? "Run is unavailable until the displayed graph is current"
+                        : selectedWithDependenciesAreRunnable
+                          ? `Run the selection and every upstream dependency (${selectedWithDependenciesCount} total)`
+                          : "Unavailable or invalid upstream dependencies cannot run"
+                    }
+                    {...stylex.props(s.toolButton)}
+                    onClick={() =>
+                      void runWorkflow("selected-with-dependencies")
+                    }
+                  >
+                    {runningScope === "selected-with-dependencies" ? (
+                      <LoaderCircle size={13} {...stylex.props(s.spinner)} />
+                    ) : (
+                      <Workflow size={13} />
+                    )}
+                    {runningScope === "selected-with-dependencies"
+                      ? "Running…"
+                      : "With dependencies"}
+                  </button>
+                ) : null}
+              </NodeToolbar>
+            ) : null}
+            {registry && activeContextualDiscovery ? (
+              <ContextualNodeDiscovery
+                key={`${activeContextualDiscovery.sourceNodeId}:${activeContextualDiscovery.sourceHandle}:${activeContextualDiscovery.flowPosition.x}:${activeContextualDiscovery.flowPosition.y}`}
+                session={activeContextualDiscovery}
+                registry={registry}
+                canInsert={localAuthoringEnabled}
+                insertDisabledReason={localAuthoringBlockedMessage}
+                onClose={() => setContextualDiscovery(null)}
+                onConfirm={confirmContextualDiscovery}
+              />
+            ) : null}
+          </WorkflowCanvas>
+        </NodeMenuRegistryContext.Provider>
       </section>
 
       {workbenchActivity ? (
@@ -4927,6 +5107,7 @@ function WorkbenchBody({
             closeGraphBrowser();
             setGridPanelOpen(false);
             setWorkspaceLibraryOpen(false);
+            pickerInsertAtRef.current = null;
             setLibraryOpen((open) => !open);
           }}
         >
@@ -4978,7 +5159,7 @@ function WorkbenchBody({
           title="Add a presentation-only Artifact Viewer"
           disabled={!localAuthoringEnabled}
           {...stylex.props(s.railButton)}
-          onClick={addArtifactViewer}
+          onClick={() => addArtifactViewer()}
         >
           <Eye size={14} />
           <span {...stylex.props(s.railLabel)}>Viewer</span>
@@ -5147,6 +5328,17 @@ function WorkbenchBody({
         />
       ) : null}
 
+      <CanvasContextMenu
+        request={canvasMenu}
+        registry={registry ?? null}
+        activeGraphId={activeGraph?.id ?? null}
+        canEdit={localAuthoringEnabled}
+        selection={canvasMenuSelection}
+        nodeMenus={nodeMenus}
+        actions={canvasMenuActions}
+        onClose={() => setCanvasMenu(null)}
+      />
+
       <WorkbenchSidePanel
         workspaceId={workspaceId}
         sidePanel={sidePanel}
@@ -5167,8 +5359,11 @@ function WorkbenchBody({
           activeGraphId={activeGraph?.id ?? null}
           canInsert={localAuthoringEnabled}
           insertDisabledReason={localAuthoringBlockedMessage}
-          onOpenChange={setLibraryOpen}
-          onAddNode={addCatalogNode}
+          onOpenChange={(open) => {
+            if (!open) pickerInsertAtRef.current = null;
+            setLibraryOpen(open);
+          }}
+          onAddNode={(spec) => addCatalogNode(spec)}
           onOpenGraph={openGraphInNewTab}
           onOpenWorkspaceLibrary={() => {
             setLibraryOpen(false);

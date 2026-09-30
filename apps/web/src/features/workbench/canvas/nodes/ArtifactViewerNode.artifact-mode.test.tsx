@@ -8,6 +8,7 @@ vi.mock("@stylexjs/stylex", () => ({
 }));
 
 vi.mock("@xyflow/react", () => ({
+  useNodeId: () => null,
   useEdges: () => [],
   useNodesData: () => null,
   useUpdateNodeInternals: () => () => undefined,

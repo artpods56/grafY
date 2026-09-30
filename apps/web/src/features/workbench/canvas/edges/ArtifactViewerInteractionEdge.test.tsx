@@ -20,6 +20,7 @@ vi.mock("@stylexjs/stylex", () => ({
 }));
 
 vi.mock("@xyflow/react", () => ({
+  useNodeId: () => null,
   BaseEdge: () => <svg data-testid="base-edge" />,
   EdgeLabelRenderer: ({ children }: { children: React.ReactNode }) => children,
   getBezierPath: () => ["M 0 0 C 0 0 100 100 100 100", 50, 50],

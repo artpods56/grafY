@@ -16,6 +16,7 @@ const xyflowMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@xyflow/react", () => ({
+  useNodeId: () => null,
   Handle: ({
     id,
     isConnectable,

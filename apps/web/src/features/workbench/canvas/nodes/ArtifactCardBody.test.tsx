@@ -30,6 +30,7 @@ vi.mock("@stylexjs/stylex", () => ({
 }));
 
 vi.mock("@xyflow/react", () => ({
+  useNodeId: () => null,
   useUpdateNodeInternals: () => vi.fn(),
   useViewport: () => ({ zoom: 1 }),
   useEdges: () => flowMocks.edges,

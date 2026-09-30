@@ -12,6 +12,7 @@ vi.mock("@stylexjs/stylex", () => ({
 }));
 
 vi.mock("@xyflow/react", () => ({
+  useNodeId: () => null,
   NodeToolbar: ({ children }: { children: React.ReactNode }) => children,
   Position: { Top: "top" },
   useViewport: () => ({ zoom: 1 }),

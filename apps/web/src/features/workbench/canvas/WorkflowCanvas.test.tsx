@@ -18,6 +18,7 @@ vi.mock("@stylexjs/stylex", () => ({
 }));
 
 vi.mock("@xyflow/react", () => ({
+  useNodeId: () => null,
   ReactFlow: ({
     children,
     ...props

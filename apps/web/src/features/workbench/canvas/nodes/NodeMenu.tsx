@@ -6,6 +6,7 @@ import { Menu } from "@base-ui/react/menu";
 import { MoreHorizontal } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { overlay } from "@/lib/stylex/overlay.stylex";
+import { useRegisterNodeMenu } from "./node-menu-registry";
 
 const s = stylex.create({
   // Quiet until asked: subtle ink at rest, full ink and a wash on hover or
@@ -136,6 +137,8 @@ export function NodeMenu({
 }) {
   const [open, setOpen] = React.useState(false);
   const popup = stylex.props(overlay.popup, s.popup);
+  // The canvas right-click menu opens on the same facts and actions.
+  useRegisterNodeMenu(info, items);
   return (
     <Menu.Root
       onOpenChange={(next) => {
