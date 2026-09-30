@@ -292,7 +292,8 @@ describe("artifact on the canvas", () => {
       "42",
     );
     expect(container.querySelector("[data-artifact-file-body]")).toBeNull();
-    expect(container.textContent).toContain("Count → count");
+    // The wire names where the value comes from; the card has no name row.
+    expect(container.querySelector("[data-artifact-head]")).toBeNull();
     libraryMocks.value = undefined;
   });
 

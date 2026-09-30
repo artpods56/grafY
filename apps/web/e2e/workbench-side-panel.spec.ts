@@ -1290,7 +1290,10 @@ test.describe("collections", () => {
     await page.getByRole("menuitem", { name: "Ungroup" }).click();
     await expect(collection).toHaveCount(0);
     await expect(cards).toHaveCount(4);
-    await expect(cards.filter({ hasText: "CSV source → File" })).toHaveCount(1);
+    // The output member comes back as a card still waiting on that output.
+    await expect(
+      cards.filter({ hasText: "Run CSV source to fill it" }),
+    ).toHaveCount(1);
     await expect(page.locator(".react-flow__edge")).toHaveCount(1);
   });
 });

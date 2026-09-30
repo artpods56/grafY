@@ -101,7 +101,9 @@ const s = stylex.create({
     minHeight: "80px",
     boxSizing: "border-box",
     padding: "8px 10px",
-    border: `1px solid ${tokens.colorBorder}`,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
     borderRadius: tokens.radiusSm,
     backgroundColor: tokens.colorSurface,
     boxShadow: "none",
@@ -223,7 +225,9 @@ const s = stylex.create({
     marginTop: "6px",
     padding: "8px",
     borderRadius: "9px",
-    border: `1px solid ${tokens.colorBorder}`,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
     backgroundColor: tokens.colorSurfaceRaised,
     boxShadow: tokens.shadowNode,
   },
@@ -255,7 +259,9 @@ const s = stylex.create({
     height: "30px",
     borderRadius: "5px",
     objectFit: "cover",
-    border: `1px solid ${tokens.colorBorder}`,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
     flexShrink: 0,
   },
   reorderName: {
@@ -275,7 +281,9 @@ const s = stylex.create({
     height: "20px",
     padding: 0,
     borderRadius: "5px",
-    border: `1px solid ${tokens.colorBorder}`,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
     backgroundColor: "transparent",
     color: tokens.colorText,
     cursor: "pointer",
@@ -547,6 +555,14 @@ export function ArtifactCardBody({
   );
 
   const showActions = Boolean(selected) || overlayOpen;
+  // A value or a wait that follows a node's output speaks for itself: the
+  // wire says where it comes from, so it needs no name row. Its name and type
+  // stay in the "⋯" menu.
+  const headless =
+    Boolean(feed) &&
+    !imageArtifact &&
+    !isSequence &&
+    (awaitingFeed || smallValue !== null);
   // Only a card pulled out of a node's output port takes an input: it follows
   // that port. A card placed from the library holds its own artifact.
   const followsOutput = Boolean(feed) || data.mode === "artifact";
@@ -651,14 +667,16 @@ export function ArtifactCardBody({
           data-artifact-content="true"
           {...stylex.props(s.frame)}
         >
-          <div data-artifact-head="true" {...stylex.props(s.head)}>
-            <ArtifactLabel
-              title={titleLabel}
-              contract={contract}
-              selected={selected ?? false}
-              image={imageArtifact}
-            />
-          </div>
+          {headless ? null : (
+            <div data-artifact-head="true" {...stylex.props(s.head)}>
+              <ArtifactLabel
+                title={titleLabel}
+                contract={contract}
+                selected={selected ?? false}
+                image={imageArtifact}
+              />
+            </div>
+          )}
           <div data-artifact-body="true" {...stylex.props(s.body)}>
             {followsOutput ? (
               <ArtifactLeftRail
