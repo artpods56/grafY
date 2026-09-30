@@ -10,6 +10,7 @@ import {
   File as FileIcon,
   FileSpreadsheet,
   FileText,
+  LoaderCircle,
   X,
 } from "lucide-react";
 
@@ -28,6 +29,7 @@ import {
   ARTIFACT_CARD_WIDTH_MIN,
   DEFAULT_ARTIFACT_CARD_WIDTH,
   DEFAULT_ARTIFACT_FILE_CARD_WIDTH,
+  DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH,
   artifactCardContract,
   artifactCardMediaHeight,
   artifactCardValue,
@@ -45,7 +47,11 @@ import {
   type CanvasNode,
 } from "../artifact-viewer";
 import { artifactTypeColor } from "../nodes.css";
-import { WORKFLOW_NODE_TYPE } from "../types";
+import {
+  WORKFLOW_NODE_TYPE,
+  effectivePortShape,
+  resolvedPortArtifactType,
+} from "../types";
 import type { WorkflowNodeLayout } from "../node-layout";
 import { LayoutResizeHandle } from "./LayoutResizeHandle";
 import {
@@ -133,10 +139,56 @@ const s = stylex.create({
   },
   head: { gridRow: 1, minWidth: 0 },
   body: { gridRow: 2, minWidth: 0, position: "relative" },
-  imageUnavailable: {
-    padding: "16px 0",
+  // Where an output will land before it has run: the card's outline, dashed,
+  // saying what it is waiting for.
+  waitingBody: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    minHeight: "80px",
+    boxSizing: "border-box",
+    padding: "8px 10px",
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: tokens.colorBorderStrong,
+    borderRadius: tokens.radiusSm,
     color: tokens.colorMuted,
     fontSize: tokens.fontSizeXs,
+  },
+  waitingCopy: { display: "grid", gap: "2px", minWidth: 0 },
+  waitingHint: { color: tokens.colorSubtle, fontSize: "10px" },
+  waitingSpinner: {
+    flexShrink: 0,
+    color: tokens.colorInfo,
+    animationName: "grafy-spin",
+    animationDuration: "900ms",
+    animationIterationCount: "infinite",
+    animationTimingFunction: "linear",
+  },
+  // A small value (a count, a short text) shows itself instead of a file tile.
+  valueBody: {
+    flexDirection: "column",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    gap: "2px",
+  },
+  valueNumber: {
+    color: tokens.colorText,
+    fontSize: "24px",
+    fontWeight: 500,
+    fontVariantNumeric: "tabular-nums",
+    letterSpacing: "-0.02em",
+    lineHeight: 1.1,
+  },
+  valueText: {
+    display: "-webkit-box",
+    overflow: "hidden",
+    color: tokens.colorText,
+    fontSize: tokens.fontSizeSm,
+    lineHeight: 1.4,
+    WebkitBoxOrient: "vertical",
+    WebkitLineClamp: 4,
+    overflowWrap: "anywhere",
   },
   stack: {
     position: "relative",
@@ -234,6 +286,46 @@ const s = stylex.create({
   },
 });
 
+/** Largest JSON artifact a card reads to show as a value. */
+const SMALL_VALUE_BYTES = 2048;
+
+async function fetchArtifactValue([, workspaceId, artifactId]: readonly [
+  string,
+  string,
+  string,
+]): Promise<unknown> {
+  const response = await fetch(
+    artifactInlineContentUrl(workspaceId, artifactId),
+    { headers: { Accept: "application/json" }, credentials: "same-origin" },
+  );
+  if (!response.ok) throw new Error(`Could not read artifact ${artifactId}`);
+  return response.json();
+}
+
+/**
+ * The one value a small payload holds: a bare number, string or boolean, or
+ * the `value` of a scalar artifact (`{"value": 3}`). Anything else is null.
+ */
+function scalarValue(payload: unknown): string | number | boolean | null {
+  const primitive = (candidate: unknown) =>
+    typeof candidate === "number" ||
+    typeof candidate === "string" ||
+    typeof candidate === "boolean"
+      ? candidate
+      : null;
+  if (primitive(payload) !== null) return primitive(payload);
+  if (
+    payload &&
+    typeof payload === "object" &&
+    !Array.isArray(payload) &&
+    Object.keys(payload).length === 1 &&
+    "value" in payload
+  ) {
+    return primitive((payload as { value: unknown }).value);
+  }
+  return null;
+}
+
 /**
  * An artifact on the canvas: the artifact itself is the node. The head is the
  * same width as the body. The side rails sit only beside the body. Picking it
@@ -297,9 +389,24 @@ export function ArtifactCardBody({
   });
   const shownValue = source.value;
   const refs = cardArtifactRefs(shownValue);
+  // Before an output exists, name what it will be from the port's own type.
+  const declaredType =
+    producer && feedPort
+      ? resolvedPortArtifactType(feedPort, producer.data.artifactTypeBindings)
+      : null;
+  const declaredContract =
+    declaredType && producer && feedPort
+      ? effectivePortShape(producer.data, feedPort) === "many"
+        ? `Sequence<${declaredType.id}@${declaredType.schema_version}>`
+        : `${declaredType.id}@${declaredType.schema_version}`
+      : null;
   const contract = shownValue
     ? artifactCardContract(shownValue)
-    : (feedPortName ?? "Artifact");
+    : (declaredContract ?? feedPortName ?? "Artifact");
+  const producerBusy =
+    producer?.data.execution?.status === "queued" ||
+    producer?.data.execution?.status === "running" ||
+    producer?.data.execution?.status === "cancelling";
   const awaitingFeed = source.kind === "waiting";
   const itemsById = React.useMemo(
     () =>
@@ -347,6 +454,17 @@ export function ArtifactCardBody({
   const imageArtifact =
     first !== null && isImageArtifact(first, firstSummary?.content_type);
   const isSequence = shownValue !== null && "item_refs" in shownValue;
+  // A small JSON artifact (a count, a short text) is read and shown as its
+  // value; anything larger stays a file tile.
+  const valueKey =
+    first &&
+    !isSequence &&
+    firstSummary?.content_type === "application/json" &&
+    (firstSummary.byte_size ?? Infinity) <= SMALL_VALUE_BYTES
+      ? (["artifact-card-value", workspace.id, first.artifact_id] as const)
+      : null;
+  const { data: valuePayload } = useSWR(valueKey, fetchArtifactValue);
+  const smallValue = scalarValue(valuePayload);
   const imageSize = first ? imageSizes[first.artifact_id] : undefined;
   const recordedName = firstSummary?.metadata?.original_filename;
   const fileName =
@@ -381,7 +499,9 @@ export function ArtifactCardBody({
     layout?.width ??
       (imageArtifact
         ? DEFAULT_ARTIFACT_CARD_WIDTH
-        : DEFAULT_ARTIFACT_FILE_CARD_WIDTH),
+        : feed
+          ? DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH
+          : DEFAULT_ARTIFACT_FILE_CARD_WIDTH),
     grid?.settings,
     grid?.bypassSnap,
     ARTIFACT_CARD_WIDTH_MIN,
@@ -599,14 +719,57 @@ export function ArtifactCardBody({
             ) : (
               <>
                 {awaitingFeed ? (
-                  <div {...stylex.props(s.imageUnavailable)}>
-                    {producer
-                      ? `Waiting for ${feedPort?.title ?? feedPortName ?? "output"}`
-                      : "Waiting for this graph to run"}
+                  <div
+                    data-artifact-waiting="true"
+                    {...stylex.props(s.waitingBody)}
+                  >
+                    {producerBusy ? (
+                      <LoaderCircle
+                        size={13}
+                        aria-hidden="true"
+                        {...stylex.props(s.waitingSpinner)}
+                      />
+                    ) : null}
+                    <span {...stylex.props(s.waitingCopy)}>
+                      <span>
+                        {producer
+                          ? `Waiting for ${feedPort?.title ?? feedPortName ?? "output"}`
+                          : "Waiting for this graph to run"}
+                      </span>
+                      {producer ? (
+                        <span {...stylex.props(s.waitingHint)}>
+                          {producerBusy
+                            ? `${producer.data.spec.title} is running`
+                            : `Run ${producer.data.spec.title} to fill it`}
+                        </span>
+                      ) : null}
+                    </span>
                   </div>
                 ) : null}
                 {isSequence ? (
                   sequenceStack
+                ) : first && !awaitingFeed && smallValue !== null ? (
+                  <div
+                    data-artifact-value="true"
+                    data-artifact-shadow-scope="file"
+                    {...stylex.props(
+                      s.fileBody,
+                      s.valueBody,
+                      tier === "active" ? s.fileBodyRaised : null,
+                      tier === "dragged" ? s.fileBodyDragged : null,
+                    )}
+                  >
+                    <span
+                      title={String(smallValue)}
+                      {...stylex.props(
+                        typeof smallValue === "string"
+                          ? s.valueText
+                          : s.valueNumber,
+                      )}
+                    >
+                      {String(smallValue)}
+                    </span>
+                  </div>
                 ) : first && !awaitingFeed ? (
                   <div
                     data-artifact-file-body="true"

@@ -23,7 +23,16 @@ const s = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  contract: { flexShrink: 0, color: tokens.colorMuted },
+  // The name wins the row: the type gives way first, down to under half.
+  contract: {
+    flexShrink: 1,
+    minWidth: 0,
+    maxWidth: "45%",
+    overflow: "hidden",
+    color: tokens.colorMuted,
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
   stack: { position: "relative", width: "100%" },
   media: {
     position: "relative",

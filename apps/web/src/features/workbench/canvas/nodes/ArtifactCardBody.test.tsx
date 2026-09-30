@@ -15,7 +15,10 @@ import { WORKFLOW_NODE_TYPE } from "../types";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const libraryMocks = vi.hoisted(() => ({ items: [] as PlacedLibraryItem[] }));
+const libraryMocks = vi.hoisted(() => ({
+  items: [] as PlacedLibraryItem[],
+  value: undefined as unknown,
+}));
 const flowMocks = vi.hoisted(() => ({
   edges: [] as unknown[],
   nodes: new Map<string, unknown>(),
@@ -56,7 +59,10 @@ vi.mock("@xyflow/react", () => ({
 }));
 
 vi.mock("swr", () => ({
-  default: () => ({ data: { folders: [], items: libraryMocks.items } }),
+  default: (key: readonly unknown[] | null) =>
+    key?.[0] === "artifact-card-value"
+      ? { data: libraryMocks.value }
+      : { data: { folders: [], items: libraryMocks.items } },
 }));
 
 vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
@@ -228,6 +234,66 @@ describe("artifact on the canvas", () => {
     ).not.toBeNull();
     // Use a stable placeholder size until the image dimensions are known.
     expect(media?.style.height).toBe("198px");
+  });
+
+  it("shows a small value instead of a file tile", () => {
+    libraryMocks.value = { value: 42 };
+    const count = {
+      artifact_id: "count-1",
+      artifact_type: "scalar.integer",
+      schema_version: 1,
+    };
+    flowMocks.nodes = new Map<string, unknown>([
+      [
+        "node-count",
+        {
+          id: "node-count",
+          type: WORKFLOW_NODE_TYPE,
+          data: {
+            spec: {
+              title: "Count",
+              outputs: [{ name: "count", title: "count" }],
+            },
+            run: {
+              status: "succeeded",
+              outputs: [
+                {
+                  port: "count",
+                  kind: "single",
+                  value: count,
+                  artifacts: [
+                    {
+                      ...count,
+                      content_type: "application/json",
+                      byte_size: 12,
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    ]);
+    flowMocks.edges = [
+      {
+        id: "artifact-viewer-edge-1",
+        type: ARTIFACT_VIEWER_EDGE_TYPE,
+        source: "node-count",
+        target: "artifact-viewer-1",
+        targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
+        data: { sourcePortName: "count" },
+      },
+    ];
+
+    const { container } = mount(single("library-1"), { mode: "artifact" });
+
+    expect(container.querySelector("[data-artifact-value]")?.textContent).toBe(
+      "42",
+    );
+    expect(container.querySelector("[data-artifact-file-body]")).toBeNull();
+    expect(container.textContent).toContain("Count → count");
+    libraryMocks.value = undefined;
   });
 
   it("follows the output port wired into it", () => {
