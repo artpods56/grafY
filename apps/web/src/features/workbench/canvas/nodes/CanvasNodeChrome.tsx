@@ -26,6 +26,7 @@ export const NODE_HEADER_HEIGHT = 24;
  */
 export const nodeChrome = stylex.create({
   header: {
+    position: "relative",
     minWidth: 0,
     display: "flex",
     alignItems: "center",
@@ -68,11 +69,19 @@ export const nodeChrome = stylex.create({
     color: { default: tokens.colorSubtle, ":hover": tokens.colorText },
     cursor: "pointer",
   },
-  // The "⋯" exists only while the node is picked up (or its menu is open),
-  // and rises in (keyframes in globals.css).
+  // The "⋯" hangs in the right column, level with the name: the same column
+  // as the output balls (an 8px gap, then a 30px slot), above the first of
+  // them; the header is exactly as wide as the plate. It exists only while
+  // the node is picked up (or its menu is open) and rises in (keyframes in
+  // globals.css).
   menuSlot: {
+    position: "absolute",
+    top: 0,
+    right: "-38px",
+    width: "30px",
+    height: "24px",
     display: "grid",
-    flexShrink: 0,
+    placeItems: "center",
     animationName: "grafy-node-detail-in",
     animationDuration: {
       default: "160ms",

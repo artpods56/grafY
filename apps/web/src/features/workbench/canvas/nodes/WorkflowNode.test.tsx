@@ -1730,7 +1730,7 @@ describe("WorkflowNode artifact type binding", () => {
     expect(select).not.toBeNull();
     expect(select?.disabled).toBe(false);
     expect([...select!.options].map((option) => option.textContent)).toEqual([
-      "Any artifact · binds on connect",
+      "Any type",
       "file.jpeg@1",
       "file.png@1",
       "image.raster@1",
@@ -1745,6 +1745,45 @@ describe("WorkflowNode artifact type binding", () => {
       id: "file.jpeg",
       schema_version: 1,
     });
+  });
+
+  it("puts each generic port's type choice on that port", () => {
+    const generic = (name: string, variable: string) => ({
+      name,
+      title: name,
+      description: null,
+      direction: "input" as const,
+      artifact_type: null,
+      artifact_type_variable: variable,
+      shape: "one" as const,
+      accepted_shapes: ["one" as const],
+      instance_plugs: false,
+      variadic: false,
+      required: true,
+    });
+    const spec = {
+      ...sequenceCollectSpec(),
+      operator_id: "test.pair",
+      title: "Pair",
+      inputs: [generic("left", "L"), generic("right", "R")],
+    };
+    const data = {
+      ...createWorkflowNodeData(spec),
+      onBindArtifactTypeBinding: vi.fn(),
+      bindableArtifactTypes: [{ id: "file.png", schema_version: 1 }],
+    };
+    const { container } = renderNode("pair", data);
+
+    // One choice per port, and no separate type row on the node.
+    expect(
+      container.querySelector('select[aria-label="Bind artifact type L"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('select[aria-label="Bind artifact type R"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[aria-label="Generic artifact types"]'),
+    ).toBeNull();
   });
 
   it("offers only claimed file formats as the interpret node's format", () => {
@@ -1782,6 +1821,6 @@ describe("WorkflowNode artifact type binding", () => {
     expect(
       container.querySelector('select[aria-label="Bind artifact type T"]'),
     ).toBeNull();
-    expect(container.textContent).toContain("Any artifact · binds on connect");
+    expect(container.textContent).toContain("Any type");
   });
 });

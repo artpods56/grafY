@@ -315,8 +315,41 @@ const s = stylex.create({
     gap: "5px",
     paddingBlock: "2px",
   },
+  // A generic port's type, chosen where the port is: a small monospace select
+  // under the port's name (or beside a plug group's name). The label keeps
+  // its place level with the ball; the choice hangs just below it.
+  portType: {
+    position: "absolute",
+    top: "calc(50% + 9px)",
+    maxWidth: "calc(100% - 16px)",
+    height: "17px",
+    boxSizing: "border-box",
+    paddingInline: "3px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: { default: "transparent", ":hover": tokens.colorBorder },
+    borderRadius: tokens.radiusSm,
+    backgroundColor: { default: "transparent", ":hover": tokens.colorSurface },
+    color: { default: tokens.colorSubtle, ":hover": tokens.colorText },
+    cursor: { default: "pointer", ":disabled": "default" },
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    fontSize: "10px",
+    lineHeight: "15px",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  portTypeIn: { left: "6px" },
+  portTypeOut: { right: "6px", direction: "rtl" },
+  portTypeInline: {
+    position: "static",
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  portTypeBound: { color: tokens.colorMuted },
+  portTypeStatic: { cursor: "default", overflow: "hidden" },
   // The type a generic node works with, as one quiet line at the top of the
-  // plate: a label, the choice, and a reset. Its colour is on the balls.
+  // plate: a label, the choice, and a reset. Its colour is on the balls. Only
+  // for a type no visible port carries.
   genericTypes: {
     display: "grid",
     minWidth: 0,
@@ -1234,11 +1267,13 @@ function PortRail({
   data,
   inputPorts,
   outputPorts,
+  typeLocked,
 }: {
   id: string;
   data: WorkflowNodeData;
   inputPorts: readonly Port[];
   outputPorts: readonly Port[];
+  typeLocked: boolean;
 }) {
   const grid = useOptionalCanvasGridSettings();
   const cellSize = grid?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
@@ -1265,6 +1300,7 @@ function PortRail({
                   data={data}
                   port={input}
                   shape={effectivePortShape(data, input)}
+                  typeLocked={typeLocked}
                 />
               ) : null}
             </div>
@@ -1280,6 +1316,7 @@ function PortRail({
                   data={data}
                   port={output}
                   shape={effectivePortShape(data, output)}
+                  typeLocked={typeLocked}
                 />
               ) : null}
             </div>
@@ -1295,11 +1332,13 @@ function PortTab({
   data,
   port,
   shape,
+  typeLocked,
 }: {
   id: string;
   data: WorkflowNodeData;
   port: Port;
   shape: Port["shape"];
+  typeLocked: boolean;
 }) {
   const input = port.direction === "input";
   const connection = useOptionalInputConnection(id, port);
@@ -1377,6 +1416,15 @@ function PortTab({
           />
         ) : null}
       </div>
+      {docked ? null : (
+        <PortTypeChoice
+          id={id}
+          data={data}
+          port={port}
+          locked={typeLocked}
+          placement={input ? "in" : "out"}
+        />
+      )}
       <CanvasPortBall
         nodeId={id}
         handleId={handleId}
@@ -1575,10 +1623,12 @@ function InstancePlugPort({
   id,
   data,
   port,
+  typeLocked,
 }: {
   id: string;
   data: WorkflowNodeData;
   port: Port;
+  typeLocked: boolean;
 }) {
   const plugs = inputPlugsForPort(data.inputPlugs, port.name);
   const [draggedPlugId, setDraggedPlugId] = React.useState<string | null>(null);
@@ -1628,6 +1678,13 @@ function InstancePlugPort({
             ) : null}
           </button>
         </PortTypePopover>
+        <PortTypeChoice
+          id={id}
+          data={data}
+          port={port}
+          locked={typeLocked}
+          placement="inline"
+        />
         <span {...stylex.props(s.plugPortRule)}>
           {acceptedShapeLabel} · plug order
         </span>
@@ -1666,16 +1723,114 @@ function InstancePlugPort({
   );
 }
 
+const ANY_TYPE_LABEL = "Any type";
+
+/**
+ * A generic port's type, chosen on the port: one select whose first option
+ * clears the choice. Ports that share a type variable share the choice, so
+ * picking on one picks for them all. Locked while the node is wired, since a
+ * wire already fixed it.
+ */
+function PortTypeChoice({
+  id,
+  data,
+  port,
+  locked,
+  placement,
+}: {
+  id: string;
+  data: WorkflowNodeData;
+  port: Port;
+  locked: boolean;
+  placement: "in" | "out" | "inline";
+}) {
+  const variable = port.artifact_type_variable;
+  if (!variable) return null;
+  const artifactType = data.artifactTypeBindings[variable];
+  const options = artifactTypeVariableOptions(
+    data.spec.operator_id,
+    variable,
+    data.bindableArtifactTypes ?? [],
+  );
+  const current = artifactType
+    ? `${artifactType.id}@${artifactType.schema_version}`
+    : "";
+  const place =
+    placement === "in"
+      ? s.portTypeIn
+      : placement === "out"
+        ? s.portTypeOut
+        : s.portTypeInline;
+  const picks = data.onBindArtifactTypeBinding !== undefined && options.length;
+  if (!picks) {
+    return (
+      <span
+        title={`${port.title ?? port.name}: ${current || ANY_TYPE_LABEL}`}
+        {...stylex.props(
+          s.portType,
+          place,
+          s.portTypeStatic,
+          artifactType ? s.portTypeBound : null,
+        )}
+      >
+        {current || ANY_TYPE_LABEL}
+      </span>
+    );
+  }
+  return (
+    <select
+      disabled={locked}
+      aria-label={`Bind artifact type ${variable}`}
+      title={
+        locked
+          ? "Disconnect this node before changing its type"
+          : `Choose the type ${port.title ?? port.name} works with`
+      }
+      {...nodeInteractionProps(
+        stylex.props(s.portType, place, artifactType ? s.portTypeBound : null),
+      )}
+      value={current}
+      onChange={(event) => {
+        const choice = event.currentTarget.value;
+        if (!choice) {
+          if (artifactType) data.onResetArtifactTypeBinding?.(id, variable);
+          return;
+        }
+        const separator = choice.lastIndexOf("@");
+        data.onBindArtifactTypeBinding?.(id, variable, {
+          id: choice.slice(0, separator),
+          schema_version: Number(choice.slice(separator + 1)),
+        });
+      }}
+    >
+      <option value="">{ANY_TYPE_LABEL}</option>
+      {options.map((type) => (
+        <option
+          key={`${type.id}@${type.schema_version}`}
+          value={`${type.id}@${type.schema_version}`}
+        >
+          {`${type.id}@${type.schema_version}`}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function GenericArtifactTypeState({
   id,
   data,
   resettable,
+  skip,
 }: {
   id: string;
   data: WorkflowNodeData;
   resettable: boolean;
+  /** Variables already chosen on a visible port. */
+  skip: ReadonlySet<string>;
 }) {
-  const variables = declaredArtifactTypeVariables(data.spec);
+  const variables = declaredArtifactTypeVariables(data.spec).filter(
+    (variable) => !skip.has(variable),
+  );
   if (!variables.length) return null;
   const bindableArtifactTypes = data.bindableArtifactTypes ?? [];
 
@@ -1692,7 +1847,7 @@ function GenericArtifactTypeState({
           data.onBindArtifactTypeBinding !== undefined && options.length > 0;
         const label = artifactType
           ? `${artifactType.id}@${artifactType.schema_version}`
-          : "Any artifact · binds on connect";
+          : ANY_TYPE_LABEL;
         return (
           <div key={variable} {...stylex.props(s.genericTypeRow)}>
             <span {...stylex.props(s.genericTypeLabel)}>
@@ -1723,7 +1878,7 @@ function GenericArtifactTypeState({
                   });
                 }}
               >
-                <option value="">Any artifact · binds on connect</option>
+                <option value="">{ANY_TYPE_LABEL}</option>
                 {options.map((type) => (
                   <option
                     key={`${type.id}@${type.schema_version}`}
@@ -3616,6 +3771,13 @@ function SupportedWorkflowNodeCard({
     .sort()
     .join("|");
   const incidentConnections = useNodeConnections({ id });
+  // A wire fixes a generic type, so the choice waits until the node is free.
+  const typeLocked = incidentConnections.length > 0;
+  const portTypeVariables = new Set(
+    [...visibleInputPorts, ...data.spec.outputs].flatMap((port) =>
+      port.artifact_type_variable ? [port.artifact_type_variable] : [],
+    ),
+  );
   const updateNodeInternals = useUpdateNodeInternals();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const grid = useOptionalCanvasGridSettings();
@@ -3717,7 +3879,8 @@ function SupportedWorkflowNodeCard({
       <GenericArtifactTypeState
         id={id}
         data={data}
-        resettable={incidentConnections.length === 0}
+        resettable={!typeLocked}
+        skip={portTypeVariables}
       />
       <PortRail
         id={id}
@@ -3726,6 +3889,7 @@ function SupportedWorkflowNodeCard({
           (port) => !portHasInstancePlugs(port),
         )}
         outputPorts={data.spec.outputs}
+        typeLocked={typeLocked}
       />
       {visibleInputPorts.some((port) => portHasInstancePlugs(port)) ? (
         <div {...stylex.props(s.plugPorts)}>
@@ -3737,6 +3901,7 @@ function SupportedWorkflowNodeCard({
                 id={id}
                 data={data}
                 port={port}
+                typeLocked={typeLocked}
               />
             ))}
         </div>
