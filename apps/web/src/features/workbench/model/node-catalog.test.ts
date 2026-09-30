@@ -6,6 +6,7 @@ import { portMetaForPort } from "../canvas/types";
 import {
   artifactFilterId,
   buildCatalogFilters,
+  catalogSearchRank,
   buildSourceFilters,
   catalogNodeKey,
   catalogNodePortSummary,
@@ -601,5 +602,38 @@ describe("upstream candidates", () => {
       "text.replace",
     ]);
     expect(candidates[0]?.choices[0]?.candidatePort.direction).toBe("output");
+  });
+});
+
+describe("catalogSearchRank", () => {
+  const titled = (title: string, description = "") =>
+    nodeSpec(`op.${title}`, "builtin", 1, null, true, { title, description });
+
+  it("puts nodes named for the query above nodes that mention it", () => {
+    const ranks = [
+      titled("Add integers"),
+      titled("Integer sequence"),
+      titled("Pad left", "adds padding"),
+    ].map((spec) => [spec.title, catalogSearchRank(spec, "add")]);
+
+    expect(ranks).toEqual([
+      ["Add integers", 1],
+      ["Integer sequence", 7],
+      ["Pad left", 7],
+    ]);
+    expect(catalogSearchRank(titled("Add integers"), "add integers")).toBe(0);
+    expect(catalogSearchRank(titled("Split text"), "text")).toBe(2);
+    expect(catalogSearchRank(titled("Split text"), "text split")).toBe(4);
+    expect(catalogSearchRank(titled("Split text"), "text join")).toBe(5);
+  });
+
+  it("finds a node by every word of the query, in any order", () => {
+    const nodes = [titled("Split text"), titled("Join text")];
+    expect(
+      filterAndSearchCatalogNodes(nodes, [], "text split", {
+        ...registry(),
+        nodes,
+      }).map((spec) => spec.title),
+    ).toEqual(["Split text"]);
   });
 });

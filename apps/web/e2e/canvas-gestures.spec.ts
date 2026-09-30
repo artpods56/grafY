@@ -29,7 +29,7 @@ async function addNode(page: Page, title: string, hasTouch: boolean) {
   const option = page.getByRole("option", { name: new RegExp(`^${title}`) });
   if (hasTouch) await option.tap();
   else await option.click();
-  const add = page.getByRole("button", { name: `Add ${title}`, exact: true });
+  const add = page.getByRole("button", { name: "Add to canvas", exact: true });
   if (hasTouch) await add.tap();
   else await add.click();
   await expect(page.getByRole("dialog")).toHaveCount(0);

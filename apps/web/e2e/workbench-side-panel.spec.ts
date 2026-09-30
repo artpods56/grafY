@@ -159,7 +159,9 @@ async function addNode(page: Page, title: string) {
   await page.getByRole("button", { name: "Add node", exact: true }).click();
   await page.getByRole("textbox", { name: "Search nodes" }).fill(title);
   await page.getByRole("option", { name: new RegExp(`^${title}`) }).click();
-  await page.getByRole("button", { name: `Add ${title}`, exact: true }).click();
+  await page
+    .getByRole("button", { name: "Add to canvas", exact: true })
+    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const node = page.locator(".react-flow__node").filter({ hasText: title });
   await expect(node).toBeVisible();
@@ -1199,6 +1201,11 @@ test.describe("collections", () => {
     await page.getByRole("button", { name: "Add node", exact: true }).click();
     await page.getByRole("textbox", { name: "Search nodes" }).fill("Collect");
     await expect(page.getByRole("option", { name: /^Collect/ })).toHaveCount(0);
+    // The first Escape clears the search, the second closes the picker.
+    await page.keyboard.press("Escape");
+    await expect(
+      page.getByRole("textbox", { name: "Search nodes" }),
+    ).toHaveValue("");
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
 

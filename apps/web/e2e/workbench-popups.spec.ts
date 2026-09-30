@@ -84,7 +84,7 @@ test("catalog fits the screen and keeps search when returning from details", asy
   const option = page.getByRole("option", { name: /^Test text source/ });
   await option.click();
   const add = page.getByRole("button", {
-    name: "Add Test text source",
+    name: "Add to canvas",
     exact: true,
   });
   await expectInsideViewport(add);
@@ -168,7 +168,7 @@ test("port schema fits the viewport and supports drilling back", async ({
     .fill("Test text source");
   await page.getByRole("option", { name: /^Test text source/ }).click();
   await page
-    .getByRole("button", { name: "Add Test text source", exact: true })
+    .getByRole("button", { name: "Add to canvas", exact: true })
     .click();
   await page.getByRole("button", { name: "Fit", exact: true }).click();
   await page.getByRole("button", { name: "Inspect Text type" }).click();
@@ -221,7 +221,7 @@ test("node insertion remains reachable in a short landscape viewport", async ({
   const dialog = page.getByRole("dialog", { name: "Add node" });
   await expectInsideViewport(dialog);
   const add = page.getByRole("button", {
-    name: "Add Test text source",
+    name: "Add to canvas",
     exact: true,
   });
   await expectInsideViewport(add);

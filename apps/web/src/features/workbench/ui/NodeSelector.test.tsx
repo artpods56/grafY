@@ -311,11 +311,11 @@ describe("NodeSelector", () => {
         '[role="toolbar"] button',
       ),
     ];
-    expect(filters.map((filter) => filter.textContent)).toEqual([
-      "All",
-      "Built-in",
-      "OCR",
-      "Workspace library",
+    expect(filters.map((filter) => filter.getAttribute("aria-label"))).toEqual([
+      "All, 6 nodes",
+      "Built-in, 4 nodes",
+      "OCR, 1 node",
+      "Workspace library, 1 node",
     ]);
 
     // Source category scopes the list to one provider plugin.
@@ -486,7 +486,7 @@ describe("NodeSelector", () => {
         button.getAttribute("aria-label")?.startsWith("Add "),
       ),
     ).toHaveLength(0);
-    await React.act(async () => buttonNamed("Add Replace text").click());
+    await React.act(async () => buttonNamed("Add to canvas").click());
 
     expect(onAddNode).toHaveBeenCalledOnce();
     expect(onAddNode.mock.calls[0]?.[0].operator_id).toBe("text.replace");
@@ -531,17 +531,75 @@ describe("NodeSelector", () => {
     ).toContain("Normalize invoices");
   });
 
-  it("moves from search through results with arrows and inserts with Enter", async () => {
+  it("moves through results from the search field and inserts with Enter", async () => {
+    const onAddNode = vi.fn();
+    await renderSelector({ onAddNode });
+    searchInput().focus();
+
+    await enterSearch("text");
+    const titles = () =>
+      options().map((option) => option.textContent?.split("→")[0]);
+    // Named for the query first, then nodes that merely mention it.
+    expect(titles()[0]).toContain("Enter text");
+    expect(options()[0]?.getAttribute("aria-selected")).toBe("true");
+
+    await press(searchInput(), "ArrowDown");
+    // Focus stays in the search; the highlight moves and is announced.
+    expect(document.activeElement).toBe(searchInput());
+    expect(options()[1]?.getAttribute("aria-selected")).toBe("true");
+    expect(searchInput().getAttribute("aria-activedescendant")).toBe(
+      options()[1]?.id,
+    );
+    await press(searchInput(), "ArrowUp");
+    await press(searchInput(), "ArrowUp");
+    expect(options()[0]?.getAttribute("aria-selected")).toBe("true");
+
+    await press(searchInput(), "Enter");
+    expect(onAddNode).toHaveBeenCalledOnce();
+    expect(onAddNode.mock.calls[0]?.[0].operator_id).toBe("text.input");
+  });
+
+  it("clears the search on the first Escape and keeps the dialog open", async () => {
+    const onOpenChange = vi.fn();
+    await renderSelector({ onOpenChange });
+
+    await enterSearch("OCR");
+    await press(searchInput(), "Escape");
+
+    expect(searchInput().value).toBe("");
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("adds a node on a double-click", async () => {
     const onAddNode = vi.fn();
     await renderSelector({ onAddNode });
 
     await enterSearch("Replace text");
-    await press(searchInput(), "ArrowDown");
-    expect(document.activeElement).toBe(options()[0]);
-    await press(options()[0]!, "Enter");
+    await React.act(async () => {
+      options()[0]?.dispatchEvent(
+        new MouseEvent("dblclick", { bubbles: true }),
+      );
+    });
 
     expect(onAddNode).toHaveBeenCalledOnce();
     expect(onAddNode.mock.calls[0]?.[0].operator_id).toBe("text.replace");
+  });
+
+  it("groups everything by source until a search asks for relevance", async () => {
+    await renderSelector();
+
+    const headings = () =>
+      [...dialog().querySelectorAll('[role="listbox"] [role="group"]')].map(
+        (group) => group.getAttribute("aria-labelledby"),
+      );
+    expect(headings()).toEqual([
+      "node-selector-group-source:builtin",
+      "node-selector-group-source:external.ocr",
+      "node-selector-group-workspace-library",
+    ]);
+
+    await enterSearch("text");
+    expect(headings()).toEqual([]);
   });
 
   it("filters results through a typed contextual port contract", async () => {
@@ -550,9 +608,10 @@ describe("NodeSelector", () => {
       compatibility: { direction: "downstream", port: contextPort },
     });
 
+    // Grouped by source: the built-in node, then the Module.
     expect(options().map((option) => option.textContent)).toEqual([
-      expect.stringContaining("Normalize invoices"),
       expect.stringContaining("Replace text"),
+      expect.stringContaining("Normalize invoices"),
     ]);
     expect(dialog().textContent).toContain(
       "Showing nodes that can connect from Source text.",
@@ -702,7 +761,7 @@ describe("NodeSelector", () => {
     await React.act(async () => filters[0]?.click());
 
     await enterSearch("Enter text");
-    const insert = buttonNamed("Add Enter text");
+    const insert = buttonNamed("Add to canvas");
     expect(insert.disabled).toBe(true);
     expect(insert.getAttribute("title")).toBe(
       "Viewers can inspect nodes but cannot edit this graph.",
@@ -754,7 +813,7 @@ describe("NodeSelector", () => {
     });
 
     await enterSearch("Render summary");
-    const add = buttonNamed("Add Render summary");
+    const add = buttonNamed("Add to canvas");
     expect(dialog().textContent).toContain("Catalog preview only.");
     expect(dialog().textContent).toContain(
       "This release has no immutable runtime image.",
