@@ -168,6 +168,8 @@ export function WorkflowCanvas({
         colorMode={resolved}
         // Click on a handle is owned by port UI (e.g. expand fields); drag still connects.
         connectOnClick={false}
+        // A click on a ball opens its type menu; only a real drag draws a wire.
+        connectionDragThreshold={4}
         panOnScroll
         panOnDrag={[1, 2]}
         selectionOnDrag

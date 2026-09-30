@@ -2,12 +2,17 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
+import { Menu } from "@base-ui/react/menu";
+import { Tooltip } from "@base-ui/react/tooltip";
 import {
   Handle,
   Position,
   useConnection,
   useNodeConnections,
 } from "@xyflow/react";
+import { Check } from "lucide-react";
+import type { ArtifactTypeKey } from "@/lib/api";
+import { overlay } from "@/lib/stylex/overlay.stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { PORT_RING_REACH, portMarkStyle } from "../handle-style";
 
@@ -128,6 +133,79 @@ const s = stylex.create({
   },
   // A value handed in by an origin rather than an edge.
   ringSquare: { borderRadius: "2px" },
+  // A generic port whose type is still open: a dashed ring, until a type is
+  // chosen or a wire brings one.
+  ringOpen: { borderStyle: "dashed", borderWidth: "1.5px" },
+  // A ball whose click opens its type menu.
+  grabPicks: { cursor: "pointer" },
+  tip: {
+    display: "grid",
+    gap: "3px",
+    maxWidth: "260px",
+    padding: "8px 10px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: tokens.radiusMd,
+    backgroundColor: tokens.colorSurfaceRaised,
+    boxShadow: tokens.shadowNodeRaised,
+    color: tokens.colorText,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.4,
+    pointerEvents: "none",
+    zIndex: 70,
+  },
+  tipName: { fontSize: tokens.fontSizeSm, fontWeight: 560 },
+  tipType: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    minWidth: 0,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    fontSize: "11px",
+    overflowWrap: "anywhere",
+  },
+  tipSwatch: {
+    width: "8px",
+    height: "8px",
+    flexShrink: 0,
+    boxSizing: "border-box",
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderRadius: "9999px",
+  },
+  tipSwatchOpen: { borderStyle: "dashed", borderWidth: "1.5px" },
+  tipHint: { color: tokens.colorSubtle },
+  menu: {
+    display: "grid",
+    gap: "1px",
+    minWidth: "190px",
+    maxHeight: "300px",
+    overflowY: "auto",
+    padding: "4px",
+    zIndex: 70,
+  },
+  menuHead: {
+    padding: "5px 8px 6px",
+    color: tokens.colorSubtle,
+    fontSize: "10px",
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+  },
+  option: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "10px",
+    padding: "5px 8px",
+    borderRadius: tokens.radiusSm,
+    color: tokens.colorText,
+    cursor: "pointer",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    fontSize: "11px",
+    textAlign: "left",
+  },
+  optionAny: { fontFamily: "inherit", color: tokens.colorMuted },
   ringHot: { transform: "scale(1.3)" },
 });
 
@@ -250,6 +328,91 @@ export interface PortBallProps {
   title?: string;
   /** Pass-through attributes on the slot, for tests and drop targets. */
   slotProps?: Record<`data-${string}`, string | undefined>;
+  /** A generic port with no type yet: the ring is dashed. */
+  open?: boolean;
+  /** What a hover (or a focus) on the ball tells about the port. */
+  tip?: PortTip | null;
+  /** A generic port's type, chosen by clicking its ball. */
+  typeChoice?: PortTypeChoice | null;
+}
+
+export interface PortTip {
+  name: string;
+  /** "Sequence<file.png@1>", or "Any type" while open. */
+  type: string;
+  /** What the person can do with the ball. */
+  hint?: string;
+}
+
+export interface PortTypeChoice {
+  current: ArtifactTypeKey | null;
+  options: readonly ArtifactTypeKey[];
+  /** A type, or null for "Any type". */
+  onPick: (type: ArtifactTypeKey | null) => void;
+}
+
+const ANY_TYPE = "Any type";
+
+function typeKeyText(type: ArtifactTypeKey): string {
+  return `${type.id}@${type.schema_version}`;
+}
+
+/** The types a generic port can take, opened from its ball. */
+function PortTypeMenu({
+  name,
+  choice,
+  open,
+  onOpenChange,
+  anchor,
+  side,
+}: {
+  name: string;
+  choice: PortTypeChoice;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  anchor: React.RefObject<HTMLDivElement | null>;
+  side: "left" | "right";
+}) {
+  const popup = stylex.props(overlay.popup, s.menu);
+  return (
+    <Menu.Root open={open} onOpenChange={onOpenChange}>
+      <Menu.Portal>
+        <Menu.Positioner
+          anchor={anchor}
+          side={side}
+          align="center"
+          sideOffset={6}
+        >
+          <Menu.Popup
+            {...popup}
+            className={`nodrag nopan nowheel ${popup.className ?? ""}`}
+          >
+            <span {...stylex.props(s.menuHead)}>Type of {name}</span>
+            <Menu.Item
+              onClick={() => choice.onPick(null)}
+              {...stylex.props(overlay.item, s.option, s.optionAny)}
+            >
+              {ANY_TYPE}
+              {choice.current ? null : <Check size={12} />}
+            </Menu.Item>
+            {choice.options.map((type) => (
+              <Menu.Item
+                key={typeKeyText(type)}
+                onClick={() => choice.onPick(type)}
+                {...stylex.props(overlay.item, s.option)}
+              >
+                {typeKeyText(type)}
+                {choice.current &&
+                typeKeyText(choice.current) === typeKeyText(type) ? (
+                  <Check size={12} />
+                ) : null}
+              </Menu.Item>
+            ))}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
 }
 
 /**
@@ -274,9 +437,14 @@ export function PortBall({
   ariaLabel,
   title,
   slotProps,
+  open = false,
+  tip,
+  typeChoice,
 }: PortBallProps) {
   const reveal = React.useContext(PortRevealContext);
   const [hovered, setHovered] = React.useState(false);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const slotRef = React.useRef<HTMLDivElement | null>(null);
   const wiring = useConnection(
     (connection) =>
       connection.inProgress &&
@@ -294,10 +462,30 @@ export function PortBall({
   const out = revealed || docked;
   const hot = isConnectable && !locked && (hovered || wiring);
   const input = side === "input";
+  const picks = Boolean(typeChoice) && !docked;
+  const ringColor = open ? tokens.colorMuted : color;
+  // The grab area is what the pointer meets: a plain click on it (no drag, so
+  // no wire) opens the type menu, and resting on it shows the tip.
+  const grab = (
+    <span
+      aria-hidden="true"
+      {...stylex.props(s.grab, picks ? s.grabPicks : null)}
+      onClick={
+        picks
+          ? (event) => {
+              event.stopPropagation();
+              setMenuOpen(true);
+            }
+          : undefined
+      }
+    />
+  );
   return (
     <div
+      ref={slotRef}
       {...slotProps}
       data-port-out={out ? "true" : "false"}
+      data-port-open={open ? "true" : undefined}
       {...stylex.props(
         s.slot,
         revealStyles(out, side),
@@ -313,30 +501,73 @@ export function PortBall({
         aria-disabled={!isConnectable || locked}
         aria-hidden={docked || undefined}
         aria-label={ariaLabel}
-        title={title}
+        title={tip ? undefined : title}
         data-port-hot={hot ? "true" : undefined}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
         style={handleBoxStyle(idle, locked)}
       >
-        <span aria-hidden="true" {...stylex.props(s.grab)} />
+        {tip && !docked ? (
+          <Tooltip.Root
+            disabled={Boolean(reveal?.connecting) || wiring || menuOpen}
+          >
+            <Tooltip.Trigger delay={350} closeDelay={60} render={grab} />
+            <Tooltip.Portal>
+              <Tooltip.Positioner
+                side={input ? "left" : "right"}
+                sideOffset={12}
+              >
+                <Tooltip.Popup {...stylex.props(s.tip)}>
+                  <span {...stylex.props(s.tipName)}>{tip.name}</span>
+                  <span {...stylex.props(s.tipType)}>
+                    <span
+                      aria-hidden="true"
+                      {...stylex.props(
+                        s.tipSwatch,
+                        open ? s.tipSwatchOpen : null,
+                      )}
+                      style={{ borderColor: ringColor }}
+                    />
+                    {tip.type}
+                  </span>
+                  {tip.hint ? (
+                    <span {...stylex.props(s.tipHint)}>{tip.hint}</span>
+                  ) : null}
+                </Tooltip.Popup>
+              </Tooltip.Positioner>
+            </Tooltip.Portal>
+          </Tooltip.Root>
+        ) : (
+          grab
+        )}
         <span
           aria-hidden="true"
           {...stylex.props(s.stem, input ? s.stemInput : s.stemOutput)}
-          style={{ backgroundColor: color }}
+          style={{ backgroundColor: ringColor }}
         />
         <span
           aria-hidden="true"
           {...stylex.props(
             s.ring,
             square ? s.ringSquare : null,
+            open ? s.ringOpen : null,
             hot ? s.ringHot : null,
           )}
           style={{
-            ...portMarkStyle(color, sequence),
-            ...(hot ? { backgroundColor: color } : null),
+            ...portMarkStyle(ringColor, sequence),
+            ...(hot && !open ? { backgroundColor: color } : null),
           }}
         />
+        {picks && typeChoice ? (
+          <PortTypeMenu
+            name={tip?.name ?? ariaLabel}
+            choice={typeChoice}
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+            anchor={slotRef}
+            side={input ? "left" : "right"}
+          />
+        ) : null}
       </Handle>
     </div>
   );

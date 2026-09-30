@@ -315,38 +315,6 @@ const s = stylex.create({
     gap: "5px",
     paddingBlock: "2px",
   },
-  // A generic port's type, chosen where the port is: a small monospace select
-  // under the port's name (or beside a plug group's name). The label keeps
-  // its place level with the ball; the choice hangs just below it.
-  portType: {
-    position: "absolute",
-    top: "calc(50% + 9px)",
-    maxWidth: "calc(100% - 16px)",
-    height: "17px",
-    boxSizing: "border-box",
-    paddingInline: "3px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: { default: "transparent", ":hover": tokens.colorBorder },
-    borderRadius: tokens.radiusSm,
-    backgroundColor: { default: "transparent", ":hover": tokens.colorSurface },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorText },
-    cursor: { default: "pointer", ":disabled": "default" },
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: "10px",
-    lineHeight: "15px",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  portTypeIn: { left: "6px" },
-  portTypeOut: { right: "6px", direction: "rtl" },
-  portTypeInline: {
-    position: "static",
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  portTypeBound: { color: tokens.colorMuted },
-  portTypeStatic: { cursor: "default", overflow: "hidden" },
   // The type a generic node works with, as one quiet line at the top of the
   // plate: a label, the choice, and a reset. Its colour is on the balls. Only
   // for a type no visible port carries.
@@ -1416,15 +1384,6 @@ function PortTab({
           />
         ) : null}
       </div>
-      {docked ? null : (
-        <PortTypeChoice
-          id={id}
-          data={data}
-          port={port}
-          locked={typeLocked}
-          placement={input ? "in" : "out"}
-        />
-      )}
       <CanvasPortBall
         nodeId={id}
         handleId={handleId}
@@ -1432,6 +1391,14 @@ function PortTab({
         color={color}
         sequence={shape === "many"}
         docked={docked}
+        {...portBallTypeProps({
+          id,
+          data,
+          port,
+          shape,
+          locked: typeLocked,
+          name: visibleName,
+        })}
         ariaLabel={accessibleLabel}
         title={
           input
@@ -1458,6 +1425,7 @@ function InstancePlugRow({
   lastPointerTargetRef,
   setDraggedPlugId,
   finishPointerDrag,
+  typeLocked,
 }: {
   id: string;
   data: WorkflowNodeData;
@@ -1473,6 +1441,7 @@ function InstancePlugRow({
   lastPointerTargetRef: React.MutableRefObject<string | null>;
   setDraggedPlugId: React.Dispatch<React.SetStateAction<string | null>>;
   finishPointerDrag: (event: React.PointerEvent<HTMLButtonElement>) => void;
+  typeLocked: boolean;
 }) {
   const connection = useOptionalInputConnection(id, port, plug.id);
   const binding = data.inputPlugBindings[plug.id];
@@ -1506,6 +1475,14 @@ function InstancePlugRow({
         color={color}
         sequence
         square={Boolean(binding)}
+        {...portBallTypeProps({
+          id,
+          data,
+          port,
+          shape: port.shape,
+          locked: typeLocked,
+          name: `${visibleName} ${index + 1}`,
+        })}
         ariaLabel={accessibleLabel}
         title={`${accessibleLabel}. Connect one compatible output here.`}
       />
@@ -1678,13 +1655,6 @@ function InstancePlugPort({
             ) : null}
           </button>
         </PortTypePopover>
-        <PortTypeChoice
-          id={id}
-          data={data}
-          port={port}
-          locked={typeLocked}
-          placement="inline"
-        />
         <span {...stylex.props(s.plugPortRule)}>
           {acceptedShapeLabel} · plug order
         </span>
@@ -1708,6 +1678,7 @@ function InstancePlugPort({
             lastPointerTargetRef={lastPointerTargetRef}
             setDraggedPlugId={setDraggedPlugId}
             finishPointerDrag={finishPointerDrag}
+            typeLocked={typeLocked}
           />
         ))}
       </div>
@@ -1726,94 +1697,82 @@ function InstancePlugPort({
 const ANY_TYPE_LABEL = "Any type";
 
 /**
- * A generic port's type, chosen on the port: one select whose first option
- * clears the choice. Ports that share a type variable share the choice, so
- * picking on one picks for them all. Locked while the node is wired, since a
- * wire already fixed it.
+ * What a port's ball says and does about its type. The ring carries the type
+ * in its colour; a generic port still open is dashed. Hovering tells the type
+ * in full; clicking a free generic port's ball picks it.
  */
-function PortTypeChoice({
+function portBallTypeProps({
   id,
   data,
   port,
+  shape,
   locked,
-  placement,
+  name,
 }: {
   id: string;
   data: WorkflowNodeData;
   port: Port;
+  shape: Port["shape"];
   locked: boolean;
-  placement: "in" | "out" | "inline";
-}) {
-  const variable = port.artifact_type_variable;
-  if (!variable) return null;
-  const artifactType = data.artifactTypeBindings[variable];
-  const options = artifactTypeVariableOptions(
-    data.spec.operator_id,
-    variable,
-    data.bindableArtifactTypes ?? [],
+  name: string;
+}): Pick<
+  React.ComponentProps<typeof CanvasPortBall>,
+  "open" | "tip" | "typeChoice"
+> {
+  const variable = port.artifact_type_variable ?? null;
+  const artifactType = resolvedPortArtifactType(
+    port,
+    data.artifactTypeBindings,
   );
-  const current = artifactType
+  const open = Boolean(variable) && !artifactType;
+  const inner = artifactType
     ? `${artifactType.id}@${artifactType.schema_version}`
-    : "";
-  const place =
-    placement === "in"
-      ? s.portTypeIn
-      : placement === "out"
-        ? s.portTypeOut
-        : s.portTypeInline;
-  const picks = data.onBindArtifactTypeBinding !== undefined && options.length;
-  if (!picks) {
-    return (
-      <span
-        title={`${port.title ?? port.name}: ${current || ANY_TYPE_LABEL}`}
-        {...stylex.props(
-          s.portType,
-          place,
-          s.portTypeStatic,
-          artifactType ? s.portTypeBound : null,
-        )}
-      >
-        {current || ANY_TYPE_LABEL}
-      </span>
-    );
-  }
-  return (
-    <select
-      disabled={locked}
-      aria-label={`Bind artifact type ${variable}`}
-      title={
-        locked
-          ? "Disconnect this node before changing its type"
-          : `Choose the type ${port.title ?? port.name} works with`
-      }
-      {...nodeInteractionProps(
-        stylex.props(s.portType, place, artifactType ? s.portTypeBound : null),
-      )}
-      value={current}
-      onChange={(event) => {
-        const choice = event.currentTarget.value;
-        if (!choice) {
-          if (artifactType) data.onResetArtifactTypeBinding?.(id, variable);
-          return;
-        }
-        const separator = choice.lastIndexOf("@");
-        data.onBindArtifactTypeBinding?.(id, variable, {
-          id: choice.slice(0, separator),
-          schema_version: Number(choice.slice(separator + 1)),
-        });
-      }}
-    >
-      <option value="">{ANY_TYPE_LABEL}</option>
-      {options.map((type) => (
-        <option
-          key={`${type.id}@${type.schema_version}`}
-          value={`${type.id}@${type.schema_version}`}
-        >
-          {`${type.id}@${type.schema_version}`}
-        </option>
-      ))}
-    </select>
-  );
+    : "any";
+  const type =
+    shape === "many"
+      ? `Sequence<${inner}>`
+      : artifactType
+        ? inner
+        : ANY_TYPE_LABEL;
+  const options = variable
+    ? artifactTypeVariableOptions(
+        data.spec.operator_id,
+        variable,
+        data.bindableArtifactTypes ?? [],
+      )
+    : [];
+  const picks =
+    variable !== null &&
+    !locked &&
+    data.onBindArtifactTypeBinding !== undefined &&
+    options.length > 0;
+  const hint = picks
+    ? open
+      ? "Click to choose its type, or connect a wire to set it."
+      : "Click to change its type."
+    : variable && locked
+      ? "Its wire set this type. Disconnect it to change the type."
+      : port.direction === "input"
+        ? "Connect a matching output here."
+        : "Drag to a matching input.";
+  return {
+    open,
+    tip: { name, type, hint },
+    typeChoice:
+      picks && variable
+        ? {
+            current: data.artifactTypeBindings[variable] ?? null,
+            options,
+            onPick: (choice) => {
+              if (choice) {
+                data.onBindArtifactTypeBinding?.(id, variable, choice);
+              } else if (data.artifactTypeBindings[variable]) {
+                data.onResetArtifactTypeBinding?.(id, variable);
+              }
+            },
+          }
+        : null,
+  };
 }
 
 function GenericArtifactTypeState({
