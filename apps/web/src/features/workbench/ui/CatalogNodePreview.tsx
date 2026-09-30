@@ -124,10 +124,12 @@ const s = stylex.create({
     backgroundColor: tokens.colorAccentSoft,
     color: tokens.colorText,
   },
-  previewTabIn: {},
+  // Flush with the plate's edge: square on the side the port comes out of.
+  previewTabIn: { borderRadius: "0 4px 4px 0" },
   previewTabOut: {
     flexDirection: "row-reverse",
     paddingInline: "8px 10px",
+    borderRadius: "4px 0 0 4px",
   },
   previewTabLabel: {
     minWidth: 0,

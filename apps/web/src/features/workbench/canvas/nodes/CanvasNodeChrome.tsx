@@ -143,10 +143,12 @@ export const nodeChrome = stylex.create({
     whiteSpace: "nowrap",
   },
   tabShape: { flexShrink: 0, color: tokens.colorSubtle },
-  tabIn: {},
+  // Flush with the plate's edge: square on the side the port comes out of.
+  tabIn: { borderRadius: "0 4px 4px 0" },
   tabOut: {
     flexDirection: "row-reverse",
     paddingInline: "8px 10px",
+    borderRadius: "4px 0 0 4px",
   },
   tabDocked: {
     visibility: "hidden",
