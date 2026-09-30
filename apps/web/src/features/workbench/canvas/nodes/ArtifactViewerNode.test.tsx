@@ -40,6 +40,9 @@ vi.mock("@xyflow/react", () => ({
   ),
   Position: { Left: "left", Right: "right" },
   useEdges: () => flowMocks.edges,
+  useConnection: (selector: (state: { inProgress: boolean }) => unknown) =>
+    selector({ inProgress: false }),
+  useNodeConnections: () => [],
   useNodesData: (nodeId: string) => flowMocks.nodes.get(nodeId) ?? null,
   useStore: (
     selector: (state: {
@@ -48,6 +51,42 @@ vi.mock("@xyflow/react", () => ({
     }) => unknown,
   ) => selector({ edges: flowMocks.edges, nodeLookup: new Map() }),
   useUpdateNodeInternals: () => flowMocks.updateNodeInternals,
+}));
+
+vi.mock("@base-ui/react/menu", () => ({
+  Menu: {
+    Root: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Trigger: ({
+      children,
+      ...props
+    }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
+    Portal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Positioner: ({ children }: { children: React.ReactNode }) => (
+      <>{children}</>
+    ),
+    Popup: ({ children }: { children: React.ReactNode }) => (
+      <div role="menu">{children}</div>
+    ),
+    Group: ({ children }: { children: React.ReactNode }) => (
+      <div role="group">{children}</div>
+    ),
+    GroupLabel: ({ children }: { children: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
+    Separator: () => <hr />,
+    Item: ({
+      children,
+      ...props
+    }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
+  },
 }));
 
 vi.mock("@base-ui/react/popover", () => ({
@@ -320,17 +359,17 @@ describe("ArtifactViewerNode", () => {
 
     expect(
       resting
-        .querySelector('[data-node-pickup-shadow="true"]')
+        .querySelector('[data-canvas-node-shell="true"]')
         ?.getAttribute("data-picked-up"),
     ).toBe("false");
     expect(
       selected
-        .querySelector('[data-node-pickup-shadow="true"]')
+        .querySelector('[data-canvas-node-shell="true"]')
         ?.getAttribute("data-picked-up"),
     ).toBe("true");
     expect(
       dragging
-        .querySelector('[data-node-pickup-shadow="true"]')
+        .querySelector('[data-canvas-node-shell="true"]')
         ?.getAttribute("data-dragging"),
     ).toBe("true");
   });
@@ -361,12 +400,14 @@ describe("ArtifactViewerNode", () => {
     const remove = vi.fn();
     const selected = renderViewer({ onRemoveNode: remove }, true);
 
+    // The about text heads the one actions menu; there is no second button.
     expect(
       container.querySelector('[aria-label="About Artifact Viewer"]'),
-    ).not.toBeNull();
+    ).toBeNull();
     expect(
       container.querySelector('[aria-label="Actions for Artifact Viewer"]'),
     ).not.toBeNull();
+    expect(container.textContent).toContain("Presentation-only preview.");
     const deleteNode = [...selected.querySelectorAll("button")].find(
       (button) => button.textContent === "Delete node",
     );

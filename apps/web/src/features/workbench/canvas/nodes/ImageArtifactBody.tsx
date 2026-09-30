@@ -32,6 +32,13 @@ const s = stylex.create({
     borderRadius: tokens.radiusSm,
     backgroundColor: "transparent",
     boxShadow: "none",
+    // The shadow tokens share a layer count, so tiers cross-fade with the lift.
+    transitionProperty: "box-shadow",
+    transitionDuration: {
+      default: "180ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+    transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
   },
   raised: { boxShadow: tokens.shadowNodeActive },
   dragged: { boxShadow: tokens.shadowNodeDragged },

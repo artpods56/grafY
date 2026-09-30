@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { dockedHandleStyle, handleStyle, portMarkStyle } from "./handle-style";
+import { handleStyle, portMarkStyle } from "./handle-style";
 
 describe("portMarkStyle", () => {
   it("uses a single colored border for a single-value port", () => {
@@ -27,13 +27,5 @@ describe("handleStyle", () => {
     const style = handleStyle(19, "#4590c7", true);
     expect(style.top).toBe("19px");
     expect(String(style.background)).toContain("#4590c7 7px 8.5px");
-  });
-
-  it("keeps the measured hit target when a docked join hides the mark", () => {
-    const style = dockedHandleStyle("50%");
-    expect(style.width).toBe("30px");
-    expect(style.height).toBe("30px");
-    expect(style.opacity).toBe(0);
-    expect(style.pointerEvents).toBe("none");
   });
 });

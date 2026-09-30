@@ -201,6 +201,19 @@ import {
   encodeHandleId,
   type ConnectionRoute,
 } from "../canvas/handles";
+import { PORT_CENTER_REACH } from "../canvas/handle-style";
+import {
+  COLLECTION_PORT,
+  collectCardsCommands,
+  collectDisabledReason,
+  collectionMembers,
+  collectionsWithoutSpare,
+  isCollectionNode,
+  isCollectionSpec,
+  ungroupCollectionDisabledReason,
+  ungroupedCollectionCards,
+  type CollectionSource,
+} from "../model/collection";
 import { appendInputPlug } from "../canvas/input-plugs";
 import {
   nodeSecretBindingReady,
@@ -294,10 +307,17 @@ const ZERO_SAFE_AREA_INSETS: SafeAreaInsets = {
   left: 0,
 };
 
+/**
+ * Ports hang outside a node's box, and a fit frames only boxes. The sides are
+ * padded so a fitted node's balls sit clear of React Flow's 40px connection
+ * auto-pan band; otherwise grabbing an edge-most port scrolls the canvas away.
+ */
+const FIT_PORT_CLEARANCE = PORT_CENTER_REACH + 44;
+
 const WORKBENCH_DESKTOP_FIT_VIEW_OPTIONS = {
   padding: {
     top: "90px",
-    right: "48px",
+    right: `${FIT_PORT_CLEARANCE}px`,
     bottom: "64px",
     left: "165px",
   },
@@ -306,9 +326,9 @@ const WORKBENCH_DESKTOP_FIT_VIEW_OPTIONS = {
 
 const WORKBENCH_MOBILE_FIT_PADDING = {
   top: 76,
-  right: 20,
+  right: FIT_PORT_CLEARANCE,
   bottom: 96,
-  left: 20,
+  left: FIT_PORT_CLEARANCE,
 } as const;
 
 function readSafeAreaInsets(): SafeAreaInsets {
@@ -2094,6 +2114,74 @@ function WorkbenchBody({
           state: artifactViewers,
           origins: authoredDocument.origins,
         });
+  // With the collection operator available, "Collect" makes a collection: it
+  // can gather Library cards and cards on a node's output alike.
+  const collectSpec = React.useMemo(
+    () => registry?.nodes.find((spec) => isCollectionSpec(spec)) ?? null,
+    [registry],
+  );
+  const selectedCollectionSources = React.useMemo(
+    () =>
+      artifactViewers.nodes.flatMap((node): CollectionSource[] => {
+        if (!node.selected) return [];
+        const feed = artifactViewers.edges.find(
+          (edge) =>
+            edge.type === ARTIFACT_VIEWER_EDGE_TYPE &&
+            edge.target === node.id &&
+            edge.targetHandle === ARTIFACT_VIEWER_INPUT_HANDLE,
+        );
+        if (feed && node.data.mode === "artifact") {
+          return [
+            {
+              kind: "output",
+              cardId: node.id,
+              position: node.position,
+              sourceNodeId: feed.source,
+              sourcePortName: feed.data?.sourcePortName ?? "",
+            },
+          ];
+        }
+        if (!feed && node.data.artifactRef) {
+          return [
+            {
+              kind: "library",
+              cardId: node.id,
+              position: node.position,
+              value: node.data.artifactRef,
+            },
+          ];
+        }
+        return [];
+      }),
+    [artifactViewers.edges, artifactViewers.nodes],
+  );
+  const collectionDisabledReason = (() => {
+    if (!collectSpec) return null;
+    if (selectedNodeCount !== selectedCollectionSources.length) {
+      return "Select only artifacts to collect.";
+    }
+    const cardIds = new Set(
+      selectedCollectionSources.map((source) => source.cardId),
+    );
+    const carried = authoredDocument.origins.some((origin) =>
+      selectedCollectionSources.some(
+        (source) =>
+          source.kind === "library" &&
+          originCarriesCardArtifacts(origin.value, source.value),
+      ),
+    );
+    if (
+      carried ||
+      artifactViewers.bindings.some(
+        (binding) =>
+          cardIds.has(binding.sourceViewerId) ||
+          cardIds.has(binding.targetViewerId),
+      )
+    ) {
+      return "Disconnect what these artifacts feed before collecting them.";
+    }
+    return collectDisabledReason(selectedCollectionSources, nodes);
+  })();
 
   const runSelectionBusy = !registry || running || selectedWorkflowCount === 0;
   const runSelectedDisabled =
@@ -2714,14 +2802,138 @@ function WorkbenchBody({
   );
 
   const collectSelectedArtifacts = React.useCallback(() => {
-    if (!localAuthoringEnabled || groupingDisabledReason) return;
+    if (!localAuthoringEnabled) return;
+    if (collectSpec) {
+      if (collectionDisabledReason) return;
+      const plan = collectCardsCommands({
+        sources: selectedCollectionSources,
+        nodes,
+        collectSpec,
+        createNodeData: (spec, plugs) => createWorkflowNodeData(spec, plugs),
+      });
+      if (!plan) return;
+      const removed = new Set(plan.removedCardIds);
+      applyAuthoringCommands(plan.commands);
+      commitArtifactViewers((current) => ({
+        ...current,
+        nodes: current.nodes.filter((node) => !removed.has(node.id)),
+        edges: current.edges.filter(
+          (edge) => !removed.has(edge.source) && !removed.has(edge.target),
+        ),
+      }));
+      setSelectedNodeIdSet(new Set([plan.collectionId]));
+      setSelectedEdgeIdSet(new Set());
+      return;
+    }
+    if (groupingDisabledReason) return;
     commitArtifactViewers((state) =>
       collectArtifactCards({
         state,
         origins: authoredDocumentRef.current.origins,
       }),
     );
-  }, [commitArtifactViewers, groupingDisabledReason, localAuthoringEnabled]);
+  }, [
+    applyAuthoringCommands,
+    collectSpec,
+    collectionDisabledReason,
+    commitArtifactViewers,
+    groupingDisabledReason,
+    localAuthoringEnabled,
+    nodes,
+    selectedCollectionSources,
+  ]);
+
+  /**
+   * A collection becomes its members again: Library members as cards holding
+   * their artifacts, output members as cards following that output.
+   */
+  const ungroupCollection = React.useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((candidate) => candidate.id === nodeId);
+      if (
+        !node ||
+        !isCollectionNode(node) ||
+        ungroupCollectionDisabledReason(nodeId, edges)
+      ) {
+        return;
+      }
+      const cards = ungroupedCollectionCards(
+        node.position,
+        collectionMembers(
+          node,
+          nodes,
+          edges,
+          authoredDocumentRef.current.origins,
+        ),
+        DEFAULT_ARTIFACT_CARD_WIDTH,
+        artifactCardMediaHeight(DEFAULT_ARTIFACT_CARD_WIDTH),
+      );
+      applyAuthoringCommands([{ kind: "remove_nodes", node_ids: [nodeId] }]);
+      const added = cards.map((card) => ({
+        card,
+        id: `artifact-viewer-${createUuid()}`,
+      }));
+      commitArtifactViewers((current) => ({
+        ...current,
+        nodes: [
+          ...current.nodes.map((viewer) => ({ ...viewer, selected: false })),
+          ...added.map(({ card, id }): ArtifactViewerNode => ({
+            id,
+            type: ARTIFACT_VIEWER_NODE_TYPE,
+            position: card.position,
+            selected: true,
+            data:
+              card.kind === "library"
+                ? { layout: null, mode: null, artifactRef: card.value }
+                : { layout: null, mode: "artifact", artifactRef: null },
+          })),
+        ],
+        edges: [
+          ...current.edges,
+          ...added.flatMap(({ card, id }): ArtifactViewerEdge[] =>
+            card.kind === "output"
+              ? [
+                  {
+                    id: `artifact-viewer-edge-${createUuid()}`,
+                    type: ARTIFACT_VIEWER_EDGE_TYPE,
+                    source: card.sourceNodeId,
+                    target: id,
+                    targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
+                    data: { sourcePortName: card.sourcePortName },
+                  },
+                ]
+              : [],
+          ),
+        ],
+      }));
+    },
+    [applyAuthoringCommands, commitArtifactViewers, edges, nodes],
+  );
+
+  // A collection always keeps one spare plug, the one its next member lands
+  // on. Filling it (a wire, a card, a Library drop) is followed by a new spare.
+  React.useEffect(() => {
+    if (!localAuthoringEnabled) return;
+    const missing = collectionsWithoutSpare(
+      nodes,
+      edges,
+      authoredDocument.origins,
+    );
+    if (!missing.length) return;
+    applyAuthoringCommands(
+      missing.map((nodeId) => ({
+        kind: "add_input_plug" as const,
+        node_id: nodeId,
+        plug: { id: createUuid(), port: COLLECTION_PORT },
+      })),
+    );
+  }, [
+    applyAuthoringCommands,
+    authoredDocument.origins,
+    edges,
+    localAuthoringEnabled,
+    nodes,
+  ]);
 
   const ungroupArtifacts = React.useCallback(
     (nodeId: string) => {
@@ -3718,11 +3930,31 @@ function WorkbenchBody({
               registry?.artifact_conversions ?? [],
               registry?.artifact_types ?? [],
             ),
+            ...(isCollectionNode(node)
+              ? {
+                  collectionMembers: collectionMembers(
+                    node,
+                    nodes,
+                    edges,
+                    authoredDocument.origins,
+                  ),
+                  ungroupDisabledReason: ungroupCollectionDisabledReason(
+                    node.id,
+                    edges,
+                  ),
+                  onUngroupCollection: localAuthoringEnabled
+                    ? ungroupCollection
+                    : undefined,
+                }
+              : {}),
           },
         };
       }),
     [
       activeGraph,
+      authoredDocument.origins,
+      localAuthoringEnabled,
+      ungroupCollection,
       applyConfiguredNodeSecret,
       attachNodeCallbacks,
       edges,
@@ -4484,7 +4716,9 @@ function WorkbenchBody({
             participants={graphRoom.participants}
             localSessionId={graphRoom.localSessionId}
           />
-          {selectedWorkflowCount || selectedArtifactCards.length > 1 ? (
+          {selectedWorkflowCount ||
+          selectedArtifactCards.length > 1 ||
+          selectedCollectionSources.length > 1 ? (
             <NodeToolbar
               nodeId={selectedNodeIds}
               isVisible
@@ -4496,7 +4730,26 @@ function WorkbenchBody({
                 {selectedNodeCount} selected
               </span>
               <span {...stylex.props(s.selectionDivider)} />
-              {selectedArtifactCards.length > 1 ? (
+              {collectSpec ? (
+                selectedCollectionSources.length > 1 ? (
+                  <button
+                    type="button"
+                    disabled={
+                      !localAuthoringEnabled ||
+                      Boolean(collectionDisabledReason)
+                    }
+                    title={
+                      collectionDisabledReason ??
+                      `Collect ${selectedCollectionSources.length} selected artifacts into one collection`
+                    }
+                    {...stylex.props(s.toolButton, s.primaryButton)}
+                    onClick={collectSelectedArtifacts}
+                  >
+                    <Layers size={13} />
+                    Collect
+                  </button>
+                ) : null
+              ) : selectedArtifactCards.length > 1 ? (
                 <button
                   type="button"
                   disabled={

@@ -4,8 +4,6 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Popover } from "@base-ui/react/popover";
 import {
-  Handle,
-  Position,
   useEdges,
   useNodeConnections,
   useUpdateNodeInternals,
@@ -31,7 +29,11 @@ import { createUuid } from "@/features/workbench/model/uuid";
 import { artifactTypeVariableOptions } from "@/features/workbench/model/claimed-formats";
 import type { Port } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import { CanvasNodeHeader, nodeChrome } from "./CanvasNodeChrome";
+import {
+  CanvasNodeHeader,
+  CanvasPortBall,
+  nodeChrome,
+} from "./CanvasNodeChrome";
 import {
   schemaFields,
   type NumberTupleItem,
@@ -40,7 +42,6 @@ import {
   type StringListSchemaField,
 } from "../config-schema";
 import { useHandleIsDocked } from "../edges/useDockedConnection";
-import { dockedHandleStyle, handleStyle } from "../handle-style";
 import { decodeHandleId, encodeHandleId } from "../handles";
 import {
   inputPlugsForPort,
@@ -103,6 +104,8 @@ import {
   spanFromLength,
 } from "../grid-layout";
 import { CanvasNodeShell, useCanvasNodeShell } from "./CanvasNodeShell";
+import { CollectionCard } from "./CollectionCard";
+import { isCollectionSpec } from "../../model/collection";
 import {
   configBoardColumns,
   fieldFootprint,
@@ -127,6 +130,7 @@ const s = stylex.create({
     height: "18px",
     display: "inline-flex",
     alignItems: "center",
+    gap: "4px",
     flexShrink: 0,
     paddingInline: "6px",
     borderRadius: "9999px",
@@ -222,7 +226,7 @@ const s = stylex.create({
   /** Unsupported cards keep a direct remove: removal is the only repair. */
   removeButton: {
     backgroundColor: {
-      default: tokens.colorSurface,
+      default: "transparent",
       ":hover": tokens.colorDangerHover,
     },
     color: { default: tokens.colorSubtle, ":hover": tokens.colorDanger },
@@ -390,21 +394,22 @@ const s = stylex.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: "8px",
-    paddingInline: "12px 10px",
+    paddingInline: "10px",
   },
+  // Reads like any other port name; the plug balls carry the type colour.
   plugPortTitle: {
     display: "flex",
     minWidth: 0,
     alignItems: "center",
-    gap: "7px",
+    gap: "4px",
     padding: 0,
     overflow: "hidden",
     borderWidth: 0,
     backgroundColor: "transparent",
-    color: tokens.colorTextEmphasis,
+    color: { default: tokens.colorMuted, ":hover": tokens.colorText },
     cursor: "pointer",
     fontSize: tokens.fontSizeXs,
-    fontWeight: 600,
+    fontWeight: 500,
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
@@ -413,10 +418,12 @@ const s = stylex.create({
     color: tokens.colorSubtle,
     fontSize: "10px",
   },
+  // Rows sit 8px in from the plate; their balls hang that much further out.
   plugList: {
     display: "grid",
     gap: "4px",
     paddingInline: "8px",
+    ["--port-inset" as string]: "8px",
   },
   plugRow: {
     position: "relative",
@@ -426,7 +433,7 @@ const s = stylex.create({
     gridTemplateColumns: "20px 20px minmax(0, 1fr) auto",
     alignItems: "center",
     gap: "4px",
-    padding: "3px 4px 3px 28px",
+    padding: "3px 4px 3px 6px",
     borderRadius: tokens.radiusMd,
     backgroundColor: tokens.colorSurfaceMuted,
   },
@@ -575,12 +582,6 @@ const s = stylex.create({
     width: "18px",
     height: "20px",
     borderRadius: "5px",
-  },
-  dot: {
-    width: "6px",
-    height: "6px",
-    flexShrink: 0,
-    borderRadius: "9999px",
   },
   body: {
     display: "grid",
@@ -943,9 +944,12 @@ const s = stylex.create({
     fontWeight: 600,
   },
   schemaFieldsCount: { color: tokens.colorSubtle, fontSize: "10px" },
+  // Field rows sit 8px in from the plate; their balls hang that much further
+  // out.
   schemaFieldList: {
     display: "grid",
     gap: "5px",
+    ["--port-inset" as string]: "8px",
   },
   schemaEmpty: {
     margin: 0,
@@ -962,7 +966,7 @@ const s = stylex.create({
     minWidth: 0,
     display: "grid",
     gap: "5px",
-    padding: "6px 6px 6px 28px",
+    padding: "6px 6px 6px 8px",
     borderRadius: tokens.radiusMd,
     backgroundColor: tokens.colorSurfaceMuted,
   },
@@ -1374,21 +1378,18 @@ function PortTab({
           />
         ) : null}
       </div>
-      <Handle
-        type={input ? "target" : "source"}
-        position={input ? Position.Left : Position.Right}
-        id={handleId}
-        aria-hidden={docked}
-        aria-label={accessibleLabel}
+      <CanvasPortBall
+        nodeId={id}
+        handleId={handleId}
+        side={input ? "input" : "output"}
+        color={color}
+        sequence={shape === "many"}
+        docked={docked}
+        ariaLabel={accessibleLabel}
         title={
           input
             ? `${accessibleLabel}. Connect a compatible output here.${port.description ? ` ${port.description}` : ""}`
             : `${accessibleLabel}. Drag to a compatible input. If fields are available, you can choose what arrives after connecting.${port.description ? ` ${port.description}` : ""}`
-        }
-        style={
-          docked
-            ? dockedHandleStyle("50%")
-            : handleStyle("50%", color, shape === "many")
         }
       />
     </div>
@@ -1449,16 +1450,17 @@ function InstancePlugRow({
         draggedPlugId === plug.id ? s.plugRowDragging : null,
       )}
     >
-      <Handle
-        className="nodrag nowheel"
-        type="target"
-        position={Position.Left}
-        id={encodeHandleId(
+      <CanvasPortBall
+        nodeId={id}
+        handleId={encodeHandleId(
           portMetaForPort(port, port.shape, plug.id, data.artifactTypeBindings),
         )}
-        aria-label={accessibleLabel}
+        side="input"
+        color={color}
+        sequence
+        square={Boolean(binding)}
+        ariaLabel={accessibleLabel}
         title={`${accessibleLabel}. Connect one compatible output here.`}
-        style={handleStyle("50%", color, true, binding ? "square" : "circle")}
       />
       <button
         type="button"
@@ -1621,7 +1623,6 @@ function InstancePlugPort({
             title={port.description ?? `Inspect ${visibleName} type`}
             {...nodeInteractionProps(stylex.props(s.plugPortTitle))}
           >
-            <span {...stylex.props(s.dot)} style={{ backgroundColor: color }} />
             <span {...stylex.props(nodeChrome.tabLabel)}>{visibleName}</span>
             {port.required ? (
               <span {...stylex.props(s.required)}>*</span>
@@ -2516,11 +2517,9 @@ function SchemaBuilderBody({
                   )}
                 >
                   {consumesInput && inputPort ? (
-                    <Handle
-                      className="nodrag nowheel"
-                      type="target"
-                      position={Position.Left}
-                      id={encodeHandleId(
+                    <CanvasPortBall
+                      nodeId={id}
+                      handleId={encodeHandleId(
                         portMetaForPort(
                           inputPort,
                           inputPort.shape,
@@ -2528,9 +2527,12 @@ function SchemaBuilderBody({
                           data.artifactTypeBindings,
                         ),
                       )}
-                      aria-label={`Nested schema for ${field.name || `field ${index + 1}`}`}
+                      side="input"
+                      color={handleColor}
+                      sequence
+                      centerY={19}
+                      ariaLabel={`Nested schema for ${field.name || `field ${index + 1}`}`}
                       title="Connect one JSON Schema output here."
-                      style={handleStyle("19px", handleColor, true)}
                     />
                   ) : null}
 
@@ -2898,11 +2900,9 @@ function ArtifactQueryTablesBody({
             return (
               <div key={relation.id} {...stylex.props(s.schemaFieldRow)}>
                 {inputPort ? (
-                  <Handle
-                    className="nodrag nowheel"
-                    type="target"
-                    position={Position.Left}
-                    id={encodeHandleId(
+                  <CanvasPortBall
+                    nodeId={id}
+                    handleId={encodeHandleId(
                       portMetaForPort(
                         inputPort,
                         inputPort.shape,
@@ -2910,9 +2910,12 @@ function ArtifactQueryTablesBody({
                         data.artifactTypeBindings,
                       ),
                     )}
-                    aria-label={`Table relation ${relation.alias || index + 1}`}
+                    side="input"
+                    color={handleColor}
+                    sequence
+                    centerY={19}
+                    ariaLabel={`Table relation ${relation.alias || index + 1}`}
                     title="Connect one table artifact here."
-                    style={handleStyle("19px", handleColor, true)}
                   />
                 ) : null}
 
@@ -3211,10 +3214,12 @@ function NodeHeader({
   id,
   data,
   selected,
+  onMenuOpenChange,
 }: {
   id: string;
   data: WorkflowNodeData;
   selected: boolean;
+  onMenuOpenChange?: (open: boolean) => void;
 }) {
   const executionLabel =
     data.execution.status === "idle" ? null : data.execution.status;
@@ -3226,7 +3231,6 @@ function NodeHeader({
     <CanvasNodeHeader
       title={data.spec.title}
       selected={selected}
-      aboutLabel={`About ${data.spec.title}`}
       aboutTitle={data.spec.title}
       aboutDescription={
         data.spec.description || "No description is available for this node."
@@ -3256,6 +3260,7 @@ function NodeHeader({
         </>
       }
       onRemove={() => data.onRemoveNode?.(id)}
+      onMenuOpenChange={onMenuOpenChange}
       status={
         executionLabel ? (
           executionIsBusy ? (
@@ -3326,9 +3331,11 @@ type IncompatibleWorkflowNodeCompatibility = Exclude<
 >;
 
 function CompatibilityPort({
+  nodeId,
   direction,
   endpoint,
 }: {
+  nodeId: string;
   direction: "input" | "output";
   endpoint: IncompatibleWorkflowNodeCompatibility["inputs"][number];
 }) {
@@ -3350,27 +3357,25 @@ function CompatibilityPort({
       >
         <span {...stylex.props(nodeChrome.tabLabel)}>{label}</span>
       </div>
-      <Handle
-        type={input ? "target" : "source"}
-        position={input ? Position.Left : Position.Right}
-        id={compatibilityHandleId(direction, endpoint)}
-        isConnectable={false}
-        aria-label={`Unavailable ${direction} port ${label}`}
+      <CanvasPortBall
+        nodeId={nodeId}
+        handleId={compatibilityHandleId(direction, endpoint)}
+        side={direction}
+        color={tokens.colorMuted}
+        locked
+        ariaLabel={`Unavailable ${direction} port ${label}`}
         title={`This historical ${direction} cannot accept new connections.`}
-        style={{
-          ...handleStyle("50%", tokens.colorMuted),
-          cursor: "not-allowed",
-          opacity: 0.72,
-        }}
       />
     </div>
   );
 }
 
 function CompatibilityPortRail({
+  nodeId,
   inputs,
   outputs,
 }: {
+  nodeId: string;
   inputs: IncompatibleWorkflowNodeCompatibility["inputs"];
   outputs: IncompatibleWorkflowNodeCompatibility["outputs"];
 }) {
@@ -3394,7 +3399,11 @@ function CompatibilityPortRail({
           >
             <div {...stylex.props(nodeChrome.portRailSlot)}>
               {input ? (
-                <CompatibilityPort direction="input" endpoint={input} />
+                <CompatibilityPort
+                  nodeId={nodeId}
+                  direction="input"
+                  endpoint={input}
+                />
               ) : null}
             </div>
             <div
@@ -3404,7 +3413,11 @@ function CompatibilityPortRail({
               )}
             >
               {output ? (
-                <CompatibilityPort direction="output" endpoint={output} />
+                <CompatibilityPort
+                  nodeId={nodeId}
+                  direction="output"
+                  endpoint={output}
+                />
               ) : null}
             </div>
           </div>
@@ -3428,6 +3441,7 @@ function IncompatibleWorkflowNodeCard({
   compatibility: IncompatibleWorkflowNodeCompatibility;
 }) {
   const updateNodeInternals = useUpdateNodeInternals();
+  const [menuOpen, setMenuOpen] = React.useState(false);
   const grid = useOptionalCanvasGridSettings();
   const allowCornerResize = grid?.settings.allowWorkflowCornerResize ?? false;
   const [draftLayout, setDraftLayout] =
@@ -3483,6 +3497,48 @@ function IncompatibleWorkflowNodeCard({
       remoteSelectionColor={data.remoteSelectionColor}
       variant="incompatible"
       ariaLabel={`${data.spec.title} ${compatibility.status} node`}
+      menuOpen={menuOpen}
+      header={
+        <CanvasNodeHeader
+          title={data.spec.title}
+          selected={selected}
+          aboutTitle={data.spec.title}
+          aboutDescription={`This node is ${compatibility.status}. Remove it, or restore the plugin release it was saved with.`}
+          aboutFooter={
+            <span {...stylex.props(s.operatorCopy)}>
+              {data.spec.operator_id}@{data.spec.operator_version}
+            </span>
+          }
+          onMenuOpenChange={setMenuOpen}
+          status={
+            <span
+              role="status"
+              title={`${data.spec.title} is ${compatibility.status}`}
+              {...stylex.props(s.compatibilityBadge)}
+            >
+              <TriangleAlert
+                size={11}
+                aria-hidden="true"
+                {...stylex.props(s.compatibilityIcon)}
+              />
+              {compatibility.status}
+            </span>
+          }
+        >
+          {/* Removal is the only repair, so it stays one click away. */}
+          <button
+            type="button"
+            aria-label={`Remove ${data.spec.title}`}
+            title={`Remove ${data.spec.title}`}
+            {...nodeInteractionProps(
+              stylex.props(nodeChrome.headerButton, s.removeButton),
+            )}
+            onClick={() => data.onRemoveNode?.(id)}
+          >
+            <X size={13} />
+          </button>
+        </CanvasNodeHeader>
+      }
       resizeHandle={
         allowCornerResize ? (
           <LayoutResizeHandle
@@ -3508,38 +3564,8 @@ function IncompatibleWorkflowNodeCard({
         />
       }
     >
-      <header {...stylex.props(s.header)}>
-        <span {...stylex.props(s.titleRow)}>
-          <TriangleAlert
-            size={14}
-            aria-hidden="true"
-            {...stylex.props(s.compatibilityIcon)}
-          />
-          <button
-            type="button"
-            aria-label={`Remove ${data.spec.title}`}
-            title={`Remove ${data.spec.title}`}
-            {...nodeInteractionProps(
-              stylex.props(nodeChrome.headerButton, s.removeButton),
-            )}
-            onClick={() => data.onRemoveNode?.(id)}
-          >
-            <X size={13} />
-          </button>
-          <span {...stylex.props(nodeChrome.title)} title={data.spec.title}>
-            {data.spec.title}
-          </span>
-          <span {...stylex.props(s.compatibilityBadge)}>
-            {compatibility.status}
-          </span>
-        </span>
-        <span {...stylex.props(s.operatorRow)}>
-          <span {...stylex.props(s.operatorCopy)}>
-            {data.spec.operator_id}@{data.spec.operator_version}
-          </span>
-        </span>
-      </header>
       <CompatibilityPortRail
+        nodeId={id}
         inputs={compatibility.inputs}
         outputs={compatibility.outputs}
       />
@@ -3604,6 +3630,7 @@ function SupportedWorkflowNodeCard({
     .join("|");
   const incidentConnections = useNodeConnections({ id });
   const updateNodeInternals = useUpdateNodeInternals();
+  const [menuOpen, setMenuOpen] = React.useState(false);
   const grid = useOptionalCanvasGridSettings();
   const allowCornerResize = grid?.settings.allowWorkflowCornerResize ?? false;
   const measuredArtifactTypeBindings = data.artifactTypeBindings;
@@ -3666,6 +3693,15 @@ function SupportedWorkflowNodeCard({
       state={shell}
       selected={selected}
       remoteSelectionColor={data.remoteSelectionColor}
+      menuOpen={menuOpen}
+      header={
+        <NodeHeader
+          id={id}
+          data={data}
+          selected={selected ?? false}
+          onMenuOpenChange={setMenuOpen}
+        />
+      }
       resizeHandle={
         allowCornerResize ? (
           <LayoutResizeHandle
@@ -3691,7 +3727,6 @@ function SupportedWorkflowNodeCard({
         />
       }
     >
-      <NodeHeader id={id} data={data} selected={selected ?? false} />
       <GenericArtifactTypeState
         id={id}
         data={data}
@@ -3763,6 +3798,17 @@ function SupportedWorkflowNodeCard({
 
 function WorkflowNodeCard(props: NodeProps<WorkflowNode>) {
   if (props.data.compatibility.status === "supported") {
+    // A collection reads as the artifacts it gathers, not as an operator.
+    if (isCollectionSpec(props.data.spec)) {
+      return (
+        <CollectionCard
+          id={props.id}
+          data={props.data}
+          selected={props.selected}
+          dragging={props.dragging}
+        />
+      );
+    }
     return <SupportedWorkflowNodeCard {...props} />;
   }
   return (

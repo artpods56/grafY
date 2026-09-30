@@ -6,7 +6,7 @@ import * as stylex from "@stylexjs/stylex";
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type { SchemaField } from "../canvas/config-schema";
-import { portMarkStyle } from "../canvas/handle-style";
+import { PORT_RING_REACH, portMarkStyle } from "../canvas/handle-style";
 import { artifactTypeColor } from "../canvas/nodes.css";
 import { portArtifactType, portHasInstancePlugs } from "../canvas/types";
 
@@ -36,36 +36,46 @@ export function fieldTypeLabel(field: SchemaField): string {
   return field.type;
 }
 
+/**
+ * The preview is a node as it sits on the canvas, picked up: its name above
+ * the plate, port names inside the plate's edges, and each port's ring out on
+ * a stem (see `PortBall`).
+ */
 const s = stylex.create({
   previewNode: {
     position: "relative",
+    display: "grid",
     width: "300px",
     flexShrink: 0,
     overflow: "visible",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: tokens.radiusLg,
-    backgroundColor: tokens.colorChrome,
-    boxShadow: tokens.shadowNodeRaised,
     color: tokens.colorText,
   },
   previewHeader: {
     minWidth: 0,
     display: "flex",
     alignItems: "center",
-    minHeight: "34px",
-    padding: "5px 12px 3px",
+    height: "24px",
+    paddingInline: "2px",
   },
   previewTitle: {
     minWidth: 0,
     overflow: "hidden",
     color: tokens.colorText,
-    fontSize: tokens.fontSizeMd,
+    fontSize: tokens.fontSizeSm,
     fontWeight: 500,
     letterSpacing: "-0.01em",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+  },
+  previewPlate: {
+    position: "relative",
+    overflow: "visible",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorderStrong,
+    borderRadius: tokens.radiusMd,
+    backgroundColor: tokens.colorChrome,
+    boxShadow: tokens.shadowNodeActive,
   },
   previewRail: {
     display: "grid",
@@ -90,18 +100,21 @@ const s = stylex.create({
     display: "flex",
     alignItems: "center",
     gap: "4px",
-    maxWidth: "calc(100% - 10px)",
-    height: "24px",
-    paddingInline: "14px 12px",
+    maxWidth: "calc(100% - 8px)",
+    height: "22px",
+    paddingInline: "10px 8px",
     borderWidth: 0,
-    backgroundColor: tokens.colorSurfaceMuted,
-    color: tokens.colorTextEmphasis,
+    borderRadius: tokens.radiusSm,
+    backgroundColor: "transparent",
+    color: tokens.colorMuted,
     fontFamily: "inherit",
     fontSize: tokens.fontSizeXs,
-    fontWeight: 600,
+    fontWeight: 500,
   },
   previewTabButton: {
     cursor: "pointer",
+    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
+    color: { default: tokens.colorMuted, ":hover": tokens.colorText },
     outlineColor: tokens.colorAccent,
     outlineStyle: "solid",
     outlineOffset: "2px",
@@ -109,14 +122,12 @@ const s = stylex.create({
   },
   previewTabSelected: {
     backgroundColor: tokens.colorAccentSoft,
+    color: tokens.colorText,
   },
-  previewTabIn: {
-    borderRadius: "0 9999px 9999px 0",
-  },
+  previewTabIn: {},
   previewTabOut: {
     flexDirection: "row-reverse",
-    paddingInline: "12px 14px",
-    borderRadius: "9999px 0 0 9999px",
+    paddingInline: "8px 10px",
   },
   previewTabLabel: {
     minWidth: 0,
@@ -128,24 +139,37 @@ const s = stylex.create({
     flexShrink: 0,
     color: tokens.colorSubtle,
   },
+  // The row sits inside the plate's 1px border: the ring's centre is 23px
+  // outside the plate, its stem runs back to the plate's edge.
+  previewStem: {
+    position: "absolute",
+    top: "50%",
+    width: "23px",
+    height: "1px",
+    marginTop: "-0.5px",
+    opacity: 0.5,
+    pointerEvents: "none",
+  },
+  previewStemIn: { left: "-24px" },
+  previewStemOut: { right: "-24px" },
   previewHandle: {
     position: "absolute",
     top: "50%",
     width: "10px",
     height: "10px",
+    marginTop: "-5px",
     boxSizing: "border-box",
-    transform: "translateY(-50%)",
     borderWidth: 2,
     borderStyle: "solid",
-    borderRadius: "99px",
+    borderRadius: "9999px",
     backgroundColor: tokens.colorSurface,
     pointerEvents: "none",
   },
   previewHandleIn: {
-    left: "-5px",
+    left: "-29px",
   },
   previewHandleOut: {
-    right: "-5px",
+    right: "-29px",
   },
   previewEmptyPort: {
     paddingInline: "12px",
@@ -187,7 +211,8 @@ const s = stylex.create({
 });
 
 export const CATALOG_PREVIEW_WIDTH = 300;
-const PREVIEW_HEADER_HEIGHT = 34;
+/** The name row above the plate, then the plate's border and rail padding. */
+const PREVIEW_HEADER_HEIGHT = 24 + 1;
 const PREVIEW_RAIL_PADDING = 2;
 const PREVIEW_ROW_HEIGHT = 36;
 
@@ -199,8 +224,9 @@ export function catalogPreviewInputHandleOffset(
     0,
     spec.inputs.findIndex((port) => port.name === portName),
   );
+  // A connection meets the ring's outer edge, a ring's reach off the plate.
   return {
-    x: 0,
+    x: -PORT_RING_REACH,
     y:
       PREVIEW_HEADER_HEIGHT +
       PREVIEW_RAIL_PADDING +
@@ -218,7 +244,7 @@ export function catalogPreviewOutputHandleOffset(
     spec.outputs.findIndex((port) => port.name === portName),
   );
   return {
-    x: CATALOG_PREVIEW_WIDTH,
+    x: CATALOG_PREVIEW_WIDTH + PORT_RING_REACH,
     y:
       PREVIEW_HEADER_HEIGHT +
       PREVIEW_RAIL_PADDING +
@@ -320,6 +346,14 @@ function PreviewPort({
       <span
         aria-hidden="true"
         {...stylex.props(
+          s.previewStem,
+          output ? s.previewStemOut : s.previewStemIn,
+        )}
+        style={{ backgroundColor: color }}
+      />
+      <span
+        aria-hidden="true"
+        {...stylex.props(
           s.previewHandle,
           output ? s.previewHandleOut : s.previewHandleIn,
         )}
@@ -349,60 +383,62 @@ export function CatalogNodePreview({
       <header {...stylex.props(s.previewHeader)}>
         <span {...stylex.props(s.previewTitle)}>{spec.title}</span>
       </header>
-      <div {...stylex.props(s.previewRail)}>
-        {Array.from({ length: rowCount }, (_, index) => (
-          <div
-            key={`preview-rail-${index}`}
-            {...stylex.props(s.previewRailRow)}
-          >
-            <PreviewPort
-              port={spec.inputs[index]}
-              direction="input"
-              registry={registry}
-              selected={Boolean(
-                spec.inputs[index] &&
-                selectedPortKey === portKey(spec.inputs[index]!),
-              )}
-              onSelect={onSelectPort}
-              emptyLabel={
-                index === 0 && spec.inputs.length === 0 ? "Start" : null
-              }
-            />
-            <PreviewPort
-              port={spec.outputs[index]}
-              direction="output"
-              registry={registry}
-              selected={Boolean(
-                spec.outputs[index] &&
-                selectedPortKey === portKey(spec.outputs[index]!),
-              )}
-              onSelect={onSelectPort}
-              emptyLabel={
-                index === 0 && spec.outputs.length === 0 ? "End" : null
-              }
-            />
-          </div>
-        ))}
-      </div>
-      {visibleFields.length ? (
-        <div {...stylex.props(s.previewBody)}>
-          {visibleFields.map((field) => (
-            <div key={field.name} {...stylex.props(s.previewField)}>
-              <span>{field.title}</span>
-              <span {...stylex.props(s.previewFieldMeta)}>
-                {fieldTypeLabel(field)}
-              </span>
+      <div {...stylex.props(s.previewPlate)}>
+        <div {...stylex.props(s.previewRail)}>
+          {Array.from({ length: rowCount }, (_, index) => (
+            <div
+              key={`preview-rail-${index}`}
+              {...stylex.props(s.previewRailRow)}
+            >
+              <PreviewPort
+                port={spec.inputs[index]}
+                direction="input"
+                registry={registry}
+                selected={Boolean(
+                  spec.inputs[index] &&
+                  selectedPortKey === portKey(spec.inputs[index]!),
+                )}
+                onSelect={onSelectPort}
+                emptyLabel={
+                  index === 0 && spec.inputs.length === 0 ? "Start" : null
+                }
+              />
+              <PreviewPort
+                port={spec.outputs[index]}
+                direction="output"
+                registry={registry}
+                selected={Boolean(
+                  spec.outputs[index] &&
+                  selectedPortKey === portKey(spec.outputs[index]!),
+                )}
+                onSelect={onSelectPort}
+                emptyLabel={
+                  index === 0 && spec.outputs.length === 0 ? "End" : null
+                }
+              />
             </div>
           ))}
-          {fields.length > visibleFields.length ? (
-            <div {...stylex.props(s.previewField)}>
-              <span>+{fields.length - visibleFields.length} more</span>
-            </div>
-          ) : null}
         </div>
-      ) : (
-        <div {...stylex.props(s.previewBodyEmpty)} />
-      )}
+        {visibleFields.length ? (
+          <div {...stylex.props(s.previewBody)}>
+            {visibleFields.map((field) => (
+              <div key={field.name} {...stylex.props(s.previewField)}>
+                <span>{field.title}</span>
+                <span {...stylex.props(s.previewFieldMeta)}>
+                  {fieldTypeLabel(field)}
+                </span>
+              </div>
+            ))}
+            {fields.length > visibleFields.length ? (
+              <div {...stylex.props(s.previewField)}>
+                <span>+{fields.length - visibleFields.length} more</span>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div {...stylex.props(s.previewBodyEmpty)} />
+        )}
+      </div>
     </article>
   );
 }

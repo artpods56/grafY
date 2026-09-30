@@ -19,6 +19,8 @@ import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  useStore,
+  useStoreApi,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -90,6 +92,27 @@ export interface WorkflowCanvasProps {
   onlyRenderVisibleElements?: boolean;
   /** Background lattice gap in flow units; omit to hide the painted grid. */
   gridGap?: number | null;
+}
+
+/**
+ * React Flow keeps its drag-selection rectangle up while the selection it drew
+ * changes underneath, so after "Collect" it would sit over the one new card and
+ * swallow drops and clicks. The rectangle only means something for several
+ * nodes; below two it goes.
+ */
+function SelectionRectangleReset() {
+  const store = useStoreApi();
+  const selected = useStore((state) => {
+    let count = 0;
+    for (const node of state.nodes) if (node.selected) count += 1;
+    return count;
+  });
+  React.useEffect(() => {
+    if (selected < 2 && store.getState().nodesSelectionActive) {
+      store.setState({ nodesSelectionActive: false });
+    }
+  }, [selected, store]);
+  return null;
 }
 
 export function WorkflowCanvas({
@@ -216,6 +239,7 @@ export function WorkflowCanvas({
           strokeWidth: 2,
         }}
       >
+        <SelectionRectangleReset />
         {children}
         {gridGap != null && gridGap > 0 ? (
           <Background

@@ -197,6 +197,7 @@ function RichArtifactViewerNode({
       ? artifactTypeColor(firstArtifact.artifact_type, tokens.colorAccent)
       : tokens.colorAccent;
   const updateNodeInternals = useUpdateNodeInternals();
+  const [menuOpen, setMenuOpen] = React.useState(false);
   const [draftLayout, setDraftLayout] =
     React.useState<WorkflowNodeLayout | null>(null);
   const layout = draftLayout ?? data.layout;
@@ -284,6 +285,46 @@ function RichArtifactViewerNode({
       remoteSelectionColor={data.remoteSelectionColor}
       ariaLabel="Artifact viewer"
       testId="artifact-viewer-node"
+      menuOpen={menuOpen}
+      header={
+        <CanvasNodeHeader
+          title="Artifact Viewer"
+          selected={selected ?? false}
+          onMenuOpenChange={setMenuOpen}
+          aboutTitle="Artifact Viewer"
+          aboutDescription={
+            sourceLabel
+              ? `Preview of ${sourceLabel}. The renderer follows the connected artifact type.`
+              : "Presentation-only preview. Connect an output and the renderer follows that artifact type."
+          }
+          aboutFooter={
+            artifactContract ? (
+              <span title={artifactContract} {...stylex.props(s.aboutMeta)}>
+                {artifactContract}
+              </span>
+            ) : null
+          }
+          overflowItems={overflowItems}
+          onRemove={() => data.onRemoveNode?.(id)}
+          status={
+            sourceIsBusy ? (
+              <LoaderCircle
+                size={11}
+                role="status"
+                aria-label="Updating"
+                {...stylex.props(s.spinner, s.statusBusy)}
+              />
+            ) : incomingEdge && !sourceNode ? (
+              <TriangleAlert
+                size={11}
+                role="status"
+                aria-label="Unavailable"
+                {...stylex.props(s.statusUnavailable)}
+              />
+            ) : null
+          }
+        />
+      }
       resizeHandle={
         showPreview ? (
           <LayoutResizeHandle
@@ -296,43 +337,6 @@ function RichArtifactViewerNode({
         ) : undefined
       }
     >
-      <CanvasNodeHeader
-        title="Artifact Viewer"
-        selected={selected ?? false}
-        aboutLabel="About Artifact Viewer"
-        aboutTitle="Artifact Viewer"
-        aboutDescription={
-          sourceLabel
-            ? `Preview of ${sourceLabel}. The renderer follows the connected artifact type.`
-            : "Presentation-only preview. Connect an output and the renderer follows that artifact type."
-        }
-        aboutFooter={
-          artifactContract ? (
-            <span title={artifactContract} {...stylex.props(s.aboutMeta)}>
-              {artifactContract}
-            </span>
-          ) : null
-        }
-        overflowItems={overflowItems}
-        onRemove={() => data.onRemoveNode?.(id)}
-        status={
-          sourceIsBusy ? (
-            <LoaderCircle
-              size={11}
-              role="status"
-              aria-label="Updating"
-              {...stylex.props(s.spinner, s.statusBusy)}
-            />
-          ) : incomingEdge && !sourceNode ? (
-            <TriangleAlert
-              size={11}
-              role="status"
-              aria-label="Unavailable"
-              {...stylex.props(s.statusUnavailable)}
-            />
-          ) : null
-        }
-      />
       <CanvasPortRail
         rows={[
           {

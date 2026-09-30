@@ -30,6 +30,7 @@ import {
 } from "./query-artifact-tables";
 import type { SchemaBuilderField } from "./schema-builder";
 import type { WorkflowNodeSecretStatuses } from "./node-secrets";
+import type { CollectionMember } from "../model/collection";
 
 export type {
   WorkflowInputPlug,
@@ -282,6 +283,12 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   pluginUpgradeRelease?: number | null;
   onUpgradePluginRelease?: (nodeId: string) => void;
   onOpenExecutionHistory?: (nodeId: string, executionId?: string) => void;
+  /** A collection's members in plug order; derived, never persisted. */
+  collectionMembers?: readonly CollectionMember[];
+  /** Turns a collection back into one card per member. */
+  onUngroupCollection?: (nodeId: string) => void;
+  /** Why a collection cannot be ungrouped right now, if it cannot. */
+  ungroupDisabledReason?: string | null;
 }
 
 export const WORKFLOW_NODE_TYPE = "grafyWorkflowNode";

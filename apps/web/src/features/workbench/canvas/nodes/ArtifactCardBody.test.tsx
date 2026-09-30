@@ -33,6 +33,7 @@ vi.mock("@xyflow/react", () => ({
   useNodesData: (nodeId: string) => flowMocks.nodes.get(nodeId) ?? null,
   useConnection: (selector: (state: { inProgress: boolean }) => unknown) =>
     selector({ inProgress: false }),
+  useNodeConnections: () => [],
   useStore: (selector: (state: unknown) => unknown) =>
     selector({ edges: [], nodeLookup: new Map() }),
   Handle: (props: {
@@ -99,6 +100,13 @@ vi.mock("@base-ui/react/menu", () => ({
         {children}
       </button>
     ),
+    Group: ({ children }: { children: React.ReactNode }) => (
+      <div role="group">{children}</div>
+    ),
+    GroupLabel: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="menu-info">{children}</div>
+    ),
+    Separator: () => <hr />,
   },
 }));
 
@@ -195,8 +203,9 @@ describe("artifact on the canvas", () => {
 
     expect(image?.getAttribute("src")).toContain("/artifacts/a1/content");
     expect(content?.querySelector("[data-artifact-media] img")).toBe(image);
+    // Placed from the library, the card holds its own artifact: output only.
     expect(content?.querySelectorAll("[data-artifact-port-side]")).toHaveLength(
-      2,
+      1,
     );
     expect(content?.querySelector("[data-testid='port-rail']")).toBeNull();
     expect(
@@ -349,13 +358,27 @@ describe("artifact on the canvas", () => {
     expect(stack?.closest("[data-artifact-content]")).not.toBeNull();
   });
 
+  it("takes an input only when pulled out of a node's output port", () => {
+    const placed = mount(single("a1"), {}, true);
+    expect(
+      placed.container.querySelector('[data-artifact-port-side="input"]'),
+    ).toBeNull();
+
+    const pulled = mount(single("a1"), { mode: "artifact" }, true);
+    expect(
+      pulled.container.querySelector(
+        `[data-artifact-port-side="input"] [data-handle-id="${ARTIFACT_VIEWER_INPUT_HANDLE}"]`,
+      ),
+    ).not.toBeNull();
+  });
+
   it("hides ports and actions until the card is picked up", () => {
-    const quiet = mount(single("a1"));
+    const quiet = mount(single("a1"), { mode: "artifact" });
     expect(
       quiet.container.querySelector('[data-artifact-chrome="off"]'),
     ).not.toBeNull();
     expect(
-      quiet.container.querySelectorAll('[data-artifact-ports="off"]'),
+      quiet.container.querySelectorAll('[data-port-out="false"]'),
     ).toHaveLength(2);
 
     React.act(() => {
@@ -367,15 +390,15 @@ describe("artifact on the canvas", () => {
       quiet.container.querySelector('[data-artifact-chrome="off"]'),
     ).not.toBeNull();
     expect(
-      quiet.container.querySelectorAll('[data-artifact-ports="off"]'),
+      quiet.container.querySelectorAll('[data-port-out="false"]'),
     ).toHaveLength(2);
 
-    const picked = mount(single("a1"), {}, true);
+    const picked = mount(single("a1"), { mode: "artifact" }, true);
     expect(
       picked.container.querySelector('[data-artifact-chrome="on"]'),
     ).not.toBeNull();
     expect(
-      picked.container.querySelectorAll('[data-artifact-ports="on"]'),
+      picked.container.querySelectorAll('[data-port-out="true"]'),
     ).toHaveLength(2);
   });
 
@@ -487,14 +510,16 @@ describe("artifact on the canvas", () => {
     });
     React.act(() => image.dispatchEvent(new Event("load")));
 
-    await React.act(async () => {
-      container
-        .querySelector<HTMLButtonElement>(
-          '[aria-label="Inspect file.jpeg@1 artifact"]',
-        )
-        ?.click();
-    });
-    expect(document.body.textContent).toContain("2.4 MB · 1920 × 1080");
+    // The info heads the one actions menu; there is no separate info button.
+    expect(
+      container.querySelector('[aria-label="Inspect file.jpeg@1 artifact"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Actions for file.jpeg@1"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="menu-info"]')?.textContent,
+    ).toContain("2.4 MB · 1920 × 1080");
     expect(
       container.querySelector<HTMLElement>("[data-artifact-media]")?.style
         .height,

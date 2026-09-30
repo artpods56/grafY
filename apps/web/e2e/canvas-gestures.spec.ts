@@ -231,14 +231,28 @@ test("ports still connect through a real drag", async ({ page, hasTouch }) => {
   if (hasTouch) await page.touchscreen.tap(pane.x + 20, pane.y + 80);
   else await page.mouse.click(pane.x + 20, pane.y + 80);
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
-  await source.locator(".react-flow__handle.source").click({ trial: true });
-  await target.locator(".react-flow__handle.target").click({ trial: true });
-  const from = await center(source.locator(".react-flow__handle.source"));
-  const to = await center(target.locator(".react-flow__handle.target"));
+  // Ports rest tucked under an idle card: picking the source up slides its
+  // output out, and starting a connection slides every other port out.
+  const sourceHeader = await center(source.locator("header"));
+  if (hasTouch) await page.touchscreen.tap(sourceHeader.x, sourceHeader.y);
+  else await page.mouse.click(sourceHeader.x, sourceHeader.y);
+  const output = source.locator(".react-flow__handle.source");
+  const input = target.locator(".react-flow__handle.target");
+  await output.click({ trial: true });
+  await expect(input).toBeHidden();
+  const from = await center(output);
 
   if (hasTouch) {
     const client = await page.context().newCDPSession(page);
     await touch(page, client, "touchStart", [{ ...from, id: 1 }]);
+    await touch(page, client, "touchMove", [
+      { x: from.x + 20, y: from.y + 20, id: 1 },
+    ]);
+    // Not a trial click: a drag near the edge of a phone viewport auto-pans,
+    // so the ball is visible but never "stable".
+    await expect(input).toBeVisible();
+    await page.waitForTimeout(350);
+    const to = await center(input);
     for (let step = 1; step <= 10; step += 1) {
       await touch(page, client, "touchMove", [
         {
@@ -252,6 +266,10 @@ test("ports still connect through a real drag", async ({ page, hasTouch }) => {
   } else {
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
+    await page.mouse.move(from.x + 20, from.y + 20, { steps: 3 });
+    await expect(input).toBeVisible();
+    await page.waitForTimeout(350);
+    const to = await center(input);
     await page.mouse.move(to.x, to.y, { steps: 10 });
     await page.mouse.up();
   }

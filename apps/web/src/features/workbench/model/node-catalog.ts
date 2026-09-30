@@ -22,6 +22,7 @@ import {
   portMetaForPort,
 } from "../canvas/types";
 import { routesForHandleFeed } from "./connection-feeds";
+import { isCollectionSpec } from "./collection";
 
 export type CatalogFilterKind =
   | "all"
@@ -345,6 +346,8 @@ export function catalogNodeSpecs(
   return registry.nodes.filter(
     (spec) =>
       spec.catalog_visible !== false &&
+      // Collections are made from artifacts on the canvas, not picked here.
+      !isCollectionSpec(spec) &&
       (activeGraphId === null || spec.module_graph_id !== activeGraphId),
   );
 }

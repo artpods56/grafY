@@ -6,13 +6,21 @@ import type {
   RunExecution,
   TemplateList,
 } from "../src/lib/api/contract";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 const DOCKED_MIN_WIDTH = 1100;
 // Mirrors DEFAULT_ARTIFACT_FILE_CARD_WIDTH. A stamped width on the drop path is
 // exactly the regression this pins: the card would silently open wide.
 const FILE_CARD_PLACED_WIDTH = 150;
 const AUTO_OPEN_MIN_WIDTH = 1280;
+
+/** Let the rails finish sliding before measuring where their marks sit. */
+const railsSettled = (card: Locator) =>
+  card.evaluate((element) =>
+    Promise.all(
+      element.getAnimations({ subtree: true }).map((motion) => motion.finished),
+    ),
+  );
 
 const panel = (page: Page) =>
   page.getByRole("complementary", { name: "Workbench side panel" });
@@ -460,32 +468,22 @@ test("an artifact dragged out of the Library onto empty canvas lands on it", asy
     card.locator('[aria-label="Connect file.csv@1 to a node input"]'),
   ).toBeVisible();
 
-  // Ports sit in the side rails, a small gap away from the file body.
-  await expect
-    .poll(async () =>
-      card
-        .locator("[data-artifact-frame]")
-        .evaluate((element) => getComputedStyle(element).columnGap),
-    )
-    .toBe("8px");
+  // Ports sit in the side rails, a small gap away from the file body. Placed
+  // from the Library, the card holds its own artifact, so it takes no input.
+  await railsSettled(card);
   const body = card.locator("[data-artifact-file-body]");
-  const input = card.locator(
-    '[aria-label="Input port Artifact, accepts any artifact"]',
+  await expect(card.locator('[data-artifact-port-side="input"]')).toHaveCount(
+    0,
   );
-  const output = card.locator(
-    '[aria-label="Connect file.csv@1 to a node input"]',
-  );
+  // The rail geometry is the port's 30px slot; the handle is only the ring.
+  const output = card.locator('[data-artifact-port-side="output"]');
   const label = card.locator("[data-artifact-label]");
   const bodyBox = await body.boundingBox();
   const labelBox = await label.boundingBox();
-  const inputBox = await input.boundingBox();
   const outputBox = await output.boundingBox();
-  if (!bodyBox || !labelBox || !inputBox || !outputBox) {
+  if (!bodyBox || !labelBox || !outputBox) {
     throw new Error("Artifact body or connection ball has no bounds");
   }
-  expect(bodyBox.x - (inputBox.x + inputBox.width)).toBeGreaterThan(4);
-  expect(bodyBox.x - (inputBox.x + inputBox.width)).toBeLessThan(16);
-  expect(Math.abs(inputBox.y - bodyBox.y)).toBeLessThan(8);
   expect(outputBox.x - (bodyBox.x + bodyBox.width)).toBeGreaterThan(4);
   expect(outputBox.x - (bodyBox.x + bodyBox.width)).toBeLessThan(16);
   expect(
@@ -495,7 +493,7 @@ test("an artifact dragged out of the Library onto empty canvas lands on it", asy
   await expect(outputPort).toHaveText("");
   expect(
     await card
-      .getByRole("button", { name: "Inspect file.csv@1 artifact" })
+      .getByRole("button", { name: "Actions for file.csv@1" })
       .evaluate((element) => getComputedStyle(element).borderTopWidth),
   ).toBe("0px");
   await expect(card.locator("[data-node-pickup-shadow]")).toHaveCount(0);
@@ -513,27 +511,28 @@ test("an artifact dragged out of the Library onto empty canvas lands on it", asy
     await body.evaluate((element) => getComputedStyle(element).boxShadow),
   ).not.toBe("none");
   expect(labelBox.y + labelBox.height).toBeLessThanOrEqual(bodyBox.y + 1);
+  // Info and actions share one button; there is no separate info button.
   const actions = card.getByRole("button", { name: "Actions for file.csv@1" });
-  const inspect = card.getByRole("button", {
-    name: "Inspect file.csv@1 artifact",
-  });
-  const actionBox = await inspect.boundingBox();
-  const menuBox = await actions.boundingBox();
-  if (!actionBox || !menuBox) throw new Error("Actions missing");
+  await expect(
+    card.getByRole("button", { name: "Inspect file.csv@1 artifact" }),
+  ).toHaveCount(0);
+  const actionBox = await actions.boundingBox();
+  if (!actionBox) throw new Error("Actions missing");
   expect(actionBox.x - (bodyBox.x + bodyBox.width)).toBeGreaterThan(4);
   expect(actionBox.x - (bodyBox.x + bodyBox.width)).toBeLessThan(16);
-  // One rail centreline serves both card kinds, so each button sits on it and
-  // the first is level with the input port.
+  // One rail centreline serves both card kinds, so the button sits on it,
+  // level with where an input port would sit (a 30px slot).
   const csvOutputCentreX = outputBox.x + outputBox.width / 2;
   expect(
     Math.abs(actionBox.x + actionBox.width / 2 - csvOutputCentreX),
   ).toBeLessThan(1);
-  expect(
-    Math.abs(menuBox.x + menuBox.width / 2 - csvOutputCentreX),
-  ).toBeLessThan(1);
+  const csvSlot = await card
+    .locator('[data-artifact-port-side="output"]')
+    .boundingBox();
+  if (!csvSlot) throw new Error("Output slot has no bounds");
   expect(
     Math.abs(
-      actionBox.y + actionBox.height / 2 - (inputBox.y + inputBox.height / 2),
+      actionBox.y + actionBox.height / 2 - (bodyBox.y + csvSlot.height / 2),
     ),
   ).toBeLessThan(1);
   const flow = await page.locator(".react-flow").boundingBox();
@@ -541,13 +540,13 @@ test("an artifact dragged out of the Library onto empty canvas lands on it", asy
   await page.mouse.click(flow.x + flow.width - 40, flow.y + flow.height - 40);
 
   await expect(actions).toBeHidden();
-  await expect(card.locator('[data-artifact-ports="off"]')).toHaveCount(2);
+  await expect(card.locator('[data-port-out="false"]')).toHaveCount(1);
   await expect
     .poll(() => body.evaluate((element) => getComputedStyle(element).boxShadow))
     .toBe("none");
   await card.click();
   await expect(actions).toBeVisible();
-  await expect(card.locator('[data-artifact-ports="on"]')).toHaveCount(2);
+  await expect(card.locator('[data-port-out="true"]')).toHaveCount(1);
   await expect
     .poll(() => body.evaluate((element) => getComputedStyle(element).boxShadow))
     .not.toBe("none");
@@ -587,7 +586,7 @@ test("an image keeps dimmed metadata above its pixels and external controls reac
 
   const actions = card.getByRole("button", { name: "Actions for file.png@1" });
   await expect(actions).toBeHidden();
-  await expect(card.locator('[data-artifact-ports="off"]')).toHaveCount(2);
+  await expect(card.locator('[data-port-out="false"]')).toHaveCount(1);
 
   const header = card.locator("[data-artifact-image-header]");
   await expect(header).toContainText("coast.png");
@@ -615,33 +614,19 @@ test("an image keeps dimmed metadata above its pixels and external controls reac
     .poll(() => header.evaluate((element) => getComputedStyle(element).opacity))
     .toBe("1");
   await expect(actions).toBeVisible();
-  await expect(card.locator('[data-artifact-ports="on"]')).toHaveCount(2);
-  await expect
-    .poll(async () =>
-      card
-        .locator("[data-artifact-frame]")
-        .evaluate((element) => getComputedStyle(element).columnGap),
-    )
-    .toBe("8px");
+  await expect(card.locator('[data-port-out="true"]')).toHaveCount(1);
+  await railsSettled(card);
   const pickedMedia = await media.boundingBox();
-  const actionBox = await card
-    .getByRole("button", { name: "Inspect file.png@1 artifact" })
-    .boundingBox();
-  const inputBox = await card
-    .locator('[aria-label="Input port Artifact, accepts any artifact"]')
-    .boundingBox();
+  const actionBox = await actions.boundingBox();
   const outputBox = await card
-    .locator('[aria-label="Connect file.png@1 to a node input"]')
+    .locator('[data-artifact-port-side="output"]')
     .boundingBox();
-  if (!pickedMedia || !actionBox || !inputBox || !outputBox) {
+  if (!pickedMedia || !actionBox || !outputBox) {
     throw new Error("Image chrome has no bounds");
   }
   expect(actionBox.x - (pickedMedia.x + pickedMedia.width)).toBeGreaterThan(4);
   expect(actionBox.x - (pickedMedia.x + pickedMedia.width)).toBeLessThan(16);
   expect(Math.abs(actionBox.y - pickedMedia.y)).toBeLessThan(8);
-  expect(pickedMedia.x - (inputBox.x + inputBox.width)).toBeGreaterThan(4);
-  expect(pickedMedia.x - (inputBox.x + inputBox.width)).toBeLessThan(16);
-  expect(Math.abs(inputBox.y - pickedMedia.y)).toBeLessThan(8);
   expect(outputBox.x - (pickedMedia.x + pickedMedia.width)).toBeGreaterThan(4);
   expect(outputBox.x - (pickedMedia.x + pickedMedia.width)).toBeLessThan(16);
   expect(
@@ -649,30 +634,35 @@ test("an image keeps dimmed metadata above its pixels and external controls reac
       outputBox.y + outputBox.height - (pickedMedia.y + pickedMedia.height),
     ),
   ).toBeLessThan(8);
-  // Both rails are a single column: the action buttons and the output ball
+  // Both rails are a single column: the action button and the output ball
   // share one centreline, so the chrome reads as part of the rail.
-  const moreBox = await actions.boundingBox();
-  if (!moreBox) throw new Error("Action menu has no bounds");
   const outputCentreX = outputBox.x + outputBox.width / 2;
   expect(
     Math.abs(actionBox.x + actionBox.width / 2 - outputCentreX),
   ).toBeLessThan(1);
-  expect(Math.abs(moreBox.x + moreBox.width / 2 - outputCentreX)).toBeLessThan(
-    1,
-  );
+  const slot = await card
+    .locator('[data-artifact-port-side="output"]')
+    .boundingBox();
+  if (!slot) throw new Error("Output slot has no bounds");
   expect(
     Math.abs(
-      actionBox.y + actionBox.height / 2 - (inputBox.y + inputBox.height / 2),
+      actionBox.y + actionBox.height / 2 - (pickedMedia.y + slot.height / 2),
     ),
   ).toBeLessThan(1);
   const outputPort = card.locator('[data-artifact-port-side="output"]');
   const width = (await outputPort.boundingBox())?.width;
   await outputPort.hover();
+  // Hovering lights the ball up without moving the slot the edges measure.
+  await expect(outputPort.locator('[data-port-hot="true"]')).toHaveCount(1);
   expect((await outputPort.boundingBox())?.width).toBe(width);
-  await card
-    .getByRole("button", { name: "Inspect file.png@1 artifact" })
-    .click();
-  await expect(page.getByText("1.0 KB · 640 × 360")).toBeVisible();
+  // The menu opens on what the artifact is, then what can be done with it.
+  await actions.click();
+  const menu = page.getByRole("menu");
+  await expect(menu.getByText("coast.png")).toBeVisible();
+  await expect(menu.getByText("1.0 KB · 640 × 360")).toBeVisible();
+  await expect(
+    menu.getByRole("menuitem", { name: "Open original" }),
+  ).toBeVisible();
   await expect(
     page.getByText("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
   ).toBeVisible();
@@ -771,71 +761,116 @@ test("a narrow canvas keeps the panel closed until it is asked for", async ({
   await expect(panel(page)).toHaveCount(0);
 });
 
+const CSV_SOURCE_NODE = {
+  operator_id: "test.csv_source",
+  operator_version: 1,
+  plugin_slug: "builtin",
+  origin: "builtin",
+  title: "CSV source",
+  description: "Produces a CSV artifact.",
+  catalog_visible: true,
+  runnable: true,
+  config_schema: {},
+  input_schema: {},
+  output_schema: {},
+  inputs: [],
+  outputs: [
+    {
+      name: "file",
+      title: "File",
+      description: "Produced CSV file",
+      direction: "output",
+      artifact_type: { id: "file.csv", schema_version: 1 },
+      artifact_type_variable: null,
+      shape: "one",
+      accepted_shapes: ["one"],
+      instance_plugs: false,
+      variadic: false,
+      required: true,
+    },
+  ],
+} satisfies NodeRegistry["nodes"][number];
+
+const CSV_SINK_NODE = {
+  operator_id: "test.csv_sink",
+  operator_version: 1,
+  plugin_slug: "builtin",
+  origin: "builtin",
+  title: "CSV sink",
+  description: "Accepts a CSV artifact.",
+  catalog_visible: true,
+  runnable: true,
+  config_schema: {},
+  input_schema: {},
+  output_schema: {},
+  inputs: [
+    {
+      name: "file",
+      title: "File",
+      description: "CSV input",
+      direction: "input",
+      artifact_type: { id: "file.csv", schema_version: 1 },
+      artifact_type_variable: null,
+      shape: "one",
+      accepted_shapes: ["one"],
+      instance_plugs: false,
+      variadic: false,
+      required: true,
+    },
+  ],
+  outputs: [],
+} satisfies NodeRegistry["nodes"][number];
+
+/** The collection operator a canvas "Collect" builds on. */
+const COLLECT_NODE = {
+  operator_id: "sequence.collect",
+  operator_version: 1,
+  plugin_slug: "builtin",
+  origin: "builtin",
+  title: "Collect",
+  description: "Collects artifacts of one type into a sequence.",
+  catalog_visible: true,
+  runnable: true,
+  config_schema: {},
+  input_schema: {},
+  output_schema: {},
+  inputs: [
+    {
+      name: "items",
+      title: "Items",
+      description: "Artifacts and sequences in connection order.",
+      direction: "input",
+      artifact_type: null,
+      artifact_type_variable: "T",
+      shape: "one",
+      accepted_shapes: ["one", "many"],
+      instance_plugs: true,
+      variadic: true,
+      required: true,
+    },
+  ],
+  outputs: [
+    {
+      name: "items",
+      title: "Items",
+      description: "One sequence containing every input artifact.",
+      direction: "output",
+      artifact_type: null,
+      artifact_type_variable: "T",
+      shape: "many",
+      accepted_shapes: ["many"],
+      instance_plugs: false,
+      variadic: false,
+      required: true,
+    },
+  ],
+} satisfies NodeRegistry["nodes"][number];
+
 test.describe("artifact wiring", () => {
   test.use({
     registry: {
       ...nodeRegistry,
-      nodes: [
-        ...nodeRegistry.nodes,
-        {
-          operator_id: "test.csv_source",
-          operator_version: 1,
-          plugin_slug: "builtin",
-          origin: "builtin",
-          title: "CSV source",
-          description: "Produces a CSV artifact.",
-          catalog_visible: true,
-          runnable: true,
-          config_schema: {},
-          input_schema: {},
-          output_schema: {},
-          inputs: [],
-          outputs: [
-            {
-              name: "file",
-              title: "File",
-              description: "Produced CSV file",
-              direction: "output",
-              artifact_type: { id: "file.csv", schema_version: 1 },
-              artifact_type_variable: null,
-              shape: "one",
-              accepted_shapes: ["one"],
-              instance_plugs: false,
-              variadic: false,
-              required: true,
-            },
-          ],
-        },
-        {
-          operator_id: "test.csv_sink",
-          operator_version: 1,
-          plugin_slug: "builtin",
-          origin: "builtin",
-          title: "CSV sink",
-          description: "Accepts a CSV artifact.",
-          catalog_visible: true,
-          runnable: true,
-          config_schema: {},
-          input_schema: {},
-          output_schema: {},
-          inputs: [
-            {
-              name: "file",
-              title: "File",
-              description: "CSV input",
-              direction: "input",
-              artifact_type: { id: "file.csv", schema_version: 1 },
-              artifact_type_variable: null,
-              shape: "one",
-              accepted_shapes: ["one"],
-              instance_plugs: false,
-              variadic: false,
-              required: true,
-            },
-          ],
-          outputs: [],
-        },
-      ],
+      nodes: [...nodeRegistry.nodes, CSV_SOURCE_NODE, CSV_SINK_NODE],
     } satisfies NodeRegistry,
   });
 
@@ -886,6 +921,24 @@ test.describe("artifact wiring", () => {
     await page.mouse.up();
 
     await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+    // The handle is the ring itself, so the edge leaves from the ball rather
+    // than from the edge of its grab area. The edge redraws a frame after the
+    // rail settles, so poll.
+    await card.click();
+    await railsSettled(card);
+    // Geometry boxes (no stroke) for both, so the path's start is exact.
+    const edgePath = page.locator(".react-flow__edge path").first();
+    await expect
+      .poll(async () => {
+        const ringRight = await source.evaluate(
+          (element) => element.getBoundingClientRect().right,
+        );
+        const edgeLeft = await edgePath.evaluate(
+          (element) => element.getBoundingClientRect().left,
+        );
+        return Math.abs(edgeLeft - ringRight);
+      })
+      .toBeLessThan(1);
   });
 
   test("a completed output dragged onto blank canvas becomes an artifact", async ({
@@ -962,6 +1015,17 @@ test.describe("artifact wiring", () => {
     await expect(card).toContainText("CSV source → File");
     await expect(card.locator("[data-artifact-content]")).toBeVisible();
     await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+    // Pulled out of an output port, the card follows it through its input,
+    // and the edge lands on that input once the rail has slid out.
+    const input = card.locator(
+      '[aria-label="Input port Artifact, accepts any artifact"]',
+    );
+    await expect(input).toBeVisible();
+    await railsSettled(card);
+    const inputBox = await input.boundingBox();
+    const media = await card.locator("[data-artifact-content]").boundingBox();
+    if (!inputBox || !media) throw new Error("Input port has no bounds");
+    expect(inputBox.x + inputBox.width).toBeLessThan(media.x);
   });
 });
 
@@ -1074,4 +1138,136 @@ test("image resizing and a two-image stack preserve image geometry", async ({
   await expect(cards).toHaveCount(2);
   await expect(cards.filter({ hasText: "coast.png" })).toBeVisible();
   await expect(cards.filter({ hasText: "ridge.png" })).toBeVisible();
+});
+
+test.describe("collections", () => {
+  test.use({
+    registry: {
+      ...nodeRegistry,
+      nodes: [...nodeRegistry.nodes, CSV_SOURCE_NODE, COLLECT_NODE],
+      // A collection binds its item type, which must be a registered one.
+      artifact_types: [
+        {
+          key: { id: "file.csv", schema_version: 1 },
+          title: "CSV file",
+          bundle: { format: "binary-file", version: 1 },
+          field_projections: [],
+          payload_schema: {},
+        },
+      ],
+    } satisfies NodeRegistry,
+  });
+
+  test("Collect gathers Library cards and a node output into one collection", async ({
+    page,
+  }) => {
+    test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
+
+    await stubResponses(page, SEQUENCE_LIBRARY);
+    await openPanel(page);
+    const canvas = page.locator(".react-flow");
+    await tree(page)
+      .getByRole("treeitem")
+      .filter({ hasText: "measurements.csv" })
+      .dragTo(canvas, { targetPosition: { x: 250, y: 270 } });
+    await tree(page)
+      .getByRole("treeitem")
+      .filter({ hasText: "forecast.csv" })
+      .dragTo(canvas, { targetPosition: { x: 580, y: 270 } });
+    const cards = page.locator("[data-artifact-card-id]");
+    await expect(cards).toHaveCount(2);
+    const first = await cards.nth(0).boundingBox();
+    const second = await cards.nth(1).boundingBox();
+    if (!first || !second) throw new Error("Artifact cards have no bounds");
+    await page.mouse.move(
+      Math.min(first.x, second.x) - 22,
+      Math.min(first.y, second.y) - 22,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      Math.max(first.x + first.width, second.x + second.width) + 22,
+      Math.max(first.y + first.height, second.y + second.height) + 22,
+      { steps: 12 },
+    );
+    await page.mouse.up();
+    await page.getByRole("button", { name: "Collect", exact: true }).click();
+
+    // The cards become one collection, which is a stack, not an operator card.
+    const collection = page.locator("[data-collection-card-id]");
+    await expect(collection).toHaveCount(1);
+    await expect(cards).toHaveCount(0);
+    await expect(collection).toContainText("2 items");
+    await expect(collection).toContainText("Sequence<file.csv@1>");
+    await expect(page.locator("[data-canvas-node-shell]")).toHaveCount(0);
+
+    // A Library item dropped on the stack joins it on the spare plug.
+    await tree(page)
+      .getByRole("treeitem")
+      .filter({ hasText: "forecast.csv" })
+      .dragTo(collection);
+    await expect(collection).toContainText("3 items");
+
+    // Collect is no longer a node to pick from the catalog.
+    await page.getByRole("button", { name: "Add node", exact: true }).click();
+    await page.getByRole("textbox", { name: "Search nodes" }).fill("Collect");
+    await expect(page.getByRole("option", { name: /^Collect/ })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // A node's output joins the same collection through its input ball.
+    const source = await addNode(page, "CSV source");
+    const header = await source.locator("header").boundingBox();
+    const box = await collection.boundingBox();
+    if (!header || !box) throw new Error("Source or collection has no bounds");
+    await page.mouse.move(header.x + 20, header.y + header.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x - 260, box.y + 40, { steps: 12 });
+    await page.mouse.up();
+    const output = source.locator(".react-flow__handle.source");
+    await expect(output).toBeVisible();
+    const from = await output.boundingBox();
+    if (!from) throw new Error("Source output has no bounds");
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 30, from.y + 10, { steps: 3 });
+    const spare = collection.locator(
+      "[data-collection-spare] .react-flow__handle",
+    );
+    await expect(spare).toBeVisible();
+    await page.waitForTimeout(350);
+    const to = await spare.boundingBox();
+    if (!to) throw new Error("Collection input has no bounds");
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, {
+      steps: 12,
+    });
+    await page.mouse.up();
+
+    await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+    await expect(collection).toContainText("3 items · 1 waiting");
+    // Wired in, the input ball stays out even when nothing is selected.
+    await page.mouse.click(box.x + box.width + 300, box.y + box.height + 200);
+    await expect(spare).toBeVisible();
+
+    // Info and actions share the collection's one "⋯", like any card.
+    await collection.click();
+    const actions = collection.getByRole("button", {
+      name: "Actions for Sequence<file.csv@1>",
+    });
+    await actions.click();
+    await page.getByRole("menuitem", { name: "Reorder members" }).click();
+    const members = collection
+      .getByRole("list", { name: "Collection members" })
+      .getByRole("listitem");
+    await expect(members).toHaveCount(4);
+    await expect(members.nth(3)).toContainText("CSV source → File");
+    await expect(members.nth(3)).toContainText("waiting for a run");
+
+    // Ungrouping gives back one card per member, the output one still wired.
+    await actions.click();
+    await page.getByRole("menuitem", { name: "Ungroup" }).click();
+    await expect(collection).toHaveCount(0);
+    await expect(cards).toHaveCount(4);
+    await expect(cards.filter({ hasText: "CSV source → File" })).toHaveCount(1);
+    await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+  });
 });

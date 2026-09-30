@@ -26,6 +26,8 @@ vi.mock("@xyflow/react", () => ({
   Position: { Left: "left", Right: "right" },
   useEdges: () => [],
   useNodeConnections: () => [],
+  useConnection: (selector: (state: { inProgress: boolean }) => unknown) =>
+    selector({ inProgress: false }),
   useStore: (
     selector: (state: {
       edges: unknown[];
@@ -70,6 +72,42 @@ vi.mock("./TextareaBodyResizeHandle", () => ({
       aria-label={ariaLabel}
     />
   ),
+}));
+
+vi.mock("@base-ui/react/menu", () => ({
+  Menu: {
+    Root: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Trigger: ({
+      children,
+      ...props
+    }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
+    Portal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Positioner: ({ children }: { children: React.ReactNode }) => (
+      <>{children}</>
+    ),
+    Popup: ({ children }: { children: React.ReactNode }) => (
+      <div role="menu">{children}</div>
+    ),
+    Group: ({ children }: { children: React.ReactNode }) => (
+      <div role="group">{children}</div>
+    ),
+    GroupLabel: ({ children }: { children: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
+    Separator: () => <hr />,
+    Item: ({
+      children,
+      ...props
+    }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
+  },
 }));
 
 vi.mock("@base-ui/react/popover", () => ({
@@ -414,7 +452,9 @@ function chatCompletionSpec(): NodeSpec {
 
 function sequenceCollectSpec(): NodeSpec {
   return {
-    operator_id: "sequence.collect",
+    // Collections render as artifact stacks; any generic operator shows the
+    // type-binding row.
+    operator_id: "sequence.slice",
     operator_version: 1,
     plugin_slug: "sequence",
     origin: "builtin",
@@ -517,7 +557,7 @@ describe("WorkflowNode pickup", () => {
 
     expect(
       node.container
-        .querySelector('[data-node-pickup-shadow="true"]')
+        .querySelector('[data-canvas-node-shell="true"]')
         ?.getAttribute("data-picked-up"),
     ).toBe("false");
     xyflowMocks.updateNodeInternals.mockClear();
@@ -536,7 +576,7 @@ describe("WorkflowNode pickup", () => {
     });
     expect(
       node.container
-        .querySelector('[data-node-pickup-shadow="true"]')
+        .querySelector('[data-canvas-node-shell="true"]')
         ?.getAttribute("data-picked-up"),
     ).toBe("true");
     // Option C rides a 200ms spring; handles remeasure per frame while it
@@ -561,7 +601,7 @@ describe("WorkflowNode pickup", () => {
     });
     expect(
       node.container
-        .querySelector('[data-node-pickup-shadow="true"]')
+        .querySelector('[data-canvas-node-shell="true"]')
         ?.getAttribute("data-dragging"),
     ).toBe("true");
     // A real drag snaps the spring and remeasures immediately for the drag loop.
@@ -576,7 +616,7 @@ describe("WorkflowNode pickup", () => {
     const second = renderNode("text-b", data, true);
 
     const plateOf = (node: { container: HTMLElement }) =>
-      node.container.querySelector('[data-node-pickup-shadow="true"]');
+      node.container.querySelector('[data-canvas-node-shell="true"]');
     expect(plateOf(first)?.getAttribute("data-dragging")).toBe("false");
     expect(plateOf(second)?.getAttribute("data-dragging")).toBe("false");
 
