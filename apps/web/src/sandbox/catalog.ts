@@ -12,6 +12,12 @@ export const SPIKES = [
       "Table row to map feature without extra ports. Four gestures for the same binding.",
   },
   {
+    id: "port-types",
+    title: "Port types",
+    summary:
+      "Where a generic port's type lives: six approaches on the same nodes, from a caption to a function signature.",
+  },
+  {
     id: "drawer-interaction",
     title: "Canvas with real input plugs",
     summary:

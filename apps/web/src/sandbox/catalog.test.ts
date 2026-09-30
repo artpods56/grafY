@@ -13,4 +13,8 @@ describe("sandbox catalog", () => {
     expect(SPIKES.map((spike) => spike.id)).toContain("viewer-link");
     expect(getSpike("viewer-link")?.title).toBe("Link viewers");
   });
+
+  it("registers the port types spike", () => {
+    expect(getSpike("port-types")?.title).toBe("Port types");
+  });
 });
