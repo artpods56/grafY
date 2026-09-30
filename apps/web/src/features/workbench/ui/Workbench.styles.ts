@@ -14,6 +14,10 @@ export const workbenchStyles = stylex.create({
       "calc(var(--grafy-rail-width, 0px) + var(--grafy-side-panel-width, 0px))",
     width:
       "calc(100% - var(--grafy-rail-width, 0px) - var(--grafy-side-panel-width, 0px))",
+    // The canvas edge moves with the side panel's edge, on the same clock.
+    transitionProperty: "margin-inline-start, width",
+    transitionDuration: "var(--grafy-side-panel-duration, 0ms)",
+    transitionTimingFunction: "var(--grafy-side-panel-ease, ease)",
     minWidth: 0,
     height: "100svh",
     overflow: "hidden",

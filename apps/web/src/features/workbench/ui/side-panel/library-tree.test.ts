@@ -12,6 +12,7 @@ import {
   libraryFileSubtitle,
   libraryFolderPath,
   libraryProvenanceLine,
+  uniqueLibraryFolderName,
 } from "./library-tree";
 
 function item(
@@ -231,6 +232,52 @@ describe("countLibraryArtifacts", () => {
       items: [item("a", { folder_id: "field" }), item("loose")],
     });
     expect(countLibraryArtifacts(tree)).toBe(2);
+  });
+
+  it("counts only what a filter leaves in the tree", () => {
+    const tree = buildLibraryTree({
+      folders: [folder("field", "Fieldwork", null)],
+      items: [
+        item("kestrel", { folder_id: "field" }),
+        item("harrier", { folder_id: "field" }),
+        item("kestrel-loose"),
+      ],
+      query: "kestrel",
+    });
+    expect(countLibraryArtifacts(tree)).toBe(2);
+  });
+});
+
+describe("parent links", () => {
+  it("names the folder each row sits in, or null at the root", () => {
+    const rows = flattenLibraryRows(
+      buildLibraryTree({
+        folders: [
+          folder("field", "Fieldwork", null),
+          folder("sep", "September", "field"),
+        ],
+        items: [item("a", { folder_id: "sep" }), item("loose")],
+      }),
+    );
+    expect(rows.map((row) => [row.key, row.parentId])).toEqual([
+      ["folder:field", null],
+      ["folder:sep", "field"],
+      ["file:a", "sep"],
+      ["file:loose", null],
+    ]);
+  });
+});
+
+describe("uniqueLibraryFolderName", () => {
+  it("numbers a new folder past the names its siblings already use", () => {
+    const folders = [
+      folder("a", "new folder", null),
+      folder("b", "New folder 2", null),
+      folder("c", "New folder", "a"),
+    ];
+    expect(uniqueLibraryFolderName(folders, null)).toBe("New folder 3");
+    expect(uniqueLibraryFolderName(folders, "a")).toBe("New folder 2");
+    expect(uniqueLibraryFolderName(folders, "b")).toBe("New folder");
   });
 });
 

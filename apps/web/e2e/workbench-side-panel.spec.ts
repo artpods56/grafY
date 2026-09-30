@@ -4,7 +4,6 @@ import type {
   LibraryList,
   NodeRegistry,
   RunExecution,
-  TemplateList,
 } from "../src/lib/api/contract";
 import type { Locator, Page } from "@playwright/test";
 
@@ -24,8 +23,18 @@ const railsSettled = (card: Locator) =>
 
 const panel = (page: Page) =>
   page.getByRole("complementary", { name: "Workbench side panel" });
+/** The rail item that opens and closes the panel. */
 const panelButton = (page: Page) =>
-  page.getByRole("button", { name: "Artifacts and templates panel" });
+  page
+    .getByRole("navigation", { name: "Graphs" })
+    .getByRole("button", { name: "Artifacts", exact: true });
+
+/** On a phone the rail sits behind the navigation button. */
+async function revealRail(page: Page): Promise<void> {
+  const openNavigation = page.getByRole("button", { name: "Open navigation" });
+  if (await openNavigation.isVisible()) await openNavigation.click();
+  await expect(panelButton(page)).toBeVisible();
+}
 const tree = (page: Page) =>
   panel(page).getByRole("tree", { name: "Workspace Library" });
 
@@ -89,25 +98,6 @@ const SEQUENCE_LIBRARY: LibraryList = {
   ],
 };
 
-const TEMPLATES: TemplateList = {
-  templates: [
-    {
-      id: "77777777-7777-4777-8777-777777777777",
-      workspace_id: "11111111-1111-4111-8111-111111111111",
-      source_graph_id: "88888888-8888-4888-8888-888888888888",
-      source_revision: 3,
-      source_graph_name: "Photo review",
-      name: "Photo review starter",
-      description: "Drop a folder of photos and run.",
-      state: "active",
-      node_count: 4,
-      edge_count: 3,
-      created_at: "2026-09-11T12:00:00Z",
-      updated_at: "2026-09-17T12:00:00Z",
-    },
-  ],
-};
-
 function viewportWidth(page: Page): number {
   return page.viewportSize()?.width ?? 0;
 }
@@ -127,7 +117,7 @@ async function stubResponses(page: Page, library: LibraryList): Promise<void> {
 }
 
 async function openPanel(page: Page): Promise<void> {
-  if ((await panelButton(page).getAttribute("aria-pressed")) === "false") {
+  if ((await panelButton(page).getAttribute("aria-expanded")) === "false") {
     await panelButton(page).click();
   }
   await expect(panel(page)).toBeVisible();
@@ -186,11 +176,10 @@ test("a wide canvas opens with the Artifacts panel docked beside it", async ({
 
   const drawer = panel(page);
   await expect(drawer).toBeVisible();
-  await expect(panelButton(page)).toHaveAttribute("aria-pressed", "true");
-  await expect(drawer.getByRole("tab", { name: "Artifacts" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(panelButton(page)).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    drawer.getByRole("heading", { name: "Artifacts" }),
+  ).toBeVisible();
 });
 
 test("the docked panel takes layout space from the canvas", async ({
@@ -214,14 +203,16 @@ test("the docked panel takes layout space from the canvas", async ({
   expect(canvasBox?.width ?? 0).toBeGreaterThan(400);
 });
 
-test("the Panel rail button docks and undocks the panel", async ({ page }) => {
+test("the rail's Artifacts button docks and undocks the panel", async ({
+  page,
+}) => {
   test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
 
   await openPanel(page);
   const openCanvas = await page.locator(".react-flow").boundingBox();
 
   await panelButton(page).click();
-  await expect(panel(page)).toHaveCount(0);
+  await expect(panel(page)).toBeHidden();
   const closedCanvas = await page.locator(".react-flow").boundingBox();
   expect((closedCanvas?.width ?? 0) - (openCanvas?.width ?? 0)).toBeGreaterThan(
     200,
@@ -264,7 +255,7 @@ test("Library artifacts sit at the root and open on the tile below", async ({
   await file.click();
   const tile = page.getByRole("complementary", { name: "Selected artifact" });
   await expect(tile).toContainText("uploaded · measurements.csv");
-  await expect(tile).toContainText("/ · file.csv@1");
+  await expect(tile).toContainText("Library · file.csv@1");
 });
 
 test("folders nest, and an artifact dragged into one moves with its depth", async ({
@@ -327,35 +318,6 @@ test("a folder refuses deletion until it is empty", async ({ page }) => {
   await expect(
     tree(page).getByRole("treeitem", { name: "Cold store" }),
   ).toHaveCount(0);
-});
-
-test("the Templates tab lists graph templates", async ({ page }) => {
-  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
-
-  await stubResponses(page, LIBRARY);
-  await openPanel(page);
-
-  await page.route("**/api/v1/workspaces/*/templates", (route) =>
-    route.request().method() === "GET"
-      ? route.fulfill({ json: TEMPLATES })
-      : route.fallback(),
-  );
-  await page.reload();
-  await panel(page).getByRole("tab", { name: "Templates" }).click();
-
-  await expect(
-    panel(page).getByRole("list", { name: "Graph templates" }),
-  ).toBeVisible();
-  await expect(
-    panel(page)
-      .getByRole("listitem")
-      .filter({ hasText: "Photo review starter" }),
-  ).toContainText("4 nodes");
-  await expect(
-    panel(page).getByRole("button", {
-      name: "New graph from Photo review starter",
-    }),
-  ).toBeVisible();
 });
 
 test("a Library artifact drag still lands on an input port", async ({
@@ -744,13 +706,16 @@ test("a narrow canvas keeps the panel closed until it is asked for", async ({
   test.skip(viewportWidth(page) >= DOCKED_MIN_WIDTH, "Narrow canvas layout");
 
   await expect(panel(page)).toHaveCount(0);
-  await expect(panelButton(page)).toHaveAttribute("aria-pressed", "false");
+  await revealRail(page);
+  await expect(panelButton(page)).toHaveAttribute("aria-expanded", "false");
 
   const beforeOpen = await page.locator(".react-flow").boundingBox();
   await panelButton(page).click();
+  const drawer = page.getByRole("dialog", { name: "Workbench side panel" });
+  await expect(drawer).toBeVisible();
   await expect(
-    page.getByRole("tabpanel").getByRole("tree", { name: "Workspace Library" }),
-  ).toBeVisible();
+    drawer.getByRole("tree", { name: "Workspace Library" }),
+  ).toBeAttached();
 
   // The slide-over covers the canvas rather than shrinking it.
   const afterOpen = await page.locator(".react-flow").boundingBox();

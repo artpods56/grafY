@@ -115,17 +115,13 @@ describe("useWorkbenchSidePanel", () => {
     expect(current().open).toBe(false);
   });
 
-  it("persists the opened view and the panel width", async () => {
+  it("persists the panel width", async () => {
     const current = await mountPanel();
 
-    await React.act(async () => {
-      current().setView("templates");
-    });
     await React.act(async () => {
       current().setWidth(333.6);
     });
 
-    expect(store.get("grafy-side-panel-view")).toBe("templates");
     expect(store.get("grafy-side-panel-width")).toBe("334");
     expect(current().width).toBe(334);
   });

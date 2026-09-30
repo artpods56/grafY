@@ -22,16 +22,22 @@ export const SIDE_PANEL_DEFAULT_WIDTH = 360;
 export const SIDE_PANEL_MIN_WIDTH = 240;
 export const SIDE_PANEL_MAX_WIDTH = 420;
 
+/** The panel's element, which the rail's toggle names in `aria-controls`. */
+export const SIDE_PANEL_ELEMENT_ID = "grafy-side-panel";
+
+/**
+ * How long the panel takes to slide open or shut. The shell's margin follows
+ * on the same clock through `--grafy-side-panel-duration` (see globals.css),
+ * so the canvas edge and the panel edge move together.
+ */
+export const SIDE_PANEL_MOTION_MS = 200;
+
 /** Below this width the panel slides over the canvas instead of docking. */
 export const SIDE_PANEL_DOCK_QUERY = "(min-width: 1100px)";
 /** Above this width the panel opens on its own the first time. */
 export const SIDE_PANEL_AUTO_OPEN_QUERY = "(min-width: 1280px)";
 
-export const SIDE_PANEL_VIEWS = ["artifacts", "templates"] as const;
-export type SidePanelViewId = (typeof SIDE_PANEL_VIEWS)[number];
-
 const OPEN_KEY = "grafy-side-panel-open";
-const VIEW_KEY = "grafy-side-panel-view";
 const WIDTH_KEY = "grafy-side-panel-width";
 const COLLAPSED_FOLDERS_KEY = "grafy-library-folders-collapsed";
 
@@ -78,11 +84,6 @@ function readDockedOpen(): boolean {
   );
 }
 
-function readView(): SidePanelViewId {
-  const stored = readStored(VIEW_KEY);
-  return SIDE_PANEL_VIEWS.find((view) => view === stored) ?? "artifacts";
-}
-
 function readWidth(): number {
   const stored = Number(readStored(WIDTH_KEY));
   return Number.isFinite(stored) && stored > 0
@@ -108,11 +109,9 @@ export interface WorkbenchSidePanelState {
   /** Docked preference on a wide viewport, slide-over state on a narrow one. */
   open: boolean;
   width: number;
-  view: SidePanelViewId;
   setOpen: (next: boolean) => void;
   toggle: () => void;
   setWidth: (next: number) => void;
-  setView: (next: SidePanelViewId) => void;
 }
 
 export function useWorkbenchSidePanel(): WorkbenchSidePanelState {
@@ -127,11 +126,6 @@ export function useWorkbenchSidePanel(): WorkbenchSidePanelState {
     () => overlayOpen,
     () => false,
   );
-  const view = React.useSyncExternalStore(
-    subscribe,
-    readView,
-    (): SidePanelViewId => "artifacts",
-  );
   const width = React.useSyncExternalStore(
     subscribe,
     readWidth,
@@ -140,9 +134,24 @@ export function useWorkbenchSidePanel(): WorkbenchSidePanelState {
 
   const open = docked ? dockedOpen : slidOpen;
 
-  React.useEffect(() => {
+  // Before paint, so the canvas edge starts moving in the same frame as the
+  // panel it makes room for.
+  React.useLayoutEffect(() => {
     publishToDocument(docked && open, width);
   }, [docked, open, width]);
+
+  // Motion starts after the first paint, so a page load lays the panel out
+  // where it belongs instead of sliding it in.
+  React.useEffect(() => {
+    const root = document.documentElement;
+    const frame = window.requestAnimationFrame(() => {
+      root.dataset.sidePanelMotion = "on";
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      delete root.dataset.sidePanelMotion;
+    };
+  }, []);
 
   // A panel that slides over the canvas must not survive the trip to a wide
   // viewport, where it would otherwise open as a docked column nobody asked for.
@@ -169,12 +178,7 @@ export function useWorkbenchSidePanel(): WorkbenchSidePanelState {
     notify();
   }, []);
 
-  const setView = React.useCallback((next: SidePanelViewId) => {
-    writeStored(VIEW_KEY, next);
-    notify();
-  }, []);
-
-  return { docked, open, width, view, setOpen, toggle, setWidth, setView };
+  return { docked, open, width, setOpen, toggle, setWidth };
 }
 
 /** Writes a width straight to the document while a resize drag is running. */
@@ -185,12 +189,17 @@ export function previewSidePanelWidth(width: number): void {
   );
 }
 
+/** A drag moves the panel edge itself; eased motion would trail the pointer. */
 export function beginSidePanelResize(): void {
   document.body.classList.add("grafy-side-panel-resizing");
+  document.documentElement.dataset.sidePanelMotion = "off";
 }
 
 export function endSidePanelResize(): void {
   document.body.classList.remove("grafy-side-panel-resizing");
+  if (document.documentElement.dataset.sidePanelMotion === "off") {
+    document.documentElement.dataset.sidePanelMotion = "on";
+  }
 }
 
 /**

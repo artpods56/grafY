@@ -2,35 +2,20 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { Menu } from "@base-ui/react/menu";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import useSWR from "swr";
 import {
-  ArrowDownUp,
-  ArrowUpRight,
-  Boxes,
-  ChevronRight,
+  ArrowDownAZ,
   Clock,
-  Download,
-  File as FileIcon,
-  FileText,
-  Folder,
   FolderPlus,
-  Image as ImageIcon,
-  Link2,
   LoaderCircle,
-  MoreHorizontal,
-  Pencil,
+  RotateCw,
   Search,
-  Table,
-  Trash2,
   Upload,
   X,
-  type LucideIcon,
 } from "lucide-react";
 
 import {
-  artifactContentUrl,
   libraryFoldersApi,
   LibraryFolderCycleError,
   LibraryFolderNameTakenError,
@@ -40,81 +25,34 @@ import {
   type LibraryFolder,
   type PlacedLibraryItem,
 } from "@/lib/api";
+import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
-  ARTIFACT_DROP_DATA_TYPE,
-  readArtifactDrop,
-  writeArtifactDrop,
-} from "../../model/artifact-drop";
-import { BLOB_ARTIFACT_NOTICE, isBlobArtifact } from "../../model/blob-notice";
-import { panelStyles as s } from "./panel-styles";
+  dropEffectFor,
+  libraryDragKind,
+  readLibraryDrop,
+  type LibraryDrop,
+  type LibraryDropTarget,
+} from "./library-drag";
 import {
   buildLibraryTree,
   countLibraryArtifacts,
-  isItemImage,
-  libraryFileDisplayName,
-  libraryFileSubtitle,
-  libraryFolderPath,
   libraryFolderKey,
-  libraryProvenanceLine,
-  type LibraryFileIcon,
-  type LibraryFileNode,
-  type LibraryFolderNode,
+  uniqueLibraryFolderName,
   type LibrarySort,
-  type LibraryTreeNode,
 } from "./library-tree";
+import { LibraryArtifactTile } from "./LibraryArtifactTile";
+import { LibraryTree, type LibraryTreeActions } from "./LibraryTree";
+import { panelStyles } from "./panel-styles";
 import { useCollapsedFolderKeys } from "./workbench-side-panel-state";
 
-/** A Library folder being dragged. The canvas ignores this type. */
-const MIME_LIBRARY_FOLDER_ID = "application/x-grafy-library-folder";
+const NO_KEYS: ReadonlySet<string> = new Set();
 
-const FILE_ICONS: Record<LibraryFileIcon, LucideIcon> = {
-  image: ImageIcon,
-  table: Table,
-  text: FileText,
-  model: Boxes,
-  other: FileIcon,
-};
-
-/** How much of a text artifact the preview reads before it stops. */
-const PREVIEW_TEXT_LIMIT = 20_000;
-
-type DragKind = "upload" | "artifact" | "folder" | null;
-
-function dragKind(types: readonly string[]): DragKind {
-  if (types.includes("Files")) return "upload";
-  if (types.includes(MIME_LIBRARY_FOLDER_ID)) return "folder";
-  if (types.includes(ARTIFACT_DROP_DATA_TYPE)) return "artifact";
-  return null;
-}
-
-/** The artifact one drag carries, when it carries exactly one. */
-function droppedArtifactId(dataTransfer: DataTransfer): string | null {
-  const dropped = readArtifactDrop(dataTransfer);
-  if (dropped === null) return null;
-  return "artifact_id" in dropped.value ? dropped.value.artifact_id : null;
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 /**
- * Whether a click belongs to a control inside the row rather than to the row.
- * The row action menu is rendered inside its row, so a click on the ⋯ or on one
- * of its items would otherwise fold the folder or select the artifact too.
- */
-const ROW_CONTROL_SELECTOR =
-  'button, [role="button"], [role="menu"], [role="menuitem"]';
-
-function isRowAction(event: React.MouseEvent): boolean {
-  const target = event.target;
-  return (
-    target instanceof Element && target.closest(ROW_CONTROL_SELECTOR) !== null
-  );
-}
-
-function isFileDrag(event: React.DragEvent): boolean {
-  return Array.from(event.dataTransfer.types).includes("Files");
-}
-
-/**
- * The sentence the panel shows under the toolbar when the server refused.
+ * The sentence the panel shows when the server refused.
  *
  * A refusal carries a code, never counts, so the contents come from the rows the
  * panel already renders. A folder whose badge reads 0 while it holds an empty
@@ -134,12 +72,8 @@ function operationErrorMessage(
       (folder) => folder.parent_id === error.folderId,
     ).length;
     const parts = [
-      artifactCount > 0
-        ? `${artifactCount} artifact${artifactCount === 1 ? "" : "s"}`
-        : null,
-      childCount > 0
-        ? `${childCount} folder${childCount === 1 ? "" : "s"}`
-        : null,
+      artifactCount > 0 ? plural(artifactCount, "artifact") : null,
+      childCount > 0 ? plural(childCount, "folder") : null,
     ].filter((part): part is string => part !== null);
     if (parts.length === 0) {
       // The server counted something this listing never received — another
@@ -158,101 +92,110 @@ function operationErrorMessage(
   return "That could not be done.";
 }
 
+/**
+ * The Workspace Library as a folder tree: the Artifacts view of the side panel.
+ * `headerEnd` is the shell's own control, placed at the end of the header row.
+ */
 export function LibraryPanel({
   workspaceId,
   onOpenRun,
+  headerEnd,
 }: {
   workspaceId: string;
   onOpenRun: (graphId: string, executionId: string) => void;
+  headerEnd?: React.ReactNode;
 }) {
-  const { data, isLoading, error, mutate } = useSWR(
-    ["library-tree", workspaceId],
-    () => libraryFoldersApi.listTree(workspaceId),
+  // The canvas reads the same key, so a change here reaches its cards too.
+  const { data, error, mutate } = useSWR(["library-tree", workspaceId], () =>
+    libraryFoldersApi.listTree(workspaceId),
   );
-  const [collapsedFolders, setCollapsedFolder] = useCollapsedFolderKeys();
+  const folders = React.useMemo(() => data?.folders ?? [], [data]);
+  const items = React.useMemo(() => data?.items ?? [], [data]);
+
   const [query, setQuery] = React.useState("");
   const [sort, setSort] = React.useState<LibrarySort>("name");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
-  const [focusKey, setFocusKey] = React.useState<string | null>(null);
   const [renamingFolderId, setRenamingFolderId] = React.useState<string | null>(
     null,
   );
-  const [dragOverFolderId, setDragOverFolderId] = React.useState<string | null>(
-    null,
-  );
-  const [fileDragOver, setFileDragOver] = React.useState(false);
-  const [uploading, setUploading] = React.useState(false);
+  const [dropTarget, setDropTargetState] =
+    React.useState<LibraryDropTarget | null>(null);
+  const [upload, setUpload] = React.useState<{
+    done: number;
+    total: number;
+  } | null>(null);
   const [message, setMessage] = React.useState<string | null>(null);
-  const treeRef = React.useRef<HTMLDivElement>(null);
+  const uploadingRef = React.useRef(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const renameInputRef = React.useRef<HTMLInputElement>(null);
 
-  const folders = React.useMemo(() => data?.folders ?? [], [data]);
-  const items = React.useMemo(() => data?.items ?? [], [data]);
+  // Folds are remembered. A filter opens every folder instead, and the folds
+  // made while it is on are forgotten with it.
+  const [savedCollapsed, setSavedCollapsed] = useCollapsedFolderKeys();
+  const [filterCollapsed, setFilterCollapsed] = React.useState(NO_KEYS);
+  const filtering = query.trim() !== "";
+  const collapsed = filtering ? filterCollapsed : savedCollapsed;
+
   const tree = React.useMemo(
     () => buildLibraryTree({ folders, items, query, sort }),
     [folders, items, query, sort],
   );
-  const filtering = query.trim() !== "";
-  const totalArtifacts = countLibraryArtifacts(tree);
   const selected = items.find(
     (item) => item.artifact.artifact_id === selectedId,
   );
-  /** Roving tabindex: one row in the tree is reachable by Tab. */
-  const tabbableKey = focusKey ?? tree[0]?.key ?? null;
 
-  React.useEffect(() => {
-    if (renamingFolderId === null) return;
-    renameInputRef.current?.focus();
-    renameInputRef.current?.select();
-  }, [renamingFolderId]);
+  // `dragover` fires every few milliseconds; only a new target re-renders.
+  const setDropTarget = React.useCallback(
+    (next: LibraryDropTarget | null) =>
+      setDropTargetState((current) =>
+        current?.folderId === next?.folderId && current?.kind === next?.kind
+          ? current
+          : next,
+      ),
+    [],
+  );
 
-  async function runOperation(action: () => Promise<unknown>): Promise<void> {
+  function changeQuery(next: string): void {
+    setQuery(next);
+    setFilterCollapsed(NO_KEYS);
+  }
+
+  /** Runs one change, says why if it was refused, and rereads the tree. */
+  async function run(action: () => Promise<unknown>): Promise<void> {
     try {
       await action();
       setMessage(null);
-      await mutate();
-    } catch (operationError) {
-      setMessage(operationErrorMessage(operationError, folders, items));
+    } catch (refusal) {
+      setMessage(operationErrorMessage(refusal, folders, items));
     }
+    await mutate();
   }
 
   async function createFolder(parentId: string | null): Promise<void> {
-    await runOperation(async () => {
+    // The new folder is named in place, so nothing may filter it out of view.
+    changeQuery("");
+    await run(async () => {
       const folder = await libraryFoldersApi.createFolder({
         workspaceId,
-        name: uniqueFolderName(parentId),
+        name: uniqueLibraryFolderName(folders, parentId),
         parentId,
       });
-      if (parentId !== null)
-        setCollapsedFolder(libraryFolderKey(parentId), false);
+      if (parentId !== null) {
+        setSavedCollapsed(libraryFolderKey(parentId), false);
+      }
       setRenamingFolderId(folder.folder_id);
-      setFocusKey(libraryFolderKey(folder.folder_id));
     });
   }
 
-  function uniqueFolderName(parentId: string | null): string {
-    const siblings = new Set(
-      folders
-        .filter((folder) => folder.parent_id === parentId)
-        .map((folder) => folder.name.toLowerCase()),
-    );
-    if (!siblings.has("new folder")) return "New folder";
-    for (let suffix = 2; ; suffix += 1) {
-      const candidate = `New folder ${suffix}`;
-      if (!siblings.has(candidate.toLowerCase())) return candidate;
-    }
-  }
-
-  async function ingestFiles(
-    files: File[],
+  async function uploadFiles(
+    files: readonly File[],
     folderId: string | null,
   ): Promise<void> {
-    if (files.length === 0 || uploading) return;
-    setUploading(true);
+    if (files.length === 0 || uploadingRef.current) return;
+    uploadingRef.current = true;
     setMessage(null);
+    setUpload({ done: 0, total: files.length });
     try {
-      for (const file of files) {
+      for (const [index, file] of files.entries()) {
         const uploaded = await uploadFile(workspaceId, file);
         if (uploaded.artifact_id == null) {
           throw new Error(
@@ -270,180 +213,128 @@ export function LibraryPanel({
             folderId,
           });
         }
+        setUpload({ done: index + 1, total: files.length });
+        // Each file shows up as it lands rather than all of them at the end.
+        void mutate();
       }
-      await mutate();
-    } catch (uploadCause) {
-      setMessage(operationErrorMessage(uploadCause, folders, items));
+    } catch (refusal) {
+      setMessage(operationErrorMessage(refusal, folders, items));
     } finally {
-      setUploading(false);
-      setFileDragOver(false);
-      setDragOverFolderId(null);
+      uploadingRef.current = false;
+      setUpload(null);
+      await mutate();
     }
   }
 
-  function rows(): HTMLElement[] {
-    const treeElement = treeRef.current;
-    if (!treeElement) return [];
-    return [...treeElement.querySelectorAll<HTMLElement>("[data-tree-key]")];
+  function drop(dropped: LibraryDrop, folderId: string | null): void {
+    switch (dropped.kind) {
+      case "upload":
+        void uploadFiles(dropped.files, folderId);
+        return;
+      case "artifact":
+        void run(() =>
+          libraryFoldersApi.moveItems({
+            workspaceId,
+            artifactIds: [dropped.artifactId],
+            folderId,
+          }),
+        );
+        return;
+      case "folder":
+        void run(() =>
+          libraryFoldersApi.moveFolder({
+            workspaceId,
+            folderId: dropped.folderId,
+            parentId: folderId,
+          }),
+        );
+    }
   }
 
-  function focusRow(element: HTMLElement | null | undefined): void {
-    if (!element) return;
-    setFocusKey(element.dataset.treeKey ?? null);
-    element.focus();
-  }
-
-  /**
-   * The row the keyboard is on. Read from the live element rather than the
-   * roving-tabindex state, which is one render behind a fast key sequence.
-   */
-  function activeKey(): string | null {
-    const active = document.activeElement;
-    if (!(active instanceof HTMLElement)) return focusKey;
-    return (
-      active.closest<HTMLElement>("[data-tree-key]")?.dataset.treeKey ??
-      focusKey
-    );
-  }
-
-  function focusByStep(step: number): void {
-    const list = rows();
-    if (list.length === 0) return;
-    const key = activeKey();
-    const current = list.findIndex((row) => row.dataset.treeKey === key);
-    focusRow(list[Math.min(list.length - 1, Math.max(0, current + step))]);
-  }
-
-  function focusByOffset(offset: number): void {
-    const list = rows();
-    if (list.length === 0) return;
-    focusRow(list[offset < 0 ? list.length + offset : offset]);
-  }
-
-  function focusRowByKey(key: string | null): void {
-    if (key === null) return;
-    focusRow(
-      treeRef.current?.querySelector<HTMLElement>(`[data-tree-key="${key}"]`),
-    );
-  }
-
-  function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
-    if (
-      event.target instanceof HTMLElement &&
-      event.target.tagName === "INPUT"
-    ) {
-      return;
-    }
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      focusByStep(1);
-      return;
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      focusByStep(-1);
-      return;
-    }
-    if (event.key === "Home") {
-      event.preventDefault();
-      focusByOffset(0);
-      return;
-    }
-    if (event.key === "End") {
-      event.preventDefault();
-      focusByOffset(-1);
-      return;
-    }
-    const key = activeKey();
-    if (key === null) return;
-    if (event.key === "ArrowRight" && key.startsWith("folder:")) {
-      if (collapsedFolders.has(key)) {
-        event.preventDefault();
-        setCollapsedFolder(key, false);
-      } else {
-        focusByStep(1);
-      }
-      return;
-    }
-    if (event.key === "ArrowLeft") {
-      if (key.startsWith("folder:")) {
-        const folderId = key.slice("folder:".length);
-        const parent = folders.find(
-          (folder) => folder.folder_id === folderId,
-        )?.parent_id;
-        if (!collapsedFolders.has(key)) {
-          event.preventDefault();
-          setCollapsedFolder(key, true);
-        } else if (parent) {
-          event.preventDefault();
-          focusRowByKey(libraryFolderKey(parent));
-        }
+  const actions: LibraryTreeActions = {
+    setFolderOpen(key, open) {
+      if (!filtering) {
+        setSavedCollapsed(key, !open);
         return;
       }
-      const artifactId = key.slice("file:".length);
-      const fileFolder = items.find(
-        (item) => item.artifact.artifact_id === artifactId,
-      )?.folder_id;
-      if (fileFolder) {
-        event.preventDefault();
-        focusRowByKey(libraryFolderKey(fileFolder));
+      setFilterCollapsed((current) => {
+        const next = new Set(current);
+        if (open) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    },
+    select: setSelectedId,
+    startRename: setRenamingFolderId,
+    async renameFolder(folderId, name) {
+      if (name !== null) {
+        await run(() =>
+          libraryFoldersApi.renameFolder({ workspaceId, folderId, name }),
+        );
       }
-      return;
-    }
-    if (
-      (event.key === "Enter" || event.key === " ") &&
-      key.startsWith("folder:")
-    ) {
-      event.preventDefault();
-      setCollapsedFolder(key, !collapsedFolders.has(key));
-      return;
-    }
-    focusByTyping(event);
-  }
+      setRenamingFolderId(null);
+    },
+    createSubfolder: (parentId) => void createFolder(parentId),
+    deleteFolder: (folderId) =>
+      void run(() => libraryFoldersApi.deleteFolder({ workspaceId, folderId })),
+    drop,
+    setDropTarget,
+  };
 
-  /** Filesystem type-ahead: a letter jumps to the next row that starts with it. */
-  function focusByTyping(event: React.KeyboardEvent<HTMLDivElement>): void {
-    if (
-      event.metaKey ||
-      event.ctrlKey ||
-      event.altKey ||
-      event.key.length !== 1 ||
-      !/\S/.test(event.key)
-    ) {
-      return;
-    }
-    const list = rows();
-    if (list.length === 0) return;
-    const current = list.findIndex(
-      (row) => row.dataset.treeKey === activeKey(),
-    );
-    const needle = event.key.toLowerCase();
-    for (let offset = 1; offset <= list.length; offset += 1) {
-      const candidate = list[(current + offset) % list.length];
-      if (
-        (candidate?.dataset.treeLabel ?? "").toLowerCase().startsWith(needle)
-      ) {
-        event.preventDefault();
-        focusRow(candidate);
-        return;
-      }
-    }
-  }
-
-  const emptyLibrary = !isLoading && tree.length === 0 && items.length === 0;
+  const loading = data === undefined && error === undefined;
+  const emptyLibrary =
+    data !== undefined && folders.length === 0 && items.length === 0;
+  const shownCount = countLibraryArtifacts(tree);
+  const rootDrag = dropTarget?.folderId === null ? dropTarget : null;
 
   return (
     <div {...stylex.props(s.view)}>
-      <div {...stylex.props(s.toolbar)}>
+      <header {...stylex.props(s.header)}>
+        <h2 {...stylex.props(s.title)}>Artifacts</h2>
         <button
           type="button"
           aria-label="New folder"
           title="New folder"
-          {...stylex.props(s.iconButton)}
           onClick={() => void createFolder(null)}
+          {...stylex.props(panelStyles.iconButton)}
         >
-          <FolderPlus size={13} />
+          <FolderPlus size={14} />
         </button>
+        <button
+          type="button"
+          aria-label="Upload files to the Library"
+          title="Upload files to the Library"
+          disabled={upload !== null}
+          onClick={() => fileInputRef.current?.click()}
+          {...stylex.props(panelStyles.iconButton)}
+        >
+          {upload ? (
+            <LoaderCircle size={14} {...stylex.props(panelStyles.spinner)} />
+          ) : (
+            <Upload size={14} />
+          )}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          hidden
+          tabIndex={-1}
+          onChange={(event) => {
+            const picked = Array.from(event.target.files ?? []);
+            event.target.value = "";
+            void uploadFiles(picked, null);
+          }}
+        />
+        {headerEnd ? (
+          <>
+            <span aria-hidden="true" {...stylex.props(s.headerDivider)} />
+            {headerEnd}
+          </>
+        ) : null}
+      </header>
+
+      <div {...stylex.props(s.searchRow)}>
         <label {...stylex.props(s.search)}>
           <Search size={12} aria-hidden="true" />
           <input
@@ -451,15 +342,22 @@ export function LibraryPanel({
             value={query}
             placeholder="Filter the Library"
             aria-label="Filter the Library"
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => changeQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && query !== "") {
+                event.preventDefault();
+                event.stopPropagation();
+                changeQuery("");
+              }
+            }}
             {...stylex.props(s.searchInput)}
           />
           {query ? (
             <button
               type="button"
               aria-label="Clear Library filter"
-              {...stylex.props(s.iconButton)}
-              onClick={() => setQuery("")}
+              onClick={() => changeQuery("")}
+              {...stylex.props(panelStyles.iconButton, s.clearButton)}
             >
               <X size={12} />
             </button>
@@ -473,114 +371,76 @@ export function LibraryPanel({
               : "Sort artifacts by name"
           }
           title={sort === "name" ? "Sorted by name" : "Sorted by newest"}
-          {...stylex.props(s.iconButton)}
           onClick={() => setSort(sort === "name" ? "recent" : "name")}
+          {...stylex.props(panelStyles.iconButton)}
         >
-          {sort === "name" ? <ArrowDownUp size={13} /> : <Clock size={13} />}
+          {sort === "name" ? <ArrowDownAZ size={14} /> : <Clock size={14} />}
         </button>
-        <button
-          type="button"
-          aria-label="Upload files to the Library"
-          title="Upload files to the Library"
-          disabled={uploading}
-          {...stylex.props(s.iconButton)}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          {uploading ? (
-            <LoaderCircle size={13} {...stylex.props(s.spinner)} />
-          ) : (
-            <Upload size={13} />
-          )}
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          hidden
-          tabIndex={-1}
-          onChange={(event) => {
-            const picked = Array.from(event.target.files ?? []);
-            event.target.value = "";
-            void ingestFiles(picked, null);
-          }}
-        />
       </div>
 
       <div
         role="region"
         aria-label="Workspace Library files"
-        {...stylex.props(s.dropRegion, fileDragOver ? s.dropActive : null)}
-        onDragEnter={(event) => {
-          if (!isFileDrag(event)) return;
-          event.preventDefault();
-          setFileDragOver(true);
-        }}
+        // The background is the root of the tree: it takes uploads, artifacts
+        // and folders, and a drop over a row never reaches it.
         onDragOver={(event) => {
-          // The background is the root of the tree: it takes uploads, artifacts
-          // and folders, and only a drop it accepts will ever be reported.
-          const kind = dragKind(Array.from(event.dataTransfer.types));
+          const kind = libraryDragKind(event.dataTransfer);
           if (kind === null) return;
           event.preventDefault();
-          event.dataTransfer.dropEffect = kind === "upload" ? "copy" : "move";
-          setFileDragOver(kind === "upload");
+          event.dataTransfer.dropEffect = dropEffectFor(kind);
+          setDropTarget({ folderId: null, kind });
         }}
         onDragLeave={(event) => {
           if (event.currentTarget.contains(event.relatedTarget as Node)) return;
-          setFileDragOver(false);
+          setDropTarget(null);
         }}
         onDrop={(event) => {
-          const kind = dragKind(Array.from(event.dataTransfer.types));
-          if (kind === "upload") {
-            event.preventDefault();
-            void ingestFiles(Array.from(event.dataTransfer.files), null);
-            return;
-          }
-          if (kind === "artifact") {
-            event.preventDefault();
-            const artifactId = droppedArtifactId(event.dataTransfer);
-            if (artifactId) {
-              void runOperation(() =>
-                libraryFoldersApi.moveItems({
-                  workspaceId,
-                  artifactIds: [artifactId],
-                  folderId: null,
-                }),
-              );
-            }
-            return;
-          }
-          if (kind === "folder") {
-            event.preventDefault();
-            const folderId = event.dataTransfer.getData(MIME_LIBRARY_FOLDER_ID);
-            if (folderId) {
-              void runOperation(() =>
-                libraryFoldersApi.moveFolder({
-                  workspaceId,
-                  folderId,
-                  parentId: null,
-                }),
-              );
-            }
-          }
+          const dropped = readLibraryDrop(event.dataTransfer);
+          if (libraryDragKind(event.dataTransfer) === null) return;
+          event.preventDefault();
+          setDropTarget(null);
+          if (dropped) drop(dropped, null);
         }}
+        {...stylex.props(s.dropRegion, rootDrag ? s.dropRegionActive : null)}
       >
-        <ScrollArea.Root {...stylex.props(s.list)}>
-          <ScrollArea.Viewport {...stylex.props(s.listViewport)}>
-            <ScrollArea.Content {...stylex.props(s.listContent)}>
-              {isLoading ? (
-                <span role="status" {...stylex.props(s.notice)}>
-                  <LoaderCircle size={12} {...stylex.props(s.spinner)} />{" "}
+        <ScrollArea.Root {...stylex.props(s.scrollRoot)}>
+          <ScrollArea.Viewport {...stylex.props(s.scrollViewport)}>
+            <ScrollArea.Content {...stylex.props(s.scrollContent)}>
+              {loading ? (
+                <span role="status" {...stylex.props(s.notice, s.loading)}>
+                  <LoaderCircle
+                    size={12}
+                    aria-hidden="true"
+                    {...stylex.props(panelStyles.spinner)}
+                  />
                   Loading the Library…
                 </span>
               ) : null}
-              {error && !isLoading ? (
-                <p role="alert" {...stylex.props(s.error)}>
+              {error && data === undefined ? (
+                <p role="alert" {...stylex.props(s.notice, s.error)}>
                   The Library could not be loaded.
+                  <button
+                    type="button"
+                    onClick={() => void mutate()}
+                    {...stylex.props(s.inlineAction)}
+                  >
+                    <RotateCw size={11} aria-hidden="true" />
+                    Try again
+                  </button>
                 </p>
               ) : null}
               {message ? (
-                <p role="alert" {...stylex.props(s.error)}>
-                  {message}
+                <p role="alert" {...stylex.props(s.notice, s.error)}>
+                  <span {...stylex.props(s.messageText)}>{message}</span>
+                  <button
+                    type="button"
+                    aria-label="Dismiss"
+                    title="Dismiss"
+                    onClick={() => setMessage(null)}
+                    {...stylex.props(panelStyles.iconButton, s.dismiss)}
+                  >
+                    <X size={12} />
+                  </button>
                 </p>
               ) : null}
               {emptyLibrary ? (
@@ -589,84 +449,28 @@ export function LibraryPanel({
                   Upload, or make a folder to file things in.
                 </p>
               ) : null}
-              <div
-                ref={treeRef}
-                role="tree"
-                aria-label="Workspace Library"
-                onKeyDown={onKeyDown}
-                {...stylex.props(s.listContent)}
-              >
-                {tree.map((node) => (
-                  <LibraryRow
-                    key={node.key}
-                    node={node}
-                    workspaceId={workspaceId}
-                    collapsedFolders={collapsedFolders}
-                    filtering={filtering}
-                    tabbableKey={tabbableKey}
-                    selectedId={selectedId}
-                    renamingFolderId={renamingFolderId}
-                    dragOverFolderId={dragOverFolderId}
-                    renameInputRef={renameInputRef}
-                    onToggle={(key) =>
-                      setCollapsedFolder(key, !collapsedFolders.has(key))
-                    }
-                    onFocusRow={setFocusKey}
-                    onSelect={setSelectedId}
-                    onStartRename={setRenamingFolderId}
-                    onEndRename={() => setRenamingFolderId(null)}
-                    onRename={(folderId, name) =>
-                      runOperation(() =>
-                        libraryFoldersApi.renameFolder({
-                          workspaceId,
-                          folderId,
-                          name,
-                        }),
-                      )
-                    }
-                    onCreateSubfolder={(parentId) =>
-                      void createFolder(parentId)
-                    }
-                    onDelete={(folderId) =>
-                      runOperation(() =>
-                        libraryFoldersApi.deleteFolder({
-                          workspaceId,
-                          folderId,
-                        }),
-                      )
-                    }
-                    onDragOverFolder={setDragOverFolderId}
-                    onMoveFolder={(folderId, parentId) =>
-                      runOperation(() =>
-                        libraryFoldersApi.moveFolder({
-                          workspaceId,
-                          folderId,
-                          parentId,
-                        }),
-                      )
-                    }
-                    onMoveItems={(artifactIds, folderId) =>
-                      runOperation(() =>
-                        libraryFoldersApi.moveItems({
-                          workspaceId,
-                          artifactIds,
-                          folderId,
-                        }),
-                      )
-                    }
-                    onUploadFiles={(files, folderId) =>
-                      void ingestFiles(files, folderId)
-                    }
-                  />
-                ))}
-              </div>
+              {data && filtering && tree.length === 0 && !emptyLibrary ? (
+                <p {...stylex.props(s.notice)}>
+                  Nothing in the Library matches “{query.trim()}”.
+                </p>
+              ) : null}
+              <LibraryTree
+                nodes={tree}
+                workspaceId={workspaceId}
+                collapsed={collapsed}
+                filtering={filtering}
+                selectedId={selected ? selectedId : null}
+                renamingFolderId={renamingFolderId}
+                dropTarget={dropTarget}
+                actions={actions}
+              />
             </ScrollArea.Content>
           </ScrollArea.Viewport>
           <ScrollArea.Scrollbar {...stylex.props(s.scrollbar)}>
             <ScrollArea.Thumb {...stylex.props(s.thumb)} />
           </ScrollArea.Scrollbar>
         </ScrollArea.Root>
-        {fileDragOver ? (
+        {rootDrag?.kind === "upload" ? (
           <span {...stylex.props(s.dropHint)}>
             Drop to add to the Workspace Library
           </span>
@@ -675,645 +479,204 @@ export function LibraryPanel({
 
       {selected ? (
         <LibraryArtifactTile
+          key={selected.artifact.artifact_id}
           workspaceId={workspaceId}
           item={selected}
           folders={folders}
           onOpenRun={onOpenRun}
+          onClose={() => setSelectedId(null)}
         />
       ) : null}
 
       <footer role="status" {...stylex.props(s.statusBar)}>
-        {uploading
-          ? "Uploading…"
-          : `${totalArtifacts} artifact${totalArtifacts === 1 ? "" : "s"} · ${folders.length} folder${folders.length === 1 ? "" : "s"}`}
+        {upload
+          ? `Uploading ${Math.min(upload.done + 1, upload.total)} of ${upload.total}…`
+          : filtering
+            ? `${shownCount} of ${plural(items.length, "artifact")}`
+            : `${plural(items.length, "artifact")} · ${plural(folders.length, "folder")}`}
       </footer>
     </div>
   );
 }
 
-/** One row, plus the rows it contains when it is an open folder. */
-function LibraryRow({
-  node,
-  workspaceId,
-  collapsedFolders,
-  filtering,
-  tabbableKey,
-  selectedId,
-  renamingFolderId,
-  dragOverFolderId,
-  renameInputRef,
-  onToggle,
-  onFocusRow,
-  onSelect,
-  onStartRename,
-  onEndRename,
-  onRename,
-  onCreateSubfolder,
-  onDelete,
-  onDragOverFolder,
-  onMoveFolder,
-  onMoveItems,
-  onUploadFiles,
-}: {
-  node: LibraryTreeNode;
-  workspaceId: string;
-  collapsedFolders: ReadonlySet<string>;
-  filtering: boolean;
-  tabbableKey: string | null;
-  selectedId: string | null;
-  renamingFolderId: string | null;
-  dragOverFolderId: string | null;
-  renameInputRef: React.RefObject<HTMLInputElement | null>;
-  onToggle: (key: string) => void;
-  onFocusRow: (key: string) => void;
-  onSelect: (artifactId: string) => void;
-  onStartRename: (folderId: string) => void;
-  onEndRename: () => void;
-  onRename: (folderId: string, name: string) => Promise<void>;
-  onCreateSubfolder: (parentId: string) => void;
-  onDelete: (folderId: string) => Promise<void>;
-  onDragOverFolder: (folderId: string | null) => void;
-  onMoveFolder: (folderId: string, parentId: string | null) => Promise<void>;
-  onMoveItems: (
-    artifactIds: readonly string[],
-    folderId: string | null,
-  ) => Promise<void>;
-  onUploadFiles: (files: File[], folderId: string | null) => void;
-}) {
-  if (node.kind === "file") {
-    return (
-      <LibraryFileRow
-        file={node}
-        workspaceId={workspaceId}
-        selected={node.item.artifact.artifact_id === selectedId}
-        tabbable={tabbableKey === node.key}
-        onFocusRow={() => onFocusRow(node.key)}
-        onSelect={() => onSelect(node.item.artifact.artifact_id)}
-      />
-    );
-  }
-
-  const collapsed = collapsedFolders.has(node.key);
-  const open = !collapsed;
-
-  return (
-    <>
-      <LibraryFolderRow
-        folder={node}
-        open={open}
-        renaming={renamingFolderId === node.id}
-        dropTarget={dragOverFolderId === node.id}
-        filtering={filtering}
-        tabbable={tabbableKey === node.key}
-        renameInputRef={renameInputRef}
-        onFocusRow={() => onFocusRow(node.key)}
-        onToggle={() => onToggle(node.key)}
-        onStartRename={() => onStartRename(node.id)}
-        onEndRename={onEndRename}
-        onRename={(name) => onRename(node.id, name)}
-        onCreateSubfolder={() => onCreateSubfolder(node.id)}
-        onDelete={() => onDelete(node.id)}
-        onDragOver={(kind) => {
-          if (kind === null) return;
-          onDragOverFolder(node.id);
-        }}
-        onDragLeave={() => onDragOverFolder(null)}
-        onDrop={(event) => {
-          const kind = dragKind(Array.from(event.dataTransfer.types));
-          onDragOverFolder(null);
-          if (kind === "upload") {
-            event.preventDefault();
-            event.stopPropagation();
-            onUploadFiles(Array.from(event.dataTransfer.files), node.id);
-            return;
-          }
-          if (kind === "artifact") {
-            event.preventDefault();
-            event.stopPropagation();
-            const artifactId = droppedArtifactId(event.dataTransfer);
-            if (artifactId) void onMoveItems([artifactId], node.id);
-            return;
-          }
-          if (kind === "folder") {
-            event.preventDefault();
-            event.stopPropagation();
-            const folderId = event.dataTransfer.getData(MIME_LIBRARY_FOLDER_ID);
-            if (folderId && folderId !== node.id) {
-              void onMoveFolder(folderId, node.id);
-            }
-          }
-        }}
-      />
-      {open ? (
-        <div
-          role="group"
-          aria-label={`${node.name} contents`}
-          {...stylex.props(s.files)}
-        >
-          {node.nodes.map((child) => (
-            <LibraryRow
-              key={child.key}
-              node={child}
-              workspaceId={workspaceId}
-              collapsedFolders={collapsedFolders}
-              filtering={filtering}
-              tabbableKey={tabbableKey}
-              selectedId={selectedId}
-              renamingFolderId={renamingFolderId}
-              dragOverFolderId={dragOverFolderId}
-              renameInputRef={renameInputRef}
-              onToggle={onToggle}
-              onFocusRow={onFocusRow}
-              onSelect={onSelect}
-              onStartRename={onStartRename}
-              onEndRename={onEndRename}
-              onRename={onRename}
-              onCreateSubfolder={onCreateSubfolder}
-              onDelete={onDelete}
-              onDragOverFolder={onDragOverFolder}
-              onMoveFolder={onMoveFolder}
-              onMoveItems={onMoveItems}
-              onUploadFiles={onUploadFiles}
-            />
-          ))}
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-function LibraryFolderRow({
-  folder,
-  open,
-  renaming,
-  dropTarget,
-  filtering,
-  tabbable,
-  renameInputRef,
-  onFocusRow,
-  onToggle,
-  onStartRename,
-  onEndRename,
-  onRename,
-  onCreateSubfolder,
-  onDelete,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-}: {
-  folder: LibraryFolderNode;
-  open: boolean;
-  renaming: boolean;
-  dropTarget: boolean;
-  filtering: boolean;
-  tabbable: boolean;
-  renameInputRef: React.RefObject<HTMLInputElement | null>;
-  onFocusRow: () => void;
-  onToggle: () => void;
-  onStartRename: () => void;
-  onEndRename: () => void;
-  onRename: (name: string) => Promise<void>;
-  onCreateSubfolder: () => void;
-  onDelete: () => Promise<void>;
-  onDragOver: (kind: DragKind) => void;
-  onDragLeave: () => void;
-  onDrop: (event: React.DragEvent<HTMLDivElement>) => void;
-}) {
-  const canDelete = folder.total === 0;
-
-  return (
-    <div
-      role="treeitem"
-      aria-expanded={open}
-      aria-selected={false}
-      aria-level={folder.depth + 1}
-      data-tree-key={folder.key}
-      data-tree-label={folder.name}
-      data-folder-drop={dropTarget ? "true" : undefined}
-      tabIndex={tabbable ? 0 : -1}
-      title={folder.name}
-      onFocus={onFocusRow}
-      onClick={(event) => {
-        if (isRowAction(event)) return;
-        onToggle();
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "F2") {
-          event.preventDefault();
-          onStartRename();
-        }
-      }}
-      onDragStart={(event) => {
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData(MIME_LIBRARY_FOLDER_ID, folder.id);
-      }}
-      onDragOver={(event) => {
-        const kind = dragKind(Array.from(event.dataTransfer.types));
-        if (kind === null) return;
-        event.preventDefault();
-        event.stopPropagation();
-        event.dataTransfer.dropEffect = kind === "upload" ? "copy" : "move";
-        onDragOver(kind);
-      }}
-      onDragLeave={(event) => {
-        if (event.currentTarget.contains(event.relatedTarget as Node)) return;
-        onDragLeave();
-      }}
-      onDrop={onDrop}
-      {...stylex.props(s.folderRow, dropTarget ? s.rowDropTarget : null)}
-      draggable={!renaming}
-    >
-      <ChevronRight
-        size={12}
-        aria-hidden="true"
-        {...stylex.props(s.chevron, open ? s.chevronOpen : null)}
-      />
-      <Folder size={13} aria-hidden="true" />
-      {renaming ? (
-        <LibraryFolderRenameInput
-          initialName={folder.name}
-          inputRef={renameInputRef}
-          onCommit={(name) => void onRename(name).then(onEndRename)}
-          onCancel={onEndRename}
-        />
-      ) : (
-        <span {...stylex.props(s.folderName)}>{folder.name}</span>
-      )}
-      <span {...stylex.props(s.count)}>
-        {filtering ? folder.matched : folder.total}
-      </span>
-      {!renaming ? (
-        <Menu.Root>
-          <Menu.Trigger
-            aria-label={`Actions for ${folder.name}`}
-            {...stylex.props(s.rowActions)}
-          >
-            <MoreHorizontal size={13} />
-          </Menu.Trigger>
-          <Menu.Portal>
-            <Menu.Positioner
-              side="bottom"
-              align="end"
-              sideOffset={4}
-              {...stylex.props(s.menuPositioner)}
-            >
-              <Menu.Popup {...stylex.props(s.menu)}>
-                <MenuItem
-                  icon={FolderPlus}
-                  label="New subfolder"
-                  onSelect={onCreateSubfolder}
-                />
-                <MenuItem
-                  icon={Pencil}
-                  label="Rename"
-                  onSelect={onStartRename}
-                />
-                <MenuItem
-                  icon={Trash2}
-                  label={
-                    canDelete
-                      ? "Delete folder"
-                      : "Delete folder — empty it first"
-                  }
-                  disabled={!canDelete}
-                  onSelect={() => void onDelete()}
-                />
-              </Menu.Popup>
-            </Menu.Positioner>
-          </Menu.Portal>
-        </Menu.Root>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * An uncontrolled rename box that commits exactly once, whether it closes on
- * Enter, a click away, or Escape. It mounts only while its folder is renaming.
- */
-function LibraryFolderRenameInput({
-  initialName,
-  inputRef,
-  onCommit,
-  onCancel,
-}: {
-  initialName: string;
-  inputRef: React.RefObject<HTMLInputElement | null>;
-  onCommit: (name: string) => void;
-  onCancel: () => void;
-}) {
-  const settled = React.useRef(false);
-
-  function commit(value: string): void {
-    if (settled.current) return;
-    settled.current = true;
-    onCommit(value);
-  }
-
-  return (
-    <input
-      ref={inputRef}
-      aria-label="Folder name"
-      defaultValue={initialName}
-      onClick={(event) => event.stopPropagation()}
-      onKeyDown={(event) => {
-        event.stopPropagation();
-        if (event.key === "Enter") {
-          event.preventDefault();
-          commit(event.currentTarget.value);
-        }
-        if (event.key === "Escape") {
-          event.preventDefault();
-          settled.current = true;
-          onCancel();
-        }
-      }}
-      onBlur={(event) => commit(event.currentTarget.value)}
-      {...stylex.props(s.renameInput)}
-    />
-  );
-}
-
-function LibraryFileRow({
-  file,
-  workspaceId,
-  selected,
-  tabbable,
-  onFocusRow,
-  onSelect,
-}: {
-  file: LibraryFileNode;
-  workspaceId: string;
-  selected: boolean;
-  tabbable: boolean;
-  onFocusRow: () => void;
-  onSelect: () => void;
-}) {
-  const { item } = file;
-  const displayName = libraryFileDisplayName(item);
-  const contentUrl = artifactContentUrl(workspaceId, item.artifact.content_url);
-  const TypeIcon = FILE_ICONS[file.icon];
-  const [thumbnailFailed, setThumbnailFailed] = React.useState(false);
-
-  return (
-    <div
-      role="treeitem"
-      aria-level={file.depth + 1}
-      aria-selected={selected}
-      draggable
-      data-tree-key={file.key}
-      data-tree-label={displayName}
-      data-artifact-id={item.artifact.artifact_id}
-      tabIndex={tabbable ? 0 : -1}
-      title={`${displayName} — drag onto an input or a folder, or double-click to open`}
-      onFocus={onFocusRow}
-      onClick={(event) => {
-        if (isRowAction(event)) return;
-        onSelect();
-      }}
-      onDoubleClick={() => {
-        if (contentUrl) window.open(contentUrl, "_blank", "noopener");
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        onSelect();
-      }}
-      onDragStart={(event) => {
-        writeArtifactDrop(event.dataTransfer, {
-          artifact_id: item.artifact.artifact_id,
-          artifact_type: item.artifact.artifact_type,
-          schema_version: item.artifact.schema_version,
-          content_hash: item.artifact.sha256 ?? null,
-        });
-        event.dataTransfer.effectAllowed = "copyMove";
-        onSelect();
-      }}
-      {...stylex.props(s.fileRow, selected ? s.fileRowSelected : null)}
-    >
-      <span {...stylex.props(s.fileThumb)}>
-        {isItemImage(item) && contentUrl !== null && !thumbnailFailed ? (
-          /* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */
-          <img
-            src={contentUrl}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            onError={() => setThumbnailFailed(true)}
-            {...stylex.props(s.fileThumbImage)}
-          />
-        ) : (
-          <TypeIcon size={11} aria-hidden="true" />
-        )}
-      </span>
-      <span {...stylex.props(s.fileCopy)}>
-        <span {...stylex.props(s.fileName)}>{displayName}</span>
-        <span {...stylex.props(s.fileMeta)}>{libraryFileSubtitle(item)}</span>
-        {isBlobArtifact(item.artifact) ? (
-          <span role="status" {...stylex.props(s.fileMeta)}>
-            {BLOB_ARTIFACT_NOTICE}
-          </span>
-        ) : null}
-      </span>
-      <Menu.Root>
-        <Menu.Trigger
-          aria-label={`Actions for ${displayName}`}
-          {...stylex.props(s.rowActions)}
-        >
-          <MoreHorizontal size={13} />
-        </Menu.Trigger>
-        <Menu.Portal>
-          <Menu.Positioner
-            side="bottom"
-            align="end"
-            sideOffset={4}
-            {...stylex.props(s.menuPositioner)}
-          >
-            <Menu.Popup {...stylex.props(s.menu)}>
-              <MenuItem
-                icon={Download}
-                label="Open original"
-                disabled={contentUrl === null}
-                onSelect={() => {
-                  if (contentUrl) window.open(contentUrl, "_blank", "noopener");
-                }}
-              />
-              <MenuItem
-                icon={Link2}
-                label="Copy link"
-                disabled={contentUrl === null}
-                onSelect={() => {
-                  if (contentUrl)
-                    void navigator.clipboard?.writeText(contentUrl);
-                }}
-              />
-            </Menu.Popup>
-          </Menu.Positioner>
-        </Menu.Portal>
-      </Menu.Root>
-    </div>
-  );
-}
-
-function MenuItem({
-  icon: Icon,
-  label,
-  disabled,
-  onSelect,
-}: {
-  icon: LucideIcon;
-  label: string;
-  disabled?: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <Menu.Item
-      disabled={disabled}
-      onClick={onSelect}
-      {...stylex.props(s.menuItem)}
-    >
-      <Icon size={12} aria-hidden="true" />
-      {label}
-    </Menu.Item>
-  );
-}
-
-/**
- * The reserved tile under the browser. It shows the selected artifact itself —
- * an image or the head of a text file — plus where it came from.
- */
-function LibraryArtifactTile({
-  workspaceId,
-  item,
-  folders,
-  onOpenRun,
-}: {
-  workspaceId: string;
-  item: PlacedLibraryItem;
-  folders: readonly LibraryFolder[];
-  onOpenRun: (graphId: string, executionId: string) => void;
-}) {
-  const contentUrl = artifactContentUrl(workspaceId, item.artifact.content_url);
-  const run = item.run;
-  const path = libraryFolderPath(folders, item.folder_id);
-  const [imageFailed, setImageFailed] = React.useState(false);
-  const preview = useTextPreview(contentUrl, item);
-
-  return (
-    <aside aria-label="Selected artifact" {...stylex.props(s.inspector)}>
-      <span {...stylex.props(s.inspectorTitle)}>
-        {libraryFileDisplayName(item)}
-      </span>
-      <span {...stylex.props(s.inspectorMono)}>
-        {path.length > 0 ? `/${path.join("/")}` : "/"}
-        {" · "}
-        {item.artifact.artifact_type}@{item.artifact.schema_version}
-      </span>
-
-      {isItemImage(item) && contentUrl !== null && !imageFailed ? (
-        /* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */
-        <img
-          key={item.artifact.artifact_id}
-          src={contentUrl}
-          alt={`Preview of ${libraryFileDisplayName(item)}`}
-          decoding="async"
-          onError={() => setImageFailed(true)}
-          {...stylex.props(s.previewImage)}
-        />
-      ) : null}
-      {preview.text !== null ? (
-        <pre {...stylex.props(s.previewText)}>{preview.text}</pre>
-      ) : null}
-      {preview.loading ? (
-        <span role="status" {...stylex.props(s.inspectorText)}>
-          Reading preview…
-        </span>
-      ) : null}
-
-      <span {...stylex.props(s.inspectorLabel)}>Provenance</span>
-      <span {...stylex.props(s.inspectorText)}>
-        {libraryProvenanceLine(item)}
-      </span>
-      {run ? (
-        <span {...stylex.props(s.inspectorText)}>
-          {run.finished_at
-            ? `finished ${new Date(run.finished_at).toLocaleString()}`
-            : "run still in history"}
-        </span>
-      ) : null}
-      <span {...stylex.props(s.inspectorActions)}>
-        {contentUrl ? (
-          <a
-            href={contentUrl}
-            target="_blank"
-            rel="noreferrer"
-            {...stylex.props(s.action)}
-          >
-            <Download size={11} aria-hidden="true" />
-            Open original
-          </a>
-        ) : null}
-        {run ? (
-          <button
-            type="button"
-            {...stylex.props(s.action)}
-            onClick={() => onOpenRun(run.graph_id, run.execution_id)}
-          >
-            <ArrowUpRight size={11} aria-hidden="true" />
-            Execution history
-          </button>
-        ) : null}
-      </span>
-    </aside>
-  );
-}
-
-function isPreviewableText(item: PlacedLibraryItem): boolean {
-  const contentType = (item.artifact.content_type ?? "").toLowerCase();
-  return (
-    contentType.startsWith("text/") ||
-    contentType === "application/json" ||
-    contentType.endsWith("+json") ||
-    contentType === "application/csv" ||
-    contentType === "application/x-ndjson"
-  );
-}
-
-/** The head of a text artifact, read lazily for the preview tile. */
-type TextPreview = { artifactId: string; text: string };
-
-function useTextPreview(
-  contentUrl: string | null,
-  item: PlacedLibraryItem,
-): { text: string | null; loading: boolean } {
-  const artifactId = item.artifact.artifact_id;
-  const previewable = isPreviewableText(item);
-  const [read, setRead] = React.useState<TextPreview | null>(null);
-
-  React.useEffect(() => {
-    if (!previewable || contentUrl === null) return;
-    const controller = new AbortController();
-    fetch(contentUrl, { signal: controller.signal })
-      .then((response) => response.text())
-      .then((body) => {
-        setRead({
-          artifactId,
-          text:
-            body.length > PREVIEW_TEXT_LIMIT
-              ? `${body.slice(0, PREVIEW_TEXT_LIMIT)}\n…`
-              : body,
-        });
-      })
-      .catch(() => {
-        // A preview that will not load shows the artifact's facts instead.
-        setRead({ artifactId, text: "" });
-      });
-    return () => controller.abort();
-  }, [artifactId, contentUrl, previewable]);
-
-  const current = read?.artifactId === artifactId ? read : null;
-  return {
-    text: current?.text ? current.text : null,
-    loading: previewable && current === null,
-  };
-}
+const s = stylex.create({
+  view: {
+    minHeight: 0,
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+  },
+  header: {
+    flexShrink: 0,
+    height: "52px",
+    display: "flex",
+    alignItems: "center",
+    gap: "2px",
+    padding: "0 6px 0 14px",
+  },
+  title: {
+    minWidth: 0,
+    flex: 1,
+    margin: 0,
+    overflow: "hidden",
+    color: tokens.colorTextEmphasis,
+    fontSize: "13px",
+    fontWeight: 620,
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  headerDivider: {
+    width: "1px",
+    height: "16px",
+    marginInline: "4px",
+    backgroundColor: tokens.colorDivider,
+  },
+  searchRow: {
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "0 6px 6px 8px",
+  },
+  search: {
+    minWidth: 0,
+    flex: 1,
+    height: "28px",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    paddingInline: "8px 2px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: {
+      default: tokens.colorBorder,
+      ":focus-within": tokens.colorBorderStrong,
+    },
+    borderRadius: "6px",
+    backgroundColor: {
+      default: tokens.colorSurface,
+      ":focus-within": tokens.colorBg,
+    },
+    color: tokens.colorSubtle,
+  },
+  searchInput: {
+    minWidth: 0,
+    flex: 1,
+    height: "100%",
+    borderWidth: 0,
+    borderStyle: "none",
+    padding: 0,
+    backgroundColor: "transparent",
+    color: tokens.colorText,
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeSm,
+    outline: "none",
+    // The field has its own clear button; the browser's would be a second one.
+    "::-webkit-search-cancel-button": { appearance: "none" },
+  },
+  clearButton: { width: "22px", height: "22px" },
+  /** The drop area: the positioned parent of the drop hint. */
+  dropRegion: {
+    position: "relative",
+    minHeight: 0,
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorDivider,
+  },
+  dropRegionActive: {
+    backgroundColor: tokens.colorAccentSoft,
+    boxShadow: `inset 0 0 0 1px ${tokens.colorAccentBorder}`,
+  },
+  dropHint: {
+    position: "absolute",
+    inset: "6px",
+    display: "grid",
+    placeItems: "center",
+    pointerEvents: "none",
+    borderRadius: "8px",
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: tokens.colorAccentBorder,
+    backgroundColor: tokens.colorAccentSoft,
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeSm,
+    fontWeight: 600,
+  },
+  scrollRoot: {
+    minHeight: 0,
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+  },
+  scrollViewport: { height: "100%", overscrollBehavior: "contain" },
+  scrollContent: {
+    display: "grid",
+    alignContent: "start",
+    gap: "4px",
+    padding: "6px 6px 12px",
+  },
+  scrollbar: {
+    display: "flex",
+    justifyContent: "center",
+    width: "8px",
+    padding: "2px",
+  },
+  thumb: {
+    width: "4px",
+    borderRadius: "9999px",
+    backgroundColor: tokens.colorBorderStrong,
+  },
+  notice: {
+    margin: 0,
+    padding: "6px 8px",
+    color: tokens.colorSubtle,
+    fontSize: tokens.fontSizeSm,
+    lineHeight: 1.45,
+  },
+  loading: { display: "flex", alignItems: "center", gap: "6px" },
+  error: {
+    display: "flex",
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+    gap: "4px 8px",
+    color: tokens.colorDanger,
+  },
+  messageText: { minWidth: 0, flex: 1 },
+  dismiss: {
+    width: "20px",
+    height: "20px",
+    marginBlock: "-1px",
+    color: tokens.colorDanger,
+  },
+  inlineAction: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: 0,
+    borderWidth: 0,
+    borderStyle: "none",
+    backgroundColor: "transparent",
+    color: { default: tokens.colorMuted, ":hover": tokens.colorText },
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeSm,
+    fontWeight: 560,
+  },
+  statusBar: {
+    flexShrink: 0,
+    padding: "5px 10px",
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorDivider,
+    color: tokens.colorSubtle,
+    fontSize: "10px",
+    letterSpacing: "0.04em",
+    fontVariantNumeric: "tabular-nums",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+});

@@ -13,6 +13,9 @@ export interface WorkbenchChromeValue {
   save: () => Promise<void>;
   renameGraph: (graph: SavedGraphSummary, name: string) => Promise<void>;
   deleteGraph: (graph: SavedGraphSummary) => Promise<void>;
+  /** The Artifacts side panel, which the rail opens and closes. */
+  sidePanelOpen: boolean;
+  toggleSidePanel: () => void;
 }
 
 /**

@@ -3,12 +3,7 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Drawer } from "@base-ui/react/drawer";
-import {
-  FolderTree,
-  LayoutTemplate,
-  PanelLeftClose,
-  type LucideIcon,
-} from "lucide-react";
+import { PanelLeftClose } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
@@ -17,55 +12,14 @@ import {
   endSidePanelResize,
   previewSidePanelWidth,
   SIDE_PANEL_DEFAULT_WIDTH,
-  type SidePanelViewId,
+  SIDE_PANEL_ELEMENT_ID,
+  SIDE_PANEL_MOTION_MS,
   type WorkbenchSidePanelState,
 } from "./workbench-side-panel-state";
 import { LibraryPanel } from "./LibraryPanel";
-import { TemplatesPanel } from "./TemplatesPanel";
+import { panelStyles } from "./panel-styles";
 
-const PANEL_BODY_ID = "grafy-side-panel-view";
 const RESIZE_STEP = 16;
-
-type PanelContext = {
-  workspaceId: string;
-  onOpenRun: (graphId: string, executionId: string) => void;
-  onOpenGraph: (graphId: string) => void;
-};
-
-/**
- * The views the panel can host. This array is the whole extension surface: one
- * entry plus one component adds a tab. It is deliberately not a registry — see
- * `docs/design/workbench-side-panel.md`.
- */
-const PANEL_VIEWS: readonly {
-  id: SidePanelViewId;
-  label: string;
-  icon: LucideIcon;
-  render: (context: PanelContext) => React.ReactNode;
-}[] = [
-  {
-    id: "artifacts",
-    label: "Artifacts",
-    icon: FolderTree,
-    render: (context) => (
-      <LibraryPanel
-        workspaceId={context.workspaceId}
-        onOpenRun={context.onOpenRun}
-      />
-    ),
-  },
-  {
-    id: "templates",
-    label: "Templates",
-    icon: LayoutTemplate,
-    render: (context) => (
-      <TemplatesPanel
-        workspaceId={context.workspaceId}
-        onOpenGraph={context.onOpenGraph}
-      />
-    ),
-  },
-];
 
 const s = stylex.create({
   /* The second pane of the sidebar: same surface and hairline as the rail, and
@@ -84,81 +38,18 @@ const s = stylex.create({
     borderInlineEndStyle: "solid",
     borderInlineEndColor: tokens.colorDivider,
     color: tokens.colorText,
+    // Parked behind the rail (which paints above it) until it slides out, and
+    // hidden once it is back there. Its left edge follows the rail when the
+    // rail folds, on the rail's own clock.
+    transform: "translateX(-100%)",
+    visibility: "hidden",
+    transitionProperty: "transform, visibility, inset-inline-start",
+    transitionDuration:
+      "var(--grafy-side-panel-duration, 0ms), var(--grafy-side-panel-duration, 0ms), 180ms",
+    transitionTimingFunction:
+      "var(--grafy-side-panel-ease, ease), linear, ease",
   },
-  header: {
-    flexShrink: 0,
-    height: "52px",
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    padding: "0 6px 0 8px",
-    borderBottomWidth: 1,
-    borderBottomStyle: "solid",
-    borderBottomColor: tokens.colorDivider,
-  },
-  tablist: {
-    minWidth: 0,
-    flex: 1,
-    display: "flex",
-    alignItems: "center",
-    gap: "2px",
-  },
-  tab: {
-    height: "26px",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "5px",
-    paddingInline: "8px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: "transparent",
-    borderRadius: "6px",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorSurfaceSunken,
-    },
-    color: { default: tokens.colorMuted, ":hover": tokens.colorText },
-    cursor: "pointer",
-    fontSize: tokens.fontSizeSm,
-    fontWeight: 560,
-    whiteSpace: "nowrap",
-  },
-  tabActive: {
-    backgroundColor: {
-      default: tokens.colorSurfaceRaised,
-      ":hover": tokens.colorSurfaceRaised,
-    },
-    borderColor: {
-      default: tokens.colorBorder,
-      ":hover": tokens.colorBorder,
-    },
-    color: {
-      default: tokens.colorTextEmphasis,
-      ":hover": tokens.colorTextEmphasis,
-    },
-  },
-  closeButton: {
-    width: "26px",
-    height: "26px",
-    display: "grid",
-    placeItems: "center",
-    flexShrink: 0,
-    borderWidth: 0,
-    borderStyle: "none",
-    borderRadius: "6px",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorSurfaceSunken,
-    },
-    color: { default: tokens.colorMuted, ":hover": tokens.colorText },
-    cursor: "pointer",
-  },
-  body: {
-    minHeight: 0,
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-  },
+  dockOpen: { transform: "none", visibility: "visible" },
   resizer: {
     position: "absolute",
     insetBlock: 0,
@@ -181,6 +72,13 @@ const s = stylex.create({
     position: "fixed",
     inset: 0,
     backgroundColor: "light-dark(rgba(17, 17, 17, 0.32), rgba(0, 0, 0, 0.55))",
+    opacity: {
+      default: 1,
+      ":is([data-starting-style], [data-ending-style])": 0,
+    },
+    transitionProperty: "opacity",
+    transitionDuration: "var(--grafy-side-panel-duration, 0ms)",
+    transitionTimingFunction: "ease",
   },
   drawerPopup: {
     position: "absolute",
@@ -195,38 +93,58 @@ const s = stylex.create({
     borderInlineEndStyle: "solid",
     borderInlineEndColor: tokens.colorDivider,
     color: tokens.colorText,
-    transform: "translateX(var(--drawer-swipe-movement-x, 0px))",
+    boxShadow: tokens.shadowNode,
+    // It follows the finger while swiped and eases in and out otherwise.
+    transform: {
+      default: "translateX(var(--drawer-swipe-movement-x, 0px))",
+      ":is([data-starting-style], [data-ending-style])": "translateX(-100%)",
+    },
+    transitionProperty: "transform",
+    transitionDuration: {
+      default: "var(--grafy-side-panel-duration, 0ms)",
+      ":is([data-swiping])": "0ms",
+    },
+    transitionTimingFunction: "var(--grafy-side-panel-ease, ease)",
   },
 });
 
+/**
+ * The second pane of the sidebar: docked beside the canvas on a wide viewport,
+ * a slide-over drawer on a narrow one. It hosts the Workspace Library. Either
+ * way it slides in from behind the rail and back out, rather than blinking.
+ */
 export function WorkbenchSidePanel({
   workspaceId,
   sidePanel,
   onOpenRun,
-  onOpenGraph,
 }: {
   workspaceId: string;
   sidePanel: WorkbenchSidePanelState;
   onOpenRun: (graphId: string, executionId: string) => void;
-  onOpenGraph: (graphId: string) => void;
 }) {
-  if (!sidePanel.open) return null;
-
   const body = (
-    <SidePanelBody
+    <LibraryPanel
       workspaceId={workspaceId}
-      view={sidePanel.view}
-      onViewChange={sidePanel.setView}
-      onClose={() => sidePanel.setOpen(false)}
       onOpenRun={onOpenRun}
-      onOpenGraph={onOpenGraph}
+      headerEnd={
+        <button
+          type="button"
+          aria-label="Collapse side panel"
+          title="Collapse side panel"
+          onClick={() => sidePanel.setOpen(false)}
+          {...stylex.props(panelStyles.iconButton)}
+        >
+          <PanelLeftClose size={14} />
+        </button>
+      }
     />
   );
 
   if (!sidePanel.docked) {
+    // Base UI keeps the popup mounted through its exit transition.
     return (
       <Drawer.Root
-        open
+        open={sidePanel.open}
         modal
         swipeDirection="left"
         onOpenChange={(next) => sidePanel.setOpen(next)}
@@ -234,7 +152,13 @@ export function WorkbenchSidePanel({
         <Drawer.Portal>
           <Drawer.Viewport {...stylex.props(s.drawerViewport)}>
             <Drawer.Backdrop {...stylex.props(s.drawerBackdrop)} />
-            <Drawer.Popup {...stylex.props(s.drawerPopup)}>{body}</Drawer.Popup>
+            <Drawer.Popup
+              id={SIDE_PANEL_ELEMENT_ID}
+              aria-label="Workbench side panel"
+              {...stylex.props(s.drawerPopup)}
+            >
+              {body}
+            </Drawer.Popup>
           </Drawer.Viewport>
         </Drawer.Portal>
       </Drawer.Root>
@@ -242,97 +166,75 @@ export function WorkbenchSidePanel({
   }
 
   return (
-    <aside aria-label="Workbench side panel" {...stylex.props(s.dock)}>
+    <DockedSidePanel open={sidePanel.open}>
       {body}
       <SidePanelResizer
         width={sidePanel.width}
         onPreview={previewSidePanelWidth}
         onCommit={sidePanel.setWidth}
       />
-    </aside>
+    </DockedSidePanel>
   );
 }
 
-function SidePanelBody({
-  workspaceId,
-  view,
-  onViewChange,
-  onClose,
-  onOpenRun,
-  onOpenGraph,
-}: {
-  workspaceId: string;
-  view: SidePanelViewId;
-  onViewChange: (next: SidePanelViewId) => void;
-  onClose: () => void;
-  onOpenRun: (graphId: string, executionId: string) => void;
-  onOpenGraph: (graphId: string) => void;
-}) {
-  const active =
-    PANEL_VIEWS.find((entry) => entry.id === view) ?? PANEL_VIEWS[0]!;
-  const context: PanelContext = { workspaceId, onOpenRun, onOpenGraph };
-
-  function onTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void {
-    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-    event.preventDefault();
-    const index = PANEL_VIEWS.findIndex((entry) => entry.id === active.id);
-    const step = event.key === "ArrowRight" ? 1 : -1;
-    const next =
-      PANEL_VIEWS[(index + step + PANEL_VIEWS.length) % PANEL_VIEWS.length]!;
-    onViewChange(next.id);
-    document.getElementById(`grafy-side-panel-tab-${next.id}`)?.focus();
+/**
+ * True while `open`, and for as long as the closing motion runs after it — the
+ * time the panel's contents stay mounted so they slide out rather than vanish.
+ */
+function useStaysForExit(open: boolean): boolean {
+  const [exiting, setExiting] = React.useState(false);
+  const [wasOpen, setWasOpen] = React.useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    setExiting(!open);
   }
 
+  React.useEffect(() => {
+    if (!exiting) return;
+    const timer = window.setTimeout(
+      () => setExiting(false),
+      SIDE_PANEL_MOTION_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [exiting]);
+
+  return open || exiting;
+}
+
+/**
+ * The docked column. Its box is always there, parked behind the rail while
+ * closed, so opening moves it in the same frame the canvas edge moves; only
+ * its contents mount and unmount. Closed, it is hidden and inert.
+ */
+function DockedSidePanel({
+  open,
+  children,
+}: {
+  open: boolean;
+  children: React.ReactNode;
+}) {
+  const hasContents = useStaysForExit(open);
+  const panelRef = React.useRef<HTMLElement>(null);
+
+  // Closing from inside the panel hands focus to the rail's toggle rather than
+  // dropping it on the document.
+  React.useEffect(() => {
+    if (open) return;
+    if (!panelRef.current?.contains(document.activeElement)) return;
+    document.querySelector<HTMLElement>("[data-side-panel-toggle]")?.focus();
+  }, [open]);
+
   return (
-    <>
-      <header {...stylex.props(s.header)}>
-        <div
-          role="tablist"
-          aria-label="Workbench panels"
-          {...stylex.props(s.tablist)}
-        >
-          {PANEL_VIEWS.map((entry) => {
-            const selected = entry.id === active.id;
-            return (
-              <button
-                key={entry.id}
-                type="button"
-                role="tab"
-                id={`grafy-side-panel-tab-${entry.id}`}
-                aria-selected={selected}
-                aria-controls={PANEL_BODY_ID}
-                tabIndex={selected ? 0 : -1}
-                title={entry.label}
-                onKeyDown={onTabKeyDown}
-                onClick={() => onViewChange(entry.id)}
-                {...stylex.props(s.tab, selected ? s.tabActive : null)}
-              >
-                <entry.icon size={12} aria-hidden="true" />
-                {entry.label}
-              </button>
-            );
-          })}
-        </div>
-        <button
-          type="button"
-          aria-label="Collapse side panel"
-          title="Collapse side panel"
-          {...stylex.props(s.closeButton)}
-          onClick={onClose}
-        >
-          <PanelLeftClose size={14} />
-        </button>
-      </header>
-      <div
-        id={PANEL_BODY_ID}
-        role="tabpanel"
-        aria-labelledby={`grafy-side-panel-tab-${active.id}`}
-        tabIndex={-1}
-        {...stylex.props(s.body)}
-      >
-        {active.render(context)}
-      </div>
-    </>
+    <aside
+      ref={panelRef}
+      id={SIDE_PANEL_ELEMENT_ID}
+      aria-label="Workbench side panel"
+      inert={!open}
+      data-state={open ? "open" : "closed"}
+      {...stylex.props(s.dock, open ? s.dockOpen : null)}
+    >
+      {hasContents ? children : null}
+    </aside>
   );
 }
 
@@ -390,6 +292,14 @@ function SidePanelResizer({
         onCommit(
           clampSidePanelWidth(drag.startWidth + (event.clientX - drag.startX)),
         );
+      }}
+      onPointerCancel={(event) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        dragRef.current = null;
+        endSidePanelResize();
+        // The drag never finished: put the edge back where it was.
+        onPreview(drag.startWidth);
       }}
       onKeyDown={(event) => {
         if (event.key === "ArrowLeft") {

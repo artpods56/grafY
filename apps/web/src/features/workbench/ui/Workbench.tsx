@@ -18,7 +18,6 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import {
-  Bookmark,
   Circle,
   Copy,
   Eye,
@@ -4635,8 +4634,16 @@ function WorkbenchBody({
         }
       : null;
 
+  const toggleSidePanel = sidePanel.toggle;
   const chromeValue = React.useMemo(
     () => ({
+      sidePanelOpen: sidePanel.open,
+      toggleSidePanel: () => {
+        closeGraphBrowser();
+        setLibraryOpen(false);
+        setGridPanelOpen(false);
+        toggleSidePanel();
+      },
       activeGraphId: activeGraph?.id ?? null,
       graphName,
       isDirty,
@@ -4681,6 +4688,7 @@ function WorkbenchBody({
       activeGraph,
       canDeleteGraph,
       canEditGraph,
+      closeGraphBrowser,
       deletingGraphId,
       graphName,
       isDirty,
@@ -4692,6 +4700,9 @@ function WorkbenchBody({
       saveCurrentGraph,
       saving,
       setGraphName,
+      setGridPanelOpen,
+      sidePanel.open,
+      toggleSidePanel,
       workspaceId,
     ],
   );
@@ -5079,22 +5090,6 @@ function WorkbenchBody({
           <History size={14} />
           <span {...stylex.props(s.railLabel)}>Runs</span>
         </button>
-        <button
-          type="button"
-          aria-label="Artifacts and templates panel"
-          aria-pressed={sidePanel.open}
-          title="The docked panel: Workspace Library artifacts and graph templates"
-          {...stylex.props(s.railButton, sidePanel.open ? s.railPrimary : null)}
-          onClick={() => {
-            closeGraphBrowser();
-            setLibraryOpen(false);
-            setGridPanelOpen(false);
-            sidePanel.toggle();
-          }}
-        >
-          <Bookmark size={14} />
-          <span {...stylex.props(s.railLabel)}>Panel</span>
-        </button>
         <span {...stylex.props(s.railDivider)} />
         <button
           type="button"
@@ -5162,9 +5157,6 @@ function WorkbenchBody({
           }
           executionHistoryReturnFocusRef.current = null;
           setExecutionHistoryTarget({ nodeId: null, executionId });
-        }}
-        onOpenGraph={(graphId) => {
-          router.push(workbenchGraphPath(workspaceSlug, graphId));
         }}
       />
 
