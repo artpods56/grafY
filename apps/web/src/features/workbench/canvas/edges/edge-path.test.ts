@@ -192,3 +192,20 @@ describe("routedBezierPath", () => {
     expect(anchor.y).toBeCloseTo(-20, 0);
   });
 });
+
+describe("edges leave their ports before they turn", () => {
+  it("runs out horizontally even when the other end is straight below", () => {
+    const { path } = routedBezierPath({
+      source: { x: 0, y: 0 },
+      target: { x: 0, y: 300 },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      routeOffset: { x: 0, y: 0 },
+    });
+    const [, firstControlX, firstControlY] =
+      /^M0,0 C(-?[\d.]+),(-?[\d.]+)/.exec(path) ?? [];
+    // Out to the right along the port's own direction, not down.
+    expect(Number(firstControlX)).toBeGreaterThan(30);
+    expect(Number(firstControlY)).toBe(0);
+  });
+});

@@ -36,31 +36,51 @@ function controlOffset(distance: number): number {
   return distance >= 0 ? distance / 2 : 6.25 * Math.sqrt(-distance);
 }
 
+/**
+ * An edge leaves its port along the port's own direction before it turns:
+ * even when the other end sits straight above or below (where the bare
+ * offset falls to nothing and the edge would drop out of the ball), it runs
+ * out a little first. The run grows with the cross distance, so a long drop
+ * turns in a wider arc.
+ */
+const EXIT_RUN_MIN = 36;
+const EXIT_RUN_MAX = 90;
+const EXIT_RUN_PER_CROSS = 0.25;
+
+function exitRun(cross: number): number {
+  return Math.min(
+    EXIT_RUN_MAX,
+    Math.max(EXIT_RUN_MIN, Math.abs(cross) * EXIT_RUN_PER_CROSS),
+  );
+}
+
 function bezierControlPoint(
   position: Position,
   start: Point,
   end: Point,
 ): Point {
+  const crossX = end.x - start.x;
+  const crossY = end.y - start.y;
   switch (position) {
     case Position.Left:
       return {
-        x: start.x - controlOffset(start.x - end.x),
+        x: start.x - Math.max(exitRun(crossY), controlOffset(start.x - end.x)),
         y: start.y,
       };
     case Position.Right:
       return {
-        x: start.x + controlOffset(end.x - start.x),
+        x: start.x + Math.max(exitRun(crossY), controlOffset(end.x - start.x)),
         y: start.y,
       };
     case Position.Top:
       return {
         x: start.x,
-        y: start.y - controlOffset(start.y - end.y),
+        y: start.y - Math.max(exitRun(crossX), controlOffset(start.y - end.y)),
       };
     case Position.Bottom:
       return {
         x: start.x,
-        y: start.y + controlOffset(end.y - start.y),
+        y: start.y + Math.max(exitRun(crossX), controlOffset(end.y - start.y)),
       };
   }
 }
