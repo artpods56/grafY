@@ -586,7 +586,7 @@ export function CollectionCard({
                 ) : (
                   refs.slice(0, 3).map((ref, index) => (
                     <div
-                      key={ref.artifact_id}
+                      key={`${index}:${ref.artifact_id}`}
                       {...stylex.props(...tileStyle)}
                       style={{
                         width: `calc(100% - ${(stackDepth - 1) * 12}px)`,

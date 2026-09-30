@@ -206,6 +206,7 @@ import {
   COLLECTION_PORT,
   collectCardsCommands,
   collectDisabledReason,
+  collectionHoldsArtifacts,
   collectionMembers,
   collectionsWithoutSpare,
   isCollectionNode,
@@ -3050,6 +3051,22 @@ function WorkbenchBody({
         (candidate) => candidate.name === target.portName,
       );
       if (!port || !artifactDropTargetFitsNode(target, node.data, port)) return;
+      // A collection never repeats a member: an artifact it already gathers
+      // stays where it is.
+      if (
+        isCollectionNode(node) &&
+        collectionHoldsArtifacts(
+          collectionMembers(
+            node,
+            nodesRef.current,
+            edgesRef.current,
+            authoredDocumentRef.current.origins,
+          ),
+          cardArtifactRefs(payload.value),
+        )
+      ) {
+        return;
+      }
       const commands = artifactDropCommands(
         payload,
         target,
@@ -3197,6 +3214,27 @@ function WorkbenchBody({
     [applyAuthoringCommands, clearRunError, nodes],
   );
 
+  /** Whether wiring these artifacts into this node would repeat a member. */
+  const repeatsCollectionMember = React.useCallback(
+    (nodeId: string, refs: ReturnType<typeof cardArtifactRefs>) => {
+      const node = nodes.find((candidate) => candidate.id === nodeId);
+      return Boolean(
+        node &&
+        isCollectionNode(node) &&
+        collectionHoldsArtifacts(
+          collectionMembers(
+            node,
+            nodes,
+            edges,
+            authoredDocumentRef.current.origins,
+          ),
+          refs,
+        ),
+      );
+    },
+    [edges, nodes],
+  );
+
   const isValidConnection = React.useCallback<IsValidConnection<CanvasEdge>>(
     (connection) => {
       const candidate: Connection = {
@@ -3206,14 +3244,19 @@ function WorkbenchBody({
         targetHandle: connection.targetHandle ?? null,
       };
       if (candidate.sourceHandle === ARTIFACT_CARD_OUTPUT_HANDLE) {
+        const resolved = resolveArtifactCardConnection(
+          candidate,
+          activeArtifactViewers.nodes,
+          activeArtifactViewers.edges,
+          nodes,
+          registry?.artifact_conversions ?? [],
+        );
         return (
-          resolveArtifactCardConnection(
-            candidate,
-            activeArtifactViewers.nodes,
-            activeArtifactViewers.edges,
-            nodes,
-            registry?.artifact_conversions ?? [],
-          ) !== null
+          resolved !== null &&
+          !repeatsCollectionMember(
+            resolved.target.nodeId,
+            cardArtifactRefs(resolved.payload.value),
+          )
         );
       }
       if (
@@ -3267,6 +3310,7 @@ function WorkbenchBody({
       activeArtifactViewers.bindings,
       edges,
       nodes,
+      repeatsCollectionMember,
       registry?.artifact_conversions,
       registry?.artifact_types,
     ],
@@ -3283,7 +3327,15 @@ function WorkbenchBody({
           nodes,
           registry?.artifact_conversions ?? [],
         );
-        if (!resolved) return;
+        if (
+          !resolved ||
+          repeatsCollectionMember(
+            resolved.target.nodeId,
+            cardArtifactRefs(resolved.payload.value),
+          )
+        ) {
+          return;
+        }
         const commands = artifactDropCommands(
           resolved.payload,
           resolved.target,
@@ -3425,6 +3477,7 @@ function WorkbenchBody({
       applyAuthoringCommands,
       clearRunError,
       addWorkflowEdge,
+      repeatsCollectionMember,
       commitArtifactViewers,
       edges,
       isValidConnection,

@@ -20,6 +20,7 @@ import {
   COLLECTION_PORT,
   collectCardsCommands,
   collectDisabledReason,
+  collectionHoldsArtifacts,
   collectionMembers,
   collectionSparePlugId,
   collectionsWithoutSpare,
@@ -278,6 +279,48 @@ describe("collecting cards", () => {
     expect([...plan.removedCardIds].sort()).toEqual(
       ["card-fed", "card-lib-1", "card-lib-2"].sort(),
     );
+  });
+
+  it("never repeats a member", () => {
+    const producer = node("resize", resizeSpec);
+    const plan = collectCardsCommands({
+      sources: [
+        library("lib-1", 0, 0),
+        { ...library("lib-1", 300, 0), cardId: "card-lib-1-again" },
+        output(0, 400),
+        { ...output(300, 400), cardId: "card-fed-again" },
+      ],
+      nodes: [producer],
+      collectSpec,
+      createNodeData: (nodeSpec, plugs) =>
+        createWorkflowNodeData(nodeSpec, plugs),
+    });
+    if (!plan) throw new Error("expected a plan");
+    const [addNode, ...members] = plan.commands;
+    if (addNode.kind !== "add_node") throw new Error("expected add_node");
+    // One Library member, one output member, and the spare.
+    expect(addNode.node.input_plugs).toHaveLength(3);
+    expect(members.map((command) => command.kind)).toEqual([
+      "add_origin",
+      "add_edge",
+    ]);
+    // Every selected card is replaced, repeats included.
+    expect(plan.removedCardIds).toHaveLength(4);
+  });
+
+  it("knows which artifacts a collection already holds", () => {
+    const members = [
+      {
+        plugId: "a",
+        kind: "library" as const,
+        originId: "o",
+        refs: [ref("x")],
+      },
+      { plugId: "b", kind: "empty" as const },
+    ];
+    expect(collectionHoldsArtifacts(members, [ref("x")])).toBe(true);
+    expect(collectionHoldsArtifacts(members, [ref("x"), ref("y")])).toBe(false);
+    expect(collectionHoldsArtifacts(members, [])).toBe(false);
   });
 
   it("refuses mixed types and a single card", () => {

@@ -124,7 +124,8 @@ export function ImageArtifactBody({
     >
       {visible.map((image, index) => (
         <div
-          key={image.id}
+          // Keyed by position: a sequence may show one artifact twice.
+          key={`${index}:${image.id}`}
           data-artifact-media="true"
           data-artifact-shadow-scope={sequence ? "sequence-item" : "image"}
           {...stylex.props(

@@ -1163,7 +1163,23 @@ test.describe("collections", () => {
   }) => {
     test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
 
-    await stubResponses(page, SEQUENCE_LIBRARY);
+    await stubResponses(page, {
+      items: [
+        ...SEQUENCE_LIBRARY.items,
+        {
+          ...SEQUENCE_LIBRARY.items[0],
+          artifact: {
+            ...SEQUENCE_LIBRARY.items[0].artifact,
+            artifact_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+          },
+          name: "weather.csv",
+          provenance: {
+            ...SEQUENCE_LIBRARY.items[0].provenance,
+            original_filename: "weather.csv",
+          },
+        },
+      ],
+    });
     await openPanel(page);
     const canvas = page.locator(".react-flow");
     await tree(page)
@@ -1200,12 +1216,19 @@ test.describe("collections", () => {
     await expect(collection).toContainText("Sequence<file.csv@1>");
     await expect(page.locator("[data-canvas-node-shell]")).toHaveCount(0);
 
-    // A Library item dropped on the stack joins it on the spare plug.
+    // A Library item dropped on the stack joins it on the spare plug; one it
+    // already gathers is not added twice.
+    await tree(page)
+      .getByRole("treeitem")
+      .filter({ hasText: "weather.csv" })
+      .dragTo(collection);
+    await expect(collection).toContainText("3 items");
     await tree(page)
       .getByRole("treeitem")
       .filter({ hasText: "forecast.csv" })
       .dragTo(collection);
     await expect(collection).toContainText("3 items");
+    await expect(cards).toHaveCount(0);
 
     // Collect is no longer a node to pick from the catalog.
     await page.getByRole("button", { name: "Add node", exact: true }).click();

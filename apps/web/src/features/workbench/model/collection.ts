@@ -144,6 +144,27 @@ export function collectionSparePlugId(
   return members.find((member) => member.kind === "empty")?.plugId ?? null;
 }
 
+/**
+ * Whether a collection already gathers every one of these artifacts, so adding
+ * them again would only repeat members.
+ */
+export function collectionHoldsArtifacts(
+  members: readonly CollectionMember[],
+  refs: readonly ArtifactRef[],
+): boolean {
+  if (refs.length === 0) return false;
+  const held = new Set(
+    members.flatMap((member) =>
+      member.kind === "library"
+        ? member.refs.map((ref) => ref.artifact_id)
+        : member.kind === "output"
+          ? (member.refs ?? []).map((ref) => ref.artifact_id)
+          : [],
+    ),
+  );
+  return refs.every((ref) => held.has(ref.artifact_id));
+}
+
 /** Collections whose every plug is filled, so they need a new spare. */
 export function collectionsWithoutSpare(
   nodes: readonly CollectionGraphNode[],
@@ -263,10 +284,27 @@ export function collectCardsCommands({
   if (!itemsPort || !variable || !artifactType) return null;
 
   // Reading order: cards within half a card label of each other share a row.
-  const ordered = [...sources].sort((left, right) => {
-    const dy = left.position.y - right.position.y;
-    return Math.abs(dy) > 24 ? dy : left.position.x - right.position.x;
-  });
+  // A card showing artifacts already gathered, or following an output that is
+  // already a member, adds nothing: a collection never repeats a member.
+  const seenArtifacts = new Set<string>();
+  const seenOutputs = new Set<string>();
+  const ordered = [...sources]
+    .sort((left, right) => {
+      const dy = left.position.y - right.position.y;
+      return Math.abs(dy) > 24 ? dy : left.position.x - right.position.x;
+    })
+    .filter((source) => {
+      if (source.kind === "output") {
+        const key = `${source.sourceNodeId}:${source.sourcePortName}`;
+        if (seenOutputs.has(key)) return false;
+        seenOutputs.add(key);
+        return true;
+      }
+      const ids = cardArtifactRefs(source.value).map((ref) => ref.artifact_id);
+      if (ids.every((id) => seenArtifacts.has(id))) return false;
+      for (const id of ids) seenArtifacts.add(id);
+      return true;
+    });
   const members = ordered.map((source) => ({ source, plugId: createUuid() }));
   const spare = createUuid();
   const collectionId = `node-${createUuid()}`;
