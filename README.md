@@ -379,6 +379,25 @@ save, configure, execute, and inspect a graph. See
 
 ## Verify
 
+### Install and run commit hooks
+
+After installing the repository dependencies, enable the local commit hook:
+
+```bash
+just install
+just hooks-install
+```
+
+Git then runs the staged-file checks from `.pre-commit-config.yaml` before each
+commit. To run the checks manually on staged files, use `uv run prek run`. To
+validate the configuration and run every hook on all tracked files, use
+`just hooks-check`. If a check fails, fix the reported files and rerun it before
+committing.
+
+The hooks cover Python Ruff lint, web ESLint and Prettier, and fast repository
+hygiene checks. Tests, type checks, generated API contracts, and builds remain
+in CI and the existing `just check` recipe.
+
 Run the full retained contract:
 
 ```bash

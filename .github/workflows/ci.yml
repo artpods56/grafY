@@ -111,6 +111,9 @@ jobs:
         id: web_install
         if: ${{ !cancelled() }}
         run: npm --prefix apps/web ci
+      - name: Validate repository hooks
+        if: ${{ !cancelled() && steps.python_install.outcome == 'success' && steps.web_install.outcome == 'success' }}
+        run: uv run prek run --all-files
       - name: Python lint
         if: ${{ !cancelled() && steps.python_install.outcome == 'success' }}
         run: uv run ruff check apps/api/src libs/client/src libs/core/src libs/persistence/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
