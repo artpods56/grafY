@@ -81,6 +81,7 @@ import {
   CanvasGridSettingsProvider,
   useCanvasGridSettings,
 } from "../canvas/canvas-grid-settings";
+import { validateConfig } from "../canvas/config-schema";
 import {
   layoutSnapAxes,
   shouldSnapPosition,
@@ -2047,7 +2048,11 @@ function WorkbenchBody({
   );
   const selectedNodeCount = selectedNodeIds.length;
   const selectedNodesAreRunnable = nodes.every(
-    (node) => !node.selected || workflowNodeIsSupported(node.data),
+    (node) =>
+      !node.selected ||
+      (workflowNodeIsSupported(node.data) &&
+        validateConfig(node.data.spec.config_schema, node.data.config)
+          .length === 0),
   );
   const nodeTitles = React.useMemo(
     () =>
@@ -2059,7 +2064,9 @@ function WorkbenchBody({
   const selectedWithDependenciesAreRunnable = nodes.every(
     (node) =>
       !selectedWithDependencyIds.has(node.id) ||
-      workflowNodeIsSupported(node.data),
+      (workflowNodeIsSupported(node.data) &&
+        validateConfig(node.data.spec.config_schema, node.data.config)
+          .length === 0),
   );
   const selectedWorkflowCount = nodes.filter((node) => node.selected).length;
   const selectedViewerCount = artifactViewers.nodes.filter(

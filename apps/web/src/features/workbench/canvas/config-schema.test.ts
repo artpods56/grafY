@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { schemaFields } from "./config-schema";
+import { schemaFields, validateConfig } from "./config-schema";
 
 const boundsItems = [
   {
@@ -201,6 +201,81 @@ describe("schemaFields", () => {
         format: "textarea",
         codeLanguage: undefined,
       }),
+    ]);
+  });
+});
+
+describe("validateConfig", () => {
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      mode: { type: "string", enum: ["fast", "safe"] },
+      count: { type: "integer", minimum: 1, maximum: 4 },
+    },
+    required: ["mode", "count"],
+  };
+
+  it("reports missing, stale enum, scalar type, numeric bound, and forbidden keys", () => {
+    expect(
+      validateConfig(schema, {
+        mode: "legacy",
+        count: 5,
+        extra: true,
+      }),
+    ).toEqual([
+      { fieldName: "mode", message: "Choose one of the allowed values." },
+      { fieldName: "count", message: "Must be at most 4." },
+      { fieldName: "extra", message: "This key is not allowed." },
+    ]);
+    expect(validateConfig(schema, { mode: "safe", count: "2" })).toEqual([
+      { fieldName: "count", message: "Expected integer." },
+    ]);
+    expect(validateConfig(schema, { mode: "safe" })).toEqual([
+      { fieldName: "count", message: "This field is required." },
+    ]);
+  });
+
+  it("allows extra keys when additionalProperties is omitted or true", () => {
+    expect(
+      validateConfig(
+        { type: "object", properties: { name: { type: "string" } } },
+        { name: "valid", extension: 3 },
+      ),
+    ).toEqual([]);
+    expect(
+      validateConfig(
+        { ...schema, additionalProperties: true },
+        { mode: "safe", count: 2, extension: 3 },
+      ),
+    ).toEqual([]);
+  });
+
+  it("resolves references and nullable unions while keeping optional null values valid", () => {
+    const referencedSchema = {
+      $defs: {
+        Mode: { type: "string", enum: ["safe", "fast"] },
+        Limit: { type: "integer", minimum: 1, maximum: 8 },
+      },
+      type: "object",
+      properties: {
+        mode: { $ref: "#/$defs/Mode" },
+        limit: { anyOf: [{ $ref: "#/$defs/Limit" }, { type: "null" }] },
+      },
+      required: ["mode"],
+    };
+
+    expect(
+      validateConfig(referencedSchema, { mode: "safe", limit: null }),
+    ).toEqual([]);
+    expect(validateConfig(referencedSchema, { mode: "old", limit: 9 })).toEqual(
+      [
+        { fieldName: "mode", message: "Choose one of the allowed values." },
+        { fieldName: "limit", message: "Must be at most 8." },
+      ],
+    );
+    expect(validateConfig(referencedSchema, {})).toEqual([
+      { fieldName: "mode", message: "This field is required." },
     ]);
   });
 });

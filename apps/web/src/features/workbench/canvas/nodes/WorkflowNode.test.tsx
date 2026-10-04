@@ -1162,7 +1162,7 @@ describe("WorkflowNode config lattice", () => {
 
   it("hands a taller saved body to the growable brick", () => {
     const data = createWorkflowNodeData(rawSqlStatementSpec());
-    data.config = { sql: "select 1" };
+    data.config = {};
     data.layout = { bodyHeight: 300 };
     const { container, root } = renderNode("sql-statement", data);
 
@@ -1743,5 +1743,41 @@ describe("WorkflowNode artifact type binding", () => {
       container.querySelector('select[aria-label="Bind artifact type T"]'),
     ).toBeNull();
     expect(container.textContent).toContain("Any artifact · binds on connect");
+  });
+});
+
+describe("WorkflowNode config validation", () => {
+  it("shows a persisted value that is no longer in the enum and an inline error", () => {
+    const spec: NodeSpec = {
+      ...rawSqlStatementSpec(),
+      title: "Mode selector",
+      config_schema: {
+        type: "object",
+        properties: { mode: { type: "string", enum: ["fast", "safe"] } },
+        required: ["mode"],
+      },
+    };
+    const data = createWorkflowNodeData(spec);
+    data.config = { mode: "legacy" };
+    const { container, root } = renderNode("mode", data);
+
+    expect(container.textContent).toContain(
+      "Choose one of the allowed values.",
+    );
+    expect(container.querySelector('option[value="legacy"]')?.textContent).toBe(
+      "Saved value: legacy",
+    );
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    React.act(() => root.unmount());
+  });
+
+  it("shows requiredness errors for an incomplete autosaved config", () => {
+    const data = createWorkflowNodeData(rawSqlStatementSpec());
+    data.config = {};
+    const { container, root } = renderNode("sql", data);
+
+    expect(container.textContent).toContain("This field is required.");
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    React.act(() => root.unmount());
   });
 });
