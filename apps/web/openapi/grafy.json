@@ -2563,12 +2563,20 @@
             },
             "title": "Secrets",
             "type": "array"
+          },
+          "unresolved_nodes": {
+            "items": {
+              "$ref": "#/components/schemas/NodeSecretResolutionResponse"
+            },
+            "title": "Unresolved Nodes",
+            "type": "array"
           }
         },
         "required": [
           "graph_id",
           "graph_revision",
-          "secrets"
+          "secrets",
+          "unresolved_nodes"
         ],
         "title": "GraphNodeSecretsResponse",
         "type": "object"
@@ -4128,6 +4136,38 @@
           "title"
         ],
         "title": "NodeSecretInputResponse",
+        "type": "object"
+      },
+      "NodeSecretResolutionReason": {
+        "enum": [
+          "contract_unavailable",
+          "invalid_configuration"
+        ],
+        "title": "NodeSecretResolutionReason",
+        "type": "string"
+      },
+      "NodeSecretResolutionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/NodeSecretResolutionReason"
+          },
+          "status": {
+            "const": "unresolved",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "status",
+          "reason"
+        ],
+        "title": "NodeSecretResolutionResponse",
         "type": "object"
       },
       "NodeSecretStatusResponse": {
