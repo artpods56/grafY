@@ -41,8 +41,6 @@ class IdentityRepositoryPort(Protocol):
 
     async def get_workspace(self, workspace_id: UUID) -> Workspace | None: ...
 
-    async def get_workspace_by_slug(self, slug: str) -> Workspace | None: ...
-
     async def lock_workspace_for_membership_mutation(
         self,
         workspace_id: UUID,

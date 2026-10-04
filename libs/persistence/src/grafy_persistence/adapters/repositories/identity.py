@@ -87,12 +87,6 @@ class SqlIdentityRepository(IdentityRepositoryPort):
         return await self._session.get(Workspace, workspace_id)
 
     @override
-    async def get_workspace_by_slug(self, slug: str) -> Workspace | None:
-        return await self._session.scalar(
-            select(Workspace).where(schema.workspaces.c.slug == slug)
-        )
-
-    @override
     async def lock_workspace_for_membership_mutation(
         self,
         workspace_id: UUID,
