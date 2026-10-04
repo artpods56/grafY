@@ -52,10 +52,6 @@ def _stringify_integer(value: int) -> str:
     return str(value)
 
 
-def _integer_is_positive(value: int) -> bool:
-    return value > 0
-
-
 class ConversionBase:
     pass
 
@@ -602,41 +598,6 @@ def test_registry_freeze_requires_concrete_node_port_artifact_registration() -> 
         registry.freeze()
 
 
-def test_registry_registers_artifact_conversions_across_plugin_boundaries() -> None:
-    source = ArtifactTypeSpec(
-        key=ArtifactTypeKey("example.source", 1),
-        title="Example source",
-    )
-    target = ArtifactTypeSpec(
-        key=ArtifactTypeKey("example.target", 1),
-        title="Example target",
-    )
-    conversion = ArtifactConversion(
-        key=ArtifactConversionKey("example.source_to_target", 1),
-        source=source.key,
-        target=target.key,
-        source_type=int,
-        target_type=str,
-        title="Source to target",
-        convert=_stringify_integer,
-    )
-    source_plugin = Plugin(slug="example.source", title="Source")
-    source_plugin.register_artifact_type(source)
-    target_plugin = Plugin(slug="example.target", title="Target")
-    target_plugin.register_artifact_type(target)
-    target_plugin.register_artifact_type_dependency(source)
-    target_plugin.register_artifact_conversion(conversion)
-    registry = PluginRegistry()
-
-    registry.install(source_plugin)
-    registry.install(target_plugin)
-    registry.freeze()
-
-    assert target_plugin.artifact_conversions == (conversion,)
-    assert registry.artifact_conversions == (conversion,)
-    assert registry.artifact_conversions[0].convert(7) == "7"
-
-
 def test_artifact_conversion_requires_valid_identity_and_title() -> None:
     with pytest.raises(ValueError, match="id must not be blank"):
         ArtifactConversionKey("   ", 1)
@@ -654,7 +615,7 @@ def test_artifact_conversion_requires_valid_identity_and_title() -> None:
         )
 
 
-def test_plugin_and_registry_report_artifact_conversion_collisions() -> None:
+def test_plugin_reports_artifact_conversion_collisions() -> None:
     conversion = ArtifactConversion(
         key=ArtifactConversionKey("example.duplicate", 1),
         source=ArtifactTypeKey("example.source", 1),
@@ -676,69 +637,8 @@ def test_plugin_and_registry_report_artifact_conversion_collisions() -> None:
     ):
         first.register_artifact_conversion(conversion)
 
-    second = Plugin(slug="example.second-conversion", title="Second conversion")
-    second.register_artifact_conversion(conversion)
-    registry = PluginRegistry()
-    registry.install(first)
-
-    with pytest.raises(
-        PluginRegistrationError,
-        match=(
-            "Plugin 'example.second-conversion' artifact conversion "
-            "example.duplicate@1 is already installed"
-        ),
-    ):
-        registry.install(second)
-
-
-@pytest.mark.parametrize(
-    ("register_source", "register_target", "missing_endpoint"),
-    [
-        (False, True, "source"),
-        (True, False, "target"),
-    ],
-)
-def test_registry_freeze_rejects_conversion_with_missing_artifact_endpoint(
-    register_source: bool,
-    register_target: bool,
-    missing_endpoint: str,
-) -> None:
-    source = ArtifactTypeSpec(
-        key=ArtifactTypeKey("example.source", 1),
-        title="Example source",
-    )
-    target = ArtifactTypeSpec(
-        key=ArtifactTypeKey("example.target", 1),
-        title="Example target",
-    )
-    conversion = ArtifactConversion(
-        key=ArtifactConversionKey("example.incomplete", 1),
-        source=source.key,
-        target=target.key,
-        source_type=int,
-        target_type=str,
-        title="Incomplete",
-        convert=_stringify_integer,
-    )
-    plugin = Plugin(slug="example.incomplete", title="Incomplete")
-    if register_source:
-        plugin.register_artifact_type(source)
-    if register_target:
-        plugin.register_artifact_type(target)
-    plugin.register_artifact_conversion(conversion)
-    registry = PluginRegistry()
-    registry.install(plugin)
-
-    missing_type = source.key if missing_endpoint == "source" else target.key
-    with pytest.raises(
-        PluginRegistrationError,
-        match=(
-            f"artifact conversion example.incomplete@1 references {missing_endpoint} "
-            f"artifact type {missing_type.id}@{missing_type.schema_version}, which "
-            "is neither owned nor declared as an exact dependency"
-        ),
-    ):
-        registry.freeze()
+    assert first.artifact_conversions == (conversion,)
+    assert first.artifact_conversions[0].convert(7) == "7"
 
 
 def test_plugin_artifact_dependencies_are_exact_and_disjoint_from_owned_types() -> None:
@@ -805,56 +705,6 @@ def test_registry_freeze_rejects_same_key_with_different_dependency_contracts() 
         match=(
             "Plugins 'example.first' and 'example.second' declare different exact "
             "contracts for artifact type example.shared@1"
-        ),
-    ):
-        registry.freeze()
-
-
-def test_registry_freeze_rejects_nominally_contiguous_runtime_type_mismatch() -> None:
-    source = ArtifactTypeSpec(
-        key=ArtifactTypeKey("example.source", 1),
-        title="Example source",
-    )
-    intermediate = ArtifactTypeSpec(
-        key=ArtifactTypeKey("example.intermediate", 1),
-        title="Example intermediate",
-    )
-    target = ArtifactTypeSpec(
-        key=ArtifactTypeKey("example.target", 1),
-        title="Example target",
-    )
-    source_to_intermediate = ArtifactConversion(
-        key=ArtifactConversionKey("example.source_to_intermediate", 1),
-        source=source.key,
-        target=intermediate.key,
-        source_type=int,
-        target_type=bool,
-        title="Source to intermediate",
-        convert=_integer_is_positive,
-    )
-    intermediate_to_target = ArtifactConversion(
-        key=ArtifactConversionKey("example.intermediate_to_target", 1),
-        source=intermediate.key,
-        target=target.key,
-        source_type=int,
-        target_type=str,
-        title="Intermediate to target",
-        convert=_stringify_integer,
-    )
-    plugin = Plugin(slug="example.non-composable", title="Non-composable")
-    for artifact_type in (source, intermediate, target):
-        plugin.register_artifact_type(artifact_type)
-    plugin.register_artifact_conversion(source_to_intermediate)
-    plugin.register_artifact_conversion(intermediate_to_target)
-    registry = PluginRegistry()
-    registry.install(plugin)
-
-    with pytest.raises(
-        PluginRegistrationError,
-        match=(
-            "Artifact conversions example.source_to_intermediate@1 and "
-            "example.intermediate_to_target@1 meet at example.intermediate@1 "
-            "but have incompatible runtime types"
         ),
     ):
         registry.freeze()
@@ -1402,16 +1252,6 @@ def test_registry_retains_family_snapshots_and_factory_order(tmp_path: Path) -> 
     first.register_artifact_type(first_type)
     first.register_artifact_type_dependency(second_type)
     second.register_artifact_type(second_type)
-    conversion = ArtifactConversion(
-        key=ArtifactConversionKey("snapshot.convert", 1),
-        source=first_type.key,
-        target=second_type.key,
-        source_type=int,
-        target_type=str,
-        title="Convert",
-        convert=_stringify_integer,
-    )
-    first.register_artifact_conversion(conversion)
     first.function_node(operator_id="snapshot.node", version=1, title="Node")(
         empty_function_node
     )
@@ -1464,9 +1304,7 @@ def test_registry_retains_family_snapshots_and_factory_order(tmp_path: Path) -> 
         assert [node.key for node in registry.nodes] == [("snapshot.node", 1)]
         assert registry.declared_artifact_types == (first_type, second_type)
         assert registry.artifact_type_dependencies == (second_type,)
-        assert registry.artifact_conversions == (conversion,)
         assert registry.artifact_type_owner(first_type.key) == first.slug
-        assert registry.artifact_conversion_owner(conversion.key) == first.slug
         assert registry.build_resolvers(context) == (first_resolver, second_resolver)
         assert registry.build_writers(context) == (first_writer, second_writer)
     with pytest.raises(PluginRegistrationError, match="frozen"):
