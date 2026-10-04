@@ -75,7 +75,7 @@ a slide-over with a backdrop and the shell stops reserving width.
 
 ```
 ┌───────────────────────────────┐
-│ [▦ Artifacts] [▤ Templates]   │  view switcher · collapse ▸
+│ [▦ Artifacts] [▤ Templates] [▥ Generated] │  view switcher · collapse ▸
 ├───────────────────────────────┤
 │ ⊕ ⌕ filter the Library… ↕ ⬆   │  this view's tools: new folder · filter · sort · upload
 ├───────────────────────────────┤
@@ -100,10 +100,11 @@ a slide-over with a backdrop and the shell stops reserving width.
 ```
 
 The toolbar is **per view**, not one shared strip: Artifacts offers new folder,
-filter, sort and upload; Templates offers its own filter and create. Each view
-owns the row under the tabs, which is why the switcher has no idea what a folder
-is. `⋯` on a folder is new subfolder · rename · delete; on an artifact it is open
-original · copy link. The row's own click still means fold or unfold.
+filter, sort and upload; Templates offers its own filter and create; Generated
+offers refresh for the current canvas. Each view owns the row under the tabs,
+which is why the switcher has no idea what a folder is. `⋯` on a folder is new
+subfolder · rename · delete; on an artifact it is open original · copy link. The
+row's own click still means fold or unfold.
 
 ## 4. The seam
 
@@ -111,7 +112,7 @@ The panel is one shell plus a fixed set of views:
 
 ```ts
 type SidePanelView = {
-  id: SidePanelViewId;      // "artifacts" | "templates"
+  id: SidePanelViewId;      // "artifacts" | "templates" | "generated"
   label: string;
   icon: LucideIcon;
   render: (context: SidePanelContext) => ReactNode;
@@ -213,8 +214,8 @@ graph LR
 - **The tile under the browser previews the artifact.** An image renders inline,
   a text-ish artifact has its head read from the content URL, and the row states
   the path (`/Fieldwork/September · file.csv@1`) so location survives a deep tree.
-- **The toolbar belongs to the view.** Artifacts and Templates each render their
-  own tools under the tabs; the shell ships none.
+- **The toolbar belongs to the view.** Artifacts, Templates, and Generated each
+  render their own tools under the tabs; the shell ships none.
 - **Drag stays the contract.** Rows carry `application/x-grafy-artifact` through
   `writeArtifactDrop`; the drop still resolves the port row under the cursor with
   `document.elementsFromPoint`, skipping portals.

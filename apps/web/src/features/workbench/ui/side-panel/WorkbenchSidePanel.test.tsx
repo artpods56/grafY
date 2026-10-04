@@ -11,8 +11,11 @@ const listLibraryArtifacts = vi.hoisted(() => vi.fn());
 const listWorkspaceTemplates = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/api", () => ({
+  getGraphExecution: vi.fn(),
+  listGraphExecutions: vi.fn(),
   listLibraryArtifacts,
   listWorkspaceTemplates,
+  saveRunArtifactToLibrary: vi.fn(),
   uploadFile: vi.fn(),
   saveUploadedArtifactToLibrary: vi.fn(),
   instantiateWorkspaceTemplate: vi.fn(),
@@ -25,6 +28,7 @@ vi.mock("@/lib/api", () => ({
 vi.mock("@stylexjs/stylex", () => ({
   create: <Styles,>(styles: Styles) => styles,
   props: () => ({}),
+  when: { ancestor: () => "" },
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -57,6 +61,11 @@ async function renderPanel(sidePanel: WorkbenchSidePanelState): Promise<void> {
       <WorkbenchSidePanel
         workspaceId="workspace-1"
         sidePanel={sidePanel}
+        graphId={null}
+        nodeTitles={{}}
+        registry={null}
+        canSave={false}
+        executionRunning={false}
         onOpenRun={vi.fn()}
         onOpenGraph={vi.fn()}
       />,
@@ -128,6 +137,17 @@ describe("WorkbenchSidePanel", () => {
     ).toBe("grafy-side-panel-tab-templates");
   });
 
+  it("shows Generated inside the existing side panel", async () => {
+    await renderPanel(state({ view: "generated" }));
+
+    expect(panel()).not.toBeNull();
+    expect(tab("generated")?.getAttribute("aria-selected")).toBe("true");
+    expect(document.body.textContent).toContain("Run artifacts");
+    expect(
+      document.querySelector('[aria-label="Generated artifacts"]'),
+    ).not.toBeNull();
+  });
+
   it("switches views from the tab strip and with the arrow keys", async () => {
     const sidePanel = state();
     await renderPanel(sidePanel);
@@ -143,6 +163,15 @@ describe("WorkbenchSidePanel", () => {
       );
     });
     expect(sidePanel.setView).toHaveBeenLastCalledWith("templates");
+  });
+
+  it("hosts Generated in the same slide-over on narrow screens", async () => {
+    await renderPanel(state({ docked: false, view: "generated" }));
+
+    expect(panel()).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(tab("generated")?.getAttribute("aria-selected")).toBe("true");
+    expect(document.body.textContent).toContain("Run artifacts");
   });
 
   it("collapses the panel from its header", async () => {
