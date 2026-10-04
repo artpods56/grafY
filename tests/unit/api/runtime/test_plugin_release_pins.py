@@ -22,10 +22,6 @@ from grafy_api.execution.requests import (
     RunRequest,
 )
 from grafy_api.execution.run_graph import RunGraph
-from grafy_api.plugins.compatibility.bindings import (
-    SystemHostBindingError,
-    validate_system_host_bindings,
-)
 from grafy_api.plugins.runtime.admission import (
     PluginNonRunnableReason,
     ReleaseExecutionAdmission,
@@ -43,10 +39,6 @@ from grafy_core.domain.modules import (
     GraphModuleDefinition,
 )
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.domain.plugin_host_bindings import (
-    LoadedSystemPlugin,
-    SystemHostPluginBinding,
-)
 from grafy_core.domain.plugin_installations import (
     InstalledPluginRelease,
     PluginInstallation,
@@ -944,48 +936,6 @@ def test_admission_rejects_an_exact_revocation_with_the_stable_reason() -> None:
     assert isinstance(decision, ReleaseExecutionRejection)
     assert decision.reason == "revoked"
     assert "security" in decision.detail
-
-
-def test_compatibility_host_binding_rejects_registry_contract_mismatch() -> None:
-    release = _host_text_release(1)
-    binding = SystemHostPluginBinding.from_release(
-        release,
-        selection_generation=1,
-        loader_target=HOST_LOADER_TARGET,
-        host_build_digest=HOST_BUILD_DIGEST,
-    )
-    mismatched_catalog = binding.catalog.model_copy(
-        update={"nodes": binding.catalog.nodes[:-1]}
-    )
-    mismatched = binding.model_copy(update={"catalog": mismatched_catalog})
-    registry = build_explicit_plugin_registry()
-    loaded = LoadedSystemPlugin(
-        slug=release.release.slug,
-        loader_target=HOST_LOADER_TARGET,
-        host_build_digest=HOST_BUILD_DIGEST,
-    )
-
-    with pytest.raises(SystemHostBindingError, match="operators do not match"):
-        validate_system_host_bindings((mismatched,), (loaded,), registry)
-
-
-def test_compatibility_host_binding_rejects_build_mismatch() -> None:
-    release = _host_text_release(1)
-    binding = SystemHostPluginBinding.from_release(
-        release,
-        selection_generation=1,
-        loader_target=HOST_LOADER_TARGET,
-        host_build_digest=HOST_BUILD_DIGEST,
-    )
-    loaded = LoadedSystemPlugin(
-        slug=release.release.slug,
-        loader_target=HOST_LOADER_TARGET,
-        host_build_digest="e" * 64,
-    )
-    registry = build_explicit_plugin_registry()
-
-    with pytest.raises(SystemHostBindingError, match="build digest"):
-        validate_system_host_bindings((binding,), (loaded,), registry)
 
 
 @pytest.mark.asyncio

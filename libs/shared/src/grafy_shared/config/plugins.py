@@ -38,9 +38,6 @@ class PluginsConfig(BaseSettings):
         default=None,
         pattern=r"^[0-9a-f]{64}$",
     )
-    # Exact System Plugin host bindings are loaded once at API startup from this
-    # deployment manifest. When omitted, startup registers Module boundaries only.
-    system_plugin_deployment_manifest: Path | None = None
     # Workspace Plugin execution is fail-closed unless the local Docker
     # sandbox owner is explicitly enabled for this single API process.
     plugin_runtime_enabled: bool = False
@@ -117,12 +114,6 @@ class PluginsConfig(BaseSettings):
     @property
     def resolved_plugin_sdk_project(self) -> Path:
         return self.plugin_sdk_project.expanduser().resolve()
-
-    @property
-    def resolved_system_plugin_deployment_manifest(self) -> Path | None:
-        if self.system_plugin_deployment_manifest is None:
-            return None
-        return self.system_plugin_deployment_manifest.expanduser().resolve()
 
     @property
     def resolved_seccomp_profile(self) -> Path | None:

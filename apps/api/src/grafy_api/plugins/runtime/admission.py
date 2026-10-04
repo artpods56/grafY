@@ -102,7 +102,6 @@ class ReleaseExecutionRoute(StrEnum):
     """Runtime route selected for an admitted immutable release."""
 
     ISOLATED = "isolated"
-    IN_PROCESS = "in-process"
 
 
 @dataclass(frozen=True, slots=True)

@@ -59,9 +59,6 @@ from grafy_api.plugins.runtime.network_policy import (
 )
 from grafy_api.settings import get_settings
 from grafy_api.storage import configured_file_storage
-from grafy_api.plugins.compatibility.deployment import (
-    SystemPluginDeploymentManifestBuilder,
-)
 from grafy_api.system_plugin_inventory import (
     CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH,
     load_system_plugin_inventory,
@@ -69,7 +66,6 @@ from grafy_api.system_plugin_inventory import (
 from grafy_core.domain.system_plugin_inventory import (
     SystemPluginInventoryError,
 )
-from grafy_api.plugins.compatibility.loader import load_system_plugin_deployment_file
 from grafy_core.runtime.plugin_loader import WORKSPACE_PLUGIN_LOADER_TARGET
 
 
@@ -360,18 +356,6 @@ async def _run(args: argparse.Namespace) -> None:
         system_inventory = load_system_plugin_inventory(
             CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH
         )
-        if args.command == "build-system-deployment":
-            manifest = await SystemPluginDeploymentManifestBuilder(
-                database.sessions
-            ).build(
-                system_inventory,
-                repository_root=CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH.parents[1],
-                output=args.output,
-                slug=args.slug,
-                revision=args.revision,
-            )
-            print(manifest.model_dump_json(indent=2))
-            return
         if args.command == "promote" or (
             args.command == "publish" and args.global_scope
         ):
@@ -388,8 +372,6 @@ async def _run(args: argparse.Namespace) -> None:
                 secret_digest=credential.secret_digest,
                 required_scope=required_scope,
             )
-            if args.command == "promote" and args.deployment_manifest is not None:
-                load_system_plugin_deployment_file(args.deployment_manifest)
             system_publication = SystemPluginPublicationWorkflow(
                 image_builder,
                 releases,
@@ -644,11 +626,6 @@ def main() -> None:
         help="publisher image used to verify a global candidate in isolation",
     )
 
-    build_system_deployment = commands.add_parser("build-system-deployment")
-    build_system_deployment.add_argument("--output", required=True, type=Path)
-    build_system_deployment.add_argument("--slug")
-    build_system_deployment.add_argument("--revision", type=int)
-
     promote = commands.add_parser(
         "promote",
         help="activate one published global Plugin release",
@@ -663,12 +640,6 @@ def main() -> None:
         type=int,
         help="optional compare-and-swap guard for concurrent automation",
     )
-    promote.add_argument(
-        "--deployment-manifest",
-        type=Path,
-        help="Exact host bindings; required only for host-eligible System Plugins",
-    )
-
     revoke = commands.add_parser("revoke")
     revoke.add_argument(
         "release",

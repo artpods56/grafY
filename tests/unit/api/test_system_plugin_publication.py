@@ -263,8 +263,10 @@ async def test_system_publication_rejects_unauthorized_identity_before_image_bui
 
 
 @pytest.mark.asyncio
-async def test_isolated_llm_system_release_promotes_without_a_host_manifest(
+@pytest.mark.parametrize("execution_policy", tuple(PluginExecutionPolicy))
+async def test_system_promotion_requires_isolated_execution_policy(
     tmp_path: Path,
+    execution_policy: PluginExecutionPolicy,
 ) -> None:
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'llm.sqlite3'}"
     await create_schema(database_url)
@@ -276,6 +278,14 @@ async def test_isolated_llm_system_release_promotes_without_a_host_manifest(
     )
     image_builder = RecordingSystemImageBuilder()
     inventory = load_system_plugin_inventory(CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH)
+    inventory = SystemPluginInventory(
+        plugins=tuple(
+            entry.model_copy(update={"execution_policy": execution_policy})
+            if entry.slug == "external.llm"
+            else entry
+            for entry in inventory.plugins
+        )
+    )
     destination = PluginEgressDestination.parse("https://api.openai.com:443")
     workflow = SystemPluginPublicationWorkflow(
         image_builder,
@@ -306,17 +316,28 @@ async def test_isolated_llm_system_release_promotes_without_a_host_manifest(
     actor = PlatformPluginActor("ci:system-release")
 
     release = await workflow.publish_verified(candidate, platform_actor=actor)
-    selection = await workflow.promote(
-        slug=release.release.slug,
-        revision=release.release.revision,
-        platform_actor=actor,
-        expected_generation=0,
-    )
-
-    assert release.installation.execution_policy is PluginExecutionPolicy.ISOLATED_ONLY
-    assert selection.selected_release_id == release.release.id
-    assert image_builder.loader_targets == [entry.loader_target]
-    await database.dispose()
+    try:
+        assert release.installation.execution_policy is execution_policy
+        if execution_policy is PluginExecutionPolicy.HOST_ELIGIBLE:
+            with pytest.raises(PluginPublishingError, match="retired host-eligible"):
+                await workflow.promote(
+                    slug=release.release.slug,
+                    revision=release.release.revision,
+                    platform_actor=actor,
+                    expected_generation=0,
+                )
+            assert await releases.list_current_system() == []
+        else:
+            selection = await workflow.promote(
+                slug=release.release.slug,
+                revision=release.release.revision,
+                platform_actor=actor,
+                expected_generation=0,
+            )
+            assert selection.selected_release_id == release.release.id
+        assert image_builder.loader_targets == [entry.loader_target]
+    finally:
+        await database.dispose()
 
 
 @pytest.mark.asyncio
