@@ -338,7 +338,11 @@ async def test_system_promotion_requires_isolated_execution_policy(
                     platform_actor=actor,
                     expected_generation=0,
                 )
-            assert await releases.list_current_system() == []
+            assert [
+                item.release
+                for item in await releases.list_catalog(WORKSPACE_ID)
+                if item.release.installation.scope is PluginReleaseScope.SYSTEM
+            ] == []
         else:
             selection = await workflow.promote(
                 slug=release.release.slug,
