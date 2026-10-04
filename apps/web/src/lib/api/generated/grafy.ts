@@ -2204,6 +2204,8 @@ export interface components {
             readonly graph_revision: number;
             /** Secrets */
             readonly secrets: readonly components["schemas"]["NodeSecretStatusResponse"][];
+            /** Unresolved Nodes */
+            readonly unresolved_nodes: readonly components["schemas"]["NodeSecretResolutionResponse"][];
         };
         /** GraphOrganizationResponse */
         readonly GraphOrganizationResponse: {
@@ -2761,6 +2763,22 @@ export interface components {
             readonly name: string;
             /** Title */
             readonly title: string;
+        };
+        /**
+         * NodeSecretResolutionReason
+         * @enum {string}
+         */
+        readonly NodeSecretResolutionReason: "contract_unavailable" | "invalid_configuration";
+        /** NodeSecretResolutionResponse */
+        readonly NodeSecretResolutionResponse: {
+            /** Node Id */
+            readonly node_id: string;
+            readonly reason: components["schemas"]["NodeSecretResolutionReason"];
+            /**
+             * Status
+             * @constant
+             */
+            readonly status: "unresolved";
         };
         /** NodeSecretStatusResponse */
         readonly NodeSecretStatusResponse: {
