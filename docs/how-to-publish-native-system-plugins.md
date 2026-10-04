@@ -31,17 +31,27 @@ The `uv` image names and `COPY --from` form follow Astral's [uv Docker guide](ht
 
 The `publisher` service builds from the checked-in `publisher` target in `infra/docker/api.Dockerfile`. That target extends `api-plugins`, which installs the CLI and copies the Docker CLI and buildx plugin for sibling sandbox containers.
 
-Build it from the same source revision as the API:
+Build it from the same source revision as the API. Force the local development tag during the build, even when `.env.production` sets a digest reference:
 
 ```bash
-docker compose \
+GRAFY_PUBLISHER_IMAGE=grafy-publisher:local docker compose \
   --env-file .env.production \
   -f infra/docker/compose.yaml \
   --profile publisher \
   build publisher
 ```
 
-For production, publish the image to the operator's registry and set `GRAFY_PUBLISHER_IMAGE` to its immutable `name@sha256:digest` reference. The publisher image may use a different registry from the native runtime base.
+Push that image to the operator's registry and copy the reported manifest digest into `GRAFY_PUBLISHER_IMAGE`:
+
+```bash
+publisher_repo=127.0.0.1:5000/grafy-publisher
+publisher_version=<source-revision>
+docker tag grafy-publisher:local "$publisher_repo:$publisher_version"
+docker push "$publisher_repo:$publisher_version"
+docker buildx imagetools inspect "$publisher_repo:$publisher_version"
+```
+
+Set `GRAFY_PUBLISHER_IMAGE` to `127.0.0.1:5000/grafy-publisher@sha256:<manifest-digest>`. The publisher image may use a different registry from the native runtime base.
 
 ## Issue and rotate the platform token
 
