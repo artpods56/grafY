@@ -160,21 +160,6 @@ class GraphExecution:
                 "finished_at"
             )
 
-    def transition_to_running(self) -> None:
-        """Advance a queued execution into running, stamping its start time.
-
-        Only a queued execution may start; this keeps the start timestamp
-        correlated with the running status and rejects running-without-start or
-        queued-with-start states.
-        """
-
-        if self.status != "queued":
-            raise ValueError(
-                f"Graph execution cannot start from status {self.status!r}"
-            )
-        self.status = "running"
-        self.started_at = _utc_now()
-
     def transition_to_cancelling(self) -> None:
         """Request cancellation from a queued or running execution."""
 

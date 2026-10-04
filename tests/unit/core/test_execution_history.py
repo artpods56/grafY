@@ -273,14 +273,6 @@ def test_durable_transition_table_enforces_legal_lifecycle() -> None:
     """Explicit transitions keep status, timestamps, workflow id, and error
     correlated; illegal sequences are rejected."""
 
-    # queued -> running stamps the start time.
-    running = _execution("queued")
-    running.transition_to_running()
-    assert running.status == "running"
-    assert running.started_at is not None
-    assert running.finished_at is None
-    assert running.error is None
-
     # running -> terminal succeeded carries workflow id and finish time.
     succeeded = _execution("running")
     succeeded.transition_to_terminal(
@@ -315,9 +307,7 @@ def test_durable_transition_table_enforces_legal_lifecycle() -> None:
     assert cancelling.status == "cancelled"
     assert cancelling.finished_at is not None
 
-    # Illegal: starting from running, cancel from terminal, cancelling to success.
-    with pytest.raises(ValueError, match="cannot start from"):
-        _execution("running").transition_to_running()
+    # Illegal: cancel from terminal, cancelling to success.
     with pytest.raises(ValueError, match="cannot cancel from"):
         GraphExecution(
             workspace_id=WORKSPACE_ONE,
