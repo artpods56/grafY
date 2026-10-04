@@ -228,10 +228,16 @@ async def test_revocation_service_enforces_authority_scope_and_idempotency(
         )
         == system_revocation
     )
-    assert await service.list_current_system() == [system_current]
-    retained_system = await service.get_system_by_revision(
+    assert [
+        item.release
+        for item in await service.list_catalog(WORKSPACE_ID)
+        if item.release.installation.scope is PluginReleaseScope.SYSTEM
+    ] == [system_current]
+    retained_system = await service.get_by_revision(
+        WORKSPACE_ID,
         system_current.release.slug,
         system_current.release.revision,
+        scope=PluginReleaseScope.SYSTEM,
     )
     assert retained_system is not None
     assert (

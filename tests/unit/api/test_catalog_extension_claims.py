@@ -266,7 +266,11 @@ async def test_a_system_promotion_colliding_with_a_builtin_is_refused(
         )
         is None
     )
-    assert await service.list_current_system() == []
+    assert [
+        item.release
+        for item in await service.list_catalog(WORKSPACE_ID)
+        if item.release.installation.scope is PluginReleaseScope.SYSTEM
+    ] == []
 
 
 async def test_a_system_promotion_colliding_with_a_workspace_plugin_is_refused(
@@ -300,7 +304,11 @@ async def test_a_system_promotion_colliding_with_a_workspace_plugin_is_refused(
             expected_generation=0,
         )
 
-    assert await service.list_current_system() == []
+    assert [
+        item.release
+        for item in await service.list_catalog(WORKSPACE_ID)
+        if item.release.installation.scope is PluginReleaseScope.SYSTEM
+    ] == []
 
 
 def test_deployment_table_resolves_json_and_confirms_documents_only() -> None:
