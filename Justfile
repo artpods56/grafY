@@ -3,6 +3,9 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 grafy_env := env_var_or_default("GRAFY_ENV_FILE", "/etc/grafy/grafy.env")
 grafy_override := env_var_or_default("GRAFY_COMPOSE_OVERRIDE", "/etc/grafy/storage.override.yaml")
+plugin_native_base_image := env_var_or_default("GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE", "127.0.0.1:5000/grafy-plugin-base")
+plugin_native_base_tag := env_var_or_default("GRAFY_PLUGIN_NATIVE_BASE_TAG", "gdal-tesseract")
+plugin_native_platform := env_var_or_default("GRAFY_PLUGIN_NATIVE_BUILD_PLATFORM", "linux/amd64")
 
 # List available recipes.
 default:
@@ -137,6 +140,27 @@ docker-up:
 # Stop the local Docker stack.
 docker-down:
     docker compose -f infra/docker/compose.yaml down
+
+# Start the opt-in loopback registry used by the native Plugin runtime.
+plugin-native-registry-up:
+    docker compose -f infra/docker/compose.plugin-registry.yaml up -d registry
+
+# Build and push the native runtime image, then print its registry manifest digest.
+plugin-native-base-publish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    metadata="$(mktemp)"
+    trap 'rm -f "$metadata"' EXIT
+    docker buildx build \
+        --platform "{{ plugin_native_platform }}" \
+        --tag "{{ plugin_native_base_image }}:{{ plugin_native_base_tag }}" \
+        --push \
+        --metadata-file "$metadata" \
+        --file infra/docker/plugin-native-runtime.Dockerfile \
+        .
+    digest="$(python -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["containerimage.digest"])' "$metadata")"
+    printf 'GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE=%s\n' "{{ plugin_native_base_image }}"
+    printf 'GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE_DIGEST=%s\n' "${digest#sha256:}"
 
 # Start the local Keycloak stack.
 keycloak-up:

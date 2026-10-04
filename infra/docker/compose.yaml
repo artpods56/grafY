@@ -162,7 +162,7 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/api.Dockerfile
-      target: api-plugins
+      target: publisher
     entrypoint: [".venv/bin/grafy"]
     command: ["plugin", "publish", "--help"]
     environment:

@@ -32,6 +32,10 @@ COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/
 # OCI images. The online API installs only its declared bundled dependencies.
 RUN uv sync --locked --no-dev --package grafy-api
 
+# The one-shot publisher uses this checked-in target. It shares the API
+# package and adds the Docker CLI/buildx tools above for sibling sandboxes.
+FROM api-plugins AS publisher
+
 FROM source AS api
 
 RUN uv sync --locked --no-dev --package grafy-api
