@@ -72,6 +72,15 @@ format:
 format-check:
     cd apps/web && npm exec prettier -- --check "src/**/*.{ts,tsx,css,md,json}" "e2e/**/*.{ts,tsx}"
 
+# Install the repository-owned Git commit hook for this clone.
+hooks-install:
+    uv run prek install
+
+# Validate the hook configuration and run every hook against tracked files.
+hooks-check:
+    uv run prek validate-config .pre-commit-config.yaml
+    uv run prek run --all-files
+
 # Run Python and TypeScript type checks.
 typecheck:
     uv run --all-extras basedpyright

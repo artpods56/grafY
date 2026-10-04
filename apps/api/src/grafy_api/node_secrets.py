@@ -1,17 +1,19 @@
 import base64
 import binascii
 import json
+import logging
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from hashlib import sha256
 from typing import Protocol, cast
 from uuid import UUID
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from grafy_core.domain.errors import NotFoundError
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
@@ -38,6 +40,8 @@ from grafy_core.ports.node_secrets import (
     NodeSecretUnitOfWorkPort,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class NodeSecretConfigurationError(RuntimeError):
     pass
@@ -49,6 +53,15 @@ class NodeSecretDeclarationError(LookupError):
 
 class NodeSecretValueError(ValueError):
     pass
+
+
+class NodeSecretResolutionStatus(StrEnum):
+    UNRESOLVED = "unresolved"
+
+
+class NodeSecretResolutionReason(StrEnum):
+    CONTRACT_UNAVAILABLE = "contract_unavailable"
+    INVALID_CONFIGURATION = "invalid_configuration"
 
 
 class NodeSecretPluginReleaseLookup(Protocol):
@@ -70,10 +83,18 @@ class NodeSecretState:
 
 
 @dataclass(frozen=True, slots=True)
+class NodeSecretResolutionState:
+    node_id: str
+    status: NodeSecretResolutionStatus
+    reason: NodeSecretResolutionReason
+
+
+@dataclass(frozen=True, slots=True)
 class GraphNodeSecretState:
     graph_id: UUID
     graph_revision: int
     secrets: tuple[NodeSecretState, ...]
+    unresolved_nodes: tuple[NodeSecretResolutionState, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,12 +145,40 @@ class NodeSecretService(NodeSecretResolverPort):
         active_key_id = self._active_key_id()
 
         states: list[NodeSecretState] = []
+        unresolved_nodes: list[NodeSecretResolutionState] = []
         for node in graph.document.nodes:
-            contract = await self._resolved_node_secret_contract(
-                graph.workspace_id,
-                node,
-            )
+            try:
+                contract = await self._resolved_node_secret_contract(
+                    graph.workspace_id,
+                    node,
+                )
+            except ValidationError:
+                reason = NodeSecretResolutionReason.INVALID_CONFIGURATION
+                logger.warning(
+                    "node_secret_status_unresolved",
+                    extra={"node_id": node.id, "reason": reason.value},
+                )
+                unresolved_nodes.append(
+                    NodeSecretResolutionState(
+                        node_id=node.id,
+                        status=NodeSecretResolutionStatus.UNRESOLVED,
+                        reason=reason,
+                    )
+                )
+                continue
             if contract is None:
+                reason = NodeSecretResolutionReason.CONTRACT_UNAVAILABLE
+                logger.warning(
+                    "node_secret_status_unresolved",
+                    extra={"node_id": node.id, "reason": reason.value},
+                )
+                unresolved_nodes.append(
+                    NodeSecretResolutionState(
+                        node_id=node.id,
+                        status=NodeSecretResolutionStatus.UNRESOLVED,
+                        reason=reason,
+                    )
+                )
                 continue
             for declaration in contract.secret_inputs:
                 dependencies = self._declared_dependencies(
@@ -157,6 +206,7 @@ class NodeSecretService(NodeSecretResolverPort):
             graph_id=graph.id,
             graph_revision=graph.revision,
             secrets=tuple(states),
+            unresolved_nodes=tuple(unresolved_nodes),
         )
 
     async def configure(
