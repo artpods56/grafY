@@ -18,8 +18,8 @@ install-all:
     uv sync --all-extras
     npm --prefix apps/web ci
 
-# Start the API. System host Plugins are loaded only from the configured exact
-# deployment manifest; installed packages are never discovered ambiently.
+# Start the API with builtin families and Module boundaries. Published Plugins
+# execute in isolated workers.
 api: db-upgrade
     uv run --exact --no-dev --package grafy-api uvicorn grafy_api.main:app --reload --host 0.0.0.0 --port 8000
 

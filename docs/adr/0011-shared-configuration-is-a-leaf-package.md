@@ -2,6 +2,8 @@
 
 - **Status:** Accepted
 - **Implements:** grafY issue #113
+- **Amended by:** Issue #117 retires `GRAFY_SYSTEM_PLUGIN_DEPLOYMENT_MANIFEST`;
+  the no-rename guarantee below describes the original configuration split.
 
 `grafy_shared.config` holds every operator-facing `GRAFY_*` variable as one of nine
 responsibility-owned `BaseSettings` sections: `AppConfig`, `AuthConfig`, `KeysConfig`,
