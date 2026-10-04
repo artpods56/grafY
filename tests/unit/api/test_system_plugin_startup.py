@@ -61,6 +61,31 @@ async def test_startup_registers_builtin_families_without_host_deployment(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "command_hmac_key",
+    [None, SecretStr("")],
+    ids=["missing", "empty"],
+)
+async def test_startup_reports_actionable_command_hmac_key_error(
+    startup_settings: Settings,
+    command_hmac_key: SecretStr | None,
+) -> None:
+    keys = KeysConfig(_env_file=None, command_hmac_key=command_hmac_key)
+    application = create_app(startup_settings.model_copy(update={"keys": keys}))
+
+    with pytest.raises(ValueError) as error:
+        async with LifespanManager(application):
+            pass
+
+    message = str(error.value)
+    assert "API startup failed" in message
+    assert "GRAFY_COMMAND_HMAC_KEY" in message
+    assert ".env" in message
+    assert "export GRAFY_COMMAND_HMAC_KEY" in message
+    assert "openssl rand -hex 32" in message
+
+
+@pytest.mark.asyncio
 async def test_runtime_startup_without_owner_does_not_reap_other_workers(
     startup_settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
