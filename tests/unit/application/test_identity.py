@@ -220,10 +220,13 @@ async def test_oidc_provisioning_creates_only_a_personal_workspace(
         display_name="Owner",
     )
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        workspaces = await unit_of_work.identity.list_workspaces_for_user(
-            provisioned.user.id
+    workspaces = [
+        workspace
+        for workspace, _ in await service.list_workspaces(
+            actor=ActorContext(user_id=provisioned.user.id)
         )
+    ]
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         provisioning_events = await unit_of_work.security_audit.list_for_workspace(
             provisioned.personal_workspace.id,
             limit=10,
@@ -250,10 +253,13 @@ async def test_ihpan_login_joins_the_shared_workspace_even_when_email_is_unverif
         email_verified=False,
     )
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        workspaces = await unit_of_work.identity.list_workspaces_for_user(
-            provisioned.user.id
+    workspaces = [
+        workspace
+        for workspace, _ in await service.list_workspaces(
+            actor=ActorContext(user_id=provisioned.user.id)
         )
+    ]
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         memberships = await unit_of_work.identity.list_memberships_for_user(
             provisioned.user.id
         )
@@ -294,25 +300,27 @@ async def test_foreign_email_does_not_join_the_shared_workspace(
         email_verified=True,
     )
 
+    outsider_workspaces = [
+        workspace
+        for workspace, _ in await service.list_workspaces(
+            actor=ActorContext(user_id=outsider.user.id)
+        )
+    ]
+    lookalike_workspaces = [
+        workspace
+        for workspace, _ in await service.list_workspaces(
+            actor=ActorContext(user_id=lookalike.user.id)
+        )
+    ]
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        outsider_workspaces = await unit_of_work.identity.list_workspaces_for_user(
-            outsider.user.id
-        )
-        lookalike_workspaces = await unit_of_work.identity.list_workspaces_for_user(
-            lookalike.user.id
-        )
         shared = (
             await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
                 "ihpan"
             )
         )
 
-    assert all(
-        workspace.kind is WorkspaceKind.PERSONAL for workspace in outsider_workspaces
-    )
-    assert all(
-        workspace.kind is WorkspaceKind.PERSONAL for workspace in lookalike_workspaces
-    )
+    assert outsider_workspaces == [outsider.personal_workspace]
+    assert lookalike_workspaces == [lookalike.personal_workspace]
     assert shared is None
 
 
@@ -413,6 +421,7 @@ async def test_personal_membership_stays_owner_and_membership_changes_are_audite
         subject="member-subject",
         email="member@example.test",
         display_name="Member",
+        email_verified=True,
     )
     shared = await service.create_shared_workspace(
         actor=ActorContext(
@@ -433,7 +442,7 @@ async def test_personal_membership_stays_owner_and_membership_changes_are_audite
         )
 
     with pytest.raises(LastWorkspaceOwnerError):
-        await service.add_or_reactivate_member(
+        _ = await service.change_member_role(
             actor=ActorContext(
                 user_id=owner.user.id,
                 credential_reference="session-owner",
@@ -444,7 +453,7 @@ async def test_personal_membership_stays_owner_and_membership_changes_are_audite
         )
 
     with pytest.raises(IdentityInvariantError):
-        await service.add_or_reactivate_member(
+        _ = await service.change_member_role(
             actor=ActorContext(
                 user_id=owner.user.id,
                 credential_reference="session-owner",
@@ -454,14 +463,21 @@ async def test_personal_membership_stays_owner_and_membership_changes_are_audite
             role=WorkspaceRole.VIEWER,
         )
 
-    await service.add_or_reactivate_member(
+    invitation, _ = await service.create_workspace_invitation(
         actor=ActorContext(
             user_id=owner.user.id,
             credential_reference="session-owner",
         ),
         workspace_id=shared.id,
-        user_id=member.user.id,
+        email="member@example.test",
         role=WorkspaceRole.VIEWER,
+    )
+    _ = await service.accept_workspace_invitation(
+        actor=ActorContext(
+            user_id=member.user.id,
+            credential_reference="session-member",
+        ),
+        invitation_id=invitation.id,
     )
     await service.change_member_role(
         actor=ActorContext(
@@ -489,7 +505,17 @@ async def test_personal_membership_stays_owner_and_membership_changes_are_audite
     operations = {event.operation for event in events}
     assert "workspace.membership.role_change" in operations
     assert "workspace.membership.remove" in operations
-    assert all(event.credential_reference == "session-owner" for event in events)
+    assert all(
+        event.credential_reference == "session-owner"
+        for event in events
+        if event.operation != "workspace.invitation.accept"
+    )
+    assert any(
+        event.operation == "workspace.invitation.accept"
+        and event.user_id == member.user.id
+        and event.credential_reference == "session-member"
+        for event in events
+    )
 
     now = datetime.now(UTC)
     active_session = AuthSession(
@@ -577,6 +603,7 @@ async def test_membership_and_role_changes_revoke_affected_workspace_pats(
         subject="member-subject",
         email="member@example.test",
         display_name="Member",
+        email_verified=True,
     )
     shared = await service.create_shared_workspace(
         actor=ActorContext(
@@ -590,11 +617,18 @@ async def test_membership_and_role_changes_revoke_affected_workspace_pats(
         user_id=owner.user.id,
         credential_reference="session-owner",
     )
-    await service.add_or_reactivate_member(
+    invitation, _ = await service.create_workspace_invitation(
         actor=owner_actor,
         workspace_id=shared.id,
-        user_id=member.user.id,
+        email="member@example.test",
         role=WorkspaceRole.EDITOR,
+    )
+    _ = await service.accept_workspace_invitation(
+        actor=ActorContext(
+            user_id=member.user.id,
+            credential_reference="session-member",
+        ),
+        invitation_id=invitation.id,
     )
 
     editor_only_token = _workspace_pat(
@@ -700,11 +734,18 @@ async def test_membership_and_role_changes_revoke_affected_workspace_pats(
     assert editor_revoked_at is not None
     assert viewer_revoked_at is not None
 
-    await service.add_or_reactivate_member(
+    invitation, _ = await service.create_workspace_invitation(
         actor=owner_actor,
         workspace_id=shared.id,
-        user_id=member.user.id,
+        email="member@example.test",
         role=WorkspaceRole.EDITOR,
+    )
+    _ = await service.accept_workspace_invitation(
+        actor=ActorContext(
+            user_id=member.user.id,
+            credential_reference="session-member",
+        ),
+        invitation_id=invitation.id,
     )
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         restored_editor_token = (
@@ -748,13 +789,27 @@ async def test_concurrent_owner_removals_preserve_one_shared_owner(
         subject="owner-two-subject",
         email="owner-two@example.test",
         display_name="Owner Two",
+        email_verified=True,
     )
     shared = await service.create_shared_workspace(
         actor=ActorContext(user_id=owner_one.user.id),
         slug="concurrent-team",
         name="Concurrent Team",
     )
-    await service.add_or_reactivate_member(
+    invitation, _ = await service.create_workspace_invitation(
+        actor=ActorContext(user_id=owner_one.user.id),
+        workspace_id=shared.id,
+        email="owner-two@example.test",
+        role=WorkspaceRole.EDITOR,
+    )
+    _ = await service.accept_workspace_invitation(
+        actor=ActorContext(
+            user_id=owner_two.user.id,
+            credential_reference="session-member",
+        ),
+        invitation_id=invitation.id,
+    )
+    _ = await service.change_member_role(
         actor=ActorContext(user_id=owner_one.user.id),
         workspace_id=shared.id,
         user_id=owner_two.user.id,

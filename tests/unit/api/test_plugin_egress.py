@@ -222,32 +222,6 @@ def test_broker_plan_is_non_secret_numeric_and_separated_by_sandbox_key() -> Non
     assert first.policy_sha256 != second.policy_sha256
 
 
-def test_postgresql_relay_requires_the_exact_declared_destination() -> None:
-    destination = PluginEgressDestination.parse(
-        "postgresql://database.example.com:5432"
-    )
-    plan = PluginEgressBrokerPlan.from_resolved(
-        broker_image="registry.example/grafy-egress@sha256:" + "a" * 64,
-        sandbox_key_sha256="b" * 64,
-        destinations=(
-            ResolvedPluginEgressDestination(
-                destination,
-                (ip_address("8.8.8.8"),),
-            ),
-        ),
-    )
-
-    assert (
-        plan.postgresql_relay_for(
-            host="database.example.com",
-            port=5432,
-        ).listen_port
-        == 5432
-    )
-    with pytest.raises(PermissionError, match="not in the deployment"):
-        plan.postgresql_relay_for(host="other.example.com", port=5432)
-
-
 @pytest.mark.parametrize(
     ("value", "expected"),
     [

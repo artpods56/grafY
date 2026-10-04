@@ -107,12 +107,11 @@ stable loader target. Workspace projects are published as immutable,
 workspace-scoped releases and execute through the retained isolated runtime;
 the API never imports their working copies.
 
-System packages are enumerated by the platform-owned inventory. A deployment
-may bind an exact current System release to installed host code by supplying
-`GRAFY_SYSTEM_PLUGIN_DEPLOYMENT_MANIFEST`. Startup verifies the installed
-distribution bytes and exact release contract before importing only the named
-loader targets. Merely installing a package does nothing, and an API with no
-manifest starts with host-owned Module boundaries only. See
+System projects are enumerated by the platform-owned inventory. Publish an
+immutable release, then explicitly promote it to make it available globally.
+System and Workspace Plugins execute in isolated workers using their retained
+OCI artifacts. Startup registers the workbench's builtin families and Module
+boundaries. Installing a Plugin package alone does not activate it. See
 [Plugin development](docs/design/plugin-development.md) for project shape and
 publication workflows.
 
@@ -201,10 +200,9 @@ environment using:
 just install-all
 ```
 
-Installation does not activate a System Plugin. The API loads host code only
-when an exact `GRAFY_SYSTEM_PLUGIN_DEPLOYMENT_MANIFEST` binds an installed
-distribution to a selected immutable release; isolated execution uses that
-release's retained OCI artifact.
+Installation does not activate a System Plugin. Publish and explicitly promote
+a System release to select it for the catalog. Plugin execution uses the
+release's retained OCI artifact in an isolated worker.
 
 Start the API and web app in separate terminals:
 

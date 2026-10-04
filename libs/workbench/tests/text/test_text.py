@@ -149,7 +149,6 @@ def test_text_release_does_not_own_canonical_conversions() -> None:
     registry.freeze()
 
     assert TEXT.artifact_conversions == ()
-    assert registry.artifact_conversions == ()
 
 
 def test_markdown_artifact_and_node_are_nominally_registered() -> None:

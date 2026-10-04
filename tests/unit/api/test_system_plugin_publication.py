@@ -180,7 +180,11 @@ async def test_system_publication_stages_then_explicitly_promotes_and_rolls_back
     assert first.release.contract_digest == plugin_contract_digest(
         first.release.catalog
     )
-    assert await releases.list_current_system() == []
+    assert [
+        item.release
+        for item in await releases.list_catalog(WORKSPACE_ID)
+        if item.release.installation.scope is PluginReleaseScope.SYSTEM
+    ] == []
     assert image_builder.build_count == 2
     assert image_builder.loader_targets == [
         inventory.entry_for(first.release.slug).loader_target,
@@ -196,7 +200,11 @@ async def test_system_publication_stages_then_explicitly_promotes_and_rolls_back
     assert selected.selected_release_id == second.release.id
     assert selected.selected_revision == 2
     assert selected.generation == 1
-    assert await releases.list_current_system() == [second]
+    assert [
+        item.release
+        for item in await releases.list_catalog(WORKSPACE_ID)
+        if item.release.installation.scope is PluginReleaseScope.SYSTEM
+    ] == [second]
 
     selected_again = await workflow.promote(
         slug=second.release.slug,
@@ -231,7 +239,11 @@ async def test_system_publication_stages_then_explicitly_promotes_and_rolls_back
     assert rolled_back.selected_release_id == first.release.id
     assert rolled_back.selected_revision == 1
     assert rolled_back.generation == 2
-    assert await releases.list_current_system() == [first]
+    assert [
+        item.release
+        for item in await releases.list_catalog(WORKSPACE_ID)
+        if item.release.installation.scope is PluginReleaseScope.SYSTEM
+    ] == [first]
 
     await database.dispose()
 
@@ -263,8 +275,10 @@ async def test_system_publication_rejects_unauthorized_identity_before_image_bui
 
 
 @pytest.mark.asyncio
-async def test_isolated_llm_system_release_promotes_without_a_host_manifest(
+@pytest.mark.parametrize("execution_policy", tuple(PluginExecutionPolicy))
+async def test_system_promotion_requires_isolated_execution_policy(
     tmp_path: Path,
+    execution_policy: PluginExecutionPolicy,
 ) -> None:
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'llm.sqlite3'}"
     await create_schema(database_url)
@@ -276,6 +290,14 @@ async def test_isolated_llm_system_release_promotes_without_a_host_manifest(
     )
     image_builder = RecordingSystemImageBuilder()
     inventory = load_system_plugin_inventory(CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH)
+    inventory = SystemPluginInventory(
+        plugins=tuple(
+            entry.model_copy(update={"execution_policy": execution_policy})
+            if entry.slug == "external.llm"
+            else entry
+            for entry in inventory.plugins
+        )
+    )
     destination = PluginEgressDestination.parse("https://api.openai.com:443")
     workflow = SystemPluginPublicationWorkflow(
         image_builder,
@@ -306,17 +328,32 @@ async def test_isolated_llm_system_release_promotes_without_a_host_manifest(
     actor = PlatformPluginActor("ci:system-release")
 
     release = await workflow.publish_verified(candidate, platform_actor=actor)
-    selection = await workflow.promote(
-        slug=release.release.slug,
-        revision=release.release.revision,
-        platform_actor=actor,
-        expected_generation=0,
-    )
-
-    assert release.installation.execution_policy is PluginExecutionPolicy.ISOLATED_ONLY
-    assert selection.selected_release_id == release.release.id
-    assert image_builder.loader_targets == [entry.loader_target]
-    await database.dispose()
+    try:
+        assert release.installation.execution_policy is execution_policy
+        if execution_policy is PluginExecutionPolicy.HOST_ELIGIBLE:
+            with pytest.raises(PluginPublishingError, match="retired host-eligible"):
+                await workflow.promote(
+                    slug=release.release.slug,
+                    revision=release.release.revision,
+                    platform_actor=actor,
+                    expected_generation=0,
+                )
+            assert [
+                item.release
+                for item in await releases.list_catalog(WORKSPACE_ID)
+                if item.release.installation.scope is PluginReleaseScope.SYSTEM
+            ] == []
+        else:
+            selection = await workflow.promote(
+                slug=release.release.slug,
+                revision=release.release.revision,
+                platform_actor=actor,
+                expected_generation=0,
+            )
+            assert selection.selected_release_id == release.release.id
+        assert image_builder.loader_targets == [entry.loader_target]
+    finally:
+        await database.dispose()
 
 
 @pytest.mark.asyncio

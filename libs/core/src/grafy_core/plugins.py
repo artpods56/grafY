@@ -30,7 +30,6 @@ from grafy_core.callable_nodes import callable_node_class
 from grafy_core.conversions import (
     ArtifactConversion,
     ArtifactConversionKey,
-    conversion_runtime_types_are_compatible,
 )
 from grafy_core.domain.modules import (
     MODULE_BOUNDARY_OPERATOR_VERSION,
@@ -632,7 +631,6 @@ class _InstalledPluginDeclaration:
     nodes: tuple[NodeRegistration, ...]
     artifact_types: tuple[ArtifactTypeSpec, ...]
     artifact_type_dependencies: tuple[ArtifactTypeSpec, ...]
-    artifact_conversions: tuple[ArtifactConversion[Any, Any], ...]
     resolver_factories: tuple[ResolverFactory, ...]
     writer_factories: tuple[WriterFactory, ...]
 
@@ -643,11 +641,6 @@ class PluginRegistry:
         self._nodes: dict[tuple[str, int], NodeRegistration] = {}
         self._artifact_types: dict[tuple[str, int], ArtifactTypeSpec] = {}
         self._artifact_type_owners: dict[tuple[str, int], str] = {}
-        self._artifact_conversions: dict[
-            ArtifactConversionKey,
-            ArtifactConversion[Any, Any],
-        ] = {}
-        self._artifact_conversion_owners: dict[ArtifactConversionKey, str] = {}
         self._frozen = False
 
     def install(
@@ -666,7 +659,6 @@ class PluginRegistry:
             nodes=plugin.nodes,
             artifact_types=plugin.artifact_types,
             artifact_type_dependencies=plugin.artifact_type_dependencies,
-            artifact_conversions=plugin.artifact_conversions,
             resolver_factories=plugin.resolver_factories,
             writer_factories=plugin.writer_factories,
         )
@@ -700,18 +692,6 @@ class PluginRegistry:
                 f"{artifact_id}@{schema_version} is already installed"
             )
 
-        duplicate_conversions = [
-            conversion.key
-            for conversion in declaration.artifact_conversions
-            if conversion.key in self._artifact_conversions
-        ]
-        if duplicate_conversions:
-            conversion_key = duplicate_conversions[0]
-            raise PluginRegistrationError(
-                f"Plugin {plugin.slug!r} artifact conversion "
-                f"{conversion_key.id}@{conversion_key.version} is already installed"
-            )
-
         self._declarations[plugin.slug] = declaration
         for registration in declaration.nodes:
             self._nodes[registration.key] = registration
@@ -722,9 +702,6 @@ class PluginRegistry:
             )
             self._artifact_types[key] = artifact_type
             self._artifact_type_owners[key] = plugin.slug
-        for conversion in declaration.artifact_conversions:
-            self._artifact_conversions[conversion.key] = conversion
-            self._artifact_conversion_owners[conversion.key] = plugin.slug
 
     def register_module_boundaries(
         self,
@@ -818,53 +795,6 @@ class PluginRegistry:
                     f"port {port_name!r} references artifact type "
                     f"{artifact_type.id}@{artifact_type.schema_version}, which is "
                     "neither owned nor declared as an exact dependency"
-                )
-
-        conversions = tuple(self._artifact_conversions.values())
-        for plugin_slug, declaration in self._declarations.items():
-            declared_artifact_keys = {
-                artifact_type.key
-                for artifact_type in (
-                    *declaration.artifact_types,
-                    *declaration.artifact_type_dependencies,
-                )
-            }
-            for conversion in declaration.artifact_conversions:
-                endpoints = (
-                    ("source", conversion.source),
-                    ("target", conversion.target),
-                )
-                for endpoint_name, artifact_type in endpoints:
-                    if artifact_type in declared_artifact_keys:
-                        continue
-                    raise PluginRegistrationError(
-                        f"Plugin {plugin_slug!r} artifact conversion "
-                        f"{conversion.key.id}@{conversion.key.version} references "
-                        f"{endpoint_name} artifact type {artifact_type.id}@"
-                        f"{artifact_type.schema_version}, which is neither owned "
-                        "nor declared as an exact dependency"
-                    )
-
-        conversions_by_source: dict[
-            ArtifactTypeKey,
-            list[ArtifactConversion[Any, Any]],
-        ] = {}
-        for conversion in conversions:
-            conversions_by_source.setdefault(conversion.source, []).append(conversion)
-        for preceding in conversions:
-            for following in conversions_by_source.get(preceding.target, []):
-                if conversion_runtime_types_are_compatible(
-                    preceding.target_type,
-                    following.source_type,
-                ):
-                    continue
-                raise PluginRegistrationError(
-                    f"Artifact conversions {preceding.key.id}@"
-                    f"{preceding.key.version} and {following.key.id}@"
-                    f"{following.key.version} meet at {preceding.target.id}@"
-                    f"{preceding.target.schema_version} but have incompatible "
-                    f"runtime types: {preceding.target_type} cannot feed "
-                    f"{following.source_type}"
                 )
 
         artifact_types_by_key = {
@@ -971,17 +901,10 @@ class PluginRegistry:
                 dependencies_by_key.setdefault(dependency.key, dependency)
         return tuple(dependencies_by_key.values())
 
-    @property
-    def artifact_conversions(self) -> tuple[ArtifactConversion[Any, Any], ...]:
-        return tuple(self._artifact_conversions.values())
-
     def artifact_type_owner(self, artifact_type: ArtifactTypeKey) -> str | None:
         return self._artifact_type_owners.get(
             (artifact_type.id, artifact_type.schema_version)
         )
-
-    def artifact_conversion_owner(self, key: ArtifactConversionKey) -> str | None:
-        return self._artifact_conversion_owners.get(key)
 
     def node_registration(
         self,

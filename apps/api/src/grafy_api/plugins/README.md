@@ -26,9 +26,8 @@ OCI builder. Plugin hosting does not import the graph execution engine.
 The `grafy` CLI remains in `grafy_api.cli`. It calls the core release service for
 System revocation. The broker executable belongs to `apps/plugin-egress-broker`;
 API runtime hosting exchanges versioned policy and readiness messages with its
-container. Historical host-deployment tools belong to `plugins/compatibility`,
-with explicit aliases for their old public imports. Their commands and supported
-historical policies remain available.
+container. Published System and Workspace Plugins execute in isolated workers.
+Historical host deployment and System cutover tooling have been retired.
 
 Run API and client regression checks from the repository root:
 

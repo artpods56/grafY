@@ -61,32 +61,6 @@ async def test_startup_registers_builtin_families_without_host_deployment(
 
 
 @pytest.mark.asyncio
-async def test_configured_host_deployment_manifest_is_ignored(
-    startup_settings: Settings,
-    tmp_path: Path,
-) -> None:
-    manifest_path = tmp_path / "deployment" / "system-plugins.json"
-    manifest_path.parent.mkdir()
-    manifest_path.write_text("{}", encoding="utf-8")
-    configured = with_setting_values(
-        startup_settings,
-        system_plugin_deployment_manifest=manifest_path,
-    )
-    application = create_app(configured)
-
-    async with LifespanManager(application):
-        resources = application.state.resources
-        expected_slugs = {family.slug for family in BUILTIN_FAMILIES}
-        assert {
-            plugin.slug for plugin in resources.workbench.plugin_registry.plugins
-        } == (expected_slugs)
-        admission = resources.workbench.release_admission
-        assert admission is not None
-        assert admission.isolated_adapter_available is False
-        assert admission.runtime_profile is None
-
-
-@pytest.mark.asyncio
 async def test_runtime_startup_without_owner_does_not_reap_other_workers(
     startup_settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:

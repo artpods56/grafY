@@ -117,7 +117,6 @@ BASELINE_SETTING_FIELDS = frozenset(
         "staged_upload_max_bytes",
         "storage_backend",
         "storage_bucket",
-        "system_plugin_deployment_manifest",
         "upload_lifetime_seconds",
         "upload_receive_timeout_seconds",
         "upload_target_ttl_seconds",
@@ -339,30 +338,6 @@ def test_default_authoring_root_does_not_overlap_system_plugin_packages(
     assert config.plugin_authoring_root == Path(".grafy-artifacts/workspace-plugins")
     assert config.plugin_authoring_root in config.plugin_roots
     assert config.plugin_authoring_root != Path("plugins")
-
-
-def test_system_plugin_deployment_manifest_is_absent_by_default(
-    monkeypatch: pytest.MonkeyPatch,  # pyright: ignore[reportCallIssue]
-) -> None:
-    monkeypatch.delenv("GRAFY_SYSTEM_PLUGIN_DEPLOYMENT_MANIFEST", raising=False)
-
-    config = PluginsConfig(_env_file=None)  # pyright: ignore[reportCallIssue]
-
-    assert config.system_plugin_deployment_manifest is None
-    assert config.resolved_system_plugin_deployment_manifest is None
-
-
-def test_system_plugin_deployment_manifest_resolves_from_environment(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:  # pyright: ignore[reportCallIssue]
-    manifest = tmp_path / "deployment" / "system-plugins.json"
-    monkeypatch.setenv("GRAFY_SYSTEM_PLUGIN_DEPLOYMENT_MANIFEST", str(manifest))
-
-    config = PluginsConfig(_env_file=None)  # pyright: ignore[reportCallIssue]
-
-    assert config.system_plugin_deployment_manifest == manifest
-    assert config.resolved_system_plugin_deployment_manifest == manifest.resolve()
 
 
 def test_database_url_does_not_reuse_legacy_database(tmp_path: Path) -> None:  # pyright: ignore[reportCallIssue]

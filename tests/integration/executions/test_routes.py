@@ -69,7 +69,6 @@ def test_application_lifespan_builds_and_releases_workbench_components(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.delenv("GRAFY_SYSTEM_PLUGIN_DEPLOYMENT_MANIFEST", raising=False)
     database_url = create_db_url(tmp_path, "lifespan.sqlite3")
 
     async def prepare_schema() -> None:
