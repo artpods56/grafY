@@ -558,8 +558,8 @@ def test_removing_a_wired_input_plug_keeps_the_room_open(
     assert receipt["accepted_sequence"] == accepted["sequence"]
 
     head = workspace_api.graphs.get_head_ok(graph.id)
-    assert [plug.id for plug in head.nodes[1].input_plugs] == ["plug-a"]
-    assert head.edges == []
+    assert [plug.id for plug in head.document.nodes[1].input_plugs] == ["plug-a"]
+    assert not head.document.edges
 
 
 def test_command_that_invalidates_the_graph_is_rejected_without_closing_room(
@@ -616,8 +616,11 @@ def test_command_that_invalidates_the_graph_is_rejected_without_closing_room(
     head = workspace_api.graphs.get_head_ok(graph.id)
     assert head.name == "Still alive"
     # The rejected command left no trace: the wired plug is still wired.
-    assert [edge.id for edge in head.edges] == ["e1"]
-    assert [plug.id for plug in head.nodes[1].input_plugs] == ["plug-a", "plug-b"]
+    assert [edge.id for edge in head.document.edges] == ["e1"]
+    assert [plug.id for plug in head.document.nodes[1].input_plugs] == [
+        "plug-a",
+        "plug-b",
+    ]
 
 
 def test_reconnect_idempotent_retry_does_not_double_apply(
