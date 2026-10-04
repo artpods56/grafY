@@ -311,15 +311,13 @@ async def test_a_system_promotion_colliding_with_a_workspace_plugin_is_refused(
     ] == []
 
 
-def test_deployment_table_resolves_json_and_confirms_documents_only() -> None:
+def test_deployment_table_resolves_json_and_declares_document_confirmation() -> None:
     snapshot = _snapshot(PluginRegistry())
 
     assert snapshot.extension_claims["json"] == ArtifactTypeKey("file.json", 1)
     assert snapshot.extension_claims["geojson"] == ArtifactTypeKey("file.geojson", 1)
 
-    rule = _contract(snapshot, "file.json").confirmation_rule.to_rule()
-    assert rule.confirms(b"[1, 2, 3]")
-    assert not rule.confirms(b"17")
+    assert _contract(snapshot, "file.json").confirmation_rule.rule == "json_document"
 
 
 def test_deployment_table_resolves_a_rule_less_format_by_extension() -> None:

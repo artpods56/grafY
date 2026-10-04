@@ -132,7 +132,10 @@ def test_release_contract_mirrors_and_round_trips_the_confirmation_rule() -> Non
     assert [
         segment.value for segment in contract.confirmation_rule.signatures[0].segments
     ] == ["89504e470d0a1a0a"]
-    assert contract.confirmation_rule.to_rule() == _spec("file.png").confirmation_rule
+    restored = PluginArtifactTypeContract.model_validate_json(
+        contract.model_dump_json()
+    )
+    assert restored == contract
 
     with pytest.raises(ValidationError, match="only file.* types claim extensions"):
         PluginArtifactTypeContract(
