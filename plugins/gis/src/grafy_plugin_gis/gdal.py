@@ -63,7 +63,6 @@ class RasterCogCompilation(BaseModel):
 class RasterTileCompilation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    destination_dir: Path
     compiler: Literal["gdal2tiles.py"] = "gdal2tiles.py"
     compiler_version: StrictStr
     profile: Literal["mercator"] = "mercator"
@@ -497,7 +496,6 @@ class GdalCli:
             ) from exc
 
         return RasterTileCompilation(
-            destination_dir=destination_dir,
             compiler_version=compiler_version,
             min_zoom=zoom_levels[0] if zoom_levels else None,
             max_zoom=zoom_levels[-1] if zoom_levels else None,
