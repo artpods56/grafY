@@ -17,6 +17,7 @@ from grafy_core.artifact_collections import (
     JSON_COLLECTIONS_STORAGE_FORMAT,
     load_json_collections_page,
 )
+from grafy_core.spatial_contracts import validated_public_service_url
 from grafy_core.spatial_storage import load_feature_collection
 from grafy_core.artifacts import (
     ArtifactExportFormat,
@@ -323,28 +324,6 @@ def _web_mercator_tile_bounds(
     north = extent - y * span
     south = north - span
     return west, south, east, north
-
-
-def _validate_public_wms_url(source: GeoWmsSourcePayload) -> None:
-    host = source.url.host
-    if host is None:
-        raise ValueError("WMS URL does not have a host")
-    normalized_host = host.rstrip(".").lower()
-    if normalized_host == "localhost" or normalized_host.endswith(".localhost"):
-        raise ValueError("WMS URL must not target localhost")
-    try:
-        address = ipaddress.ip_address(normalized_host)
-    except ValueError:
-        return
-    if (
-        address.is_private
-        or address.is_loopback
-        or address.is_link_local
-        or address.is_reserved
-        or address.is_multicast
-        or address.is_unspecified
-    ):
-        raise ValueError("WMS URL must target a public address")
 
 
 class ArtifactService:
@@ -1126,7 +1105,7 @@ class ArtifactService:
             )
         if layer.style.kind != "raster":
             raise ValueError("WMS layer has non-raster style")
-        _validate_public_wms_url(layer.source)
+        _ = validated_public_service_url(layer.source.url, service_name="WMS")
         return GeoRenderLayerResponse(
             id=str(layer_artifact.id),
             title=layer.title,
@@ -1232,7 +1211,7 @@ class ArtifactService:
                 minzoom=max(layer.min_zoom, projection.min_zoom),
                 maxzoom=min(layer.max_zoom, projection.max_zoom),
             )
-        _validate_public_wms_url(layer.source)
+        _ = validated_public_service_url(layer.source.url, service_name="WMS")
         return GeoRasterTileJsonResponse(
             name=layer.title,
             tiles=[
@@ -1342,7 +1321,7 @@ class ArtifactService:
         x: int,
         y: int,
     ) -> GeoTileRead:
-        _validate_public_wms_url(source)
+        _ = validated_public_service_url(source.url, service_name="WMS")
         host = source.url.host
         if host is None:
             raise ArtifactContentUnavailableError("WMS URL does not have a host")
