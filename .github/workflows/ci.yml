@@ -87,6 +87,36 @@ jobs:
       - name: Run backend tests
         run: uv run --all-extras pytest
 
+  native-runtime:
+    name: Native Plugin runtime image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build checked-in native runtime
+        run: docker build --file infra/docker/plugin-native-runtime.Dockerfile --tag grafy-native-runtime-ci .
+      - name: Verify opt-in loopback registry
+        run: |
+          registry_compose=(docker compose --project-name grafy-runtime-ci --file infra/docker/compose.plugin-registry.yaml)
+          trap '"${registry_compose[@]}" down --volumes' EXIT
+          "${registry_compose[@]}" up --detach
+          curl --fail --retry 20 --retry-delay 1 --retry-connrefused http://127.0.0.1:5000/v2/
+      - name: Exercise native runtime tools
+        run: |
+          docker run --rm grafy-native-runtime-ci sh -eu -c '
+            uv --version
+            python --version
+            /usr/bin/python3 -c "from osgeo import gdal; import numpy; from PIL import Image; print(gdal.VersionInfo())"
+            gdal_create -of GTiff -outsize 64 64 -bands 1 -burn 127 -a_srs EPSG:4326 -a_ullr -1 1 1 -1 /tmp/source.tif
+            gdal_translate -of COG /tmp/source.tif /tmp/cog.tif
+            gdalinfo /tmp/cog.tif | grep "LAYOUT=COG"
+            /usr/bin/python3 /usr/bin/gdal2tiles.py --xyz --zoom=0 --processes=1 /tmp/cog.tif /tmp/tiles
+            test -s /tmp/tiles/0/0/0.png
+            /usr/bin/python3 -c "from PIL import Image; Image.new(\"RGB\", (256, 64), \"white\").save(\"/tmp/ocr.png\")"
+            tesseract /tmp/ocr.png /tmp/ocr -l eng
+            test -f /tmp/ocr.txt
+          '
+
   quality-contracts:
     name: Lint, type and API contracts
     runs-on: ubuntu-24.04
