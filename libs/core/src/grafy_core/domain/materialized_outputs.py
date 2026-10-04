@@ -8,8 +8,6 @@ from uuid import UUID
 
 from grafy_core.domain.artifact_outputs import (
     ArtifactOutputValue,
-    artifact_outputs_from_storage,
-    artifact_outputs_to_storage,
     normalize_artifact_outputs,
 )
 
@@ -188,18 +186,3 @@ class MaterializedNodeOutputs:
             raise ValueError("Materialized output timestamp must be timezone-aware")
 
         self.outputs = normalize_artifact_outputs(self.outputs)
-
-    def storage_envelopes(self) -> list[dict[str, object]]:
-        return self.outputs_to_storage(self.outputs)
-
-    @staticmethod
-    def outputs_to_storage(
-        outputs: dict[str, ArtifactOutputValue],
-    ) -> list[dict[str, object]]:
-        return artifact_outputs_to_storage(outputs)
-
-    @staticmethod
-    def outputs_from_storage(
-        value: object,
-    ) -> dict[str, ArtifactOutputValue]:
-        return artifact_outputs_from_storage(value)

@@ -4,6 +4,10 @@ from uuid import UUID
 import pytest
 
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
+from grafy_core.domain.artifact_outputs import (
+    artifact_outputs_from_storage,
+    artifact_outputs_to_storage,
+)
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.execution_history import (
     GraphExecution,
@@ -55,7 +59,7 @@ def test_execution_history_models_validate_lifecycle_and_count_artifacts() -> No
     assert result.node_id == "extract"
     assert result.artifact_count == 3
     assert (
-        GraphExecutionNodeResult.outputs_from_storage(result.storage_envelopes())
+        artifact_outputs_from_storage(artifact_outputs_to_storage(result.outputs))
         == result.outputs
     )
 

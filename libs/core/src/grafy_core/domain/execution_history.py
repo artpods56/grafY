@@ -7,8 +7,6 @@ from uuid import UUID
 from grafy_core.artifacts import ArtifactRefSequence, JsonObject
 from grafy_core.domain.artifact_outputs import (
     ArtifactOutputValue,
-    artifact_outputs_from_storage,
-    artifact_outputs_to_storage,
     normalize_artifact_outputs,
 )
 
@@ -230,13 +228,6 @@ class GraphExecutionNodeResult:
             len(output.item_refs) if isinstance(output, ArtifactRefSequence) else 1
             for output in self.outputs.values()
         )
-
-    def storage_envelopes(self) -> list[dict[str, object]]:
-        return artifact_outputs_to_storage(self.outputs)
-
-    @staticmethod
-    def outputs_from_storage(value: object) -> dict[str, ArtifactOutputValue]:
-        return artifact_outputs_from_storage(value)
 
 
 @dataclass(frozen=True, slots=True)
