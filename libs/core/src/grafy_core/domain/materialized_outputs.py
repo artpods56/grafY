@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from grafy_core.domain.artifact_outputs import (
-    ArtifactOutputEnvelope,
     ArtifactOutputValue,
     artifact_outputs_from_storage,
     artifact_outputs_to_storage,
@@ -27,7 +26,6 @@ if TYPE_CHECKING:
 # vocabulary becomes the persistence boundary used by both materializations and
 # invocation-cache entries.
 MaterializedOutputValue = ArtifactOutputValue
-MaterializedOutputEnvelope = ArtifactOutputEnvelope
 
 
 def _utc_now() -> datetime:
