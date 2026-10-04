@@ -18,6 +18,10 @@ def test_public_routes_are_registered_once(settings: Settings) -> None:
     ]
 
     assert len(operations) == len(set(operations))
+    assert (
+        "GET",
+        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/head",
+    ) not in operations
 
 
 def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
@@ -51,7 +55,6 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions",
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions/{execution_id}",
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/folder",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/head",
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document",
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/materializations",
         "/v1/workspaces/{workspace_id}/graphs/{graph_id}/node-secrets",
@@ -105,7 +108,9 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "post"
     }
     assert set(
-        schema["paths"]["/v1/workspaces/{workspace_id}/graphs/{graph_id}/head"]
+        schema["paths"][
+            "/v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document"
+        ]
     ) == {"get"}
     assert set(
         schema["paths"]["/v1/workspaces/{workspace_id}/graphs/{graph_id}/commands"]

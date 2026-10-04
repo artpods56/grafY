@@ -307,25 +307,6 @@ async def get_saved_graph(
     return SavedGraphResponse.from_graph(graph)
 
 
-@router.get("/{graph_id}/head", response_model=CollaborativeHeadResponse)
-async def get_collaborative_head(
-    graph_id: UUID,
-    collaboration: CollaborationDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
-) -> CollaborativeHeadResponse:
-    try:
-        head = await collaboration.get_head(
-            actor=access.actor,
-            workspace_id=access.workspace_id,
-            graph_id=graph_id,
-        )
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except MissingCollaborativeHeadError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return CollaborativeHeadResponse.from_head(head)
-
-
 @router.get(
     "/{graph_id}/head/document",
     response_model=CanonicalCollaborativeHeadResponse,

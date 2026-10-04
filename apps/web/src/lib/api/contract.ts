@@ -171,8 +171,7 @@ export type SavedGraph =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}"]["get"]["responses"][200]["content"]["application/json"];
 export type UpdateSavedGraphRequest =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}"]["put"]["requestBody"]["content"]["application/json"];
-export type LegacyCollaborativeHead =
-  paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/head"]["get"]["responses"][200]["content"]["application/json"];
+export type LegacyCollaborativeHead = Schemas["CollaborativeHeadResponse"];
 export type CollaborativeHead =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document"]["get"]["responses"][200]["content"]["application/json"];
 export type SubmitGraphCommandRequest =

@@ -803,32 +803,24 @@ def test_http_copy_exact_head_into_same_workspace(
     assert copied_head["checkpoint_revision"] == 1
 
 
-def test_canonical_head_endpoint_preserves_legacy_head_and_exact_document(
+def test_canonical_head_endpoint_returns_exact_document(
     builtin_client: TestClient,
 ) -> None:
     api = GrafyApi(builtin_client)
     graph = api.workspace(WORKSPACE_ID).graphs.create_ok(_graph_request())
     base = f"/v1/workspaces/{WORKSPACE_ID}/graphs/{graph.id}/head"
-    legacy_before = builtin_client.get(base)
     canonical = builtin_client.get(base + "/document")
-    legacy_after = builtin_client.get(base)
 
     assert canonical.status_code == 200
-    assert legacy_before.json() == legacy_after.json()
     body = canonical.json()
     assert body["document"] == graph.document.model_dump(mode="json")
     assert "nodes" not in body and "edges" not in body and "presentation" not in body
     assert "workspace_id" not in body
-    for field in (
-        "graph_id",
-        "room_epoch",
-        "collaboration_sequence",
-        "checkpoint_sequence",
-        "checkpoint_revision",
-        "name",
-        "updated_at",
-    ):
-        assert body[field] == legacy_before.json()[field]
+    assert body["graph_id"] == str(graph.id)
+    assert body["name"] == graph.name
+    assert body["collaboration_sequence"] == 1
+    assert body["checkpoint_sequence"] == 1
+    assert body["checkpoint_revision"] == graph.revision
     for node in body["document"]["nodes"]:
         assert "plugin_release_pin" in node
         assert "plugin_release" not in node
@@ -841,10 +833,8 @@ def test_canonical_head_endpoint_preserves_missing_and_cross_workspace_rejection
     graph = api.workspace(WORKSPACE_ID).graphs.create_ok(_graph_request())
     for workspace_id, graph_id in [(WORKSPACE_ID, uuid4()), (uuid4(), graph.id)]:
         base = f"/v1/workspaces/{workspace_id}/graphs/{graph_id}/head"
-        legacy = builtin_client.get(base)
         canonical = builtin_client.get(base + "/document")
-        assert legacy.status_code == canonical.status_code == 404
-        assert legacy.json()["detail"] == canonical.json()["detail"]
+        assert canonical.status_code == 404
 
 
 def test_canonical_head_reads_uncheckpointed_collaboration_state(
