@@ -165,6 +165,10 @@ function configValueIssues(
     issues.push({ fieldName, message: "Choose one of the allowed values." });
   }
 
+  if (Object.hasOwn(schema, "const") && !sameJsonValue(schema.const, value)) {
+    issues.push({ fieldName, message: "Use the required literal value." });
+  }
+
   if (typeof value === "number") {
     if (typeof schema.minimum === "number" && value < schema.minimum) {
       issues.push({
