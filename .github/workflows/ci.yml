@@ -184,3 +184,31 @@ jobs:
       - name: Build production web application
         if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
         run: npm --prefix apps/web run build
+
+  generated-browser:
+    name: Generated panel browser contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install locked web workspace and Chromium
+        working-directory: apps/web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Verify desktop and narrow Generated layout
+        working-directory: apps/web
+        run: npx playwright test generated-drawer.spec.ts
+      - name: Verify port drag with Generated docked
+        working-directory: apps/web
+        run: npx playwright test canvas-gestures.spec.ts --project=desktop-chromium --grep "ports still connect with Generated"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: generated-browser-failure
+          path: output/playwright/
