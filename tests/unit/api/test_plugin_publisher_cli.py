@@ -9,7 +9,6 @@ import pytest
 from grafy_shared.config import AppConfig, EgressConfig, PluginsConfig, StorageConfig
 from pydantic import SecretStr
 
-from grafy_api.plugins.compatibility.loader import SystemPluginDeploymentError
 from grafy_api.settings import Settings
 from grafy_api import cli
 from grafy_api.cli_credentials import CredentialDigest
@@ -527,7 +526,7 @@ def test_global_promotion_is_a_distinct_command(
     output = capsys.readouterr().out
     assert "release" in output
     assert "--if-generation" in output
-    assert "--deployment-manifest" in output
+    assert "--deployment-manifest" not in output
     assert "--actor" not in output
 
 
@@ -557,26 +556,6 @@ def test_publish_rejects_legacy_workspace_and_actor_options(
 
     assert excinfo.value.code == 2
     assert "unrecognized arguments" in capsys.readouterr().err
-
-
-def test_system_deployment_builder_exposes_exact_or_all_modes(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        ["grafy", "plugin", "build-system-deployment", "--help"],
-    )
-
-    with pytest.raises(SystemExit) as excinfo:
-        cli.main()
-
-    assert excinfo.value.code == 0
-    output = capsys.readouterr().out
-    assert "--output" in output
-    assert "--slug" in output
-    assert "--revision" in output
 
 
 def test_global_revocation_uses_release_reference_and_derived_platform_actor(
@@ -663,38 +642,16 @@ def test_cli_renders_publication_failures_without_a_traceback(
     assert "Traceback" not in error
 
 
-@pytest.mark.parametrize(
-    "manifest_contents", ["not json", '{"manifest_version":"invalid"}']
-)
-def test_global_promotion_still_validates_supplied_compatibility_manifest(
-    tmp_path: Path,
+@pytest.mark.parametrize("arguments", [("--help",), ("plugin", "--help")])
+def test_cli_help_omits_retired_tooling(
+    arguments: tuple[str, ...],
     monkeypatch: pytest.MonkeyPatch,
-    manifest_contents: str,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    manifest = tmp_path / "deployment.json"
-    manifest.write_text(manifest_contents)
-    settings = Settings(
-        app=AppConfig(_env_file=None, workspace=tmp_path / "workspace"),  # pyright: ignore[reportCallIssue]
-    )
-    monkeypatch.setattr(cli, "get_settings", lambda: settings)
-    monkeypatch.setattr(cli, "create_database", create_fake_database)
-    monkeypatch.setattr(cli, "configured_file_storage", configured_fake_storage)
-    monkeypatch.setattr(cli, "PluginReleaseService", FakePluginReleaseService)
-    monkeypatch.setattr(cli, "PluginOciImageBuilder", FakePluginOciImageBuilder)
-    monkeypatch.setattr(cli, "IdentityService", FakeIdentityService)
-    monkeypatch.setattr(cli, "_load_credential_digest", platform_credential)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "grafy",
-            "plugin",
-            "promote",
-            "external.llm@1",
-            "--deployment-manifest",
-            str(manifest),
-        ],
-    )
-
-    with pytest.raises(SystemPluginDeploymentError, match="deployment manifest"):
+    monkeypatch.setattr(sys, "argv", ["grafy", *arguments])
+    with pytest.raises(SystemExit) as excinfo:
         cli.main()
+    assert excinfo.value.code == 0
+    output = capsys.readouterr().out
+    assert "system-cutover" not in output
+    assert "build-system-deployment" not in output

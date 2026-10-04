@@ -1,3 +1,25 @@
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+from typing import Literal, cast
+from grafy_persistence.database import create_database
+from grafy_persistence.orm import metadata
+from grafy_core.domain.plugin_releases import (
+    PluginCapabilityManifest,
+    PluginCatalogManifest,
+    PluginExecutionPolicy,
+    PluginNodeContract,
+    PluginRelease,
+    PluginReleaseNamespace,
+    PluginReleaseScope,
+    PluginRuntimeArtifact,
+    plugin_contract_digest,
+    plugin_profile_digest,
+    plugin_protocol_digest,
+)
+from grafy_core.domain.plugin_installations import PluginInstallation
+from grafy_core.domain.plugin_selection import PluginReleaseSelection
+from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_core.domain.plugin_revocations import PluginReleaseRevocationError
 import asyncio
 from pathlib import Path
 from uuid import UUID
@@ -35,7 +57,7 @@ from grafy_core.domain.identity import (
     WorkspaceRole,
 )
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
-from grafy_core.domain.plugin_releases import PlatformPluginActor, PluginReleaseScope
+from grafy_core.domain.plugin_releases import PlatformPluginActor
 from grafy_core.domain.plugin_revocations import (
     PluginReleaseRevocationReason,
     SystemPluginRevocationDrainError,
@@ -57,26 +79,334 @@ from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_storage import LocalFileObjectStore
 from sqlalchemy import event, select, update
 
-from tests.unit.persistence.test_system_cutover import (
-    NOW,
-    WORKSPACE_ID,
-)
-from tests.unit.persistence.test_system_cutover import (
-    cutover_database as _cutover_database_fixture,
-)
 from tests.unit.persistence.test_transient_fence_ordering import (
     fence_database as _fence_database_fixture,
 )
 
-cutover_database = _cutover_database_fixture
 fence_database = _fence_database_fixture
+
+
+WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000001201")
+GRAPH_ID = UUID("00000000-0000-0000-0000-000000001202")
+EXECUTION_ID = UUID("00000000-0000-0000-0000-000000001203")
+TEMPLATE_ID = UUID("00000000-0000-0000-0000-000000001204")
+ROOM_EPOCH = UUID("00000000-0000-0000-0000-000000001205")
+WORKFLOW_RUN_ID = UUID("00000000-0000-0000-0000-000000001206")
+ARTIFACT_ID = UUID("00000000-0000-0000-0000-000000001208")
+NOW = datetime(2026, 8, 24, 10, 0, tzinfo=UTC)
+
+
+def _system_release() -> InstalledPluginRelease:
+    catalog = PluginCatalogManifest(
+        slug="builtin.text",
+        title="Text",
+        nodes=(
+            PluginNodeContract(
+                operator_id="text.concat",
+                operator_version=1,
+                title="Concat",
+                description="Concatenate text.",
+                config_schema={"type": "object"},
+                input_schema={"type": "object"},
+                output_schema={"type": "object"},
+                inputs=(),
+                outputs=(),
+            ),
+        ),
+    )
+    capabilities = PluginCapabilityManifest()
+    runtime = PluginRuntimeArtifact(
+        object_key="plugin-releases/system/builtin.text/runtime.oci.tar",
+        archive_digest="a" * 64,
+        manifest_digest="b" * 64,
+        config_digest="c" * 64,
+    )
+    release = PluginRelease(
+        slug=catalog.slug,
+        revision=3,
+        catalog=catalog,
+        contract_digest=plugin_contract_digest(catalog),
+        capabilities=capabilities,
+        capability_digest=capabilities.digest,
+        protocol_digest=plugin_protocol_digest(),
+        profile_digest=plugin_profile_digest("python-uv"),
+        source_object_key="plugin-releases/system/builtin.text/source.tar.gz",
+        source_digest="d" * 64,
+        lock_digest="e" * 64,
+        runtime_profile="python-uv",
+        loader_target="grafy_plugin_llm.plugin:LLM",
+        runtime_image_digest=runtime.manifest_digest,
+        runtime_artifact=runtime,
+        published_by_platform_actor="test:revocation",
+    )
+    return InstalledPluginRelease(
+        release=release,
+        installation=PluginInstallation.from_release(
+            release,
+            namespace=PluginReleaseNamespace(
+                scope=PluginReleaseScope.SYSTEM,
+                workspace_id=None,
+            ),
+            execution_policy=PluginExecutionPolicy.HOST_ELIGIBLE,
+            installed_by_user_id=None,
+            installed_by_platform_actor="test:revocation",
+        ),
+    )
+
+
+def _graph_document() -> SavedGraphDocument:
+    return SavedGraphDocument.model_validate(
+        {
+            "nodes": [
+                {
+                    "kind": "builtin",
+                    "id": "known",
+                    "operator_id": "text.concat",
+                    "operator_version": 1,
+                    "config": {"separator": " | "},
+                    "position": {"x": 12, "y": 34},
+                    "layout": {"width": 320},
+                },
+                {
+                    "kind": "builtin",
+                    "id": "unknown",
+                    "operator_id": "retired.missing",
+                    "operator_version": 7,
+                    "config": {"opaque": [1, {"x": True}]},
+                    "position": {"x": 56, "y": 78},
+                },
+                {
+                    "kind": "module",
+                    "id": "module-input",
+                    "operator_id": "module.input",
+                    "operator_version": 1,
+                    "config": {},
+                    "position": {"x": 0, "y": 0},
+                },
+                {
+                    "kind": "module",
+                    "id": "module-call",
+                    "operator_id": "graph.module.call",
+                    "operator_version": 2,
+                    "config": {},
+                    "position": {"x": 1, "y": 1},
+                },
+            ],
+            "edges": [],
+        }
+    )
+
+
+def _run_request() -> dict[str, object]:
+    document = _graph_document().model_dump(mode="json")
+    nodes = document["nodes"]
+    assert isinstance(nodes, list)
+    run_nodes: list[dict[str, object]] = []
+    for node in cast(list[object], nodes):
+        assert isinstance(node, dict)
+        run_nodes.append(
+            {
+                "kind": node["kind"],
+                "id": node["id"],
+                "operator_id": node["operator_id"],
+                "operator_version": node["operator_version"],
+                "config": node["config"],
+            }
+        )
+    return {"nodes": run_nodes, "edges": [], "scope": "all"}
+
+
+@pytest.fixture
+async def revocation_database(
+    tmp_path: Path,
+) -> AsyncIterator[tuple[Database, InstalledPluginRelease]]:
+    database = create_database(f"sqlite+aiosqlite:///{tmp_path / 'revocation.sqlite3'}")
+    release = _system_release()
+    document = _graph_document()
+    async with database.engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+        await connection.execute(
+            schema.workspaces.insert().values(
+                id=WORKSPACE_ID,
+                slug="revocation",
+                name="Revocation",
+                kind="shared",
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+        await unit_of_work.plugin_releases.add(release.release)
+        await unit_of_work.plugin_releases.add_installation(release.installation)
+        await unit_of_work.plugin_releases.add_selection(
+            PluginReleaseSelection.from_release(
+                release,
+                actor_reference="test:revocation",
+            )
+        )
+        await unit_of_work.commit()
+    async with database.engine.begin() as connection:
+        await connection.execute(
+            schema.saved_graphs.insert().values(
+                id=GRAPH_ID,
+                workspace_id=WORKSPACE_ID,
+                name="Legacy graph",
+                document=document,
+                revision=7,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        await connection.execute(
+            schema.saved_graph_revisions.insert().values(
+                workspace_id=WORKSPACE_ID,
+                graph_id=GRAPH_ID,
+                revision=7,
+                name="Legacy graph",
+                document=document,
+                created_at=NOW,
+            )
+        )
+        await connection.execute(
+            schema.collaborative_graph_heads.insert().values(
+                workspace_id=WORKSPACE_ID,
+                graph_id=GRAPH_ID,
+                room_epoch=ROOM_EPOCH,
+                collaboration_sequence=11,
+                checkpoint_sequence=9,
+                checkpoint_revision=7,
+                name="Legacy graph",
+                document=document,
+                updated_at=NOW,
+            )
+        )
+        await connection.execute(
+            schema.templates.insert().values(
+                id=TEMPLATE_ID,
+                workspace_id=WORKSPACE_ID,
+                source_graph_id=GRAPH_ID,
+                source_revision=7,
+                source_graph_name="Legacy graph",
+                snapshot_document=document,
+                name="Legacy template",
+                state="active",
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        await connection.execute(
+            schema.graph_executions.insert().values(
+                workspace_id=WORKSPACE_ID,
+                execution_id=EXECUTION_ID,
+                graph_id=GRAPH_ID,
+                graph_revision=7,
+                status="cancelled",
+                scope="all",
+                submitted_request=_run_request(),
+                created_at=NOW,
+                finished_at=NOW,
+            )
+        )
+        await connection.execute(
+            schema.artifact_objects.insert().values(
+                id=ARTIFACT_ID,
+                workspace_id=WORKSPACE_ID,
+                artifact_type="text",
+                schema_version=1,
+                content_type="text/plain",
+                storage_backend="inline",
+                inline_payload={"text": "legacy"},
+                metadata={
+                    "plugin_release": {
+                        "scope": "system",
+                        "slug": "builtin.text",
+                        "revision": 0,
+                    }
+                },
+            )
+        )
+        await connection.execute(
+            schema.invocation_cache_entries.insert().values(
+                workspace_id=WORKSPACE_ID,
+                key_sha256="f" * 64,
+                generation=UUID("00000000-0000-0000-0000-000000001207"),
+                outputs={},
+                created_at=NOW,
+            )
+        )
+        await connection.execute(
+            schema.materialized_node_outputs.insert().values(
+                workspace_id=WORKSPACE_ID,
+                graph_id=GRAPH_ID,
+                graph_revision=7,
+                node_id="known",
+                workflow_run_id=WORKFLOW_RUN_ID,
+                outputs={},
+                materialized_at=NOW,
+            )
+        )
+    try:
+        yield database, release
+    finally:
+        await database.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["queued", "running", "cancelling"])
+async def test_system_revocation_requires_durable_execution_drain(
+    revocation_database: tuple[Database, InstalledPluginRelease],
+    tmp_path: Path,
+    status: Literal["queued", "running", "cancelling"],
+) -> None:
+    database, release = revocation_database
+    releases = PluginReleaseService(
+        lambda: SqlAlchemyUnitOfWork(database.sessions),
+        LocalFileObjectStore(tmp_path / "objects"),
+        bucket="plugins",
+    )
+    actor = PlatformPluginActor("cli:security-response")
+    async with database.engine.begin() as connection:
+        await connection.execute(
+            update(schema.graph_executions).values(status=status, finished_at=None)
+        )
+
+    with pytest.raises(PluginReleaseRevocationError, match="drained execution queue"):
+        await releases.revoke_system(
+            slug=release.release.slug,
+            revision=release.release.revision,
+            reason=PluginReleaseRevocationReason.SECURITY,
+            platform_actor=actor,
+        )
+    assert (
+        await releases.get_system_revocation(
+            slug=release.release.slug,
+            revision=release.release.revision,
+        )
+        is None
+    )
+
+    async with database.engine.begin() as connection:
+        await connection.execute(
+            update(schema.graph_executions).values(status="cancelled", finished_at=NOW)
+        )
+    revoked = await releases.revoke_system(
+        slug=release.release.slug,
+        revision=release.release.revision,
+        reason=PluginReleaseRevocationReason.SECURITY,
+        platform_actor=actor,
+    )
+
+    assert revoked.installation_id == release.installation.id
+    assert revoked.reason is PluginReleaseRevocationReason.SECURITY
+    assert revoked.revoked_by_platform_actor == actor.reference
 
 
 @pytest.fixture
 async def execution_database(
-    cutover_database: tuple[Database, InstalledPluginRelease], fence_database: Database
+    revocation_database: tuple[Database, InstalledPluginRelease],
+    fence_database: Database,
 ) -> tuple[Database, InstalledPluginRelease]:
-    source, release = cutover_database
+    source, release = revocation_database
     async with source.engine.connect() as source_connection:
         async with fence_database.engine.begin() as target_connection:
             for table in schema.metadata.sorted_tables:

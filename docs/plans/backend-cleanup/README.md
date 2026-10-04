@@ -1,5 +1,10 @@
 # Backend cleanup implementation checklist
 
+> Historical audit record. Issue #117 retires the System cutover and host
+> deployment tooling mentioned below. Those implementation and verification
+> notes describe the earlier cleanup, not commands supported by the current API.
+
+
 This is the working checklist for the active goal: implement all remaining findings from this thread's backend structure audit. The full original review is preserved in [original-audit.md](original-audit.md). Do not mark a whole finding complete when only its file movement or easiest subtask is done.
 
 Worktree: `/Users/user/Work/grafY-worktrees/backend-safe-cleanup`

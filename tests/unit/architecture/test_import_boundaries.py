@@ -100,9 +100,9 @@ def _imported_modules(source: str, package: str) -> list[str]:
             "grafy_api.v1.routes.artifacts",
         ),
         (
-            "from ..compatibility import loader",
+            "from ..publication import source",
             "grafy_api.plugins.runtime",
-            "grafy_api.plugins.compatibility.loader",
+            "grafy_api.plugins.publication.source",
         ),
         (
             "from . import views",

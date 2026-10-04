@@ -64,20 +64,16 @@ capabilities to an effective Workspace catalog:
 
 Workspace owners and reviewed coding agents publish isolated-only Workspace
 releases. A separate one-shot platform/CI publisher stages System releases,
-including retained OCI artifacts and explicit distribution/execution policy;
+including retained OCI artifacts and isolated-only execution policy;
 stage and promotion are distinct operations. `/v1/nodes` combines selected
 System releases, selected releases owned by the requested Workspace, and
 published Modules (`entry_kind=module`).
 
-After the API image installs immutable System project paths, run
-`grafy plugin build-system-deployment --output <path>` inside that image (or
-add `--slug <slug> --revision <revision>` for one candidate). The producer
-rebuilds each inventory project's deterministic source archive, verifies its
-SHA-256 and `uv.lock` digest against the staged release, then fingerprints the
-installed distribution and verifies its loader catalog. The resulting host
-binding therefore proves both the staged source identity and the exact bytes
-loaded by that image; the retained-OCI guest loader manifest remains a separate
-artifact.
+The checked-in inventory provides the System project path and loader target to
+the isolated publisher. After staging a release, explicitly promote its exact
+`SLUG@REVISION` with `grafy plugin promote`. System promotion accepts only
+`isolated-only` installations. The retained OCI artifact carries the guest
+loader contract used for execution.
 
 ```mermaid
 flowchart LR
@@ -87,7 +83,6 @@ flowchart LR
     PlatformPublish --> Releases
     Releases --> Catalog["Effective /v1/nodes catalog"]
     Catalog --> Admission["Shared release admission"]
-    Admission --> Host["Exact bound System host adapter"]
     Admission --> OCI["Retained OCI adapter"]
 ```
 
@@ -613,8 +608,8 @@ publisher/API  ──►  serialized release + core ports
   import from `apps/api`, `apps/mcp`, `libs/persistence`, or `libs/storage` —
   those are host concerns.
 - Serialized contracts, not imports or registry membership, determine catalog
-  visibility. The API may load a deployment-declared System implementation only
-  for an exact host binding; every System release still retains OCI.
+  visibility. Published System and Workspace Plugins execute through their
+  retained OCI artifacts in isolated workers.
 - Reuse producer-neutral artifact types from core contract modules such as
   `grafy_core.artifact_contracts`, `grafy_core.image_contracts`,
   `grafy_core.prompt_contracts`, `grafy_core.schema_contracts`, and
@@ -630,8 +625,7 @@ publisher/API  ──►  serialized release + core ports
 
 Each Plugin ships owning tests that construct its singleton, validate the
 declaration, and verify the serialized release contract without relying on
-ambient host discovery. Transitional host packages separately verify their
-exact deployment binding:
+ambient host discovery:
 
 ```python
 from grafy_core.domain.plugin_releases import PluginCatalogManifest
@@ -675,11 +669,11 @@ Every Plugin must pass declaration and freeze tests that verify:
 - [ ] Serialized inspection is clean: no slug/operator/artifact collisions,
       non-canonical conversion references, or incomplete dependency contracts.
 
-## System host-loader boundary
+## System publication boundary
 
-The checked-in System inventory owns the stable distribution name and loader
-target. Deployment tooling binds that target to one exact release and installed
-distribution digest. API startup imports only targets named by that exact
-manifest; it never scans installed packages. Plugin scope, distribution,
-execution policy, and capabilities remain platform-owned release metadata, not
-attributes inferred from Python packaging.
+The checked-in System inventory owns the stable distribution name, project path,
+loader target, execution policy, and capabilities. The isolated publisher uses
+that target to inspect the frozen project. Explicit promotion selects one exact
+release for global visibility. The API does not import installed System Plugin
+implementations at startup. Builtin families ship as workbench application code
+and execute in-process without a Plugin release pin.

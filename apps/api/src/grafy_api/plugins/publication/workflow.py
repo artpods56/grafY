@@ -27,7 +27,6 @@ from grafy_core.file_contracts import ExtensionClaimCollisionError
 from grafy_api.plugins.runtime.admission import (
     ReleaseExecutionAdmission,
     ReleaseExecutionRejection,
-    ReleaseExecutionRoute,
 )
 from grafy_api.plugins.publication.oci import PluginOciImageBuilder
 from grafy_api.plugins.publication.source import (
@@ -375,12 +374,11 @@ class SystemPluginPublicationWorkflow:
         if (
             candidate.release.installation.execution_policy
             is PluginExecutionPolicy.HOST_ELIGIBLE
-            and decision is not ReleaseExecutionRoute.IN_PROCESS
         ):
             raise PluginPublishingError(
-                f"System Plugin release {slug!r} revision {revision} requires an "
-                "exact deployment host binding for its prospective selection "
-                "generation before promotion"
+                f"System Plugin release {slug!r} revision {revision} cannot be "
+                "promoted with the retired host-eligible execution policy; "
+                "System Plugins must use isolated-only execution"
             )
         try:
             return await self._releases.promote_system(
