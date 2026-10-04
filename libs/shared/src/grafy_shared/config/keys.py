@@ -20,11 +20,12 @@ class KeysConfig(BaseSettings):
     def resolved_command_hmac_key(self) -> bytes:
         """Return the deployment HMAC key, failing closed when unset or empty."""
         configured = self.command_hmac_key
-        if configured is None:
+        value = configured.get_secret_value() if configured is not None else ""
+        if not value:
             raise ValueError(
-                "GRAFY_COMMAND_HMAC_KEY must be configured for collaboration"
+                "API startup failed: GRAFY_COMMAND_HMAC_KEY is missing or empty. "
+                "Set it in the repository-root .env file or export it before "
+                "starting the API. Generate one with: "
+                'export GRAFY_COMMAND_HMAC_KEY="$(openssl rand -hex 32)"'
             )
-        value = configured.get_secret_value()
-        if value == "":
-            raise ValueError("GRAFY_COMMAND_HMAC_KEY must not be empty")
         return value.encode("utf-8")

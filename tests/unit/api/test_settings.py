@@ -688,7 +688,7 @@ def test_command_hmac_key_fails_closed_when_missing() -> None:
 
 def test_command_hmac_key_fails_closed_when_empty() -> None:
     keys = KeysConfig(_env_file=None, command_hmac_key=SecretStr(""))  # pyright: ignore[reportCallIssue]
-    with pytest.raises(ValueError, match="must not be empty"):
+    with pytest.raises(ValueError, match="is missing or empty"):
         keys.resolved_command_hmac_key()
 
 
