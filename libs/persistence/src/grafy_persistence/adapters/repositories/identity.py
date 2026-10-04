@@ -124,22 +124,6 @@ class SqlIdentityRepository(IdentityRepositoryPort):
         )
 
     @override
-    async def list_workspaces_for_user(self, user_id: UUID) -> list[Workspace]:
-        result = await self._session.scalars(
-            select(Workspace)
-            .join(
-                schema.workspace_memberships,
-                schema.workspace_memberships.c.workspace_id == schema.workspaces.c.id,
-            )
-            .where(
-                schema.workspace_memberships.c.user_id == user_id,
-                schema.workspace_memberships.c.revoked_at.is_(None),
-            )
-            .order_by(schema.workspaces.c.slug.asc())
-        )
-        return list(result)
-
-    @override
     async def list_memberships_for_user(
         self,
         user_id: UUID,

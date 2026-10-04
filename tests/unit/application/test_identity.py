@@ -220,10 +220,13 @@ async def test_oidc_provisioning_creates_only_a_personal_workspace(
         display_name="Owner",
     )
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        workspaces = await unit_of_work.identity.list_workspaces_for_user(
-            provisioned.user.id
+    workspaces = [
+        workspace
+        for workspace, _ in await service.list_workspaces(
+            actor=ActorContext(user_id=provisioned.user.id)
         )
+    ]
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         provisioning_events = await unit_of_work.security_audit.list_for_workspace(
             provisioned.personal_workspace.id,
             limit=10,
@@ -250,10 +253,13 @@ async def test_ihpan_login_joins_the_shared_workspace_even_when_email_is_unverif
         email_verified=False,
     )
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        workspaces = await unit_of_work.identity.list_workspaces_for_user(
-            provisioned.user.id
+    workspaces = [
+        workspace
+        for workspace, _ in await service.list_workspaces(
+            actor=ActorContext(user_id=provisioned.user.id)
         )
+    ]
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         memberships = await unit_of_work.identity.list_memberships_for_user(
             provisioned.user.id
         )
@@ -294,25 +300,27 @@ async def test_foreign_email_does_not_join_the_shared_workspace(
         email_verified=True,
     )
 
+    outsider_workspaces = [
+        workspace
+        for workspace, _ in await service.list_workspaces(
+            actor=ActorContext(user_id=outsider.user.id)
+        )
+    ]
+    lookalike_workspaces = [
+        workspace
+        for workspace, _ in await service.list_workspaces(
+            actor=ActorContext(user_id=lookalike.user.id)
+        )
+    ]
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        outsider_workspaces = await unit_of_work.identity.list_workspaces_for_user(
-            outsider.user.id
-        )
-        lookalike_workspaces = await unit_of_work.identity.list_workspaces_for_user(
-            lookalike.user.id
-        )
         shared = (
             await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
                 "ihpan"
             )
         )
 
-    assert all(
-        workspace.kind is WorkspaceKind.PERSONAL for workspace in outsider_workspaces
-    )
-    assert all(
-        workspace.kind is WorkspaceKind.PERSONAL for workspace in lookalike_workspaces
-    )
+    assert outsider_workspaces == [outsider.personal_workspace]
+    assert lookalike_workspaces == [lookalike.personal_workspace]
     assert shared is None
 
 
