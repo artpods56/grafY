@@ -12,14 +12,22 @@ def test_publisher_is_one_shot_profile_and_only_base_service_with_docker_socket(
         dict[str, object],
         yaml.safe_load((repository / "infra/docker/compose.yaml").read_text()),
     )
+    dockerfile = (repository / "infra/docker/api.Dockerfile").read_text()
     services = cast(dict[str, dict[str, object]], document["services"])
     publisher = services["publisher"]
+    publisher_build = cast(dict[str, object], publisher["build"])
     publisher_volumes = cast(list[str], publisher["volumes"])
     publisher_environment = cast(dict[str, object], publisher["environment"])
 
     assert publisher["profiles"] == ["publisher"]
     assert publisher["restart"] == "no"
     assert publisher["entrypoint"] == [".venv/bin/grafy"]
+    assert publisher_build == {
+        "context": "../..",
+        "dockerfile": "infra/docker/api.Dockerfile",
+        "target": "publisher",
+    }
+    assert "FROM api-plugins AS publisher" in dockerfile
     assert "/var/run/docker.sock:/var/run/docker.sock" in publisher_volumes
     assert publisher_environment["GRAFY_PLUGIN_PUBLISHER_SCRATCH_ROOT"] == (
         "${GRAFY_PUBLISHER_SCRATCH_ROOT:-/tmp/grafy-plugin-publisher}"
@@ -75,3 +83,46 @@ def test_native_runtime_profile_variables_are_exposed_to_api_and_publisher() -> 
             # A null Compose value imports a configured value and stays unset
             # for deployments that do not run a native profile.
             assert environment[variable] is None, variable
+
+
+def test_native_runtime_base_and_local_registry_are_declared() -> None:
+    repository = Path(__file__).resolve().parents[3]
+    dockerfile = (
+        repository / "infra/docker/plugin-native-runtime.Dockerfile"
+    ).read_text()
+    registry = cast(
+        dict[str, object],
+        yaml.safe_load(
+            (repository / "infra/docker/compose.plugin-registry.yaml").read_text()
+        ),
+    )
+    services = cast(dict[str, dict[str, object]], registry["services"])
+    volumes = cast(dict[str, object], registry["volumes"])
+
+    assert (
+        "uv:python3.14-trixie-slim@sha256:63018e7b676ef735eee4da4f9c2e7b5f5e3851fa023745d78ce91d1a099a35fd"
+        in dockerfile
+    )
+    assert (
+        "uv:python3.14-bookworm-slim@sha256:7cf77f594be8042dab6daa9fe326f90962252268b4f120a7f5dccce4d947e6c1"
+        in dockerfile
+    )
+    for package in (
+        "gdal-bin",
+        "python3-gdal",
+        "python3-numpy",
+        "python3-pil",
+        "tesseract-ocr",
+        "tesseract-ocr-eng",
+    ):
+        assert package in dockerfile
+
+    service = services["registry"]
+    assert service["image"] == (
+        "registry:2.8.3@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
+    )
+    assert service["ports"] == ["127.0.0.1:5000:5000"]
+    assert service["volumes"] == ["plugin-runtime-registry-data:/var/lib/registry"]
+    assert volumes["plugin-runtime-registry-data"] == {
+        "name": "grafy-plugin-runtime-registry-data"
+    }
