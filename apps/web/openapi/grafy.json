@@ -3557,6 +3557,17 @@
             ],
             "title": "Graph Title"
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "node_id": {
             "anyOf": [
               {
@@ -5666,6 +5677,12 @@
             "title": "Execution Id",
             "type": "string"
           },
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
           "node_id": {
             "maxLength": 255,
             "minLength": 1,
@@ -5683,7 +5700,8 @@
           "artifact_id",
           "execution_id",
           "node_id",
-          "node_title"
+          "node_title",
+          "name"
         ],
         "title": "SaveRunArtifactRequest",
         "type": "object"

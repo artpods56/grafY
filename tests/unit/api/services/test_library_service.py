@@ -11,6 +11,7 @@ from grafy_api.v1.routes.artifacts.services import ArtifactService
 from grafy_api.v1.routes.library.services import LibraryService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.artifacts import ArtifactObject
+from grafy_core.domain.library import LibraryFolder
 from grafy_core.domain.errors import NotFoundError
 from grafy_core.domain.execution_history import (
     GraphExecution,
@@ -156,6 +157,7 @@ async def _save_run(
     seeded: Seeded,
     *,
     node_title: str = "Resize",
+    name: str = "Quarterly report",
 ) -> None:
     _ = await service.save_from_run(
         workspace_id=WORKSPACE_ID,
@@ -163,6 +165,7 @@ async def _save_run(
         execution_id=seeded.execution_id,
         node_id=seeded.node_id,
         node_title=node_title,
+        name=name,
     )
 
 
@@ -189,6 +192,7 @@ async def test_saving_a_run_artifact_writes_the_four_producing_facts(
     assert item.provenance.graph_title == "Sales"
     assert item.provenance.node_id == seeded.node_id
     assert item.provenance.node_title == "Resize"
+    assert item.name == "Quarterly report"
     assert item.provenance.graph_revision == 4
     assert item.provenance.execution_id == seeded.execution_id
     assert item.provenance.original_filename is None
@@ -197,6 +201,55 @@ async def test_saving_a_run_artifact_writes_the_four_producing_facts(
     assert item.run.execution_id == seeded.execution_id
     assert item.run.graph_id == seeded.graph_id
     assert item.run.finished_at == NOW
+
+
+@pytest.mark.asyncio
+async def test_saving_the_same_run_artifact_keeps_its_name_and_placement(
+    tmp_path: Path,
+) -> None:
+    store = InMemoryDataStore()
+    seeded = await _seed_run(store)
+    saved_graphs = FakeSavedGraphs()
+    saved_graphs.set_title(seeded.graph_id, "Sales")
+    service, artifacts = _service(store, saved_graphs, tmp_path)
+    try:
+        first = await service.save_from_run(
+            workspace_id=WORKSPACE_ID,
+            artifact_id=seeded.artifact_id,
+            execution_id=seeded.execution_id,
+            node_id=seeded.node_id,
+            node_title="Resize",
+            name="Quarterly report",
+        )
+        folder_id = uuid4()
+        unit_of_work = InMemoryUnitOfWork(store)
+        async with unit_of_work as entered:
+            await entered.library_folders.add(
+                LibraryFolder(workspace_id=WORKSPACE_ID, name="Reports", id=folder_id)
+            )
+            await entered.library_folders.place(
+                workspace_id=WORKSPACE_ID,
+                artifact_ids=[seeded.artifact_id],
+                folder_id=folder_id,
+            )
+            await entered.commit()
+        second = await service.save_from_run(
+            workspace_id=WORKSPACE_ID,
+            artifact_id=seeded.artifact_id,
+            execution_id=seeded.execution_id,
+            node_id=seeded.node_id,
+            node_title="Resized later",
+            name="A different name",
+        )
+        items = await service.list_items(WORKSPACE_ID)
+    finally:
+        await artifacts.close()
+
+    assert first.name == "Quarterly report"
+    assert second.name == "Quarterly report"
+    assert second.provenance.node_title == "Resize"
+    assert len(items) == 1
+    assert items[0].folder_id == folder_id
 
 
 @pytest.mark.asyncio
@@ -241,6 +294,7 @@ async def test_saving_again_never_rewrites_the_birth_record(tmp_path: Path) -> N
             execution_id=seeded.execution_id,
             node_id=seeded.node_id,
             node_title="A different title",
+            name="A different name",
         )
         item = (await service.list_items(WORKSPACE_ID))[0]
     finally:
@@ -315,6 +369,7 @@ async def test_a_run_artifact_must_belong_to_the_named_node_and_run(
                 execution_id=seeded.execution_id,
                 node_id="some-other-node",
                 node_title="Other",
+                name="Other",
             )
         with pytest.raises(NotFoundError):
             _ = await service.save_from_run(
@@ -323,6 +378,7 @@ async def test_a_run_artifact_must_belong_to_the_named_node_and_run(
                 execution_id=uuid4(),
                 node_id=seeded.node_id,
                 node_title="Resize",
+                name="Resize",
             )
     finally:
         await artifacts.close()

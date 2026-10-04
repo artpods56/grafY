@@ -35,6 +35,7 @@ def test_saving_from_an_unknown_run_is_not_found(builtin_client: TestClient) -> 
             "execution_id": str(uuid4()),
             "node_id": "resize-1",
             "node_title": "Resize",
+            "name": "Quarterly report",
         },
     )
 
@@ -49,7 +50,26 @@ def test_a_save_request_must_name_a_node_and_title(builtin_client: TestClient) -
             "execution_id": str(uuid4()),
             "node_id": "   ",
             "node_title": "Resize",
+            "name": "Quarterly report",
         },
     )
 
     assert response.status_code == 422
+
+
+def test_a_run_save_name_is_required_and_bounded(builtin_client: TestClient) -> None:
+    body = {
+        "artifact_id": str(uuid4()),
+        "execution_id": str(uuid4()),
+        "node_id": "resize-1",
+        "node_title": "Resize",
+    }
+
+    missing = builtin_client.post(_library_path("/artifacts/from-run"), json=body)
+    too_long = builtin_client.post(
+        _library_path("/artifacts/from-run"),
+        json={**body, "name": "r" * 161},
+    )
+
+    assert missing.status_code == 422
+    assert too_long.status_code == 422

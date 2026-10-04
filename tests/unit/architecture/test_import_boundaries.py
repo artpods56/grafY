@@ -373,7 +373,7 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
         assert "grafy-core==0.1.0" in cast(list[str], project["dependencies"])
         core_wheel = project_root / "wheels/grafy_core-0.1.0-py3-none-any.whl"
         assert sha256(core_wheel.read_bytes()).hexdigest() == (
-            "c610281979fcc1b7526a81f3f409ed4ed29feaf7481f3cb8fe0680445f3eaf7b"
+            "88f518e947339dc5257bde783ca7bf0a9a6becd5155658c785049dc6b656e229"
         )
         assert "workspace = true" not in (project_root / "pyproject.toml").read_text()
 

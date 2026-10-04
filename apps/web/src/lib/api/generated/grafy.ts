@@ -2535,6 +2535,8 @@ export interface components {
             readonly graph_revision?: number | null;
             /** Graph Title */
             readonly graph_title?: string | null;
+            /** Name */
+            readonly name?: string | null;
             /** Node Id */
             readonly node_id?: string | null;
             /** Node Title */
@@ -3632,6 +3634,8 @@ export interface components {
              * Format: uuid
              */
             readonly execution_id: string;
+            /** Name */
+            readonly name: string;
             /** Node Id */
             readonly node_id: string;
             /** Node Title */

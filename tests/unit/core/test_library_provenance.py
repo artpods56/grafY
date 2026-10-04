@@ -17,6 +17,7 @@ def _run_provenance() -> LibraryProvenance:
         node_title="Resize",
         graph_revision=4,
         execution_id=uuid4(),
+        name="Quarterly report",
     )
 
 
@@ -29,6 +30,31 @@ def test_run_provenance_freezes_the_producing_facts() -> None:
     assert provenance.graph_revision == 4
     assert provenance.execution_id is not None
     assert provenance.original_filename is None
+    assert provenance.name == "Quarterly report"
+
+
+def test_old_run_provenance_without_a_name_still_loads() -> None:
+    values = _run_provenance().model_dump(mode="json")
+    values.pop("name")
+
+    restored = LibraryProvenance.model_validate(values)
+
+    assert restored.name is None
+
+
+@pytest.mark.parametrize("name", ["", " ", "r" * 161])
+def test_run_provenance_rejects_an_invalid_name(name: str) -> None:
+    with pytest.raises(ValueError):
+        LibraryProvenance.from_run(
+            saved_at=NOW,
+            graph_id=uuid4(),
+            graph_title="Sales",
+            node_id="resize-1",
+            node_title="Resize",
+            graph_revision=4,
+            execution_id=uuid4(),
+            name=name,
+        )
 
 
 def test_run_provenance_strips_titles() -> None:
