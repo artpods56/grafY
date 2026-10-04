@@ -53,7 +53,6 @@ class RasterCogCompilation(BaseModel):
     compiler: Literal["gdal_translate"] = "gdal_translate"
     compiler_version: StrictStr
     native_crs: StrictStr | None
-    native_bounds: RasterBounds | None
     bounds_wgs84: RasterBounds | None
     width: StrictInt = Field(gt=0)
     height: StrictInt = Field(gt=0)
@@ -365,7 +364,6 @@ class GdalCli:
             destination=destination,
             compiler_version=compiler_version,
             native_crs=self._native_crs(output_info),
-            native_bounds=self._native_bounds(output_info),
             bounds_wgs84=self._wgs84_bounds(output_info),
             width=output_info.size[0],
             height=output_info.size[1],
@@ -658,24 +656,6 @@ class GdalCli:
         if wkt is None or wkt.strip() == "":
             return None
         return wkt
-
-    def _native_bounds(self, info: _GdalInfo) -> RasterBounds | None:
-        if info.geo_transform is None or info.corner_coordinates is None:
-            return None
-        corners = info.corner_coordinates
-        positions = [
-            position
-            for position in (
-                corners.upper_left,
-                corners.lower_left,
-                corners.lower_right,
-                corners.upper_right,
-            )
-            if position is not None
-        ]
-        if len(positions) != 4:
-            return None
-        return self._bounds(positions)
 
     def _wgs84_bounds(self, info: _GdalInfo) -> RasterBounds | None:
         extent = info.wgs84_extent
