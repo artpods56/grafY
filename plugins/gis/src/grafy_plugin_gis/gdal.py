@@ -58,7 +58,6 @@ class RasterCogCompilation(BaseModel):
     height: StrictInt = Field(gt=0)
     bands: StrictInt = Field(gt=0)
     tile_size: Literal[256] = COG_BLOCK_SIZE
-    overview_levels: StrictInt = Field(ge=0)
 
 
 class RasterTileCompilation(BaseModel):
@@ -368,7 +367,6 @@ class GdalCli:
             width=output_info.size[0],
             height=output_info.size[1],
             bands=len(output_info.bands),
-            overview_levels=len(output_info.bands[0].overviews),
         )
 
     def tile_raster_to_xyz(
