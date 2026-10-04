@@ -22,12 +22,6 @@ if TYPE_CHECKING:
     )
 
 
-# Compatibility aliases for existing callers while the shared artifact-output
-# vocabulary becomes the persistence boundary used by both materializations and
-# invocation-cache entries.
-MaterializedOutputValue = ArtifactOutputValue
-
-
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -177,7 +171,7 @@ class MaterializedNodeOutputs:
     graph_revision: int
     node_id: str
     workflow_run_id: UUID
-    outputs: dict[str, MaterializedOutputValue]
+    outputs: dict[str, ArtifactOutputValue]
     materialized_at: datetime = field(default_factory=_utc_now)
 
     def __post_init__(self) -> None:
@@ -200,12 +194,12 @@ class MaterializedNodeOutputs:
 
     @staticmethod
     def outputs_to_storage(
-        outputs: dict[str, MaterializedOutputValue],
+        outputs: dict[str, ArtifactOutputValue],
     ) -> list[dict[str, object]]:
         return artifact_outputs_to_storage(outputs)
 
     @staticmethod
     def outputs_from_storage(
         value: object,
-    ) -> dict[str, MaterializedOutputValue]:
+    ) -> dict[str, ArtifactOutputValue]:
         return artifact_outputs_from_storage(value)
