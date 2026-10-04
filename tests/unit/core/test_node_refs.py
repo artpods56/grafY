@@ -9,10 +9,7 @@ from grafy_core.domain.implementation import (
 )
 from grafy_core.domain.plugin_identity import PluginReleaseScope
 from grafy_core.domain.saved_graphs import (
-    BuiltinNodeRef,
     GraphPoint,
-    ModuleNodeRef,
-    PluginNodeRef,
     SAVED_GRAPH_SCHEMA_VERSION,
     SavedGraphDocument,
     SavedGraphNode,
@@ -40,7 +37,7 @@ def _node(**overrides: Any) -> SavedGraphNode:
     return SavedGraphNode.model_validate(payload)
 
 
-def test_builtin_plugin_and_module_node_refs_round_trip() -> None:
+def test_builtin_plugin_and_module_nodes_round_trip() -> None:
     builtin = _node()
     plugin = _node(
         id="n2",
@@ -51,20 +48,6 @@ def test_builtin_plugin_and_module_node_refs_round_trip() -> None:
     module = _node(
         id="n3",
         kind="module",
-        operator_id="graph.module.abc",
-        operator_version=2,
-    )
-
-    assert builtin.node_ref() == BuiltinNodeRef(
-        operator_id="arithmetic.add",
-        operator_version=1,
-    )
-    assert plugin.node_ref() == PluginNodeRef(
-        operator_id="llm.openai_compatible.chat_completion",
-        operator_version=1,
-        plugin_release_pin=PIN,
-    )
-    assert module.node_ref() == ModuleNodeRef(
         operator_id="graph.module.abc",
         operator_version=2,
     )

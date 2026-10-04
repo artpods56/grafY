@@ -110,9 +110,11 @@ class SelectedSystemReleaseLookup:
 
     async def list_catalog(self, workspace_id: UUID) -> list[PluginCatalogRelease]:
         releases = [
-            *await self.list_current_system(),
-            *await self.list_current(workspace_id),
+            release
+            for release in self._releases.values()
+            if release.installation.scope is PluginReleaseScope.SYSTEM
         ]
+        releases.extend(await self.list_current(workspace_id))
         return [
             PluginCatalogRelease(
                 release=release,
@@ -122,13 +124,6 @@ class SelectedSystemReleaseLookup:
                 revocation=None,
             )
             for release in releases
-        ]
-
-    async def list_current_system(self) -> list[InstalledPluginRelease]:
-        return [
-            release
-            for release in self._releases.values()
-            if release.installation.scope is PluginReleaseScope.SYSTEM
         ]
 
     async def list_current(

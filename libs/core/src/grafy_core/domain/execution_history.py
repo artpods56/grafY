@@ -7,8 +7,6 @@ from uuid import UUID
 from grafy_core.artifacts import ArtifactRefSequence, JsonObject
 from grafy_core.domain.artifact_outputs import (
     ArtifactOutputValue,
-    artifact_outputs_from_storage,
-    artifact_outputs_to_storage,
     normalize_artifact_outputs,
 )
 
@@ -160,21 +158,6 @@ class GraphExecution:
                 "finished_at"
             )
 
-    def transition_to_running(self) -> None:
-        """Advance a queued execution into running, stamping its start time.
-
-        Only a queued execution may start; this keeps the start timestamp
-        correlated with the running status and rejects running-without-start or
-        queued-with-start states.
-        """
-
-        if self.status != "queued":
-            raise ValueError(
-                f"Graph execution cannot start from status {self.status!r}"
-            )
-        self.status = "running"
-        self.started_at = _utc_now()
-
     def transition_to_cancelling(self) -> None:
         """Request cancellation from a queued or running execution."""
 
@@ -245,13 +228,6 @@ class GraphExecutionNodeResult:
             len(output.item_refs) if isinstance(output, ArtifactRefSequence) else 1
             for output in self.outputs.values()
         )
-
-    def storage_envelopes(self) -> list[dict[str, object]]:
-        return artifact_outputs_to_storage(self.outputs)
-
-    @staticmethod
-    def outputs_from_storage(value: object) -> dict[str, ArtifactOutputValue]:
-        return artifact_outputs_from_storage(value)
 
 
 @dataclass(frozen=True, slots=True)

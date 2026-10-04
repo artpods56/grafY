@@ -29,12 +29,6 @@ BUILTIN_FAMILIES: tuple[Plugin, ...] = (
     FILES,
 )
 
-MODULE_BOUNDARY_OPERATOR_IDS = frozenset(
-    registration.node_class.operator_id
-    for registration in MODULE_BOUNDARY_REGISTRATIONS
-)
-
-
 def build_builtin_registry(
     families: Iterable[Plugin] = BUILTIN_FAMILIES,
 ) -> PluginRegistry:

@@ -89,10 +89,6 @@ class PluginReleaseSelection:
             workspace_id=self.workspace_id,
         )
 
-    @property
-    def allows_new_insertion(self) -> bool:
-        return self.lifecycle is PluginFamilyLifecycle.PUBLISHED
-
     def select(
         self,
         release: InstalledPluginRelease,

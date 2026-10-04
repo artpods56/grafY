@@ -22,8 +22,6 @@ from grafy_core.artifacts import (
     ArtifactTypeKey,
     ArtifactTypeSpec,
     ConfirmationRule,
-    MagicSegment,
-    MagicSignature,
     MaterializedJsonType,
     validate_extension_claims,
 )
@@ -276,23 +274,6 @@ class PluginConfirmationRule(PluginReleaseValue):
                     )
                 )
                 for signature in rule.signatures
-            ),
-        )
-
-    def to_rule(self) -> ArtifactConfirmationRule:
-        return ArtifactConfirmationRule(
-            rule=self.rule,
-            signatures=tuple(
-                MagicSignature(
-                    segments=tuple(
-                        MagicSegment(
-                            offset=segment.offset,
-                            value=bytes.fromhex(segment.value),
-                        )
-                        for segment in signature.segments
-                    )
-                )
-                for signature in self.signatures
             ),
         )
 

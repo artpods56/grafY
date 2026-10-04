@@ -4,6 +4,10 @@ from uuid import UUID
 import pytest
 
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
+from grafy_core.domain.artifact_outputs import (
+    artifact_outputs_from_storage,
+    artifact_outputs_to_storage,
+)
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.execution_history import (
     GraphExecution,
@@ -55,7 +59,7 @@ def test_execution_history_models_validate_lifecycle_and_count_artifacts() -> No
     assert result.node_id == "extract"
     assert result.artifact_count == 3
     assert (
-        GraphExecutionNodeResult.outputs_from_storage(result.storage_envelopes())
+        artifact_outputs_from_storage(artifact_outputs_to_storage(result.outputs))
         == result.outputs
     )
 
@@ -273,14 +277,6 @@ def test_durable_transition_table_enforces_legal_lifecycle() -> None:
     """Explicit transitions keep status, timestamps, workflow id, and error
     correlated; illegal sequences are rejected."""
 
-    # queued -> running stamps the start time.
-    running = _execution("queued")
-    running.transition_to_running()
-    assert running.status == "running"
-    assert running.started_at is not None
-    assert running.finished_at is None
-    assert running.error is None
-
     # running -> terminal succeeded carries workflow id and finish time.
     succeeded = _execution("running")
     succeeded.transition_to_terminal(
@@ -315,9 +311,7 @@ def test_durable_transition_table_enforces_legal_lifecycle() -> None:
     assert cancelling.status == "cancelled"
     assert cancelling.finished_at is not None
 
-    # Illegal: starting from running, cancel from terminal, cancelling to success.
-    with pytest.raises(ValueError, match="cannot start from"):
-        _execution("running").transition_to_running()
+    # Illegal: cancel from terminal, cancelling to success.
     with pytest.raises(ValueError, match="cannot cancel from"):
         GraphExecution(
             workspace_id=WORKSPACE_ONE,

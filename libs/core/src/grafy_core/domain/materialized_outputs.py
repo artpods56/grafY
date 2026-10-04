@@ -7,10 +7,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from grafy_core.domain.artifact_outputs import (
-    ArtifactOutputEnvelope,
     ArtifactOutputValue,
-    artifact_outputs_from_storage,
-    artifact_outputs_to_storage,
     normalize_artifact_outputs,
 )
 
@@ -21,13 +18,6 @@ if TYPE_CHECKING:
         SavedGraphNode,
         SavedGraphOrigin,
     )
-
-
-# Compatibility aliases for existing callers while the shared artifact-output
-# vocabulary becomes the persistence boundary used by both materializations and
-# invocation-cache entries.
-MaterializedOutputValue = ArtifactOutputValue
-MaterializedOutputEnvelope = ArtifactOutputEnvelope
 
 
 def _utc_now() -> datetime:
@@ -179,7 +169,7 @@ class MaterializedNodeOutputs:
     graph_revision: int
     node_id: str
     workflow_run_id: UUID
-    outputs: dict[str, MaterializedOutputValue]
+    outputs: dict[str, ArtifactOutputValue]
     materialized_at: datetime = field(default_factory=_utc_now)
 
     def __post_init__(self) -> None:
@@ -196,18 +186,3 @@ class MaterializedNodeOutputs:
             raise ValueError("Materialized output timestamp must be timezone-aware")
 
         self.outputs = normalize_artifact_outputs(self.outputs)
-
-    def storage_envelopes(self) -> list[dict[str, object]]:
-        return self.outputs_to_storage(self.outputs)
-
-    @staticmethod
-    def outputs_to_storage(
-        outputs: dict[str, MaterializedOutputValue],
-    ) -> list[dict[str, object]]:
-        return artifact_outputs_to_storage(outputs)
-
-    @staticmethod
-    def outputs_from_storage(
-        value: object,
-    ) -> dict[str, MaterializedOutputValue]:
-        return artifact_outputs_from_storage(value)
