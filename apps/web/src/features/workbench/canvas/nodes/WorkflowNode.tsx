@@ -34,6 +34,7 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 import { CanvasNodeHeader, nodeChrome } from "./CanvasNodeChrome";
 import {
   schemaFields,
+  validateConfig,
   type NumberTupleItem,
   type NumberTupleSchemaField,
   type SchemaField,
@@ -791,6 +792,18 @@ const s = stylex.create({
   },
   /** Structural schema metadata, so it stays out of the port/type colour range. */
   required: { color: tokens.colorSubtle, fontSize: tokens.fontSizeSm },
+  configValidationError: {
+    margin: 0,
+    color: tokens.colorDanger,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.4,
+  },
+  configValidationSummary: {
+    margin: "0 12px 8px",
+    color: tokens.colorDanger,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.4,
+  },
   secretField: { display: "grid", alignContent: "start", gap: "5px" },
   secretHeader: {
     minWidth: 0,
@@ -2125,6 +2138,15 @@ function ConfigField({
             );
           }}
         >
+          {typeof value === "string" || typeof value === "number" ? (
+            field.enumValues.some((option) =>
+              Object.is(option, value),
+            ) ? null : (
+              <option value={value} disabled>
+                Saved value: {String(value)}
+              </option>
+            )
+          ) : null}
           {typeof value !== "string" && typeof value !== "number" ? (
             <option value="" disabled>
               Choose an option
@@ -3133,7 +3155,17 @@ function GenericBody({
 }) {
   const grid = useOptionalCanvasGridSettings();
   const bricks = configBricks(data);
-  if (!bricks.length) return null;
+  const issues = validateConfig(data.spec.config_schema, data.config);
+  if (!bricks.length && !issues.length) return null;
+  const displayedFields = new Set(
+    bricks.flatMap((brick) =>
+      brick.kind === "field" ? [brick.field.name] : [],
+    ),
+  );
+  const summaryIssues = issues.filter(
+    (issue) =>
+      issue.fieldName === null || !displayedFields.has(issue.fieldName),
+  );
 
   const cellSize = grid?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
   const labelHidden = configFieldLabelIsRedundant(data.spec.title, bricks);
@@ -3147,57 +3179,78 @@ function GenericBody({
 
   return (
     <div {...stylex.props(s.body)}>
-      <div
-        data-testid="config-board"
-        {...stylex.props(s.configBoard)}
-        style={{
-          gridTemplateColumns: `repeat(${board.columns}, minmax(0, 1fr))`,
-          gridTemplateRows: `repeat(${board.rows}, minmax(${cellSize}px, auto))`,
-        }}
-      >
-        {board.placements.map((placement) => {
-          const brick = bricks[placement.index];
-          if (!brick) return null;
-          const fillsCell = brick.footprint.growY === true;
-          return (
-            <div
-              key={
-                brick.kind === "field"
-                  ? `field:${brick.field.name}`
-                  : `secret:${brick.input.name}`
-              }
-              data-testid="config-brick"
-              {...stylex.props(s.configBrick)}
-              style={{
-                gridColumn: `${placement.col + 1} / span ${placement.w}`,
-                gridRow: `${placement.row + 1} / span ${placement.h}`,
-              }}
-            >
-              {brick.kind === "field" ? (
-                <ConfigField
-                  field={brick.field}
-                  value={data.config[brick.field.name]}
-                  fillHeight={fillsCell}
-                  labelHidden={labelHidden}
-                  layout={layout}
-                  onLayoutDraft={onLayoutDraft}
-                  onLayoutCommit={onLayoutCommit}
-                  onChange={(value) =>
-                    data.onConfigChange?.(id, brick.field.name, value)
-                  }
-                />
-              ) : (
-                <SecretInputField
-                  key={`${data.secretInputScope}:${brick.input.name}:${nodeSecretDependencyRevision(brick.input, data.config)}`}
-                  id={id}
-                  data={data}
-                  input={brick.input}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {bricks.length ? (
+        <div
+          data-testid="config-board"
+          {...stylex.props(s.configBoard)}
+          style={{
+            gridTemplateColumns: `repeat(${board.columns}, minmax(0, 1fr))`,
+            gridTemplateRows: `repeat(${board.rows}, minmax(${cellSize}px, auto))`,
+          }}
+        >
+          {board.placements.map((placement) => {
+            const brick = bricks[placement.index];
+            if (!brick) return null;
+            const fillsCell = brick.footprint.growY === true;
+            return (
+              <div
+                key={
+                  brick.kind === "field"
+                    ? `field:${brick.field.name}`
+                    : `secret:${brick.input.name}`
+                }
+                data-testid="config-brick"
+                {...stylex.props(s.configBrick)}
+                style={{
+                  gridColumn: `${placement.col + 1} / span ${placement.w}`,
+                  gridRow: `${placement.row + 1} / span ${placement.h}`,
+                }}
+              >
+                {brick.kind === "field" ? (
+                  <>
+                    <ConfigField
+                      field={brick.field}
+                      value={data.config[brick.field.name]}
+                      fillHeight={fillsCell}
+                      labelHidden={labelHidden}
+                      layout={layout}
+                      onLayoutDraft={onLayoutDraft}
+                      onLayoutCommit={onLayoutCommit}
+                      onChange={(value) =>
+                        data.onConfigChange?.(id, brick.field.name, value)
+                      }
+                    />
+                    {issues
+                      .filter((issue) => issue.fieldName === brick.field.name)
+                      .map((issue, index) => (
+                        <p
+                          key={`${brick.field.name}-config-issue-${index}`}
+                          role="alert"
+                          {...stylex.props(s.configValidationError)}
+                        >
+                          {issue.message}
+                        </p>
+                      ))}
+                  </>
+                ) : (
+                  <SecretInputField
+                    key={`${data.secretInputScope}:${brick.input.name}:${nodeSecretDependencyRevision(brick.input, data.config)}`}
+                    id={id}
+                    data={data}
+                    input={brick.input}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+      {summaryIssues.length ? (
+        <p role="alert" {...stylex.props(s.configValidationSummary)}>
+          This node has configuration errors in fields that cannot be edited
+          here.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -3569,6 +3622,7 @@ function SupportedWorkflowNodeCard({
   dragging,
 }: NodeProps<WorkflowNode>) {
   const fields = schemaFields(data.spec.config_schema);
+  const configIssues = validateConfig(data.spec.config_schema, data.config);
   const secretInputs = nodeSecretInputs(data.spec);
   const isSchemaBuilder = data.spec.operator_id === SCHEMA_BUILDER_OPERATOR_ID;
   const isArtifactQuery = data.spec.operator_id === ARTIFACT_QUERY_OPERATOR_ID;
@@ -3582,7 +3636,8 @@ function SupportedWorkflowNodeCard({
     }
     return true;
   });
-  const hasConfig = fields.length > 0 || secretInputs.length > 0;
+  const hasConfig =
+    fields.length > 0 || secretInputs.length > 0 || configIssues.length > 0;
   const hasExecutionError = Boolean(data.execution.error);
   const hasProgress = Boolean(data.progress?.entries.length);
   const hasMaterialization = (data.run?.outputs ?? []).some(

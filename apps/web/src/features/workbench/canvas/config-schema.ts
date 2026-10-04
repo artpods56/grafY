@@ -42,6 +42,11 @@ export interface StringListSchemaField extends SchemaFieldBase {
 export type SchemaField =
   ScalarSchemaField | NumberTupleSchemaField | StringListSchemaField;
 
+export interface ConfigValidationIssue {
+  fieldName: string | null;
+  message: string;
+}
+
 function record(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return null;
@@ -54,12 +59,262 @@ function resolveSchema(
   root: Record<string, unknown>,
 ): Record<string, unknown> {
   const reference = schema.$ref;
-  if (typeof reference !== "string" || !reference.startsWith("#/$defs/")) {
+  if (typeof reference !== "string" || !reference.startsWith("#/")) {
     return schema;
   }
-  const name = reference.slice("#/$defs/".length);
-  const definitions = record(root.$defs);
-  return record(definitions?.[name]) ?? schema;
+  const target = reference
+    .slice(2)
+    .split("/")
+    .map((segment) => segment.replaceAll("~1", "/").replaceAll("~0", "~"))
+    .reduce<unknown>((current, segment) => record(current)?.[segment], root);
+  return record(target) ?? schema;
+}
+
+function schemaMatchesType(type: unknown, value: unknown): boolean {
+  if (Array.isArray(type)) {
+    return type.some((candidate) => schemaMatchesType(candidate, value));
+  }
+  switch (type) {
+    case "null":
+      return value === null;
+    case "object":
+      return record(value) !== null;
+    case "array":
+      return Array.isArray(value);
+    case "string":
+      return typeof value === "string";
+    case "boolean":
+      return typeof value === "boolean";
+    case "integer":
+      return typeof value === "number" && Number.isInteger(value);
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    default:
+      return true;
+  }
+}
+
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (typeof left !== "object" || left === null) return false;
+  if (typeof right !== "object" || right === null) return false;
+  try {
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch {
+    return false;
+  }
+}
+
+function configValueIssues(
+  schema: Record<string, unknown>,
+  value: unknown,
+  root: Record<string, unknown>,
+  fieldName: string | null,
+  depth = 0,
+): ConfigValidationIssue[] {
+  if (depth > 64)
+    return [{ fieldName, message: "Schema nesting is too deep." }];
+
+  const issues: ConfigValidationIssue[] = [];
+  const reference = resolveSchema(schema, root);
+  if (reference !== schema) {
+    issues.push(
+      ...configValueIssues(reference, value, root, fieldName, depth + 1),
+    );
+  }
+
+  if (!schemaMatchesType(schema.type, value)) {
+    return [
+      ...issues,
+      { fieldName, message: `Expected ${String(schema.type)}.` },
+    ];
+  }
+
+  for (const keyword of ["allOf", "anyOf", "oneOf"] as const) {
+    const branches = schema[keyword];
+    if (!Array.isArray(branches)) continue;
+    const branchIssues = branches.map((branch) => {
+      const branchSchema = record(branch);
+      return branchSchema
+        ? configValueIssues(branchSchema, value, root, fieldName, depth + 1)
+        : [{ fieldName, message: "Invalid schema branch." }];
+    });
+    const matchingBranches = branchIssues.filter((branch) => !branch.length);
+    if (keyword === "allOf") {
+      for (const branch of branchIssues) issues.push(...branch);
+    } else if (
+      (keyword === "anyOf" && matchingBranches.length === 0) ||
+      (keyword === "oneOf" && matchingBranches.length !== 1)
+    ) {
+      const bestBranch = branchIssues.reduce<ConfigValidationIssue[]>(
+        (best, current) => (current.length < best.length ? current : best),
+        branchIssues[0] ?? [],
+      );
+      issues.push(
+        ...(bestBranch.length
+          ? bestBranch
+          : [{ fieldName, message: "Value must match exactly one schema." }]),
+      );
+    }
+  }
+
+  if (
+    Array.isArray(schema.enum) &&
+    !schema.enum.some((candidate) => sameJsonValue(candidate, value))
+  ) {
+    issues.push({ fieldName, message: "Choose one of the allowed values." });
+  }
+
+  if (Object.hasOwn(schema, "const") && !sameJsonValue(schema.const, value)) {
+    issues.push({ fieldName, message: "Use the required literal value." });
+  }
+
+  if (typeof value === "number") {
+    if (typeof schema.minimum === "number" && value < schema.minimum) {
+      issues.push({
+        fieldName,
+        message: `Must be at least ${schema.minimum}.`,
+      });
+    }
+    if (typeof schema.maximum === "number" && value > schema.maximum) {
+      issues.push({ fieldName, message: `Must be at most ${schema.maximum}.` });
+    }
+    if (
+      typeof schema.exclusiveMinimum === "number" &&
+      value <= schema.exclusiveMinimum
+    ) {
+      issues.push({
+        fieldName,
+        message: `Must be greater than ${schema.exclusiveMinimum}.`,
+      });
+    }
+    if (
+      typeof schema.exclusiveMaximum === "number" &&
+      value >= schema.exclusiveMaximum
+    ) {
+      issues.push({
+        fieldName,
+        message: `Must be less than ${schema.exclusiveMaximum}.`,
+      });
+    }
+  }
+
+  if (typeof value === "string") {
+    const length = Array.from(value).length;
+    if (typeof schema.minLength === "number" && length < schema.minLength) {
+      issues.push({
+        fieldName,
+        message: `Use at least ${schema.minLength} characters.`,
+      });
+    }
+    if (typeof schema.maxLength === "number" && length > schema.maxLength) {
+      issues.push({
+        fieldName,
+        message: `Use at most ${schema.maxLength} characters.`,
+      });
+    }
+    if (typeof schema.pattern === "string") {
+      try {
+        if (!new RegExp(schema.pattern).test(value)) {
+          issues.push({
+            fieldName,
+            message: "Value does not match the required format.",
+          });
+        }
+      } catch {
+        issues.push({
+          fieldName,
+          message: "The schema contains an invalid pattern.",
+        });
+      }
+    }
+  }
+
+  const objectValue = record(value);
+  if (objectValue) {
+    const properties = record(schema.properties);
+    const required = Array.isArray(schema.required)
+      ? schema.required.filter(
+          (name): name is string => typeof name === "string",
+        )
+      : [];
+    for (const name of required) {
+      if (!Object.hasOwn(objectValue, name)) {
+        issues.push({ fieldName: name, message: "This field is required." });
+      }
+    }
+    for (const [name, propertySchema] of Object.entries(properties ?? {})) {
+      if (!Object.hasOwn(objectValue, name)) continue;
+      const childSchema = record(propertySchema);
+      if (!childSchema) continue;
+      issues.push(
+        ...configValueIssues(
+          childSchema,
+          objectValue[name],
+          root,
+          fieldName ?? name,
+          depth + 1,
+        ),
+      );
+    }
+    for (const [name, childValue] of Object.entries(objectValue)) {
+      if (properties && Object.hasOwn(properties, name)) continue;
+      if (schema.additionalProperties === false) {
+        issues.push({ fieldName: name, message: "This key is not allowed." });
+      } else {
+        const extraSchema = record(schema.additionalProperties);
+        if (extraSchema) {
+          issues.push(
+            ...configValueIssues(
+              extraSchema,
+              childValue,
+              root,
+              fieldName ?? name,
+              depth + 1,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(value)) {
+    const prefixItems = Array.isArray(schema.prefixItems)
+      ? schema.prefixItems
+      : [];
+    if (typeof schema.minItems === "number" && value.length < schema.minItems) {
+      issues.push({
+        fieldName,
+        message: `Provide at least ${schema.minItems} items.`,
+      });
+    }
+    if (typeof schema.maxItems === "number" && value.length > schema.maxItems) {
+      issues.push({
+        fieldName,
+        message: `Provide at most ${schema.maxItems} items.`,
+      });
+    }
+    value.forEach((item, index) => {
+      const itemSchema = record(prefixItems[index] ?? schema.items);
+      if (itemSchema) {
+        issues.push(
+          ...configValueIssues(itemSchema, item, root, fieldName, depth + 1),
+        );
+      }
+    });
+  }
+
+  return issues;
+}
+
+/** Validate persisted config values against the emitted JSON Schema locally. */
+export function validateConfig(
+  rawSchema: unknown,
+  config: unknown,
+): ConfigValidationIssue[] {
+  const schema = record(rawSchema);
+  if (!schema) return [];
+  return configValueIssues(schema, config, schema, null);
 }
 
 function editableSchema(
