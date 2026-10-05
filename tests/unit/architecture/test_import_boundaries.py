@@ -100,9 +100,9 @@ def _imported_modules(source: str, package: str) -> list[str]:
             "grafy_api.v1.routes.artifacts",
         ),
         (
-            "from ..compatibility import loader",
+            "from ..publication import source",
             "grafy_api.plugins.runtime",
-            "grafy_api.plugins.compatibility.loader",
+            "grafy_api.plugins.publication.source",
         ),
         (
             "from . import views",
@@ -373,7 +373,7 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
         assert "grafy-core==0.1.0" in cast(list[str], project["dependencies"])
         core_wheel = project_root / "wheels/grafy_core-0.1.0-py3-none-any.whl"
         assert sha256(core_wheel.read_bytes()).hexdigest() == (
-            "a4b7af86fe218ffbb897fffba0363d12d1e859ffda21cbd0b78036799d8a1d81"
+            "0761bb6cdba470e34e7462282b4d9ec312dcbd168aeccc7df0bd27565353f9e3"
         )
         assert "workspace = true" not in (project_root / "pyproject.toml").read_text()
 

@@ -108,11 +108,10 @@ profile definitions. `plugins/runtime` owns exact-release admission, Docker
 invocation, artifact staging, sandbox settings, and egress policy. The standalone
 egress broker is packaged separately from API.
 
-Historical deployment manifests, bindings, and loader implementations live under
-`plugins/compatibility`. Root-level historical module names are aliases for
-supported operator imports. They are not active graph runtime dependencies.
-Persistence-specific System cutover and baseline operations live in
-`grafy_persistence.system_cutover` and `system_baseline`.
+`grafy_api.system_plugin_inventory` loads the checked-in System inventory for
+publication and promotion. Historical System cutover and host deployment
+manifest tooling have been retired under issue #117. Persisted `host-eligible`
+policy values remain readable, but System promotion rejects that policy.
 
 ```mermaid
 flowchart LR

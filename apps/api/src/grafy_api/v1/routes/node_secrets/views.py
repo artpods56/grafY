@@ -20,7 +20,6 @@ from grafy_api.v1.routes.node_secrets.models import (
 from grafy_api.node_secrets import (
     NodeSecretConfigurationError,
     NodeSecretDeclarationError,
-    NodeSecretValueError,
 )
 
 
@@ -72,8 +71,6 @@ async def configure_node_secret(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except NodeSecretConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except NodeSecretValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return NodeSecretStatusResponse.from_state(state)
 
 

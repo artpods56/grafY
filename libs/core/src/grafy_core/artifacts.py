@@ -93,7 +93,8 @@ class ArtifactFieldProjection:
     target: ArtifactTypeKey
     title: str
 
-#[TODO] Artifact types could be typed
+
+# [TODO] Artifact types could be typed
 @dataclass(frozen=True, slots=True)
 class ArtifactExportFormat:
     """One downloadable rendering of an artifact type, beyond the universal JSON.
@@ -260,7 +261,8 @@ class ArtifactRef(BaseModel):
     def key(self) -> ArtifactTypeKey:
         return ArtifactTypeKey(self.artifact_type, self.schema_version)
 
-#[TODO] Review if this is really needed to represent a sequence of artifacts
+
+# [TODO] Review if this is really needed to represent a sequence of artifacts
 class ArtifactRefSequence(BaseModel):
     sequence_id: UUID = Field(default_factory=sequence_id)
     artifact_type: str
@@ -309,6 +311,7 @@ _GRAPH_TITLE_MAX_LENGTH = 160
 _NODE_TITLE_MAX_LENGTH = 160
 _NODE_ID_MAX_LENGTH = 255
 _FILENAME_MAX_LENGTH = 255
+_LIBRARY_NAME_MAX_LENGTH = 160
 
 
 def _required_text(value: str, *, label: str, max_length: int) -> str:
@@ -321,7 +324,8 @@ def _required_text(value: str, *, label: str, max_length: int) -> str:
         )
     return text
 
-#[TODO] from_run and from_upload apply validation but it should be moved to the field definitions so its also applied on direct object construction
+
+# [TODO] from_run and from_upload apply validation but it should be moved to the field definitions so its also applied on direct object construction
 class LibraryProvenance(BaseModel):
     """Birth record written once when an artifact enters a Workspace Library.
 
@@ -341,6 +345,7 @@ class LibraryProvenance(BaseModel):
     graph_revision: int | None = None
     execution_id: UUID | None = None
     original_filename: str | None = None
+    name: str | None = None
 
     @field_validator("saved_at")
     @classmethod
@@ -374,6 +379,12 @@ class LibraryProvenance(BaseModel):
                 raise ValueError(
                     "A run Library provenance cannot carry an uploaded filename"
                 )
+            if self.name is not None:
+                _required_text(
+                    self.name,
+                    label="name",
+                    max_length=_LIBRARY_NAME_MAX_LENGTH,
+                )
             return self
         if self.original_filename is None:
             raise ValueError("An uploaded Library provenance requires a filename")
@@ -386,11 +397,10 @@ class LibraryProvenance(BaseModel):
                 self.node_title,
                 self.graph_revision,
                 self.execution_id,
+                self.name,
             )
         ):
-            raise ValueError(
-                "An uploaded Library provenance cannot carry run facts"
-            )
+            raise ValueError("An uploaded Library provenance cannot carry run facts")
         return self
 
     @classmethod
@@ -404,6 +414,7 @@ class LibraryProvenance(BaseModel):
         node_title: str,
         graph_revision: int,
         execution_id: UUID,
+        name: str | None = None,
     ) -> Self:
         return cls(
             source="run",
@@ -426,6 +437,15 @@ class LibraryProvenance(BaseModel):
             ),
             graph_revision=graph_revision,
             execution_id=execution_id,
+            name=(
+                None
+                if name is None
+                else _required_text(
+                    name,
+                    label="name",
+                    max_length=_LIBRARY_NAME_MAX_LENGTH,
+                )
+            ),
         )
 
     @classmethod
@@ -494,7 +514,8 @@ if TYPE_CHECKING:
         InMemoryUploadRepository as InMemoryUploadRepository,
     )
 
-#[TODO] Remove whatever this is, probably dead code
+
+# [TODO] Remove whatever this is, probably dead code
 def __getattr__(name: str) -> object:
     # Legacy SDK exports must be lazy: importing ports or runtime while artifact
     # models initialize re-enters the domain package through its public exports.

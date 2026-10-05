@@ -1,5 +1,10 @@
 # Final backend cleanup audit
 
+> Historical audit record. Issue #117 retires the System cutover and host
+> deployment tooling mentioned below. Those implementation and verification
+> notes describe the earlier cleanup, not commands supported by the current API.
+
+
 This audit checks the original findings against current source and behavioral evidence. Implementation checklist completion does not prove whole-goal completion. The cleanup worktree is on `codex/backend-safe-cleanup`; this first final-audit pass inspected production commit `c88bd00`.
 
 ## Fresh regression evidence

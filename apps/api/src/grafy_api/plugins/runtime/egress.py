@@ -329,32 +329,6 @@ class PluginEgressBrokerPlan:
     def policy_sha256(self) -> str:
         return sha256(self.canonical_json_bytes()).hexdigest()
 
-    def postgresql_relay_for(
-        self,
-        *,
-        host: object,
-        port: object,
-    ) -> PluginPostgresqlRelay:
-        if (
-            not isinstance(host, str)
-            or not isinstance(port, int)
-            or isinstance(port, bool)
-        ):
-            raise PermissionError(
-                "PostgreSQL egress requires exact string host and integer port config"
-            )
-        requested = PluginEgressDestination(
-            protocol=PluginEgressProtocol.POSTGRESQL,
-            host=host,
-            port=port,
-        )
-        for relay in self.postgresql_relays:
-            if relay.destination == requested:
-                return relay
-        raise PermissionError(
-            "PostgreSQL destination is not in the deployment egress allowlist"
-        )
-
     def canonical_json_bytes(self) -> bytes:
         http_destinations: list[Mapping[str, object]] = []
         postgresql_relays: list[Mapping[str, object]] = []

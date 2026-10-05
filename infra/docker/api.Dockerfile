@@ -12,6 +12,7 @@ ENV UV_LINK_MODE=copy
 COPY pyproject.toml uv.lock alembic.ini ./
 COPY libs/client ./libs/client
 COPY libs/core ./libs/core
+COPY libs/shared ./libs/shared
 COPY libs/persistence ./libs/persistence
 COPY libs/storage ./libs/storage
 COPY libs/workbench ./libs/workbench
@@ -31,6 +32,10 @@ COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/
 # Isolated-only families and their native tools live solely in their retained
 # OCI images. The online API installs only its declared bundled dependencies.
 RUN uv sync --locked --no-dev --package grafy-api
+
+# The one-shot publisher uses this checked-in target. It shares the API
+# package and adds the Docker CLI/buildx tools above for sibling sandboxes.
+FROM api-plugins AS publisher
 
 FROM source AS api
 

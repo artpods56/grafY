@@ -64,6 +64,13 @@ jobs:
         run: >-
           uv run --all-extras pytest -q -o log_cli=false
           tests/unit/persistence/test_migrations.py::test_fresh_postgresql_database_upgrades_to_head
+      - name: Verify PostgreSQL persistence contracts
+        env:
+          GRAFY_TEST_POSTGRES_URL: postgresql+asyncpg://grafy:grafy-ci@127.0.0.1:5432/grafy
+          GRAFY_TEST_TRANSIENT_POSTGRES_URL: postgresql+asyncpg://grafy:grafy-ci@127.0.0.1:5432/grafy
+        run: >-
+          uv run --all-extras pytest -q -o log_cli=false tests/unit/persistence
+          --deselect tests/unit/persistence/test_migrations.py::test_fresh_postgresql_database_upgrades_to_head
       - name: Verify OCI and GIS capabilities
         run: |
           docker version
@@ -86,6 +93,36 @@ jobs:
           PY
       - name: Run backend tests
         run: uv run --all-extras pytest
+
+  native-runtime:
+    name: Native Plugin runtime image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build checked-in native runtime
+        run: docker build --file infra/docker/plugin-native-runtime.Dockerfile --tag grafy-native-runtime-ci .
+      - name: Verify opt-in loopback registry
+        run: |
+          registry_compose=(docker compose --project-name grafy-runtime-ci --file infra/docker/compose.plugin-registry.yaml)
+          trap '"${registry_compose[@]}" down --volumes' EXIT
+          "${registry_compose[@]}" up --detach
+          curl --fail --retry 20 --retry-delay 1 --retry-connrefused http://127.0.0.1:5000/v2/
+      - name: Exercise native runtime tools
+        run: |
+          docker run --rm grafy-native-runtime-ci sh -eu -c '
+            uv --version
+            python --version
+            /usr/bin/python3 -c "from osgeo import gdal; import numpy; from PIL import Image; print(gdal.VersionInfo())"
+            gdal_create -of GTiff -outsize 64 64 -bands 1 -burn 127 -a_srs EPSG:4326 -a_ullr -1 1 1 -1 /tmp/source.tif
+            gdal_translate -of COG /tmp/source.tif /tmp/cog.tif
+            gdalinfo /tmp/cog.tif | grep "LAYOUT=COG"
+            /usr/bin/python3 /usr/bin/gdal2tiles.py --xyz --zoom=0 --processes=1 /tmp/cog.tif /tmp/tiles
+            test -s /tmp/tiles/0/0/0.png
+            /usr/bin/python3 -c "from PIL import Image; Image.new(\"RGB\", (256, 64), \"white\").save(\"/tmp/ocr.png\")"
+            tesseract /tmp/ocr.png /tmp/ocr -l eng
+            test -f /tmp/ocr.txt
+          '
 
   quality-contracts:
     name: Lint, type and API contracts
@@ -111,6 +148,9 @@ jobs:
         id: web_install
         if: ${{ !cancelled() }}
         run: npm --prefix apps/web ci
+      - name: Validate repository hooks
+        if: ${{ !cancelled() && steps.python_install.outcome == 'success' && steps.web_install.outcome == 'success' }}
+        run: uv run prek run --all-files
       - name: Python lint
         if: ${{ !cancelled() && steps.python_install.outcome == 'success' }}
         run: uv run ruff check apps/api/src libs/client/src libs/core/src libs/persistence/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
@@ -151,3 +191,82 @@ jobs:
       - name: Build production web application
         if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
         run: npm --prefix apps/web run build
+
+  generated-browser:
+    name: Generated panel browser contracts
+    env:
+      FORCE_COLOR: "0"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install locked web workspace and Chromium
+        working-directory: apps/web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Falsify browser geometry and connection assertions
+        working-directory: apps/web
+        run: |
+          backup="$(mktemp -d)"
+          cp e2e/generated-drawer.spec.ts "$backup/geometry.ts"
+          cp e2e/canvas-gestures.spec.ts "$backup/ports.ts"
+          trap 'cp "$backup/geometry.ts" e2e/generated-drawer.spec.ts; cp "$backup/ports.ts" e2e/canvas-gestures.spec.ts; rm -rf "$backup"' EXIT
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("e2e/generated-drawer.spec.ts")
+          s = p.read_text()
+          old = "toBeLessThan(canvasBefore.width)"
+          assert old in s
+          p.write_text(s.replace(old, "toBeLessThan(0)"))
+          p = Path("e2e/canvas-gestures.spec.ts")
+          s = p.read_text()
+          old = 'page.locator(".react-flow__edge")).toHaveCount(1)'
+          assert old in s
+          p.write_text(s.replace(old, 'page.locator(".react-flow__edge")).toHaveCount(2)'))
+          PY
+          if npx playwright test generated-drawer.spec.ts --project=desktop-chromium --retries=0 > "$backup/geometry.log" 2>&1; then
+            cat "$backup/geometry.log"
+            exit 1
+          fi
+          cat "$backup/geometry.log"
+          grep -q "Expected: < 0" "$backup/geometry.log"
+          if npx playwright test canvas-gestures.spec.ts --project=desktop-chromium --grep "ports still connect with Generated" --retries=0 > "$backup/ports.log" 2>&1; then
+            cat "$backup/ports.log"
+            exit 1
+          fi
+          cat "$backup/ports.log"
+          grep -q "Expected: 2" "$backup/ports.log"
+      - name: Verify desktop and narrow Generated layout
+        working-directory: apps/web
+        run: npx playwright test generated-drawer.spec.ts
+      - name: Verify port drag with Generated docked
+        working-directory: apps/web
+        run: npx playwright test canvas-gestures.spec.ts --project=desktop-chromium --grep "ports still connect with Generated"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: generated-browser-failure
+          path: output/playwright/
+
+  deployment-images:
+    name: API and publisher deployment images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image with locked workspace
+        run: docker build --file infra/docker/api.Dockerfile --target api --tag grafy-api-ci .
+      - name: Construct installed API contracts
+        run: docker run --rm --entrypoint .venv/bin/python grafy-api-ci -c 'import grafy_shared.config.keys; import grafy_api.v1.routes.library.views'
+      - name: Build publisher and Plugin API image
+        run: docker build --file infra/docker/api.Dockerfile --target publisher --tag grafy-publisher-ci .
+      - name: Construct publisher CLI and verify tools
+        run: |
+          docker run --rm --entrypoint .venv/bin/grafy grafy-publisher-ci --help
+          docker run --rm --entrypoint docker grafy-publisher-ci buildx version

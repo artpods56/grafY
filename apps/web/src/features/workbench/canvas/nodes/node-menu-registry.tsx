@@ -3,7 +3,24 @@
 import * as React from "react";
 import { useNodeId } from "@xyflow/react";
 
-import type { NodeMenuInfo, NodeMenuItem } from "./NodeMenu";
+export interface NodeMenuItem {
+  id: string;
+  label: string;
+  icon?: React.ReactNode;
+  disabled?: boolean;
+  danger?: boolean;
+  onClick?: () => void;
+}
+
+export interface NodeMenuInfo {
+  title: string;
+  /** Plain facts under the title, one per line. */
+  lines?: readonly React.ReactNode[];
+  /** An identifier, set small and monospaced. */
+  mono?: string | null;
+  /** Links or controls that belong with the facts. */
+  footer?: React.ReactNode;
+}
 
 /**
  * What each card's "⋯" menu says, by node id, so the canvas right-click menu

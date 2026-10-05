@@ -48,6 +48,7 @@ from grafy_persistence.orm import metadata
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 from grafy_shared.config import AppConfig
+from grafy_workbench.text import TEXT
 
 from grafy_api.execution.requests import (
     RunNodeRequest,
@@ -1178,9 +1179,13 @@ async def test_dirty_run_rejects_invalid_saved_secret_binding(
         )
 
 
-def test_node_secret_routes_never_return_secret_value(tmp_path: Path) -> None:
+def test_node_secret_status_preserves_valid_nodes_when_saved_config_is_invalid(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     database_url = create_db_url(tmp_path, "routes.sqlite3")
     database = create_database(database_url)
+    plaintext = "route-secret-value"
 
     async def prepare() -> tuple[NodeSecretService, WorkbenchComponents, str]:
         async with database.engine.begin() as connection:
@@ -1188,6 +1193,7 @@ def test_node_secret_routes_never_return_secret_value(tmp_path: Path) -> None:
         await seed_shared_workspace(database)
         registry = PluginRegistry()
         registry.install(SECRET_TEST_PLUGIN)
+        registry.install(TEXT)
         registry.freeze()
         saved_graphs = SavedGraphService(
             lambda: SqlAlchemyUnitOfWork(database.sessions),
@@ -1196,7 +1202,19 @@ def test_node_secret_routes_never_return_secret_value(tmp_path: Path) -> None:
         graph = SavedGraph(
             workspace_id=WORKSPACE_ID,
             name="Shared extraction",
-            document=_secret_document(),
+            document=SavedGraphDocument(
+                nodes=(
+                    *_secret_document().nodes,
+                    SavedGraphNode(
+                        kind="builtin",
+                        id="invalid-text",
+                        operator_id="text.input",
+                        operator_version=1,
+                        config={"unexpected": "do-not-log-this-config-value"},
+                        position=GraphPoint(x=1, y=1),
+                    ),
+                ),
+            ),
         )
         async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
             await stage_checkpointed_graph(
@@ -1209,6 +1227,14 @@ def test_node_secret_routes_never_return_secret_value(tmp_path: Path) -> None:
             unit_of_work_factory=lambda: SqlAlchemyUnitOfWork(database.sessions),
             plugin_registry=registry,
             encryption_key=_encryption_key(),
+        )
+        await service.configure(
+            workspace_id=WORKSPACE_ID,
+            graph_id=graph.id,
+            node_id="llm",
+            name="api_key",
+            value=SecretStr(plaintext),
+            expected_graph_revision=graph.revision,
         )
         components = build_workbench_components(
             plugin_registry=registry,
@@ -1223,7 +1249,6 @@ def test_node_secret_routes_never_return_secret_value(tmp_path: Path) -> None:
         **workbench_dependency_overrides(components),
         node_secret_service: lambda: service,
     }
-    plaintext = "route-secret-value"
     try:
         with client_with_overrides(
             settings=Settings(
@@ -1289,8 +1314,30 @@ def test_node_secret_routes_never_return_secret_value(tmp_path: Path) -> None:
                         "configured": True,
                     }
                 ],
+                "unresolved_nodes": [
+                    {
+                        "node_id": "invalid-text",
+                        "reason": "invalid_configuration",
+                        "status": "unresolved",
+                    }
+                ],
             }
-            assert plaintext not in status.text
+            assert "route-secret-value" not in status.text
+            assert "do-not-log-this-config-value" not in status.text
+            unresolved_logs = [
+                record
+                for record in caplog.records
+                if record.getMessage() == "node_secret_status_unresolved"
+            ]
+            assert any(
+                getattr(record, "node_id", None) == "invalid-text"
+                and getattr(record, "reason", None) == "invalid_configuration"
+                for record in unresolved_logs
+            )
+            assert all(
+                "do-not-log-this-config-value" not in repr(record.__dict__)
+                for record in caplog.records
+            )
 
             saved_graph = api.workspace(WORKSPACE_ID).graphs.get(UUID(graph_id))
             assert saved_graph.status_code == 200
@@ -1306,3 +1353,49 @@ def test_node_secret_routes_never_return_secret_value(tmp_path: Path) -> None:
             assert deleted.content == b""
     finally:
         asyncio.run(database.dispose())
+
+
+async def test_empty_secret_value_response_keeps_its_plain_detail(
+    node_secret_setup: tuple[
+        Database, NodeSecretService, SavedGraphService, PluginRegistry
+    ],
+    tmp_path: Path,
+) -> None:
+    # The rejected-value message is the whole response body; nothing about the stored secret is
+    # added to it now that the HTTP boundary does the translating.
+    database, service, saved_graphs, registry = node_secret_setup
+    graph = await _saved_secret_graph(database)
+    components = _build_secret_components(
+        registry=registry,
+        workspace=tmp_path / "route-workbench",
+        saved_graphs=saved_graphs,
+        node_secrets=service,
+    )
+    with client_with_overrides(
+        settings=Settings(
+            app=AppConfig(
+                workspace=tmp_path / "workbench",
+                database_url=SecretStr(create_db_url(tmp_path, "node-secrets.sqlite3")),
+            )
+        ),
+        overrides={
+            **workbench_dependency_overrides(components),
+            node_secret_service: lambda: service,
+        },
+    ) as client:
+        response = (
+            GrafyApi(client)
+            .workspace(WORKSPACE_ID)
+            .node_secrets.configure_secret(
+                graph.id,
+                "llm",
+                "api_key",
+                ConfigureNodeSecretRequest(
+                    value=SecretStr(""),
+                    expected_graph_revision=1,
+                ),
+            )
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "Node secret value must not be empty"}

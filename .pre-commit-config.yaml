@@ -1,0 +1,32 @@
+repos:
+  - repo: builtin
+    hooks:
+      - id: check-added-large-files
+      - id: check-json
+      - id: check-merge-conflict
+        args: [--assume-in-merge]
+      - id: check-toml
+      - id: check-yaml
+
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff lint
+        entry: uv run ruff check
+        files: ^(apps/api/src|libs/(client|core|persistence|shared|storage)/src|plugins/[^/]+/src|infra/db/migrations|scripts|tests)/.*\.py$
+        language: system
+        types: [python]
+
+      - id: web-eslint
+        name: Web ESLint
+        entry: npm --prefix apps/web exec -- eslint
+        args: [--config, apps/web/eslint.config.mjs]
+        language: system
+        files: ^apps/web/(src|e2e)/.*\.(js|jsx|ts|tsx)$
+
+      - id: web-prettier
+        name: Web Prettier
+        entry: npm --prefix apps/web exec -- prettier --check
+        args: [--config, apps/web/.prettierrc, --ignore-path, apps/web/.prettierignore]
+        language: system
+        files: ^apps/web/(src/.*\.(ts|tsx|css|md|json)|e2e/.*\.(ts|tsx))$

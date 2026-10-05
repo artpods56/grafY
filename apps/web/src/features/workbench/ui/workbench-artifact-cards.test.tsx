@@ -1,0 +1,202 @@
+// @vitest-environment jsdom
+
+import { act } from "react";
+import * as React from "react";
+import { createRoot } from "react-dom/client";
+import { describe, expect, it } from "vitest";
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+import type { ArtifactCardValue } from "../canvas/artifact-card";
+import {
+  ARTIFACT_VIEWER_NODE_TYPE,
+  type ArtifactViewerCanvasState,
+  type ArtifactViewerNode,
+} from "../canvas/artifact-viewer";
+import type { GraphCommand } from "../model/graph-document";
+import {
+  artifactCardDropPosition,
+  useArtifactCardCommands,
+} from "./workbench-artifact-cards";
+
+function single(artifactId: string) {
+  return {
+    artifact_id: artifactId,
+    artifact_type: "file.jpeg",
+    schema_version: 1,
+  };
+}
+
+function cardValue(artifactIds: readonly string[]): ArtifactCardValue {
+  return {
+    artifact_type: "file.jpeg",
+    schema_version: 1,
+    item_refs: artifactIds.map(single),
+    ordered: true,
+    index_key: "order_index",
+    sequence_id: "22222222-2222-4222-8222-222222222222",
+  };
+}
+
+function card(id: string, selected = false): ArtifactViewerNode {
+  return {
+    id,
+    type: ARTIFACT_VIEWER_NODE_TYPE,
+    position: { x: 10, y: 20 },
+    selected,
+    data: { layout: null, mode: null, artifactRef: cardValue([`art-${id}`]) },
+  };
+}
+
+function state(
+  nodes: readonly ArtifactViewerNode[],
+): ArtifactViewerCanvasState {
+  return {
+    graphId: "graph-1",
+    nodes: [...nodes],
+    edges: [],
+    bindings: [],
+    annotations: [],
+  };
+}
+
+async function mount(options: {
+  nodes?: readonly ArtifactViewerNode[];
+  localAuthoringEnabled?: boolean;
+  groupingDisabledReason?: string | null;
+}) {
+  const base = state(options.nodes ?? []);
+  const committed: ArtifactViewerCanvasState[] = [];
+  const commands: GraphCommand[][] = [];
+  let api: ReturnType<typeof useArtifactCardCommands> | null = null;
+
+  function HarnessComponent() {
+    api = useArtifactCardCommands({
+      applyAuthoringCommands: (batch) => {
+        commands.push([...batch]);
+      },
+      artifactViewers: base,
+      authoredDocumentRef: { current: { origins: [] } },
+      commitArtifactViewers: (updater) => {
+        committed.push(updater(base));
+      },
+      collection: {
+        spec: null,
+        disabledReason: null,
+        sources: [],
+        nodes: [],
+        edges: [],
+        onCollected: () => {},
+      },
+      groupingDisabledReason: options.groupingDisabledReason ?? null,
+      localAuthoringEnabled: options.localAuthoringEnabled ?? true,
+    });
+    return null;
+  }
+
+  const root = createRoot(document.createElement("div"));
+  await act(async () => {
+    root.render(React.createElement(HarnessComponent));
+  });
+  const read = () => {
+    if (!api) throw new Error("harness did not render");
+    return api;
+  };
+  return { commands, committed, read, unmount: () => root.unmount() };
+}
+
+describe("useArtifactCardCommands", () => {
+  it("places a new card selected and deselects the cards already on the canvas", async () => {
+    const view = await mount({ nodes: [card("card-1", true)] });
+
+    await act(async () => {
+      view.read().addArtifactCard(cardValue(["art-new"]), { x: 40, y: 60 });
+    });
+
+    const next = view.committed.at(-1);
+    expect(next?.nodes).toHaveLength(2);
+    expect(next?.nodes[0]?.selected).toBe(false);
+    const placed = next?.nodes[1];
+    expect(placed?.selected).toBe(true);
+    expect(placed?.position).toEqual({ x: 40, y: 60 });
+    expect(placed?.data.layout).toBeNull();
+    expect(placed?.data.mode).toBeNull();
+    expect(placed?.data.artifactRef).toEqual(cardValue(["art-new"]));
+    view.unmount();
+  });
+
+  it("does not group cards while the canvas cannot author", async () => {
+    const blocked = await mount({
+      nodes: [card("card-1", true)],
+      localAuthoringEnabled: false,
+    });
+    await act(async () => {
+      blocked.read().collectSelectedArtifacts();
+    });
+    expect(blocked.committed).toEqual([]);
+
+    const groupingBlocked = await mount({
+      nodes: [card("card-1", true)],
+      groupingDisabledReason: "Select at least two cards.",
+    });
+    await act(async () => {
+      groupingBlocked.read().collectSelectedArtifacts();
+    });
+    expect(groupingBlocked.committed).toEqual([]);
+    blocked.unmount();
+    groupingBlocked.unmount();
+  });
+
+  it("groups when authoring is allowed and grouping has no reason to refuse", async () => {
+    const view = await mount({
+      nodes: [card("card-1", true), card("card-2", true)],
+    });
+
+    await act(async () => {
+      view.read().collectSelectedArtifacts();
+    });
+
+    expect(view.committed).toHaveLength(1);
+    view.unmount();
+  });
+
+  it("removes the card when its artifacts are taken away", async () => {
+    const view = await mount({ nodes: [card("card-1")] });
+
+    await act(async () => {
+      view.read().updateArtifactCardRefs("card-1", null);
+    });
+
+    expect(view.committed.at(-1)?.nodes).toEqual([]);
+    expect(view.commands).toEqual([]);
+    view.unmount();
+  });
+
+  it("ignores a card that is no longer on the canvas", async () => {
+    const view = await mount({ nodes: [card("card-1")] });
+
+    await act(async () => {
+      view.read().updateArtifactCardRefs("gone-card", cardValue(["art-x"]));
+    });
+
+    expect(view.committed).toEqual([]);
+    expect(view.commands).toEqual([]);
+    view.unmount();
+  });
+});
+
+describe("artifactCardDropPosition", () => {
+  it("centres a dropped card on the cursor", () => {
+    expect(artifactCardDropPosition({ x: 300, y: 200 }, 1)).toEqual({
+      x: 175,
+      y: 176,
+    });
+  });
+
+  it("lifts a card that carries a set so the stack reads below the cursor", () => {
+    const singleCard = artifactCardDropPosition({ x: 300, y: 200 }, 1);
+    const setCard = artifactCardDropPosition({ x: 300, y: 200 }, 2);
+    expect(setCard.x).toBe(singleCard.x);
+    expect(singleCard.y - setCard.y).toBe(52);
+  });
+});

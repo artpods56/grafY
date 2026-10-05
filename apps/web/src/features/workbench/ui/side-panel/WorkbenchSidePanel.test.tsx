@@ -40,9 +40,11 @@ function state(
     docked: true,
     open: true,
     width: 276,
+    view: "artifacts",
     setOpen: vi.fn(),
     toggle: vi.fn(),
     setWidth: vi.fn(),
+    setView: vi.fn(),
     ...overrides,
   };
 }
@@ -57,11 +59,16 @@ async function renderPanel(sidePanel: WorkbenchSidePanelState): Promise<void> {
       <WorkbenchSidePanel
         workspaceId="workspace-1"
         sidePanel={sidePanel}
+        graphId={null}
+        nodeTitles={{}}
+        registry={null}
+        canSave={false}
+        executionRunning={false}
         onOpenRun={vi.fn()}
       />,
     );
   });
-  if (!sidePanel.open) return;
+  if (!sidePanel.open || sidePanel.view !== "artifacts") return;
   await React.act(async () => {
     await vi.waitFor(() =>
       expect(document.body.textContent).toContain("The Library is empty"),
@@ -110,6 +117,11 @@ describe("WorkbenchSidePanel", () => {
           <WorkbenchSidePanel
             workspaceId="workspace-1"
             sidePanel={{ ...sidePanel, open }}
+            graphId={null}
+            nodeTitles={{}}
+            registry={null}
+            canSave={false}
+            executionRunning={false}
             onOpenRun={vi.fn()}
           />,
         );
@@ -138,6 +150,25 @@ describe("WorkbenchSidePanel", () => {
     expect(
       document.querySelector('[role="tree"][aria-label="Workspace Library"]'),
     ).not.toBeNull();
+  });
+
+  it("hosts Generated in the same docked column", async () => {
+    await renderPanel(state({ view: "generated" }));
+
+    expect(panel()).not.toBeNull();
+    expect(document.body.textContent).toContain("Run artifacts");
+    expect(
+      panel()?.querySelector('[aria-label="Generated artifacts"]'),
+    ).not.toBeNull();
+    expect(document.body.textContent).not.toContain("The Library is empty");
+  });
+
+  it("hosts Generated in the same slide-over on narrow screens", async () => {
+    await renderPanel(state({ docked: false, view: "generated" }));
+
+    expect(panel()).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(document.body.textContent).toContain("Run artifacts");
   });
 
   it("collapses the panel from its header", async () => {

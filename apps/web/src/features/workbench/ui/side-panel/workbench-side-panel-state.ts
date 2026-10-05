@@ -37,7 +37,15 @@ export const SIDE_PANEL_DOCK_QUERY = "(min-width: 1100px)";
 /** Above this width the panel opens on its own the first time. */
 export const SIDE_PANEL_AUTO_OPEN_QUERY = "(min-width: 1280px)";
 
+/**
+ * What the panel shows. The rail picks the view, so there is no tab strip:
+ * Artifacts is the Library, Generated is this canvas's Run artifacts.
+ */
+export const SIDE_PANEL_VIEWS = ["artifacts", "generated"] as const;
+export type SidePanelViewId = (typeof SIDE_PANEL_VIEWS)[number];
+
 const OPEN_KEY = "grafy-side-panel-open";
+const VIEW_KEY = "grafy-side-panel-view";
 const WIDTH_KEY = "grafy-side-panel-width";
 const COLLAPSED_FOLDERS_KEY = "grafy-library-folders-collapsed";
 
@@ -84,6 +92,11 @@ function readDockedOpen(): boolean {
   );
 }
 
+function readView(): SidePanelViewId {
+  const stored = readStored(VIEW_KEY);
+  return SIDE_PANEL_VIEWS.find((view) => view === stored) ?? "artifacts";
+}
+
 function readWidth(): number {
   const stored = Number(readStored(WIDTH_KEY));
   return Number.isFinite(stored) && stored > 0
@@ -109,9 +122,11 @@ export interface WorkbenchSidePanelState {
   /** Docked preference on a wide viewport, slide-over state on a narrow one. */
   open: boolean;
   width: number;
+  view: SidePanelViewId;
   setOpen: (next: boolean) => void;
   toggle: () => void;
   setWidth: (next: number) => void;
+  setView: (next: SidePanelViewId) => void;
 }
 
 export function useWorkbenchSidePanel(): WorkbenchSidePanelState {
@@ -125,6 +140,11 @@ export function useWorkbenchSidePanel(): WorkbenchSidePanelState {
     subscribe,
     () => overlayOpen,
     () => false,
+  );
+  const view = React.useSyncExternalStore(
+    subscribe,
+    readView,
+    (): SidePanelViewId => "artifacts",
   );
   const width = React.useSyncExternalStore(
     subscribe,
@@ -178,7 +198,12 @@ export function useWorkbenchSidePanel(): WorkbenchSidePanelState {
     notify();
   }, []);
 
-  return { docked, open, width, setOpen, toggle, setWidth };
+  const setView = React.useCallback((next: SidePanelViewId) => {
+    writeStored(VIEW_KEY, next);
+    notify();
+  }, []);
+
+  return { docked, open, width, view, setOpen, toggle, setWidth, setView };
 }
 
 /** Writes a width straight to the document while a resize drag is running. */

@@ -22,7 +22,7 @@ import {
   portMetaForPort,
 } from "../canvas/types";
 import { routesForHandleFeed } from "./connection-feeds";
-import { isCollectionSpec } from "./collection";
+import { isCollectionSpec } from "./collection-spec";
 
 export type CatalogFilterKind =
   | "all"

@@ -1,6 +1,6 @@
 """Exact runtime identity of one executable node implementation."""
 
-from typing import Annotated, ClassVar, Literal, Self
+from typing import Annotated, ClassVar, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -49,20 +49,6 @@ class PluginImplementationIdentity(ImplementationIdentityValue):
                 "slug, and revision"
             )
         return value
-
-    @classmethod
-    def from_pin(
-        cls,
-        pin: SavedGraphPluginReleasePin,
-        *,
-        manifest_digest: str,
-        image_digest: str,
-    ) -> Self:
-        return cls(
-            plugin_release_pin=pin,
-            manifest_digest=manifest_digest,
-            image_digest=image_digest,
-        )
 
     def fingerprint_document(self) -> dict[str, object]:
         return {

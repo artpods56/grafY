@@ -2,7 +2,8 @@ import type { Node } from "@xyflow/react";
 
 import { decodeHandleId } from "../canvas/handles";
 import { inputPlugsForPort } from "../canvas/input-plugs";
-import { isCollectionNode } from "./collection";
+import { isCollectionNode } from "./collection-spec";
+import { validateConfig } from "../canvas/config-schema";
 import {
   WORKFLOW_NODE_TYPE,
   portHasInstancePlugs,
@@ -270,6 +271,18 @@ export function executionValidationIssue(
     return {
       nodeId: incompatibleNode.id,
       message: `Cannot run ${incompatibleNode.data.spec.title}: ${issue}`,
+    };
+  }
+
+  for (const node of executionNodes) {
+    const issue = validateConfig(
+      node.data.spec.config_schema,
+      node.data.config,
+    )[0];
+    if (!issue) continue;
+    return {
+      nodeId: node.id,
+      message: `Cannot run ${node.data.spec.title}: ${issue.message}`,
     };
   }
 

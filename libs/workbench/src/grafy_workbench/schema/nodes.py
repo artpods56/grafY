@@ -1,8 +1,6 @@
 import json
 from enum import StrEnum
-from hashlib import sha256
-from typing import Annotated, Self, cast, final, override
-from uuid import UUID
+from typing import Annotated, Self, final, override
 
 from jsonschema import Draft202012Validator
 from pydantic import (
@@ -10,35 +8,25 @@ from pydantic import (
     ConfigDict,
     Field,
     StrictStr,
-    ValidationError,
     model_validator,
 )
 
 from grafy_core.artifacts import (
     Artifact,
-    ArtifactObject,
     ArtifactRef,
-    JsonObject,
     NodeConfig,
     NodeInput,
     NodeOutput,
 )
-from grafy_core.ports.artifacts import UnitOfWorkPort
-from grafy_core.domain.errors import NotFoundError
 from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
 from grafy_core.plugins import NodeCachePolicy
-from grafy_core.runtime.persistence import ArtifactOutputWriter, ArtifactWriteContext
-from grafy_core.runtime.resolvers import (
-    ArtifactContractError,
-    ResolutionError,
-    Resolver,
-)
 from grafy_core.schema_contracts import (
     JSON_SCHEMA,
     JsonSchemaPayload,
     parse_json_schema,
 )
 
+from grafy_workbench.scalar_persistence import ScalarOutputWriter, ScalarResolver
 from grafy_workbench.schema.declaration import SCHEMAS
 
 
@@ -260,143 +248,38 @@ def _canonical_schema_text(schema_definition: dict[str, object]) -> str:
     )
 
 
-@final
-class JsonSchemaOutputWriter(ArtifactOutputWriter):
-    artifact_type = JSON_SCHEMA.key
-
-    def __init__(self, *, uow: UnitOfWorkPort) -> None:
-        self._uow = uow
-
-    @override
-    async def write(
-        self,
-        value: object,
-        context: ArtifactWriteContext,
-    ) -> ArtifactRef:
-        try:
-            payload = JsonSchemaPayload.model_validate({"value": value})
-            schema_definition = parse_json_schema(
-                payload.value,
-                context="artifact output",
-            )
-            payload = JsonSchemaPayload(value=_canonical_schema_text(schema_definition))
-        except (ValidationError, ValueError) as exc:
-            message = (
-                f"Failed to serialize {self.artifact_type.id}@"
-                f"{self.artifact_type.schema_version} value produced by node "
-                f"{context.node_context.node_id!r}"
-            )
-            raise RuntimeError(message) from exc
-
-        payload_json = cast(JsonObject, payload.model_dump(mode="json"))
-        payload_bytes = json.dumps(
-            payload_json,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        provenance: dict[str, object] = {
-            input_name: [
-                {
-                    "artifact_id": str(ref.artifact_id),
-                    "artifact_type": ref.artifact_type,
-                    "schema_version": ref.schema_version,
-                }
-                for ref in refs
-            ]
-            for input_name, refs in context.provenance.refs_by_input.items()
-        }
-        metadata: JsonObject = {
-            "producer_node_id": context.node_context.node_id,
-        }
-        if provenance:
-            metadata["provenance"] = provenance
-        metadata.update(context.metadata)
-        artifact = ArtifactObject(
-            workspace_id=context.node_context.workspace_id,
-            artifact_type=self.artifact_type.id,
-            schema_version=self.artifact_type.schema_version,
-            content_type="application/json",
-            storage_backend="inline",
-            inline_payload=payload_json,
-            byte_size=len(payload_bytes),
-            sha256=sha256(payload_bytes).hexdigest(),
-            metadata=metadata,
-        )
-        try:
-            async with self._uow as uow:
-                await uow.artifacts.add(artifact)
-                await uow.commit()
-        except Exception as exc:
-            message = (
-                f"Failed to persist {self.artifact_type.id}@"
-                f"{self.artifact_type.schema_version} produced by node "
-                f"{context.node_context.node_id!r}"
-            )
-            raise RuntimeError(message) from exc
-        return artifact.ref()
+def _normalize_schema_value(value: object) -> str:
+    payload = JsonSchemaPayload.model_validate({"value": value})
+    schema_definition = parse_json_schema(payload.value, context="artifact output")
+    return _canonical_schema_text(schema_definition)
 
 
-@final
-class JsonSchemaResolver(Resolver[str]):
-    source = JSON_SCHEMA.key
-    target: type[object] = str
-
-    def __init__(self, *, uow: UnitOfWorkPort) -> None:
-        self._uow = uow
-
-    @override
-    async def resolve(self, ref: ArtifactRef, workspace_id: UUID) -> str:
-        if ref.key() != self.source:
-            message = (
-                f"JSON Schema resolver expected {self.source.id}@"
-                f"{self.source.schema_version}, got {ref.artifact_type}@"
-                f"{ref.schema_version} for artifact {ref.artifact_id}"
-            )
-            raise ArtifactContractError(message)
-
-        async with self._uow as uow:
-            artifact = await uow.artifacts.get(workspace_id, ref.artifact_id)
-        if artifact is None:
-            raise NotFoundError("Artifact", str(ref.artifact_id))
-        if artifact.ref() != ref:
-            message = (
-                "Artifact repository returned a different artifact ref for "
-                f"JSON Schema artifact {ref.artifact_id}"
-            )
-            raise ArtifactContractError(message)
-        if artifact.inline_payload is None:
-            message = (
-                f"JSON Schema artifact {ref.artifact_id} does not have an inline "
-                "JSON payload"
-            )
-            raise ArtifactContractError(message)
-
-        try:
-            payload = JsonSchemaPayload.model_validate(artifact.inline_payload)
-            parse_json_schema(payload.value, context=f"artifact {ref.artifact_id}")
-            return payload.value
-        except (ValidationError, ValueError) as exc:
-            message = (
-                f"Failed to resolve artifact {ref.artifact_id} as "
-                f"{self.source.id}@{self.source.schema_version} JSON Schema"
-            )
-            raise ResolutionError(message) from exc
+def _check_schema_value(value: str, ref: ArtifactRef) -> None:
+    _ = parse_json_schema(value, context=f"artifact {ref.artifact_id}")
 
 
 SCHEMAS.register(
     Artifact(
         spec=JSON_SCHEMA,
-        resolver=lambda context: JsonSchemaResolver(uow=context.uow),
-        writer=lambda context: JsonSchemaOutputWriter(uow=context.uow),
+        resolver=lambda context: ScalarResolver(
+            source=JSON_SCHEMA.key,
+            target=str,
+            model=JsonSchemaPayload,
+            uow=context.uow,
+            check=_check_schema_value,
+        ),
+        writer=lambda context: ScalarOutputWriter(
+            artifact_type=JSON_SCHEMA.key,
+            model=JsonSchemaPayload,
+            uow=context.uow,
+            normalize=_normalize_schema_value,
+        ),
     )
 )
 
 
 __all__ = [
     "SCHEMAS",
-    "JsonSchemaOutputWriter",
-    "JsonSchemaResolver",
     "JsonSchemaBuilderConfig",
     "JsonSchemaBuilderField",
     "JsonSchemaBuilderInput",

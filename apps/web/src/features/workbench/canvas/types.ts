@@ -30,7 +30,7 @@ import {
 } from "./query-artifact-tables";
 import type { SchemaBuilderField } from "./schema-builder";
 import type { WorkflowNodeSecretStatuses } from "./node-secrets";
-import type { CollectionMember } from "../model/collection";
+import type { CollectionMember } from "./collection-member";
 
 export type {
   WorkflowInputPlug,

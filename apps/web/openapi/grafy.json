@@ -2563,12 +2563,20 @@
             },
             "title": "Secrets",
             "type": "array"
+          },
+          "unresolved_nodes": {
+            "items": {
+              "$ref": "#/components/schemas/NodeSecretResolutionResponse"
+            },
+            "title": "Unresolved Nodes",
+            "type": "array"
           }
         },
         "required": [
           "graph_id",
           "graph_revision",
-          "secrets"
+          "secrets",
+          "unresolved_nodes"
         ],
         "title": "GraphNodeSecretsResponse",
         "type": "object"
@@ -3557,6 +3565,17 @@
             ],
             "title": "Graph Title"
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "node_id": {
             "anyOf": [
               {
@@ -4128,6 +4147,38 @@
           "title"
         ],
         "title": "NodeSecretInputResponse",
+        "type": "object"
+      },
+      "NodeSecretResolutionReason": {
+        "enum": [
+          "contract_unavailable",
+          "invalid_configuration"
+        ],
+        "title": "NodeSecretResolutionReason",
+        "type": "string"
+      },
+      "NodeSecretResolutionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/NodeSecretResolutionReason"
+          },
+          "status": {
+            "const": "unresolved",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "status",
+          "reason"
+        ],
+        "title": "NodeSecretResolutionResponse",
         "type": "object"
       },
       "NodeSecretStatusResponse": {
@@ -5666,6 +5717,12 @@
             "title": "Execution Id",
             "type": "string"
           },
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
           "node_id": {
             "maxLength": 255,
             "minLength": 1,
@@ -5683,7 +5740,8 @@
           "artifact_id",
           "execution_id",
           "node_id",
-          "node_title"
+          "node_title",
+          "name"
         ],
         "title": "SaveRunArtifactRequest",
         "type": "object"
@@ -11639,67 +11697,6 @@
           }
         ],
         "summary": "Assign Graph Folder",
-        "tags": [
-          "saved graphs"
-        ]
-      }
-    },
-    "/v1/workspaces/{workspace_id}/graphs/{graph_id}/head": {
-      "get": {
-        "operationId": "get_collaborative_head_v1_workspaces__workspace_id__graphs__graph_id__head_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "graph_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Graph Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CollaborativeHeadResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "APIKeyCookie": []
-          },
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Get Collaborative Head",
         "tags": [
           "saved graphs"
         ]

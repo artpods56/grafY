@@ -28,15 +28,7 @@ import {
   type PublishModuleReleaseRequest,
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-
-export interface ModuleBoundarySummary {
-  id: string;
-  direction: "input" | "output";
-  portName: string | null;
-  description: string | null;
-  artifactType: string | null;
-  connectionCount: number;
-}
+import type { ModuleBoundarySummary } from "../model/module-boundary";
 
 export interface ModuleSetupReadinessInput {
   graphSaved: boolean;

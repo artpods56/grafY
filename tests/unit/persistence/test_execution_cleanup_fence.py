@@ -1,3 +1,9 @@
+from tests.unit.persistence.test_transient_execution_revocation import (
+    NOW,
+    WORKSPACE_ID,
+    GRAPH_ID,
+    revocation_database as _revocation_database_fixture,
+)
 import asyncio
 from pathlib import Path
 from typing import Literal
@@ -35,25 +41,10 @@ from grafy_core.runtime.persistence import ArtifactWriterRegistry, OutputPersist
 from grafy_core.runtime.resolvers import ResolverRegistry
 from grafy_persistence import schema
 from grafy_persistence.database import Database
-from grafy_persistence.system_cutover import (
-    SystemBaselineCutoverService,
-    SystemCutoverBlockedError,
-    SystemCutoverCommand,
-)
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_storage import LocalFileObjectStore
 from sqlalchemy import select, update
 
-from tests.unit.persistence.test_system_cutover import (
-    GRAPH_ID,
-    NOW,
-    WORKSPACE_ID,
-    cutover_rollback_unit,
-    system_cutover_baseline,
-)
-from tests.unit.persistence.test_system_cutover import (
-    cutover_database as _cutover_database_fixture,
-)
 from tests.unit.persistence.test_transient_execution_revocation import (
     execution_database as _execution_database_fixture,
 )
@@ -61,9 +52,10 @@ from tests.unit.persistence.test_transient_execution_revocation import (
     fence_database as _fence_database_fixture,
 )
 
-cutover_database = _cutover_database_fixture
 execution_database = _execution_database_fixture
 fence_database = _fence_database_fixture
+
+revocation_database = _revocation_database_fixture
 
 
 class ControlledSandboxCleanup:
@@ -263,15 +255,6 @@ async def test_cleanup_confirmation_controls_execution_maintenance_fence(
             assert [item.execution_id for item in blocked.value.active_executions] == [
                 activity[0].execution_id
             ]
-            with pytest.raises(SystemCutoverBlockedError) as cutover:
-                await SystemBaselineCutoverService(database.sessions).execute(
-                    SystemCutoverCommand(
-                        mode="dry-run",
-                        baseline=system_cutover_baseline(release),
-                        rollback_unit=cutover_rollback_unit(),
-                    )
-                )
-            assert str(cutover.value).count(str(activity[0].execution_id)) == 1
             with pytest.raises(RuntimeError, match="requires exclusive API ownership"):
                 await history.recover_transient(
                     exclusive_owner=False, orphan_cleanup_confirmed=False

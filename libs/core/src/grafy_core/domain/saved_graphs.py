@@ -287,25 +287,6 @@ class SavedGraphNode(SavedGraphValue):
             )
         return self
 
-    def node_ref(self) -> SavedGraphNodeRef:
-        if self.kind == "builtin":
-            return BuiltinNodeRef(
-                operator_id=self.operator_id,
-                operator_version=self.operator_version,
-            )
-        if self.kind == "plugin":
-            if self.plugin_release_pin is None:
-                raise ValueError("Plugin node is missing its release pin")
-            return PluginNodeRef(
-                operator_id=self.operator_id,
-                operator_version=self.operator_version,
-                plugin_release_pin=self.plugin_release_pin,
-            )
-        return ModuleNodeRef(
-            operator_id=self.operator_id,
-            operator_version=self.operator_version,
-        )
-
     def artifact_type_binding_map(self) -> dict[str, ArtifactTypeKey]:
         return {
             binding.variable: binding.artifact_type

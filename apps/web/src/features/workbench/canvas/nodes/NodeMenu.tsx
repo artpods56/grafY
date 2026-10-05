@@ -6,7 +6,13 @@ import { Menu } from "@base-ui/react/menu";
 import { MoreHorizontal } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { overlay } from "@/lib/stylex/overlay.stylex";
-import { useRegisterNodeMenu } from "./node-menu-registry";
+import {
+  useRegisterNodeMenu,
+  type NodeMenuInfo,
+  type NodeMenuItem,
+} from "./node-menu-registry";
+
+export type { NodeMenuInfo, NodeMenuItem };
 
 const s = stylex.create({
   // Quiet until asked: subtle ink at rest, full ink and a wash on hover or
@@ -94,25 +100,6 @@ const s = stylex.create({
     },
   },
 });
-
-export interface NodeMenuItem {
-  id: string;
-  label: string;
-  icon?: React.ReactNode;
-  disabled?: boolean;
-  danger?: boolean;
-  onClick?: () => void;
-}
-
-export interface NodeMenuInfo {
-  title: string;
-  /** Plain facts under the title, one per line. */
-  lines?: readonly React.ReactNode[];
-  /** An identifier, set small and monospaced. */
-  mono?: string | null;
-  /** Links or controls that belong with the facts. */
-  footer?: React.ReactNode;
-}
 
 /**
  * The one "⋯" a canvas card carries: a menu that opens on what the thing is,

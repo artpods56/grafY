@@ -94,6 +94,7 @@ function graphSecrets(
   return {
     graph_id: activeGraph.id,
     graph_revision: activeGraph.revision,
+    unresolved_nodes: [],
     secrets: [{ node_id: nodeId, name: secretName, configured }],
   };
 }
@@ -257,6 +258,7 @@ describe("useNodeSecrets", () => {
       .mockResolvedValueOnce({
         graph_id: activeGraph.id,
         graph_revision: activeGraph.revision,
+        unresolved_nodes: [],
         secrets: [
           { node_id: nodeId, name: secretName, configured: false },
           { node_id: otherNodeId, name: secretName, configured: false },
@@ -318,6 +320,7 @@ describe("useNodeSecrets", () => {
       refreshResponse.resolve({
         graph_id: activeGraph.id,
         graph_revision: activeGraph.revision,
+        unresolved_nodes: [],
         secrets: [
           { node_id: nodeId, name: secretName, configured: false },
           { node_id: otherNodeId, name: secretName, configured: true },

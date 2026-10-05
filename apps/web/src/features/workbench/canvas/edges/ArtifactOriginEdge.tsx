@@ -4,7 +4,7 @@ import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from "@xyflow/react";
 import * as stylex from "@stylexjs/stylex";
 import { Unplug } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import type { ArtifactOriginEdge } from "../artifact-connections";
+import type { ArtifactOriginEdge } from "../artifact-origin-edge";
 import { routedBezierPath } from "./edge-path";
 
 const s = stylex.create({

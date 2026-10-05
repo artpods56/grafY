@@ -13,13 +13,19 @@ import {
   addEdgeCommand,
   addNodeCommand,
 } from "../canvas/graph-document-adapter";
+import type { CollectionMember } from "../canvas/collection-member";
+import {
+  COLLECTION_OPERATOR_ID,
+  COLLECTION_PORT,
+  isCollectionNode,
+  isCollectionSpec,
+} from "./collection-spec";
 import { decodeHandleId, encodeHandleId } from "../canvas/handles";
 import { inputPlugsForPort } from "../canvas/input-plugs";
 import {
   effectivePortShape,
   portMetaForPort,
   resolvedPortArtifactType,
-  workflowNodeIsSupported,
   type WorkflowEdge,
   type WorkflowNodeData,
 } from "../canvas/types";
@@ -34,41 +40,14 @@ import { createUuid } from "./uuid";
  * plug) or a node output (an edge into its plug), so one collection can gather
  * both, and more can join it later through its spare plug.
  */
-export const COLLECTION_OPERATOR_ID = "sequence.collect";
-export const COLLECTION_PORT = "items";
+export {
+  COLLECTION_OPERATOR_ID,
+  COLLECTION_PORT,
+  isCollectionNode,
+  isCollectionSpec,
+};
 
-export function isCollectionSpec(
-  spec: Pick<NodeSpec, "operator_id"> | null | undefined,
-): boolean {
-  return spec?.operator_id === COLLECTION_OPERATOR_ID;
-}
-
-export function isCollectionNode(node: { data: WorkflowNodeData }): boolean {
-  return workflowNodeIsSupported(node.data) && isCollectionSpec(node.data.spec);
-}
-
-export type CollectionMember =
-  | {
-      readonly plugId: string;
-      readonly kind: "library";
-      readonly originId: string;
-      readonly refs: readonly ArtifactRef[];
-    }
-  | {
-      readonly plugId: string;
-      readonly kind: "output";
-      readonly edgeId: string;
-      readonly sourceNodeId: string;
-      readonly sourcePortName: string;
-      /** "Resize image → Resized". */
-      readonly label: string;
-      /** The producer's latest output, or null until it has run. */
-      readonly refs: readonly ArtifactRef[] | null;
-    }
-  | {
-      readonly plugId: string;
-      readonly kind: "empty";
-    };
+export type { CollectionMember };
 
 interface CollectionGraphNode {
   readonly id: string;

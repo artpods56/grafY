@@ -48,7 +48,7 @@ import {
   type WorkflowEdge,
 } from "./types";
 
-import { ARTIFACT_ORIGIN_EDGE_TYPE } from "./artifact-connections";
+import { ARTIFACT_ORIGIN_EDGE_TYPE } from "./artifact-origin-edge";
 import ArtifactOriginEdgeControl from "./edges/ArtifactOriginEdge";
 
 export const nodeTypes: NodeTypes = {

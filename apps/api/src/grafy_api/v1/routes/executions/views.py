@@ -38,21 +38,13 @@ from grafy_api.v1.routes.executions.models import (
     GraphExecutionListResponse,
     GraphExecutionNodeResultResponse,
     GraphMaterializationsResponse,
-    RunExecutionCapacityErrorDetail,
     RunExecutionCapacityErrorResponse,
-    RunExecutionQueueFullErrorDetail,
     RunExecutionQueueFullErrorResponse,
-    RunExecutionIdempotencyConflictErrorDetail,
     RunExecutionResponse,
     RunResponse,
     SavedGraphExecutionRequest,
 )
 from grafy_api.execution.requests import RunRequest
-from grafy_api.execution.admission import (
-    RunExecutionCapacityError,
-    RunExecutionQueueFullError,
-)
-from grafy_api.execution.manager import RunExecutionIdempotencyConflictError
 
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["executions"])
@@ -64,21 +56,6 @@ ExecutionNodeFilter = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=255),
 ]
-
-
-def _idempotency_conflict_http_exception(
-    error: RunExecutionIdempotencyConflictError,
-) -> HTTPException:
-    detail = RunExecutionIdempotencyConflictErrorDetail(
-        error_code=error.error_code,
-        message=str(error),
-        idempotency_key=error.idempotency_key,
-        execution_id=error.execution_id,
-    )
-    return HTTPException(
-        status_code=409,
-        detail=detail.model_dump(mode="json"),
-    )
 
 
 @router.post(
@@ -113,17 +90,6 @@ async def run_graph(
             admission_lease.release()
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except RunExecutionCapacityError as exc:
-        detail = RunExecutionCapacityErrorDetail(
-            error_code=exc.error_code,
-            message=str(exc),
-            max_active_executions=exc.max_active_executions,
-        )
-        raise HTTPException(
-            status_code=429,
-            detail=detail.model_dump(mode="json"),
-            headers={"Retry-After": "1"},
-        ) from exc
     except SavedGraphRevisionConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ArtifactContentUnavailableError as exc:
@@ -152,30 +118,6 @@ async def _start_execution(
         return await presenter.execution_response(execution)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except RunExecutionCapacityError as exc:
-        detail = RunExecutionCapacityErrorDetail(
-            error_code=exc.error_code,
-            message=str(exc),
-            max_active_executions=exc.max_active_executions,
-        )
-        raise HTTPException(
-            status_code=429,
-            detail=detail.model_dump(mode="json"),
-            headers={"Retry-After": "1"},
-        ) from exc
-    except RunExecutionQueueFullError as exc:
-        detail = RunExecutionQueueFullErrorDetail(
-            error_code=exc.error_code,
-            message=str(exc),
-            max_pending_graphs=exc.max_pending_graphs,
-        )
-        raise HTTPException(
-            status_code=429,
-            detail=detail.model_dump(mode="json"),
-            headers={"Retry-After": "1"},
-        ) from exc
-    except RunExecutionIdempotencyConflictError as exc:
-        raise _idempotency_conflict_http_exception(exc) from exc
     except CollaborationActiveExecutionError as exc:
         raise HTTPException(
             status_code=409,
@@ -277,15 +219,12 @@ async def start_saved_graph_execution(
     ] = None,
 ) -> RunExecutionResponse:
     if idempotency_key is not None:
-        try:
-            replay = await manager.replay_saved_graph_execution(
-                access.workspace_id,
-                idempotency_key,
-                graph_id=graph_id,
-                graph_revision=request.expected_revision,
-            )
-        except RunExecutionIdempotencyConflictError as exc:
-            raise _idempotency_conflict_http_exception(exc) from exc
+        replay = await manager.replay_saved_graph_execution(
+            access.workspace_id,
+            idempotency_key,
+            graph_id=graph_id,
+            graph_revision=request.expected_revision,
+        )
         if replay is not None:
             return await presenter.execution_response(replay)
 

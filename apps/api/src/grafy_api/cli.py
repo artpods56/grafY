@@ -59,31 +59,13 @@ from grafy_api.plugins.runtime.network_policy import (
 )
 from grafy_api.settings import get_settings
 from grafy_api.storage import configured_file_storage
-from grafy_persistence.system_cutover import (
-    SystemBaselineCutoverService,
-    SystemCutoverCommand,
-)
-from grafy_api.system_cutover_operations import (
-    create_rollback_unit_manifest,
-    generate_system_baseline_file,
-    load_rollback_unit,
-    load_system_baseline_manifest,
-    verify_rollback_unit_manifest,
-)
-from grafy_api.plugins.compatibility.deployment import (
-    SystemPluginDeploymentManifestBuilder,
-)
 from grafy_api.system_plugin_inventory import (
     CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH,
     load_system_plugin_inventory,
 )
-from grafy_persistence.system_baseline import (
-    SystemBaselineManifestGenerator,
-)
 from grafy_core.domain.system_plugin_inventory import (
     SystemPluginInventoryError,
 )
-from grafy_api.plugins.compatibility.loader import load_system_plugin_deployment_file
 from grafy_core.runtime.plugin_loader import WORKSPACE_PLUGIN_LOADER_TARGET
 
 
@@ -237,58 +219,6 @@ async def _run_admin(args: argparse.Namespace) -> None:
         await database.dispose()
 
 
-async def _run_system_cutover(args: argparse.Namespace) -> None:
-    if args.command == "create-rollback-unit":
-        result = create_rollback_unit_manifest(
-            rollback_unit_id=args.rollback_unit_id,
-            database_backup=args.database_backup,
-            release_objects=args.release_objects,
-            artifact_storage=args.artifact_storage,
-            migration_manifest=args.migration_manifest,
-            output=args.output,
-        )
-        print(result.model_dump_json(indent=2))
-        return
-    if args.command == "verify-rollback-unit":
-        result = verify_rollback_unit_manifest(
-            manifest=args.manifest,
-            database_backup=args.database_backup,
-            release_objects=args.release_objects,
-            artifact_storage=args.artifact_storage,
-            migration_manifest=args.migration_manifest,
-        )
-        print(result.model_dump_json(indent=2))
-        return
-
-    settings = get_settings()
-    database = create_database(settings.app.resolved_database_url)
-    try:
-        if args.command == "generate-baseline":
-            result = await generate_system_baseline_file(
-                SystemBaselineManifestGenerator(database.sessions),
-                inventory_path=args.inventory,
-                output=args.output,
-                deployment_manifest_path=args.deployment_manifest,
-            )
-            print(result.model_dump_json(indent=2))
-            return
-
-        baseline = load_system_baseline_manifest(args.baseline)
-        rollback_unit = load_rollback_unit(args.rollback_unit)
-        command = SystemCutoverCommand(
-            mode="dry-run" if args.command == "audit" else "apply",
-            baseline=baseline,
-            rollback_unit=rollback_unit,
-            expected_precondition_token=(
-                None if args.command == "audit" else args.precondition_token
-            ),
-        )
-        report = await SystemBaselineCutoverService(database.sessions).execute(command)
-        print(report.model_dump_json(indent=2))
-    finally:
-        await database.dispose()
-
-
 async def _run_network_policy(args: argparse.Namespace) -> None:
     """Validate the deployment network policy without mutating anything."""
 
@@ -334,9 +264,6 @@ async def _run(args: argparse.Namespace) -> None:
         return
     if args.group == "network-policy":
         await _run_network_policy(args)
-        return
-    if args.group == "system-cutover":
-        await _run_system_cutover(args)
         return
     if args.group != "plugin":
         raise ValueError("Unsupported Grafy command")
@@ -429,18 +356,6 @@ async def _run(args: argparse.Namespace) -> None:
         system_inventory = load_system_plugin_inventory(
             CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH
         )
-        if args.command == "build-system-deployment":
-            manifest = await SystemPluginDeploymentManifestBuilder(
-                database.sessions
-            ).build(
-                system_inventory,
-                repository_root=CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH.parents[1],
-                output=args.output,
-                slug=args.slug,
-                revision=args.revision,
-            )
-            print(manifest.model_dump_json(indent=2))
-            return
         if args.command == "promote" or (
             args.command == "publish" and args.global_scope
         ):
@@ -457,8 +372,6 @@ async def _run(args: argparse.Namespace) -> None:
                 secret_digest=credential.secret_digest,
                 required_scope=required_scope,
             )
-            if args.command == "promote" and args.deployment_manifest is not None:
-                load_system_plugin_deployment_file(args.deployment_manifest)
             system_publication = SystemPluginPublicationWorkflow(
                 image_builder,
                 releases,
@@ -713,11 +626,6 @@ def main() -> None:
         help="publisher image used to verify a global candidate in isolation",
     )
 
-    build_system_deployment = commands.add_parser("build-system-deployment")
-    build_system_deployment.add_argument("--output", required=True, type=Path)
-    build_system_deployment.add_argument("--slug")
-    build_system_deployment.add_argument("--revision", type=int)
-
     promote = commands.add_parser(
         "promote",
         help="activate one published global Plugin release",
@@ -732,12 +640,6 @@ def main() -> None:
         type=int,
         help="optional compare-and-swap guard for concurrent automation",
     )
-    promote.add_argument(
-        "--deployment-manifest",
-        type=Path,
-        help="Exact host bindings; required only for host-eligible System Plugins",
-    )
-
     revoke = commands.add_parser("revoke")
     revoke.add_argument(
         "release",
@@ -779,39 +681,6 @@ def main() -> None:
         help="Manifest to validate; defaults to GRAFY_NETWORK_POLICY_MANIFEST",
     )
 
-    system_cutover = groups.add_parser("system-cutover")
-    cutover_commands = system_cutover.add_subparsers(
-        dest="command",
-        required=True,
-    )
-    generate_baseline = cutover_commands.add_parser("generate-baseline")
-    generate_baseline.add_argument("--inventory", required=True, type=Path)
-    generate_baseline.add_argument("--output", required=True, type=Path)
-    generate_baseline.add_argument("--deployment-manifest", type=Path)
-
-    create_rollback = cutover_commands.add_parser("create-rollback-unit")
-    create_rollback.add_argument("--rollback-unit-id", required=True)
-    create_rollback.add_argument("--database-backup", required=True, type=Path)
-    create_rollback.add_argument("--release-objects", required=True, type=Path)
-    create_rollback.add_argument("--artifact-storage", required=True, type=Path)
-    create_rollback.add_argument("--migration-manifest", required=True, type=Path)
-    create_rollback.add_argument("--output", required=True, type=Path)
-
-    verify_rollback = cutover_commands.add_parser("verify-rollback-unit")
-    verify_rollback.add_argument("--manifest", required=True, type=Path)
-    verify_rollback.add_argument("--database-backup", required=True, type=Path)
-    verify_rollback.add_argument("--release-objects", required=True, type=Path)
-    verify_rollback.add_argument("--artifact-storage", required=True, type=Path)
-    verify_rollback.add_argument("--migration-manifest", required=True, type=Path)
-
-    audit_cutover = cutover_commands.add_parser("audit")
-    audit_cutover.add_argument("--baseline", required=True, type=Path)
-    audit_cutover.add_argument("--rollback-unit", required=True, type=Path)
-
-    apply_cutover = cutover_commands.add_parser("apply")
-    apply_cutover.add_argument("--baseline", required=True, type=Path)
-    apply_cutover.add_argument("--rollback-unit", required=True, type=Path)
-    apply_cutover.add_argument("--precondition-token", required=True)
     args = parser.parse_args()
     if (
         args.group == "plugin"

@@ -117,7 +117,6 @@ def test_workspace_publication_can_reselect_and_restore_family_visibility() -> N
 
     assert selection.selected_revision == 2
     assert selection.lifecycle is PluginFamilyLifecycle.PUBLISHED
-    assert selection.allows_new_insertion is True
 
 
 def test_selection_rejects_a_release_from_another_scoped_family() -> None:

@@ -13,9 +13,12 @@ export interface WorkbenchChromeValue {
   save: () => Promise<void>;
   renameGraph: (graph: SavedGraphSummary, name: string) => Promise<void>;
   deleteGraph: (graph: SavedGraphSummary) => Promise<void>;
-  /** The Artifacts side panel, which the rail opens and closes. */
+  /** The side panel's Artifacts view, which the rail opens and closes. */
   sidePanelOpen: boolean;
   toggleSidePanel: () => void;
+  /** The side panel's Generated view: this canvas's Run artifacts. */
+  generatedPanelOpen: boolean;
+  toggleGeneratedPanel: () => void;
 }
 
 /**

@@ -401,6 +401,8 @@ describe("workspace rail route lifecycle", () => {
       deleteGraph: vi.fn(),
       sidePanelOpen: false,
       toggleSidePanel,
+      generatedPanelOpen: false,
+      toggleGeneratedPanel: vi.fn(),
     };
     await rerender();
     const button = artifactsButton(container);

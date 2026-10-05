@@ -86,8 +86,6 @@ async def receive_upload_content(
         await content_length_validator.validate(request)
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except UploadTooLargeError as exc:
-        raise HTTPException(status_code=413, detail=str(exc)) from exc
 
     buffer = SpooledTemporaryFile(max_size=_STREAM_BUFFER_BYTES)
     byte_count = 0

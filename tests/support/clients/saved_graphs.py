@@ -10,7 +10,7 @@ from grafy_api.graph_contracts import (
     AssignGraphFolderRequest,
     CheckpointGraphRequest,
     CheckpointGraphResponse,
-    CollaborativeHeadResponse,
+    CanonicalCollaborativeHeadResponse,
     CopyExactHeadRequest,
     CreateSavedGraphRequest,
     GraphBrowserListResponse,
@@ -265,15 +265,15 @@ class SavedGraphsApi:
         self, graph_id: UUID, *, headers: Mapping[str, str] | None = None
     ) -> Response:
         return self._client.get(
-            f"/v1/workspaces/{self._workspace_id}/graphs/{graph_id}/head",
+            f"/v1/workspaces/{self._workspace_id}/graphs/{graph_id}/head/document",
             headers=headers,
         )
 
     def get_head_ok(
         self, graph_id: UUID, *, headers: Mapping[str, str] | None = None
-    ) -> CollaborativeHeadResponse:
+    ) -> CanonicalCollaborativeHeadResponse:
         return _parse(
-            CollaborativeHeadResponse,
+            CanonicalCollaborativeHeadResponse,
             _expect(self.get_head(graph_id, headers=headers), 200),
         )
 

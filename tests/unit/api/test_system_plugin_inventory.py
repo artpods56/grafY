@@ -1,185 +1,32 @@
-from collections.abc import AsyncIterator
-from hashlib import sha256
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import delete
 
-from grafy_core.domain.plugin_host_bindings import (
-    SystemHostPluginBinding,
-)
-from grafy_api.system_cutover_operations import (
-    canonical_model_json_bytes,
-    generate_system_baseline_file,
-    load_system_baseline_manifest,
-)
 from grafy_api.system_plugin_inventory import (
     load_system_plugin_inventory,
 )
 from grafy_core.domain.system_plugin_inventory import (
     SYSTEM_PLUGIN_SLUGS,
     SystemPluginInventory,
-    SystemPluginInventoryEntry,
     SystemPluginInventoryError,
-)
-from grafy_persistence.system_baseline import (
-    SystemBaselineManifestGenerator,
-)
-from grafy_api.plugins.compatibility.loader import (
-    SystemPluginDeploymentEntry,
-    SystemPluginDeploymentManifest,
 )
 from grafy_core.canonical_conversions import INTEGER_TO_TEXT
 from grafy_core.domain.plugin_releases import (
     PluginArtifactConversionContract,
     PluginArtifactTypeContract,
     PluginArtifactTypeKey,
-    PluginCapabilityManifest,
     PluginCatalogManifest,
     PluginNodeContract,
-    PluginRelease,
-    PluginReleaseNamespace,
-    PluginReleaseScope,
-    PluginRuntimeArtifact,
-    plugin_contract_digest,
-    plugin_profile_digest,
-    plugin_protocol_digest,
 )
-from grafy_core.domain.plugin_installations import (
-    InstalledPluginRelease,
-    PluginInstallation,
-)
-from grafy_core.domain.plugin_selection import PluginReleaseSelection
 from grafy_core.plugins import Plugin
-from grafy_persistence import schema
-from grafy_persistence.database import Database, create_database
-from grafy_persistence.orm import metadata
-from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_plugin_gis import GIS
 from grafy_plugin_llm import LLM
 from grafy_plugin_ocr import OCR
 from grafy_plugin_sql import SQL
-from tests.support.plugin_contract_digests import (
-    persisted_row_with_digest,
-    stored_contract_digest_before_canonicalization,
-)
 
 
 INVENTORY_PATH = Path(__file__).parents[3] / "plugins" / "system-plugins.toml"
-
-
-def _release(
-    entry: SystemPluginInventoryEntry,
-    position: int,
-    *,
-    catalog: PluginCatalogManifest | None = None,
-) -> InstalledPluginRelease:
-    operator_prefix = entry.operator_prefixes[0]
-    release_catalog = catalog or PluginCatalogManifest(
-        slug=entry.slug,
-        title=entry.slug,
-        # An owned artifact type is what makes the catalog serialize the empty
-        # extension defaults the pre-canonicalization digest still hashed, and
-        # the inventory entry only permits its own allowlisted prefixes.
-        artifact_types=(
-            PluginArtifactTypeContract(
-                key=PluginArtifactTypeKey(
-                    id=f"{entry.artifact_type_prefixes[0]}.value",
-                    schema_version=1,
-                ),
-                title="Value",
-            ),
-        ),
-        nodes=(
-            PluginNodeContract(
-                operator_id=f"{operator_prefix}.node",
-                operator_version=1,
-                title="Node",
-                description="Inventory generator fixture.",
-                config_schema={"type": "object"},
-                input_schema={"type": "object"},
-                output_schema={"type": "object"},
-                inputs=(),
-                outputs=(),
-                required_capabilities=entry.capabilities,
-            ),
-        ),
-    )
-    capabilities = PluginCapabilityManifest(capabilities=entry.capabilities)
-    archive_digest = sha256(f"archive:{entry.slug}".encode()).hexdigest()
-    manifest_digest = sha256(f"manifest:{entry.slug}".encode()).hexdigest()
-    runtime = PluginRuntimeArtifact(
-        object_key=f"plugin-releases/system/{entry.slug}/runtime.oci.tar",
-        archive_digest=archive_digest,
-        manifest_digest=manifest_digest,
-        config_digest=sha256(f"config:{entry.slug}".encode()).hexdigest(),
-    )
-    release = PluginRelease(
-        slug=entry.slug,
-        revision=position + 1,
-        catalog=release_catalog,
-        contract_digest=plugin_contract_digest(release_catalog),
-        capabilities=capabilities,
-        capability_digest=capabilities.digest,
-        protocol_digest=plugin_protocol_digest(),
-        profile_digest=plugin_profile_digest("python-uv"),
-        source_object_key=f"plugin-releases/system/{entry.slug}/source.tar.gz",
-        source_digest=sha256(f"source:{entry.slug}".encode()).hexdigest(),
-        lock_digest=sha256(f"lock:{entry.slug}".encode()).hexdigest(),
-        runtime_profile="python-uv",
-        loader_target=entry.loader_target,
-        runtime_image_digest=manifest_digest,
-        runtime_artifact=runtime,
-        published_by_platform_actor="test:inventory",
-    )
-    return InstalledPluginRelease(
-        release=release,
-        installation=PluginInstallation.from_release(
-            release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.SYSTEM,
-                workspace_id=None,
-            ),
-            execution_policy=entry.execution_policy,
-            installed_by_user_id=None,
-            installed_by_platform_actor="test:inventory",
-        ),
-    )
-
-
-@pytest.fixture
-async def inventory_database(
-    tmp_path: Path,
-) -> AsyncIterator[
-    tuple[Database, SystemPluginInventory, dict[str, InstalledPluginRelease]]
-]:
-    inventory = load_system_plugin_inventory(INVENTORY_PATH)
-    database = create_database(
-        f"sqlite+aiosqlite:///{tmp_path / 'system-inventory.sqlite3'}"
-    )
-    async with database.engine.begin() as connection:
-        await connection.run_sync(metadata.create_all)
-    releases = {
-        entry.slug: _release(entry, position)
-        for position, entry in enumerate(inventory.plugins)
-    }
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        for entry in inventory.plugins:
-            release = releases[entry.slug]
-            await unit_of_work.plugin_releases.add(release.release)
-            await unit_of_work.plugin_releases.add_installation(release.installation)
-            await unit_of_work.plugin_releases.add_selection(
-                PluginReleaseSelection.from_release(
-                    release,
-                    actor_reference="test:inventory",
-                )
-            )
-        await unit_of_work.commit()
-    try:
-        yield database, inventory, releases
-    finally:
-        await database.dispose()
 
 
 def test_checked_in_system_inventory_is_complete_finite_and_excludes_modules() -> None:
@@ -329,133 +176,6 @@ def test_inventory_reserves_system_prefixes_from_workspace_catalogs() -> None:
     inventory.require_workspace_catalog_authority(unreserved)
 
 
-@pytest.mark.asyncio
-async def test_generator_resolves_exact_releases_and_host_bindings_idempotently(
-    inventory_database: tuple[
-        Database,
-        SystemPluginInventory,
-        dict[str, InstalledPluginRelease],
-    ],
-    tmp_path: Path,
-) -> None:
-    database, inventory, releases = inventory_database
-    bindings = tuple(
-        SystemHostPluginBinding.from_release(
-            releases[entry.slug],
-            selection_generation=1,
-            loader_target=entry.loader_target,
-            host_build_digest=sha256(f"host:{entry.slug}".encode()).hexdigest(),
-        )
-        for entry in inventory.plugins
-        if entry.execution_policy == "host-eligible"
-    )
-    generator = SystemBaselineManifestGenerator(database.sessions)
-
-    first = await generator.generate(inventory, host_bindings=bindings)
-    second = await generator.generate(inventory, host_bindings=bindings)
-
-    assert first == second
-    assert [release.slug for release in first.releases] == sorted(SYSTEM_PLUGIN_SLUGS)
-    entries_by_slug = {entry.slug: entry for entry in inventory.plugins}
-    for generated in first.releases:
-        selected = releases[generated.slug]
-        assert generated.release_id == selected.release.id
-        assert generated.descriptor_digest == selected.release.descriptor.digest
-        assert generated.operators[0].operator_id == (
-            f"{entries_by_slug[generated.slug].operator_prefixes[0]}.node"
-        )
-
-    deployment = SystemPluginDeploymentManifest(
-        plugins=tuple(
-            SystemPluginDeploymentEntry(
-                binding=binding,
-                distribution_name=entries_by_slug[binding.slug].distribution_name,
-                loader_target=binding.loader_target,
-                host_build_digest=binding.host_build_digest,
-            )
-            for binding in bindings
-        )
-    )
-    deployment_path = tmp_path / "deployment.json"
-    deployment_path.write_bytes(deployment.canonical_json_bytes())
-    output = tmp_path / "baseline.json"
-    written = await generate_system_baseline_file(
-        generator,
-        inventory_path=INVENTORY_PATH,
-        deployment_manifest_path=deployment_path,
-        output=output,
-    )
-    assert written.release_count == 4
-    assert output.read_bytes() == canonical_model_json_bytes(first)
-    assert load_system_baseline_manifest(output) == first
-
-    unexpected_binding = SystemHostPluginBinding.from_release(
-        releases["external.sql"],
-        selection_generation=1,
-        loader_target=entries_by_slug["external.sql"].loader_target,
-        host_build_digest=sha256(b"host:external.sql").hexdigest(),
-    )
-    with pytest.raises(SystemPluginInventoryError, match="unique slugs"):
-        await generator.generate(
-            inventory,
-            host_bindings=(unexpected_binding, unexpected_binding),
-        )
-    with pytest.raises(SystemPluginInventoryError, match="unexpected"):
-        await generator.generate(
-            inventory,
-            host_bindings=(unexpected_binding,),
-        )
-
-
-@pytest.mark.asyncio
-async def test_generator_refuses_missing_selection_and_inventory_release_mismatch(
-    inventory_database: tuple[
-        Database,
-        SystemPluginInventory,
-        dict[str, InstalledPluginRelease],
-    ],
-) -> None:
-    database, inventory, _releases = inventory_database
-    generator = SystemBaselineManifestGenerator(database.sessions)
-    async with database.engine.begin() as connection:
-        await connection.execute(
-            delete(schema.plugin_release_selections).where(
-                schema.plugin_release_selections.c.slug == "external.sql"
-            )
-        )
-    with pytest.raises(SystemPluginInventoryError, match="missing=.*external.sql"):
-        await generator.generate(inventory)
-
-    database_two = create_database("sqlite+aiosqlite:///:memory:")
-    try:
-        async with database_two.engine.begin() as connection:
-            await connection.run_sync(metadata.create_all)
-        entries = list(inventory.plugins)
-        first = entries[0]
-        mismatched_entry = first.model_copy(
-            update={"execution_policy": "host-eligible"}
-        )
-        entries[0] = mismatched_entry
-        mismatched_inventory = inventory.model_copy(update={"plugins": tuple(entries)})
-        async with SqlAlchemyUnitOfWork(database_two.sessions) as unit_of_work:
-            for position, entry in enumerate(inventory.plugins):
-                release = _release(entry, position)
-                await unit_of_work.plugin_releases.add(release.release)
-                await unit_of_work.plugin_releases.add_installation(
-                    release.installation
-                )
-                await unit_of_work.plugin_releases.add_selection(
-                    PluginReleaseSelection.from_release(release)
-                )
-            await unit_of_work.commit()
-        with pytest.raises(SystemPluginInventoryError, match="execution policy"):
-            await SystemBaselineManifestGenerator(database_two.sessions).generate(
-                mismatched_inventory
-            )
-    finally:
-        await database_two.dispose()
-
-
 def test_inventory_and_exact_binding_collisions_are_rejected() -> None:
     inventory = load_system_plugin_inventory(INVENTORY_PATH)
     entries = list(inventory.plugins)
@@ -465,49 +185,3 @@ def test_inventory_and_exact_binding_collisions_are_rejected() -> None:
 
     with pytest.raises(ValidationError, match="loader targets must be unique"):
         SystemPluginInventory(plugins=tuple(entries))
-
-
-@pytest.mark.asyncio
-async def test_generator_accepts_releases_stored_before_canonicalization() -> None:
-    inventory = load_system_plugin_inventory(INVENTORY_PATH)
-    database = create_database("sqlite+aiosqlite:///:memory:")
-    try:
-        async with database.engine.begin() as connection:
-            await connection.run_sync(metadata.create_all)
-        releases: dict[str, InstalledPluginRelease] = {}
-        for position, entry in enumerate(inventory.plugins):
-            release = _release(entry, position)
-            stored = stored_contract_digest_before_canonicalization(
-                release.release.catalog
-            )
-            assert stored != plugin_contract_digest(release.release.catalog)
-            releases[entry.slug] = persisted_row_with_digest(release, stored)
-        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            for entry in inventory.plugins:
-                release = releases[entry.slug]
-                await unit_of_work.plugin_releases.add(release.release)
-                await unit_of_work.plugin_releases.add_installation(
-                    release.installation
-                )
-                await unit_of_work.plugin_releases.add_selection(
-                    PluginReleaseSelection.from_release(
-                        release,
-                        actor_reference="test:inventory",
-                    )
-                )
-            await unit_of_work.commit()
-
-        baseline = await SystemBaselineManifestGenerator(database.sessions).generate(
-            inventory
-        )
-
-        assert [release.slug for release in baseline.releases] == sorted(
-            SYSTEM_PLUGIN_SLUGS
-        )
-        assert {
-            release.slug: release.contract_digest for release in baseline.releases
-        } == {
-            slug: release.release.contract_digest for slug, release in releases.items()
-        }
-    finally:
-        await database.dispose()

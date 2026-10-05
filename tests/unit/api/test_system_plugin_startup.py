@@ -61,29 +61,28 @@ async def test_startup_registers_builtin_families_without_host_deployment(
 
 
 @pytest.mark.asyncio
-async def test_configured_host_deployment_manifest_is_ignored(
+@pytest.mark.parametrize(
+    "command_hmac_key",
+    [None, SecretStr("")],
+    ids=["missing", "empty"],
+)
+async def test_startup_reports_actionable_command_hmac_key_error(
     startup_settings: Settings,
-    tmp_path: Path,
+    command_hmac_key: SecretStr | None,
 ) -> None:
-    manifest_path = tmp_path / "deployment" / "system-plugins.json"
-    manifest_path.parent.mkdir()
-    manifest_path.write_text("{}", encoding="utf-8")
-    configured = with_setting_values(
-        startup_settings,
-        system_plugin_deployment_manifest=manifest_path,
-    )
-    application = create_app(configured)
+    keys = KeysConfig(_env_file=None, command_hmac_key=command_hmac_key)
+    application = create_app(startup_settings.model_copy(update={"keys": keys}))
 
-    async with LifespanManager(application):
-        resources = application.state.resources
-        expected_slugs = {family.slug for family in BUILTIN_FAMILIES}
-        assert {
-            plugin.slug for plugin in resources.workbench.plugin_registry.plugins
-        } == (expected_slugs)
-        admission = resources.workbench.release_admission
-        assert admission is not None
-        assert admission.isolated_adapter_available is False
-        assert admission.runtime_profile is None
+    with pytest.raises(ValueError) as error:
+        async with LifespanManager(application):
+            pass
+
+    message = str(error.value)
+    assert "API startup failed" in message
+    assert "GRAFY_COMMAND_HMAC_KEY" in message
+    assert ".env" in message
+    assert "export GRAFY_COMMAND_HMAC_KEY" in message
+    assert "openssl rand -hex 32" in message
 
 
 @pytest.mark.asyncio

@@ -31,10 +31,6 @@ from grafy_core.operators.modules import MODULE_BOUNDARY_REGISTRATIONS
 from grafy_core.plugins import Plugin, PluginRegistry, UnknownOperatorError
 from grafy_workbench import BUILTIN_FAMILIES
 
-from grafy_core.domain.plugin_host_bindings import (
-    LoadedSystemPlugin,
-    SystemHostPluginBinding,
-)
 from grafy_api.v1.models import ArtifactTypeBindingModel
 from grafy_api.execution.requests import (
     RunInputPlugRequest,
@@ -114,9 +110,11 @@ class SelectedSystemReleaseLookup:
 
     async def list_catalog(self, workspace_id: UUID) -> list[PluginCatalogRelease]:
         releases = [
-            *await self.list_current_system(),
-            *await self.list_current(workspace_id),
+            release
+            for release in self._releases.values()
+            if release.installation.scope is PluginReleaseScope.SYSTEM
         ]
+        releases.extend(await self.list_current(workspace_id))
         return [
             PluginCatalogRelease(
                 release=release,
@@ -126,13 +124,6 @@ class SelectedSystemReleaseLookup:
                 revocation=None,
             )
             for release in releases
-        ]
-
-    async def list_current_system(self) -> list[InstalledPluginRelease]:
-        return [
-            release
-            for release in self._releases.values()
-            if release.installation.scope is PluginReleaseScope.SYSTEM
         ]
 
     async def list_current(
@@ -171,8 +162,6 @@ class SelectedSystemPluginDeployment:
     registry: PluginRegistry
     releases: tuple[InstalledPluginRelease, ...]
     selections: tuple[PluginReleaseSelection, ...]
-    host_bindings: tuple[SystemHostPluginBinding, ...]
-    loaded_plugins: tuple[LoadedSystemPlugin, ...]
     release_lookup: SelectedSystemReleaseLookup
 
     def pin_node(self, node: RunNodeRequest) -> RunNodeRequest:
@@ -273,8 +262,6 @@ def build_selected_system_plugin_deployment(
         registry=registry,
         releases=releases,
         selections=selections,
-        host_bindings=(),
-        loaded_plugins=(),
         release_lookup=SelectedSystemReleaseLookup(releases, selections),
     )
 

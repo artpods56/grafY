@@ -5,6 +5,7 @@ import { Popover } from "@base-ui/react/popover";
 import {
   ChevronsUpDown,
   FolderTree,
+  Layers,
   LoaderCircle,
   LogOut,
   Mail,
@@ -953,6 +954,30 @@ export function WorkspaceRail({
             >
               <FolderTree size={15} aria-hidden="true" />
               <span>Artifacts</span>
+            </button>
+          ) : null}
+          {activeWorkspace && chrome ? (
+            <button
+              type="button"
+              className={`grafy-workspace-rail__item${chrome.generatedPanelOpen ? " is-active" : ""}`}
+              aria-label="Generated artifacts"
+              title={
+                chrome.generatedPanelOpen
+                  ? "Hide generated artifacts"
+                  : "Show Run artifacts from this canvas"
+              }
+              aria-expanded={chrome.generatedPanelOpen}
+              aria-controls={
+                chrome.generatedPanelOpen ? SIDE_PANEL_ELEMENT_ID : undefined
+              }
+              data-side-panel-toggle=""
+              onClick={() => {
+                closeMobileNavigation(false);
+                chrome.toggleGeneratedPanel();
+              }}
+            >
+              <Layers size={15} aria-hidden="true" />
+              <span>Generated</span>
             </button>
           ) : null}
         </nav>

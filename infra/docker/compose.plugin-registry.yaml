@@ -1,0 +1,12 @@
+services:
+  registry:
+    image: registry:2.8.3@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - plugin-runtime-registry-data:/var/lib/registry
+
+volumes:
+  plugin-runtime-registry-data:
+    name: grafy-plugin-runtime-registry-data

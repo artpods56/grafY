@@ -3,7 +3,9 @@
 Status: implementation handoff for #79 and the drawer area that follows it.
 Audience: whoever builds the next panel view.
 Update (2026-09-30): the Templates tab is gone for now; the panel hosts the
-Artifacts view alone. §3–§5 describe the panel as it is.
+Artifacts view. §3–§5 describe the panel as it is.
+Update (2026-10-05): the panel also hosts Generated, this canvas's Run
+artifacts. The rail picks the view; there is still no tab strip (see §4).
 
 ## 1. The problem
 
@@ -117,13 +119,16 @@ the view one control for its header:
 
 ```tsx
 <LibraryPanel workspaceId={…} onOpenRun={…} headerEnd={<CollapseButton />} />
+<GeneratedDrawer workspaceId={…} graphId={…} … headerEnd={<CollapseButton />} />
 ```
 
-The rail's Artifacts item is the panel's only opener; see §5. The shell used
-to host a tab strip with a Templates view beside Artifacts. That
-tab was removed (2026-09-30) until Templates is ready to come back to the panel;
-the `/templates` routes are untouched. A second view brings back a switcher in
-the header, not a registry — see [R41].
+The shell shows one of the two, whichever `view` (`"artifacts" | "generated"`)
+the rail last asked for. The rail's Artifacts and Generated items are the
+panel's only openers: each opens its view, or closes the panel when that view is
+already showing; see §5. The shell used to host a tab strip with a Templates
+view beside Artifacts. That tab was removed (2026-09-30) until Templates is
+ready to come back to the panel; the `/templates` routes are untouched. A third
+view brings back a switcher in the header, not a registry — see [R41].
 
 The Artifacts view keeps its own data seam one level down:
 

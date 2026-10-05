@@ -107,12 +107,11 @@ stable loader target. Workspace projects are published as immutable,
 workspace-scoped releases and execute through the retained isolated runtime;
 the API never imports their working copies.
 
-System packages are enumerated by the platform-owned inventory. A deployment
-may bind an exact current System release to installed host code by supplying
-`GRAFY_SYSTEM_PLUGIN_DEPLOYMENT_MANIFEST`. Startup verifies the installed
-distribution bytes and exact release contract before importing only the named
-loader targets. Merely installing a package does nothing, and an API with no
-manifest starts with host-owned Module boundaries only. See
+System projects are enumerated by the platform-owned inventory. Publish an
+immutable release, then explicitly promote it to make it available globally.
+System and Workspace Plugins execute in isolated workers using their retained
+OCI artifacts. Startup registers the workbench's builtin families and Module
+boundaries. Installing a Plugin package alone does not activate it. See
 [Plugin development](docs/design/plugin-development.md) for project shape and
 publication workflows.
 
@@ -201,10 +200,9 @@ environment using:
 just install-all
 ```
 
-Installation does not activate a System Plugin. The API loads host code only
-when an exact `GRAFY_SYSTEM_PLUGIN_DEPLOYMENT_MANIFEST` binds an installed
-distribution to a selected immutable release; isolated execution uses that
-release's retained OCI artifact.
+Installation does not activate a System Plugin. Publish and explicitly promote
+a System release to select it for the catalog. Plugin execution uses the
+release's retained OCI artifact in an isolated worker.
 
 Start the API and web app in separate terminals:
 
@@ -380,6 +378,25 @@ save, configure, execute, and inspect a graph. See
 [Build and run a graph with Python](docs/how-to-author-graphs-with-python.md).
 
 ## Verify
+
+### Install and run commit hooks
+
+After installing the repository dependencies, enable the local commit hook:
+
+```bash
+just install
+just hooks-install
+```
+
+Git then runs the staged-file checks from `.pre-commit-config.yaml` before each
+commit. To run the checks manually on staged files, use `uv run prek run`. To
+validate the configuration and run every hook on all tracked files, use
+`just hooks-check`. If a check fails, fix the reported files and rerun it before
+committing.
+
+The hooks cover Python Ruff lint, web ESLint and Prettier, and fast repository
+hygiene checks. Tests, type checks, generated API contracts, and builds remain
+in CI and the existing `just check` recipe.
 
 Run the full retained contract:
 

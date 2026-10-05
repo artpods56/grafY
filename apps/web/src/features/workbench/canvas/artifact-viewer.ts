@@ -1,4 +1,4 @@
-import type { ArtifactOriginEdge } from "./artifact-connections";
+import type { ArtifactOriginEdge } from "./artifact-origin-edge";
 import type { Edge, Node } from "@xyflow/react";
 
 import type { CollaborativeHead, SavedGraphDocument } from "@/lib/api";

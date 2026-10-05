@@ -3,6 +3,9 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 grafy_env := env_var_or_default("GRAFY_ENV_FILE", "/etc/grafy/grafy.env")
 grafy_override := env_var_or_default("GRAFY_COMPOSE_OVERRIDE", "/etc/grafy/storage.override.yaml")
+plugin_native_base_image := env_var_or_default("GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE", "127.0.0.1:5000/grafy-plugin-base")
+plugin_native_base_tag := env_var_or_default("GRAFY_PLUGIN_NATIVE_BASE_TAG", "gdal-tesseract")
+plugin_native_platform := env_var_or_default("GRAFY_PLUGIN_NATIVE_BUILD_PLATFORM", "linux/amd64")
 
 # List available recipes.
 default:
@@ -18,8 +21,8 @@ install-all:
     uv sync --all-extras
     npm --prefix apps/web ci
 
-# Start the API. System host Plugins are loaded only from the configured exact
-# deployment manifest; installed packages are never discovered ambiently.
+# Start the API with builtin families and Module boundaries. Published Plugins
+# execute in isolated workers.
 api: db-upgrade
     uv run --exact --no-dev --package grafy-api uvicorn grafy_api.main:app --reload --host 0.0.0.0 --port 8000
 
@@ -71,6 +74,15 @@ format:
 # Fail when the web app is not formatted. CI runs this.
 format-check:
     cd apps/web && npm exec prettier -- --check "src/**/*.{ts,tsx,css,md,json}" "e2e/**/*.{ts,tsx}"
+
+# Install the repository-owned Git commit hook for this clone.
+hooks-install:
+    uv run prek install
+
+# Validate the hook configuration and run every hook against tracked files.
+hooks-check:
+    uv run prek validate-config .pre-commit-config.yaml
+    uv run prek run --all-files
 
 # Run Python and TypeScript type checks.
 typecheck:
@@ -137,6 +149,27 @@ docker-up:
 # Stop the local Docker stack.
 docker-down:
     docker compose -f infra/docker/compose.yaml down
+
+# Start the opt-in loopback registry used by the native Plugin runtime.
+plugin-native-registry-up:
+    docker compose -f infra/docker/compose.plugin-registry.yaml up -d registry
+
+# Build and push the native runtime image, then print its registry manifest digest.
+plugin-native-base-publish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    metadata="$(mktemp)"
+    trap 'rm -f "$metadata"' EXIT
+    docker buildx build \
+        --platform "{{ plugin_native_platform }}" \
+        --tag "{{ plugin_native_base_image }}:{{ plugin_native_base_tag }}" \
+        --push \
+        --metadata-file "$metadata" \
+        --file infra/docker/plugin-native-runtime.Dockerfile \
+        .
+    digest="$(python -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["containerimage.digest"])' "$metadata")"
+    printf 'GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE=%s\n' "{{ plugin_native_base_image }}"
+    printf 'GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE_DIGEST=%s\n' "${digest#sha256:}"
 
 # Start the local Keycloak stack.
 keycloak-up:

@@ -18,6 +18,8 @@ import {
 } from "./workbench-side-panel-state";
 import { LibraryPanel } from "./LibraryPanel";
 import { panelStyles } from "./panel-styles";
+import { GeneratedDrawer } from "../GeneratedDrawer";
+import type { NodeRegistry } from "@/lib/api";
 
 const RESIZE_STEP = 16;
 
@@ -110,35 +112,58 @@ const s = stylex.create({
 
 /**
  * The second pane of the sidebar: docked beside the canvas on a wide viewport,
- * a slide-over drawer on a narrow one. It hosts the Workspace Library. Either
+ * a slide-over drawer on a narrow one. It hosts the Workspace Library, or this
+ * canvas's Generated Run artifacts, whichever the rail last asked for. Either
  * way it slides in from behind the rail and back out, rather than blinking.
  */
 export function WorkbenchSidePanel({
   workspaceId,
   sidePanel,
   onOpenRun,
+  graphId,
+  nodeTitles,
+  registry,
+  canSave,
+  executionRunning,
 }: {
   workspaceId: string;
   sidePanel: WorkbenchSidePanelState;
   onOpenRun: (graphId: string, executionId: string) => void;
+  graphId: string | null;
+  nodeTitles: Readonly<Record<string, string>>;
+  registry: NodeRegistry | null;
+  canSave: boolean;
+  executionRunning: boolean;
 }) {
-  const body = (
-    <LibraryPanel
-      workspaceId={workspaceId}
-      onOpenRun={onOpenRun}
-      headerEnd={
-        <button
-          type="button"
-          aria-label="Collapse side panel"
-          title="Collapse side panel"
-          onClick={() => sidePanel.setOpen(false)}
-          {...stylex.props(panelStyles.iconButton)}
-        >
-          <PanelLeftClose size={14} />
-        </button>
-      }
-    />
+  const collapse = (
+    <button
+      type="button"
+      aria-label="Collapse side panel"
+      title="Collapse side panel"
+      onClick={() => sidePanel.setOpen(false)}
+      {...stylex.props(panelStyles.iconButton)}
+    >
+      <PanelLeftClose size={14} />
+    </button>
   );
+  const body =
+    sidePanel.view === "generated" ? (
+      <GeneratedDrawer
+        workspaceId={workspaceId}
+        graphId={graphId}
+        nodeTitles={nodeTitles}
+        registry={registry}
+        canSave={canSave}
+        executionRunning={executionRunning}
+        headerEnd={collapse}
+      />
+    ) : (
+      <LibraryPanel
+        workspaceId={workspaceId}
+        onOpenRun={onOpenRun}
+        headerEnd={collapse}
+      />
+    );
 
   if (!sidePanel.docked) {
     // Base UI keeps the popup mounted through its exit transition.

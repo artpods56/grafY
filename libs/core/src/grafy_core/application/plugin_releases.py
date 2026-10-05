@@ -682,30 +682,6 @@ class PluginReleaseService:
         async with self._unit_of_work_factory() as unit_of_work:
             return await unit_of_work.plugin_releases.list_current(namespace)
 
-    async def list_current_system(self) -> list[InstalledPluginRelease]:
-        namespace = PluginReleaseNamespace(
-            scope=PluginReleaseScope.SYSTEM,
-            workspace_id=None,
-        )
-        async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.plugin_releases.list_current(namespace)
-
-    async def get_system_by_revision(
-        self,
-        slug: str,
-        revision: int,
-    ) -> InstalledPluginRelease | None:
-        namespace = PluginReleaseNamespace(
-            scope=PluginReleaseScope.SYSTEM,
-            workspace_id=None,
-        )
-        async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.plugin_releases.get_by_revision(
-                namespace,
-                slug,
-                revision,
-            )
-
     async def get_by_revision(
         self,
         workspace_id: UUID,

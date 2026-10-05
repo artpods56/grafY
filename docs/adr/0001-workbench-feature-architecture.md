@@ -128,7 +128,7 @@ parameters or interfaces solely for tests.
 ### Naming and ownership
 
 - Name files after the capability or policy they own, such as
-  `execution-plan.ts`, `connection-policy.ts`, or `SavedGraphBrowser.tsx`.
+  `execution-plan.ts`, `connection-policy.ts`, or `LibraryPanel.tsx`.
 - Avoid generic ownership names such as `utils`, `helpers`, `manager`, or
   `services` inside the feature.
 - Use PascalCase for component files and `use` prefixes for genuine React hooks.

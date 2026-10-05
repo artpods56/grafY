@@ -39,7 +39,7 @@ dependencies = [
     { name = "referencing" },
 ]
 wheels = [
-    { filename = "grafy_core-0.1.0-py3-none-any.whl", hash = "sha256:a4b7af86fe218ffbb897fffba0363d12d1e859ffda21cbd0b78036799d8a1d81" },
+    { filename = "grafy_core-0.1.0-py3-none-any.whl", hash = "sha256:0761bb6cdba470e34e7462282b4d9ec312dcbd168aeccc7df0bd27565353f9e3" },
 ]
 
 [package.metadata]

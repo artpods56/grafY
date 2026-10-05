@@ -150,10 +150,11 @@ vi.mock("./type-inspector", () => ({
 
 import type { NodeSpec } from "@/lib/api";
 import { compatibilityHandleId, createWorkflowNodeData } from "../types";
-import WorkflowNodeCard, {
+import WorkflowNodeCard from "./WorkflowNode";
+import {
   configFieldLabelIsRedundant,
   type ConfigBrick,
-} from "./WorkflowNode";
+} from "./workflow/config-fields";
 import { fieldFootprint } from "./field-footprints";
 
 function unavailableSpec(): NodeSpec {
@@ -1213,7 +1214,7 @@ describe("WorkflowNode config lattice", () => {
 
   it("hands a taller saved body to the growable brick", () => {
     const data = createWorkflowNodeData(rawSqlStatementSpec());
-    data.config = { sql: "select 1" };
+    data.config = {};
     data.layout = { bodyHeight: 300 };
     const { container, root } = renderNode("sql-statement", data);
 
@@ -1829,5 +1830,41 @@ describe("WorkflowNode artifact type binding", () => {
     // as open.
     expect(typeMenus(container)).toHaveLength(0);
     expect(container.querySelector('[data-port-open="true"]')).not.toBeNull();
+  });
+});
+
+describe("WorkflowNode config validation", () => {
+  it("shows a persisted value that is no longer in the enum and an inline error", () => {
+    const spec: NodeSpec = {
+      ...rawSqlStatementSpec(),
+      title: "Mode selector",
+      config_schema: {
+        type: "object",
+        properties: { mode: { type: "string", enum: ["fast", "safe"] } },
+        required: ["mode"],
+      },
+    };
+    const data = createWorkflowNodeData(spec);
+    data.config = { mode: "legacy" };
+    const { container, root } = renderNode("mode", data);
+
+    expect(container.textContent).toContain(
+      "Choose one of the allowed values.",
+    );
+    expect(container.querySelector('option[value="legacy"]')?.textContent).toBe(
+      "Saved value: legacy",
+    );
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    React.act(() => root.unmount());
+  });
+
+  it("shows requiredness errors for an incomplete autosaved config", () => {
+    const data = createWorkflowNodeData(rawSqlStatementSpec());
+    data.config = {};
+    const { container, root } = renderNode("sql", data);
+
+    expect(container.textContent).toContain("This field is required.");
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    React.act(() => root.unmount());
   });
 });
