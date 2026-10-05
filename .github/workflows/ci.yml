@@ -64,6 +64,13 @@ jobs:
         run: >-
           uv run --all-extras pytest -q -o log_cli=false
           tests/unit/persistence/test_migrations.py::test_fresh_postgresql_database_upgrades_to_head
+      - name: Verify PostgreSQL persistence contracts
+        env:
+          GRAFY_TEST_POSTGRES_URL: postgresql+asyncpg://grafy:grafy-ci@127.0.0.1:5432/grafy
+          GRAFY_TEST_TRANSIENT_POSTGRES_URL: postgresql+asyncpg://grafy:grafy-ci@127.0.0.1:5432/grafy
+        run: >-
+          uv run --all-extras pytest -q -o log_cli=false tests/unit/persistence
+          --deselect tests/unit/persistence/test_migrations.py::test_fresh_postgresql_database_upgrades_to_head
       - name: Verify OCI and GIS capabilities
         run: |
           docker version
