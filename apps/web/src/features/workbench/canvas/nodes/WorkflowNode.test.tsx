@@ -101,10 +101,11 @@ vi.mock("./type-inspector", () => ({
 
 import type { NodeSpec } from "@/lib/api";
 import { compatibilityHandleId, createWorkflowNodeData } from "../types";
-import WorkflowNodeCard, {
+import WorkflowNodeCard from "./WorkflowNode";
+import {
   configFieldLabelIsRedundant,
   type ConfigBrick,
-} from "./WorkflowNode";
+} from "./workflow/config-fields";
 import { fieldFootprint } from "./field-footprints";
 
 function unavailableSpec(): NodeSpec {

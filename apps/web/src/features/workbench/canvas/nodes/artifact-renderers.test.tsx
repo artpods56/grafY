@@ -108,9 +108,8 @@ import type {
 import {
   formatJsonSchemaPayload,
   markdownPayload,
-  rendererCanBrush,
-  rendererFor,
-} from "./artifact-renderers";
+} from "./artifact-renderers/payload";
+import { rendererCanBrush, rendererFor } from "./artifact-renderers/registry";
 import type { ArtifactViewerInteractionContext } from "../artifact-interactions";
 
 const JSON_SCHEMA_ARTIFACT: ArtifactSummary = {

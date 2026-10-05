@@ -37,6 +37,7 @@ import {
 import type { WorkflowNodeData } from "../canvas/types";
 import type { WorkflowNode } from "../model/execution-plan";
 import { NEW_GRAPH_ROUTE_ID, workbenchGraphPath } from "../routes";
+import { NEW_GRAPH_NAME, savedGraphDirtiness } from "./saved-graph-dirtiness";
 
 export interface ActiveSavedGraph {
   id: string;
@@ -131,8 +132,6 @@ export interface UseSavedGraphLifecycleResult {
   purgeLocalGraphState: () => void;
 }
 
-const NEW_GRAPH_NAME = "Untitled workflow";
-
 export function useSavedGraphLifecycle({
   workspaceId,
   workspaceSlug,
@@ -215,31 +214,24 @@ export function useSavedGraphLifecycle({
     currentFingerprintRef.current = currentFingerprint;
   }, [currentFingerprint]);
 
-  const hasUnsavedDraft =
-    document.nodes.length > 0 ||
-    document.edges.length > 0 ||
-    (presentation.viewers?.length ?? 0) > 0 ||
-    (presentation.links?.length ?? 0) > 0 ||
-    (presentation.bindings?.length ?? 0) > 0 ||
-    document.name.trim() !== NEW_GRAPH_NAME;
-  const isDirty = activeGraph
-    ? savedFingerprint !== currentFingerprint
-    : hasUnsavedDraft;
-  /**
-   * Work a reload would actually lose: a graph the server has never been told
-   * about, or canvas edits the disconnected room refused to take. `isDirty`
-   * answers a different question — whether the canvas matches the last
-   * checkpoint — and a journal the room already holds is safe on the server.
-   */
-  const workAtRisk = activeGraph ? hasUnsyncedRoomEdits : hasUnsavedDraft;
-  const canMaterializeSavedGraph = Boolean(
-    activeGraph &&
-    savedExecutionFingerprint !== null &&
-    savedExecutionFingerprint === currentExecutionFingerprint,
-  );
-  const persistenceOperationBusy = Boolean(
-    saving || openingGraphId || deletingGraphId,
-  );
+  const {
+    isDirty,
+    workAtRisk,
+    canMaterializeSavedGraph,
+    persistenceOperationBusy,
+  } = savedGraphDirtiness({
+    document,
+    presentation,
+    hasActiveGraph: activeGraph !== null,
+    currentFingerprint,
+    savedFingerprint,
+    currentExecutionFingerprint,
+    savedExecutionFingerprint,
+    hasUnsyncedRoomEdits,
+    saving,
+    openingGraphId,
+    deletingGraphId,
+  });
 
   React.useEffect(() => {
     if (!workAtRisk) return;

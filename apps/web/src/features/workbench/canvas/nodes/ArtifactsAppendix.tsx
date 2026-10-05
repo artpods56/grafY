@@ -13,11 +13,11 @@ import {
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type { ArtifactViewerInteractionContext } from "../artifact-interactions";
+import { PrettyValue } from "./artifact-renderers/pretty-value";
 import {
   META_ARTIFACT_RENDERER,
-  PrettyValue,
   rendererFor,
-} from "./artifact-renderers";
+} from "./artifact-renderers/registry";
 import { schemaTypeLabel } from "./type-inspector";
 import { writeArtifactDrop } from "../../model/artifact-drop";
 import { BLOB_ARTIFACT_NOTICE, isBlobArtifact } from "../../model/blob-notice";
