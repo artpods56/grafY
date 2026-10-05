@@ -16,7 +16,13 @@ test("shows Generated inside the existing docked workbench side panel", async ({
   const canvasBefore = await canvas.boundingBox();
   if (!canvasBefore) throw new Error("Workflow canvas has no visible bounds");
 
-  await page.getByRole("button", { name: "Generated artifacts" }).click();
+  // On a phone the rail is a navigation drawer that has to be opened first.
+  const openNavigation = page.getByRole("button", { name: "Open navigation" });
+  if (await openNavigation.isVisible()) await openNavigation.click();
+  const generatedButton = page.getByRole("button", {
+    name: "Generated artifacts",
+  });
+  await generatedButton.click();
 
   const panel =
     viewport.width >= 1100
@@ -26,21 +32,25 @@ test("shows Generated inside the existing docked workbench side panel", async ({
     name: "Generated artifacts",
   });
   await expect(panel).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Generated artifacts" }),
-  ).toHaveAttribute("aria-expanded", "true");
   await expect(generated).toBeVisible();
   await expect(
     page.getByRole("complementary", { name: "Generated", exact: true }),
   ).toHaveCount(0);
 
   if (viewport.width >= 1100) {
-    const panelBox = await panel.boundingBox();
-    const canvasWithPanel = await canvas.boundingBox();
-    if (!panelBox || !canvasWithPanel) {
-      throw new Error("Expected the side panel and canvas to have bounds");
-    }
-    expect(panelBox.x + panelBox.width).toBeCloseTo(canvasWithPanel.x, 0);
-    expect(canvasWithPanel.width).toBeLessThan(canvasBefore.width);
+    // Docked, the rail stays reachable. Below that the panel is a modal
+    // slide-over that hides it from the accessibility tree.
+    await expect(generatedButton).toHaveAttribute("aria-expanded", "true");
+    // The panel slides open over SIDE_PANEL_MOTION_MS and the canvas edge moves
+    // with it, so measure once the edges have met rather than mid-slide.
+    await expect(async () => {
+      const panelBox = await panel.boundingBox();
+      const canvasWithPanel = await canvas.boundingBox();
+      if (!panelBox || !canvasWithPanel) {
+        throw new Error("Expected the side panel and canvas to have bounds");
+      }
+      expect(panelBox.x + panelBox.width).toBeCloseTo(canvasWithPanel.x, 0);
+      expect(canvasWithPanel.width).toBeLessThan(canvasBefore.width);
+    }).toPass();
   }
 });
