@@ -298,8 +298,30 @@ flag:
 
 | File | Lines | stylex | Note |
 | --- | --- | --- | --- |
-| `ui/Workbench.tsx` | 4356 | 0 | still no test renders it; ~60 `useCallback`s left in `WorkbenchBody` |
+| `ui/Workbench.tsx` | 4394 | 0 | still no test renders it; ~60 `useCallback`s left in `WorkbenchBody` |
 | `ui/useRunExecution.ts` | 1870 | 0 | safest large target next; `ui/run-execution/state.ts` already shows the shape |
 | `ui/NodeSelector.tsx` | 1214 | 100 | `ui/node-selector/styles.ts` already exists; the rest is one component |
 | `workspaces/WorkspaceLayout.tsx` | 1172 | 0 | safe, but do the importer pass (see the revert note) |
-| `canvas/nodes/workflow/config-fields.tsx` | 910 | 43 | split inside `workflow/`, styles move must be hash-checked |
+| `canvas/nodes/workflow/config-fields.tsx` | 919 | 43 | split inside `workflow/`, styles move must be hash-checked |
+
+## Rebase onto main (2026-10-05)
+
+The branch was rebased from `6a949874` onto `7c54031b` (69 commits of `main`). Every commit
+SHA quoted above predates the rebase; find a commit by its subject. Four files overlapped
+with `main`, and two needed a hand port:
+
+| File on `main` | Where the change went |
+| --- | --- |
+| `WorkflowNode.tsx` - `validateConfig`, the `Saved value:` option, the inline and summary config errors | `workflow/generic-body.tsx` (errors, two styles), `workflow/config-fields.tsx` (option), `workflow/cards.tsx` (`hasConfig`) |
+| `LibraryPanel.tsx` - `operationErrorMessage(error, folders, items)` | `side-panel/library/operation-error.ts` |
+| `Workbench.tsx`, `WorkflowNode.test.tsx` | merged without conflict |
+
+- **A clean textual merge was not a safe one.** `main` had changed `LibraryFolderNotEmptyError`
+  to drop its counts. `operation-error.ts` is a file this branch created, so git merged it
+  untouched and it read the removed fields. Only `tsc` caught it. After a rebase of a
+  split, typecheck before trusting a conflict-free file list.
+- **Not re-run after the rebase:** the byte-identical stylex bundle comparison. `main` changed
+  styles, so the old reference build is no longer the right baseline; rebuild both sides if
+  that proof is wanted again.
+- Gate after the rebase: typecheck 0 errors, 111 files / 861 tests green, eslint silent,
+  prettier clean, `check:stylex` clean over 343 modules.
