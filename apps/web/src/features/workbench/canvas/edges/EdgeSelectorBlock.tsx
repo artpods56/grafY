@@ -147,7 +147,66 @@ const s = stylex.create({
     overflow: "hidden",
     zIndex: 50,
   },
+  // At rest an edge says only what its ports do not: a small quiet chip.
+  restPositioner: {
+    width: "auto",
+    height: "auto",
+  },
+  restChip: {
+    display: "block",
+    maxWidth: "150px",
+    height: "18px",
+    boxSizing: "border-box",
+    paddingInline: "8px",
+    overflow: "hidden",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: "9999px",
+    backgroundColor: tokens.colorChrome,
+    color: tokens.colorMuted,
+    fontSize: "10px",
+    fontWeight: 500,
+    lineHeight: "16px",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    cursor: "pointer",
+  },
 });
+
+/**
+ * Hover that survives the gap between an edge's path and its label, which
+ * live in different layers: leaving one and entering the other within a
+ * beat keeps it hovered.
+ */
+export function useHoverIntent(leaveDelayMs = 160) {
+  const [hovered, setHovered] = React.useState(false);
+  const timer = React.useRef<number | null>(null);
+  const clear = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = null;
+  };
+  React.useEffect(() => clear, []);
+  const handlers = React.useMemo(
+    () => ({
+      onPointerEnter: () => {
+        clear();
+        setHovered(true);
+      },
+      onPointerLeave: () => {
+        clear();
+        timer.current = window.setTimeout(() => {
+          timer.current = null;
+          setHovered(false);
+        }, leaveDelayMs);
+      },
+    }),
+    [leaveDelayMs],
+  );
+  return { hovered, handlers };
+}
+
+type HoverHandlers = ReturnType<typeof useHoverIntent>["handlers"];
 
 export type EdgeSelectorBendHandlers = Pick<
   React.ButtonHTMLAttributes<HTMLButtonElement>,
@@ -179,6 +238,14 @@ export interface EdgeSelectorBlockProps {
   removeAriaLabel: string;
   onRemove: () => void;
   children: React.ReactNode;
+  /**
+   * What an idle edge shows when not selected or hovered: the full selector,
+   * just its label (when the label says more than the ports do), or nothing.
+   */
+  rest?: "full" | "label" | "hidden";
+  /** The edge's path is hovered (it shares `hoverHandlers` with the block). */
+  hovered?: boolean;
+  hoverHandlers?: HoverHandlers;
 }
 
 /** Midpoint feed selector — 3 cells wide × 1 cell tall in flow coordinates. */
@@ -199,13 +266,47 @@ export function EdgeSelectorBlock({
   removeAriaLabel,
   onRemove,
   children,
+  rest = "full",
+  hovered = false,
+  hoverHandlers,
 }: EdgeSelectorBlockProps) {
+  const [menuOpen, setMenuOpen] = React.useState(false);
   const grid = useOptionalCanvasGridSettings();
   const cellSize = grid?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
   const routed = edgeSelectorBlockSize(cellSize);
   const width = widthOverride ?? routed.width;
   const height =
     heightOverride ?? (docked ? EDGE_SELECTOR_PILL_HEIGHT : routed.height);
+  const expanded =
+    rest === "full" ||
+    docked ||
+    selected ||
+    hovered ||
+    menuOpen ||
+    bendDragging;
+
+  if (!expanded && rest === "hidden") return null;
+  if (!expanded) {
+    return (
+      <div
+        className="nodrag nopan nowheel"
+        data-testid="edge-selector-block"
+        data-rest="label"
+        style={{
+          transform: `translate(-50%, -50%) translate(${anchor.x}px, ${anchor.y}px)`,
+        }}
+        {...stylex.props(s.positioner, s.restPositioner)}
+        {...hoverHandlers}
+      >
+        <span
+          title={label}
+          {...stylex.props(s.restChip, disabled ? s.blockDisabled : null)}
+        >
+          {label}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -221,6 +322,7 @@ export function EdgeSelectorBlock({
         transform: `translate(-50%, -50%) translate(${anchor.x}px, ${anchor.y}px)`,
       }}
       {...stylex.props(s.positioner, docked ? s.dockedPositioner : null)}
+      {...hoverHandlers}
     >
       {docked ? null : (
         <button
@@ -249,7 +351,7 @@ export function EdgeSelectorBlock({
             {label}
           </span>
         </span>
-        <Popover.Root>
+        <Popover.Root onOpenChange={setMenuOpen}>
           <Popover.Trigger
             type="button"
             disabled={editDisabled}

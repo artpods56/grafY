@@ -54,6 +54,24 @@ body.grafy-side-panel-resizing {
   user-select: none;
 }
 
+/* The panel and the canvas edge beside it move on one clock. Motion is off until
+ * the workbench has painted once, off during a resize drag, and off for anyone
+ * who asked for less of it. SIDE_PANEL_MOTION_MS mirrors the duration. */
+:root {
+  --grafy-side-panel-duration: 0ms;
+  --grafy-side-panel-ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+:root[data-side-panel-motion="on"] {
+  --grafy-side-panel-duration: 200ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-side-panel-motion] {
+    --grafy-side-panel-duration: 0ms;
+  }
+}
+
 @layer resets {
   *,
   *::before,

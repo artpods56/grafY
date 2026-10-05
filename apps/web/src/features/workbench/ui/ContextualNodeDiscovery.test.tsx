@@ -20,6 +20,7 @@ vi.mock("@stylexjs/stylex", () => ({
 }));
 
 vi.mock("@xyflow/react", () => ({
+  useNodeId: () => null,
   ViewportPortal: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="canvas-preview">{children}</div>
   ),

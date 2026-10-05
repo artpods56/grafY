@@ -4,6 +4,8 @@ import * as React from "react";
 
 import { useMediaQuery } from "@/hooks/use-media-query";
 
+import { PORT_CENTER_REACH } from "../canvas/handle-style";
+
 const MOBILE_WORKBENCH_QUERY = "(max-width: 720px)";
 
 interface SafeAreaInsets {
@@ -20,10 +22,17 @@ const ZERO_SAFE_AREA_INSETS: SafeAreaInsets = {
   left: 0,
 };
 
+/**
+ * Ports hang outside a node's box, and a fit frames only boxes. The sides are
+ * padded so a fitted node's balls sit clear of React Flow's 40px connection
+ * auto-pan band; otherwise grabbing an edge-most port scrolls the canvas away.
+ */
+const FIT_PORT_CLEARANCE = PORT_CENTER_REACH + 44;
+
 const WORKBENCH_DESKTOP_FIT_VIEW_OPTIONS = {
   padding: {
     top: "90px",
-    right: "48px",
+    right: `${FIT_PORT_CLEARANCE}px`,
     bottom: "64px",
     left: "165px",
   },
@@ -32,9 +41,9 @@ const WORKBENCH_DESKTOP_FIT_VIEW_OPTIONS = {
 
 const WORKBENCH_MOBILE_FIT_PADDING = {
   top: 76,
-  right: 20,
+  right: FIT_PORT_CLEARANCE,
   bottom: 96,
-  left: 20,
+  left: FIT_PORT_CLEARANCE,
 } as const;
 
 /**

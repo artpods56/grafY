@@ -2,14 +2,12 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { Handle, Position } from "@xyflow/react";
 import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from "lucide-react";
 
 import type { Port } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-import { nodeChrome } from "../CanvasNodeChrome";
-import { handleStyle } from "../../handle-style";
+import { CanvasPortBall, nodeChrome } from "../CanvasNodeChrome";
 import { encodeHandleId } from "../../handles";
 import { inputPlugsForPort } from "../../input-plugs";
 import { artifactTypeColor } from "../../nodes.css";
@@ -25,6 +23,7 @@ import { PortTypePopover } from "../type-inspector";
 import {
   OptionalConnectionToggle,
   nodeInteractionProps,
+  portBallTypeProps,
   useOptionalInputConnection,
 } from "./ports";
 import { sharedStyles } from "./styles";
@@ -41,21 +40,22 @@ const s = stylex.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: "8px",
-    paddingInline: "12px 10px",
+    paddingInline: "10px",
   },
+  // Reads like any other port name; the plug balls carry the type colour.
   plugPortTitle: {
     display: "flex",
     minWidth: 0,
     alignItems: "center",
-    gap: "7px",
+    gap: "4px",
     padding: 0,
     overflow: "hidden",
     borderWidth: 0,
     backgroundColor: "transparent",
-    color: tokens.colorTextEmphasis,
+    color: { default: tokens.colorMuted, ":hover": tokens.colorText },
     cursor: "pointer",
     fontSize: tokens.fontSizeXs,
-    fontWeight: 600,
+    fontWeight: 500,
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
@@ -64,10 +64,12 @@ const s = stylex.create({
     color: tokens.colorSubtle,
     fontSize: "10px",
   },
+  // Rows sit 8px in from the plate; their balls hang that much further out.
   plugList: {
     display: "grid",
     gap: "4px",
     paddingInline: "8px",
+    ["--port-inset" as string]: "8px",
   },
   plugRow: {
     position: "relative",
@@ -77,7 +79,7 @@ const s = stylex.create({
     gridTemplateColumns: "20px 20px minmax(0, 1fr) auto",
     alignItems: "center",
     gap: "4px",
-    padding: "3px 4px 3px 28px",
+    padding: "3px 4px 3px 6px",
     borderRadius: tokens.radiusMd,
     backgroundColor: tokens.colorSurfaceMuted,
   },
@@ -160,12 +162,6 @@ const s = stylex.create({
     fontSize: tokens.fontSizeXs,
     fontWeight: 500,
   },
-  dot: {
-    width: "6px",
-    height: "6px",
-    flexShrink: 0,
-    borderRadius: "9999px",
-  },
 });
 
 function InstancePlugRow({
@@ -183,6 +179,7 @@ function InstancePlugRow({
   lastPointerTargetRef,
   setDraggedPlugId,
   finishPointerDrag,
+  typeLocked,
 }: {
   id: string;
   data: WorkflowNodeData;
@@ -198,6 +195,7 @@ function InstancePlugRow({
   lastPointerTargetRef: React.MutableRefObject<string | null>;
   setDraggedPlugId: React.Dispatch<React.SetStateAction<string | null>>;
   finishPointerDrag: (event: React.PointerEvent<HTMLButtonElement>) => void;
+  typeLocked: boolean;
 }) {
   const connection = useOptionalInputConnection(id, port, plug.id);
   const binding = data.inputPlugBindings[plug.id];
@@ -222,16 +220,25 @@ function InstancePlugRow({
         draggedPlugId === plug.id ? s.plugRowDragging : null,
       )}
     >
-      <Handle
-        className="nodrag nowheel"
-        type="target"
-        position={Position.Left}
-        id={encodeHandleId(
+      <CanvasPortBall
+        nodeId={id}
+        handleId={encodeHandleId(
           portMetaForPort(port, port.shape, plug.id, data.artifactTypeBindings),
         )}
-        aria-label={accessibleLabel}
+        side="input"
+        color={color}
+        sequence
+        square={Boolean(binding)}
+        {...portBallTypeProps({
+          id,
+          data,
+          port,
+          shape: port.shape,
+          locked: typeLocked,
+          name: `${visibleName} ${index + 1}`,
+        })}
+        ariaLabel={accessibleLabel}
         title={`${accessibleLabel}. Connect one compatible output here.`}
-        style={handleStyle("50%", color, true, binding ? "square" : "circle")}
       />
       <button
         type="button"
@@ -347,10 +354,12 @@ export function InstancePlugPort({
   id,
   data,
   port,
+  typeLocked,
 }: {
   id: string;
   data: WorkflowNodeData;
   port: Port;
+  typeLocked: boolean;
 }) {
   const plugs = inputPlugsForPort(data.inputPlugs, port.name);
   const [draggedPlugId, setDraggedPlugId] = React.useState<string | null>(null);
@@ -394,7 +403,6 @@ export function InstancePlugPort({
             title={port.description ?? `Inspect ${visibleName} type`}
             {...nodeInteractionProps(stylex.props(s.plugPortTitle))}
           >
-            <span {...stylex.props(s.dot)} style={{ backgroundColor: color }} />
             <span {...stylex.props(nodeChrome.tabLabel)}>{visibleName}</span>
             {port.required ? (
               <span {...stylex.props(sharedStyles.required)}>*</span>
@@ -424,6 +432,7 @@ export function InstancePlugPort({
             lastPointerTargetRef={lastPointerTargetRef}
             setDraggedPlugId={setDraggedPlugId}
             finishPointerDrag={finishPointerDrag}
+            typeLocked={typeLocked}
           />
         ))}
       </div>

@@ -23,7 +23,16 @@ const s = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  contract: { flexShrink: 0, color: tokens.colorMuted },
+  // The name wins the row: the type gives way first, down to under half.
+  contract: {
+    flexShrink: 1,
+    minWidth: 0,
+    maxWidth: "45%",
+    overflow: "hidden",
+    color: tokens.colorMuted,
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
   stack: { position: "relative", width: "100%" },
   media: {
     position: "relative",
@@ -32,6 +41,13 @@ const s = stylex.create({
     borderRadius: tokens.radiusSm,
     backgroundColor: "transparent",
     boxShadow: "none",
+    // The shadow tokens share a layer count, so tiers cross-fade with the lift.
+    transitionProperty: "box-shadow",
+    transitionDuration: {
+      default: "180ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+    transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
   },
   raised: { boxShadow: tokens.shadowNodeActive },
   dragged: { boxShadow: tokens.shadowNodeDragged },
@@ -117,7 +133,8 @@ export function ImageArtifactBody({
     >
       {visible.map((image, index) => (
         <div
-          key={image.id}
+          // Keyed by position: a sequence may show one artifact twice.
+          key={`${index}:${image.id}`}
           data-artifact-media="true"
           data-artifact-shadow-scope={sequence ? "sequence-item" : "image"}
           {...stylex.props(

@@ -22,6 +22,8 @@ import {
 export function useShellGridFill(
   naturalWidth: number,
   minWidth?: number,
+  /** A row above the plate (a node's name) that the frame must also hold. */
+  headerHeight = 0,
 ): {
   contentRef: React.RefObject<HTMLDivElement | null>;
   frameStyle: React.CSSProperties;
@@ -57,7 +59,10 @@ export function useShellGridFill(
       if (height <= 0) return;
       setFillHeight((previous) => {
         // Include gutters so the painted inner area still fits content.
-        const next = ceilToCell(height + GRID_SHELL_GUTTER * 2, cellSize);
+        const next = ceilToCell(
+          height + headerHeight + GRID_SHELL_GUTTER * 2,
+          cellSize,
+        );
         return previous === next ? previous : next;
       });
     };
@@ -67,7 +72,7 @@ export function useShellGridFill(
     const observer = new ResizeObserver(update);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [cellSize, fill]);
+  }, [cellSize, fill, headerHeight]);
 
   const activeFillHeight = fill ? fillHeight : undefined;
 
@@ -92,9 +97,11 @@ export function useShellGridFill(
       flexDirection: "column",
     };
     if (activeFillHeight !== undefined) {
-      style.height = "100%";
+      // The frame is a column (name row, then plate): the plate takes the rest
+      // of the cell-aligned height. Overflow stays visible so ports can hang
+      // outside it.
+      style.flex = "1 1 auto";
       style.minHeight = 0;
-      // Keep overflow visible so port handles can extend past the card.
     }
     return style;
   }, [activeFillHeight, fill, gridWidth]);

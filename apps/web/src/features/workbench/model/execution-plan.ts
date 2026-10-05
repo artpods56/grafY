@@ -2,6 +2,7 @@ import type { Node } from "@xyflow/react";
 
 import { decodeHandleId } from "../canvas/handles";
 import { inputPlugsForPort } from "../canvas/input-plugs";
+import { isCollectionNode } from "./collection-spec";
 import { validateConfig } from "../canvas/config-schema";
 import {
   WORKFLOW_NODE_TYPE,
@@ -183,16 +184,33 @@ export function missingRequiredInputsFor(
             },
           ];
         }
+        const filled = plugs.map(
+          (plug) =>
+            edges.some(
+              (edge) =>
+                edge.data?.enabled !== false &&
+                edge.target === node.id &&
+                decodeHandleId(edge.targetHandle)?.plugId === plug.id,
+            ) ||
+            origins.some((origin) =>
+              originSatisfiesSlot(origin, node.id, port.name, plug.id),
+            ),
+        );
+        // A collection keeps a spare plug for its next member; empty plugs
+        // are left out of the run, so it only needs one member to be ready.
+        if (isCollectionNode(node)) {
+          return filled.some(Boolean)
+            ? []
+            : [
+                {
+                  nodeId: node.id,
+                  nodeTitle: node.data.spec.title,
+                  portName: port.name,
+                },
+              ];
+        }
         return plugs.flatMap((plug, index) =>
-          edges.some(
-            (edge) =>
-              edge.data?.enabled !== false &&
-              edge.target === node.id &&
-              decodeHandleId(edge.targetHandle)?.plugId === plug.id,
-          ) ||
-          origins.some((origin) =>
-            originSatisfiesSlot(origin, node.id, port.name, plug.id),
-          )
+          filled[index]
             ? []
             : [
                 {

@@ -5,30 +5,28 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WorkbenchSidePanel } from "./WorkbenchSidePanel";
-import type { WorkbenchSidePanelState } from "./workbench-side-panel-state";
+import {
+  SIDE_PANEL_MOTION_MS,
+  type WorkbenchSidePanelState,
+} from "./workbench-side-panel-state";
 
-const listLibraryArtifacts = vi.hoisted(() => vi.fn());
-const listWorkspaceTemplates = vi.hoisted(() => vi.fn());
+const listTree = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lib/api", () => ({
-  getGraphExecution: vi.fn(),
-  listGraphExecutions: vi.fn(),
-  listLibraryArtifacts,
-  listWorkspaceTemplates,
-  saveRunArtifactToLibrary: vi.fn(),
-  uploadFile: vi.fn(),
-  saveUploadedArtifactToLibrary: vi.fn(),
-  instantiateWorkspaceTemplate: vi.fn(),
-  artifactContentUrl: (
-    _workspaceId: string,
-    contentUrl: string | null | undefined,
-  ) => (contentUrl ? `/api/v1/${contentUrl}` : null),
-}));
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<Record<string, unknown>>("@/lib/api");
+  return {
+    ...actual,
+    libraryFoldersApi: { listTree },
+    uploadFile: vi.fn(),
+    saveUploadedArtifactToLibrary: vi.fn(),
+  };
+});
 
 vi.mock("@stylexjs/stylex", () => ({
   create: <Styles,>(styles: Styles) => styles,
   props: () => ({}),
-  when: { ancestor: () => "" },
+  defaultMarker: () => ({}),
+  when: { ancestor: (pseudo: string) => pseudo },
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -67,28 +65,21 @@ async function renderPanel(sidePanel: WorkbenchSidePanelState): Promise<void> {
         canSave={false}
         executionRunning={false}
         onOpenRun={vi.fn()}
-        onOpenGraph={vi.fn()}
       />,
     );
   });
-  if (!sidePanel.open) return;
+  if (!sidePanel.open || sidePanel.view !== "artifacts") return;
   await React.act(async () => {
     await vi.waitFor(() =>
-      expect(
-        document.querySelector('[role="tabpanel"], [role="dialog"]'),
-      ).not.toBeNull(),
+      expect(document.body.textContent).toContain("The Library is empty"),
     );
   });
 }
 
 function panel(): HTMLElement | null {
   return document.querySelector<HTMLElement>(
-    '[aria-label="Workbench side panel"]',
+    'aside[aria-label="Workbench side panel"]',
   );
-}
-
-function tab(id: string): HTMLElement | null {
-  return document.getElementById(`grafy-side-panel-tab-${id}`);
 }
 
 afterEach(() => {
@@ -97,72 +88,79 @@ afterEach(() => {
   });
   document.body.replaceChildren();
   vi.unstubAllGlobals();
-  listLibraryArtifacts.mockReset();
-  listWorkspaceTemplates.mockReset();
+  listTree.mockReset();
 });
 
 beforeEach(() => {
-  listLibraryArtifacts.mockResolvedValue({ items: [] });
-  listWorkspaceTemplates.mockResolvedValue({ templates: [] });
+  listTree.mockResolvedValue({ folders: [], items: [] });
 });
 
 describe("WorkbenchSidePanel", () => {
-  it("renders nothing while closed", async () => {
+  it("parks an empty, inert column while closed", async () => {
     await renderPanel(state({ open: false }));
 
-    expect(panel()).toBeNull();
+    expect(panel()?.hasAttribute("inert")).toBe(true);
+    expect(panel()?.dataset.state).toBe("closed");
+    expect(panel()?.childElementCount).toBe(0);
   });
 
-  it("docks beside the canvas with one tab per work surface", async () => {
+  it("keeps its contents through the closing slide, then lets them go", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const sidePanel = state();
+      const container = document.createElement("div");
+      document.body.append(container);
+      const root = createRoot(container);
+      roots.push(root);
+      const render = (open: boolean) =>
+        root.render(
+          <WorkbenchSidePanel
+            workspaceId="workspace-1"
+            sidePanel={{ ...sidePanel, open }}
+            graphId={null}
+            nodeTitles={{}}
+            registry={null}
+            canSave={false}
+            executionRunning={false}
+            onOpenRun={vi.fn()}
+          />,
+        );
+      await React.act(async () => render(true));
+      await React.act(async () => render(false));
+
+      expect(panel()?.dataset.state).toBe("closed");
+      expect(panel()?.hasAttribute("inert")).toBe(true);
+      expect(panel()?.querySelector('[role="tree"]')).not.toBeNull();
+
+      await React.act(async () => {
+        vi.advanceTimersByTime(SIDE_PANEL_MOTION_MS);
+      });
+      expect(panel()?.querySelector('[role="tree"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("docks beside the canvas with the Workspace Library", async () => {
     await renderPanel(state());
 
     expect(panel()).not.toBeNull();
-    expect(tab("artifacts")?.getAttribute("aria-selected")).toBe("true");
-    expect(tab("templates")?.getAttribute("aria-selected")).toBe("false");
-    expect(document.body.textContent).toContain("The Library is empty");
+    expect(panel()?.querySelector("h2")?.textContent).toBe("Artifacts");
+    expect(document.querySelector('[role="tablist"]')).toBeNull();
     expect(
       document.querySelector('[role="tree"][aria-label="Workspace Library"]'),
     ).not.toBeNull();
   });
 
-  it("shows the selected view in the tab panel", async () => {
-    await renderPanel(state({ view: "templates" }));
-
-    expect(tab("templates")?.getAttribute("aria-selected")).toBe("true");
-    expect(document.body.textContent).toContain("No graph templates");
-    expect(
-      document
-        .getElementById("grafy-side-panel-view")
-        ?.getAttribute("aria-labelledby"),
-    ).toBe("grafy-side-panel-tab-templates");
-  });
-
-  it("shows Generated inside the existing side panel", async () => {
+  it("hosts Generated in the same docked column", async () => {
     await renderPanel(state({ view: "generated" }));
 
     expect(panel()).not.toBeNull();
-    expect(tab("generated")?.getAttribute("aria-selected")).toBe("true");
     expect(document.body.textContent).toContain("Run artifacts");
     expect(
-      document.querySelector('[aria-label="Generated artifacts"]'),
+      panel()?.querySelector('[aria-label="Generated artifacts"]'),
     ).not.toBeNull();
-  });
-
-  it("switches views from the tab strip and with the arrow keys", async () => {
-    const sidePanel = state();
-    await renderPanel(sidePanel);
-
-    await React.act(async () => {
-      tab("templates")?.click();
-    });
-    expect(sidePanel.setView).toHaveBeenCalledWith("templates");
-
-    await React.act(async () => {
-      tab("artifacts")?.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
-      );
-    });
-    expect(sidePanel.setView).toHaveBeenLastCalledWith("templates");
+    expect(document.body.textContent).not.toContain("The Library is empty");
   });
 
   it("hosts Generated in the same slide-over on narrow screens", async () => {
@@ -170,7 +168,6 @@ describe("WorkbenchSidePanel", () => {
 
     expect(panel()).toBeNull();
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(tab("generated")?.getAttribute("aria-selected")).toBe("true");
     expect(document.body.textContent).toContain("Run artifacts");
   });
 

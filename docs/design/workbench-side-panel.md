@@ -2,6 +2,10 @@
 
 Status: implementation handoff for #79 and the drawer area that follows it.
 Audience: whoever builds the next panel view.
+Update (2026-09-30): the Templates tab is gone for now; the panel hosts the
+Artifacts view. §3–§5 describe the panel as it is.
+Update (2026-10-05): the panel also hosts Generated, this canvas's Run
+artifacts. The rail picks the view; there is still no tab strip (see §4).
 
 ## 1. The problem
 
@@ -75,20 +79,19 @@ a slide-over with a backdrop and the shell stops reserving width.
 
 ```
 ┌───────────────────────────────┐
-│ [▦ Artifacts] [▤ Templates] [▥ Generated] │  view switcher · collapse ▸
+│ Artifacts            ⊕  ⬆  │ ⇤ │  the view's title and tools · the shell's collapse
+│ ⌕ Filter the Library…      ↕  │  filter · sort
 ├───────────────────────────────┤
-│ ⊕ ⌕ filter the Library… ↕ ⬆   │  this view's tools: new folder · filter · sort · upload
+│ ▾ 📂 Fieldwork            2  ⋯│  the user's folders, nested to any depth
+│ │ ▾ 📂 September          1  ⋯│  a guide hangs each folder's contents
+│ │ │ ▣  core.png                 │  artifact row: thumbnail, size, origin
+│ │ │    2.6 MB · uploaded        │
+│ │ ▸ 📁 Reports            0  ⋯│  an empty folder renders, and deletes
+│ ▣  field-notes.txt            │  an unfiled artifact sits at the root
+│                               │  the empty space below is the root: a drop target
 ├───────────────────────────────┤
-│ ▾ 📁 Fieldwork            2  ⋯│  the user's folders, nested to any depth
-│   ▾ 📁 September          1  ⋯│
-│     ▾ 📁 Raw photos       1  ⋯│
-│        ▣  core.png            │  artifact row: thumbnail, size, origin
-│           2.6 MB · uploaded   │
-│   ▸ 📁 Reports            0  ⋯│  an empty folder renders, and deletes
-│ ▣  field-notes.txt         ⋯  │  an unfiled artifact sits at the root
-├───────────────────────────────┤
-│ core.png                      │  the tile under the browser: the artifact itself
-│ /Fieldwork/September/Raw photos · file.png@1
+│ core.png                    × │  the tile under the browser: the artifact itself
+│ Library / Fieldwork / September · file.png@1 · 2.6 MB
 │ ┌───────────────────────────┐ │
 │ │   the image, or the head   │ │  image inline, text read from its URL,
 │ │   of the text file         │ │  nothing forced through a download
@@ -96,33 +99,36 @@ a slide-over with a backdrop and the shell stops reserving width.
 │ PROVENANCE                    │
 │ uploaded · core.png           │
 │ [Open original] [Execution…]  │
+├───────────────────────────────┤
+│ 5 artifacts · 3 folders       │  or "2 of 5 artifacts" under a filter
 └───────────────────────────────┘
 ```
 
-The toolbar is **per view**, not one shared strip: Artifacts offers new folder,
-filter, sort and upload; Templates offers its own filter and create; Generated
-offers refresh for the current canvas. Each view owns the row under the tabs,
-which is why the switcher has no idea what a folder is. `⋯` on a folder is new
-subfolder · rename · delete; on an artifact it is open original · copy link. The
+The header belongs to the view: Artifacts puts its title, new folder and upload
+there, and the shell adds only its collapse button at the end. Filter and sort
+sit on the row under it. `⋯` on a folder is new subfolder · rename · delete; on
+an artifact it is open original · copy link. With a mouse the `⋯` stays hidden
+until its row is hovered or keyboard-focused; on touch it is always there. The
 row's own click still means fold or unfold.
 
 ## 4. The seam
 
-The panel is one shell plus a fixed set of views:
+The panel is one shell and one view. `WorkbenchSidePanel` owns where the panel
+is (docked column or slide-over drawer), its width and the resizer, and hands
+the view one control for its header:
 
-```ts
-type SidePanelView = {
-  id: SidePanelViewId;      // "artifacts" | "templates" | "generated"
-  label: string;
-  icon: LucideIcon;
-  render: (context: SidePanelContext) => ReactNode;
-};
+```tsx
+<LibraryPanel workspaceId={…} onOpenRun={…} headerEnd={<CollapseButton />} />
+<GeneratedDrawer workspaceId={…} graphId={…} … headerEnd={<CollapseButton />} />
 ```
 
-`SIDE_PANEL_VIEWS` is a module-level array, not a registry. A view is a function
-that receives `{ workspace, workspaceId, onOpenGraph, onOpenRun }`. Adding a
-third view means adding one entry and one component; nothing else moves. There
-is no registration API, no provider, no ordering protocol — see [R41].
+The shell shows one of the two, whichever `view` (`"artifacts" | "generated"`)
+the rail last asked for. The rail's Artifacts and Generated items are the
+panel's only openers: each opens its view, or closes the panel when that view is
+already showing; see §5. The shell used to host a tab strip with a Templates
+view beside Artifacts. That tab was removed (2026-09-30) until Templates is
+ready to come back to the panel; the `/templates` routes are untouched. A third
+view brings back a switcher in the header, not a registry — see [R41].
 
 The Artifacts view keeps its own data seam one level down:
 
@@ -131,14 +137,22 @@ libraryFoldersApi.listTree(workspaceId)
    → { folders: LibraryFolder[], items: PlacedLibraryItem[] }   folder_id null = root
               │
               ▼
-  buildLibraryTree({folders, items, query, sort}) ──► LibraryTreeNode[]   (recursive)
+  buildLibraryTree({folders, items, query, sort}) ──► LibraryTreeNode[]   (recursive, each node knows its parentId)
               │
               ▼
-  flattenLibraryRows(roots, {collapsed})  ──► the order the panel paints, and the order the keyboard walks
+  flattenLibraryRows(roots, {collapsed})  ──► the order the keyboard walks, which is the order the tree paints
               │
               ▼
-  LibraryRow (recursive, role=tree / treeitem)
+  LibraryTree (role=tree) → FolderRow / FileRow (treeitem)
 ```
+
+| File | Holds |
+| --- | --- |
+| `LibraryPanel.tsx` | the data, every server call, the header, filter, drop region, notices and status line |
+| `LibraryTree.tsx` | rows, row menus, rename, keyboard walking; rows read the tree's state from one context |
+| `LibraryArtifactTile.tsx` | the tile, and the text preview that reads only the head of the bytes |
+| `library-tree.ts` | the projection and the text helpers; pure |
+| `library-drag.ts` | what a drag carries, read into one `LibraryDrop` the root and every row share |
 
 `libraryFoldersApi` (`src/lib/api/library-folders.ts`) is the whole contract:
 `listTree`, `createFolder`, `renameFolder`, `deleteFolder`, `moveFolder`,
@@ -183,10 +197,10 @@ graph LR
 - **Docked over overlay.** The panel takes layout space. Overlay chrome is for
   transient context (Run history, dialogs); the Library is a standing work
   surface and must be laid out like one.
-- **Tabs in the panel header, not a third column.** An activity-bar strip would
-  push the canvas past 400px of chrome before the first node. A segmented switcher
-  in the header keeps the unit two panes wide, which is what "double sidebar"
-  means here.
+- **Switch views in the panel header, not a third column.** An activity-bar
+  strip would push the canvas past 400px of chrome before the first node. With
+  one view there is no switcher at all; a tab strip of one tab is chrome that
+  says nothing.
 - **Folders belong to the user, not to the artifact types.** This reverses the
   acceptance line in `#79` that had the tree derived from
   `images/tables/text/models/other`: five folders the user never made are not a
@@ -204,34 +218,59 @@ graph LR
   moment it gained its first child, which hid the subfolder the user had just
   made; a tree this recursive is not worth an animation primitive.
 - **A row click means the row, a control click means the control.** The `⋯` menu
-  renders inside its row, so its items bubble through the row handler. Row
-  handlers ignore anything under `button, [role="button"], [role="menu"],
-  [role="menuitem"]`.
+  renders in a portal, but React bubbles its events through the row anyway. The
+  menu's wrapper stops clicks, keys and drags at the menu, so the row never
+  sees them.
 - **Every drop target accepts what it says it accepts.** The panel background is
   the root of the tree, so its `dragover` accepts uploads, artifacts and folders.
   `dragover` that never calls `preventDefault` means the `drop` never fires — an
-  artifact could be dragged into a folder but never back out.
+  artifact could be dragged into a folder but never back out. A drop on an
+  artifact row files into the folder that row sits in, and that folder lights up
+  while the drag is over it.
+- **A filter opens every folder.** A match folded away is a match hidden. While
+  a filter is on, folds are its own and are forgotten with it; the remembered
+  folds come back when it clears.
 - **The tile under the browser previews the artifact.** An image renders inline,
-  a text-ish artifact has its head read from the content URL, and the row states
-  the path (`/Fieldwork/September · file.csv@1`) so location survives a deep tree.
-- **The toolbar belongs to the view.** Artifacts, Templates, and Generated each
-  render their own tools under the tabs; the shell ships none.
+  a text-ish artifact has only its head read from the content URL (an error
+  response is never shown as the artifact's text), and the tile states where it
+  is filed (`Library / Fieldwork / September · file.csv@1 · 1.0 KB`) so location
+  survives a deep tree. × or Escape closes it; it never takes more than about
+  half the column.
+- **The tools belong to the view.** The view renders its own header row; the
+  shell adds only collapse.
 - **Drag stays the contract.** Rows carry `application/x-grafy-artifact` through
   `writeArtifactDrop`; the drop still resolves the port row under the cursor with
   `document.elementsFromPoint`, skipping portals.
 - **Keyboard first-class.** `role=tree` with `treeitem`, `aria-level`,
   `aria-expanded`; Arrow keys move, ArrowRight/Left expand and collapse, Home/End
-  jump, Enter selects. A file browser you cannot walk with the keyboard is a demo.
+  jump, Enter selects or folds, F2 renames, Escape closes the tile, and a letter
+  jumps to the next row that starts with it. A file browser you cannot walk with
+  the keyboard is a demo.
 - **Upload by click too.** Drag-and-drop alone excludes keyboard users; the
   header upload button posts the same two calls.
-- **Collapse is total.** Closed = unmounted. A 40px sliver that is neither open
-  nor closed is the worst of both.
+- **Collapse is total.** Closed means the contents are unmounted and the column
+  is parked behind the rail, hidden and inert. A 40px sliver that is neither
+  open nor closed is the worst of both.
+- **It opens from the rail.** The rail's Graphs section carries an Artifacts
+  item while a workbench is open (the workbench publishes `sidePanelOpen` and
+  `toggleSidePanel` through `WorkbenchChromeContext`, the way it publishes
+  Save). The canvas toolbar no longer has a panel button. On a phone the item
+  sits in the navigation drawer, which closes as the panel's drawer opens.
+- **It moves; it never blinks.** Docked, the column slides out from behind the
+  rail while the canvas edge eases over on the same clock
+  (`--grafy-side-panel-duration`, 200ms, and `--grafy-side-panel-ease`), and
+  slides back when closed. The column's box stays mounted so it starts moving
+  in the same frame as the canvas; its contents stay for the exit and then
+  unmount. When the rail folds, the column's left edge follows it on the
+  rail's clock, and the canvas follows too. The drawer slides in over a fading
+  backdrop and follows a swipe. Motion is off on first paint, during a resize
+  drag, and under `prefers-reduced-motion`.
 
 ## 6. Verification
 
 - `npm --prefix apps/web test` — the refusal codes mapped to the panel's errors,
   the recursive projection and filter, the panel (create, rename, fold, move,
-  preview, and a delete the server refuses), the shell, and both views.
+  preview, and a delete the server refuses), and the shell.
 - `npm --prefix apps/web run typecheck`, `npm --prefix apps/web run lint`.
 - `npm --prefix apps/web test:e2e` — the panel opens docked, takes width, folds
   and unfolds; a folder is created, nested, filled by drag, emptied and deleted;

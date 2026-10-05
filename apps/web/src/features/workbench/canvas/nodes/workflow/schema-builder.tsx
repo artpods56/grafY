@@ -2,12 +2,11 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { Handle, Position } from "@xyflow/react";
 import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-import { handleStyle } from "../../handle-style";
+import { CanvasPortBall } from "../CanvasNodeChrome";
 import { encodeHandleId } from "../../handles";
 import { reconcileSchemaFieldInputPlugs } from "../../input-plugs";
 import { artifactTypeColor } from "../../nodes.css";
@@ -353,11 +352,9 @@ export function SchemaBuilderBody({
                   )}
                 >
                   {consumesInput && inputPort ? (
-                    <Handle
-                      className="nodrag nowheel"
-                      type="target"
-                      position={Position.Left}
-                      id={encodeHandleId(
+                    <CanvasPortBall
+                      nodeId={id}
+                      handleId={encodeHandleId(
                         portMetaForPort(
                           inputPort,
                           inputPort.shape,
@@ -365,9 +362,12 @@ export function SchemaBuilderBody({
                           data.artifactTypeBindings,
                         ),
                       )}
-                      aria-label={`Nested schema for ${field.name || `field ${index + 1}`}`}
+                      side="input"
+                      color={handleColor}
+                      sequence
+                      centerY={19}
+                      ariaLabel={`Nested schema for ${field.name || `field ${index + 1}`}`}
                       title="Connect one JSON Schema output here."
-                      style={handleStyle("19px", handleColor, true)}
                     />
                   ) : null}
 

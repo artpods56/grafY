@@ -2,17 +2,26 @@ import * as React from "react";
 
 import { createUuid } from "@/features/workbench/model/uuid";
 
+import type { NodeSpec } from "@/lib/api";
+
 import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
+  artifactCardMediaHeight,
   artifactCardValue,
   cardArtifactRefs,
   originCarriesCardArtifacts,
   type ArtifactCardValue,
 } from "../canvas/artifact-card";
 import {
+  ARTIFACT_VIEWER_EDGE_TYPE,
+  ARTIFACT_VIEWER_INPUT_HANDLE,
   ARTIFACT_VIEWER_NODE_TYPE,
   type ArtifactViewerCanvasState,
+  type ArtifactViewerEdge,
+  type ArtifactViewerNode,
 } from "../canvas/artifact-viewer";
+import type { WorkflowNode } from "../canvas/nodes/workflow/node-type";
+import type { WorkflowEdge } from "../canvas/types";
 import type {
   AuthoredGraphOrigin,
   GraphCommand,
@@ -22,6 +31,31 @@ import {
   tidyArtifactCards,
   ungroupArtifactCard,
 } from "../model/artifact-grouping";
+import {
+  collectCardsCommands,
+  collectionMembers,
+  isCollectionNode,
+  ungroupCollectionDisabledReason,
+  ungroupedCollectionCards,
+  type CollectionSource,
+} from "../model/collection";
+import { createWorkflowNodeData } from "../canvas/types";
+
+/**
+ * What the card commands need to make and unmake collections. With the
+ * collection operator available, "Collect" gathers Library cards and cards on a
+ * node's output into one node instead of a card stack.
+ */
+export type CollectionCommandDeps = {
+  spec: NodeSpec | null;
+  /** Why the current selection cannot be collected, or null when it can. */
+  disabledReason: string | null;
+  sources: readonly CollectionSource[];
+  nodes: readonly WorkflowNode[];
+  edges: readonly WorkflowEdge[];
+  /** Called with the new collection's id, so the caller can select it. */
+  onCollected: (collectionId: string) => void;
+};
 
 export type ArtifactCardCommandDeps = {
   artifactViewers: ArtifactViewerCanvasState;
@@ -35,6 +69,7 @@ export type ArtifactCardCommandDeps = {
   ) => void;
   groupingDisabledReason: string | null;
   localAuthoringEnabled: boolean;
+  collection: CollectionCommandDeps;
 };
 
 /**
@@ -50,6 +85,7 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
     artifactViewers,
     authoredDocumentRef,
     commitArtifactViewers,
+    collection,
     groupingDisabledReason,
     localAuthoringEnabled,
   } = deps;
@@ -79,7 +115,29 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
   );
 
   const collectSelectedArtifacts = React.useCallback(() => {
-    if (!localAuthoringEnabled || groupingDisabledReason) return;
+    if (!localAuthoringEnabled) return;
+    if (collection.spec) {
+      if (collection.disabledReason) return;
+      const plan = collectCardsCommands({
+        sources: collection.sources,
+        nodes: collection.nodes,
+        collectSpec: collection.spec,
+        createNodeData: (spec, plugs) => createWorkflowNodeData(spec, plugs),
+      });
+      if (!plan) return;
+      const removed = new Set(plan.removedCardIds);
+      applyAuthoringCommands(plan.commands);
+      commitArtifactViewers((current) => ({
+        ...current,
+        nodes: current.nodes.filter((node) => !removed.has(node.id)),
+        edges: current.edges.filter(
+          (edge) => !removed.has(edge.source) && !removed.has(edge.target),
+        ),
+      }));
+      collection.onCollected(plan.collectionId);
+      return;
+    }
+    if (groupingDisabledReason) return;
     commitArtifactViewers((state) =>
       collectArtifactCards({
         state,
@@ -87,11 +145,88 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
       }),
     );
   }, [
+    applyAuthoringCommands,
     authoredDocumentRef,
+    collection,
     commitArtifactViewers,
     groupingDisabledReason,
     localAuthoringEnabled,
   ]);
+
+  /**
+   * A collection becomes its members again: Library members as cards holding
+   * their artifacts, output members as cards following that output.
+   */
+  const ungroupCollection = React.useCallback(
+    (nodeId: string) => {
+      const node = collection.nodes.find(
+        (candidate) => candidate.id === nodeId,
+      );
+      if (
+        !node ||
+        !isCollectionNode(node) ||
+        ungroupCollectionDisabledReason(nodeId, collection.edges)
+      ) {
+        return;
+      }
+      const cards = ungroupedCollectionCards(
+        node.position,
+        collectionMembers(
+          node,
+          collection.nodes,
+          collection.edges,
+          authoredDocumentRef.current.origins,
+        ),
+        DEFAULT_ARTIFACT_CARD_WIDTH,
+        artifactCardMediaHeight(DEFAULT_ARTIFACT_CARD_WIDTH),
+      );
+      applyAuthoringCommands([{ kind: "remove_nodes", node_ids: [nodeId] }]);
+      const added = cards.map((card) => ({
+        card,
+        id: `artifact-viewer-${createUuid()}`,
+      }));
+      commitArtifactViewers((current) => ({
+        ...current,
+        nodes: [
+          ...current.nodes.map((viewer) => ({ ...viewer, selected: false })),
+          ...added.map(({ card, id }): ArtifactViewerNode => ({
+            id,
+            type: ARTIFACT_VIEWER_NODE_TYPE,
+            position: card.position,
+            selected: true,
+            data:
+              card.kind === "library"
+                ? { layout: null, mode: null, artifactRef: card.value }
+                : { layout: null, mode: "artifact", artifactRef: null },
+          })),
+        ],
+        edges: [
+          ...current.edges,
+          ...added.flatMap(({ card, id }): ArtifactViewerEdge[] =>
+            card.kind === "output"
+              ? [
+                  {
+                    id: `artifact-viewer-edge-${createUuid()}`,
+                    type: ARTIFACT_VIEWER_EDGE_TYPE,
+                    source: card.sourceNodeId,
+                    target: id,
+                    targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
+                    data: { sourcePortName: card.sourcePortName },
+                  },
+                ]
+              : [],
+          ),
+        ],
+      }));
+    },
+    [
+      applyAuthoringCommands,
+      authoredDocumentRef,
+      collection.edges,
+      collection.nodes,
+      commitArtifactViewers,
+    ],
+  );
 
   const ungroupArtifacts = React.useCallback(
     (nodeId: string) => {
@@ -160,6 +295,7 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
     collectSelectedArtifacts,
     tidySelectedArtifacts,
     ungroupArtifacts,
+    ungroupCollection,
     updateArtifactCardRefs,
   };
 }

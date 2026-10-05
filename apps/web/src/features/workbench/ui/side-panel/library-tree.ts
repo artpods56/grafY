@@ -17,20 +17,20 @@ export type LibraryFileIcon = "image" | "table" | "text" | "model" | "other";
 export type LibraryFileNode = {
   kind: "file";
   key: string;
+  /** The folder this artifact sits in, or null at the root. */
+  parentId: string | null;
   depth: number;
   icon: LibraryFileIcon;
   item: PlacedLibraryItem;
-  /** True when the active filter matches this artifact. */
-  matched: boolean;
 };
 
 export type LibraryFolderNode = {
   kind: "folder";
   key: string;
+  parentId: string | null;
   id: string;
   depth: number;
   name: string;
-  parentId: string | null;
   /** Child folders and artifacts, folders first, in display order. */
   nodes: LibraryTreeNode[];
   /** Artifacts under this folder at any depth. */
@@ -49,10 +49,34 @@ export function libraryFileKey(artifactId: string): string {
   return `file:${artifactId}`;
 }
 
+const ICON_BY_ARTIFACT_TYPE: Readonly<Record<string, LibraryFileIcon>> = {
+  "image.raster": "image",
+  "image.pixmap": "image",
+  "geo.raster_scan": "image",
+
+  "table.data": "table",
+  "table.csv": "table",
+  "geo.feature_collection": "table",
+
+  "text.txt": "text",
+  "scalar.text": "text",
+  "document.page": "text",
+
+  "model.artifact": "model",
+  "model.weights": "model",
+  "model.embedding": "model",
+  "module.reference": "model",
+  "graph.reference": "model",
+};
+
 function artifactTypeId(item: PlacedLibraryItem): string {
   return (
     item.artifact.artifact_type.split("@")[0] ?? item.artifact.artifact_type
   );
+}
+
+function contentTypeOf(item: PlacedLibraryItem): string {
+  return (item.artifact.content_type ?? "").toLowerCase();
 }
 
 /**
@@ -61,47 +85,33 @@ function artifactTypeId(item: PlacedLibraryItem): string {
  */
 export function libraryFileIcon(item: PlacedLibraryItem): LibraryFileIcon {
   if (isItemImage(item)) return "image";
-  const byType: Record<string, LibraryFileIcon> = {
-    "image.raster": "image",
-    "image.pixmap": "image",
-    "geo.raster_scan": "image",
-
-    "table.data": "table",
-    "table.csv": "table",
-    "geo.feature_collection": "table",
-
-    "text.txt": "text",
-    "scalar.text": "text",
-    "document.page": "text",
-
-    "model.artifact": "model",
-    "model.weights": "model",
-    "model.embedding": "model",
-    "module.reference": "model",
-    "graph.reference": "model",
-  };
-  const mapped = byType[artifactTypeId(item)];
+  const mapped = ICON_BY_ARTIFACT_TYPE[artifactTypeId(item)];
   if (mapped) return mapped;
-  const contentType = (item.artifact.content_type ?? "").toLowerCase();
-  if (contentType.startsWith("image/")) return "image";
+  const contentType = contentTypeOf(item);
   if (
     contentType.startsWith("text/csv") ||
     contentType.includes("tab-separated")
   ) {
     return "table";
   }
-  if (
-    contentType.startsWith("text/") ||
-    contentType === "application/json" ||
-    contentType.endsWith("+json")
-  ) {
-    return "text";
-  }
+  if (isItemText(item)) return "text";
   return "other";
 }
 
 export function isItemImage(item: PlacedLibraryItem): boolean {
-  return (item.artifact.content_type ?? "").toLowerCase().startsWith("image/");
+  return contentTypeOf(item).startsWith("image/");
+}
+
+/** Bytes a browser can show as text: the preview reads the head of these. */
+export function isItemText(item: PlacedLibraryItem): boolean {
+  const contentType = contentTypeOf(item);
+  return (
+    contentType.startsWith("text/") ||
+    contentType === "application/json" ||
+    contentType.endsWith("+json") ||
+    contentType === "application/csv" ||
+    contentType === "application/x-ndjson"
+  );
 }
 
 function matchesQuery(item: PlacedLibraryItem, needle: string): boolean {
@@ -114,10 +124,6 @@ function matchesQuery(item: PlacedLibraryItem, needle: string): boolean {
     .join(" ")
     .toLowerCase();
   return needle.split(/\s+/).every((term) => haystack.includes(term));
-}
-
-function folderMatches(folder: LibraryFolder, needle: string): boolean {
-  return folder.name.toLowerCase().includes(needle);
 }
 
 function byName(a: { name: string }, b: { name: string }): number {
@@ -133,6 +139,20 @@ function byRecent(a: PlacedLibraryItem, b: PlacedLibraryItem): number {
   return saved !== 0 ? saved : byName(a, b);
 }
 
+function groupBy<T>(
+  values: readonly T[],
+  keyOf: (value: T) => string | null,
+): Map<string | null, T[]> {
+  const groups = new Map<string | null, T[]>();
+  for (const value of values) {
+    const key = keyOf(value);
+    const group = groups.get(key);
+    if (group) group.push(value);
+    else groups.set(key, [value]);
+  }
+  return groups;
+}
+
 export function buildLibraryTree(input: {
   folders: readonly LibraryFolder[];
   items: readonly PlacedLibraryItem[];
@@ -140,83 +160,74 @@ export function buildLibraryTree(input: {
   sort?: LibrarySort;
 }): LibraryTreeNode[] {
   const needle = (input.query ?? "").trim().toLowerCase();
-  const sort = input.sort ?? "name";
+  const itemOrder = input.sort === "recent" ? byRecent : byName;
 
-  const childFolders = new Map<string | null, LibraryFolder[]>();
-  for (const folder of input.folders) {
-    const siblings = childFolders.get(folder.parent_id) ?? [];
-    siblings.push(folder);
-    childFolders.set(folder.parent_id, siblings);
-  }
   const knownFolders = new Set(input.folders.map((folder) => folder.folder_id));
-  const childItems = new Map<string | null, PlacedLibraryItem[]>();
-  for (const item of input.items) {
-    // An artifact filed somewhere that is no longer in the tree sits at the root.
-    const folderId =
-      item.folder_id !== null && knownFolders.has(item.folder_id)
-        ? item.folder_id
-        : null;
-    const siblings = childItems.get(folderId) ?? [];
-    siblings.push(item);
-    childItems.set(folderId, siblings);
-  }
+  const childFolders = groupBy(input.folders, (folder) => folder.parent_id);
+  // An artifact filed somewhere that is no longer in the tree sits at the root.
+  const childItems = groupBy(input.items, (item) =>
+    item.folder_id !== null && knownFolders.has(item.folder_id)
+      ? item.folder_id
+      : null,
+  );
 
-  type Built = { node: LibraryFolderNode; selfMatches: boolean };
+  function fileNodes(
+    folderId: string | null,
+    depth: number,
+    revealed: boolean,
+  ): LibraryFileNode[] {
+    return [...(childItems.get(folderId) ?? [])]
+      .sort(itemOrder)
+      .filter((item) => revealed || matchesQuery(item, needle))
+      .map((item) => ({
+        kind: "file",
+        key: libraryFileKey(item.artifact.artifact_id),
+        parentId: folderId,
+        depth,
+        icon: libraryFileIcon(item),
+        item,
+      }));
+  }
 
   /**
-   * Builds one folder under `revealedByAncestor`. A folder whose name matches
-   * is revealed whole — that is the folder the user asked for — while a folder
-   * that only holds matches is kept as a path to them.
+   * Builds one folder, or nothing when the filter leaves it empty. A folder
+   * whose name matches is revealed whole — that is the folder the user asked
+   * for — while a folder that only holds matches is kept as a path to them.
    */
-  function build(
+  function folderNode(
     folder: LibraryFolder,
     depth: number,
     revealedByAncestor: boolean,
-  ): Built {
-    const selfMatches = needle === "" || folderMatches(folder, needle);
+  ): { node: LibraryFolderNode; shown: boolean } {
+    const selfMatches =
+      needle === "" || folder.name.toLowerCase().includes(needle);
     const revealed = revealedByAncestor || selfMatches;
-    const foldersHere = [...(childFolders.get(folder.folder_id) ?? [])].sort(
-      byName,
-    );
-    const itemsHere = [...(childItems.get(folder.folder_id) ?? [])].sort(
-      sort === "recent" ? byRecent : byName,
-    );
+    const key = libraryFolderKey(folder.folder_id);
 
     const nodes: LibraryTreeNode[] = [];
-    let total = itemsHere.length;
+    let total = childItems.get(folder.folder_id)?.length ?? 0;
     let matched = 0;
-
-    for (const child of foldersHere) {
-      const built = build(child, depth + 1, revealed);
+    for (const child of [...(childFolders.get(folder.folder_id) ?? [])].sort(
+      byName,
+    )) {
+      const built = folderNode(child, depth + 1, revealed);
       total += built.node.total;
       matched += built.node.matched;
-      if (revealed || built.node.matched > 0 || built.selfMatches) {
-        nodes.push(built.node);
-      }
+      if (built.shown) nodes.push(built.node);
     }
-    for (const item of itemsHere) {
-      const itemMatches = revealed || matchesQuery(item, needle);
-      if (!itemMatches) continue;
-      matched += 1;
-      nodes.push({
-        kind: "file",
-        key: libraryFileKey(item.artifact.artifact_id),
-        depth: depth + 1,
-        icon: libraryFileIcon(item),
-        item,
-        matched: itemMatches,
-      });
-    }
+    const files = fileNodes(folder.folder_id, depth + 1, revealed);
+    matched += files.length;
+    nodes.push(...files);
 
     return {
-      selfMatches,
+      shown: revealed || matched > 0,
       node: {
         kind: "folder",
-        key: libraryFolderKey(folder.folder_id),
+        key,
+        parentId: folder.parent_id,
         id: folder.folder_id,
         depth,
         name: folder.name,
-        parentId: folder.parent_id,
         nodes,
         total,
         matched,
@@ -224,28 +235,13 @@ export function buildLibraryTree(input: {
     };
   }
 
-  const roots = [...(childFolders.get(null) ?? [])]
+  const rootFolders = [...(childFolders.get(null) ?? [])]
     .sort(byName)
-    .map((folder) => build(folder, 0, false))
-    .filter(
-      ({ node, selfMatches }) =>
-        needle === "" || selfMatches || node.matched > 0,
-    )
+    .map((folder) => folderNode(folder, 0, false))
+    .filter(({ shown }) => shown)
     .map(({ node }) => node);
 
-  const rootItems = [...(childItems.get(null) ?? [])]
-    .sort(sort === "recent" ? byRecent : byName)
-    .filter((item) => matchesQuery(item, needle))
-    .map((item) => ({
-      kind: "file" as const,
-      key: libraryFileKey(item.artifact.artifact_id),
-      depth: 0,
-      icon: libraryFileIcon(item),
-      item,
-      matched: true,
-    }));
-
-  return [...roots, ...rootItems];
+  return [...rootFolders, ...fileNodes(null, 0, false)];
 }
 
 /**
@@ -266,12 +262,12 @@ export function flattenLibraryRows(
   return rows;
 }
 
-/** Every artifact in the tree, however deeply filed. */
+/** The artifacts the tree shows, however deeply filed. */
 export function countLibraryArtifacts(
   roots: readonly LibraryTreeNode[],
 ): number {
   return roots.reduce(
-    (total, node) => total + (node.kind === "folder" ? node.total : 1),
+    (count, node) => count + (node.kind === "folder" ? node.matched : 1),
     0,
   );
 }
@@ -329,17 +325,39 @@ export function libraryFileSubtitle(item: PlacedLibraryItem): string {
   return size ? `${size} · ${origin}` : origin;
 }
 
+/** "New folder", or the first "New folder N" no sibling already uses. */
+export function uniqueLibraryFolderName(
+  folders: readonly LibraryFolder[],
+  parentId: string | null,
+): string {
+  // Sibling names are unique without regard to case, as the server keeps them.
+  const taken = new Set(
+    folders
+      .filter((folder) => folder.parent_id === parentId)
+      .map((folder) => folder.name.toLowerCase()),
+  );
+  let name = "New folder";
+  for (let suffix = 2; taken.has(name.toLowerCase()); suffix += 1) {
+    name = `New folder ${suffix}`;
+  }
+  return name;
+}
+
 /** Where a row sits in the tree, outermost first — the path under the name. */
 export function libraryFolderPath(
   folders: readonly LibraryFolder[],
   folderId: string | null,
 ): string[] {
+  const byId = new Map(folders.map((folder) => [folder.folder_id, folder]));
   const path: string[] = [];
-  let current = folders.find((folder) => folder.folder_id === folderId);
-  while (current) {
+  // The visited set only guards a corrupt listing; the server forbids cycles.
+  const visited = new Set<string>();
+  let current = folderId === null ? undefined : byId.get(folderId);
+  while (current && !visited.has(current.folder_id)) {
+    visited.add(current.folder_id);
     path.unshift(current.name);
-    const parentId = current.parent_id;
-    current = folders.find((folder) => folder.folder_id === parentId);
+    current =
+      current.parent_id === null ? undefined : byId.get(current.parent_id);
   }
   return path;
 }

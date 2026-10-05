@@ -24,6 +24,8 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const testState = vi.hoisted(() => ({
   pathname: "/workspaces/operations/graphs/graph-a",
   push: vi.fn(),
+  /** What an open workbench publishes to the rail; null with none open. */
+  chrome: null as Record<string, unknown> | null,
   savedGraphs: [] as Array<{
     id: string;
     name: string;
@@ -82,7 +84,7 @@ vi.mock("@/features/auth/AuthSessionBoundary", () => ({
 }));
 
 vi.mock("@/features/workbench/ui/WorkbenchChromeContext", () => ({
-  useWorkbenchChrome: () => null,
+  useWorkbenchChrome: () => testState.chrome,
 }));
 
 vi.mock("@/hooks/use-api", () => ({
@@ -106,6 +108,7 @@ afterEach(async () => {
   testState.pathname = "/workspaces/operations/graphs/graph-a";
   testState.push.mockReset();
   testState.savedGraphs = [];
+  testState.chrome = null;
   vi.unstubAllGlobals();
 });
 
@@ -375,6 +378,49 @@ describe("workspace rail route lifecycle", () => {
     expect(testState.push).toHaveBeenCalledWith(
       "/workspaces/operations/settings",
     );
+  });
+
+  it("offers the Artifacts panel only while a workbench is open", async () => {
+    const artifactsButton = (container: HTMLElement) =>
+      [...container.querySelectorAll("button")].find(
+        (button) => button.textContent?.trim() === "Artifacts",
+      );
+
+    const { container, rerender } = await renderWorkspaceRail();
+    expect(artifactsButton(container)).toBeUndefined();
+
+    const toggleSidePanel = vi.fn();
+    testState.chrome = {
+      activeGraphId: "graph-a",
+      graphName: "Graph A",
+      isDirty: false,
+      saving: false,
+      canSave: false,
+      save: vi.fn(),
+      renameGraph: vi.fn(),
+      deleteGraph: vi.fn(),
+      sidePanelOpen: false,
+      toggleSidePanel,
+      generatedPanelOpen: false,
+      toggleGeneratedPanel: vi.fn(),
+    };
+    await rerender();
+    const button = artifactsButton(container);
+    expect(button?.getAttribute("aria-expanded")).toBe("false");
+    expect(button?.className).not.toContain("is-active");
+
+    await act(async () => button?.click());
+    expect(toggleSidePanel).toHaveBeenCalledTimes(1);
+
+    testState.chrome = { ...testState.chrome, sidePanelOpen: true };
+    await rerender();
+    expect(artifactsButton(container)?.getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+    expect(artifactsButton(container)?.getAttribute("aria-controls")).toBe(
+      "grafy-side-panel",
+    );
+    expect(artifactsButton(container)?.className).toContain("is-active");
   });
 
   it("does not reopen a mobile drawer after navigating away and back", async () => {

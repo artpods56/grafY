@@ -16,16 +16,29 @@ const xyflowMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@xyflow/react", () => ({
-  Handle: ({ id, isConnectable }: { id: string; isConnectable: boolean }) => (
+  useNodeId: () => null,
+  Handle: ({
+    id,
+    isConnectable,
+    children,
+  }: {
+    id: string;
+    isConnectable: boolean;
+    children?: React.ReactNode;
+  }) => (
     <span
       data-testid="compatibility-handle"
       data-handle-id={id}
       data-connectable={String(isConnectable)}
-    />
+    >
+      {children}
+    </span>
   ),
   Position: { Left: "left", Right: "right" },
   useEdges: () => [],
   useNodeConnections: () => [],
+  useConnection: (selector: (state: { inProgress: boolean }) => unknown) =>
+    selector({ inProgress: false }),
   useStore: (
     selector: (state: {
       edges: unknown[];
@@ -70,6 +83,42 @@ vi.mock("./TextareaBodyResizeHandle", () => ({
       aria-label={ariaLabel}
     />
   ),
+}));
+
+vi.mock("@base-ui/react/menu", () => ({
+  Menu: {
+    Root: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Trigger: ({
+      children,
+      ...props
+    }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
+    Portal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Positioner: ({ children }: { children: React.ReactNode }) => (
+      <>{children}</>
+    ),
+    Popup: ({ children }: { children: React.ReactNode }) => (
+      <div role="menu">{children}</div>
+    ),
+    Group: ({ children }: { children: React.ReactNode }) => (
+      <div role="group">{children}</div>
+    ),
+    GroupLabel: ({ children }: { children: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
+    Separator: () => <hr />,
+    Item: ({
+      children,
+      ...props
+    }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
+  },
 }));
 
 vi.mock("@base-ui/react/popover", () => ({
@@ -415,7 +464,9 @@ function chatCompletionSpec(): NodeSpec {
 
 function sequenceCollectSpec(): NodeSpec {
   return {
-    operator_id: "sequence.collect",
+    // Collections render as artifact stacks; any generic operator shows the
+    // type-binding row.
+    operator_id: "sequence.slice",
     operator_version: 1,
     plugin_slug: "sequence",
     origin: "builtin",
@@ -518,7 +569,7 @@ describe("WorkflowNode pickup", () => {
 
     expect(
       node.container
-        .querySelector('[data-node-pickup-shadow="true"]')
+        .querySelector('[data-canvas-node-shell="true"]')
         ?.getAttribute("data-picked-up"),
     ).toBe("false");
     xyflowMocks.updateNodeInternals.mockClear();
@@ -537,7 +588,7 @@ describe("WorkflowNode pickup", () => {
     });
     expect(
       node.container
-        .querySelector('[data-node-pickup-shadow="true"]')
+        .querySelector('[data-canvas-node-shell="true"]')
         ?.getAttribute("data-picked-up"),
     ).toBe("true");
     // Option C rides a 200ms spring; handles remeasure per frame while it
@@ -562,7 +613,7 @@ describe("WorkflowNode pickup", () => {
     });
     expect(
       node.container
-        .querySelector('[data-node-pickup-shadow="true"]')
+        .querySelector('[data-canvas-node-shell="true"]')
         ?.getAttribute("data-dragging"),
     ).toBe("true");
     // A real drag snaps the spring and remeasures immediately for the drag loop.
@@ -577,7 +628,7 @@ describe("WorkflowNode pickup", () => {
     const second = renderNode("text-b", data, true);
 
     const plateOf = (node: { container: HTMLElement }) =>
-      node.container.querySelector('[data-node-pickup-shadow="true"]');
+      node.container.querySelector('[data-canvas-node-shell="true"]');
     expect(plateOf(first)?.getAttribute("data-dragging")).toBe("false");
     expect(plateOf(second)?.getAttribute("data-dragging")).toBe("false");
 
@@ -1671,6 +1722,16 @@ describe("WorkflowNode artifact drop rows", () => {
   });
 });
 
+/**
+ * The type menus the ports' balls open, each as its choices (the mocked menu
+ * renders inline, so every ball's menu is present).
+ */
+function typeMenus(container: HTMLElement) {
+  return [...container.querySelectorAll('[role="menu"]')].map((menu) => [
+    ...menu.querySelectorAll("button"),
+  ]);
+}
+
 describe("WorkflowNode artifact type binding", () => {
   it("binds an artifact type variable from the node card instead of connect only", () => {
     const onBindArtifactTypeBinding = vi.fn();
@@ -1685,27 +1746,59 @@ describe("WorkflowNode artifact type binding", () => {
     };
     const { container } = renderNode("collect", data);
 
-    const select = container.querySelector<HTMLSelectElement>(
-      'select[aria-label="Bind artifact type T"]',
-    );
-    expect(select).not.toBeNull();
-    expect(select?.disabled).toBe(false);
-    expect([...select!.options].map((option) => option.textContent)).toEqual([
-      "Any artifact · binds on connect",
+    // The ball opens the choices; its ring is dashed while the type is open.
+    const [options = []] = typeMenus(container);
+    expect(options.map((option) => option.textContent)).toEqual([
+      "Any type",
       "file.jpeg@1",
       "file.png@1",
       "image.raster@1",
     ]);
+    expect(container.querySelector('[data-port-open="true"]')).not.toBeNull();
 
     React.act(() => {
-      select!.value = "file.jpeg@1";
-      select!.dispatchEvent(new Event("change", { bubbles: true }));
+      options[1]?.click();
     });
 
     expect(onBindArtifactTypeBinding).toHaveBeenCalledWith("collect", "T", {
       id: "file.jpeg",
       schema_version: 1,
     });
+  });
+
+  it("puts each generic port's type choice on that port", () => {
+    const generic = (name: string, variable: string) => ({
+      name,
+      title: name,
+      description: null,
+      direction: "input" as const,
+      artifact_type: null,
+      artifact_type_variable: variable,
+      shape: "one" as const,
+      accepted_shapes: ["one" as const],
+      instance_plugs: false,
+      variadic: false,
+      required: true,
+    });
+    const spec = {
+      ...sequenceCollectSpec(),
+      operator_id: "test.pair",
+      title: "Pair",
+      inputs: [generic("left", "L"), generic("right", "R")],
+    };
+    const data = {
+      ...createWorkflowNodeData(spec),
+      onBindArtifactTypeBinding: vi.fn(),
+      bindableArtifactTypes: [{ id: "file.png", schema_version: 1 }],
+    };
+    const { container } = renderNode("pair", data);
+
+    // One choice per port, and no separate type row on the node.
+    // Each port's ball opens its own choice.
+    expect(typeMenus(container)).toHaveLength(2);
+    expect(
+      container.querySelector('[aria-label="Generic artifact types"]'),
+    ).toBeNull();
   });
 
   it("offers only claimed file formats as the interpret node's format", () => {
@@ -1722,16 +1815,9 @@ describe("WorkflowNode artifact type binding", () => {
     };
     const { container } = renderNode("interpret", data);
 
-    const select = container.querySelector<HTMLSelectElement>(
-      'select[aria-label="Bind artifact type format"]',
-    );
-
-    expect(select).not.toBeNull();
-    expect([...select!.options].map((option) => option.value)).toEqual([
-      "",
-      "file.jpeg@1",
-      "file.png@1",
-    ]);
+    expect(
+      typeMenus(container)[0]?.map((option) => option.textContent),
+    ).toEqual(["Any type", "file.jpeg@1", "file.png@1"]);
   });
 
   it("keeps the static type row when no binding options are supplied", () => {
@@ -1740,10 +1826,10 @@ describe("WorkflowNode artifact type binding", () => {
       createWorkflowNodeData(sequenceCollectSpec()),
     );
 
-    expect(
-      container.querySelector('select[aria-label="Bind artifact type T"]'),
-    ).toBeNull();
-    expect(container.textContent).toContain("Any artifact · binds on connect");
+    // With nothing to choose from, the ball opens no menu but still reads
+    // as open.
+    expect(typeMenus(container)).toHaveLength(0);
+    expect(container.querySelector('[data-port-open="true"]')).not.toBeNull();
   });
 });
 

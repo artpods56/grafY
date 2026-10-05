@@ -144,7 +144,8 @@ describe("useShellGridFill", () => {
     expect(latest?.frameStyle.minHeight).toBe(350);
     expect(latest?.frameStyle.padding).toBe(GRID_SHELL_GUTTER);
     expect(latest?.shellStyle.width).toBe("100%");
-    expect(latest?.shellStyle.height).toBe("100%");
+    // The plate fills the rest of the frame column under the name row.
+    expect(latest?.shellStyle.flex).toBe("1 1 auto");
     expect(latest?.gutter).toBe(GRID_SHELL_GUTTER);
     expect(latest?.paintWidth).toBe(300 - GRID_SHELL_GUTTER * 2);
 
@@ -293,7 +294,7 @@ describe("useShellGridFill", () => {
 
     expect(styles.at(-1)?.frameStyle.height).toBeUndefined();
     expect(styles.at(-1)?.frameStyle.minHeight).toBeUndefined();
-    expect(styles.at(-1)?.shellStyle.height).toBeUndefined();
+    expect(styles.at(-1)?.shellStyle.flex).toBeUndefined();
     expect(styles.at(-1)?.gutter).toBe(0);
   });
 });

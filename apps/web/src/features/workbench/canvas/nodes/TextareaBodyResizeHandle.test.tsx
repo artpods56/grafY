@@ -12,6 +12,7 @@ vi.mock("@stylexjs/stylex", () => ({
 }));
 
 vi.mock("@xyflow/react", () => ({
+  useNodeId: () => null,
   useViewport: () => ({ zoom: 1, x: 0, y: 0 }),
 }));
 

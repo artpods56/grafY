@@ -4,6 +4,8 @@ import * as React from "react";
 import { Popover } from "@base-ui/react/popover";
 import {
   ChevronsUpDown,
+  FolderTree,
+  Layers,
   LoaderCircle,
   LogOut,
   Mail,
@@ -32,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { useAuthSession } from "@/features/auth/AuthSessionBoundary";
 import { useWorkbenchChrome } from "@/features/workbench/ui/WorkbenchChromeContext";
+import { SIDE_PANEL_ELEMENT_ID } from "@/features/workbench/ui/side-panel/workbench-side-panel-state";
 import {
   NEW_GRAPH_ROUTE_ID,
   workbenchGraphPath,
@@ -931,6 +934,50 @@ export function WorkspaceRail({
                     ? "Save"
                     : "Saved"}
               </span>
+            </button>
+          ) : null}
+          {activeWorkspace && chrome ? (
+            <button
+              type="button"
+              className={`grafy-workspace-rail__item${chrome.sidePanelOpen ? " is-active" : ""}`}
+              title={chrome.sidePanelOpen ? "Hide artifacts" : "Show artifacts"}
+              aria-expanded={chrome.sidePanelOpen}
+              aria-controls={
+                chrome.sidePanelOpen ? SIDE_PANEL_ELEMENT_ID : undefined
+              }
+              data-side-panel-toggle=""
+              onClick={() => {
+                // On a phone the navigation drawer gives way to the panel's own.
+                closeMobileNavigation(false);
+                chrome.toggleSidePanel();
+              }}
+            >
+              <FolderTree size={15} aria-hidden="true" />
+              <span>Artifacts</span>
+            </button>
+          ) : null}
+          {activeWorkspace && chrome ? (
+            <button
+              type="button"
+              className={`grafy-workspace-rail__item${chrome.generatedPanelOpen ? " is-active" : ""}`}
+              aria-label="Generated artifacts"
+              title={
+                chrome.generatedPanelOpen
+                  ? "Hide generated artifacts"
+                  : "Show Run artifacts from this canvas"
+              }
+              aria-expanded={chrome.generatedPanelOpen}
+              aria-controls={
+                chrome.generatedPanelOpen ? SIDE_PANEL_ELEMENT_ID : undefined
+              }
+              data-side-panel-toggle=""
+              onClick={() => {
+                closeMobileNavigation(false);
+                chrome.toggleGeneratedPanel();
+              }}
+            >
+              <Layers size={15} aria-hidden="true" />
+              <span>Generated</span>
             </button>
           ) : null}
         </nav>

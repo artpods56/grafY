@@ -1,3 +1,5 @@
+import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
+
 import {
   connectionRoutesFor,
   encodeHandleId,
@@ -8,40 +10,29 @@ import {
   portHasInstancePlugs,
   portMetaForPort,
 } from "../../canvas/types";
-import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
 import { catalogNodeKey, sortCatalogNodes } from "../../model/node-catalog";
 
-export const MODULE_PLUGIN_SLUG = "graph.module";
+/**
+ * What else in the catalog can be wired to one port of the inspected node, and
+ * how: the "Works with" list. Routes come from the same resolver canvas wiring
+ * uses, so a suggestion here is an edge the canvas will accept.
+ */
 
 export interface CompatibleNode {
   spec: NodeSpec;
+  /** "Text → Values · map each item · As text": the first route, in words. */
   routeSummary: string;
   additionalRouteCount: number;
 }
 
-export interface CompatiblePortPair {
+interface CompatiblePortPair {
   source: Port;
   target: Port;
   route: ConnectionRoute;
   routeCount: number;
 }
 
-export function nodeKey(spec: NodeSpec): string {
-  return catalogNodeKey(spec);
-}
-
-export function pluginFor(
-  registry: NodeRegistry,
-  slug: string,
-): NodeRegistry["plugins"][number] {
-  const plugin = registry.plugins.find((candidate) => candidate.slug === slug);
-  if (!plugin) {
-    throw new Error(`Node registry is missing owner plugin "${slug}".`);
-  }
-  return plugin;
-}
-
-export function shapesAreCompatible(source: Port, target: Port): boolean {
+function shapesAreCompatible(source: Port, target: Port): boolean {
   const acceptedShapes = acceptedPortShapes(target);
   return (
     acceptedShapes.includes(source.shape) ||
@@ -51,7 +42,7 @@ export function shapesAreCompatible(source: Port, target: Port): boolean {
   );
 }
 
-export function routeTitle(route: ConnectionRoute): string | null {
+function routeTitle(route: ConnectionRoute): string | null {
   const conversionTitle = route.conversionPath
     .map((conversion) => conversion.title)
     .join(" → ");
@@ -63,7 +54,7 @@ export function routeTitle(route: ConnectionRoute): string | null {
   return null;
 }
 
-export function compatiblePortPairs(
+function compatiblePortPairs(
   sourceSpec: NodeSpec,
   targetSpec: NodeSpec,
   registry: NodeRegistry,
@@ -88,14 +79,22 @@ export function compatiblePortPairs(
   return pairs;
 }
 
+function transportLabel(pair: CompatiblePortPair): string {
+  if (portHasInstancePlugs(pair.target)) return "direct to ordered input";
+  return acceptedPortShapes(pair.target).includes(pair.source.shape)
+    ? "direct"
+    : "map each item";
+}
+
+/** Catalog nodes that connect to `port` of `selected`, in catalog order. */
 export function compatibleNodesForPort(
   selected: NodeSpec,
   port: Port,
   registry: NodeRegistry,
 ): CompatibleNode[] {
-  const selectedKey = nodeKey(selected);
-  const matches = registry.nodes.flatMap((candidate) => {
-    if (nodeKey(candidate) === selectedKey) return [];
+  const selectedKey = catalogNodeKey(selected);
+  const matches = registry.nodes.flatMap((candidate): CompatibleNode[] => {
+    if (catalogNodeKey(candidate) === selectedKey) return [];
     const pairs =
       port.direction === "input"
         ? compatiblePortPairs(candidate, selected, registry).filter(
@@ -107,16 +106,10 @@ export function compatibleNodesForPort(
     const first = pairs[0];
     if (!first) return [];
 
-    const transport = portHasInstancePlugs(first.target)
-      ? "direct to ordered input"
-      : acceptedPortShapes(first.target).includes(first.source.shape)
-        ? "direct"
-        : "map each item";
-    const transformation = routeTitle(first.route);
     const routeSummary = [
       `${first.source.title ?? first.source.name} → ${first.target.title ?? first.target.name}`,
-      transport,
-      transformation,
+      transportLabel(first),
+      routeTitle(first.route),
     ]
       .filter((value): value is string => Boolean(value))
       .join(" · ");
@@ -134,13 +127,13 @@ export function compatibleNodesForPort(
   });
   const order = new Map(
     sortCatalogNodes(matches.map((match) => match.spec)).map((spec, index) => [
-      nodeKey(spec),
+      catalogNodeKey(spec),
       index,
     ]),
   );
   return matches.sort(
     (left, right) =>
-      (order.get(nodeKey(left.spec)) ?? 0) -
-      (order.get(nodeKey(right.spec)) ?? 0),
+      (order.get(catalogNodeKey(left.spec)) ?? 0) -
+      (order.get(catalogNodeKey(right.spec)) ?? 0),
   );
 }

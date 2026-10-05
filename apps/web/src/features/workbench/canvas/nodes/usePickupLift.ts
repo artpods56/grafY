@@ -227,3 +227,37 @@ export function usePickupLift({
 
   return { tier, pickedUp, draggedTier, liftRef, holdHandlers };
 }
+
+/**
+ * Keep React Flow's handle bounds current while ports slide by CSS alone:
+ * whenever `motion` changes, remeasure next frame and again once it settles.
+ * A port that carries an edge never slides (it stays out), so no edge follows
+ * a moving port and there is nothing to track frame by frame; the settled
+ * measurement is what connection snapping reads.
+ */
+export function useFollowHandleMotion({
+  id,
+  motion,
+  durationMs,
+  updateNodeInternals,
+}: {
+  id: string;
+  motion: string;
+  durationMs: number;
+  updateNodeInternals: (id: string) => void;
+}) {
+  const previous = React.useRef(motion);
+  React.useLayoutEffect(() => {
+    if (previous.current === motion) return;
+    previous.current = motion;
+    const frame = window.requestAnimationFrame(() => updateNodeInternals(id));
+    const settled = window.setTimeout(
+      () => updateNodeInternals(id),
+      durationMs + 20,
+    );
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(settled);
+    };
+  }, [durationMs, id, motion, updateNodeInternals]);
+}

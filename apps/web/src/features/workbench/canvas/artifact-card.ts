@@ -18,6 +18,13 @@ export const DEFAULT_ARTIFACT_CARD_WIDTH = 250;
 export const DEFAULT_ARTIFACT_FILE_CARD_WIDTH = 150;
 
 /**
+ * Width a card following a node output opens at when it is not a picture:
+ * four lattice cells, room for "Producer → port" beside its type while it
+ * waits, and for the value once one arrives.
+ */
+export const DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH = 200;
+
+/**
  * Narrowest a card may be snapped. Workflow nodes floor at `NODE_WIDTH_MIN`,
  * which would bump the five-cell card default up to six, so a card declares
  * its own narrower lattice floor.

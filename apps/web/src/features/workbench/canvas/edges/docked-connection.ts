@@ -1,5 +1,6 @@
 import { Position } from "@xyflow/react";
 
+import { PORT_CENTER_REACH } from "../handle-style";
 import { decodeHandleId } from "../handles";
 import {
   EDGE_SELECTOR_PILL_HEIGHT,
@@ -45,7 +46,9 @@ export function connectionIsDocked({
   if (sourcePosition !== Position.Right || targetPosition !== Position.Left) {
     return false;
   }
-  const dx = target.x - source.x;
+  // Ring centres sit a reach outside each card, so the gap between the two
+  // cards is the centres' gap plus both reaches.
+  const dx = target.x - source.x + 2 * PORT_CENTER_REACH;
   const dy = Math.abs(target.y - source.y);
   if (dx < -DOCK_OVERLAP_PX) return false;
   if (dx > cellSize * DOCK_GAP_CELLS) return false;

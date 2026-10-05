@@ -636,6 +636,8 @@ export interface GeneratedDrawerProps {
   canSave: boolean;
   /** A finished run adds a recorded execution, so the newest batch re-reads. */
   executionRunning: boolean;
+  /** The shell's own control, placed at the end of the header row. */
+  headerEnd?: React.ReactNode;
 }
 
 /**
@@ -651,6 +653,7 @@ export function GeneratedDrawer({
   registry,
   canSave,
   executionRunning,
+  headerEnd,
 }: GeneratedDrawerProps) {
   const historyKey: GeneratedHistoryKey | null = graphId
     ? ["generated-runs", workspaceId, graphId]
@@ -754,6 +757,7 @@ export function GeneratedDrawer({
             {...stylex.props(isValidating ? s.spinner : null)}
           />
         </button>
+        {headerEnd}
       </header>
 
       {saveError ? (

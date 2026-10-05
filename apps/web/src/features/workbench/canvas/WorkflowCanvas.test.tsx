@@ -18,6 +18,7 @@ vi.mock("@stylexjs/stylex", () => ({
 }));
 
 vi.mock("@xyflow/react", () => ({
+  useNodeId: () => null,
   ReactFlow: ({
     children,
     ...props
@@ -37,6 +38,12 @@ vi.mock("@xyflow/react", () => ({
   addEdge: vi.fn(),
   applyEdgeChanges: vi.fn(),
   applyNodeChanges: vi.fn(),
+  useStore: (selector: (state: { nodes: unknown[] }) => unknown) =>
+    selector({ nodes: [] }),
+  useStoreApi: () => ({
+    getState: () => ({ nodesSelectionActive: false }),
+    setState: vi.fn(),
+  }),
 }));
 
 vi.mock("@/components/theme", () => ({

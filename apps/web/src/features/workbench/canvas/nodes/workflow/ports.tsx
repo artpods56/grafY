@@ -3,15 +3,15 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Popover } from "@base-ui/react/popover";
-import { Handle, Position, useEdges } from "@xyflow/react";
+import { useEdges } from "@xyflow/react";
 import { Power } from "lucide-react";
 
 import type { Port } from "@/lib/api";
+import { artifactTypeVariableOptions } from "@/features/workbench/model/claimed-formats";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-import { nodeChrome } from "../CanvasNodeChrome";
+import { CanvasPortBall, nodeChrome } from "../CanvasNodeChrome";
 import { useHandleIsDocked } from "../../edges/useDockedConnection";
-import { dockedHandleStyle, handleStyle } from "../../handle-style";
 import { decodeHandleId, encodeHandleId } from "../../handles";
 import { artifactTypeColor } from "../../nodes.css";
 import {
@@ -180,11 +180,13 @@ export function PortRail({
   data,
   inputPorts,
   outputPorts,
+  typeLocked,
 }: {
   id: string;
   data: WorkflowNodeData;
   inputPorts: readonly Port[];
   outputPorts: readonly Port[];
+  typeLocked: boolean;
 }) {
   const grid = useOptionalCanvasGridSettings();
   const cellSize = grid?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
@@ -211,6 +213,7 @@ export function PortRail({
                   data={data}
                   port={input}
                   shape={effectivePortShape(data, input)}
+                  typeLocked={typeLocked}
                 />
               ) : null}
             </div>
@@ -226,6 +229,7 @@ export function PortRail({
                   data={data}
                   port={output}
                   shape={effectivePortShape(data, output)}
+                  typeLocked={typeLocked}
                 />
               ) : null}
             </div>
@@ -241,11 +245,13 @@ function PortTab({
   data,
   port,
   shape,
+  typeLocked,
 }: {
   id: string;
   data: WorkflowNodeData;
   port: Port;
   shape: Port["shape"];
+  typeLocked: boolean;
 }) {
   const input = port.direction === "input";
   const connection = useOptionalInputConnection(id, port);
@@ -327,25 +333,111 @@ function PortTab({
           />
         ) : null}
       </div>
-      <Handle
-        type={input ? "target" : "source"}
-        position={input ? Position.Left : Position.Right}
-        id={handleId}
-        aria-hidden={docked}
-        aria-label={accessibleLabel}
+      <CanvasPortBall
+        nodeId={id}
+        handleId={handleId}
+        side={input ? "input" : "output"}
+        color={color}
+        sequence={shape === "many"}
+        docked={docked}
+        {...portBallTypeProps({
+          id,
+          data,
+          port,
+          shape,
+          locked: typeLocked,
+          name: visibleName,
+        })}
+        ariaLabel={accessibleLabel}
         title={
           input
             ? `${accessibleLabel}. Connect a compatible output here.${port.description ? ` ${port.description}` : ""}`
             : `${accessibleLabel}. Drag to a compatible input. If fields are available, you can choose what arrives after connecting.${port.description ? ` ${port.description}` : ""}`
         }
-        style={
-          docked
-            ? dockedHandleStyle("50%")
-            : handleStyle("50%", color, shape === "many")
-        }
       />
     </div>
   );
+}
+
+export const ANY_TYPE_LABEL = "Any type";
+
+/**
+ * What a port's ball says and does about its type. The ring carries the type
+ * in its colour; a generic port still open is dashed. Hovering tells the type
+ * in full; clicking a free generic port's ball picks it.
+ */
+export function portBallTypeProps({
+  id,
+  data,
+  port,
+  shape,
+  locked,
+  name,
+}: {
+  id: string;
+  data: WorkflowNodeData;
+  port: Port;
+  shape: Port["shape"];
+  locked: boolean;
+  name: string;
+}): Pick<
+  React.ComponentProps<typeof CanvasPortBall>,
+  "open" | "tip" | "typeChoice"
+> {
+  const variable = port.artifact_type_variable ?? null;
+  const artifactType = resolvedPortArtifactType(
+    port,
+    data.artifactTypeBindings,
+  );
+  const open = Boolean(variable) && !artifactType;
+  const inner = artifactType
+    ? `${artifactType.id}@${artifactType.schema_version}`
+    : "any";
+  const type =
+    shape === "many"
+      ? `Sequence<${inner}>`
+      : artifactType
+        ? inner
+        : ANY_TYPE_LABEL;
+  const options = variable
+    ? artifactTypeVariableOptions(
+        data.spec.operator_id,
+        variable,
+        data.bindableArtifactTypes ?? [],
+      )
+    : [];
+  const picks =
+    variable !== null &&
+    !locked &&
+    data.onBindArtifactTypeBinding !== undefined &&
+    options.length > 0;
+  const hint = picks
+    ? open
+      ? "Click to choose its type, or connect a wire to set it."
+      : "Click to change its type."
+    : variable && locked
+      ? "Its wire set this type. Disconnect it to change the type."
+      : port.direction === "input"
+        ? "Connect a matching output here."
+        : "Drag to a matching input.";
+  return {
+    open,
+    tip: { name, type, hint },
+    typeChoice:
+      picks && variable
+        ? {
+            current: data.artifactTypeBindings[variable] ?? null,
+            options,
+            onPick: (choice) => {
+              if (choice) {
+                data.onBindArtifactTypeBinding?.(id, variable, choice);
+              } else if (data.artifactTypeBindings[variable]) {
+                data.onResetArtifactTypeBinding?.(id, variable);
+              }
+            },
+          }
+        : null,
+  };
 }
 
 export function InstanceInputConnectionToggle({
@@ -372,9 +464,11 @@ export type IncompatibleWorkflowNodeCompatibility = Exclude<
 >;
 
 function CompatibilityPort({
+  nodeId,
   direction,
   endpoint,
 }: {
+  nodeId: string;
   direction: "input" | "output";
   endpoint: IncompatibleWorkflowNodeCompatibility["inputs"][number];
 }) {
@@ -396,27 +490,25 @@ function CompatibilityPort({
       >
         <span {...stylex.props(nodeChrome.tabLabel)}>{label}</span>
       </div>
-      <Handle
-        type={input ? "target" : "source"}
-        position={input ? Position.Left : Position.Right}
-        id={compatibilityHandleId(direction, endpoint)}
-        isConnectable={false}
-        aria-label={`Unavailable ${direction} port ${label}`}
+      <CanvasPortBall
+        nodeId={nodeId}
+        handleId={compatibilityHandleId(direction, endpoint)}
+        side={direction}
+        color={tokens.colorMuted}
+        locked
+        ariaLabel={`Unavailable ${direction} port ${label}`}
         title={`This historical ${direction} cannot accept new connections.`}
-        style={{
-          ...handleStyle("50%", tokens.colorMuted),
-          cursor: "not-allowed",
-          opacity: 0.72,
-        }}
       />
     </div>
   );
 }
 
 export function CompatibilityPortRail({
+  nodeId,
   inputs,
   outputs,
 }: {
+  nodeId: string;
   inputs: IncompatibleWorkflowNodeCompatibility["inputs"];
   outputs: IncompatibleWorkflowNodeCompatibility["outputs"];
 }) {
@@ -440,7 +532,11 @@ export function CompatibilityPortRail({
           >
             <div {...stylex.props(nodeChrome.portRailSlot)}>
               {input ? (
-                <CompatibilityPort direction="input" endpoint={input} />
+                <CompatibilityPort
+                  nodeId={nodeId}
+                  direction="input"
+                  endpoint={input}
+                />
               ) : null}
             </div>
             <div
@@ -450,7 +546,11 @@ export function CompatibilityPortRail({
               )}
             >
               {output ? (
-                <CompatibilityPort direction="output" endpoint={output} />
+                <CompatibilityPort
+                  nodeId={nodeId}
+                  direction="output"
+                  endpoint={output}
+                />
               ) : null}
             </div>
           </div>

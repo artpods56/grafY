@@ -75,10 +75,12 @@ export function NodeHeader({
   id,
   data,
   selected,
+  onMenuOpenChange,
 }: {
   id: string;
   data: WorkflowNodeData;
   selected: boolean;
+  onMenuOpenChange?: (open: boolean) => void;
 }) {
   const executionLabel =
     data.execution.status === "idle" ? null : data.execution.status;
@@ -90,7 +92,6 @@ export function NodeHeader({
     <CanvasNodeHeader
       title={data.spec.title}
       selected={selected}
-      aboutLabel={`About ${data.spec.title}`}
       aboutTitle={data.spec.title}
       aboutDescription={
         data.spec.description || "No description is available for this node."
@@ -120,6 +121,7 @@ export function NodeHeader({
         </>
       }
       onRemove={() => data.onRemoveNode?.(id)}
+      onMenuOpenChange={onMenuOpenChange}
       status={
         executionLabel ? (
           executionIsBusy ? (

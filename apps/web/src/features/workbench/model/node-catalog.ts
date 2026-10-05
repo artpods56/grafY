@@ -22,6 +22,7 @@ import {
   portMetaForPort,
 } from "../canvas/types";
 import { routesForHandleFeed } from "./connection-feeds";
+import { isCollectionSpec } from "./collection-spec";
 
 export type CatalogFilterKind =
   | "all"
@@ -94,7 +95,8 @@ export const INPUT_NODES_FILTER: CatalogFilter = {
   title: "Input nodes",
 };
 
-function pluginFor(
+/** The plugin a node ships in. The registry always lists it; a miss is a bug. */
+export function catalogPlugin(
   registry: NodeRegistry,
   slug: string,
 ): NodeRegistry["plugins"][number] {
@@ -272,7 +274,7 @@ export function nodeCatalogSearchText(
   spec: NodeSpec,
   registry: NodeRegistry,
 ): string {
-  const plugin = pluginFor(registry, spec.plugin_slug);
+  const plugin = catalogPlugin(registry, spec.plugin_slug);
   const fields = schemaFields(spec.config_schema);
   return [
     spec.title,
@@ -312,16 +314,49 @@ function portSearchTerms(port: Port, registry: NodeRegistry): string[] {
   ];
 }
 
+function searchTerms(query: string): string[] {
+  return query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** Every word of the query appears somewhere the node is described. */
 export function searchCatalogNodes(
   nodes: readonly NodeSpec[],
   query: string,
   registry: NodeRegistry,
 ): readonly NodeSpec[] {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return nodes;
-  return nodes.filter((spec) =>
-    nodeCatalogSearchText(spec, registry).includes(normalized),
-  );
+  const terms = searchTerms(query);
+  if (terms.length === 0) return nodes;
+  return nodes.filter((spec) => {
+    const text = nodeCatalogSearchText(spec, registry);
+    return terms.every((term) => text.includes(term));
+  });
+}
+
+/** Babel here cannot compile Unicode property escapes, so this is spelled out. */
+const TITLE_WORD_SEPARATOR = /[\s\-_.,:;/\\()[\]{}"'`+*&|<>]+/;
+
+/**
+ * How well a node's title answers the query; lower is better. A node is found
+ * by anything it declares, but the ones named for the query come first:
+ * "add" puts Add integers above every node that merely mentions adding.
+ */
+export function catalogSearchRank(spec: NodeSpec, query: string): number {
+  const phrase = query.trim().toLowerCase();
+  const title = spec.title.toLowerCase();
+  if (title === phrase) return 0;
+  if (title.startsWith(phrase)) return 1;
+  // Spaces and punctuation separate words; letters of any script do not.
+  const words = title.split(TITLE_WORD_SEPARATOR);
+  if (words.some((word) => word.startsWith(phrase))) return 2;
+  if (title.includes(phrase)) return 3;
+  const terms = searchTerms(query);
+  const inTitle = terms.filter((term) =>
+    words.some((word) => word.startsWith(term)),
+  ).length;
+  if (inTitle === terms.length) return 4;
+  if (inTitle > 0) return 5;
+  if (spec.operator_id.toLowerCase().includes(phrase)) return 6;
+  return 7;
 }
 
 export function filterAndSearchCatalogNodes(
@@ -335,7 +370,13 @@ export function filterAndSearchCatalogNodes(
       filter.kind === "all" ? acc : catalogNodesForFilter(acc, filter),
     nodes,
   );
-  return sortCatalogNodes(searchCatalogNodes(filtered, query, registry));
+  const found = sortCatalogNodes(searchCatalogNodes(filtered, query, registry));
+  if (searchTerms(query).length === 0) return found;
+  // A stable sort keeps title order among nodes that rank the same.
+  return found
+    .map((spec) => ({ spec, rank: catalogSearchRank(spec, query) }))
+    .sort((left, right) => left.rank - right.rank)
+    .map(({ spec }) => spec);
 }
 
 export function catalogNodeSpecs(
@@ -345,6 +386,8 @@ export function catalogNodeSpecs(
   return registry.nodes.filter(
     (spec) =>
       spec.catalog_visible !== false &&
+      // Collections are made from artifacts on the canvas, not picked here.
+      !isCollectionSpec(spec) &&
       (activeGraphId === null || spec.module_graph_id !== activeGraphId),
   );
 }
@@ -381,7 +424,7 @@ export function catalogNodeProviderLabel(
   spec: NodeSpec,
   registry: NodeRegistry,
 ): string {
-  const plugin = pluginFor(registry, spec.plugin_slug);
+  const plugin = catalogPlugin(registry, spec.plugin_slug);
   if (plugin.origin === "module" || plugin.entry_kind === "module") {
     const state = spec.publication_state ?? "published";
     return `Module · release ${spec.module_graph_revision} · ${state}`;

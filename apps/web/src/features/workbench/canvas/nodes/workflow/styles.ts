@@ -70,16 +70,19 @@ export const sharedStyles = stylex.create({
     fontWeight: 600,
   },
   schemaFieldsCount: { color: tokens.colorSubtle, fontSize: "10px" },
+  // Field rows sit 8px in from the plate; their balls hang that much further
+  // out.
   schemaFieldList: {
     display: "grid",
     gap: "5px",
+    ["--port-inset" as string]: "8px",
   },
   schemaFieldRow: {
     position: "relative",
     minWidth: 0,
     display: "grid",
     gap: "5px",
-    padding: "6px 6px 6px 28px",
+    padding: "6px 6px 6px 8px",
     borderRadius: tokens.radiusMd,
     backgroundColor: tokens.colorSurfaceMuted,
   },

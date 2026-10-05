@@ -80,6 +80,14 @@ async function mount(options: {
       commitArtifactViewers: (updater) => {
         committed.push(updater(base));
       },
+      collection: {
+        spec: null,
+        disabledReason: null,
+        sources: [],
+        nodes: [],
+        edges: [],
+        onCollected: () => {},
+      },
       groupingDisabledReason: options.groupingDisabledReason ?? null,
       localAuthoringEnabled: options.localAuthoringEnabled ?? true,
     });

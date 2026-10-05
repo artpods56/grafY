@@ -11,7 +11,7 @@ import { TriangleAlert, X } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-import { nodeChrome } from "../CanvasNodeChrome";
+import { CanvasNodeHeader, nodeChrome } from "../CanvasNodeChrome";
 import { schemaFields, validateConfig } from "../../config-schema";
 import { nodeSecretInputs } from "../../node-secrets";
 import {
@@ -57,6 +57,7 @@ const s = stylex.create({
     height: "18px",
     display: "inline-flex",
     alignItems: "center",
+    gap: "4px",
     flexShrink: 0,
     paddingInline: "6px",
     borderRadius: "9999px",
@@ -123,7 +124,7 @@ const s = stylex.create({
   /** Unsupported cards keep a direct remove: removal is the only repair. */
   removeButton: {
     backgroundColor: {
-      default: tokens.colorSurface,
+      default: "transparent",
       ":hover": tokens.colorDangerHover,
     },
     color: { default: tokens.colorSubtle, ":hover": tokens.colorDanger },
@@ -163,6 +164,7 @@ export function IncompatibleWorkflowNodeCard({
   compatibility: IncompatibleWorkflowNodeCompatibility;
 }) {
   const updateNodeInternals = useUpdateNodeInternals();
+  const [menuOpen, setMenuOpen] = React.useState(false);
   const grid = useOptionalCanvasGridSettings();
   const allowCornerResize = grid?.settings.allowWorkflowCornerResize ?? false;
   const [draftLayout, setDraftLayout] =
@@ -218,6 +220,48 @@ export function IncompatibleWorkflowNodeCard({
       remoteSelectionColor={data.remoteSelectionColor}
       variant="incompatible"
       ariaLabel={`${data.spec.title} ${compatibility.status} node`}
+      menuOpen={menuOpen}
+      header={
+        <CanvasNodeHeader
+          title={data.spec.title}
+          selected={selected}
+          aboutTitle={data.spec.title}
+          aboutDescription={`This node is ${compatibility.status}. Remove it, or restore the plugin release it was saved with.`}
+          aboutFooter={
+            <span {...stylex.props(sharedStyles.operatorCopy)}>
+              {data.spec.operator_id}@{data.spec.operator_version}
+            </span>
+          }
+          onMenuOpenChange={setMenuOpen}
+          status={
+            <span
+              role="status"
+              title={`${data.spec.title} is ${compatibility.status}`}
+              {...stylex.props(s.compatibilityBadge)}
+            >
+              <TriangleAlert
+                size={11}
+                aria-hidden="true"
+                {...stylex.props(s.compatibilityIcon)}
+              />
+              {compatibility.status}
+            </span>
+          }
+        >
+          {/* Removal is the only repair, so it stays one click away. */}
+          <button
+            type="button"
+            aria-label={`Remove ${data.spec.title}`}
+            title={`Remove ${data.spec.title}`}
+            {...nodeInteractionProps(
+              stylex.props(nodeChrome.headerButton, s.removeButton),
+            )}
+            onClick={() => data.onRemoveNode?.(id)}
+          >
+            <X size={13} />
+          </button>
+        </CanvasNodeHeader>
+      }
       resizeHandle={
         allowCornerResize ? (
           <LayoutResizeHandle
@@ -243,38 +287,8 @@ export function IncompatibleWorkflowNodeCard({
         />
       }
     >
-      <header {...stylex.props(s.header)}>
-        <span {...stylex.props(s.titleRow)}>
-          <TriangleAlert
-            size={14}
-            aria-hidden="true"
-            {...stylex.props(s.compatibilityIcon)}
-          />
-          <button
-            type="button"
-            aria-label={`Remove ${data.spec.title}`}
-            title={`Remove ${data.spec.title}`}
-            {...nodeInteractionProps(
-              stylex.props(nodeChrome.headerButton, s.removeButton),
-            )}
-            onClick={() => data.onRemoveNode?.(id)}
-          >
-            <X size={13} />
-          </button>
-          <span {...stylex.props(nodeChrome.title)} title={data.spec.title}>
-            {data.spec.title}
-          </span>
-          <span {...stylex.props(s.compatibilityBadge)}>
-            {compatibility.status}
-          </span>
-        </span>
-        <span {...stylex.props(s.operatorRow)}>
-          <span {...stylex.props(sharedStyles.operatorCopy)}>
-            {data.spec.operator_id}@{data.spec.operator_version}
-          </span>
-        </span>
-      </header>
       <CompatibilityPortRail
+        nodeId={id}
         inputs={compatibility.inputs}
         outputs={compatibility.outputs}
       />
@@ -340,7 +354,15 @@ export function SupportedWorkflowNodeCard({
     .sort()
     .join("|");
   const incidentConnections = useNodeConnections({ id });
+  // A wire fixes a generic type, so the choice waits until the node is free.
+  const typeLocked = incidentConnections.length > 0;
+  const portTypeVariables = new Set(
+    [...visibleInputPorts, ...data.spec.outputs].flatMap((port) =>
+      port.artifact_type_variable ? [port.artifact_type_variable] : [],
+    ),
+  );
   const updateNodeInternals = useUpdateNodeInternals();
+  const [menuOpen, setMenuOpen] = React.useState(false);
   const grid = useOptionalCanvasGridSettings();
   const allowCornerResize = grid?.settings.allowWorkflowCornerResize ?? false;
   const measuredArtifactTypeBindings = data.artifactTypeBindings;
@@ -403,6 +425,15 @@ export function SupportedWorkflowNodeCard({
       state={shell}
       selected={selected}
       remoteSelectionColor={data.remoteSelectionColor}
+      menuOpen={menuOpen}
+      header={
+        <NodeHeader
+          id={id}
+          data={data}
+          selected={selected ?? false}
+          onMenuOpenChange={setMenuOpen}
+        />
+      }
       resizeHandle={
         allowCornerResize ? (
           <LayoutResizeHandle
@@ -428,11 +459,11 @@ export function SupportedWorkflowNodeCard({
         />
       }
     >
-      <NodeHeader id={id} data={data} selected={selected ?? false} />
       <GenericArtifactTypeState
         id={id}
         data={data}
-        resettable={incidentConnections.length === 0}
+        resettable={!typeLocked}
+        skip={portTypeVariables}
       />
       <PortRail
         id={id}
@@ -441,6 +472,7 @@ export function SupportedWorkflowNodeCard({
           (port) => !portHasInstancePlugs(port),
         )}
         outputPorts={data.spec.outputs}
+        typeLocked={typeLocked}
       />
       {visibleInputPorts.some((port) => portHasInstancePlugs(port)) ? (
         <div {...stylex.props(s.plugPorts)}>
@@ -452,6 +484,7 @@ export function SupportedWorkflowNodeCard({
                 id={id}
                 data={data}
                 port={port}
+                typeLocked={typeLocked}
               />
             ))}
         </div>

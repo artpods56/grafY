@@ -43,6 +43,42 @@ type SceneId = "pair" | "markdown";
 type Phase = "idle" | "carrying" | "menu" | "aim" | "mapping" | "live";
 type ViewerKind = "table" | "map" | "markdown";
 
+/** The node menu styles this spike was drawn with, before nodes moved on. */
+const legacyMenu = stylex.create({
+  nodeMenu: { minWidth: "150px", display: "grid", padding: "4px", zIndex: 50 },
+  nodeMenuItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "6px 8px",
+    borderRadius: tokens.radiusSm,
+    color: tokens.colorText,
+    cursor: "pointer",
+    fontSize: tokens.fontSizeSm,
+    textAlign: "left",
+  },
+  nodeMenuItemDanger: {
+    backgroundColor: {
+      default: "transparent",
+      ":hover": tokens.colorDangerHover,
+    },
+    color: { default: tokens.colorDanger, ":hover": tokens.colorDanger },
+  },
+  helpPopup: {
+    width: "280px",
+    display: "grid",
+    gap: "6px",
+    padding: "11px 13px",
+    zIndex: 50,
+  },
+  helpTitle: { fontSize: tokens.fontSizeSm, fontWeight: 600 },
+  helpDescription: {
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.5,
+  },
+});
+
 const APPROACHES: { id: ApproachId; label: string; note: string }[] = [
   {
     id: "drag",
@@ -483,13 +519,13 @@ function ViewerHeader({
               <Popover.Positioner side="top" align="start" sideOffset={7}>
                 <Popover.Popup
                   {...canvasNodeInteractionProps(
-                    stylex.props(overlay.popup, nodeChrome.helpPopup),
+                    stylex.props(overlay.popup, legacyMenu.helpPopup),
                   )}
                 >
-                  <span {...stylex.props(nodeChrome.helpTitle)}>
+                  <span {...stylex.props(legacyMenu.helpTitle)}>
                     Artifact Viewer
                   </span>
-                  <span {...stylex.props(nodeChrome.helpDescription)}>
+                  <span {...stylex.props(legacyMenu.helpDescription)}>
                     Presentation-only preview. Connect an output and the
                     renderer follows that artifact type.
                   </span>
@@ -511,13 +547,13 @@ function ViewerHeader({
               <Popover.Positioner side="bottom" align="end" sideOffset={6}>
                 <Popover.Popup
                   {...canvasNodeInteractionProps(
-                    stylex.props(overlay.popup, nodeChrome.nodeMenu),
+                    stylex.props(overlay.popup, legacyMenu.nodeMenu),
                   )}
                 >
                   {showLinkAction && onLinkViews ? (
                     <button
                       type="button"
-                      {...stylex.props(overlay.item, nodeChrome.nodeMenuItem)}
+                      {...stylex.props(overlay.item, legacyMenu.nodeMenuItem)}
                       onClick={onLinkViews}
                     >
                       <Link2 size={13} />
@@ -528,8 +564,8 @@ function ViewerHeader({
                     type="button"
                     {...stylex.props(
                       overlay.item,
-                      nodeChrome.nodeMenuItem,
-                      nodeChrome.nodeMenuItemDanger,
+                      legacyMenu.nodeMenuItem,
+                      legacyMenu.nodeMenuItemDanger,
                     )}
                   >
                     <Trash2 size={13} />
@@ -1006,7 +1042,7 @@ export function ViewerLinkSpike() {
               <div {...stylex.props(overlay.popup, s.sendMenu)}>
                 <button
                   type="button"
-                  {...stylex.props(overlay.item, nodeChrome.nodeMenuItem)}
+                  {...stylex.props(overlay.item, legacyMenu.nodeMenuItem)}
                   onClick={() => {
                     setSendOpen(false);
                     setPhase("mapping");

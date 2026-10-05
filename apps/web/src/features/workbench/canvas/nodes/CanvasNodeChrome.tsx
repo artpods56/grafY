@@ -2,46 +2,58 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { Popover } from "@base-ui/react/popover";
-import { Handle, Position } from "@xyflow/react";
-import { CircleHelp, MoreHorizontal, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 
-import { overlay } from "@/lib/stylex/overlay.stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { useHandleIsDocked } from "../edges/useDockedConnection";
-import { dockedHandleStyle, handleStyle } from "../handle-style";
 import {
   GRID_CELL_SIZE_DEFAULT,
   PORT_RAIL_ROW_HEIGHT_CELLS,
   lengthFromSpan,
 } from "../grid-layout";
 import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
+import { NodeMenu, type NodeMenuItem } from "./NodeMenu";
+import { PortBall } from "./PortBall";
+
+/** Height of the name row that sits above a node's plate. */
+export const NODE_HEADER_HEIGHT = 24;
 
 /**
- * Shared card chrome for operator nodes and Artifact Viewers: one lattice cell
- * of header, paired port rails, and selection-gated about/overflow actions.
+ * Shared chrome for operator nodes and Artifact Viewers, on the artifact
+ * card's layout: the name sits above the plate, port labels sit inside it at
+ * its edges, and each label's ball sits just outside, on a stem back to the
+ * plate.
  */
 export const nodeChrome = stylex.create({
   header: {
+    position: "relative",
     minWidth: 0,
     display: "flex",
     alignItems: "center",
-    gap: "4px",
-    minHeight: "34px",
-    padding: "5px 10px 3px 12px",
+    gap: "6px",
+    height: "24px",
+    paddingInline: "2px 0",
+    userSelect: "none",
   },
   title: {
     minWidth: 0,
     flex: 1,
     overflow: "hidden",
-    marginLeft: "4px",
     color: tokens.colorText,
-    fontSize: tokens.fontSizeMd,
+    fontSize: tokens.fontSizeSm,
     fontWeight: 500,
     letterSpacing: "-0.01em",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    transitionProperty: "opacity",
+    transitionDuration: {
+      default: "120ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
   },
+  // At rest the name recedes, like an artifact's label; picked up it reads in
+  // full.
+  titleQuiet: { opacity: 0.6 },
   headerButton: {
     width: "22px",
     height: "22px",
@@ -51,63 +63,35 @@ export const nodeChrome = stylex.create({
     borderWidth: 0,
     borderRadius: "9999px",
     backgroundColor: {
-      default: tokens.colorSurface,
+      default: "transparent",
       ":hover": tokens.colorHover,
     },
     color: { default: tokens.colorSubtle, ":hover": tokens.colorText },
     cursor: "pointer",
   },
-  nodeMenu: {
-    minWidth: "150px",
+  // The "⋯" hangs in the right column, level with the name: the same column
+  // as the output balls (an 8px gap, then a 30px slot), above the first of
+  // them; the header is exactly as wide as the plate. It exists only while
+  // the node is picked up (or its menu is open) and rises in (keyframes in
+  // globals.css).
+  menuSlot: {
+    position: "absolute",
+    top: 0,
+    right: "-38px",
+    width: "30px",
+    height: "24px",
     display: "grid",
-    padding: "4px",
-    zIndex: 50,
-  },
-  nodeMenuItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "6px 8px",
-    borderRadius: tokens.radiusSm,
-    color: tokens.colorText,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeSm,
-    textAlign: "left",
-  },
-  nodeMenuItemDanger: {
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorDangerHover,
+    placeItems: "center",
+    animationName: "grafy-node-detail-in",
+    animationDuration: {
+      default: "160ms",
+      "@media (prefers-reduced-motion: reduce)": "0s",
     },
-    color: { default: tokens.colorDanger, ":hover": tokens.colorDanger },
-  },
-  helpPopup: {
-    width: "280px",
-    display: "grid",
-    gap: "6px",
-    padding: "11px 13px",
-    zIndex: 50,
-  },
-  helpTitle: { fontSize: tokens.fontSizeSm, fontWeight: 600 },
-  helpDescription: {
-    color: tokens.colorMuted,
-    fontSize: tokens.fontSizeXs,
-    lineHeight: 1.5,
-  },
-  helpFooter: {
-    minWidth: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "8px",
-    paddingTop: "6px",
-    borderTopWidth: 1,
-    borderTopStyle: "solid",
-    borderTopColor: tokens.colorDivider,
+    animationTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
+    animationFillMode: "both",
   },
   portRail: {
     display: "grid",
-    paddingBlock: "2px",
   },
   portRailRow: {
     display: "grid",
@@ -131,24 +115,26 @@ export const nodeChrome = stylex.create({
     height: "100%",
     minHeight: "28px",
     alignItems: "center",
-    cursor: "crosshair",
   },
   tabRowOut: { justifyContent: "flex-end" },
+  // A port's name, quiet and flush with the plate's edge; its ball carries the
+  // type colour outside.
   tab: {
     display: "flex",
     alignItems: "center",
     gap: "4px",
-    maxWidth: "calc(100% - 12px)",
-    height: "24px",
-    paddingInline: "14px 12px",
+    maxWidth: "calc(100% - 8px)",
+    height: "22px",
+    paddingInline: "10px 8px",
     borderWidth: 0,
+    borderRadius: tokens.radiusSm,
     backgroundColor: {
-      default: tokens.colorSurfaceMuted,
-      ":hover": tokens.colorHoverStrong,
+      default: "transparent",
+      ":hover": tokens.colorHover,
     },
-    color: tokens.colorTextEmphasis,
+    color: { default: tokens.colorMuted, ":hover": tokens.colorText },
     fontSize: tokens.fontSizeXs,
-    fontWeight: 600,
+    fontWeight: 500,
   },
   tabLabel: {
     minWidth: 0,
@@ -156,18 +142,31 @@ export const nodeChrome = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  tabShape: { flexShrink: 0 },
-  tabIn: { borderRadius: "0 9999px 9999px 0" },
+  tabShape: { flexShrink: 0, color: tokens.colorSubtle },
+  // Flush with the plate's edge: square on the side the port comes out of.
+  tabIn: { borderRadius: "0 4px 4px 0" },
   tabOut: {
     flexDirection: "row-reverse",
-    paddingInline: "12px 14px",
-    borderRadius: "9999px 0 0 9999px",
+    paddingInline: "8px 10px",
+    borderRadius: "4px 0 0 4px",
   },
   tabDocked: {
     visibility: "hidden",
     pointerEvents: "none",
   },
   tabInactive: { opacity: 0.55 },
+  // Where a row's ball hangs: centred on the row, outside the plate. The row
+  // sits flush with the plate's inside edge, so the 30px slot starts the 1px
+  // border and the 8px gap further out; a row set in from the plate says how
+  // far through `--port-inset`.
+  ballAnchor: {
+    position: "absolute",
+    top: "50%",
+    marginTop: "-15px",
+    zIndex: 1,
+  },
+  ballAnchorIn: { left: "calc(-39px - var(--port-inset, 0px))" },
+  ballAnchorOut: { right: "calc(-39px - var(--port-inset, 0px))" },
 });
 
 export function canvasNodeInteractionProps(
@@ -179,139 +178,85 @@ export function canvasNodeInteractionProps(
   };
 }
 
-export interface CanvasNodeOverflowItem {
-  id: string;
-  label: string;
-  icon?: React.ReactNode;
-  disabled?: boolean;
-  danger?: boolean;
-  onClick?: () => void;
-}
+export type CanvasNodeOverflowItem = NodeMenuItem;
 
+/**
+ * The name row above a node's plate: the name, its status, and one "⋯" that
+ * opens on what the node is and then what can be done with it.
+ */
 export function CanvasNodeHeader({
   title,
   selected,
   status,
-  aboutLabel,
   aboutTitle,
   aboutDescription,
   aboutFooter,
   overflowItems,
   onRemove,
+  removeLabel = "Delete node",
+  onMenuOpenChange,
   children,
 }: {
   title: string;
   selected: boolean;
   status?: React.ReactNode;
-  aboutLabel: string;
   aboutTitle: string;
   aboutDescription: React.ReactNode;
   aboutFooter?: React.ReactNode;
   overflowItems?: readonly CanvasNodeOverflowItem[];
   onRemove?: () => void;
+  removeLabel?: string;
+  onMenuOpenChange?: (open: boolean) => void;
   children?: React.ReactNode;
 }) {
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const items: NodeMenuItem[] = [
+    ...(overflowItems ?? []),
+    ...(onRemove
+      ? [
+          {
+            id: "remove",
+            label: removeLabel,
+            icon: <Trash2 size={13} />,
+            danger: true,
+            onClick: onRemove,
+          },
+        ]
+      : []),
+  ];
+  const showMenu = selected || menuOpen;
   return (
-    <header {...stylex.props(nodeChrome.header)}>
-      <span {...stylex.props(nodeChrome.title)} title={title}>
+    <header data-node-header="true" {...stylex.props(nodeChrome.header)}>
+      <span
+        {...stylex.props(
+          nodeChrome.title,
+          selected ? null : nodeChrome.titleQuiet,
+        )}
+        title={title}
+      >
         {title}
       </span>
       {status}
-      {selected ? (
-        <>
-          {children}
-          <Popover.Root>
-            <Popover.Trigger
-              type="button"
-              aria-label={aboutLabel}
-              title={aboutLabel}
-              {...canvasNodeInteractionProps(
-                stylex.props(nodeChrome.headerButton),
-              )}
-            >
-              <CircleHelp size={13} />
-            </Popover.Trigger>
-            <Popover.Portal>
-              <Popover.Positioner side="top" align="start" sideOffset={7}>
-                <Popover.Popup
-                  {...canvasNodeInteractionProps(
-                    stylex.props(overlay.popup, nodeChrome.helpPopup),
-                  )}
-                >
-                  <span {...stylex.props(nodeChrome.helpTitle)}>
-                    {aboutTitle}
-                  </span>
-                  <span {...stylex.props(nodeChrome.helpDescription)}>
-                    {aboutDescription}
-                  </span>
-                  {aboutFooter ? (
-                    <span {...stylex.props(nodeChrome.helpFooter)}>
-                      {aboutFooter}
-                    </span>
-                  ) : null}
-                </Popover.Popup>
-              </Popover.Positioner>
-            </Popover.Portal>
-          </Popover.Root>
-          {overflowItems?.length || onRemove ? (
-            <Popover.Root>
-              <Popover.Trigger
-                type="button"
-                aria-label={`Actions for ${title}`}
-                title={`Actions for ${title}`}
-                {...canvasNodeInteractionProps(
-                  stylex.props(nodeChrome.headerButton),
-                )}
-              >
-                <MoreHorizontal size={13} />
-              </Popover.Trigger>
-              <Popover.Portal>
-                <Popover.Positioner side="bottom" align="end" sideOffset={6}>
-                  <Popover.Popup
-                    {...canvasNodeInteractionProps(
-                      stylex.props(overlay.popup, nodeChrome.nodeMenu),
-                    )}
-                  >
-                    {overflowItems?.length
-                      ? overflowItems.map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            disabled={item.disabled}
-                            {...stylex.props(
-                              overlay.item,
-                              nodeChrome.nodeMenuItem,
-                              item.danger
-                                ? nodeChrome.nodeMenuItemDanger
-                                : null,
-                            )}
-                            onClick={item.onClick}
-                          >
-                            {item.icon}
-                            {item.label}
-                          </button>
-                        ))
-                      : null}
-                    {onRemove ? (
-                      <button
-                        type="button"
-                        {...stylex.props(
-                          overlay.item,
-                          nodeChrome.nodeMenuItem,
-                          nodeChrome.nodeMenuItemDanger,
-                        )}
-                        onClick={onRemove}
-                      >
-                        <Trash2 size={13} />
-                        Delete node
-                      </button>
-                    ) : null}
-                  </Popover.Popup>
-                </Popover.Positioner>
-              </Popover.Portal>
-            </Popover.Root>
-          ) : null}
-        </>
+      {children}
+      {showMenu ? (
+        <span
+          {...canvasNodeInteractionProps(stylex.props(nodeChrome.menuSlot))}
+        >
+          <NodeMenu
+            label={`Actions for ${title}`}
+            info={{
+              title: aboutTitle,
+              lines: [aboutDescription],
+              footer: aboutFooter,
+            }}
+            items={items}
+            align="end"
+            onOpenChange={(open) => {
+              setMenuOpen(open);
+              onMenuOpenChange?.(open);
+            }}
+          />
+        </span>
       ) : null}
     </header>
   );
@@ -351,6 +296,31 @@ export function CanvasPortRail({
   );
 }
 
+/**
+ * A port's ball, hung outside the plate level with its row. `centerY` pins the
+ * ball's centre that far down a tall row instead of at its middle.
+ */
+export function CanvasPortBall({
+  centerY,
+  ...props
+}: React.ComponentProps<typeof PortBall> & { centerY?: number }) {
+  return (
+    <span
+      {...stylex.props(
+        nodeChrome.ballAnchor,
+        props.side === "input"
+          ? nodeChrome.ballAnchorIn
+          : nodeChrome.ballAnchorOut,
+      )}
+      style={
+        centerY === undefined ? undefined : { top: centerY - 15, marginTop: 0 }
+      }
+    >
+      <PortBall {...props} />
+    </span>
+  );
+}
+
 export function CanvasPortTab({
   nodeId,
   label,
@@ -375,7 +345,7 @@ export function CanvasPortTab({
   title?: string;
   /** Sequence (or plug collection) shape: the mark draws a second ring. */
   multiple?: boolean;
-  /** Nothing to pass yet: the pill and mark read as inert. */
+  /** Nothing to pass yet: the label and mark read as inert. */
   inactive?: boolean;
 }) {
   const input = direction === "input";
@@ -399,23 +369,17 @@ export function CanvasPortTab({
           <span {...stylex.props(nodeChrome.tabShape)}>{hint}</span>
         ) : null}
       </div>
-      <Handle
-        id={handleId}
-        type={input ? "target" : "source"}
-        position={input ? Position.Left : Position.Right}
-        isConnectable={isConnectable}
-        aria-disabled={isConnectable === false || inactive}
-        aria-hidden={docked}
-        aria-label={ariaLabel}
+      <CanvasPortBall
+        nodeId={nodeId}
+        handleId={handleId}
+        side={direction}
+        color={color}
+        sequence={multiple}
+        isConnectable={isConnectable !== false}
+        idle={inactive}
+        docked={docked}
+        ariaLabel={ariaLabel}
         title={title}
-        style={
-          docked
-            ? dockedHandleStyle("50%")
-            : {
-                ...handleStyle("50%", color, multiple),
-                ...(inactive ? { opacity: 0.3 } : null),
-              }
-        }
       />
     </div>
   );

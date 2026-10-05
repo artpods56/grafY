@@ -45,6 +45,8 @@ vi.mock("@/lib/api", async () => {
 vi.mock("@stylexjs/stylex", () => ({
   create: <Styles,>(styles: Styles) => styles,
   props: () => ({}),
+  defaultMarker: () => ({}),
+  when: { ancestor: (pseudo: string) => pseudo },
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -335,7 +337,7 @@ describe("LibraryPanel", () => {
     installMemoryStorage();
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({ text: async () => "plot(x),y(x)\n1,2\n" })),
+      vi.fn(async () => new Response("plot(x),y(x)\n1,2\n")),
     );
   });
 
@@ -618,7 +620,7 @@ describe("LibraryPanel", () => {
       '[aria-label="Selected artifact"]',
     );
     expect(tile).not.toBeNull();
-    expect(tile!.textContent).toContain("/Fieldwork/September");
+    expect(tile!.textContent).toContain("Library / Fieldwork / September");
     expect(tile!.textContent).toContain(
       "Sales · Resize · revision 4 · from a run",
     );
@@ -636,8 +638,12 @@ describe("LibraryPanel", () => {
       fileRow("artifact-run").click();
     });
     await React.act(async () => {
-      document
-        .querySelector<HTMLElement>('[aria-label="Selected artifact"] button')!
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          '[aria-label="Selected artifact"] button',
+        ),
+      ]
+        .find((button) => button.textContent === "Execution history")!
         .click();
     });
 
@@ -654,6 +660,186 @@ describe("LibraryPanel", () => {
     });
 
     expect(fileRow("artifact-upload").querySelector("img")).toBeNull();
+  });
+
+  it("keeps a click on a row menu from folding its folder", async () => {
+    await renderPanel({ folders: [FIELDWORK, SEPTEMBER], items: [RUN_ITEM] });
+
+    const trigger = folderRow("fieldwork").querySelector<HTMLElement>(
+      '[aria-label="Actions for Fieldwork"]',
+    )!;
+    await React.act(async () => {
+      trigger.click();
+    });
+    expect(folderRow("fieldwork").getAttribute("aria-expanded")).toBe("true");
+
+    const rename = [
+      ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ].find((item) => item.textContent === "Rename")!;
+    await selectMenuItem(rename);
+
+    expect(folderRow("fieldwork").getAttribute("aria-expanded")).toBe("true");
+    expect(
+      document.querySelector('input[aria-label="Folder name"]'),
+    ).not.toBeNull();
+  });
+
+  it("opens every folder while a filter is on, and restores the folds after", async () => {
+    await renderPanel({ folders: [FIELDWORK, SEPTEMBER], items: [RUN_ITEM] });
+    await React.act(async () => {
+      folderRow("fieldwork").click();
+    });
+    expect(
+      document.querySelector('[data-tree-key="file:artifact-run"]'),
+    ).toBeNull();
+
+    const filter = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Filter the Library"]',
+    )!;
+    await React.act(async () => {
+      typeInto(filter, "sales");
+    });
+    expect(fileRow("artifact-run")).not.toBeNull();
+
+    await React.act(async () => {
+      typeInto(filter, "");
+    });
+    expect(folderRow("fieldwork").getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("says when a filter matches nothing", async () => {
+    await renderPanel({ folders: [FIELDWORK], items: [RUN_ITEM] });
+
+    await React.act(async () => {
+      typeInto(
+        document.querySelector<HTMLInputElement>(
+          'input[aria-label="Filter the Library"]',
+        )!,
+        "kestrel",
+      );
+    });
+
+    expect(rows()).toEqual([]);
+    expect(document.body.textContent).toContain(
+      "Nothing in the Library matches “kestrel”.",
+    );
+    expect(document.body.textContent).toContain("0 of 1 artifact");
+  });
+
+  it("files an artifact dropped on another into that one's folder", async () => {
+    moveItems.mockResolvedValue(undefined);
+
+    await renderPanel({
+      folders: [FIELDWORK, SEPTEMBER],
+      items: [RUN_ITEM, UPLOAD_ITEM],
+    });
+
+    await React.act(async () => {
+      dropPayload(fileRow("artifact-run"), {
+        [ARTIFACT_DROP_TYPE]: artifactDropValue("artifact-upload"),
+      });
+    });
+
+    expect(moveItems).toHaveBeenCalledWith({
+      workspaceId: expect.any(String),
+      artifactIds: ["artifact-upload"],
+      folderId: "september",
+    });
+  });
+
+  it("sends nothing for a rename that keeps the name or clears it", async () => {
+    await renderPanel({ folders: [EMPTY_FOLDER], items: [] });
+
+    for (const value of ["Archive", "   "]) {
+      await React.act(async () => {
+        folderRow("archive").focus();
+        press(folderRow("archive"), "F2");
+      });
+      const input = document.querySelector<HTMLInputElement>(
+        'input[aria-label="Folder name"]',
+      )!;
+      await React.act(async () => {
+        typeInto(input, value);
+      });
+      await React.act(async () => {
+        press(input, "Enter");
+      });
+      expect(
+        document.querySelector('input[aria-label="Folder name"]'),
+      ).toBeNull();
+      expect(document.activeElement).toBe(folderRow("archive"));
+    }
+
+    expect(renameFolder).not.toHaveBeenCalled();
+  });
+
+  it("closes the preview from its tile and with Escape", async () => {
+    await renderPanel({ folders: [], items: [UPLOAD_ITEM] });
+    const tile = () =>
+      document.querySelector('[aria-label="Selected artifact"]');
+
+    await React.act(async () => {
+      fileRow("artifact-upload").click();
+    });
+    await React.act(async () => {
+      document
+        .querySelector<HTMLElement>('button[aria-label="Close preview"]')!
+        .click();
+    });
+    expect(tile()).toBeNull();
+
+    await React.act(async () => {
+      fileRow("artifact-upload").click();
+      fileRow("artifact-upload").focus();
+    });
+    expect(tile()).not.toBeNull();
+    await React.act(async () => {
+      press(fileRow("artifact-upload"), "Escape");
+    });
+    expect(tile()).toBeNull();
+  });
+
+  it("never previews an error page as the artifact's text", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("Not found", { status: 404 })),
+    );
+    await renderPanel({ folders: [FIELDWORK, SEPTEMBER], items: [RUN_ITEM] });
+
+    await React.act(async () => {
+      fileRow("artifact-run").click();
+    });
+    await React.act(async () => {
+      await vi.waitFor(() =>
+        expect(document.body.textContent).not.toContain("Reading preview"),
+      );
+    });
+
+    const tile = document.querySelector('[aria-label="Selected artifact"]')!;
+    expect(tile.querySelector("pre")).toBeNull();
+    expect(tile.textContent).not.toContain("Not found");
+  });
+
+  it("says the Library could not be loaded, and never that it is empty", async () => {
+    listTree.mockRejectedValue(new Error("offline"));
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    roots.push(root);
+    await React.act(async () => {
+      root.render(
+        <LibraryPanel workspaceId="unreachable" onOpenRun={vi.fn()} />,
+      );
+    });
+    await React.act(async () => {
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain(
+          "The Library could not be loaded.",
+        ),
+      );
+    });
+
+    expect(document.body.textContent).not.toContain("The Library is empty");
   });
 
   it("says an unreadable artifact will not open, without hiding the row", async () => {

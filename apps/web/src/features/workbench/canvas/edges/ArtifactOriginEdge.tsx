@@ -1,15 +1,11 @@
 "use client";
 
-import {
-  BaseEdge,
-  EdgeLabelRenderer,
-  getBezierPath,
-  type EdgeProps,
-} from "@xyflow/react";
+import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from "@xyflow/react";
 import * as stylex from "@stylexjs/stylex";
 import { Unplug } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type { ArtifactOriginEdge } from "../artifact-origin-edge";
+import { routedBezierPath } from "./edge-path";
 
 const s = stylex.create({
   disconnect: {
@@ -19,7 +15,9 @@ const s = stylex.create({
     width: "28px",
     height: "28px",
     borderRadius: "6px",
-    border: `1px solid ${tokens.colorBorder}`,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
     backgroundColor: tokens.colorSurfaceRaised,
     color: tokens.colorText,
     pointerEvents: "all",
@@ -30,7 +28,17 @@ const s = stylex.create({
 export default function ArtifactOriginEdgeControl(
   props: EdgeProps<ArtifactOriginEdge>,
 ) {
-  const [path, x, y] = getBezierPath(props);
+  // The same exit-then-turn curve as every other canvas edge.
+  const {
+    path,
+    anchor: { x, y },
+  } = routedBezierPath({
+    source: { x: props.sourceX, y: props.sourceY },
+    target: { x: props.targetX, y: props.targetY },
+    sourcePosition: props.sourcePosition,
+    targetPosition: props.targetPosition,
+    routeOffset: { x: 0, y: 0 },
+  });
   return (
     <>
       <BaseEdge

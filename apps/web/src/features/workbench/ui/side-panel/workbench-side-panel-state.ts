@@ -22,16 +22,26 @@ export const SIDE_PANEL_DEFAULT_WIDTH = 360;
 export const SIDE_PANEL_MIN_WIDTH = 240;
 export const SIDE_PANEL_MAX_WIDTH = 420;
 
+/** The panel's element, which the rail's toggle names in `aria-controls`. */
+export const SIDE_PANEL_ELEMENT_ID = "grafy-side-panel";
+
+/**
+ * How long the panel takes to slide open or shut. The shell's margin follows
+ * on the same clock through `--grafy-side-panel-duration` (see globals.css),
+ * so the canvas edge and the panel edge move together.
+ */
+export const SIDE_PANEL_MOTION_MS = 200;
+
 /** Below this width the panel slides over the canvas instead of docking. */
 export const SIDE_PANEL_DOCK_QUERY = "(min-width: 1100px)";
 /** Above this width the panel opens on its own the first time. */
 export const SIDE_PANEL_AUTO_OPEN_QUERY = "(min-width: 1280px)";
 
-export const SIDE_PANEL_VIEWS = [
-  "artifacts",
-  "templates",
-  "generated",
-] as const;
+/**
+ * What the panel shows. The rail picks the view, so there is no tab strip:
+ * Artifacts is the Library, Generated is this canvas's Run artifacts.
+ */
+export const SIDE_PANEL_VIEWS = ["artifacts", "generated"] as const;
 export type SidePanelViewId = (typeof SIDE_PANEL_VIEWS)[number];
 
 const OPEN_KEY = "grafy-side-panel-open";
@@ -144,9 +154,24 @@ export function useWorkbenchSidePanel(): WorkbenchSidePanelState {
 
   const open = docked ? dockedOpen : slidOpen;
 
-  React.useEffect(() => {
+  // Before paint, so the canvas edge starts moving in the same frame as the
+  // panel it makes room for.
+  React.useLayoutEffect(() => {
     publishToDocument(docked && open, width);
   }, [docked, open, width]);
+
+  // Motion starts after the first paint, so a page load lays the panel out
+  // where it belongs instead of sliding it in.
+  React.useEffect(() => {
+    const root = document.documentElement;
+    const frame = window.requestAnimationFrame(() => {
+      root.dataset.sidePanelMotion = "on";
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      delete root.dataset.sidePanelMotion;
+    };
+  }, []);
 
   // A panel that slides over the canvas must not survive the trip to a wide
   // viewport, where it would otherwise open as a docked column nobody asked for.
@@ -189,12 +214,17 @@ export function previewSidePanelWidth(width: number): void {
   );
 }
 
+/** A drag moves the panel edge itself; eased motion would trail the pointer. */
 export function beginSidePanelResize(): void {
   document.body.classList.add("grafy-side-panel-resizing");
+  document.documentElement.dataset.sidePanelMotion = "off";
 }
 
 export function endSidePanelResize(): void {
   document.body.classList.remove("grafy-side-panel-resizing");
+  if (document.documentElement.dataset.sidePanelMotion === "off") {
+    document.documentElement.dataset.sidePanelMotion = "on";
+  }
 }
 
 /**

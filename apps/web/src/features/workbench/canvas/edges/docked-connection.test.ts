@@ -13,12 +13,16 @@ import {
 const cellSize = 50;
 const dockableTypes = new Set(["workflow", "viewer"]);
 
+// Adjacent lattice cards paint at 6..294 and 306..594; each ring centre sits
+// 23px outside its card (the 8px gap plus half the 30px slot).
+const REACH = 23;
+
 function dockedInput(
   overrides: Partial<Parameters<typeof connectionIsDocked>[0]> = {},
 ) {
   return connectionIsDocked({
-    source: { x: 294, y: 80 },
-    target: { x: 306, y: 80 },
+    source: { x: 294 + REACH, y: 80 },
+    target: { x: 306 - REACH, y: 80 },
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
     cellSize,
@@ -47,8 +51,8 @@ function nodeWithHandle(
             id: handle.id,
             x: handle.x,
             y: handle.y,
-            width: 30,
-            height: 30,
+            width: 10,
+            height: 10,
             position: handle.position,
           },
         ],
@@ -65,8 +69,8 @@ describe("connectionIsDocked", () => {
   it("docks when facing handles overlap in the gutter", () => {
     expect(
       dockedInput({
-        source: { x: 300, y: 80 },
-        target: { x: 300, y: 80 },
+        source: { x: 300 + REACH, y: 80 },
+        target: { x: 300 - REACH, y: 80 },
       }),
     ).toBe(true);
   });
@@ -74,13 +78,13 @@ describe("connectionIsDocked", () => {
   it("does not dock across an empty lattice cell", () => {
     expect(
       dockedInput({
-        target: { x: 294 + 50, y: 80 },
+        target: { x: 306 + 50 - REACH, y: 80 },
       }),
     ).toBe(false);
   });
 
   it("does not dock when the handles are on different rows", () => {
-    expect(dockedInput({ target: { x: 306, y: 130 } })).toBe(false);
+    expect(dockedInput({ target: { x: 306 - REACH, y: 130 } })).toBe(false);
   });
 
   it("does not dock a wrapping leftward path", () => {
@@ -125,8 +129,8 @@ describe("dockedConnections", () => {
           {
             id: sourceHandle,
             type: "source",
-            x: 279,
-            y: 65,
+            x: 294 + REACH - 5,
+            y: 75,
             position: Position.Right,
           },
         ),
@@ -138,8 +142,8 @@ describe("dockedConnections", () => {
           {
             id: targetHandle,
             type: "target",
-            x: -9,
-            y: 65,
+            x: 6 - REACH - 5,
+            y: 75,
             position: Position.Left,
           },
         ),
@@ -181,8 +185,8 @@ describe("dockedConnections", () => {
           {
             id: sourceHandle,
             type: "source",
-            x: 279,
-            y: 65,
+            x: 294 + REACH - 5,
+            y: 75,
             position: Position.Right,
           },
         ),
@@ -194,8 +198,8 @@ describe("dockedConnections", () => {
           {
             id: plugHandle,
             type: "target",
-            x: -9,
-            y: 65,
+            x: 6 - REACH - 5,
+            y: 75,
             position: Position.Left,
           },
         ),
@@ -239,8 +243,8 @@ describe("dockedConnections", () => {
           {
             id: sourceHandle,
             type: "source",
-            x: 279,
-            y: 65,
+            x: 294 + REACH - 5,
+            y: 75,
             position: Position.Right,
           },
         ),
@@ -252,8 +256,8 @@ describe("dockedConnections", () => {
           {
             id: targetHandle,
             type: "target",
-            x: -9,
-            y: 65,
+            x: 6 - REACH - 5,
+            y: 75,
             position: Position.Left,
           },
         ),

@@ -1,13 +1,12 @@
 "use client";
 
 import * as stylex from "@stylexjs/stylex";
-import { Handle, Position } from "@xyflow/react";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 
 import { createUuid } from "@/features/workbench/model/uuid";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-import { handleStyle } from "../../handle-style";
+import { CanvasPortBall } from "../CanvasNodeChrome";
 import { encodeHandleId } from "../../handles";
 import { artifactTypeColor } from "../../nodes.css";
 import {
@@ -138,11 +137,9 @@ export function ArtifactQueryTablesBody({
                 {...stylex.props(sharedStyles.schemaFieldRow)}
               >
                 {inputPort ? (
-                  <Handle
-                    className="nodrag nowheel"
-                    type="target"
-                    position={Position.Left}
-                    id={encodeHandleId(
+                  <CanvasPortBall
+                    nodeId={id}
+                    handleId={encodeHandleId(
                       portMetaForPort(
                         inputPort,
                         inputPort.shape,
@@ -150,9 +147,12 @@ export function ArtifactQueryTablesBody({
                         data.artifactTypeBindings,
                       ),
                     )}
-                    aria-label={`Table relation ${relation.alias || index + 1}`}
+                    side="input"
+                    color={handleColor}
+                    sequence
+                    centerY={19}
+                    ariaLabel={`Table relation ${relation.alias || index + 1}`}
                     title="Connect one table artifact here."
-                    style={handleStyle("19px", handleColor, true)}
                   />
                 ) : null}
 

@@ -29,7 +29,7 @@ import type {
   WorkflowEdgeRouteOption,
 } from "../types";
 import { dockedBridgeLayout } from "./docked-connection";
-import { EdgeSelectorBlock } from "./EdgeSelectorBlock";
+import { EdgeSelectorBlock, useHoverIntent } from "./EdgeSelectorBlock";
 import { applyHandleFanOffset, routedBezierPath } from "./edge-path";
 import { useEdgeIsDocked } from "./useDockedConnection";
 import { useEdgeFanOffsets } from "./useEdgeFanOffsets";
@@ -162,6 +162,7 @@ export default function ArtifactViewerEdgeControl({
     GRID_CELL_SIZE_DEFAULT;
   const edgeData: ArtifactViewerEdgeData = data ?? { sourcePortName: "output" };
   const sourcePortName = edgeData.sourcePortName || "output";
+  const hover = useHoverIntent();
   const fan = useEdgeFanOffsets(id, sourcePosition, targetPosition);
   const source = applyHandleFanOffset(
     { x: sourceX, y: sourceY },
@@ -241,7 +242,8 @@ export default function ArtifactViewerEdgeControl({
             : edgePath
         }
         markerEnd={docked ? undefined : markerEnd}
-        interactionWidth={24}
+        // The hover-aware interaction path below takes clicks and hover.
+        interactionWidth={0}
         style={{
           ...style,
           opacity: docked ? 0 : selected ? 0.9 : 0.62,
@@ -249,9 +251,26 @@ export default function ArtifactViewerEdgeControl({
           strokeWidth: selected ? 2.5 : (style?.strokeWidth ?? 2),
         }}
       />
+      <path
+        d={
+          docked
+            ? `M${source.x},${source.y} L${target.x},${target.y}`
+            : edgePath
+        }
+        fill="none"
+        stroke="transparent"
+        strokeWidth={24}
+        className="react-flow__edge-interaction"
+        style={{ pointerEvents: "stroke" }}
+        {...hover.handlers}
+      />
       <EdgeLabelRenderer>
         <EdgeSelectorBlock
           anchor={bridge?.anchor ?? anchor}
+          // Idle, the edge shows only what its ports do not say.
+          rest={edgeData.projection?.path.length ? "label" : "hidden"}
+          hovered={hover.hovered}
+          hoverHandlers={hover.handlers}
           selected={selected}
           label={label}
           docked={docked}

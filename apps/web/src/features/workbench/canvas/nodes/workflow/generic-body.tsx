@@ -6,7 +6,6 @@ import { RotateCcw } from "lucide-react";
 import { artifactTypeVariableOptions } from "@/features/workbench/model/claimed-formats";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-import { artifactTypeColor } from "../../nodes.css";
 import { nodeSecretDependencyRevision } from "../../node-secrets";
 import { resolvedNodeWidth, type WorkflowNodeLayout } from "../../node-layout";
 import {
@@ -24,7 +23,7 @@ import {
   configBricks,
   configFieldLabelIsRedundant,
 } from "./config-fields";
-import { nodeInteractionProps } from "./ports";
+import { ANY_TYPE_LABEL, nodeInteractionProps } from "./ports";
 
 const s = stylex.create({
   configValidationError: {
@@ -39,26 +38,26 @@ const s = stylex.create({
     fontSize: tokens.fontSizeXs,
     lineHeight: 1.4,
   },
+  // The type a generic node works with, as one quiet line at the top of the
+  // plate: a label, the choice, and a reset. Its colour is on the balls. Only
+  // for a type no visible port carries.
   genericTypes: {
     display: "grid",
-    gap: "5px",
-    padding: "0 10px 8px",
+    minWidth: 0,
+    paddingBlock: "4px 2px",
   },
   genericTypeRow: {
-    minHeight: "30px",
+    minWidth: 0,
+    height: "24px",
     display: "flex",
     alignItems: "center",
-    gap: "7px",
-    padding: "5px 7px",
-    borderRadius: "7px",
-    backgroundColor: tokens.colorSurfaceMuted,
+    gap: "6px",
+    paddingInline: "10px 6px",
   },
-  genericTypeDot: {
-    width: "6px",
-    height: "6px",
+  genericTypeLabel: {
     flexShrink: 0,
-    borderRadius: "9999px",
-    backgroundColor: tokens.colorAccent,
+    color: tokens.colorSubtle,
+    fontSize: tokens.fontSizeXs,
   },
   genericTypeCopy: {
     minWidth: 0,
@@ -70,42 +69,42 @@ const s = stylex.create({
     whiteSpace: "nowrap",
   },
   genericTypeBound: {
-    color: tokens.colorTextEmphasis,
+    color: tokens.colorText,
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontWeight: 500,
+    fontSize: "10.5px",
   },
   bindType: {
     minWidth: 0,
     flex: 1,
+    height: "22px",
     paddingInline: "4px",
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: "5px",
-    backgroundColor: tokens.colorSurface,
-    color: tokens.colorTextEmphasis,
-    cursor: "pointer",
+    borderColor: { default: "transparent", ":hover": tokens.colorBorder },
+    borderRadius: tokens.radiusSm,
+    backgroundColor: { default: "transparent", ":hover": tokens.colorSurface },
+    color: tokens.colorText,
+    cursor: { default: "pointer", ":disabled": "default" },
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: "10px",
+    fontSize: "10.5px",
+    textOverflow: "ellipsis",
   },
   resetType: {
-    minHeight: "22px",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "4px",
-    paddingInline: "6px",
+    width: "22px",
+    height: "22px",
+    flexShrink: 0,
+    display: "grid",
+    placeItems: "center",
+    padding: 0,
     borderWidth: 0,
-    borderRadius: "5px",
+    borderRadius: "9999px",
     backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: { default: tokens.colorMuted, ":hover": tokens.colorText },
+    color: { default: tokens.colorSubtle, ":hover": tokens.colorText },
     cursor: "pointer",
-    fontSize: "10px",
-    fontWeight: 500,
   },
   resetTypeDisabled: {
-    color: tokens.colorSubtle,
     cursor: "not-allowed",
-    opacity: 0.55,
+    opacity: 0.45,
   },
   body: {
     display: "grid",
@@ -140,12 +139,17 @@ export function GenericArtifactTypeState({
   id,
   data,
   resettable,
+  skip,
 }: {
   id: string;
   data: WorkflowNodeData;
   resettable: boolean;
+  /** Variables already chosen on a visible port. */
+  skip: ReadonlySet<string>;
 }) {
-  const variables = declaredArtifactTypeVariables(data.spec);
+  const variables = declaredArtifactTypeVariables(data.spec).filter(
+    (variable) => !skip.has(variable),
+  );
   if (!variables.length) return null;
   const bindableArtifactTypes = data.bindableArtifactTypes ?? [];
 
@@ -162,23 +166,12 @@ export function GenericArtifactTypeState({
           data.onBindArtifactTypeBinding !== undefined && options.length > 0;
         const label = artifactType
           ? `${artifactType.id}@${artifactType.schema_version}`
-          : "Any artifact · binds on connect";
+          : ANY_TYPE_LABEL;
         return (
           <div key={variable} {...stylex.props(s.genericTypeRow)}>
-            <span
-              aria-hidden="true"
-              {...stylex.props(s.genericTypeDot)}
-              style={
-                artifactType
-                  ? {
-                      backgroundColor: artifactTypeColor(
-                        artifactType.id,
-                        tokens.colorAccent,
-                      ),
-                    }
-                  : undefined
-              }
-            />
+            <span {...stylex.props(s.genericTypeLabel)}>
+              {variables.length > 1 ? `Type ${variable}` : "Type"}
+            </span>
             {picksType ? (
               <select
                 disabled={!resettable}
@@ -204,7 +197,7 @@ export function GenericArtifactTypeState({
                   });
                 }}
               >
-                <option value="">Any artifact · binds on connect</option>
+                <option value="">{ANY_TYPE_LABEL}</option>
                 {options.map((type) => (
                   <option
                     key={`${type.id}@${type.schema_version}`}
@@ -243,8 +236,7 @@ export function GenericArtifactTypeState({
                 )}
                 onClick={() => data.onResetArtifactTypeBinding?.(id, variable)}
               >
-                <RotateCcw size={10} />
-                Reset type
+                <RotateCcw size={11} />
               </button>
             ) : null}
           </div>
