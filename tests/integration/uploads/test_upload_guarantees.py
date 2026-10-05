@@ -6,9 +6,10 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, urlsplit
 from uuid import uuid4
 
+import botocore.auth
 import pytest
 from grafy_api.upload_inspection import FileFormatMismatchError, inspect_upload_async
 from grafy_api.uploads import UploadService, UploadServiceConfig, UploadTooLargeError
@@ -257,6 +258,47 @@ def test_conditional_presign_includes_if_none_match_in_signed_headers() -> None:
     assert urlparse(url).hostname == "uploads.example.test"
     signed_headers = query["X-Amz-SignedHeaders"][0]
     assert "if-none-match" in signed_headers.split(";")
+
+
+@pytest.mark.parametrize("signing_path", ["/storage", "/storage/"])
+def test_conditional_presign_signs_origin_and_prefixes_proxy_path(
+    monkeypatch: pytest.MonkeyPatch, signing_path: str
+) -> None:
+    """The proxy strips `/storage`, so the signature must not cover it."""
+
+    frozen = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
+    monkeypatch.setattr(botocore.auth, "get_current_datetime", lambda: frozen)
+
+    def sign(signing_endpoint_url: str) -> str:
+        store = S3ObjectStore(
+            endpoint_url="http://minio.internal:9000",
+            signing_endpoint_url=signing_endpoint_url,
+            region="us-east-1",
+            access_key_id="minioadmin",
+            secret_access_key="minioadmin",
+            force_path_style=True,
+        )
+        return store._sign_conditional_put("artifacts", "objects/one.bin", 60)
+
+    prefixed = urlsplit(sign(f"https://grafy.example.test{signing_path}"))
+    origin = urlsplit(sign("https://grafy.example.test"))
+
+    assert prefixed.netloc == "grafy.example.test"
+    assert prefixed.path == "/storage/artifacts/objects/one.bin"
+    assert origin.path == "/artifacts/objects/one.bin"
+    assert prefixed.query == origin.query
+
+
+def test_conditional_presign_rejects_signing_endpoint_with_query() -> None:
+    with pytest.raises(ValueError, match="query or fragment"):
+        S3ObjectStore(
+            endpoint_url="http://minio.internal:9000",
+            signing_endpoint_url="https://grafy.example.test/storage?x=1",
+            region="us-east-1",
+            access_key_id="minioadmin",
+            secret_access_key="minioadmin",
+            force_path_style=True,
+        )
 
 
 @pytest.mark.skipif(

@@ -62,6 +62,17 @@ test:
     uv run --all-extras pytest
     npm --prefix apps/web test
 
+# Prove presigned S3 uploads through the gateway's /storage/ location.
+test-storage-gateway:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    stack=(docker compose --file infra/docker/compose.storage-gateway-test.yaml)
+    trap '"${stack[@]}" down --volumes' EXIT
+    "${stack[@]}" up --detach --wait
+    GRAFY_TEST_S3_GATEWAY_URL=http://127.0.0.1:${GRAFY_TEST_GATEWAY_PORT:-18080}/storage \
+    GRAFY_TEST_S3_ENDPOINT_URL=http://127.0.0.1:${GRAFY_TEST_MINIO_PORT:-19000} \
+        uv run pytest -q -o log_cli=false tests/integration/uploads/test_storage_gateway.py
+
 # Run Python and web linters.
 lint:
     uv run ruff check apps/api/src libs/client/src libs/core/src libs/persistence/src libs/shared/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
