@@ -45,6 +45,7 @@ async def test_library_provenance_round_trips_on_the_artifact_row(
         node_title="Resize",
         graph_revision=4,
         execution_id=uuid4(),
+        name="Quarterly report",
     )
     async with unit_of_work as entered:
         await entered.artifacts.add(artifact)
@@ -63,6 +64,7 @@ async def test_library_provenance_round_trips_on_the_artifact_row(
 
     assert reloaded is not None
     assert reloaded.library_provenance == provenance
+    assert reloaded.library_provenance.name == "Quarterly report"
     assert [candidate.id for candidate in listed] == [artifact.id]
 
 

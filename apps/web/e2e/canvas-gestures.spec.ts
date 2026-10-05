@@ -202,7 +202,7 @@ test("touch can select and move a node without moving the viewport", async ({
   expect(await viewportTransform(page)).toEqual(beforeViewport);
 });
 
-test("ports still connect through a real drag", async ({ page, hasTouch }) => {
+async function connectPortsThroughDrag(page: Page, hasTouch: boolean) {
   const source = await addNode(page, "Test text source", hasTouch);
   const target = await addNode(page, "Test text sink", hasTouch);
   // New nodes open near the viewport center. Move the sink below the source
@@ -256,4 +256,27 @@ test("ports still connect through a real drag", async ({ page, hasTouch }) => {
     await page.mouse.up();
   }
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+}
+
+test("ports still connect through a real drag", async ({ page, hasTouch }) => {
+  await connectPortsThroughDrag(page, hasTouch);
+});
+
+test("ports still connect with Generated selected in the docked panel", async ({
+  page,
+  hasTouch,
+}) => {
+  const viewport = page.viewportSize();
+  test.skip(
+    (viewport?.width ?? 0) < 1100,
+    "The side panel slides over the canvas below 1100px.",
+  );
+
+  await page.getByRole("button", { name: "Generated artifacts" }).click();
+  await expect(page.getByRole("tab", { name: "Generated" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+
+  await connectPortsThroughDrag(page, hasTouch);
 });

@@ -4796,6 +4796,32 @@ function WorkbenchBody({
           <Bookmark size={14} />
           <span {...stylex.props(s.railLabel)}>Panel</span>
         </button>
+        <button
+          type="button"
+          aria-label="Generated artifacts"
+          aria-pressed={sidePanel.open && sidePanel.view === "generated"}
+          title="Show Run artifacts from this canvas"
+          {...stylex.props(
+            s.railButton,
+            sidePanel.open && sidePanel.view === "generated"
+              ? s.railPrimary
+              : null,
+          )}
+          onClick={() => {
+            closeGraphBrowser();
+            setLibraryOpen(false);
+            setGridPanelOpen(false);
+            if (sidePanel.open && sidePanel.view === "generated") {
+              sidePanel.toggle();
+            } else {
+              sidePanel.setView("generated");
+              sidePanel.setOpen(true);
+            }
+          }}
+        >
+          <Layers size={14} />
+          <span {...stylex.props(s.railLabel)}>Generated</span>
+        </button>
         <span {...stylex.props(s.railDivider)} />
         <button
           type="button"
@@ -4856,6 +4882,11 @@ function WorkbenchBody({
       <WorkbenchSidePanel
         workspaceId={workspaceId}
         sidePanel={sidePanel}
+        graphId={activeGraph?.id ?? null}
+        nodeTitles={nodeTitles}
+        registry={registry ?? null}
+        canSave={canEditGraph}
+        executionRunning={running}
         onOpenRun={(graphId, executionId) => {
           if (graphId !== activeGraph?.id) {
             openGraphInNewTab(graphId);

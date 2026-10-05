@@ -5,6 +5,7 @@ import * as stylex from "@stylexjs/stylex";
 import { Drawer } from "@base-ui/react/drawer";
 import {
   FolderTree,
+  Layers,
   LayoutTemplate,
   PanelLeftClose,
   type LucideIcon,
@@ -22,6 +23,8 @@ import {
 } from "./workbench-side-panel-state";
 import { LibraryPanel } from "./LibraryPanel";
 import { TemplatesPanel } from "./TemplatesPanel";
+import { GeneratedDrawer } from "../GeneratedDrawer";
+import type { NodeRegistry } from "@/lib/api";
 
 const PANEL_BODY_ID = "grafy-side-panel-view";
 const RESIZE_STEP = 16;
@@ -30,6 +33,11 @@ type PanelContext = {
   workspaceId: string;
   onOpenRun: (graphId: string, executionId: string) => void;
   onOpenGraph: (graphId: string) => void;
+  graphId: string | null;
+  nodeTitles: Readonly<Record<string, string>>;
+  registry: NodeRegistry | null;
+  canSave: boolean;
+  executionRunning: boolean;
 };
 
 /**
@@ -62,6 +70,21 @@ const PANEL_VIEWS: readonly {
       <TemplatesPanel
         workspaceId={context.workspaceId}
         onOpenGraph={context.onOpenGraph}
+      />
+    ),
+  },
+  {
+    id: "generated",
+    label: "Generated",
+    icon: Layers,
+    render: (context) => (
+      <GeneratedDrawer
+        workspaceId={context.workspaceId}
+        graphId={context.graphId}
+        nodeTitles={context.nodeTitles}
+        registry={context.registry}
+        canSave={context.canSave}
+        executionRunning={context.executionRunning}
       />
     ),
   },
@@ -204,11 +227,21 @@ export function WorkbenchSidePanel({
   sidePanel,
   onOpenRun,
   onOpenGraph,
+  graphId,
+  nodeTitles,
+  registry,
+  canSave,
+  executionRunning,
 }: {
   workspaceId: string;
   sidePanel: WorkbenchSidePanelState;
   onOpenRun: (graphId: string, executionId: string) => void;
   onOpenGraph: (graphId: string) => void;
+  graphId: string | null;
+  nodeTitles: Readonly<Record<string, string>>;
+  registry: NodeRegistry | null;
+  canSave: boolean;
+  executionRunning: boolean;
 }) {
   if (!sidePanel.open) return null;
 
@@ -220,6 +253,11 @@ export function WorkbenchSidePanel({
       onClose={() => sidePanel.setOpen(false)}
       onOpenRun={onOpenRun}
       onOpenGraph={onOpenGraph}
+      graphId={graphId}
+      nodeTitles={nodeTitles}
+      registry={registry}
+      canSave={canSave}
+      executionRunning={executionRunning}
     />
   );
 
@@ -260,6 +298,11 @@ function SidePanelBody({
   onClose,
   onOpenRun,
   onOpenGraph,
+  graphId,
+  nodeTitles,
+  registry,
+  canSave,
+  executionRunning,
 }: {
   workspaceId: string;
   view: SidePanelViewId;
@@ -267,10 +310,24 @@ function SidePanelBody({
   onClose: () => void;
   onOpenRun: (graphId: string, executionId: string) => void;
   onOpenGraph: (graphId: string) => void;
+  graphId: string | null;
+  nodeTitles: Readonly<Record<string, string>>;
+  registry: NodeRegistry | null;
+  canSave: boolean;
+  executionRunning: boolean;
 }) {
   const active =
     PANEL_VIEWS.find((entry) => entry.id === view) ?? PANEL_VIEWS[0]!;
-  const context: PanelContext = { workspaceId, onOpenRun, onOpenGraph };
+  const context: PanelContext = {
+    workspaceId,
+    onOpenRun,
+    onOpenGraph,
+    graphId,
+    nodeTitles,
+    registry,
+    canSave,
+    executionRunning,
+  };
 
   function onTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;

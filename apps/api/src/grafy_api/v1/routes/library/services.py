@@ -119,6 +119,7 @@ class LibraryService:
         execution_id: UUID,
         node_id: str,
         node_title: str,
+        name: str,
     ) -> LibraryItemResponse:
         async with self._unit_of_work as unit_of_work:
             detail = await unit_of_work.execution_history.get(
@@ -156,6 +157,7 @@ class LibraryService:
             node_title=node_title,
             graph_revision=detail.execution.graph_revision,
             execution_id=execution_id,
+            name=name,
         )
         return await self._record(
             workspace_id,
@@ -225,7 +227,7 @@ class LibraryService:
     ) -> LibraryItemResponse:
         return LibraryItemResponse.from_item(
             item,
-            name=self._artifact_name(item.artifact),
+            name=item.provenance.name or self._artifact_name(item.artifact),
             download_formats=self._artifacts.export_formats(item.artifact),
             folder_id=folder_id,
         )

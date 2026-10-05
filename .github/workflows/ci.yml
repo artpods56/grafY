@@ -201,6 +201,38 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
+      - name: Falsify browser geometry and connection assertions
+        working-directory: apps/web
+        run: |
+          backup="$(mktemp -d)"
+          cp e2e/generated-drawer.spec.ts "$backup/geometry.ts"
+          cp e2e/canvas-gestures.spec.ts "$backup/ports.ts"
+          trap 'cp "$backup/geometry.ts" e2e/generated-drawer.spec.ts; cp "$backup/ports.ts" e2e/canvas-gestures.spec.ts; rm -rf "$backup"' EXIT
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("e2e/generated-drawer.spec.ts")
+          s = p.read_text()
+          old = "toBeLessThan(canvasBefore.width)"
+          assert old in s
+          p.write_text(s.replace(old, "toBeLessThan(0)"))
+          p = Path("e2e/canvas-gestures.spec.ts")
+          s = p.read_text()
+          old = 'page.locator(".react-flow__edge")).toHaveCount(1)'
+          assert old in s
+          p.write_text(s.replace(old, 'page.locator(".react-flow__edge")).toHaveCount(2)'))
+          PY
+          if npx playwright test generated-drawer.spec.ts --project=desktop-chromium --retries=0 > "$backup/geometry.log" 2>&1; then
+            cat "$backup/geometry.log"
+            exit 1
+          fi
+          cat "$backup/geometry.log"
+          grep -q "Expected: < 0" "$backup/geometry.log"
+          if npx playwright test canvas-gestures.spec.ts --project=desktop-chromium --grep "ports still connect with Generated" --retries=0 > "$backup/ports.log" 2>&1; then
+            cat "$backup/ports.log"
+            exit 1
+          fi
+          cat "$backup/ports.log"
+          grep -q "Expected: 2" "$backup/ports.log"
       - name: Verify desktop and narrow Generated layout
         working-directory: apps/web
         run: npx playwright test generated-drawer.spec.ts
