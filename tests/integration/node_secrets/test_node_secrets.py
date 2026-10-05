@@ -1353,3 +1353,49 @@ def test_node_secret_status_preserves_valid_nodes_when_saved_config_is_invalid(
             assert deleted.content == b""
     finally:
         asyncio.run(database.dispose())
+
+
+async def test_empty_secret_value_response_keeps_its_plain_detail(
+    node_secret_setup: tuple[
+        Database, NodeSecretService, SavedGraphService, PluginRegistry
+    ],
+    tmp_path: Path,
+) -> None:
+    # The rejected-value message is the whole response body; nothing about the stored secret is
+    # added to it now that the HTTP boundary does the translating.
+    database, service, saved_graphs, registry = node_secret_setup
+    graph = await _saved_secret_graph(database)
+    components = _build_secret_components(
+        registry=registry,
+        workspace=tmp_path / "route-workbench",
+        saved_graphs=saved_graphs,
+        node_secrets=service,
+    )
+    with client_with_overrides(
+        settings=Settings(
+            app=AppConfig(
+                workspace=tmp_path / "workbench",
+                database_url=SecretStr(create_db_url(tmp_path, "node-secrets.sqlite3")),
+            )
+        ),
+        overrides={
+            **workbench_dependency_overrides(components),
+            node_secret_service: lambda: service,
+        },
+    ) as client:
+        response = (
+            GrafyApi(client)
+            .workspace(WORKSPACE_ID)
+            .node_secrets.configure_secret(
+                graph.id,
+                "llm",
+                "api_key",
+                ConfigureNodeSecretRequest(
+                    value=SecretStr(""),
+                    expected_graph_revision=1,
+                ),
+            )
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "Node secret value must not be empty"}
