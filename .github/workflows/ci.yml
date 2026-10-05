@@ -93,6 +93,14 @@ jobs:
           PY
       - name: Run backend tests
         run: uv run --all-extras pytest
+      - name: Verify presigned uploads through the gateway
+        run: |
+          stack=(docker compose --file infra/docker/compose.storage-gateway-test.yaml)
+          trap '"${stack[@]}" down --volumes' EXIT
+          "${stack[@]}" up --detach --wait
+          GRAFY_TEST_S3_GATEWAY_URL=http://127.0.0.1:18080/storage \
+          GRAFY_TEST_S3_ENDPOINT_URL=http://127.0.0.1:19000 \
+            uv run --all-extras pytest -q -o log_cli=false tests/integration/uploads/test_storage_gateway.py
 
   native-runtime:
     name: Native Plugin runtime image
