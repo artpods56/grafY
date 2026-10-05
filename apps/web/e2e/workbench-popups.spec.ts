@@ -104,35 +104,34 @@ test("catalog fits the screen and keeps search when returning from details", asy
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
 });
 
-test("compact filters are optional and preserve the chosen source", async ({
+test("sources and filters stay out of the way and keep what was chosen", async ({
   page,
-  viewport,
 }) => {
-  test.skip(!viewport || viewport.width > 1024, "Compact source controls");
   await page.getByRole("button", { name: "Add node", exact: true }).click();
-  const source = page.getByRole("combobox", { name: "Node source" });
-  await source.selectOption({ label: "Built-in" });
-  const artifact = page.getByRole("combobox", { name: "Artifact type" });
-  await expect(artifact).toBeHidden();
-  await page.getByRole("button", { name: "Filters", exact: true }).click();
-  await artifact.selectOption({ label: "Text payload" });
-  await page.getByRole("checkbox", { name: "Input nodes only" }).check();
-  const filters = page.getByRole("button", {
-    name: "Filters (2)",
-    exact: true,
-  });
+  const sources = page.getByRole("toolbar", { name: "Node sources" });
+  const builtIn = sources.getByRole("button", { name: /^Built-in, / });
+  await builtIn.click();
+  await expect(builtIn).toHaveAttribute("aria-pressed", "true");
+
+  // The refinements live behind one Filters button.
+  const filters = page.getByRole("button", { name: /^Filters/ });
+  await expect(filters).toHaveAccessibleName("Filters");
   await filters.click();
-  await expect(artifact).toBeHidden();
-  await expect(source.locator("option:checked")).toHaveText("Built-in");
+  await page.getByRole("menuitemradio", { name: "Text payload" }).click();
+  await filters.click();
+  await page
+    .getByRole("menuitemcheckbox", { name: "Starts a workflow" })
+    .click();
+  await page.keyboard.press("Escape");
+  await expect(filters).toHaveAccessibleName("Filters, 2 on");
+
   await expect(
     page.getByRole("option", { name: /^Test text sink/ }),
   ).toHaveCount(0);
   await page.getByRole("option", { name: /^Test text source/ }).click();
-  if (viewport && viewport.width <= 720) {
-    await page.getByRole("button", { name: "Back to results" }).click();
-  }
-  await expect(filters).toHaveAttribute("aria-expanded", "false");
-  await expect(source.locator("option:checked")).toHaveText("Built-in");
+  const back = page.getByRole("button", { name: "Back to results" });
+  if (await back.isVisible()) await back.click();
+  await expect(builtIn).toHaveAttribute("aria-pressed", "true");
 });
 
 test("Canvas lab reveals advanced controls without covering the canvas", async ({

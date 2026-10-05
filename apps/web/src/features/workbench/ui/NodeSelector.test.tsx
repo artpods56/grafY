@@ -280,6 +280,31 @@ async function enterSearch(value: string) {
   });
 }
 
+/** Opens the Filters menu; Base UI renders it in a portal on the body. */
+async function openFilters() {
+  const trigger = dialog().querySelector<HTMLElement>(
+    'button[aria-label^="Filters"]',
+  );
+  if (!trigger) throw new Error("No Filters button");
+  await React.act(async () => trigger.click());
+}
+
+function menuItem(role: string, text: string): HTMLElement {
+  const item = [
+    ...document.body.querySelectorAll<HTMLElement>(`[role="${role}"]`),
+  ].find((candidate) => candidate.textContent?.trim() === text);
+  if (!item) throw new Error(`No ${role} ${text}`);
+  return item;
+}
+
+async function openDetails() {
+  const toggle = [
+    ...dialog().querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
+  ].find((button) => button.textContent?.startsWith("Details"));
+  if (!toggle) throw new Error("No Details toggle");
+  await React.act(async () => toggle.click());
+}
+
 async function press(element: Element, key: string) {
   await React.act(async () => {
     element.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
@@ -298,14 +323,14 @@ afterEach(async () => {
 });
 
 describe("NodeSelector", () => {
-  it("scopes the rail by source with artifact and input-node refinements", async () => {
+  it("scopes the list by source, with type and input-node filters", async () => {
     await renderSelector();
 
     expect(
       dialog()
         .querySelector('[role="toolbar"]')
         ?.getAttribute("aria-orientation"),
-    ).toBe("vertical");
+    ).toBe("horizontal");
     const filters = [
       ...dialog().querySelectorAll<HTMLButtonElement>(
         '[role="toolbar"] button',
@@ -320,7 +345,9 @@ describe("NodeSelector", () => {
 
     // Source category scopes the list to one provider plugin.
     await React.act(async () => buttonNamed("Built-in, 4 nodes").click());
-    expect(dialog().textContent).toContain("Built-in nodes");
+    expect(
+      dialog().querySelector('section[aria-label="Built-in nodes"]'),
+    ).not.toBeNull();
     expect(options().map((option) => option.textContent)).toEqual([
       expect.stringContaining("Compose map"),
       expect.stringContaining("Enter text"),
@@ -329,29 +356,26 @@ describe("NodeSelector", () => {
     ]);
 
     // The artifact type refines within the active source.
-    const artifactSelect = dialog().querySelector<HTMLSelectElement>(
-      '[aria-label="Artifact type"]',
+    await openFilters();
+    await React.act(async () =>
+      menuItem("menuitemradio", "scalar.text").click(),
     );
-    expect(artifactSelect).not.toBeNull();
-    await React.act(async () => {
-      if (!artifactSelect) return;
-      artifactSelect.value = "artifact:scalar.text@1";
-      artifactSelect.dispatchEvent(new Event("change", { bubbles: true }));
-    });
     expect(options().map((option) => option.textContent)).toEqual([
       expect.stringContaining("Enter text"),
       expect.stringContaining("Replace text"),
     ]);
 
-    // Input nodes only: nodes that take no inputs because they are inputs themselves.
-    const inputToggle = dialog().querySelector<HTMLInputElement>(
-      'input[type="checkbox"]',
-    );
-    expect(inputToggle).not.toBeNull();
-    await React.act(async () => {
-      inputToggle?.click();
-    });
-    expect(inputToggle?.checked).toBe(true);
+    expect(
+      dialog()
+        .querySelector('button[aria-label^="Filters"]')
+        ?.getAttribute("aria-label"),
+    ).toBe("Filters, 1 on");
+
+    // Nodes that take no inputs because they are inputs themselves.
+    await openFilters();
+    const startsWorkflow = menuItem("menuitemcheckbox", "Starts a workflow");
+    await React.act(async () => startsWorkflow.click());
+    expect(startsWorkflow.getAttribute("aria-checked")).toBe("true");
     expect(options().map((option) => option.textContent)).toEqual([
       expect.stringContaining("Enter text"),
     ]);
@@ -397,25 +421,17 @@ describe("NodeSelector", () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(searchInput()));
   });
 
-  it("keeps toolbar semantics aligned with live compact-layout changes", async () => {
-    let compact = true;
-    const listeners = new Set<EventListener>();
+  it("keeps the sources in one sideways row at every width", async () => {
     vi.stubGlobal(
       "matchMedia",
       vi.fn(
         (query: string): MediaQueryList =>
           ({
-            get matches() {
-              return query === "(max-width: 720px)" && compact;
-            },
+            matches: query === "(max-width: 720px)",
             media: query,
             onchange: null,
-            addEventListener: ((_type: string, listener: EventListener) => {
-              listeners.add(listener);
-            }) as MediaQueryList["addEventListener"],
-            removeEventListener: ((_type: string, listener: EventListener) => {
-              listeners.delete(listener);
-            }) as MediaQueryList["removeEventListener"],
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
             addListener: vi.fn(),
             removeListener: vi.fn(),
             dispatchEvent: vi.fn(),
@@ -425,21 +441,12 @@ describe("NodeSelector", () => {
 
     await renderSelector();
 
-    expect(
-      dialog()
-        .querySelector('[role="toolbar"]')
-        ?.getAttribute("aria-orientation"),
-    ).toBe("horizontal");
-
-    compact = false;
-    await React.act(async () => {
-      for (const listener of listeners) listener(new Event("change"));
-    });
-    expect(
-      dialog()
-        .querySelector('[role="toolbar"]')
-        ?.getAttribute("aria-orientation"),
-    ).toBe("vertical");
+    const toolbar = dialog().querySelector('[role="toolbar"]');
+    expect(toolbar?.getAttribute("aria-orientation")).toBe("horizontal");
+    const chips = [...(toolbar?.querySelectorAll("button") ?? [])];
+    chips[0]?.focus();
+    await press(chips[0]!, "ArrowRight");
+    expect(document.activeElement).toBe(chips[1]);
   });
 
   it("renders the selected node in the inspector with its ports and settings", async () => {
@@ -454,7 +461,7 @@ describe("NodeSelector", () => {
     expect(enterPreview?.textContent).toContain("Text");
     expect(enterPreview?.textContent).toContain("string");
     expect(dialog().querySelector("aside")?.textContent).toContain(
-      "Starts a workflow",
+      "it starts a workflow",
     );
 
     await enterSearch("Fuzzy match tables");
@@ -497,6 +504,11 @@ describe("NodeSelector", () => {
 
     await enterSearch("Replace text");
     await React.act(async () => options()[0]?.click());
+    // What a node works with is a detail, folded away until asked for.
+    expect(dialog().querySelector("aside")?.textContent).not.toContain(
+      "Works with:",
+    );
+    await openDetails();
 
     expect(dialog().querySelector("aside")?.textContent).toContain(
       "Works with:",

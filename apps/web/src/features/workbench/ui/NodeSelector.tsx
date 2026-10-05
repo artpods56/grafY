@@ -37,7 +37,7 @@ import {
   resultOptionId,
   type NodeResultGroup,
 } from "./node-selector/NodeResultList";
-import { NodeSourceRail } from "./node-selector/NodeSourceRail";
+import { NodeSourceBar } from "./node-selector/NodeSourceBar";
 
 const MODULE_PLUGIN_SLUG = "graph.module";
 /** Below this the picker shows the list or one node's details, not both. */
@@ -144,14 +144,13 @@ function NodeBrowser({
     moduleKey: string;
     releaseKey: string;
   } | null>(null);
-  const [technicalDetailsOpen, setTechnicalDetailsOpen] = React.useState(false);
-  const [detailsOpen, setDetailsOpen] = React.useState(false);
-  const [filtersOpen, setFiltersOpen] = React.useState(false);
+  const [nodeDetailsOpen, setNodeDetailsOpen] = React.useState(false);
+  const [phoneDetailsOpen, setPhoneDetailsOpen] = React.useState(false);
   const options = React.useRef(new Map<string, HTMLElement>());
   const backRef = React.useRef<HTMLButtonElement>(null);
   /** A row to focus once it renders: the phone layout's return to the list. */
   const pendingOptionFocus = React.useRef<string | null>(null);
-  const showingDetailsOnly = phoneLayout && detailsOpen;
+  const showingDetailsOnly = phoneLayout && phoneDetailsOpen;
 
   // --- The catalog, narrowed by port, source, refinements and search ---------
 
@@ -425,11 +424,11 @@ function NodeBrowser({
 
   return (
     <>
-      <div {...stylex.props(s.header)}>
-        <div {...stylex.props(s.heading)}>
-          <DialogTitle id="node-selector-title" {...stylex.props(s.title)}>
-            Add node
-          </DialogTitle>
+      <div
+        {...stylex.props(s.header, showingDetailsOnly && s.headerPhoneDetails)}
+      >
+        <div {...stylex.props(s.visuallyHidden)}>
+          <DialogTitle id="node-selector-title">Add node</DialogTitle>
           <DialogDescription
             id="node-selector-description"
             {...stylex.props(s.visuallyHidden)}
@@ -471,47 +470,44 @@ function NodeBrowser({
         </label>
       </div>
 
-      <div {...stylex.props(s.layout, showingDetailsOnly && s.detailsLayout)}>
-        <NodeSourceRail
-          sources={sourceFilters}
-          counts={sourceCounts}
-          activeSourceId={activeSourceId}
-          horizontal={phoneLayout}
-          artifactOptions={artifactOptions}
-          artifactFilterId={artifactFilterId}
-          inputNodesOnly={inputNodesOnly}
-          filtersOpen={filtersOpen}
-          hidden={showingDetailsOnly}
-          onSelectSource={selectSource}
-          onArtifactFilterChange={(id) => {
-            setArtifactFilterId(id);
-            setActiveKey(null);
-          }}
-          onInputNodesOnlyChange={(next) => {
-            setInputNodesOnly(next);
-            setActiveKey(null);
-          }}
-          onFiltersOpenChange={setFiltersOpen}
-        />
+      {showingDetailsOnly ? null : (
+        <>
+          <NodeSourceBar
+            sources={sourceFilters}
+            counts={sourceCounts}
+            activeSourceId={activeSourceId}
+            artifactOptions={artifactOptions}
+            artifactFilterId={artifactFilterId}
+            inputNodesOnly={inputNodesOnly}
+            onSelectSource={selectSource}
+            onArtifactFilterChange={(id) => {
+              setArtifactFilterId(id);
+              setActiveKey(null);
+            }}
+            onInputNodesOnlyChange={(next) => {
+              setInputNodesOnly(next);
+              setActiveKey(null);
+            }}
+          />
+          {compatibility ? (
+            <CompatibilityNote
+              direction={compatibility.direction}
+              portTitle={compatibility.port.title ?? compatibility.port.name}
+            />
+          ) : null}
+        </>
+      )}
 
+      <div {...stylex.props(s.layout, showingDetailsOnly && s.detailsLayout)}>
         <NodeResultList
-          title={listTitle}
+          label={listTitle}
           status={status}
           errorMessage={errorMessage}
           loading={loading}
           groups={groups}
-          registry={registry}
           activeKey={listedKey}
           hidden={showingDetailsOnly}
           keepSearchFocus={finePointer}
-          compatibilityNote={
-            compatibility ? (
-              <CompatibilityNote
-                direction={compatibility.direction}
-                portTitle={compatibility.port.title ?? compatibility.port.name}
-              />
-            ) : null
-          }
           empty={
             <>
               <span>
@@ -546,7 +542,7 @@ function NodeBrowser({
           onActivate={setActiveKey}
           onChoose={(key) => {
             setActiveKey(key);
-            setDetailsOpen(true);
+            setPhoneDetailsOpen(true);
           }}
           onInsert={insertNode}
           onRetry={onRetry}
@@ -565,7 +561,7 @@ function NodeBrowser({
           aria-labelledby={selectedSpec ? INSPECTOR_TITLE_ID : undefined}
           {...stylex.props(
             s.inspector,
-            phoneLayout && !detailsOpen && s.hidden,
+            phoneLayout && !phoneDetailsOpen && s.hidden,
           )}
         >
           {selectedSpec ? (
@@ -575,7 +571,7 @@ function NodeBrowser({
               registry={registry}
               catalogRegistry={catalogRegistry}
               moduleReleases={moduleReleases}
-              technicalDetailsOpen={technicalDetailsOpen}
+              detailsOpen={nodeDetailsOpen}
               canInsert={canInsert}
               insertDisabledReason={insertDisabledReason}
               showEnterHint={finePointer}
@@ -586,7 +582,7 @@ function NodeBrowser({
                     type="button"
                     onClick={() => {
                       pendingOptionFocus.current = listedKey;
-                      setDetailsOpen(false);
+                      setPhoneDetailsOpen(false);
                     }}
                     {...stylex.props(s.backButton)}
                   >
@@ -594,7 +590,7 @@ function NodeBrowser({
                   </button>
                 ) : null
               }
-              onTechnicalDetailsOpenChange={setTechnicalDetailsOpen}
+              onDetailsOpenChange={setNodeDetailsOpen}
               onSelectRelease={(releaseKey) => {
                 if (moduleKey) setChosenRelease({ moduleKey, releaseKey });
               }}
@@ -685,54 +681,37 @@ function ModuleNotes({
 }
 
 const s = stylex.create({
+  /** The search is the header; the dialog's close button sits at its end. */
   header: {
-    display: "grid",
-    gridTemplateColumns: {
-      default: "132px minmax(0, 1fr)",
-      "@media (max-width: 720px)": "1fr",
-    },
-    alignItems: "center",
-    gap: "12px",
+    flexShrink: 0,
     padding: {
-      default: "12px 56px 12px 16px",
-      "@media (max-width: 720px)": "12px 56px 12px 12px",
+      default: "12px 56px 10px 12px",
+      "@media (max-width: 720px)": "12px 60px 10px 12px",
     },
-    borderBottomWidth: 1,
-    borderBottomStyle: "solid",
-    borderBottomColor: tokens.colorBorder,
   },
-  heading: { minWidth: 0 },
-  title: {
-    color: tokens.colorTextEmphasis,
-    fontSize: tokens.fontSizeLg,
-    fontWeight: 740,
-  },
+  headerPhoneDetails: { display: "none" },
   search: {
     position: "relative",
     minWidth: 0,
-    height: { default: "38px", "@media (max-width: 720px)": "44px" },
+    height: { default: "42px", "@media (pointer: coarse)": "46px" },
     display: "flex",
     alignItems: "center",
-    gap: "8px",
-    paddingInline: "11px",
+    gap: "10px",
+    paddingInline: "13px",
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: {
-      default: tokens.colorBorderStrong,
-      ":focus-within": tokens.colorAccent,
+      default: tokens.colorBorder,
+      ":focus-within": tokens.colorBorderStrong,
     },
-    borderRadius: "8px",
+    borderRadius: "10px",
     backgroundColor: {
       default: tokens.colorSurfaceSunken,
       ":focus-within": tokens.colorBg,
     },
-    boxShadow: {
-      default: "none",
-      ":focus-within": `0 0 0 3px ${tokens.colorAccentSoft}`,
-    },
     color: tokens.colorSubtle,
     cursor: "text",
-    transitionProperty: "border-color, box-shadow, background-color",
+    transitionProperty: "border-color, background-color",
     transitionDuration: "120ms",
   },
   searchIcon: { flexShrink: 0 },
@@ -745,8 +724,9 @@ const s = stylex.create({
     backgroundColor: "transparent",
     color: tokens.colorText,
     fontFamily: "inherit",
-    fontSize: tokens.fontSizeSm,
+    fontSize: "14px",
     outline: "none",
+    "::placeholder": { color: tokens.colorSubtle },
   },
   hidden: { display: "none" },
   layout: {
@@ -755,28 +735,27 @@ const s = stylex.create({
     display: "grid",
     overflow: "hidden",
     overscrollBehaviorY: "contain",
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorDivider,
     paddingBottom: {
       default: 0,
       "@media (max-width: 720px)": "env(safe-area-inset-bottom, 0px)",
     },
     gridTemplateColumns: {
-      default: "168px minmax(0, 1fr) 360px",
+      default: "minmax(0, 1fr) 380px",
       "@media (max-width: 1024px)": "minmax(0, 1fr) minmax(0, 1fr)",
       "@media (max-width: 720px)": "1fr",
     },
-    gridTemplateRows: {
-      default: "minmax(0, 1fr)",
-      "@media (max-width: 1024px)": "auto minmax(0, 1fr)",
-    },
+    gridTemplateRows: "minmax(0, 1fr)",
     gridTemplateAreas: {
-      default: '"filters nodes inspector"',
-      "@media (max-width: 1024px)": '"filters filters" "nodes inspector"',
-      "@media (max-width: 720px)": '"filters" "nodes"',
+      default: '"nodes inspector"',
+      "@media (max-width: 720px)": '"nodes"',
     },
   },
   detailsLayout: {
+    borderTopWidth: 0,
     gridTemplateColumns: "minmax(0, 1fr)",
-    gridTemplateRows: "minmax(0, 1fr)",
     gridTemplateAreas: '"inspector"',
   },
   inspector: {
@@ -785,26 +764,33 @@ const s = stylex.create({
     minHeight: 0,
     display: "flex",
     flexDirection: "column",
+    borderLeftWidth: { default: 1, "@media (max-width: 720px)": 0 },
+    borderLeftStyle: "solid",
+    borderLeftColor: tokens.colorDivider,
     backgroundColor: tokens.colorSurface,
   },
   backButton: {
-    minHeight: "44px",
+    minHeight: "40px",
     display: "inline-flex",
     alignItems: "center",
     alignSelf: "flex-start",
     flexShrink: 0,
     gap: "6px",
-    paddingInline: "12px",
+    margin: "8px 8px 0",
+    paddingInline: "10px 14px",
     borderWidth: 0,
-    backgroundColor: "transparent",
+    borderRadius: "8px",
+    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
     color: tokens.colorText,
+    fontFamily: "inherit",
     fontSize: tokens.fontSizeSm,
     cursor: "pointer",
-    outlineColor: tokens.colorAccent,
+    outlineColor: tokens.colorBorderStrong,
     outlineStyle: "solid",
-    outlineOffset: "-2px",
+    outlineOffset: "0",
     outlineWidth: { default: 0, ":focus-visible": "2px" },
   },
+
   empty: {
     minHeight: "160px",
     display: "grid",

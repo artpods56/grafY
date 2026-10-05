@@ -52,12 +52,12 @@ export function NodeInspector({
   registry,
   catalogRegistry,
   moduleReleases,
-  technicalDetailsOpen,
+  detailsOpen,
   canInsert,
   insertDisabledReason,
   showEnterHint,
   leading,
-  onTechnicalDetailsOpenChange,
+  onDetailsOpenChange,
   onSelectRelease,
   onInspect,
   onInsert,
@@ -68,13 +68,14 @@ export function NodeInspector({
   /** The registry narrowed to what the picker lists; "Works with" suggests from it. */
   catalogRegistry: NodeRegistry;
   moduleReleases: readonly NodeSpec[];
-  technicalDetailsOpen: boolean;
+  /** Settings, ports and what the node works with, folded away by default. */
+  detailsOpen: boolean;
   canInsert: boolean;
   insertDisabledReason: string;
   showEnterHint: boolean;
   /** Placed above the preview: the phone layout's way back to the results. */
   leading?: React.ReactNode;
-  onTechnicalDetailsOpenChange: (open: boolean) => void;
+  onDetailsOpenChange: (open: boolean) => void;
   onSelectRelease: (releaseKey: string) => void;
   onInspect: (spec: NodeSpec) => void;
   onInsert: () => void;
@@ -143,6 +144,13 @@ export function NodeInspector({
             <h3 id={INSPECTOR_TITLE_ID} {...stylex.props(s.title)}>
               {spec.title}
             </h3>
+            <p {...stylex.props(s.description)}>{description}</p>
+            {spec.runnable === false ? (
+              <p {...stylex.props(s.note)}>
+                Catalog preview only. {catalogOnlyReason}
+              </p>
+            ) : null}
+            <PortChips spec={spec} registry={registry} />
             {isModule ? (
               <ModuleFacts
                 spec={spec}
@@ -151,39 +159,36 @@ export function NodeInspector({
                 onOpenGraph={onOpenGraph}
               />
             ) : null}
-            <p {...stylex.props(s.description)}>{description}</p>
-            {spec.runnable === false ? (
-              <p {...stylex.props(s.note)}>
-                Catalog preview only. {catalogOnlyReason}
-              </p>
-            ) : null}
-            {isModule ? null : (
-              <>
-                <NodeSummary spec={spec} registry={registry} fields={fields} />
-                <button
-                  type="button"
-                  aria-expanded={technicalDetailsOpen}
-                  onClick={() =>
-                    onTechnicalDetailsOpenChange(!technicalDetailsOpen)
-                  }
-                  {...stylex.props(s.disclosure)}
-                >
-                  <ChevronRight
-                    size={13}
-                    aria-hidden="true"
-                    {...stylex.props(
-                      s.disclosureChevron,
-                      technicalDetailsOpen ? s.disclosureChevronOpen : null,
-                    )}
-                  />
-                  Technical details
-                </button>
-              </>
-            )}
           </header>
 
-          {isModule || technicalDetailsOpen ? (
-            <>
+          <button
+            type="button"
+            aria-expanded={detailsOpen}
+            onClick={() => onDetailsOpenChange(!detailsOpen)}
+            {...stylex.props(s.disclosure)}
+          >
+            <ChevronRight
+              size={13}
+              aria-hidden="true"
+              {...stylex.props(
+                s.disclosureChevron,
+                detailsOpen ? s.disclosureChevronOpen : null,
+              )}
+            />
+            Details
+            <span {...stylex.props(s.disclosureHint)}>
+              {detailsSummary(fields.length, ports.length)}
+            </span>
+          </button>
+
+          {detailsOpen ? (
+            <div {...stylex.props(s.details)}>
+              {fields.length ? (
+                <section {...stylex.props(s.section)}>
+                  <SectionTitle icon={Settings2}>Settings</SectionTitle>
+                  <FieldList fields={fields} />
+                </section>
+              ) : null}
               <section {...stylex.props(s.section)}>
                 <SectionTitle icon={Workflow}>
                   {isModule ? "Module contract" : "Ports"}
@@ -206,22 +211,17 @@ export function NodeInspector({
                   />
                 </div>
               </section>
-              <section {...stylex.props(s.section)}>
-                <SectionTitle icon={Settings2}>Configuration</SectionTitle>
-                <FieldList fields={fields} />
-              </section>
-            </>
-          ) : null}
-
-          {activePort ? (
-            <WorksWith
-              ports={ports}
-              activePort={activePort}
-              matches={matches}
-              registry={registry}
-              onSelectPort={selectPort}
-              onInspect={onInspect}
-            />
+              {activePort ? (
+                <WorksWith
+                  ports={ports}
+                  activePort={activePort}
+                  matches={matches}
+                  registry={registry}
+                  onSelectPort={selectPort}
+                  onInspect={onInspect}
+                />
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>
@@ -343,77 +343,87 @@ function ModuleFacts({
   );
 }
 
-/** "Accepts … / Produces … / Configuration: …" in words, for a plain node. */
-function NodeSummary({
+function detailsSummary(fieldCount: number, portCount: number): string {
+  const parts = [
+    fieldCount ? `${fieldCount} setting${fieldCount === 1 ? "" : "s"}` : null,
+    portCount ? `${portCount} port${portCount === 1 ? "" : "s"}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "Ports and connections";
+}
+
+/** What the node takes and makes, one chip per port, in the canvas's colours. */
+function PortChips({
   spec,
   registry,
-  fields,
 }: {
   spec: NodeSpec;
   registry: NodeRegistry;
-  fields: readonly SchemaField[];
 }) {
   return (
-    <div {...stylex.props(s.summary)}>
-      <p {...stylex.props(s.statement)}>
-        <PortStatement
-          verb="Accepts"
-          ports={spec.inputs}
-          registry={registry}
-          none="Starts a workflow"
-        />
-      </p>
-      <p {...stylex.props(s.statement)}>
-        <PortStatement
-          verb="Produces"
-          ports={spec.outputs}
-          registry={registry}
-          none="Ends a workflow branch"
-        />
-      </p>
-      <div {...stylex.props(s.configuration)}>
-        <span {...stylex.props(s.strong)}>Configuration:</span>
-        <span>
-          {fields.length
-            ? `${fields.map((field) => field.title).join(", ")} ${fields.length === 1 ? "is" : "are"} editable after adding.`
-            : "No editable settings."}
-        </span>
-      </div>
+    <div {...stylex.props(s.flow)}>
+      <PortChipGroup
+        label="Takes"
+        ports={spec.inputs}
+        registry={registry}
+        none="Nothing — it starts a workflow"
+      />
+      <PortChipGroup
+        label="Makes"
+        ports={spec.outputs}
+        registry={registry}
+        none="Nothing — it ends a branch"
+      />
     </div>
   );
 }
 
-function PortStatement({
-  verb,
+function PortChipGroup({
+  label,
   ports,
   registry,
   none,
 }: {
-  verb: string;
+  label: string;
   ports: readonly Port[];
   registry: NodeRegistry;
   none: string;
 }) {
-  const first = ports[0];
-  if (!first) return <>{none}</>;
-  const artifactType = portArtifactType(first);
   return (
-    <>
-      {verb}{" "}
-      <span
-        {...stylex.props(s.strong)}
-        style={{
-          color: artifactType
-            ? artifactTypeColor(artifactType.id, tokens.colorTextEmphasis)
-            : tokens.colorTextEmphasis,
-        }}
-      >
-        {artifactTitleFor(registry, first)}
-      </span>
-      {ports.length > 1
-        ? ` + ${ports.length - 1} more`
-        : ` · ${first.shape === "many" ? "sequence" : "single value"}`}
-    </>
+    <div {...stylex.props(s.flowRow)}>
+      <span {...stylex.props(s.flowLabel)}>{label}</span>
+      {ports.length ? (
+        <span {...stylex.props(s.chips)}>
+          {ports.map((port) => {
+            const artifactType = portArtifactType(port);
+            const many = port.shape === "many";
+            const type = artifactTitleFor(registry, port);
+            return (
+              <span
+                key={port.name}
+                title={`${port.title ?? port.name}: ${type}${many ? " · sequence" : ""}`}
+                {...stylex.props(s.chip)}
+              >
+                <span
+                  aria-hidden="true"
+                  {...stylex.props(s.chipDot, many && s.chipDotMany)}
+                  style={{
+                    color: artifactType
+                      ? artifactTypeColor(artifactType.id, tokens.colorSubtle)
+                      : tokens.colorSubtle,
+                  }}
+                />
+                {type}
+                {many ? (
+                  <span {...stylex.props(s.chipMany)}>sequence</span>
+                ) : null}
+              </span>
+            );
+          })}
+        </span>
+      ) : (
+        <span {...stylex.props(s.flowNone)}>{none}</span>
+      )}
+    </div>
   );
 }
 
@@ -664,25 +674,19 @@ const s = stylex.create({
   },
   previewStage: {
     flexShrink: 0,
-    maxHeight: "36%",
+    maxHeight: "40%",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: "14px 12px",
+    padding: "18px 14px",
     overflow: "auto",
-    borderBottomWidth: 1,
-    borderBottomStyle: "solid",
-    borderBottomColor: tokens.colorBorder,
   },
   scroll: { minHeight: 0, flex: 1, overflowY: "auto" },
   header: {
     display: "grid",
     justifyItems: "start",
-    gap: "6px",
-    padding: "14px 16px",
-    borderBottomWidth: 1,
-    borderBottomStyle: "solid",
-    borderBottomColor: tokens.colorBorder,
+    gap: "8px",
+    padding: "4px 20px 16px",
   },
   provenance: { display: "flex", alignItems: "center", gap: "7px" },
   eyebrow: {
@@ -713,10 +717,10 @@ const s = stylex.create({
   title: {
     margin: 0,
     color: tokens.colorTextEmphasis,
-    fontSize: tokens.fontSizeLg,
-    fontWeight: 740,
+    fontSize: "17px",
+    fontWeight: 680,
     letterSpacing: "-0.015em",
-    lineHeight: 1.2,
+    lineHeight: 1.25,
   },
   description: {
     maxWidth: "68ch",
@@ -760,48 +764,84 @@ const s = stylex.create({
     outlineOffset: "2px",
     outlineWidth: { default: 0, ":focus-visible": "2px" },
   },
-  summary: { display: "grid", gap: "6px", marginTop: "4px" },
-  statement: {
-    margin: 0,
-    color: tokens.colorMuted,
-    fontSize: tokens.fontSizeSm,
-    lineHeight: 1.5,
-  },
-  strong: { color: tokens.colorTextEmphasis, fontWeight: 680 },
-  configuration: {
-    display: "grid",
-    gap: "2px",
-    color: tokens.colorMuted,
-    fontSize: tokens.fontSizeSm,
-    lineHeight: 1.5,
-  },
+
   disclosure: {
-    minHeight: { default: "28px", "@media (max-width: 720px)": "44px" },
-    display: "inline-flex",
+    width: "calc(100% - 24px)",
+    minHeight: { default: "34px", "@media (pointer: coarse)": "44px" },
+    display: "flex",
     alignItems: "center",
-    gap: "4px",
-    marginTop: "2px",
-    marginLeft: "-4px",
-    paddingInline: "4px 8px",
+    gap: "6px",
+    margin: "0 12px",
+    padding: "0 8px",
     borderWidth: 0,
-    borderRadius: tokens.radiusSm,
+    borderTopWidth: 1,
+    borderStyle: "solid",
+    borderTopColor: tokens.colorDivider,
+    borderRadius: 0,
     backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: { default: tokens.colorMuted, ":hover": tokens.colorText },
+    color: { default: tokens.colorText, ":hover": tokens.colorTextEmphasis },
     cursor: "pointer",
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 680,
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeSm,
+    fontWeight: 600,
+    textAlign: "left",
     outlineColor: tokens.colorAccent,
     outlineStyle: "solid",
-    outlineOffset: "2px",
+    outlineOffset: "-2px",
     outlineWidth: { default: 0, ":focus-visible": "2px" },
   },
+  disclosureHint: {
+    marginLeft: "auto",
+    color: tokens.colorSubtle,
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 500,
+  },
+  details: { paddingBottom: "8px" },
+  flow: { display: "grid", gap: "6px", marginTop: "4px" },
+  flowRow: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: "10px",
+    fontSize: tokens.fontSizeSm,
+  },
+  flowLabel: {
+    width: "44px",
+    flexShrink: 0,
+    color: tokens.colorSubtle,
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 600,
+  },
+  flowNone: { color: tokens.colorSubtle, fontSize: tokens.fontSizeXs },
+  chips: { display: "flex", flexWrap: "wrap", gap: "4px" },
+  chip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "5px",
+    height: "22px",
+    paddingInline: "8px",
+    borderRadius: "99px",
+    backgroundColor: tokens.colorSurfaceSunken,
+    color: tokens.colorText,
+    fontSize: tokens.fontSizeXs,
+    whiteSpace: "nowrap",
+  },
+  chipDot: {
+    width: "7px",
+    height: "7px",
+    flexShrink: 0,
+    borderRadius: "99px",
+    backgroundColor: "currentColor",
+  },
+  chipDotMany: { marginRight: "3px", boxShadow: "3px 0 0 -1px currentColor" },
+  chipMany: { color: tokens.colorSubtle },
   disclosureChevron: { transition: "transform 140ms ease" },
   disclosureChevronOpen: { transform: "rotate(90deg)" },
   section: {
-    padding: "16px",
-    borderBottomWidth: 1,
-    borderBottomStyle: "solid",
-    borderBottomColor: tokens.colorBorder,
+    margin: "0 12px",
+    padding: "12px 8px",
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorDivider,
   },
   sectionTitleRow: {
     display: "flex",
@@ -969,11 +1009,7 @@ const s = stylex.create({
   footer: {
     flexShrink: 0,
     display: "grid",
-    padding: "10px 16px",
-    borderTopWidth: 1,
-    borderTopStyle: "solid",
-    borderTopColor: tokens.colorBorder,
-    backgroundColor: tokens.colorSurfaceRaised,
+    padding: "12px 16px 14px",
   },
   visuallyHidden: {
     position: "absolute",
