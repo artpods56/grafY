@@ -222,16 +222,16 @@ _Avoid_: directory, collection
 
 ### Run artifact
 
-An output one run of a graph produced, shown in the Runs drawer. The Runs drawer
-is per canvas, newest first, grouped by run and then by the node that made the
-item, and each row names the revision it came from. Run artifacts are not a
-second persist: they exist as materialized output bindings the moment their node
-succeeds, which is what incremental execution, pins, and execution history read.
-The drawer is a view of those bindings, so an item stays visible after its run
-ends, and one reaches the Library only through an explicit save. Saving a Run
-artifact into the Library adds a reference to the same identity rather than
-moving or copying it, so the row stays in Runs and the artifact then appears in
-both drawers.
+An output one run of a graph produced, shown in the Runs drawer. Its workbench
+panel tab is titled `Generated`. The drawer is per canvas, newest first, grouped
+by run and then by the node that made the item, and each row names the revision
+it came from. Run artifacts are not a second persist: they exist as materialized
+output bindings the moment their node succeeds, which is what incremental
+execution, pins, and execution history read. The drawer is a view of those
+bindings, so an item stays visible after its run ends, and one reaches the
+Library only through an explicit save. Saving a Run artifact into the Library
+adds a reference to the same identity rather than moving or copying it, so the
+row stays in Runs and the artifact then appears in both views.
 _Avoid_: produced, generated, result
 
 ### Graph execution history

@@ -28,6 +28,10 @@ BoundedFolderName = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=160),
 ]
+BoundedLibraryName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=160),
+]
 
 
 class LibraryProvenanceResponse(ApiResponse):
@@ -42,6 +46,7 @@ class LibraryProvenanceResponse(ApiResponse):
     graph_revision: int | None = None
     execution_id: UUID | None = None
     original_filename: str | None = None
+    name: str | None = None
 
     @classmethod
     def from_provenance(
@@ -57,6 +62,7 @@ class LibraryProvenanceResponse(ApiResponse):
             graph_revision=provenance.graph_revision,
             execution_id=provenance.execution_id,
             original_filename=provenance.original_filename,
+            name=provenance.name,
         )
 
 
@@ -123,6 +129,7 @@ class SaveRunArtifactRequest(ApiResponse):
         str,
         StringConstraints(strip_whitespace=True, min_length=1, max_length=160),
     ]
+    name: BoundedLibraryName
 
 
 class SaveUploadedArtifactRequest(ApiResponse):

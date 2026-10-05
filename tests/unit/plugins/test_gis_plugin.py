@@ -148,6 +148,30 @@ def write_geotiff(path: Path) -> bytes:
     return path.read_bytes()
 
 
+def test_gdal_normalizes_cog_and_tiles_to_xyz(tmp_path: Path) -> None:
+    source = tmp_path / "source.tif"
+    cog_path = tmp_path / "normalized.tif"
+    destination_dir = tmp_path / "tiles"
+    _ = write_geotiff(source)
+
+    gdal = GdalCli()
+    cog = gdal.normalize_geotiff_to_cog(source, cog_path)
+
+    assert cog.destination == cog_path
+    assert cog.bounds_wgs84 == (13.0, 52.0, 14.0, 53.0)
+    assert (cog.width, cog.height, cog.bands) == (64, 64, 3)
+
+    tiles = gdal.tile_raster_to_xyz(
+        cog_path,
+        destination_dir,
+        min_zoom=0,
+        max_zoom=0,
+    )
+
+    assert tiles.tile_count == 1
+    assert len(list(destination_dir.rglob("*.png"))) == 1
+
+
 def test_gis_registers_exact_sources_lightweight_layers_and_documents() -> None:
     registry = PluginRegistry()
     registry.install(TABLES)

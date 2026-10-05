@@ -51,6 +51,7 @@ async def save_library_artifact_from_run(
             execution_id=body.execution_id,
             node_id=body.node_id,
             node_title=body.node_title,
+            name=body.name,
         )
     except WorkbenchOperationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

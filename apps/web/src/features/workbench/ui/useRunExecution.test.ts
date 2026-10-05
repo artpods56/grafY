@@ -1009,6 +1009,44 @@ describe("useRunExecution", () => {
     });
   });
 
+  it.each([
+    {
+      label: "a persisted enum value from an older schema",
+      config: { mode: "retired" },
+      schema: {
+        type: "object",
+        properties: { mode: { type: "string", enum: ["fast", "safe"] } },
+        required: ["mode"],
+      },
+    },
+    {
+      label: "an incomplete autosaved config",
+      config: {},
+      schema: {
+        type: "object",
+        properties: { mode: { type: "string", enum: ["fast", "safe"] } },
+        required: ["mode"],
+      },
+    },
+  ])("blocks $label before any network request", async ({ config, schema }) => {
+    const invalid = { ...workflowNode(), selected: true };
+    invalid.data.spec = { ...invalid.data.spec, config_schema: schema };
+    invalid.data.config = config;
+    const harness = hookHarness({ nodes: [invalid] });
+    const hook = await renderHook(useRunExecution, harness.hookOptions);
+
+    await React.act(async () => {
+      await hook.result.current.runWorkflow("selected");
+    });
+
+    expect(apiMocks.getGraphMaterializations).not.toHaveBeenCalled();
+    expect(apiMocks.startRunExecution).not.toHaveBeenCalled();
+    expect(harness.nodes()[0]?.data.execution.status).toBe("failed");
+    expect(harness.nodes()[0]?.data.execution.error).toMatch(
+      /Cannot run Test operator/,
+    );
+  });
+
   it("clears a stale upstream pin when the current saved revision has no materialization", async () => {
     const graph = connectedSelection();
     graph.nodes[0].data.run = materializedRun("source", "stale-artifact");

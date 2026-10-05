@@ -188,6 +188,13 @@ Mount a protected platform-token file into the one-shot container and set
 `GRAFY_TOKEN_FILE` to that in-container path. The token must include
 `plugin.publish_global`.
 
+The checked-in `publisher` Dockerfile target owns this image. It extends the
+`api-plugins` target with the Docker CLI and buildx plugin. Keep
+`GRAFY_PUBLISHER_IMAGE` pointed at a digest-pinned build in production. See
+[How to publish native System Plugins](../../docs/how-to-publish-native-system-plugins.md)
+for the native base image, registry, token rotation, promotion, and retirement
+steps.
+
 `publish --global` has no host-verification option. Dependency lock checking and
 locked sync run in resource-bounded containers with package-network access.
 Candidate tests and catalog inspection then run in fresh containers with no
