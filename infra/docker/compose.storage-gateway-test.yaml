@@ -11,8 +11,10 @@ name: grafy-storage-gateway-test
 
 services:
   minio:
-    # Same digest as the production MinIO service.
-    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    # quay.io/minio/minio is no longer anonymously pullable; Chainguard's
+    # anonymously pullable MinIO build is the pinned replacement. It ships no
+    # `mc` or curl, so the healthcheck probes the readiness endpoint over bash.
+    image: cgr.dev/chainguard/minio@sha256:4cf4831a2bbcf13ddca09c1cbcc9faff716dd3c4247e0babc32864b8ee8e0034
     command: ["server", "/data"]
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -20,7 +22,11 @@ services:
     ports:
       - "127.0.0.1:${GRAFY_TEST_MINIO_PORT:-19000}:9000"
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test:
+        - CMD
+        - bash
+        - -c
+        - 'exec 3<>/dev/tcp/127.0.0.1/9000 && printf "GET /minio/health/ready HTTP/1.1\r\nHost: 127.0.0.1:9000\r\nConnection: close\r\n\r\n" >&3 && read -r status <&3 && [[ $$status == *" 200 "* ]]'
       interval: 2s
       timeout: 5s
       retries: 30
