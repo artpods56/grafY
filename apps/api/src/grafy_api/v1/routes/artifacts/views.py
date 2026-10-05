@@ -508,8 +508,6 @@ async def get_artifact_content(
         raise HTTPException(status_code=404, detail="Artifact not found")
     try:
         content = await service.open_content(artifact)
-    except ArtifactContentUnavailableError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
     except ArtifactResponseTooLargeError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     headers: dict[str, str] = {}

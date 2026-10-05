@@ -1,14 +1,15 @@
 import os
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Any
 from uuid import UUID, uuid4
 from dataclasses import dataclass
 
 import structlog
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
+from fastapi.utils import is_body_allowed_for_status_code
 from starlette.routing import BaseRoute
 
 from grafy_api.app_state import get_identity
@@ -17,7 +18,20 @@ from grafy_api.diagnostics import (
     diagnostic_scope,
     record_failure,
 )
+from grafy_api.execution.admission import (
+    RunExecutionCapacityError,
+    RunExecutionQueueFullError,
+)
+from grafy_api.execution.manager import RunExecutionIdempotencyConflictError
+from grafy_api.node_secrets import NodeSecretValueError
+from grafy_api.services.errors import ArtifactContentUnavailableError
+from grafy_api.uploads import UploadTooLargeError
 from grafy_api.v1.routes.auth.services import AuthService
+from grafy_api.v1.routes.executions.models import (
+    RunExecutionCapacityErrorDetail,
+    RunExecutionIdempotencyConflictErrorDetail,
+    RunExecutionQueueFullErrorDetail,
+)
 from grafy_core.domain.errors import (
     CapabilityDeniedError,
     Failure,
@@ -383,17 +397,33 @@ async def _grafy_core_error_handler(
     )
 
 
-async def _http_error_handler(request: Request, exception: Exception) -> Response:
-    if not isinstance(exception, HTTPException):
-        raise exception
+async def _render_http_error(
+    request: Request,
+    exception: Exception,
+    *,
+    status_code: int,
+    detail: object,
+    headers: Mapping[str, str] | None,
+) -> Response:
+    """Answer one failed request: audit it, then send a plain detail or the internal envelope.
 
-    error_code = "not_found" if exception.status_code == 404 else "http_error"
-    if exception.status_code < 500:
+    Below 500 the client gets ``{"detail": detail}``. At 500 and above the detail is replaced by
+    the recorded failure, so internal messages never reach the client.
+    """
+    error_code = "not_found" if status_code == 404 else "http_error"
+    if status_code < 500:
         await _audit_workspace_failure(request, error_code)
         await _audit_auth_failure(request, error_code)
-        return await http_exception_handler(request, exception)
+        response_headers = dict(headers) if headers is not None else None
+        if not is_body_allowed_for_status_code(status_code):
+            return Response(status_code=status_code, headers=response_headers)
+        return JSONResponse(
+            {"detail": detail},
+            status_code=status_code,
+            headers=response_headers,
+        )
 
-    if exception.status_code == 503:
+    if status_code == 503:
         spec = _HTTP_UNAVAILABLE_SPEC
     else:
         spec = _INTERNAL_FAILURE_SPEC
@@ -407,13 +437,89 @@ async def _http_error_handler(request: Request, exception: Exception) -> Respons
     ):
         await _audit_workspace_failure(request, error_code)
         await _audit_auth_failure(request, error_code)
-    response = _failure_response(
-        failure,
-        status_code=exception.status_code,
-    )
-    if exception.headers is not None:
-        response.headers.update(exception.headers)
+    response = _failure_response(failure, status_code=status_code)
+    if headers is not None:
+        response.headers.update(headers)
     return response
+
+
+async def _http_error_handler(request: Request, exception: Exception) -> Response:
+    if not isinstance(exception, HTTPException):
+        raise exception
+    return await _render_http_error(
+        request,
+        exception,
+        status_code=exception.status_code,
+        detail=exception.detail,
+        headers=exception.headers,
+    )
+
+
+def _capacity_detail(exception: RunExecutionCapacityError) -> object:
+    return RunExecutionCapacityErrorDetail(
+        error_code=exception.error_code,
+        message=str(exception),
+        max_active_executions=exception.max_active_executions,
+    ).model_dump(mode="json")
+
+
+def _queue_full_detail(exception: RunExecutionQueueFullError) -> object:
+    return RunExecutionQueueFullErrorDetail(
+        error_code=exception.error_code,
+        message=str(exception),
+        max_pending_graphs=exception.max_pending_graphs,
+    ).model_dump(mode="json")
+
+
+def _idempotency_conflict_detail(
+    exception: RunExecutionIdempotencyConflictError,
+) -> object:
+    return RunExecutionIdempotencyConflictErrorDetail(
+        error_code=exception.error_code,
+        message=str(exception),
+        idempotency_key=exception.idempotency_key,
+        execution_id=exception.execution_id,
+    ).model_dump(mode="json")
+
+
+@dataclass(frozen=True)
+class _HttpMapping:
+    status_code: int
+    detail: Callable[[Any], object] = str
+    headers: Mapping[str, str] | None = None
+
+
+_RETRY_SOON = {"Retry-After": "1"}
+
+# API-layer errors that answer the same way on every route raising them. Errors routes translate
+# differently stay in the route: WorkbenchOperationError's status varies by endpoint, and run
+# execution also surfaces the two remaining NodeSecret errors as internal failures.
+_HTTP_MAPPINGS: dict[type[Exception], _HttpMapping] = {
+    UploadTooLargeError: _HttpMapping(413),
+    ArtifactContentUnavailableError: _HttpMapping(500),
+    NodeSecretValueError: _HttpMapping(422),
+    RunExecutionCapacityError: _HttpMapping(429, _capacity_detail, _RETRY_SOON),
+    RunExecutionQueueFullError: _HttpMapping(429, _queue_full_detail, _RETRY_SOON),
+    RunExecutionIdempotencyConflictError: _HttpMapping(
+        409,
+        _idempotency_conflict_detail,
+    ),
+}
+
+
+async def _mapped_error_handler(request: Request, exception: Exception) -> Response:
+    mapping = next(
+        _HTTP_MAPPINGS[error_type]
+        for error_type in type(exception).__mro__
+        if error_type in _HTTP_MAPPINGS
+    )
+    return await _render_http_error(
+        request,
+        exception,
+        status_code=mapping.status_code,
+        detail=mapping.detail(exception),
+        headers=mapping.headers,
+    )
 
 
 def _route_template(request: Request) -> str:
@@ -472,6 +578,8 @@ def register_http_error_handlers(app: FastAPI) -> None:
     )
     app.add_exception_handler(HTTPException, _http_error_handler)
     app.add_exception_handler(GrafyCoreError, _grafy_core_error_handler)
+    for error_type in _HTTP_MAPPINGS:
+        app.add_exception_handler(error_type, _mapped_error_handler)
     app.middleware("http")(_http_diagnostics_middleware)
 
 
