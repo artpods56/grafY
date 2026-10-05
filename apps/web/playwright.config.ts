@@ -56,7 +56,7 @@ export default defineConfig({
   ],
   webServer: {
     command: "npm run dev -- --hostname 127.0.0.1 --port 3000",
-    url: baseURL,
+    url: `${baseURL}/workspaces/mobile-test/graphs/new`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

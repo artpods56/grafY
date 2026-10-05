@@ -187,6 +187,8 @@ jobs:
 
   generated-browser:
     name: Generated panel browser contracts
+    env:
+      FORCE_COLOR: "0"
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -244,3 +246,20 @@ jobs:
         with:
           name: generated-browser-failure
           path: output/playwright/
+
+  deployment-images:
+    name: API and publisher deployment images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image with locked workspace
+        run: docker build --file infra/docker/api.Dockerfile --target api --tag grafy-api-ci .
+      - name: Construct installed API contracts
+        run: docker run --rm --entrypoint .venv/bin/python grafy-api-ci -c 'import grafy_shared.config.keys; import grafy_api.v1.routes.library.views'
+      - name: Build publisher and Plugin API image
+        run: docker build --file infra/docker/api.Dockerfile --target publisher --tag grafy-publisher-ci .
+      - name: Construct publisher CLI and verify tools
+        run: |
+          docker run --rm --entrypoint .venv/bin/grafy grafy-publisher-ci --help
+          docker run --rm --entrypoint docker grafy-publisher-ci buildx version
