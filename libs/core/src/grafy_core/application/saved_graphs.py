@@ -55,6 +55,23 @@ class SavedGraphService:
             raise NotFoundError("Saved graph", str(graph_id))
         return graph
 
+    async def titles_referencing_artifact(
+        self,
+        workspace_id: UUID,
+        artifact_id: UUID,
+    ) -> dict[UUID, str]:
+        """Map each graph that holds ``artifact_id`` to its name.
+
+        Both the current document and every retained revision count, so restoring
+        an old revision cannot bring back a reference to deleted content.
+        """
+
+        async with self._unit_of_work_factory() as unit_of_work:
+            return await unit_of_work.graphs.titles_referencing_artifact(
+                workspace_id,
+                artifact_id,
+            )
+
     async def get_revision(
         self,
         workspace_id: UUID,

@@ -1,5 +1,5 @@
 from asyncio import Lock
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
@@ -34,7 +34,12 @@ if TYPE_CHECKING:
     )
     from grafy_core.ports.uploads import UploadRepositoryPort
 
-from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey
+from grafy_core.artifacts import (
+    ArtifactObject,
+    ArtifactRefSequence,
+    ArtifactTypeKey,
+)
+from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.errors import (
     CollaborationActiveExecutionError,
     LibraryFolderNameConflictError,
@@ -50,6 +55,18 @@ from grafy_core.ports.library_folders import LibraryFolderRepositoryPort
 
 def _clone[T](value: T) -> T:
     return deepcopy(value)
+
+
+def _output_artifact_ids(outputs: Mapping[str, ArtifactOutputValue]) -> set[UUID]:
+    """Every artifact identity a recorded output names, sequence items included."""
+
+    artifact_ids: set[UUID] = set()
+    for output in outputs.values():
+        if isinstance(output, ArtifactRefSequence):
+            artifact_ids.update(ref.artifact_id for ref in output.item_refs)
+        else:
+            artifact_ids.add(output.artifact_id)
+    return artifact_ids
 
 
 @dataclass(slots=True)
@@ -176,6 +193,24 @@ class InMemoryArtifactRepository(ArtifactRepositoryPort):
             if artifact.workspace_id == workspace_id
             and artifact.library_provenance is not None
         ]
+
+    @override
+    async def count_artifacts_sharing_object(
+        self,
+        workspace_id: UUID,
+        *,
+        bucket: str,
+        object_key: str,
+        except_artifact_id: UUID,
+    ) -> int:
+        return sum(
+            1
+            for artifact in self._store.artifacts.values()
+            if artifact.workspace_id == workspace_id
+            and artifact.id != except_artifact_id
+            and artifact.bucket == bucket
+            and artifact.object_key == object_key
+        )
 
 
 @final
@@ -715,6 +750,26 @@ class InMemoryGraphExecutionHistoryRepository:
                 error=error,
             )
         return tuple(interrupted)
+
+    async def graph_ids_with_artifact_output(
+        self,
+        workspace_id: UUID,
+        artifact_id: UUID,
+    ) -> list[UUID]:
+        graph_ids: set[UUID] = set()
+        for (
+            stored_workspace_id,
+            execution_id,
+            _node_id,
+        ), (_position, result) in self._store.graph_execution_nodes.items():
+            if stored_workspace_id != workspace_id or result is None:
+                continue
+            if artifact_id not in _output_artifact_ids(result.outputs):
+                continue
+            execution = self._store.graph_executions.get(execution_id)
+            if execution is not None and execution.workspace_id == workspace_id:
+                graph_ids.add(execution.graph_id)
+        return sorted(graph_ids, key=str)
 
 
 @final

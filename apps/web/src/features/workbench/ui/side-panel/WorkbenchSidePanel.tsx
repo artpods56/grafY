@@ -161,6 +161,9 @@ export function WorkbenchSidePanel({
       <LibraryPanel
         workspaceId={workspaceId}
         onOpenRun={onOpenRun}
+        // Saving an artifact and changing the Library are the same capability,
+        // so the Generated view's `canSave` is the Library's `canEdit`.
+        canEdit={canSave}
         headerEnd={collapse}
       />
     );

@@ -12635,6 +12635,61 @@
         ]
       }
     },
+    "/v1/workspaces/{workspace_id}/library/artifacts/{artifact_id}": {
+      "delete": {
+        "description": "Delete one Library artifact. Saved work that still uses it is refused.",
+        "operationId": "delete_library_artifact_v1_workspaces__workspace_id__library_artifacts__artifact_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Library Artifact",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/v1/workspaces/{workspace_id}/library/folders": {
       "get": {
         "operationId": "list_library_folders_v1_workspaces__workspace_id__library_folders_get",

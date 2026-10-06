@@ -7,11 +7,14 @@ import { encodeHandleId } from "../canvas/handles";
 import type { WorkflowEdge } from "../canvas/types";
 import {
   ARTIFACT_DROP_DATA_TYPE,
+  ARTIFACT_GROUPS_DATA_TYPE,
   artifactDropCommands,
   artifactDropTargetFromRow,
   isArtifactDrop,
   readArtifactDrop,
+  readArtifactDropGroups,
   resolveArtifactDrop,
+  writeArtifactDropGroups,
   writeArtifactDrop,
   type ArtifactDropGraphState,
   type ArtifactDropTarget,
@@ -605,6 +608,114 @@ describe("artifact drop collection on a many input", () => {
     expect(command.update.value).toEqual(ref("csv"));
     expect(command.update.conversion_path).toEqual([
       { id: "to-table", version: 1 },
+    ]);
+  });
+});
+
+/**
+ * Several cards in one drag: what a canvas reads, and what a reader that never
+ * heard of grouped drops still lands.
+ */
+describe("grouped artifact drops", () => {
+  function transfer(): DataTransfer {
+    const store = new Map<string, string>();
+    return {
+      get types() {
+        return [...store.keys()];
+      },
+      effectAllowed: "none",
+      dropEffect: "none",
+      setData: (type: string, value: string) => {
+        store.set(type, value);
+      },
+      getData: (type: string) => store.get(type) ?? "",
+    } as unknown as DataTransfer;
+  }
+
+  it("reads an ungrouped drag as the one card it carries", () => {
+    const dataTransfer = transfer();
+    writeArtifactDrop(dataTransfer, sequence("a", "b"));
+
+    expect(readArtifactDropGroups(dataTransfer)).toEqual([
+      { value: sequence("a", "b"), shape: "many" },
+    ]);
+  });
+
+  it("round-trips every card in the order they should land", () => {
+    const dataTransfer = transfer();
+    writeArtifactDropGroups(dataTransfer, [
+      { value: ref("png"), shape: "one" },
+      { value: sequence("a", "b"), shape: "many" },
+    ]);
+
+    expect(readArtifactDropGroups(dataTransfer)).toEqual([
+      { value: ref("png"), shape: "one" },
+      { value: sequence("a", "b"), shape: "many" },
+    ]);
+  });
+
+  it("offers the first card on the type every reader already looks for", () => {
+    const dataTransfer = transfer();
+    writeArtifactDropGroups(dataTransfer, [
+      { value: ref("png"), shape: "one" },
+      { value: ref("csv"), shape: "one" },
+    ]);
+
+    expect(readArtifactDrop(dataTransfer)).toEqual({
+      value: ref("png"),
+      shape: "one",
+    });
+  });
+
+  it("writes no group list for a card that is on its own", () => {
+    const dataTransfer = transfer();
+    writeArtifactDropGroups(dataTransfer, [
+      { value: ref("png"), shape: "one" },
+    ]);
+
+    expect(dataTransfer.getData(ARTIFACT_GROUPS_DATA_TYPE)).toBe("");
+    expect(readArtifactDropGroups(dataTransfer)).toEqual([
+      { value: ref("png"), shape: "one" },
+    ]);
+  });
+
+  it("counts a grouped drag as an artifact drag even without the single type", () => {
+    const store = new Map([[ARTIFACT_GROUPS_DATA_TYPE, "[]"]]);
+    const dataTransfer = {
+      types: [ARTIFACT_GROUPS_DATA_TYPE],
+      getData: (type: string) => store.get(type) ?? "",
+    } as unknown as DataTransfer;
+
+    expect(isArtifactDrop(dataTransfer)).toBe(true);
+    // An empty group list is not a card, and nothing else is carried: the drag
+    // reads as nothing rather than as a card that does not exist.
+    expect(readArtifactDropGroups(dataTransfer)).toEqual([]);
+  });
+
+  it("lands the card it can when the group list is unreadable", () => {
+    const dataTransfer = transfer();
+    writeArtifactDrop(dataTransfer, ref("csv"));
+    dataTransfer.setData(ARTIFACT_GROUPS_DATA_TYPE, "{ not json");
+
+    expect(readArtifactDropGroups(dataTransfer)).toEqual([
+      { value: ref("csv"), shape: "one" },
+    ]);
+  });
+
+  it("skips a card the reader cannot make sense of", () => {
+    const store = new Map([
+      [
+        ARTIFACT_GROUPS_DATA_TYPE,
+        JSON.stringify([{ value: ref("csv"), shape: "one" }, { junk: true }]),
+      ],
+    ]);
+    const dataTransfer = {
+      types: [ARTIFACT_GROUPS_DATA_TYPE],
+      getData: (type: string) => store.get(type) ?? "",
+    } as unknown as DataTransfer;
+
+    expect(readArtifactDropGroups(dataTransfer)).toEqual([
+      { value: ref("csv"), shape: "one" },
     ]);
   });
 });

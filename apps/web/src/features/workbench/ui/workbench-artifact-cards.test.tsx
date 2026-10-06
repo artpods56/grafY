@@ -14,8 +14,11 @@ import {
   type ArtifactViewerNode,
 } from "../canvas/artifact-viewer";
 import type { GraphCommand } from "../model/graph-document";
+import { DEFAULT_ARTIFACT_CARD_WIDTH } from "../canvas/artifact-card";
 import {
+  ARTIFACT_CARD_DROP_GUTTER,
   artifactCardDropPosition,
+  artifactCardDropPositions,
   useArtifactCardCommands,
 } from "./workbench-artifact-cards";
 
@@ -198,5 +201,70 @@ describe("artifactCardDropPosition", () => {
     const setCard = artifactCardDropPosition({ x: 300, y: 200 }, 2);
     expect(setCard.x).toBe(singleCard.x);
     expect(singleCard.y - setCard.y).toBe(52);
+  });
+});
+
+describe("addArtifactCards", () => {
+  it("lands a drop of several cards as one change to the canvas", async () => {
+    const view = await mount({ nodes: [card("card-1", true)] });
+
+    await act(async () => {
+      view.read().addArtifactCards([
+        { value: cardValue(["art-a"]), position: { x: 10, y: 20 } },
+        { value: cardValue(["art-b", "art-c"]), position: { x: 284, y: 20 } },
+      ]);
+    });
+
+    // One commit for the batch, so the presentation room syncs once to a canvas
+    // that has all of them rather than once per card.
+    expect(view.committed).toHaveLength(1);
+    const next = view.committed[0]!;
+    expect(next.nodes).toHaveLength(3);
+    expect(next.nodes[0]?.selected).toBe(false);
+    expect(next.nodes.slice(1).map((node) => node.selected)).toEqual([
+      true,
+      true,
+    ]);
+    expect(next.nodes[2]?.position).toEqual({ x: 284, y: 20 });
+    expect(next.nodes[2]?.data.artifactRef).toEqual(
+      cardValue(["art-b", "art-c"]),
+    );
+    view.unmount();
+  });
+
+  it("leaves the canvas alone when the drag carried no card", async () => {
+    const view = await mount({ nodes: [card("card-1")] });
+
+    await act(async () => {
+      view.read().addArtifactCards([]);
+    });
+
+    expect(view.committed).toEqual([]);
+    view.unmount();
+  });
+});
+
+describe("artifactCardDropPositions", () => {
+  it("centres the row a drop lays out on the cursor", () => {
+    const [first, second] = artifactCardDropPositions(
+      { x: 500, y: 300 },
+      [1, 1],
+    );
+
+    expect(first!.y).toBe(second!.y);
+    expect(second!.x - first!.x).toBe(
+      DEFAULT_ARTIFACT_CARD_WIDTH + ARTIFACT_CARD_DROP_GUTTER,
+    );
+    const middleOfRow =
+      (first!.x + second!.x + DEFAULT_ARTIFACT_CARD_WIDTH) / 2;
+    expect(middleOfRow).toBeCloseTo(500, 6);
+  });
+
+  it("lifts a card that carries a set exactly as a single drop does", () => {
+    const [single] = artifactCardDropPositions({ x: 300, y: 200 }, [1]);
+    const [set] = artifactCardDropPositions({ x: 300, y: 200 }, [3]);
+
+    expect(single!.x).toBe(set!.x);
+    expect(single!.y - set!.y).toBe(52);
   });
 });

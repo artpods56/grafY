@@ -64,6 +64,7 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "/v1/workspaces/{workspace_id}/library/artifacts",
         "/v1/workspaces/{workspace_id}/library/artifacts/from-run",
         "/v1/workspaces/{workspace_id}/library/artifacts/from-upload",
+        "/v1/workspaces/{workspace_id}/library/artifacts/{artifact_id}",
         "/v1/workspaces/{workspace_id}/library/folders",
         "/v1/workspaces/{workspace_id}/library/folders/{folder_id}",
         "/v1/workspaces/{workspace_id}/library/folders/{folder_id}/parent",

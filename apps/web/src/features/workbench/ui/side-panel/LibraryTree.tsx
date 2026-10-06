@@ -22,7 +22,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { artifactContentUrl } from "@/lib/api";
+import { artifactContentUrl, type PlacedLibraryItem } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { BLOB_ARTIFACT_NOTICE, isBlobArtifact } from "../../model/blob-notice";
 import {
@@ -34,6 +34,11 @@ import {
   type LibraryDrop,
   type LibraryDropTarget,
 } from "./library-drag";
+import {
+  libraryClickGesture,
+  type LibrarySelection,
+  type LibrarySelectionGesture,
+} from "./library-selection";
 import {
   flattenLibraryRows,
   isItemImage,
@@ -57,21 +62,40 @@ const FILE_ICONS: Record<LibraryFileIcon, LucideIcon> = {
 /** What the tree asks of the panel. Every change goes through the server. */
 export interface LibraryTreeActions {
   setFolderOpen: (key: string, open: boolean) => void;
-  select: (artifactId: string | null) => void;
+  /**
+   * Selects one artifact (`plain`), adds or removes one (`toggle`), takes the
+   * range from the anchor (`range`), or clears the selection (null id).
+   */
+  select: (
+    artifactId: string | null,
+    gesture?: LibrarySelectionGesture,
+  ) => void;
+  /**
+   * The rows a drag starting on this row carries: the whole selection when the
+   * row is part of a multi-selection, otherwise this row alone, which then
+   * becomes the selection. Tree order, because that is the order the canvas
+   * lays the cards out in.
+   */
+  beginArtifactDrag: (artifactId: string) => readonly PlacedLibraryItem[];
   startRename: (folderId: string) => void;
   /** Resolves once the server has answered, whatever it answered. */
   renameFolder: (folderId: string, name: string | null) => Promise<void>;
   createSubfolder: (parentId: string) => void;
   deleteFolder: (folderId: string) => void;
+  /** Asks the panel to confirm taking this artifact out of the Library. */
+  requestDeleteArtifact: (artifactId: string) => void;
   drop: (drop: LibraryDrop, folderId: string | null) => void;
   setDropTarget: (target: LibraryDropTarget | null) => void;
 }
 
 interface LibraryTreeContextValue extends LibraryTreeActions {
   workspaceId: string;
+  /** Whether this member may change the Library at all. */
+  canEdit: boolean;
   collapsed: ReadonlySet<string>;
   filtering: boolean;
-  selectedId: string | null;
+  /** Every selected artifact id; a row highlights when it is one of them. */
+  selectedIds: ReadonlySet<string>;
   renamingFolderId: string | null;
   dropTarget: LibraryDropTarget | null;
   tabbableKey: string | null;
@@ -93,18 +117,22 @@ function useLibraryTree(): LibraryTreeContextValue {
 export function LibraryTree({
   nodes,
   workspaceId,
+  canEdit,
   collapsed,
   filtering,
-  selectedId,
+  selection,
   renamingFolderId,
   dropTarget,
   actions,
 }: {
   nodes: readonly LibraryTreeNode[];
   workspaceId: string;
+  /** Read-only members are offered nothing that the server would refuse. */
+  canEdit?: boolean;
   collapsed: ReadonlySet<string>;
   filtering: boolean;
-  selectedId: string | null;
+  /** What is selected right now: any number of artifacts and a range anchor. */
+  selection: LibrarySelection;
   renamingFolderId: string | null;
   dropTarget: LibraryDropTarget | null;
   actions: LibraryTreeActions;
@@ -114,6 +142,10 @@ export function LibraryTree({
   const visibleRows = React.useMemo(
     () => flattenLibraryRows(nodes, { collapsed }),
     [nodes, collapsed],
+  );
+  const selectedIds = React.useMemo(
+    () => new Set(selection.ids),
+    [selection.ids],
   );
 
   // Roving tabindex: exactly one row is reachable by Tab. It falls back to the
@@ -156,10 +188,20 @@ export function LibraryTree({
     if (visibleRows.length === 0) return;
     const index = activeIndex();
     const row = visibleRows[index];
+    // `⌘`/`Ctrl` and `Shift` turn an arrow into the same gesture as the click of
+    // the same name, so a keyboard can build a selection rather than only a mouse.
+    // The arrow still moves first; the gesture then names the row it landed on.
+    const moveGesture = libraryClickGesture(event);
     const focusAt = (next: number) => {
       event.preventDefault();
       const clamped = Math.min(visibleRows.length - 1, Math.max(0, next));
-      focusRow(visibleRows[clamped]!.key);
+      const target = visibleRows[clamped];
+      if (!target) return;
+      focusRow(target.key);
+      if (moveGesture === "plain") return;
+      if (target.kind === "file") {
+        actions.select(target.item.artifact.artifact_id, moveGesture);
+      }
     };
 
     switch (event.key) {
@@ -172,7 +214,7 @@ export function LibraryTree({
       case "End":
         return focusAt(visibleRows.length - 1);
       case "Escape":
-        if (selectedId !== null) {
+        if (selection.ids.length > 0) {
           event.preventDefault();
           actions.select(null);
         }
@@ -205,6 +247,15 @@ export function LibraryTree({
         event.preventDefault();
         if (row.kind === "folder") actions.setFolderOpen(row.key, !open);
         else actions.select(row.item.artifact.artifact_id);
+        return;
+      case "Delete":
+      case "Backspace":
+        // Deleting a row means deleting the selection when the row is part of one
+        // and one row otherwise; the panel owns that choice because it owns the
+        // confirmation. A viewer is offered nothing, as the server would refuse.
+        if (row.kind !== "file" || !canEdit) return;
+        event.preventDefault();
+        actions.requestDeleteArtifact(row.item.artifact.artifact_id);
         return;
       case "F2":
         if (row.kind !== "folder") return;
@@ -239,9 +290,10 @@ export function LibraryTree({
   const context: LibraryTreeContextValue = {
     ...actions,
     workspaceId,
+    canEdit: canEdit ?? true,
     collapsed,
     filtering,
-    selectedId,
+    selectedIds,
     renamingFolderId,
     dropTarget,
     tabbableKey,
@@ -255,6 +307,7 @@ export function LibraryTree({
       <div
         role="tree"
         aria-label="Workspace Library"
+        aria-multiselectable
         onKeyDown={onKeyDown}
         {...stylex.props(s.tree)}
       >
@@ -463,14 +516,18 @@ function FileRow({ file }: { file: LibraryFileNode }) {
     tree.workspaceId,
     item.artifact.content_url,
   );
-  const selected = tree.selectedId === artifactId;
+  const selected = tree.selectedIds.has(artifactId);
   const blob = isBlobArtifact(item.artifact);
   // A drop on an artifact files into the folder the artifact sits in. At the
-  // root the drag falls through to the panel background, which is the root.
+  // root the drag falls through to the panel background, which is the root. A
+  // row never accepts itself; a drag of several artifacts is a move of that set
+  // into this row's folder, which is a thing the user can mean.
   const drop = useDropInto(
     file.parentId,
     (dropped) =>
-      dropped.kind === "artifact" && dropped.artifactId === artifactId,
+      dropped.kind === "artifact" &&
+      dropped.artifactIds.length === 1 &&
+      dropped.artifactIds[0] === artifactId,
   );
 
   return (
@@ -486,10 +543,13 @@ function FileRow({ file }: { file: LibraryFileNode }) {
       tabIndex={tree.tabbableKey === file.key ? 0 : -1}
       title={`${displayName} — drag onto an input or a folder, or double-click to open`}
       onFocus={() => tree.onRowFocus(file.key)}
-      onClick={() => tree.select(artifactId)}
+      onClick={(event) => tree.select(artifactId, libraryClickGesture(event))}
       onDoubleClick={() => openInNewTab(contentUrl)}
       onDragStart={(event) =>
-        writeLibraryArtifactDrag(event.dataTransfer, item)
+        writeLibraryArtifactDrag(
+          event.dataTransfer,
+          tree.beginArtifactDrag(artifactId),
+        )
       }
       onDragEnd={() => tree.setDropTarget(null)}
       {...(file.parentId === null ? {} : drop)}
@@ -523,6 +583,20 @@ function FileRow({ file }: { file: LibraryFileNode }) {
           label="Copy link"
           disabled={contentUrl === null}
           onSelect={() => copyLink(contentUrl)}
+        />
+        <RowMenuItem
+          icon={Trash2}
+          label={
+            !tree.canEdit
+              ? "Delete — it needs edit access"
+              : selected && tree.selectedIds.size >= 2
+                ? // The row is one of several, and this menu would delete them all;
+                  // a plain "Delete" would not say so.
+                  `Delete ${tree.selectedIds.size} artifacts`
+                : "Delete"
+          }
+          disabled={!tree.canEdit}
+          onSelect={() => tree.requestDeleteArtifact(artifactId)}
         />
       </RowMenu>
     </div>

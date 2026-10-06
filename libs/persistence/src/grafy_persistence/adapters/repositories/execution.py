@@ -4,6 +4,7 @@ from itertools import batched
 from typing import cast, override
 from uuid import UUID
 from sqlalchemy import (
+    String,
     and_,
     case,
     delete,
@@ -677,6 +678,36 @@ class SqlGraphExecutionHistoryRepository(
                 )
             )
         return interrupted
+
+    @override
+    async def graph_ids_with_artifact_output(
+        self,
+        workspace_id: UUID,
+        artifact_id: UUID,
+    ) -> list[UUID]:
+        nodes = schema.graph_execution_nodes
+        executions = schema.graph_executions
+        # Recorded outputs hold the artifact identity as a lowercase UUID string,
+        # so the identity is matched as text and no other value can collide with a
+        # full 36-character identity.
+        rows = await self._session.execute(
+            select(executions.c.graph_id)
+            .select_from(
+                executions.join(
+                    nodes,
+                    and_(
+                        nodes.c.workspace_id == executions.c.workspace_id,
+                        nodes.c.execution_id == executions.c.execution_id,
+                    ),
+                )
+            )
+            .where(
+                executions.c.workspace_id == workspace_id,
+                nodes.c.outputs.cast(String).like(f"%{artifact_id}%"),
+            )
+            .distinct()
+        )
+        return [graph_id for (graph_id,) in rows]
 
     async def _hydrate_executions(
         self,

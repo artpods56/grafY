@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LibraryPanel } from "./LibraryPanel";
 import { BLOB_ARTIFACT_NOTICE } from "../../model/blob-notice";
+import { ARTIFACT_GROUPS_DATA_TYPE } from "../../model/artifact-drop";
+import { LIBRARY_MOVE_DATA_TYPE } from "./library-drag";
 import {
+  LibraryArtifactInUseError,
   LibraryFolderNotEmptyError,
   type LibraryFolder,
   type PlacedLibraryItem,
@@ -18,6 +21,7 @@ const renameFolder = vi.hoisted(() => vi.fn());
 const deleteFolder = vi.hoisted(() => vi.fn());
 const moveFolder = vi.hoisted(() => vi.fn());
 const moveItems = vi.hoisted(() => vi.fn());
+const deleteLibraryArtifact = vi.hoisted(() => vi.fn());
 const uploadFile = vi.hoisted(() => vi.fn());
 const saveUploadedArtifactToLibrary = vi.hoisted(() => vi.fn());
 
@@ -33,6 +37,7 @@ vi.mock("@/lib/api", async () => {
       moveFolder,
       moveItems,
     },
+    deleteLibraryArtifact,
     uploadFile,
     saveUploadedArtifactToLibrary,
     artifactContentUrl: (
@@ -201,6 +206,57 @@ async function deleteItemOfFolder(folderId: string): Promise<HTMLElement> {
   return item;
 }
 
+/** The same for an artifact row, whose menu item names the Library. */
+async function deleteItemOfArtifact(artifactId: string): Promise<HTMLElement> {
+  const label = fileRow(artifactId).dataset.treeLabel ?? "";
+  const trigger = fileRow(artifactId).querySelector<HTMLElement>(
+    `[aria-label="Actions for ${label}"]`,
+  );
+  if (!trigger) throw new Error(`No action trigger for artifact ${artifactId}`);
+  await React.act(async () => {
+    trigger.click();
+  });
+  const item = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ].find((element) => element.textContent?.startsWith("Delete"));
+  if (!item) throw new Error(`No Delete item in the menu for ${artifactId}`);
+  return item;
+}
+
+/** The panel's delete confirmation, once it is up. */
+function confirmDialog(): HTMLElement {
+  const dialog = document.querySelector<HTMLElement>(
+    '[role="dialog"], [role="alertdialog"]',
+  );
+  if (!dialog) throw new Error("No delete confirmation");
+  return dialog;
+}
+
+function buttonIn(dialog: HTMLElement, label: string): HTMLElement {
+  const button = [...dialog.querySelectorAll<HTMLElement>("button")].find(
+    (element) => element.textContent?.trim() === label,
+  );
+  if (!button) throw new Error(`No ${label} button in the confirmation`);
+  return button;
+}
+
+/** Opens the artifact menu, chooses Delete, and returns the confirmation. */
+async function confirmArtifactDelete(artifactId: string): Promise<HTMLElement> {
+  await selectMenuItem(await deleteItemOfArtifact(artifactId));
+  await React.act(async () => {
+    await vi.waitFor(() => expect(confirmDialog()).toBeDefined());
+  });
+  return confirmDialog();
+}
+
+/** Renders the same two-artifact Library most delete tests need, then asks. */
+async function confirmArtifactDeleteViaRender(
+  artifactId: string,
+): Promise<HTMLElement> {
+  await renderPanel({ folders: [FIELDWORK], items: [RUN_ITEM, UPLOAD_ITEM] });
+  return confirmArtifactDelete(artifactId);
+}
+
 async function selectMenuItem(item: HTMLElement): Promise<void> {
   await React.act(async () => {
     item.click();
@@ -217,9 +273,18 @@ function typeInto(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-function press(element: HTMLElement, key: string): void {
+function press(
+  element: HTMLElement,
+  key: string,
+  modifiers: { shiftKey?: boolean; metaKey?: boolean } = {},
+): void {
   element.dispatchEvent(
-    new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+    new KeyboardEvent("keydown", {
+      key,
+      bubbles: true,
+      cancelable: true,
+      ...modifiers,
+    }),
   );
 }
 
@@ -291,6 +356,7 @@ let workspaceCounter = 0;
 async function renderPanel(
   tree: { folders: LibraryFolder[]; items: PlacedLibraryItem[] },
   onOpenRun = vi.fn(),
+  panelProps: { canEdit?: boolean } = {},
 ): Promise<{ onOpenRun: ReturnType<typeof vi.fn>; workspaceId: string }> {
   listTree.mockResolvedValue(tree);
   workspaceCounter += 1;
@@ -301,7 +367,11 @@ async function renderPanel(
   roots.push(root);
   await React.act(async () => {
     root.render(
-      <LibraryPanel workspaceId={workspaceId} onOpenRun={onOpenRun} />,
+      <LibraryPanel
+        workspaceId={workspaceId}
+        onOpenRun={onOpenRun}
+        canEdit={panelProps.canEdit}
+      />,
     );
   });
   await React.act(async () => {
@@ -325,6 +395,7 @@ afterEach(() => {
     deleteFolder,
     moveFolder,
     moveItems,
+    deleteLibraryArtifact,
     uploadFile,
     saveUploadedArtifactToLibrary,
   ]) {
@@ -484,6 +555,106 @@ describe("LibraryPanel", () => {
     expect(document.body.textContent).not.toContain(
       "0 artifacts and 0 folders",
     );
+  });
+
+  it("names the artifact before it deletes anything", async () => {
+    deleteLibraryArtifact.mockResolvedValue(undefined);
+
+    const { workspaceId } = await renderPanel({
+      folders: [FIELDWORK],
+      items: [RUN_ITEM, UPLOAD_ITEM],
+    });
+    // Its tile is open, because a previewed artifact is the likeliest one to
+    // decide against.
+    await React.act(async () => {
+      fileRow("artifact-upload").click();
+    });
+
+    const dialog = await confirmArtifactDelete("artifact-upload");
+
+    // The row reads `harbour-front.jpg` because an upload is named by its file.
+    expect(dialog.textContent).toContain("Delete harbour-front.jpg?");
+    expect(deleteLibraryArtifact).not.toHaveBeenCalled();
+
+    await React.act(async () => {
+      buttonIn(dialog, "Delete").click();
+    });
+
+    expect(deleteLibraryArtifact).toHaveBeenCalledWith(
+      workspaceId,
+      "artifact-upload",
+    );
+    await React.act(async () => {
+      await vi.waitFor(() =>
+        expect(document.querySelector('[role="dialog"]')).toBeNull(),
+      );
+    });
+    // The tree is reread the way every other Library change rereads it, and the
+    // tile that was showing it goes with it.
+    expect(listTree.mock.calls.length).toBeGreaterThan(1);
+    expect(
+      document.querySelector('[aria-label="Selected artifact"]'),
+    ).toBeNull();
+    expect(document.body.textContent).toContain("2 artifacts · 1 folder");
+  });
+
+  it("sends nothing when the artifact delete is answered Cancel", async () => {
+    const dialog = await confirmArtifactDeleteViaRender("artifact-upload");
+
+    await React.act(async () => {
+      buttonIn(dialog, "Cancel").click();
+    });
+
+    expect(deleteLibraryArtifact).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(fileRow("artifact-upload")).not.toBeNull();
+  });
+
+  it("shows the graphs the server named and keeps the artifact", async () => {
+    deleteLibraryArtifact.mockRejectedValue(
+      new LibraryArtifactInUseError(
+        "artifact-run",
+        "Still used by: Sales, Salt maps",
+      ),
+    );
+
+    await renderPanel({ folders: [FIELDWORK], items: [RUN_ITEM, UPLOAD_ITEM] });
+    await React.act(async () => {
+      fileRow("artifact-run").click();
+    });
+    const dialog = await confirmArtifactDelete("artifact-run");
+
+    await React.act(async () => {
+      buttonIn(dialog, "Delete").click();
+    });
+
+    await React.act(async () => {
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain(
+          "Still used by: Sales, Salt maps",
+        ),
+      );
+    });
+    expect(fileRow("artifact-run")).not.toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    // Nothing left, so the preview it was in stays open on the same artifact.
+    expect(
+      document.querySelector('[aria-label="Selected artifact"]'),
+    ).not.toBeNull();
+  });
+
+  it("will not offer a delete to a member who cannot change the Library", async () => {
+    await renderPanel({ folders: [], items: [UPLOAD_ITEM] }, vi.fn(), {
+      canEdit: false,
+    });
+
+    const item = await deleteItemOfArtifact("artifact-upload");
+    expect(item.getAttribute("aria-disabled")).toBe("true");
+    expect(item.textContent).toContain("needs edit access");
+
+    await selectMenuItem(item);
+    expect(deleteLibraryArtifact).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it("keeps the keyboard inside the tree", async () => {
@@ -849,5 +1020,378 @@ describe("LibraryPanel", () => {
     expect(fileRow("artifact-blob").textContent).toContain(
       BLOB_ARTIFACT_NOTICE,
     );
+  });
+});
+
+/**
+ * Several artifacts selected at once: what the tree shows, what a drag carries,
+ * and what one Delete asks for.
+ */
+describe("LibraryPanel multi-selection", () => {
+  function upload(
+    id: string,
+    filename: string,
+    artifactType = "file.png",
+    folderId: string | null = null,
+  ): PlacedLibraryItem {
+    return {
+      artifact: {
+        artifact_id: id,
+        artifact_type: artifactType,
+        schema_version: 1,
+        content_type: artifactType === "file.png" ? "image/png" : "text/csv",
+        byte_size: 10,
+        sha256: `hash-${id}`,
+        content_url: `/api/v1/artifacts/${id}/content`,
+        download_formats: [],
+        metadata: {},
+      },
+      name: filename,
+      provenance: {
+        source: "upload",
+        saved_at: "2026-09-11T12:00:00Z",
+        original_filename: filename,
+      },
+      run: null,
+      folder_id: folderId,
+    };
+  }
+
+  const A = upload("art-a", "a.png");
+  const B = upload("art-b", "b.png");
+  const C = upload("art-c", "c.png");
+  const D = upload("art-d", "d.csv", "file.csv");
+
+  /** Every root artifact the panel lists, in the order the tree shows them. */
+  function three() {
+    return renderPanel({ folders: [], items: [C, A, B] });
+  }
+
+  function selectedLabels(): string[] {
+    return rows()
+      .filter((row) => row.getAttribute("aria-selected") === "true")
+      .map((row) => row.dataset.treeLabel ?? "");
+  }
+
+  function click(
+    rowId: string,
+    modifiers: { metaKey?: boolean; shiftKey?: boolean } = {},
+  ): Promise<void> {
+    return React.act(async () => {
+      fileRow(rowId).dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          ...modifiers,
+        }),
+      );
+    });
+  }
+
+  function tile(): HTMLElement | null {
+    return document.querySelector<HTMLElement>(
+      '[aria-label="Selected artifact"]',
+    );
+  }
+
+  /** The rows a drag starting on this row carries, as the tree wrote them. */
+  async function dragFrom(rowId: string): Promise<Record<string, string>> {
+    const written: Record<string, string> = {};
+    const dataTransfer = {
+      types: [] as string[],
+      files: [],
+      getData: (type: string) => written[type] ?? "",
+      setData: (type: string, value: string) => {
+        written[type] = value;
+      },
+      effectAllowed: "uninitialized",
+      dropEffect: "none",
+    };
+    const event = new Event("dragstart", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+    await React.act(async () => {
+      fileRow(rowId).dispatchEvent(event);
+    });
+    return written;
+  }
+
+  function moveIds(written: Record<string, string>): string[] {
+    return JSON.parse(written[LIBRARY_MOVE_DATA_TYPE] ?? "[]") as string[];
+  }
+
+  it("selects one row at a time until a second modifier says otherwise", async () => {
+    await three();
+
+    await click("art-a");
+    expect(selectedLabels()).toEqual(["a.png"]);
+    // One selected artifact is the one case the preview tile has anything to say
+    // about, so it is up.
+    expect(tile()).not.toBeNull();
+
+    await click("art-b");
+    expect(selectedLabels()).toEqual(["b.png"]);
+
+    await click("art-c", { metaKey: true });
+    expect(selectedLabels()).toEqual(["b.png", "c.png"]);
+  });
+
+  it("counts a shift range over the rows on screen and drops the preview", async () => {
+    await renderPanel({ folders: [], items: [A, B, C, D] });
+
+    await click("art-a");
+    await click("art-c", { shiftKey: true });
+
+    expect(selectedLabels()).toEqual(["a.png", "b.png", "c.png"]);
+    // Two artifacts have no one preview, and a tile showing one of three would
+    // claim to be what a drag or a delete means.
+    expect(tile()).toBeNull();
+    expect(document.body.textContent).toContain("3 selected");
+    expect(document.body.textContent).toContain("4 artifacts · 0 folders");
+  });
+
+  it("counts a range upwards from the anchor just the same", async () => {
+    await renderPanel({ folders: [], items: [A, B, C, D] });
+
+    await click("art-d");
+    await click("art-b", { shiftKey: true });
+
+    expect(selectedLabels()).toEqual(["b.png", "c.png", "d.csv"]);
+  });
+
+  it("clears the selection on Escape, preview and all", async () => {
+    await three();
+    await click("art-a");
+    await click("art-b", { shiftKey: true });
+    expect(selectedLabels()).toHaveLength(2);
+
+    await React.act(async () => {
+      press(rows()[0]!, "Escape");
+    });
+
+    expect(selectedLabels()).toEqual([]);
+    expect(tile()).toBeNull();
+  });
+
+  it("asks for the whole selection when the row asked about is part of it", async () => {
+    await three();
+    await click("art-a");
+    await click("art-b", { metaKey: true });
+    deleteLibraryArtifact.mockResolvedValue(undefined);
+
+    const dialog = await confirmArtifactDelete("art-a");
+    expect(dialog.textContent).toContain("Delete 2 artifacts?");
+
+    await React.act(async () => {
+      buttonIn(dialog, "Delete").click();
+    });
+
+    // Tree order, one call each, whatever order the rows were clicked in.
+    await React.act(async () => {
+      await vi.waitFor(() =>
+        expect(deleteLibraryArtifact.mock.calls.length).toBe(2),
+      );
+    });
+    expect(deleteLibraryArtifact.mock.calls.map(([, id]) => id)).toEqual([
+      "art-a",
+      "art-b",
+    ]);
+    expect(selectedLabels()).toEqual([]);
+  });
+
+  it("deletes one row when the row asked about is outside the selection", async () => {
+    await renderPanel({ folders: [], items: [A, B, D] });
+    deleteLibraryArtifact.mockResolvedValue(undefined);
+    await click("art-a");
+    await click("art-b", { metaKey: true });
+
+    const dialog = await confirmArtifactDelete("art-d");
+    expect(dialog.textContent).toContain("Delete d.csv?");
+
+    await React.act(async () => {
+      buttonIn(dialog, "Delete").click();
+    });
+
+    await React.act(async () => {
+      await vi.waitFor(() =>
+        expect(deleteLibraryArtifact.mock.calls).toEqual([
+          [expect.any(String), "art-d"],
+        ]),
+      );
+    });
+    // The two rows the user had selected are nothing to do with that delete.
+    expect(selectedLabels()).toEqual(["a.png", "b.png"]);
+  });
+
+  it("keeps the artifact that refused selected, and names it once", async () => {
+    await renderPanel({ folders: [], items: [A, B, D] });
+    deleteLibraryArtifact.mockImplementation(
+      async (_workspaceId: string, artifactId: string) => {
+        if (artifactId === "art-b") {
+          throw new LibraryArtifactInUseError(
+            artifactId,
+            "Still used by: Salt maps",
+          );
+        }
+      },
+    );
+
+    await click("art-a");
+    await click("art-b", { metaKey: true });
+    await click("art-d", { metaKey: true });
+
+    const dialog = await confirmArtifactDelete("art-a");
+    await React.act(async () => {
+      buttonIn(dialog, "Delete").click();
+    });
+
+    await React.act(async () => {
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain(
+          "Deleted 2. 1 still used by: Salt maps",
+        ),
+      );
+    });
+    // A refusal never stops the artifact after it.
+    expect(deleteLibraryArtifact.mock.calls.map(([, id]) => id)).toEqual([
+      "art-a",
+      "art-b",
+      "art-d",
+    ]);
+    // What refused stays selected so the user can see it; what went away is gone
+    // from the tree and from the selection with it.
+    expect(selectedLabels()).toEqual(["b.png"]);
+    expect(fileRow("art-b")).not.toBeNull();
+  });
+
+  it("offers the keyboard delete to a member who cannot edit and takes nothing", async () => {
+    await renderPanel({ folders: [], items: [A, B] }, vi.fn(), {
+      canEdit: false,
+    });
+
+    await click("art-a");
+    await React.act(async () => {
+      press(fileRow("art-a"), "Delete");
+    });
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(deleteLibraryArtifact).not.toHaveBeenCalled();
+  });
+
+  it("carries an arrow held with a modifier into the selection", async () => {
+    await renderPanel({ folders: [], items: [A, B, D] });
+    await click("art-a");
+
+    await React.act(async () => {
+      const row = fileRow("art-a");
+      row.focus();
+      press(row, "ArrowDown", { shiftKey: true });
+    });
+
+    // The arrow moved to the next row and took the run with it, exactly as
+    // Shift-click on that row would have.
+    expect(selectedLabels()).toEqual(["a.png", "b.png"]);
+    expect(document.activeElement).toBe(fileRow("art-b"));
+  });
+
+  it("asks for the selection from the keyboard as well", async () => {
+    await renderPanel({ folders: [], items: [A, B, D] });
+    await click("art-a");
+    await click("art-d", { metaKey: true });
+
+    await React.act(async () => {
+      fileRow("art-d").focus();
+      press(fileRow("art-d"), "Backspace");
+    });
+
+    const dialog = confirmDialog();
+    expect(dialog.textContent).toContain("Delete 2 artifacts?");
+    expect(deleteLibraryArtifact).not.toHaveBeenCalled();
+  });
+
+  it("carries the whole selection in a drag from one of its rows", async () => {
+    await renderPanel({ folders: [FIELDWORK], items: [A, B, D] });
+    await click("art-a");
+    await click("art-b", { metaKey: true });
+
+    const written = await dragFrom("art-a");
+
+    expect(moveIds(written)).toEqual(["art-a", "art-b"]);
+    // Two images, one sequence card, so there is nothing to group.
+    expect(written[ARTIFACT_GROUPS_DATA_TYPE]).toBeUndefined();
+    expect(
+      JSON.parse(written[ARTIFACT_DROP_TYPE]).value.item_refs,
+    ).toHaveLength(2);
+  });
+
+  it("splits a selection of mixed kinds into one card each", async () => {
+    await renderPanel({ folders: [], items: [A, B, D] });
+    await click("art-a");
+    await click("art-d", { metaKey: true });
+
+    const written = await dragFrom("art-a");
+
+    expect(moveIds(written)).toEqual(["art-a", "art-d"]);
+    const groups = JSON.parse(written[ARTIFACT_GROUPS_DATA_TYPE]);
+    expect(
+      groups.map((group: { value: Record<string, unknown>; shape: string }) => [
+        group.value.artifact_type,
+        group.shape,
+      ]),
+    ).toEqual([
+      ["file.png", "one"],
+      ["file.csv", "one"],
+    ]);
+    // A canvas that predates grouped drops still lands the first card.
+    expect(JSON.parse(written[ARTIFACT_DROP_TYPE]).value.artifact_type).toBe(
+      "file.png",
+    );
+  });
+
+  it("carries one row when the dragged row is outside the selection", async () => {
+    await renderPanel({ folders: [], items: [A, B, D] });
+    await click("art-a");
+    await click("art-b", { metaKey: true });
+
+    const written = await dragFrom("art-d");
+
+    expect(moveIds(written)).toEqual(["art-d"]);
+    expect(written[ARTIFACT_GROUPS_DATA_TYPE]).toBeUndefined();
+    // The panel follows the drag: what it has selected is what was dragged.
+    expect(selectedLabels()).toEqual(["d.csv"]);
+  });
+
+  it("moves every artifact of a dropped selection into the folder it lands on", async () => {
+    await renderPanel({ folders: [FIELDWORK], items: [A, B, D] });
+    moveItems.mockResolvedValue(undefined);
+
+    await React.act(async () => {
+      dropPayload(folderRow("fieldwork"), {
+        [LIBRARY_MOVE_DATA_TYPE]: JSON.stringify(["art-a", "art-b"]),
+        [ARTIFACT_DROP_TYPE]: artifactDropValue("art-a"),
+      });
+    });
+
+    expect(moveItems).toHaveBeenCalledWith({
+      workspaceId: expect.any(String),
+      artifactIds: ["art-a", "art-b"],
+      folderId: "fieldwork",
+    });
+  });
+
+  it("files an artifact dragged from the canvas, which carries no move list", async () => {
+    await renderPanel({ folders: [FIELDWORK], items: [A] });
+    moveItems.mockResolvedValue(undefined);
+
+    await React.act(async () => {
+      dropPayload(folderRow("fieldwork"), {
+        [ARTIFACT_DROP_TYPE]: artifactDropValue("art-a"),
+      });
+    });
+
+    expect(moveItems).toHaveBeenCalledWith({
+      workspaceId: expect.any(String),
+      artifactIds: ["art-a"],
+      folderId: "fieldwork",
+    });
   });
 });

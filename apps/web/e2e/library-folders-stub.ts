@@ -6,14 +6,15 @@ import type { LibraryList } from "../src/lib/api/contract";
 import type { LibraryFolder } from "../src/lib/api/library-folder-model";
 
 /**
- * The Workspace Library folder routes, answered inside the Node test process.
+ * The Workspace Library routes, answered inside the Node test process.
  *
  * The side panel reads and writes this tree through the real HTTP client, so
  * every workbench test needs an answer at `/library/folders` and
- * `/library/placements`. The fake keeps the three rules the real routes keep — a
- * sibling name is taken whatever its case, a folder never lands inside itself,
- * and a folder deletes only when empty — because a fake that only ever says yes
- * cannot show a refusal reaching the panel.
+ * `/library/placements`. The fake keeps the rules the real routes keep — a
+ * sibling name is taken whatever its case, a folder never lands inside itself, a
+ * folder deletes only when empty, and an artifact a graph still references
+ * refuses its delete — because a fake that only ever says yes cannot show a
+ * refusal reaching the panel.
  *
  * The tree belongs to one page. Playwright builds a page per test and per retry,
  * so the folders a test names are gone before the next run names them again: no
@@ -40,7 +41,19 @@ const REFUSALS = {
     status: 422,
     detail: "A folder cannot be moved inside itself",
   },
+  "library.artifact_in_use": {
+    status: 409,
+    detail: "Still used by: Survey pipeline, Salt maps",
+  },
 } as const;
+
+/**
+ * The fixture artifact a saved graph is said to reference, so a delete has a
+ * refusal to reach the panel with. The real server answers this by looking at
+ * saved revisions and run history; this fake only has the one id, so it names
+ * the same graphs the refusal sentence does.
+ */
+const REFERENCED_ARTIFACT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
 type LibraryStubState = {
   /** The artifact list the Library lists, before placements place it anywhere. */
@@ -167,6 +180,27 @@ export async function libraryStub(page: Page): Promise<LibraryStub> {
       folder_id: state.placements.get(item.artifact.artifact_id) ?? null,
     }));
     await route.fulfill({ json: { items } satisfies LibraryList });
+  });
+
+  await page.route(`${LIBRARY_GLOB}/artifacts/*`, async (route) => {
+    const request = route.request();
+    if (request.method() !== "DELETE") return route.fallback();
+    const artifactId = segmentOf(new URL(request.url()), 7);
+    const known = state.artifacts.items.some(
+      (item) => item.artifact.artifact_id === artifactId,
+    );
+    if (!known) return notFound(route);
+    if (artifactId === REFERENCED_ARTIFACT_ID) {
+      return refusal(route, "library.artifact_in_use");
+    }
+    // The Library stops listing it, and its placement goes with it.
+    state.artifacts = {
+      items: state.artifacts.items.filter(
+        (item) => item.artifact.artifact_id !== artifactId,
+      ),
+    };
+    state.placements.delete(artifactId);
+    await route.fulfill({ status: 204 });
   });
 
   await page.route(`${LIBRARY_GLOB}/placements`, async (route) => {

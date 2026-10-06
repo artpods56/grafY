@@ -70,6 +70,24 @@ async def save_library_artifact_from_upload(
     )
 
 
+@router.delete(
+    "/artifacts/{artifact_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_library_artifact(
+    artifact_id: UUID,
+    service: LibraryDependency,
+    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+) -> Response:
+    """Delete one Library artifact. Saved work that still uses it is refused."""
+    await service.delete_artifact(
+        workspace_id=access.workspace_id,
+        artifact_id=artifact_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.put(
     "/placements",
     status_code=status.HTTP_204_NO_CONTENT,

@@ -78,6 +78,19 @@ class GraphExecutionHistoryRepositoryPort(Protocol):
         error: str,
     ) -> tuple[GraphExecution, ...]: ...
 
+    async def graph_ids_with_artifact_output(
+        self,
+        workspace_id: UUID,
+        artifact_id: UUID,
+    ) -> list[UUID]:
+        """List graphs whose recorded runs produced ``artifact_id`` on a port.
+
+        History outlives the run that made it, so a Library artifact an earlier run
+        handed to a graph is still a reference even when no saved revision names
+        the artifact.
+        """
+        ...
+
 
 class ExecutionHistoryUnitOfWorkPort(UnitOfWorkPort, Protocol):
     @property
