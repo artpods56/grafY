@@ -336,6 +336,12 @@ keys and reread the files on later runs. There is therefore no age-based cleanup
 or workspace quota yet; monitor the data volume until upload promotion/reference
 tracking can make deletion and transactional quota reservation safe.
 
+With `GRAFY_STORAGE_BACKEND=s3`, browsers PUT directly to presigned URLs. Keep
+MinIO private: include `compose.shared-storage.yaml` and set
+`GRAFY_S3_SIGNING_ENDPOINT_URL=${GRAFY_PUBLIC_ORIGIN}/storage` so uploads go
+through the gateway's `/storage/` location. See
+[`docs/deploy/upload-storage.md`](../../docs/deploy/upload-storage.md).
+
 1. stop gateway and API traffic (and Prefect if it might touch shared state);
 2. confirm one API owner and no active execution;
 3. checkpoint/truncate the SQLite WAL and create a consistent backup with the

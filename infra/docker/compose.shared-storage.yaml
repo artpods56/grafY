@@ -1,0 +1,19 @@
+# Opt-in override for S3 storage on an operator-managed MinIO that lives on an
+# external Docker network (alias `minio`, port 9000). The API reads and writes
+# objects directly; the gateway serves browser presigned uploads under
+# `/storage/`. MinIO publishes no host port of its own.
+services:
+  api:
+    networks:
+      default:
+      shared-storage:
+
+  gateway:
+    networks:
+      default:
+      shared-storage:
+
+networks:
+  shared-storage:
+    external: true
+    name: ${GRAFY_S3_DOCKER_NETWORK:-shared-storage}

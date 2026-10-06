@@ -194,3 +194,78 @@ def test_compose_api_healthcheck_uses_dependency_readiness() -> None:
     assert api_block is not None
     assert "http://127.0.0.1:8000/ready" in api_block.group(1)
     assert "http://127.0.0.1:8000/health" not in api_block.group(1)
+
+
+def test_nginx_gateway_proxies_presigned_uploads_to_private_minio() -> None:
+    repository = Path(__file__).parents[3]
+    nginx = (repository / "infra/docker/gateway/nginx.conf").read_text()
+    env_example = (repository / "infra/docker/.env.production.example").read_text()
+
+    storage_location = re.search(
+        r"location\s+\^~\s+/storage/\s*\{(.*?)\n        \}",
+        nginx,
+        re.DOTALL,
+    )
+    assert storage_location is not None, "gateway must expose /storage/ to MinIO"
+    body = storage_location.group(1)
+
+    # Only signed PUTs into the artifact bucket reach MinIO.
+    assert re.search(r"limit_except\s+PUT\s*\{\s*deny all;\s*\}", body)
+    env_values = dict(
+        line.split("=", maxsplit=1)
+        for line in env_example.splitlines()
+        if line and not line.startswith("#") and "=" in line
+    )
+    bucket = env_values["GRAFY_STORAGE_BUCKET"]
+    uri_map = re.search(
+        r"map \$request_uri \$grafy_storage_uri \{(.*?)\n    \}",
+        nginx,
+        re.DOTALL,
+    )
+    assert uri_map is not None
+    assert f"/{bucket}/" in uri_map.group(1)
+    assert 'default "";' in uri_map.group(1)
+    assert 'if ($grafy_storage_uri = "") {\n                return 404;' in body
+
+    # SigV4 covers Host (with port) and the raw path/query; both pass unchanged.
+    assert "proxy_set_header Host $http_host;" in body
+    assert "proxy_pass http://$grafy_storage_upstream$grafy_storage_uri;" in body
+    assert "set $grafy_storage_upstream minio:9000;" in body
+    assert "resolver 127.0.0.11" in body
+    assert 'proxy_set_header Cookie "";' in body
+
+    # Body bounds mirror the staged upload ceiling and stream to MinIO.
+    max_bytes = int(env_values["GRAFY_STAGED_UPLOAD_MAX_BYTES"])
+    assert max_bytes == 64 * 1024 * 1024
+    assert "client_max_body_size 64m;" in body
+    assert "proxy_request_buffering off;" in body
+    assert "proxy_buffering off;" in body
+    assert "client_body_timeout 60s;" in body
+    assert "proxy_send_timeout 60s;" in body
+
+
+def test_compose_wires_signing_endpoint_and_optional_shared_storage() -> None:
+    repository = Path(__file__).parents[3]
+    compose = (repository / "infra/docker/compose.yaml").read_text()
+    shared_storage = (
+        repository / "infra/docker/compose.shared-storage.yaml"
+    ).read_text()
+    env_example = (repository / "infra/docker/.env.production.example").read_text()
+
+    assert (
+        "GRAFY_S3_SIGNING_ENDPOINT_URL: ${GRAFY_S3_SIGNING_ENDPOINT_URL:-}" in compose
+    )
+    assert re.search(r"^GRAFY_S3_SIGNING_ENDPOINT_URL=$", env_example, re.MULTILINE)
+
+    # MinIO stays off the default network and publishes no ports; only the API
+    # and gateway join its network.
+    assert "minio" not in compose.split("\nservices:", maxsplit=1)[1]
+    for service in ("api", "gateway"):
+        assert re.search(
+            rf"^  {service}:\n    networks:\n      default:\n      shared-storage:\n",
+            shared_storage,
+            re.MULTILINE,
+        )
+    assert "ports:" not in shared_storage
+    assert "external: true" in shared_storage
+    assert "name: ${GRAFY_S3_DOCKER_NETWORK:-shared-storage}" in shared_storage

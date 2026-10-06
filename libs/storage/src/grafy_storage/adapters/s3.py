@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from tempfile import SpooledTemporaryFile
 from typing import TYPE_CHECKING, cast, final, override
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import botocore.session
 from botocore.client import BaseClient, Config
@@ -47,7 +47,7 @@ class S3ObjectStore(FileStoragePort):
         self._secret_access_key = secret_access_key
         self._force_path_style = force_path_style
         self._endpoint_url = endpoint_url
-        self._signing_endpoint_url = (
+        self._signing_endpoint_url, self._signing_path_prefix = _split_signing_endpoint(
             signing_endpoint_url
             if signing_endpoint_url not in (None, "")
             else endpoint_url
@@ -192,16 +192,25 @@ class S3ObjectStore(FileStoragePort):
         expires_seconds: int,
     ) -> str:
         client = self._botocore_signer()
-        return client.generate_presigned_url(
-            "put_object",
-            Params={
-                "Bucket": bucket,
-                "Key": path,
-                "IfNoneMatch": _IF_NONE_MATCH,
-            },
-            ExpiresIn=expires_seconds,
-            HttpMethod="PUT",
+        url = cast(
+            str,
+            client.generate_presigned_url(
+                "put_object",
+                Params={
+                    "Bucket": bucket,
+                    "Key": path,
+                    "IfNoneMatch": _IF_NONE_MATCH,
+                },
+                ExpiresIn=expires_seconds,
+                HttpMethod="PUT",
+            ),
         )
+        if not self._signing_path_prefix:
+            return url
+        # The signature covers the unprefixed path that the store verifies;
+        # the reverse proxy strips this prefix before forwarding.
+        parts = urlsplit(url)
+        return urlunsplit(parts._replace(path=self._signing_path_prefix + parts.path))
 
     def _botocore_signer(self) -> BaseClient:
         if self._signer_client is not None:
@@ -297,6 +306,25 @@ class S3ObjectStore(FileStoragePort):
                 client_options=self._client_options,
             )
         return self._stores[bucket]
+
+
+def _split_signing_endpoint(url: str | None) -> tuple[str | None, str]:
+    """Separate a reverse-proxy path prefix from the signing origin.
+
+    SigV4 signs the request path. A proxy mounted at ``/storage`` strips that
+    prefix before the store verifies the signature, so the signer must see only
+    the origin and the prefix is added to the returned URL afterwards.
+    """
+
+    if url is None:
+        return None, ""
+    parts = urlsplit(url)
+    prefix = parts.path.rstrip("/")
+    if not prefix:
+        return url, ""
+    if parts.query or parts.fragment:
+        raise ValueError("S3 signing endpoint must not contain a query or fragment")
+    return urlunsplit((parts.scheme, parts.netloc, "", "", "")), prefix
 
 
 @final
