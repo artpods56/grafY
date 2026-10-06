@@ -5,9 +5,14 @@ import * as React from "react";
 import type { ArtifactSummary } from "@/lib/api";
 
 import { artifactMeta } from "./artifact-meta";
+import { fileTextRenderer } from "./file-text-renderer";
 import { geoMapRenderer } from "./geo-map-renderer";
 import { imageRenderer } from "./image-renderer";
-import { jsonRenderer, jsonSchemaRenderer } from "./json-renderer";
+import {
+  jsonRenderer,
+  jsonSchemaRenderer,
+  scalarRenderer,
+} from "./json-renderer";
 import { markdownRenderer } from "./markdown-renderer";
 import { PrettyValue } from "./pretty-value";
 import type { ArtifactRendererSpec } from "./spec";
@@ -27,7 +32,9 @@ export const ARTIFACT_RENDERERS: readonly ArtifactRendererSpec[] = [
   tableRenderer,
   jsonSchemaRenderer,
   markdownRenderer,
+  scalarRenderer,
   jsonRenderer,
+  fileTextRenderer,
   META_ARTIFACT_RENDERER,
 ];
 

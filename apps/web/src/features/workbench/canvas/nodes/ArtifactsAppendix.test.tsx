@@ -253,8 +253,10 @@ describe("artifact payload loading policy", () => {
     await act(async () => root.unmount());
   });
 
-  it("keeps the ingest notice on a blob artifact", async () => {
-    const fetchMock = vi.fn();
+  it("keeps the ingest notice on a blob artifact and shows readable bytes", async () => {
+    const fetchMock = vi.fn(
+      async () => new Response('{"hello": "world"}', { status: 200 }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const artifact: ArtifactSummary = {
       artifact_id: "blob-artifact",
@@ -267,9 +269,63 @@ describe("artifact payload loading policy", () => {
 
     const { container, root } = await renderPreview(outputFor([artifact]));
 
-    expect(fetchMock).not.toHaveBeenCalled();
     expect(container.textContent).toContain(
       "Format not recognized, stored as a blob.",
+    );
+    expect(container.textContent).toContain('"hello": "world"');
+    await act(async () => root.unmount());
+  });
+
+  it("falls back to metadata for a blob artifact whose bytes are binary", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00]), {
+            status: 200,
+          }),
+      ),
+    );
+    const artifact: ArtifactSummary = {
+      artifact_id: "binary-artifact",
+      artifact_type: "file.blob",
+      schema_version: 1,
+      content_type: "application/octet-stream",
+      byte_size: 5,
+      content_url: "./artifacts/binary-artifact/content",
+    };
+
+    const { container, root } = await renderPreview(outputFor([artifact]));
+
+    expect(container.textContent).toContain("Binary content");
+    expect(container.textContent).toContain("binary-artifact");
+    await act(async () => root.unmount());
+  });
+
+  it("shows a scalar artifact as its JSON text by default", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response('{"value":5}', {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ),
+    );
+    const artifact: ArtifactSummary = {
+      artifact_id: "integer-artifact",
+      artifact_type: "scalar.integer",
+      schema_version: 1,
+      content_type: "application/json",
+      byte_size: 11,
+      content_url: "./artifacts/integer-artifact/content",
+    };
+
+    const { container, root } = await renderPreview(outputFor([artifact]));
+
+    expect(container.querySelector("pre")?.textContent).toBe(
+      '{\n  "value": 5\n}',
     );
     await act(async () => root.unmount());
   });

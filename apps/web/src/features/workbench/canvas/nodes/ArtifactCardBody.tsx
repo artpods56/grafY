@@ -59,6 +59,11 @@ import {
   ArtifactRightRail,
   ArtifactSequenceBar,
 } from "./ArtifactControls";
+import {
+  formatTextHead,
+  readTextHead,
+  type TextHead,
+} from "./artifact-renderers/text-head";
 import { ArtifactLabel, ImageArtifactBody } from "./ImageArtifactBody";
 import { usePickupLift } from "./usePickupLift";
 import { PortRevealProvider, usePortReveal } from "./PortBall";
@@ -167,29 +172,21 @@ const s = stylex.create({
     animationIterationCount: "infinite",
     animationTimingFunction: "linear",
   },
-  // A small value (a count, a short text) shows itself instead of a file tile.
-  valueBody: {
-    flexDirection: "column",
+  // Readable content shows itself instead of a file tile.
+  textBody: {
     alignItems: "flex-start",
-    justifyContent: "center",
-    gap: "2px",
+    overflow: "hidden",
   },
-  valueNumber: {
-    color: tokens.colorText,
-    fontSize: "24px",
-    fontWeight: 500,
-    fontVariantNumeric: "tabular-nums",
-    letterSpacing: "-0.02em",
-    lineHeight: 1.1,
-  },
-  valueText: {
-    display: "-webkit-box",
+  textContent: {
+    flex: 1,
+    minWidth: 0,
+    margin: 0,
     overflow: "hidden",
     color: tokens.colorText,
-    fontSize: tokens.fontSizeSm,
-    lineHeight: 1.4,
-    WebkitBoxOrient: "vertical",
-    WebkitLineClamp: 4,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    fontSize: "10px",
+    lineHeight: 1.5,
+    whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
   },
   stack: {
@@ -294,44 +291,18 @@ const s = stylex.create({
   },
 });
 
-/** Largest JSON artifact a card reads to show as a value. */
-const SMALL_VALUE_BYTES = 2048;
+/** How much of an artifact's bytes a card reads to show as text. */
+const CARD_TEXT_BYTES = 4096;
 
-async function fetchArtifactValue([, workspaceId, artifactId]: readonly [
+async function fetchArtifactText([, workspaceId, artifactId]: readonly [
   string,
   string,
   string,
-]): Promise<unknown> {
-  const response = await fetch(
+]): Promise<TextHead | null> {
+  return readTextHead(
     artifactInlineContentUrl(workspaceId, artifactId),
-    { headers: { Accept: "application/json" }, credentials: "same-origin" },
+    CARD_TEXT_BYTES,
   );
-  if (!response.ok) throw new Error(`Could not read artifact ${artifactId}`);
-  return response.json();
-}
-
-/**
- * The one value a small payload holds: a bare number, string or boolean, or
- * the `value` of a scalar artifact (`{"value": 3}`). Anything else is null.
- */
-function scalarValue(payload: unknown): string | number | boolean | null {
-  const primitive = (candidate: unknown) =>
-    typeof candidate === "number" ||
-    typeof candidate === "string" ||
-    typeof candidate === "boolean"
-      ? candidate
-      : null;
-  if (primitive(payload) !== null) return primitive(payload);
-  if (
-    payload &&
-    typeof payload === "object" &&
-    !Array.isArray(payload) &&
-    Object.keys(payload).length === 1 &&
-    "value" in payload
-  ) {
-    return primitive((payload as { value: unknown }).value);
-  }
-  return null;
 }
 
 /**
@@ -462,17 +433,6 @@ export function ArtifactCardBody({
   const imageArtifact =
     first !== null && isImageArtifact(first, firstSummary?.content_type);
   const isSequence = shownValue !== null && "item_refs" in shownValue;
-  // A small JSON artifact (a count, a short text) is read and shown as its
-  // value; anything larger stays a file tile.
-  const valueKey =
-    first &&
-    !isSequence &&
-    firstSummary?.content_type === "application/json" &&
-    (firstSummary.byte_size ?? Infinity) <= SMALL_VALUE_BYTES
-      ? (["artifact-card-value", workspace.id, first.artifact_id] as const)
-      : null;
-  const { data: valuePayload } = useSWR(valueKey, fetchArtifactValue);
-  const smallValue = scalarValue(valuePayload);
   const imageSize = first ? imageSizes[first.artifact_id] : undefined;
   const recordedName = firstSummary?.metadata?.original_filename;
   const fileName =
@@ -487,6 +447,14 @@ export function ArtifactCardBody({
     first?.artifact_type === "file.csv" ||
     first?.artifact_type.startsWith("table.") ||
     fileName?.toLowerCase().endsWith(".csv");
+  // Readable bytes are shown as they are, JSON indented, instead of a file
+  // tile. Binary bytes, images, PDFs and tables keep their tile.
+  const textKey =
+    first && !isSequence && !imageArtifact && !isPdf && !isTableFile
+      ? (["artifact-card-text", workspace.id, first.artifact_id] as const)
+      : null;
+  const { data: textHead } = useSWR(textKey, fetchArtifactText);
+  const shownText = textHead ? formatTextHead(textHead) : null;
   const feedLabel = feed
     ? `${producer?.data.spec.title ?? "Output"} → ${feedPort?.title ?? feedPortName ?? "output"}`
     : null;
@@ -562,7 +530,7 @@ export function ArtifactCardBody({
     Boolean(feed) &&
     !imageArtifact &&
     !isSequence &&
-    (awaitingFeed || smallValue !== null);
+    (awaitingFeed || shownText !== null);
   // Only a card pulled out of a node's output port takes an input: it follows
   // that port. A card placed from the library holds its own artifact.
   const followsOutput = Boolean(feed) || data.mode === "artifact";
@@ -766,27 +734,18 @@ export function ArtifactCardBody({
                 ) : null}
                 {isSequence ? (
                   sequenceStack
-                ) : first && !awaitingFeed && smallValue !== null ? (
+                ) : first && !awaitingFeed && shownText !== null ? (
                   <div
                     data-artifact-value="true"
                     data-artifact-shadow-scope="file"
                     {...stylex.props(
                       s.fileBody,
-                      s.valueBody,
+                      s.textBody,
                       tier === "active" ? s.fileBodyRaised : null,
                       tier === "dragged" ? s.fileBodyDragged : null,
                     )}
                   >
-                    <span
-                      title={String(smallValue)}
-                      {...stylex.props(
-                        typeof smallValue === "string"
-                          ? s.valueText
-                          : s.valueNumber,
-                      )}
-                    >
-                      {String(smallValue)}
-                    </span>
+                    <pre {...stylex.props(s.textContent)}>{shownText}</pre>
                   </div>
                 ) : first && !awaitingFeed ? (
                   <div
