@@ -107,9 +107,9 @@ a slide-over with a backdrop and the shell stops reserving width.
 The header belongs to the view: Artifacts puts its title, new folder and upload
 there, and the shell adds only its collapse button at the end. Filter and sort
 sit on the row under it. `⋯` on a folder is new subfolder · rename · delete; on
-an artifact it is open original · copy link. With a mouse the `⋯` stays hidden
-until its row is hovered or keyboard-focused; on touch it is always there. The
-row's own click still means fold or unfold.
+an artifact it is open original · copy link · delete. With a mouse the `⋯` stays
+hidden until its row is hovered or keyboard-focused; on touch it is always there.
+The row's own click still means fold or unfold.
 
 ## 4. The seam
 
@@ -152,6 +152,7 @@ libraryFoldersApi.listTree(workspaceId)
 | `LibraryTree.tsx` | rows, row menus, rename, keyboard walking; rows read the tree's state from one context |
 | `LibraryArtifactTile.tsx` | the tile, and the text preview that reads only the head of the bytes |
 | `library-tree.ts` | the projection and the text helpers; pure |
+| `library-selection.ts` | the selection rule: plain, toggle, range, prune, and what a batch delete says; pure |
 | `library-drag.ts` | what a drag carries, read into one `LibraryDrop` the root and every row share |
 
 `libraryFoldersApi` (`src/lib/api/library-folders.ts`) is the whole contract:
@@ -171,6 +172,7 @@ the capability split the Library already used — `VIEW_ARTIFACTS` reads,
 | `/library/folders/{folder_id}` | `DELETE` | delete it, if it holds nothing |
 | `/library/folders/{folder_id}/parent` | `PUT` | move it; a null parent means root |
 | `/library/placements` | `PUT` | file these artifacts here, or unfile them |
+| `/library/artifacts/{artifact_id}` | `DELETE` | take it out of the Library, if nothing references it |
 
 `GET /library/artifacts` stamps every item with the `folder_id` it sits in, so
 `listTree` is two requests — the folders, and the artifacts already filed. The
@@ -184,6 +186,43 @@ failure in this API already returns, `{detail, code, error_id}`:
 class the panel knows how to phrase and passes anything else through untouched.
 The envelope carries no counts, so `LibraryFolderNotEmptyError` carries the
 `folder_id` and the panel says what its own tree still holds.
+
+**Selecting several artifacts.** A row click selects it alone; `⌘`/`Ctrl`-click adds
+or removes one row; `Shift`-click takes the run of rows from the row the last
+plain or `⌘`-click landed on, in the order the tree shows them — hidden by a
+folded folder or a search are not in that run, because they are not rows. The
+selection is a set with an anchor behind it (`library-selection.ts` holds the
+rule, the panel holds the state), and `aria-multiselectable` on the tree says so:
+`aria-selected` is true on every row in the set, which is why rows read
+`aria-selected="false"` rather than nothing at all. The preview tile is the story
+of one artifact, so it shows for a selection of exactly one and hides for two or
+more; the footer counts what is picked up ("2 selected") beside what the Library
+holds. Escape puts the selection down.
+
+**Deleting an artifact.** Deleting an artifact is the one Library action that
+cannot be undone, so the row menu only asks for it: `Delete`
+opens a confirmation that names the artifact, and Cancel sends nothing. A delete
+that lands rereads the tree the way every other Library change does, and closes
+the preview tile if that artifact was in it. A delete that does not — `409`
+`library.artifact_in_use`, which `deleteLibraryArtifact` raises as
+`LibraryArtifactInUseError` — leaves the row where it is and puts the
+server's own sentence in the notice above the tree. The panel passes that
+sentence through because the references live in saved revisions and run history,
+neither of which the panel holds: it could not name the graphs itself, and "this
+could not be deleted" would be a worse answer than the one that says which graphs
+to go and detach. Read-only members see the menu item disabled and say so, the
+capability the Generated view already uses to gate saving.
+
+**Deleting several.** With two or more selected, `Delete` (or `Backspace`) on a
+selected row, and `Delete` in any selected row's menu, ask about the whole
+selection: `Delete 5 artifacts?`. A row outside the selection is still asked
+about alone. The panel then sends one delete per artifact, in tree order, and
+does not stop when the server refuses one — the user asked to delete five and
+some of the rest may well go. One notice answers the batch: the single server
+sentence when only one was asked for, otherwise `Deleted 4. 1 still used by:
+Field study.` What refused stays selected, so the next thing the user does is
+aimed at what is left; what went away leaves the selection, and the reread prunes
+anything else the Library lost while the dialog was open.
 
 ```mermaid
 graph LR
@@ -211,6 +250,11 @@ graph LR
 - **A folder deletes only when empty.** Emptying a folder is a visible, reversible
   act; deleting a subtree that holds someone's work is not. The API says so with
   `LibraryFolderNotEmptyError` and the row menu says "empty it first".
+- **An artifact asks instead of being counted.** A folder can check its own
+  contents; an artifact cannot see the graphs and runs that reference it, so the
+  server is the only honest judge and the panel's job is to make the question
+  explicit before asking it. Hence the confirmation dialog on artifacts and the
+  emptiness rule on folders, which look like an inconsistency and are not one.
 - **Moving a folder cannot make a cycle.** `moveFolder` rejects a parent that is
   the folder itself or one of its descendants.
 - **The tree folds on its own state.** Each row renders its children with a plain
@@ -240,12 +284,19 @@ graph LR
   shell adds only collapse.
 - **Drag stays the contract.** Rows carry `application/x-grafy-artifact` through
   `writeArtifactDrop`; the drop still resolves the port row under the cursor with
-  `document.elementsFromPoint`, skipping portals.
+  `document.elementsFromPoint`, skipping portals. A drag out of a selection carries
+  the selection: `application/x-grafy-library-move` names every row it picked up,
+  and the cards those rows make — one per kind, in tree order — go on the type
+  every drop target already reads, with the rest of the cards behind it on
+  `application/x-grafy-artifact-groups`. A reader that knows only the first type
+  lands the first card, which is what a drag of one artifact always was.
 - **Keyboard first-class.** `role=tree` with `treeitem`, `aria-level`,
   `aria-expanded`; Arrow keys move, ArrowRight/Left expand and collapse, Home/End
   jump, Enter selects or folds, F2 renames, Escape closes the tile, and a letter
-  jumps to the next row that starts with it. A file browser you cannot walk with
-  the keyboard is a demo.
+  jumps to the next row that starts with it. `⌘`/`Ctrl`-click and `Shift`-click
+  have key equivalents: `⌘`-Arrow selects the row the arrow lands on, `Shift`-Arrow
+  takes the run to it, and `Delete`/`Backspace` deletes what is selected. A file
+  browser you cannot walk with the keyboard is a demo.
 - **Upload by click too.** Drag-and-drop alone excludes keyboard users; the
   header upload button posts the same two calls.
 - **Collapse is total.** Closed means the contents are unmounted and the column

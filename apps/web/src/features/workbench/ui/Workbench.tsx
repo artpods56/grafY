@@ -244,6 +244,7 @@ import {
   artifactDropTargetFromRow,
   isArtifactDrop,
   readArtifactDrop,
+  readArtifactDropGroups,
 } from "../model/artifact-drop";
 import {
   collectionModeForConnection,
@@ -279,7 +280,7 @@ import { useWorkbenchFitViewOptions } from "./useWorkbenchFitViewOptions";
 import { useArtifactViewerCommands } from "./workbench-artifact-viewers";
 import { useNodeCommands } from "./workbench-node-commands";
 import {
-  artifactCardDropPosition,
+  artifactCardDropPositions,
   useArtifactCardCommands,
 } from "./workbench-artifact-cards";
 import {
@@ -2261,7 +2262,7 @@ function WorkbenchBody({
    * artifact value.
    */
   const {
-    addArtifactCard,
+    addArtifactCards,
     collectSelectedArtifacts,
     tidySelectedArtifacts,
     ungroupArtifacts,
@@ -2312,25 +2313,38 @@ function WorkbenchBody({
     nodes,
   ]);
 
+  /**
+   * Drop the carried artifacts on empty canvas: one card per group they form.
+   *
+   * A Library drag of several artifacts arrives as one group per artifact type,
+   * so a same-type selection lands as one sequence card and a mixed selection as
+   * several cards laid side by side. A drop that asks for more than one card and
+   * lands on empty canvas is still one drop: one commit places all of them.
+   */
   const dropArtifactOnCanvas = React.useCallback(
     (event: DragEvent | React.DragEvent<HTMLElement>) => {
       if (!event.dataTransfer || !canvasAtPoint(event.clientX, event.clientY)) {
         return;
       }
-      const payload = readArtifactDrop(event.dataTransfer);
-      if (!payload) return;
+      const groups = readArtifactDropGroups(event.dataTransfer);
+      if (groups.length === 0) return;
       event.preventDefault();
       const point = flow?.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       }) ?? { x: 0, y: 0 };
-      const refs = cardArtifactRefs(payload.value);
-      addArtifactCard(
-        payload.value,
-        artifactCardDropPosition(point, refs.length),
+      const positions = artifactCardDropPositions(
+        point,
+        groups.map((group) => cardArtifactRefs(group.value).length),
+      );
+      addArtifactCards(
+        groups.map((group, index) => ({
+          value: group.value,
+          position: positions[index] ?? point,
+        })),
       );
     },
-    [addArtifactCard, flow],
+    [addArtifactCards, flow],
   );
 
   /**
@@ -2361,6 +2375,17 @@ function WorkbenchBody({
         return;
       }
       event.preventDefault();
+      // One input row takes one artifact value. A drag of several artifact types
+      // has no honest reading here — filling the row with the first group and
+      // silently dropping the rest would lose what the user picked up — so the
+      // drop is refused and said.
+      const groups = readArtifactDropGroups(event.dataTransfer);
+      if (groups.length > 1) {
+        setRunError(
+          `Drop one artifact type at a time onto an input: this drag carries ${groups.length} kinds of artifact.`,
+        );
+        return;
+      }
       const payload = readArtifactDrop(event.dataTransfer);
       const target = artifactDropTargetFromRow(row);
       if (!payload || !target) return;

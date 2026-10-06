@@ -16,7 +16,9 @@ import {
 } from "lucide-react";
 
 import {
+  deleteLibraryArtifact,
   libraryFoldersApi,
+  LibraryArtifactInUseError,
   LibraryFolderCycleError,
   LibraryFolderNameTakenError,
   LibraryFolderNotEmptyError,
@@ -25,6 +27,14 @@ import {
   type LibraryFolder,
   type PlacedLibraryItem,
 } from "@/lib/api";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
   dropEffectFor,
@@ -36,10 +46,22 @@ import {
 import {
   buildLibraryTree,
   countLibraryArtifacts,
+  flattenLibraryRows,
+  libraryFileDisplayName,
   libraryFolderKey,
   uniqueLibraryFolderName,
   type LibrarySort,
 } from "./library-tree";
+import {
+  applyLibrarySelection,
+  emptyLibrarySelection,
+  libraryBulkDeleteSummary,
+  librarySelectionSummary,
+  orderedLibrarySelection,
+  pruneLibrarySelection,
+  removeFromLibrarySelection,
+  type LibrarySelection,
+} from "./library-selection";
 import { LibraryArtifactTile } from "./LibraryArtifactTile";
 import { LibraryTree, type LibraryTreeActions } from "./LibraryTree";
 import { panelStyles } from "./panel-styles";
@@ -88,6 +110,12 @@ function operationErrorMessage(
   if (error instanceof LibraryFolderNameTakenError) {
     return `There is already a folder called ${error.folderName} here.`;
   }
+  if (error instanceof LibraryArtifactInUseError) {
+    // The references live in saved revisions and run history, neither of which
+    // this panel holds, so the server's own sentence — the one naming the
+    // graphs — is the only true thing that can be said here.
+    return error.detail;
+  }
   if (error instanceof Error && error.message) return error.message;
   return "That could not be done.";
 }
@@ -99,10 +127,13 @@ function operationErrorMessage(
 export function LibraryPanel({
   workspaceId,
   onOpenRun,
+  canEdit = true,
   headerEnd,
 }: {
   workspaceId: string;
   onOpenRun: (graphId: string, executionId: string) => void;
+  /** The capability behind every Library change. Read-only members are told, not refused later. */
+  canEdit?: boolean;
   headerEnd?: React.ReactNode;
 }) {
   // The canvas reads the same key, so a change here reaches its cards too.
@@ -114,7 +145,12 @@ export function LibraryPanel({
 
   const [query, setQuery] = React.useState("");
   const [sort, setSort] = React.useState<LibrarySort>("name");
-  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  // Several artifacts are selected at once, with the row a shift range measures
+  // from kept beside them. What the Library holds changes under it, so the
+  // selection is pruned where it is read rather than corrected after a render.
+  const [picked, setPicked] = React.useState<LibrarySelection>(
+    emptyLibrarySelection,
+  );
   const [renamingFolderId, setRenamingFolderId] = React.useState<string | null>(
     null,
   );
@@ -125,6 +161,14 @@ export function LibraryPanel({
     total: number;
   } | null>(null);
   const [message, setMessage] = React.useState<string | null>(null);
+  // The artifacts a delete is waiting to be confirmed. Several at once when the
+  // user asked for a selection; the name is held for the one case, where the
+  // confirmation can say what is about to go away.
+  const [deleteTarget, setDeleteTarget] = React.useState<{
+    artifactIds: string[];
+    name: string | null;
+  } | null>(null);
+  const [deleting, setDeleting] = React.useState(false);
   const uploadingRef = React.useRef(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -139,9 +183,47 @@ export function LibraryPanel({
     () => buildLibraryTree({ folders, items, query, sort }),
     [folders, items, query, sort],
   );
-  const selected = items.find(
-    (item) => item.artifact.artifact_id === selectedId,
+  /**
+   * The rows the tree renders, top to bottom — a filter and the open folders
+   * have already been applied to it.
+   *
+   * A shift range, a bulk delete and a drag of several artifacts all run in this
+   * order, because this is the order the user is looking at.
+   */
+  const visibleArtifacts = React.useMemo(
+    () =>
+      flattenLibraryRows(tree, { collapsed })
+        .filter((row) => row.kind === "file")
+        .map((row) => row.item),
+    [tree, collapsed],
   );
+  const visibleArtifactIds = React.useMemo(
+    () => visibleArtifacts.map((item) => item.artifact.artifact_id),
+    [visibleArtifacts],
+  );
+  const itemsById = React.useMemo(
+    () =>
+      new Map(items.map((item) => [item.artifact.artifact_id, item] as const)),
+    [items],
+  );
+
+  // A refresh that took an artifact away takes it out of the selection too, so a
+  // bulk delete can never aim at a row the Library no longer has.
+  const existingIds = React.useMemo(
+    () => new Set(items.map((item) => item.artifact.artifact_id)),
+    [items],
+  );
+  const selection = React.useMemo(
+    () => pruneLibrarySelection(picked, existingIds),
+    [picked, existingIds],
+  );
+
+  // The preview tile shows one artifact or none: several selected artifacts have
+  // no single preview, and its folder picker would claim to move what it shows.
+  const selected =
+    selection.ids.length === 1
+      ? itemsById.get(selection.ids[0] ?? "")
+      : undefined;
 
   // `dragover` fires every few milliseconds; only a new target re-renders.
   const setDropTarget = React.useCallback(
@@ -235,7 +317,7 @@ export function LibraryPanel({
         void run(() =>
           libraryFoldersApi.moveItems({
             workspaceId,
-            artifactIds: [dropped.artifactId],
+            artifactIds: dropped.artifactIds,
             folderId,
           }),
         );
@@ -264,7 +346,35 @@ export function LibraryPanel({
         return next;
       });
     },
-    select: setSelectedId,
+    select: (artifactId, gesture = "plain") => {
+      setPicked(
+        artifactId === null
+          ? emptyLibrarySelection
+          : applyLibrarySelection({
+              selection,
+              artifactId,
+              gesture,
+              visible: visibleArtifactIds,
+            }),
+      );
+    },
+    beginArtifactDrag: (artifactId) => {
+      // A row in a multi-selection drags the selection; any other row is picked
+      // up on its own and the selection follows it, so what the panel has
+      // selected is always what a drag moved.
+      const ids =
+        selection.ids.length >= 2 && selection.ids.includes(artifactId)
+          ? orderedLibrarySelection(selection, visibleArtifactIds)
+          : [artifactId];
+      const dragged = ids
+        .map((id) => itemsById.get(id))
+        .filter((item): item is PlacedLibraryItem => item !== undefined);
+      setPicked({
+        ids: dragged.map((item) => item.artifact.artifact_id),
+        anchor: artifactId,
+      });
+      return dragged;
+    },
     startRename: setRenamingFolderId,
     async renameFolder(folderId, name) {
       if (name !== null) {
@@ -277,9 +387,82 @@ export function LibraryPanel({
     createSubfolder: (parentId) => void createFolder(parentId),
     deleteFolder: (folderId) =>
       void run(() => libraryFoldersApi.deleteFolder({ workspaceId, folderId })),
+    requestDeleteArtifact: (artifactId) => {
+      // A row inside a multi-selection means the whole selection; a row outside
+      // it means only itself, even when a dozen other rows are highlighted.
+      const artifactIds =
+        selection.ids.length >= 2 && selection.ids.includes(artifactId)
+          ? orderedLibrarySelection(selection, visibleArtifactIds)
+          : [artifactId];
+      const only = artifactIds.length === 1 ? itemsById.get(artifactId) : null;
+      if (artifactIds.length === 1 && !only) return;
+      setDeleteTarget({
+        artifactIds,
+        name: only ? libraryFileDisplayName(only) : null,
+      });
+    },
     drop,
     setDropTarget,
   };
+
+  /**
+   * Takes the confirmed artifacts out of the Library.
+   *
+   * Each artifact is asked for on its own, in tree order, and a refusal never
+   * stops the ones behind it: the server decides per artifact, and stopping at
+   * the first artifact still in use would leave the rest of a deliberate
+   * selection behind without saying so. The tree is reread once the batch is
+   * answered, and one sentence covers it — the server's own for a single
+   * artifact, a count and a list of what refused for several.
+   *
+   * What refused stays selected, so the user can see what is left and act on it
+   * again; what went away leaves the selection with it.
+   */
+  async function confirmDeleteArtifacts(): Promise<void> {
+    if (!deleteTarget) return;
+    const { artifactIds } = deleteTarget;
+    setDeleting(true);
+    const deleted: string[] = [];
+    const refused: { artifactId: string; name: string; detail: string }[] = [];
+    for (const artifactId of artifactIds) {
+      const item = itemsById.get(artifactId);
+      try {
+        await deleteLibraryArtifact(workspaceId, artifactId);
+        deleted.push(artifactId);
+      } catch (refusal) {
+        refused.push({
+          artifactId,
+          name: item ? libraryFileDisplayName(item) : "That artifact",
+          detail: operationErrorMessage(refusal, folders, items),
+        });
+      }
+    }
+    try {
+      await mutate();
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+    }
+    // The reread above prunes the selection too, for anything the Library lost
+    // while the dialog was open. What the server kept stays selected so the user
+    // can see what is left and act on it again; what went away leaves the
+    // selection with it, and a delete asked for outside a selection leaves that
+    // selection alone.
+    setPicked((current) => removeFromLibrarySelection(current, deleted));
+    if (refused.length === 0) {
+      setMessage(null);
+      return;
+    }
+    const [only] = refused;
+    // One artifact asked for, one refusal: the server's own sentence is the whole
+    // story and needs no count in front of it. Several asked for: one sentence
+    // for the batch, naming what refused.
+    setMessage(
+      artifactIds.length === 1 && only
+        ? only.detail
+        : (libraryBulkDeleteSummary(deleted.length, refused) ?? null),
+    );
+  }
 
   const loading = data === undefined && error === undefined;
   const emptyLibrary =
@@ -457,9 +640,10 @@ export function LibraryPanel({
               <LibraryTree
                 nodes={tree}
                 workspaceId={workspaceId}
+                canEdit={canEdit}
                 collapsed={collapsed}
                 filtering={filtering}
-                selectedId={selected ? selectedId : null}
+                selection={selection}
                 renamingFolderId={renamingFolderId}
                 dropTarget={dropTarget}
                 actions={actions}
@@ -484,17 +668,62 @@ export function LibraryPanel({
           item={selected}
           folders={folders}
           onOpenRun={onOpenRun}
-          onClose={() => setSelectedId(null)}
+          onClose={() => setPicked(emptyLibrarySelection)}
         />
       ) : null}
 
       <footer role="status" {...stylex.props(s.statusBar)}>
-        {upload
-          ? `Uploading ${Math.min(upload.done + 1, upload.total)} of ${upload.total}…`
-          : filtering
-            ? `${shownCount} of ${plural(items.length, "artifact")}`
-            : `${plural(items.length, "artifact")} · ${plural(folders.length, "folder")}`}
+        {[
+          librarySelectionSummary(selection),
+          upload
+            ? `Uploading ${Math.min(upload.done + 1, upload.total)} of ${upload.total}…`
+            : filtering
+              ? `${shownCount} of ${plural(items.length, "artifact")}`
+              : `${plural(items.length, "artifact")} · ${plural(folders.length, "folder")}`,
+        ]
+          .filter((part): part is string => part !== null)
+          .join(" · ")}
       </footer>
+
+      {/* Deleting an artifact is not a click's worth of consequence, so the row
+          menu only asks for it and this dialog decides it. */}
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent size="compact">
+          <DialogHeader>
+            <DialogTitle>
+              {deleteTarget?.name
+                ? `Delete ${deleteTarget.name}?`
+                : `Delete ${deleteTarget?.artifactIds.length ?? 0} artifacts?`}
+            </DialogTitle>
+            <DialogDescription>This can&apos;t be undone.</DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <div {...stylex.props(s.dialogActions)}>
+              <button
+                type="button"
+                className="grafy-workspace-button"
+                disabled={deleting}
+                onClick={() => setDeleteTarget(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="grafy-workspace-button grafy-workspace-button--primary"
+                disabled={deleting}
+                onClick={() => void confirmDeleteArtifacts()}
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -678,5 +907,10 @@ const s = stylex.create({
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
+  },
+  dialogActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "8px",
   },
 });

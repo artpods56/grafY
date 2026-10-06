@@ -1,23 +1,37 @@
-import type { PlacedLibraryItem } from "@/lib/api";
+import type { ArtifactRef, PlacedLibraryItem } from "@/lib/api";
 import {
   ARTIFACT_DROP_DATA_TYPE,
+  artifactDropPayload,
   readArtifactDrop,
-  writeArtifactDrop,
+  writeArtifactDropGroups,
+  type ArtifactDropValue,
 } from "../../model/artifact-drop";
+import { artifactCardValue } from "../../canvas/artifact-card";
+import { artifactTypeKey } from "../../canvas/handles";
 
 /**
- * What the Library tree can be handed by a drag: files from the desktop, one of
- * its own artifacts, or one of its own folders. The canvas reads artifact drags
- * too; it ignores the folder type.
+ * What the Library tree can be handed by a drag: files from the desktop, one or
+ * more of its own artifacts, or one of its own folders. The canvas reads artifact
+ * drags too; it ignores the folder type.
  */
 
 export const LIBRARY_FOLDER_DATA_TYPE = "application/x-grafy-library-folder";
+
+/**
+ * The artifacts a Library drag moves between folders.
+ *
+ * The canvas payload describes what the artifacts ARE; a move needs the ids of
+ * every row the drag picked up, including the ones grouped into a card the
+ * canvas never sees as separate rows. So it rides along as its own type instead
+ * of being squeezed into the canvas payload.
+ */
+export const LIBRARY_MOVE_DATA_TYPE = "application/x-grafy-library-move";
 
 export type LibraryDragKind = "upload" | "artifact" | "folder";
 
 export type LibraryDrop =
   | { kind: "upload"; files: File[] }
-  | { kind: "artifact"; artifactId: string }
+  | { kind: "artifact"; artifactIds: string[] }
   | { kind: "folder"; folderId: string };
 
 /** Where a drag would land if it dropped now: a folder, or the root (null). */
@@ -36,7 +50,12 @@ export function libraryDragKind(
   const types = Array.from(dataTransfer.types ?? []);
   if (types.includes("Files")) return "upload";
   if (types.includes(LIBRARY_FOLDER_DATA_TYPE)) return "folder";
-  if (types.includes(ARTIFACT_DROP_DATA_TYPE)) return "artifact";
+  if (
+    types.includes(ARTIFACT_DROP_DATA_TYPE) ||
+    types.includes(LIBRARY_MOVE_DATA_TYPE)
+  ) {
+    return "artifact";
+  }
   return null;
 }
 
@@ -54,10 +73,13 @@ export function readLibraryDrop(
       return folderId ? { kind: "folder", folderId } : null;
     }
     case "artifact": {
-      // A drag of many artifacts comes from the canvas, never from a Library row.
+      const moved = readLibraryMoveIds(dataTransfer);
+      if (moved.length > 0) return { kind: "artifact", artifactIds: moved };
+      // A drag of many artifacts comes from the canvas, never from a Library
+      // row, so only a single artifact reference is a row this Library can file.
       const value = readArtifactDrop(dataTransfer)?.value;
       return value && "artifact_id" in value
-        ? { kind: "artifact", artifactId: value.artifact_id }
+        ? { kind: "artifact", artifactIds: [value.artifact_id] }
         : null;
     }
     default:
@@ -65,16 +87,70 @@ export function readLibraryDrop(
   }
 }
 
+function readLibraryMoveIds(dataTransfer: DataTransfer): string[] {
+  const raw = dataTransfer.getData(LIBRARY_MOVE_DATA_TYPE);
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id): id is string => typeof id === "string");
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The canvas values one set of Library artifacts turns into.
+ *
+ * Artifacts of the same type and schema version go on one card — a lone one as
+ * a single reference, several as a sequence — because that is the only thing a
+ * card can honestly present. Different types never share a card, so a selection
+ * spanning three types becomes three cards, in the order the rows appear in the
+ * tree: the caller passes them in that order and grouping keeps it, dating each
+ * group from the first row of it the user can see.
+ */
+export function artifactDropGroups(
+  items: readonly PlacedLibraryItem[],
+): ArtifactDropValue[] {
+  const groups = new Map<string, ArtifactRef[]>();
+  for (const item of items) {
+    const ref: ArtifactRef = {
+      artifact_id: item.artifact.artifact_id,
+      artifact_type: item.artifact.artifact_type,
+      schema_version: item.artifact.schema_version,
+      content_hash: item.artifact.sha256 ?? null,
+    };
+    const key = artifactTypeKey({
+      id: ref.artifact_type,
+      schema_version: ref.schema_version,
+    });
+    const group = groups.get(key);
+    if (group) group.push(ref);
+    else groups.set(key, [ref]);
+  }
+  return [...groups.values()]
+    .map((refs) => artifactCardValue(refs))
+    .filter((value): value is ArtifactDropValue => value !== null);
+}
+
+/**
+ * Write a Library artifact drag: the canvas payloads, and the id list a folder
+ * drop needs to move every picked-up row.
+ *
+ * `items` is in tree order. One artifact writes what it always wrote; a group
+ * adds the grouped type on top, so an older canvas still lands the first group.
+ */
 export function writeLibraryArtifactDrag(
   dataTransfer: DataTransfer,
-  item: PlacedLibraryItem,
+  items: readonly PlacedLibraryItem[],
 ): void {
-  writeArtifactDrop(dataTransfer, {
-    artifact_id: item.artifact.artifact_id,
-    artifact_type: item.artifact.artifact_type,
-    schema_version: item.artifact.schema_version,
-    content_hash: item.artifact.sha256 ?? null,
-  });
+  const groups = artifactDropGroups(items);
+  if (groups.length === 0) return;
+  writeArtifactDropGroups(dataTransfer, groups.map(artifactDropPayload));
+  dataTransfer.setData(
+    LIBRARY_MOVE_DATA_TYPE,
+    JSON.stringify(items.map((item) => item.artifact.artifact_id)),
+  );
   // Copy onto the canvas, move between folders.
   dataTransfer.effectAllowed = "copyMove";
 }

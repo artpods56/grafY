@@ -98,6 +98,28 @@ const SEQUENCE_LIBRARY: LibraryList = {
   ],
 };
 
+// A second kind that asks for nothing: a card for a small JSON or an image reads
+// its artifact back over HTTP, and this page's stub serves the Library only.
+const MIXED_KIND_LIBRARY: LibraryList = {
+  items: [
+    LIBRARY.items[0],
+    {
+      ...LIBRARY.items[0],
+      artifact: {
+        ...LIBRARY.items[0].artifact,
+        artifact_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        artifact_type: "file.txt",
+        content_type: "text/plain",
+      },
+      name: "field-notes.txt",
+      provenance: {
+        ...LIBRARY.items[0].provenance,
+        original_filename: "field-notes.txt",
+      },
+    },
+  ],
+};
+
 function viewportWidth(page: Page): number {
   return page.viewportSize()?.width ?? 0;
 }
@@ -320,6 +342,55 @@ test("a folder refuses deletion until it is empty", async ({ page }) => {
   await expect(
     tree(page).getByRole("treeitem", { name: "Cold store" }),
   ).toHaveCount(0);
+});
+
+function artifactActions(page: Page, name: string) {
+  return panel(page).getByRole("button", { name: `Actions for ${name}` });
+}
+
+async function chooseArtifactDelete(page: Page, name: string) {
+  await artifactActions(page, name).click();
+  await page
+    .getByRole("menuitem", { name: /^Delete/ })
+    .first()
+    .click();
+  return page.getByRole("dialog");
+}
+
+test("an artifact deletes only after the answer is yes, and a referenced one refuses", async ({
+  page,
+}) => {
+  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
+
+  await stubResponses(page, SEQUENCE_LIBRARY);
+  await openPanel(page);
+  const confirm = page.getByRole("dialog");
+
+  // A refusal first, because it is the path a local fake could otherwise skip.
+  const refusal = await chooseArtifactDelete(page, "forecast.csv");
+  await expect(refusal).toContainText("Delete forecast.csv?");
+  await refusal.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(confirm).toHaveCount(0);
+  await expect(page.getByText("Still used by: Survey pipeline")).toBeVisible();
+  await expect(
+    tree(page).getByRole("treeitem", { name: /forecast\.csv/ }),
+  ).toBeVisible();
+
+  // Cancel sends nothing at all.
+  const cancelled = await chooseArtifactDelete(page, "measurements.csv");
+  await cancelled.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirm).toHaveCount(0);
+  await expect(
+    tree(page).getByRole("treeitem", { name: /measurements\.csv/ }),
+  ).toBeVisible();
+
+  // Yes takes it out of the tree for good.
+  const accepted = await chooseArtifactDelete(page, "measurements.csv");
+  await accepted.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(
+    tree(page).getByRole("treeitem", { name: /measurements\.csv/ }),
+  ).toHaveCount(0);
+  await expect(panel(page)).toContainText("1 artifact · 0 folders");
 });
 
 test("a Library artifact drag still lands on an input port", async ({
@@ -1268,4 +1339,118 @@ test.describe("collections", () => {
     ).toHaveCount(1);
     await expect(page.locator(".react-flow__edge")).toHaveCount(1);
   });
+});
+
+test("a selection dragged onto the canvas lands one card per kind of artifact", async ({
+  page,
+}) => {
+  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
+
+  await stubResponses(page, SEQUENCE_LIBRARY);
+  await openPanel(page);
+
+  const rows = tree(page).getByRole("treeitem");
+  await rows.filter({ hasText: "measurements.csv" }).click();
+  await rows
+    .filter({ hasText: "forecast.csv" })
+    .click({ modifiers: ["ControlOrMeta"] });
+  await expect(panel(page)).toContainText("2 selected");
+
+  // The drag started on one row and carried both.
+  await rows
+    .filter({ hasText: "measurements.csv" })
+    .dragTo(page.locator(".react-flow"), {
+      targetPosition: { x: 520, y: 420 },
+    });
+
+  const card = page.locator("[data-artifact-card-id]");
+  await expect(card).toHaveCount(1);
+  await expect(card).toContainText("Sequence<file.csv@1>");
+  await expect(card.getByLabel("2 items in sequence")).toBeVisible();
+});
+
+test("a selection of two kinds becomes two cards side by side", async ({
+  page,
+}) => {
+  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
+
+  await stubResponses(page, MIXED_KIND_LIBRARY);
+  await openPanel(page);
+
+  const rows = tree(page).getByRole("treeitem");
+  await rows.filter({ hasText: "measurements.csv" }).click();
+  await rows
+    .filter({ hasText: "field-notes.txt" })
+    .click({ modifiers: ["ControlOrMeta"] });
+
+  await rows
+    .filter({ hasText: "measurements.csv" })
+    .dragTo(page.locator(".react-flow"), {
+      targetPosition: { x: 520, y: 420 },
+    });
+
+  const cards = page.locator("[data-artifact-card-id]");
+  await expect(cards).toHaveCount(2);
+  await expect(cards.filter({ hasText: "measurements.csv" })).toBeVisible();
+  await expect(cards.filter({ hasText: "field-notes.txt" })).toBeVisible();
+  // Side by side at the cursor: same row, different columns.
+  const [first, second] = await Promise.all([
+    cards.nth(0).boundingBox(),
+    cards.nth(1).boundingBox(),
+  ]);
+  if (!first || !second) throw new Error("Artifact cards have no bounds");
+  expect(Math.abs(first.y - second.y)).toBeLessThan(2);
+  expect(Math.abs(first.x - second.x)).toBeGreaterThan(100);
+});
+
+test("a selection refuses to land on one input rather than split itself", async ({
+  page,
+}) => {
+  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
+
+  await stubResponses(page, MIXED_KIND_LIBRARY);
+  await openPanel(page);
+  const sink = await addNode(page, "Test text sink");
+
+  const rows = tree(page).getByRole("treeitem");
+  await rows.filter({ hasText: "measurements.csv" }).click();
+  await rows
+    .filter({ hasText: "field-notes.txt" })
+    .click({ modifiers: ["ControlOrMeta"] });
+
+  const row = sink.locator("[data-input-node-id]").first();
+  await rows.filter({ hasText: "measurements.csv" }).dragTo(row);
+
+  await expect(
+    page.getByText(/Drop one artifact type at a time onto an input/).first(),
+  ).toBeVisible();
+  await expect(page.locator("[data-artifact-card-id]")).toHaveCount(0);
+});
+
+test("a selection dragged into a folder moves every row it carried", async ({
+  page,
+}) => {
+  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
+
+  await stubResponses(page, SEQUENCE_LIBRARY);
+  await openPanel(page);
+  await makeFolder(page, "Autumn");
+
+  const rows = tree(page).getByRole("treeitem");
+  await rows.filter({ hasText: "measurements.csv" }).click();
+  await rows
+    .filter({ hasText: "forecast.csv" })
+    .click({ modifiers: ["ControlOrMeta"] });
+  // A drag from inside a selection carries the selection, so one drop files both
+  // rows in the folder they were dropped on.
+  await rows
+    .filter({ hasText: "measurements.csv" })
+    .dragTo(folderRow(page, "Autumn"));
+
+  await expect(folderRow(page, "Autumn")).toContainText("2");
+  const filed = panel(page).locator('[data-tree-key^="file:"]');
+  await expect(filed).toHaveCount(2);
+  await expect(
+    panel(page).getByRole("treeitem", { name: /measurements\.csv/ }),
+  ).toBeVisible();
 });

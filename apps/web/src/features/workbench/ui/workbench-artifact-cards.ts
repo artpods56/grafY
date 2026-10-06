@@ -90,13 +90,21 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
     localAuthoringEnabled,
   } = deps;
 
-  const addArtifactCard = React.useCallback(
-    (value: ArtifactCardValue, position: { x: number; y: number }) => {
+  const addArtifactCards = React.useCallback(
+    (
+      cards: readonly {
+        value: ArtifactCardValue;
+        position: { x: number; y: number };
+      }[],
+    ) => {
+      if (cards.length === 0) return;
+      // One commit, so a drop of several cards is one change to the canvas and
+      // one presentation sync rather than a cascade the room replays.
       commitArtifactViewers((current) => ({
         ...current,
         nodes: [
           ...current.nodes.map((node) => ({ ...node, selected: false })),
-          {
+          ...cards.map(({ value, position }): ArtifactViewerNode => ({
             id: `artifact-viewer-${createUuid()}`,
             type: ARTIFACT_VIEWER_NODE_TYPE,
             position,
@@ -107,11 +115,18 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
               mode: null,
               artifactRef: value,
             },
-          },
+          })),
         ],
       }));
     },
     [commitArtifactViewers],
+  );
+
+  const addArtifactCard = React.useCallback(
+    (value: ArtifactCardValue, position: { x: number; y: number }) => {
+      addArtifactCards([{ value, position }]);
+    },
+    [addArtifactCards],
   );
 
   const collectSelectedArtifacts = React.useCallback(() => {
@@ -292,6 +307,7 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
 
   return {
     addArtifactCard,
+    addArtifactCards,
     collectSelectedArtifacts,
     tidySelectedArtifacts,
     ungroupArtifacts,
@@ -309,4 +325,34 @@ export function artifactCardDropPosition(
     x: center.x - DEFAULT_ARTIFACT_CARD_WIDTH / 2,
     y: center.y - (artifactCount > 1 ? 76 : 24),
   };
+}
+
+/**
+ * The gutter between cards that land from one drop.
+ *
+ * Stride is the widest card a drop can produce plus this gutter, so two cards
+ * never overlap whatever widths the cards end up opening at.
+ */
+export const ARTIFACT_CARD_DROP_GUTTER = 24;
+
+/**
+ * Where a set of cards dropped together lands: one row, centred on the cursor.
+ *
+ * Each card is placed by the same rule as a single drop — centred horizontally,
+ * pushed up when it carries a set — and the row as a whole is centred on where
+ * the pointer was released, so a two-card drop does not appear offset to one
+ * side of the cursor.
+ */
+export function artifactCardDropPositions(
+  center: { x: number; y: number },
+  artifactCounts: readonly number[],
+): { x: number; y: number }[] {
+  const stride = DEFAULT_ARTIFACT_CARD_WIDTH + ARTIFACT_CARD_DROP_GUTTER;
+  const span = (artifactCounts.length - 1) * stride;
+  return artifactCounts.map((count, index) => ({
+    ...artifactCardDropPosition(
+      { x: center.x - span / 2 + index * stride, y: center.y },
+      count,
+    ),
+  }));
 }

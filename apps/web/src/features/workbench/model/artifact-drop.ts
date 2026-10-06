@@ -19,6 +19,14 @@ import { createUuid } from "./uuid";
 
 export const ARTIFACT_DROP_DATA_TYPE = "application/x-grafy-artifact";
 
+/**
+ * Several cards in one drag: an artifact-card payload per group, in the order
+ * the groups should land. A drag that carries only `ARTIFACT_DROP_DATA_TYPE`
+ * still means one card, and every reader that predates multi-card drops keeps
+ * working, because a grouped drag writes that type too — with its first group.
+ */
+export const ARTIFACT_GROUPS_DATA_TYPE = "application/x-grafy-artifact-groups";
+
 export type ArtifactDropValue = SavedGraphOrigin["value"];
 
 export interface ArtifactDropPayload {
@@ -64,27 +72,82 @@ export function writeArtifactDrop(
 
 /** Whether one drag carries a Grafy artifact rather than page text or a file. */
 export function isArtifactDrop(dataTransfer: DataTransfer): boolean {
-  return Array.from(dataTransfer.types ?? []).includes(ARTIFACT_DROP_DATA_TYPE);
+  return (
+    Array.from(dataTransfer.types ?? []).includes(ARTIFACT_DROP_DATA_TYPE) ||
+    Array.from(dataTransfer.types ?? []).includes(ARTIFACT_GROUPS_DATA_TYPE)
+  );
+}
+
+/** One payload from parsed JSON, or null when it is not a payload we wrote. */
+function parseArtifactDropPayload(parsed: unknown): ArtifactDropPayload | null {
+  if (!parsed || typeof parsed !== "object") return null;
+  if (!("value" in parsed) || !("shape" in parsed)) return null;
+  const value = parsed.value;
+  const shape = parsed.shape;
+  if (!value || typeof value !== "object") return null;
+  if (shape !== "one" && shape !== "many") return null;
+  if (shape === "many" && !("item_refs" in value)) return null;
+  if (shape === "one" && "item_refs" in value) return null;
+  return { value: value as ArtifactDropValue, shape };
+}
+
+function readArtifactDropPayload(raw: string): ArtifactDropPayload | null {
+  if (!raw) return null;
+  try {
+    return parseArtifactDropPayload(JSON.parse(raw) as unknown);
+  } catch {
+    return null;
+  }
 }
 
 export function readArtifactDrop(
   dataTransfer: DataTransfer,
 ): ArtifactDropPayload | null {
-  const raw = dataTransfer.getData(ARTIFACT_DROP_DATA_TYPE);
-  if (!raw) return null;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-    if (!("value" in parsed) || !("shape" in parsed)) return null;
-    const value = parsed.value;
-    const shape = parsed.shape;
-    if (!value || typeof value !== "object") return null;
-    if (shape !== "one" && shape !== "many") return null;
-    if (shape === "many" && !("item_refs" in value)) return null;
-    if (shape === "one" && "item_refs" in value) return null;
-    return { value: value as ArtifactDropValue, shape };
-  } catch {
-    return null;
+  return readArtifactDropPayload(dataTransfer.getData(ARTIFACT_DROP_DATA_TYPE));
+}
+
+/**
+ * Every card one drag asks for, in the order they should land.
+ *
+ * A drag of one artifact, and any drag made before grouped drops existed, reads
+ * back as the one payload it carries.
+ */
+export function readArtifactDropGroups(
+  dataTransfer: DataTransfer,
+): ArtifactDropPayload[] {
+  const raw = dataTransfer.getData(ARTIFACT_GROUPS_DATA_TYPE);
+  if (raw) {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const groups = parsed
+          .map((entry) => parseArtifactDropPayload(entry))
+          .filter((entry): entry is ArtifactDropPayload => entry !== null);
+        if (groups.length > 0) return groups;
+      }
+    } catch {
+      // Fall through: a grouped drag always carries the first group on its own.
+    }
+  }
+  const single = readArtifactDrop(dataTransfer);
+  return single ? [single] : [];
+}
+
+/**
+ * Write a drag of one or more cards.
+ *
+ * The first group goes on the type every reader already knows, so a canvas or a
+ * Library built without grouped drops still lands something sensible rather
+ * than refusing the drag.
+ */
+export function writeArtifactDropGroups(
+  dataTransfer: DataTransfer,
+  payloads: readonly ArtifactDropPayload[],
+): void {
+  if (payloads.length === 0) return;
+  dataTransfer.setData(ARTIFACT_DROP_DATA_TYPE, JSON.stringify(payloads[0]));
+  if (payloads.length > 1) {
+    dataTransfer.setData(ARTIFACT_GROUPS_DATA_TYPE, JSON.stringify(payloads));
   }
 }
 
