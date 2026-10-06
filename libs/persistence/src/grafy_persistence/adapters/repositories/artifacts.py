@@ -11,6 +11,7 @@ from sqlalchemy import (
     CursorResult,
     and_,
     delete,
+    func,
     or_,
     select,
     update,
@@ -94,6 +95,27 @@ class SqlArtifactRepository(ArtifactRepositoryPort):
             .order_by(schema.artifact_objects.c.id.asc())
         )
         return list(result)
+
+    @override
+    async def count_artifacts_sharing_object(
+        self,
+        workspace_id: UUID,
+        *,
+        bucket: str,
+        object_key: str,
+        except_artifact_id: UUID,
+    ) -> int:
+        counted = (
+            select(func.count())
+            .select_from(schema.artifact_objects)
+            .where(
+                schema.artifact_objects.c.workspace_id == workspace_id,
+                schema.artifact_objects.c.bucket == bucket,
+                schema.artifact_objects.c.object_key == object_key,
+                schema.artifact_objects.c.id != except_artifact_id,
+            )
+        )
+        return int(await self._session.scalar(counted) or 0)
 
 
 class SqlUploadRepository(UploadRepositoryPort):

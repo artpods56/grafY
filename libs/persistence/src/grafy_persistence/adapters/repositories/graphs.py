@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from typing import cast, override
 from uuid import UUID
 from sqlalchemy import (
+    String,
     and_,
     delete,
     insert,
@@ -427,6 +428,36 @@ class SqlSavedGraphRepository(SavedGraphRepositoryPort):
     @override
     async def save_user_state(self, state: UserGraphState) -> None:
         self._session.add(state)
+
+    @override
+    async def titles_referencing_artifact(
+        self,
+        workspace_id: UUID,
+        artifact_id: UUID,
+    ) -> dict[UUID, str]:
+        # An origin and an artifact card each hold the artifact identity as a
+        # lowercase UUID string inside the JSON document, so the identity is matched
+        # as text. No other value in a document can collide with a full 36-character
+        # identity, and every field that can hold one is a reference.
+        needle = f"%{artifact_id}%"
+        heads = await self._session.execute(
+            select(schema.saved_graphs.c.id, schema.saved_graphs.c.name).where(
+                schema.saved_graphs.c.workspace_id == workspace_id,
+                schema.saved_graphs.c.document.cast(String).like(needle),
+            ),
+        )
+        revisions = await self._session.execute(
+            select(
+                schema.saved_graph_revisions.c.graph_id,
+                schema.saved_graph_revisions.c.name,
+            ).where(
+                schema.saved_graph_revisions.c.workspace_id == workspace_id,
+                schema.saved_graph_revisions.c.document.cast(String).like(needle),
+            ),
+        )
+        titles = {graph_id: name for graph_id, name in heads}
+        titles.update({graph_id: name for graph_id, name in revisions})
+        return titles
 
     @override
     async def remove(self, workspace_id: UUID, graph: SavedGraph) -> None:

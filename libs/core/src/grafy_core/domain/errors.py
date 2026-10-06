@@ -1,5 +1,5 @@
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import ClassVar
@@ -10,6 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 _FAILURE_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
 _MAX_FAILURE_CODE_LENGTH = 120
+# The limits behind ``_listed_graph_titles``. Three names of forty characters plus
+# the count of the rest stays inside ``_MAX_PUBLIC_MESSAGE_LENGTH`` with room for
+# the sentence in front of it.
+_MAX_LISTED_TITLES = 3
+_MAX_LISTED_TITLE_LENGTH = 40
+_MAX_PUBLIC_DETAIL_LENGTH = 160
 _MAX_PUBLIC_MESSAGE_LENGTH = 200
 
 
@@ -264,6 +270,73 @@ class LibraryFolderNameConflictError(GrafyCoreError):
             "parent_id": self.parent_id,
             "name": self.name,
         }
+
+
+class LibraryArtifactInUseError(GrafyCoreError):
+    """Raised when a Library artifact is still referenced by saved work.
+
+    A reference lives in a saved graph revision or in execution history, and both
+    outlive the run that made them, so dropping the artifact would leave a
+    dangling reference the user only meets later as a failed load. The refusal
+    names the graphs that hold it. Taking it anyway means the glossary's forced
+    delete, which rewrites each referencing graph's head revision and leaves the
+    input unsatisfied; that is not implemented, so the paths open today are to
+    unfile the artifact, which keeps it, or to delete the referencing graph.
+    """
+
+    failure_spec = FailureSpec(
+        code="library.artifact_in_use",
+        kind=FailureKind.CONFLICT,
+        public_message="This Library artifact is still used by saved work",
+    )
+
+    def __init__(
+        self,
+        *,
+        artifact_id: UUID,
+        graph_ids: Sequence[UUID],
+        graph_titles: Sequence[str],
+    ) -> None:
+        self.artifact_id = artifact_id
+        self.graph_ids = tuple(graph_ids)
+        self.graph_titles = tuple(graph_titles)
+        super().__init__(
+            (
+                f"Library artifact {artifact_id} is referenced by "
+                f"{len(self.graph_titles)} saved graph(s): "
+                f"{', '.join(self.graph_titles)}"
+            )
+        )
+
+    @property
+    def public_message(self) -> str:
+        return f"Still used by: {_listed_graph_titles(self.graph_titles)}"
+
+    @property
+    def diagnostic_context(self) -> Mapping[str, object]:
+        return {"artifact_id": self.artifact_id, "graph_ids": self.graph_ids}
+
+
+def _listed_graph_titles(graph_titles: Sequence[str]) -> str:
+    """Name the referencing graphs within the public detail budget.
+
+    A Library folder name reaches 160 characters and several graphs can hold the
+    same reference, so the listing is clipped: the first few names in full, the
+    rest counted. The whole string stays under the 200-character limit
+    ``FailureSpec`` places on ``Failure.message``.
+    """
+
+    shown = [_clipped_graph_title(title) for title in graph_titles[:_MAX_LISTED_TITLES]]
+    omitted = len(graph_titles) - len(shown)
+    if omitted > 0:
+        shown.append(f"and {omitted} more")
+    return ", ".join(shown)[:_MAX_PUBLIC_DETAIL_LENGTH]
+
+
+def _clipped_graph_title(title: str) -> str:
+    if len(title) <= _MAX_LISTED_TITLE_LENGTH:
+        return title
+    return f"{title[: _MAX_LISTED_TITLE_LENGTH - 1]}…"
 
 
 class LibraryFolderNotEmptyError(GrafyCoreError):

@@ -105,6 +105,18 @@ class SavedGraphRepositoryPort(Protocol):
 
     async def remove(self, workspace_id: UUID, graph: SavedGraph) -> None: ...
 
+    async def titles_referencing_artifact(
+        self,
+        workspace_id: UUID,
+        artifact_id: UUID,
+    ) -> dict[UUID, str]:
+        """Map each graph holding ``artifact_id`` to its name.
+
+        The current document and every retained revision count as a reference, so
+        a restored revision cannot point at an artifact that has been deleted.
+        """
+        ...
+
 
 class SavedGraphUnitOfWorkPort(TransactionPort, Protocol):
     @property

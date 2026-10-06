@@ -799,6 +799,26 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/library/artifacts/{artifact_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /**
+         * Delete Library Artifact
+         * @description Delete one Library artifact. Saved work that still uses it is refused.
+         */
+        readonly delete: operations["delete_library_artifact_v1_workspaces__workspace_id__library_artifacts__artifact_id__delete"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/library/artifacts/from-run": {
         readonly parameters: {
             readonly query?: never;
@@ -6499,6 +6519,36 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["LibraryListResponse"];
                 };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly delete_library_artifact_v1_workspaces__workspace_id__library_artifacts__artifact_id__delete: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly artifact_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 204: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             readonly 422: {

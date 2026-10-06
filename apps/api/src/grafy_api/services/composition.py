@@ -199,6 +199,7 @@ def build_workbench_components(
         artifacts,
         artifact_types=artifact_types,
         saved_graphs=saved_graphs,
+        storage=resolved_storage,
     )
     library_folders = LibraryFoldersService(resolved_unit_of_work)
     plugin_invoker = None
