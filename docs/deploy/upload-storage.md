@@ -61,11 +61,14 @@ the gateway that sets `Host $host` is fine on the default HTTPS port.
   Oversized bodies get `413` before MinIO stores anything. An edge proxy in
   front of the gateway needs a limit of at least 64 MiB;
 - request and response streaming (`proxy_request_buffering off`,
-  `proxy_buffering off`), cookies stripped;
+  `proxy_buffering off`), cookies and Authorization headers stripped;
 - 60 s idle timeouts while receiving and forwarding the body. Open-source
   nginx cannot cap the total duration of one request, so a body trickled
   slowly can outlast `GRAFY_UPLOAD_RECEIVE_TIMEOUT_SECONDS`; upload cleanup
   remains the backstop for bytes that land late;
+- access and error logging disabled for upload requests because signed query
+  strings grant temporary access. Configure the outer TLS proxy to omit query
+  strings for this route as well;
 - MinIO is resolved per request through Docker DNS, so the gateway still
   starts (and `/storage/` returns `502`) when no MinIO is attached.
 
@@ -80,3 +83,36 @@ starts the pinned MinIO behind the real gateway config
 `tests/integration/uploads/test_storage_gateway.py`: a signed create-only PUT
 succeeds and cannot be replayed, a tampered path is rejected, non-`PUT`
 methods, other buckets and oversize bodies are refused.
+
+## Keep an existing direct-path upload deployment
+
+Deployments already signing against the public origin without `/storage` can
+keep the direct `/workbench-artifacts/objects/` route. Include
+`infra/docker/compose.minio-uploads.yaml` after the base Compose file and set:
+
+```dotenv
+GRAFY_S3_SIGNING_ENDPOINT_URL=https://grafy.example.com
+GRAFY_S3_FORCE_PATH_STYLE=true
+```
+
+The TLS edge must forward `/workbench-artifacts/objects/` to the gateway without
+changing its path, query string, or public Host header. This route preserves the
+signed object path directly; it does not strip a prefix. The same signer supports
+both endpoint forms. Keep `GRAFY_STORAGE_BUCKET=workbench-artifacts`, or update
+the supplied route when using another bucket.
+
+The override joins the gateway to the existing private MinIO network. Set
+`GRAFY_STORAGE_DOCKER_NETWORK` if that network has another name. The API also
+needs access to MinIO, for example through `compose.shared-storage.yaml`. The
+direct route is opt-in; the default `/storage/` route remains available.
+
+The direct route permits PUT only, limits bodies to 64 MiB, strips cookies and
+Authorization headers, and disables access and error logging. It uses
+1800-second inactivity timeouts rather than the default route's 60 seconds;
+lower these when the API upload limits are lower. Neither route imposes a total
+receive-duration deadline. Configure the outer TLS proxy to omit signed query
+strings too.
+
+Verify a small signed PUT through the public HTTPS origin, compare the stored
+bytes, and confirm that an unsigned PUT and a second PUT to the same object
+are rejected. Remove the test object afterward.

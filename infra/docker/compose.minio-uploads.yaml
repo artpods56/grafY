@@ -1,0 +1,13 @@
+# Opt-in same-origin uploads to an existing private MinIO service.
+services:
+  gateway:
+    volumes:
+      - ./gateway/minio-upload.conf:/etc/nginx/grafy-uploads/minio-upload.conf:ro
+    networks:
+      default:
+      shared-storage:
+
+networks:
+  shared-storage:
+    external: true
+    name: ${GRAFY_STORAGE_DOCKER_NETWORK:-shared-storage}
