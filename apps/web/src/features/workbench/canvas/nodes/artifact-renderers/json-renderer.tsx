@@ -49,3 +49,14 @@ export const jsonRenderer: ArtifactRendererSpec = {
     return <PrettyValue value={value} />;
   },
 };
+
+/** A scalar is one `{ "value": … }` object; its JSON text is the readable form. */
+export const scalarRenderer: ArtifactRendererSpec = {
+  id: "scalar",
+  modes: ["raw", "pretty"],
+  matches: (artifact, payload) =>
+    artifact.schema_version === 1 &&
+    ["scalar.integer", "scalar.text"].includes(artifact.artifact_type) &&
+    (payload !== undefined || artifact.content_type === "application/json"),
+  Component: jsonRenderer.Component,
+};

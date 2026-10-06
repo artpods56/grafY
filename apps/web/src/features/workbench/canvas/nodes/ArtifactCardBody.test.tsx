@@ -17,7 +17,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const libraryMocks = vi.hoisted(() => ({
   items: [] as PlacedLibraryItem[],
-  value: undefined as unknown,
+  value: undefined as { text: string; truncated: boolean } | undefined,
 }));
 const flowMocks = vi.hoisted(() => ({
   edges: [] as unknown[],
@@ -60,10 +60,12 @@ vi.mock("@xyflow/react", () => ({
 }));
 
 vi.mock("swr", () => ({
-  default: (key: readonly unknown[] | null) =>
-    key?.[0] === "artifact-card-value"
+  default: (key: readonly unknown[] | null) => {
+    if (key === null) return { data: undefined };
+    return key[0] === "artifact-card-text"
       ? { data: libraryMocks.value }
-      : { data: { folders: [], items: libraryMocks.items } },
+      : { data: { folders: [], items: libraryMocks.items } };
+  },
 }));
 
 vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
@@ -237,8 +239,8 @@ describe("artifact on the canvas", () => {
     expect(media?.style.height).toBe("198px");
   });
 
-  it("shows a small value instead of a file tile", () => {
-    libraryMocks.value = { value: 42 };
+  it("shows readable content as text instead of a file tile", () => {
+    libraryMocks.value = { text: '{"value":42}', truncated: false };
     const count = {
       artifact_id: "count-1",
       artifact_type: "scalar.integer",
@@ -290,7 +292,7 @@ describe("artifact on the canvas", () => {
     const { container } = mount(single("library-1"), { mode: "artifact" });
 
     expect(container.querySelector("[data-artifact-value]")?.textContent).toBe(
-      "42",
+      '{\n  "value": 42\n}',
     );
     expect(container.querySelector("[data-artifact-file-body]")).toBeNull();
     // The wire names where the value comes from; the card has no name row.

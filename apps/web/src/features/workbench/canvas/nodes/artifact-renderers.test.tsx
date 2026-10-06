@@ -1858,7 +1858,7 @@ describe("JSON Schema artifact rendering", () => {
     };
 
     expect(rendererFor(textArtifact, { value: '{"type":"object"}' }).id).toBe(
-      "json",
+      "scalar",
     );
   });
 
