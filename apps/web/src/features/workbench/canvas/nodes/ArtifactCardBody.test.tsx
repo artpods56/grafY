@@ -59,28 +59,43 @@ vi.mock("@xyflow/react", () => ({
   Position: { Left: "left", Right: "right" },
 }));
 
+const registryMocks = vi.hoisted(() => ({
+  artifactTypes: [] as {
+    key: { id: string; schema_version: number };
+    title: string;
+  }[],
+}));
+
 vi.mock("swr", () => ({
-  default: (key: readonly unknown[] | null) => {
+  default: (key: readonly unknown[] | string | null) => {
     if (key === null) return { data: undefined };
+    if (typeof key === "string") {
+      return { data: { artifact_types: registryMocks.artifactTypes } };
+    }
     return key[0] === "artifact-card-text"
       ? { data: libraryMocks.value }
       : { data: { folders: [], items: libraryMocks.items } };
   },
 }));
 
-vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
-  useWorkspaceContext: () => ({
+const workspaceMocks = vi.hoisted(() => ({
+  value: {
     workspace: {
       id: "workspace-1",
       slug: "team",
       name: "Local",
-      kind: "personal",
+      kind: "personal" as const,
       role: "owner",
       capabilities: [],
     },
     workspaces: [],
     refreshWorkspaces: async () => undefined,
-  }),
+  },
+}));
+
+vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
+  useWorkspaceContext: () => workspaceMocks.value,
+  useOptionalWorkspaceContext: () => workspaceMocks.value,
 }));
 
 vi.mock("@base-ui/react/menu", () => ({
@@ -195,6 +210,7 @@ afterEach(() => {
   mountedRoots.length = 0;
   document.body.replaceChildren();
   libraryMocks.items = [];
+  registryMocks.artifactTypes = [];
   flowMocks.edges = [];
   flowMocks.nodes = new Map();
 });
@@ -231,7 +247,7 @@ describe("artifact on the canvas", () => {
     ).toBe(media);
     const picked = mount(single("a1"), {}, true);
     expect(picked.container.textContent).toContain("boat.jpg");
-    expect(picked.container.textContent).toContain("file.jpeg@1");
+    expect(picked.container.textContent).toContain("file.jpeg");
     expect(
       picked.container.querySelector("[data-artifact-image-header]"),
     ).not.toBeNull();
@@ -517,6 +533,35 @@ describe("artifact on the canvas", () => {
     expect(container.querySelector('[title="file.jpeg@1"]')).not.toBeNull();
   });
 
+  it("names the card's type by catalog title, identity in the tooltip", () => {
+    registryMocks.artifactTypes = [
+      { key: { id: "file.jpeg", schema_version: 1 }, title: "Image file" },
+    ];
+
+    const { container } = mount(single("a1"), {}, true);
+
+    expect(container.textContent).toContain("Image file");
+    expect(container.querySelector('[title="file.jpeg@1"]')).not.toBeNull();
+    expect(
+      container.querySelector('[aria-label="Actions for Image file"]'),
+    ).not.toBeNull();
+  });
+
+  it("shows the schema version only once it is past the first", () => {
+    registryMocks.artifactTypes = [
+      { key: { id: "file.jpeg", schema_version: 2 }, title: "Image file" },
+    ];
+
+    const { container } = mount(
+      { artifact_id: "a2", artifact_type: "file.jpeg", schema_version: 2 },
+      {},
+      true,
+    );
+
+    expect(container.textContent).toContain("Image file · v2");
+    expect(container.querySelector('[title="file.jpeg@2"]')).not.toBeNull();
+  });
+
   it("shows a compact file row for a type it cannot preview", () => {
     const { container } = mount({
       artifact_id: "csv1",
@@ -534,7 +579,7 @@ describe("artifact on the canvas", () => {
     const label = container.querySelector("[data-artifact-label]");
     const body = container.querySelector("[data-artifact-file-body]");
     expect(label?.textContent).toContain("File");
-    expect(label?.textContent).toContain("file.csv@1");
+    expect(label?.textContent).toContain("file.csv");
     // The plate states the format, never the contract.
     expect(body?.textContent).toBe("Table");
     expect(body?.textContent).not.toContain("file.csv@1");
@@ -582,7 +627,7 @@ describe("artifact on the canvas", () => {
 
     // The info heads the one actions menu; there is no separate info button.
     expect(
-      container.querySelector('[aria-label="Inspect file.jpeg@1 artifact"]'),
+      container.querySelector('[aria-label="Inspect file.jpeg artifact"]'),
     ).toBeNull();
     expect(
       container.querySelector('[aria-label="Actions for file.jpeg@1"]'),

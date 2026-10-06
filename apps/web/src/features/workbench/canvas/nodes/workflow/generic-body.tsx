@@ -13,6 +13,12 @@ import {
   type WorkflowNodeData,
 } from "../../types";
 import { useOptionalCanvasGridSettings } from "../../canvas-grid-settings";
+import { artifactTypeKey } from "../../artifact-type-key";
+import {
+  formatArtifactTypeLabel,
+  formatArtifactTypeTooltip,
+} from "../../artifact-type-label";
+import { useArtifactTypeCatalog } from "../../use-artifact-type-catalog";
 import { GRID_CELL_SIZE_DEFAULT, spanFromLength } from "../../grid-layout";
 import { validateConfig } from "../../config-schema";
 import { configBoardColumns, packFieldFootprints } from "../field-footprints";
@@ -147,6 +153,7 @@ export function GenericArtifactTypeState({
   /** Variables already chosen on a visible port. */
   skip: ReadonlySet<string>;
 }) {
+  const artifactTypes = useArtifactTypeCatalog();
   const variables = declaredArtifactTypeVariables(data.spec).filter(
     (variable) => !skip.has(variable),
   );
@@ -165,7 +172,7 @@ export function GenericArtifactTypeState({
         const picksType =
           data.onBindArtifactTypeBinding !== undefined && options.length > 0;
         const label = artifactType
-          ? `${artifactType.id}@${artifactType.schema_version}`
+          ? formatArtifactTypeLabel(artifactType, artifactTypes)
           : ANY_TYPE_LABEL;
         return (
           <div key={variable} {...stylex.props(s.genericTypeRow)}>
@@ -182,11 +189,7 @@ export function GenericArtifactTypeState({
                     : "Disconnect this node before changing its type"
                 }
                 {...nodeInteractionProps(stylex.props(s.bindType))}
-                value={
-                  artifactType
-                    ? `${artifactType.id}@${artifactType.schema_version}`
-                    : ""
-                }
+                value={artifactType ? artifactTypeKey(artifactType) : ""}
                 onChange={(event) => {
                   const choice = event.currentTarget.value;
                   if (!choice) return;
@@ -200,10 +203,11 @@ export function GenericArtifactTypeState({
                 <option value="">{ANY_TYPE_LABEL}</option>
                 {options.map((type) => (
                   <option
-                    key={`${type.id}@${type.schema_version}`}
-                    value={`${type.id}@${type.schema_version}`}
+                    key={artifactTypeKey(type)}
+                    value={artifactTypeKey(type)}
+                    title={formatArtifactTypeTooltip(type)}
                   >
-                    {`${type.id}@${type.schema_version}`}
+                    {formatArtifactTypeLabel(type, artifactTypes)}
                   </option>
                 ))}
               </select>

@@ -682,7 +682,7 @@ def test_cross_workspace_copy_preserves_system_pins_and_rejects_workspace_pins()
 ):
     system_pin = SavedGraphPluginReleasePin(
         scope=PluginReleaseScope.SYSTEM,
-        slug="arithmetic",
+        slug="value",
         revision=3,
     )
     system_document = SavedGraphDocument(nodes=(_node(plugin_release_pin=system_pin),))

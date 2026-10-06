@@ -205,10 +205,10 @@ def _durable_client(fixture: DurableApiFixture) -> Iterator[TestClient]:
 
 def _graph_payload(expected_revision: int | None = None) -> dict[str, object]:
     nodes: list[tuple[str, str, dict[str, object]]] = [
-        ("nine", "arithmetic.number", {"value": 9}),
-        ("four", "arithmetic.number", {"value": 4}),
-        ("add", "arithmetic.add", {}),
-        ("multiply", "arithmetic.multiply", {}),
+        ("nine", "value.integer", {"value": 9}),
+        ("four", "value.integer", {"value": 4}),
+        ("add", "test.arithmetic.add", {}),
+        ("multiply", "test.arithmetic.multiply", {}),
     ]
     edges = _edges()
     node_models = [
@@ -393,28 +393,28 @@ def _full_run_payload(
             RunNodeRequest(
                 kind="builtin",
                 id="nine",
-                operator_id="arithmetic.number",
+                operator_id="value.integer",
                 operator_version=1,
                 config={"value": nine_value},
             ),
             RunNodeRequest(
                 kind="builtin",
                 id="four",
-                operator_id="arithmetic.number",
+                operator_id="value.integer",
                 operator_version=1,
                 config={"value": 4},
             ),
             RunNodeRequest(
                 kind="builtin",
                 id="add",
-                operator_id="arithmetic.add",
+                operator_id="test.arithmetic.add",
                 operator_version=1,
                 config={},
             ),
             RunNodeRequest(
                 kind="builtin",
                 id="multiply",
-                operator_id="arithmetic.multiply",
+                operator_id="test.arithmetic.multiply",
                 operator_version=1,
                 config={},
             ),
@@ -436,7 +436,7 @@ def _downstream_run_payload(
             RunNodeRequest(
                 kind="builtin",
                 id="multiply",
-                operator_id="arithmetic.multiply",
+                operator_id="test.arithmetic.multiply",
                 operator_version=1,
                 config={},
             )
@@ -549,7 +549,7 @@ def test_materialization_context_validates_graph_revision_and_fragment(
                     RunNodeRequest(
                         kind="builtin",
                         id="rogue-node",
-                        operator_id="arithmetic.number",
+                        operator_id="value.integer",
                         operator_version=1,
                         config={"value": 99},
                     )
@@ -1002,7 +1002,7 @@ def test_downstream_run_without_materialization_returns_dependency_guidance(
                         RunNodeRequest(
                             kind="builtin",
                             id="standalone",
-                            operator_id="arithmetic.number",
+                            operator_id="value.integer",
                             operator_version=1,
                             config={"value": 5},
                         )
@@ -1130,21 +1130,21 @@ def test_saved_run_rejects_pin_that_is_not_the_latest_materialization(
                     RunNodeRequest(
                         kind="builtin",
                         id="eight",
-                        operator_id="arithmetic.number",
+                        operator_id="value.integer",
                         operator_version=1,
                         config={"value": 8},
                     ),
                     RunNodeRequest(
                         kind="builtin",
                         id="three",
-                        operator_id="arithmetic.number",
+                        operator_id="value.integer",
                         operator_version=1,
                         config={"value": 3},
                     ),
                     RunNodeRequest(
                         kind="builtin",
                         id="add",
-                        operator_id="arithmetic.add",
+                        operator_id="test.arithmetic.add",
                         operator_version=1,
                         config={},
                     ),

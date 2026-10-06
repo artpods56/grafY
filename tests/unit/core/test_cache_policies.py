@@ -1,10 +1,12 @@
-from grafy_workbench.arithmetic import ARITHMETIC
 from grafy_workbench.image import IMAGES
 from grafy_core.operators.modules import MODULE_BOUNDARY_REGISTRATIONS
 from grafy_workbench.schema import SCHEMAS
 from grafy_workbench.sequence import SEQUENCES
 from grafy_workbench.text import TEXT
+from grafy_workbench.value import VALUE
 from grafy_core.plugins import NodeCachePolicy
+
+from tests.support.scenarios.arithmetic import ARITHMETIC_TEST_PLUGIN
 
 
 def test_builtin_node_cache_policy_inventory_is_fail_closed() -> None:
@@ -14,9 +16,10 @@ def test_builtin_node_cache_policy_inventory_is_fail_closed() -> None:
             *IMAGES.nodes,
             *MODULE_BOUNDARY_REGISTRATIONS,
             *SEQUENCES.nodes,
-            *ARITHMETIC.nodes,
+            *VALUE.nodes,
             *TEXT.nodes,
             *SCHEMAS.nodes,
+            *ARITHMETIC_TEST_PLUGIN.nodes,
         )
     }
 
@@ -28,12 +31,12 @@ def test_builtin_node_cache_policy_inventory_is_fail_closed() -> None:
         ("sequence.count", 1): NodeCachePolicy.EXACT,
         ("sequence.slice", 1): NodeCachePolicy.EXACT,
         ("sequence.item_at", 1): NodeCachePolicy.EXACT,
-        ("arithmetic.number", 1): NodeCachePolicy.EXACT,
-        ("arithmetic.integer_sequence", 1): NodeCachePolicy.EXACT,
-        ("arithmetic.add", 1): NodeCachePolicy.EXACT,
-        ("arithmetic.subtract", 1): NodeCachePolicy.EXACT,
-        ("arithmetic.multiply", 1): NodeCachePolicy.EXACT,
-        ("arithmetic.sum", 1): NodeCachePolicy.EXACT,
+        ("value.integer", 1): NodeCachePolicy.EXACT,
+        ("test.arithmetic.integer_sequence", 1): NodeCachePolicy.EXACT,
+        ("test.arithmetic.add", 1): NodeCachePolicy.EXACT,
+        ("test.arithmetic.subtract", 1): NodeCachePolicy.EXACT,
+        ("test.arithmetic.multiply", 1): NodeCachePolicy.EXACT,
+        ("test.arithmetic.sum", 1): NodeCachePolicy.EXACT,
         ("text.input", 1): NodeCachePolicy.EXACT,
         ("text.as_markdown", 1): NodeCachePolicy.EXACT,
         ("text.split", 1): NodeCachePolicy.EXACT,

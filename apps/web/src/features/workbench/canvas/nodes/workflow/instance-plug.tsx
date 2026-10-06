@@ -23,8 +23,8 @@ import { PortTypePopover } from "../type-inspector";
 import {
   OptionalConnectionToggle,
   nodeInteractionProps,
-  portBallTypeProps,
   useOptionalInputConnection,
+  usePortBallTypeProps,
 } from "./ports";
 import { sharedStyles } from "./styles";
 
@@ -229,7 +229,7 @@ function InstancePlugRow({
         color={color}
         sequence
         square={Boolean(binding)}
-        {...portBallTypeProps({
+        {...usePortBallTypeProps({
           id,
           data,
           port,

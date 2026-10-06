@@ -144,7 +144,7 @@ async def test_compiler_orders_nodes_and_resolves_declared_conversions(
             RunNodeRequest(
                 kind="builtin",
                 id="number",
-                operator_id="arithmetic.number",
+                operator_id="value.integer",
                 operator_version=1,
                 config={"value": 12},
             ),
@@ -197,7 +197,7 @@ async def test_compiler_does_not_resolve_mutable_plugin_registry_conversions(
             RunNodeRequest(
                 kind="builtin",
                 id="number",
-                operator_id="arithmetic.number",
+                operator_id="value.integer",
                 operator_version=1,
                 config={"value": 12},
             ),
@@ -790,14 +790,14 @@ async def test_compiler_rejects_origin_shape_map_and_invalid_plugs(
             RunNodeRequest(
                 kind="builtin",
                 id="source",
-                operator_id="arithmetic.integer_sequence",
+                operator_id="test.arithmetic.integer_sequence",
                 operator_version=1,
                 config={"start": 1, "step": 1, "count": 2},
             ),
             RunNodeRequest(
                 kind="builtin",
                 id="add",
-                operator_id="arithmetic.add",
+                operator_id="test.arithmetic.add",
                 operator_version=1,
             ),
         ],
@@ -839,14 +839,14 @@ async def test_compiler_broadcasts_an_origin_beside_a_map_edge(
             RunNodeRequest(
                 kind="builtin",
                 id="source",
-                operator_id="arithmetic.integer_sequence",
+                operator_id="test.arithmetic.integer_sequence",
                 operator_version=1,
                 config={"start": 1, "step": 1, "count": 2},
             ),
             RunNodeRequest(
                 kind="builtin",
                 id="add",
-                operator_id="arithmetic.add",
+                operator_id="test.arithmetic.add",
                 operator_version=1,
             ),
         ],

@@ -15,6 +15,7 @@ import {
   DEFAULT_NODE_WIDTH,
 } from "../canvas/node-layout";
 import { artifactTypeColor } from "../canvas/nodes.css";
+import type { ArtifactTypeCatalog } from "../canvas/artifact-type-label";
 import { portArtifactType } from "../canvas/types";
 import { connectionRouteTitle } from "../model/graph-authoring";
 import {
@@ -301,12 +302,13 @@ function choiceLabel(
   direction: ContextualDiscoveryDirection,
   sourcePortTitle: string,
   choice: ContextualRouteChoice,
+  artifactTypes: ArtifactTypeCatalog,
 ): string {
   const candidateTitle =
     choice.candidatePort.title ?? choice.candidatePort.name;
   const transport =
     choice.collectionMode === "map" ? "map each item" : "direct";
-  const route = connectionRouteTitle(choice.route);
+  const route = connectionRouteTitle(choice.route, artifactTypes);
   return [
     direction === "upstream"
       ? `${candidateTitle} → ${sourcePortTitle}`
@@ -468,9 +470,16 @@ export function ContextualNodeDiscovery({
       candidate.spec.description,
       catalogNodeProviderLabel(candidate.spec, registry),
       catalogNodePortSummary(candidate.spec, registry),
-      ...candidate.choices.map((choice) =>
-        choiceLabel(session.direction, session.sourcePortTitle, choice),
-      ),
+      ...candidate.choices.flatMap((choice) => [
+        // Match both what the choice reads as and the raw identity behind it.
+        choiceLabel(
+          session.direction,
+          session.sourcePortTitle,
+          choice,
+          registry.artifact_types,
+        ),
+        choiceLabel(session.direction, session.sourcePortTitle, choice, null),
+      ]),
     ]
       .join(" ")
       .toLowerCase();
@@ -701,7 +710,7 @@ export function ContextualNodeDiscovery({
               const active = index === hoveredChoiceIndex;
               return (
                 <button
-                  key={`${choice.candidatePort.name}-${index}-${connectionRouteTitle(choice.route)}`}
+                  key={`${choice.candidatePort.name}-${index}-${connectionRouteTitle(choice.route, null)}`}
                   type="button"
                   role="option"
                   aria-selected={active}
@@ -723,6 +732,7 @@ export function ContextualNodeDiscovery({
                       session.direction,
                       session.sourcePortTitle,
                       choice,
+                      registry.artifact_types,
                     )}
                   </span>
                 </button>

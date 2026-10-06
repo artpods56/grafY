@@ -1,416 +1,5 @@
 {
   "plugins": {
-    "arithmetic": {
-      "artifact_dependencies": [],
-      "artifact_types": [
-        {
-          "bundle": "inline-json@1",
-          "exports": [],
-          "key": "scalar.integer@1",
-          "materialized_json_type": "integer",
-          "projections": [],
-          "references": [],
-          "schema": {
-            "fields": [
-              "value"
-            ],
-            "required": [
-              "value"
-            ],
-            "sha256": "13dd5c9edb1aae47e4bae5d6f924e7600b5aa7d29dd9fb573bee7c75f683a4af"
-          },
-          "title": "Integer value"
-        }
-      ],
-      "capabilities": [],
-      "conversions": [],
-      "nodes": [
-        {
-          "cache_policy": "exact",
-          "config": {
-            "fields": [
-              "value"
-            ],
-            "required": [
-              "value"
-            ],
-            "sha256": "d5302d5ee22cf5d964e9665e9e1dc4afe405be8b75cf3c2635aac662f58b7c22"
-          },
-          "description": "Produces a configured integer value.",
-          "input_schema": {
-            "fields": [],
-            "required": [],
-            "sha256": "a25d8a88fc2473ecf88922623a95322803f67a60cdd9150540321d7addc137bf"
-          },
-          "inputs": [],
-          "key": "arithmetic.number@1",
-          "output_schema": {
-            "fields": [
-              "value"
-            ],
-            "required": [
-              "value"
-            ],
-            "sha256": "2f62cd599f251e4cb1e101c89367a8455c5ffafc2a5f862300cfd48a3fc5a7e6"
-          },
-          "outputs": [
-            {
-              "accepted_shapes": [
-                "one"
-              ],
-              "artifact": "scalar.integer@1",
-              "description": "The configured integer value.",
-              "instance_plugs": false,
-              "name": "value",
-              "required": true,
-              "shape": "one",
-              "title": "Value",
-              "variadic": false
-            }
-          ],
-          "required_capabilities": [],
-          "secret_inputs": [],
-          "title": "Number"
-        },
-        {
-          "cache_policy": "exact",
-          "config": {
-            "fields": [
-              "start",
-              "count",
-              "step"
-            ],
-            "required": [],
-            "sha256": "3bfe34d33e0a05adaa5ea7c2fc532769cb464f3dce58d9d0568cb1b95bc07228"
-          },
-          "description": "Produces an ordered sequence of configured integer values.",
-          "input_schema": {
-            "fields": [],
-            "required": [],
-            "sha256": "325a788d1273a13ce5e9d9a628f25b11a67041f42bbd5b713568d9105e51f190"
-          },
-          "inputs": [],
-          "key": "arithmetic.integer_sequence@1",
-          "output_schema": {
-            "fields": [
-              "values"
-            ],
-            "required": [
-              "values"
-            ],
-            "sha256": "281df49c7705dce8bded2f40e3cf3b949fa66e89d41583fe63e3022f4cb197e0"
-          },
-          "outputs": [
-            {
-              "accepted_shapes": [
-                "many"
-              ],
-              "artifact": "scalar.integer@1",
-              "description": "Ordered generated integer sequence.",
-              "instance_plugs": false,
-              "name": "values",
-              "required": true,
-              "shape": "many",
-              "title": "Values",
-              "variadic": false
-            }
-          ],
-          "required_capabilities": [],
-          "secret_inputs": [],
-          "title": "Integer sequence"
-        },
-        {
-          "cache_policy": "exact",
-          "config": {
-            "fields": [],
-            "required": [],
-            "sha256": "febba04b0ec95e74aa128b08a6dab81e47e290fd863588187f2bfdea359bafdd"
-          },
-          "description": "Adds two integer inputs.",
-          "input_schema": {
-            "fields": [
-              "left",
-              "right"
-            ],
-            "required": [
-              "left",
-              "right"
-            ],
-            "sha256": "8b22f735aaf860a323392155184e1a0197e7ad4ae78e03901d4a06da3ad18bf4"
-          },
-          "inputs": [
-            {
-              "accepted_shapes": [
-                "one"
-              ],
-              "artifact": "scalar.integer@1",
-              "description": "Left-hand integer operand.",
-              "instance_plugs": false,
-              "name": "left",
-              "required": true,
-              "shape": "one",
-              "title": "Left",
-              "variadic": false
-            },
-            {
-              "accepted_shapes": [
-                "one"
-              ],
-              "artifact": "scalar.integer@1",
-              "description": "Right-hand integer operand.",
-              "instance_plugs": false,
-              "name": "right",
-              "required": true,
-              "shape": "one",
-              "title": "Right",
-              "variadic": false
-            }
-          ],
-          "key": "arithmetic.add@1",
-          "output_schema": {
-            "fields": [
-              "result"
-            ],
-            "required": [
-              "result"
-            ],
-            "sha256": "ad6f5f94e1e3f02572c8db747d51a4cf2e60a54664e8b9026d0eb297c6f086b1"
-          },
-          "outputs": [
-            {
-              "accepted_shapes": [
-                "one"
-              ],
-              "artifact": "scalar.integer@1",
-              "description": "Resulting integer value.",
-              "instance_plugs": false,
-              "name": "result",
-              "required": true,
-              "shape": "one",
-              "title": null,
-              "variadic": false
-            }
-          ],
-          "required_capabilities": [],
-          "secret_inputs": [],
-          "title": "Add integers"
-        },
-        {
-          "cache_policy": "exact",
-          "config": {
-            "fields": [],
-            "required": [],
-            "sha256": "febba04b0ec95e74aa128b08a6dab81e47e290fd863588187f2bfdea359bafdd"
-          },
-          "description": "Subtracts the right integer input from the left input.",
-          "input_schema": {
-            "fields": [
-              "left",
-              "right"
-            ],
-            "required": [
-              "left",
-              "right"
-            ],
-            "sha256": "8b22f735aaf860a323392155184e1a0197e7ad4ae78e03901d4a06da3ad18bf4"
-          },
-          "inputs": [
-            {
-              "accepted_shapes": [
-                "one"
-              ],
-              "artifact": "scalar.integer@1",
-              "description": "Left-hand integer operand.",
-              "instance_plugs": false,
-              "name": "left",
-              "required": true,
-              "shape": "one",
-              "title": "Left",
-              "variadic": false
-            },
-            {
-              "accepted_shapes": [
-                "one"
-              ],
-              "artifact": "scalar.integer@1",
-              "description": "Right-hand integer operand.",
-              "instance_plugs": false,
-              "name": "right",
-              "required": true,
-              "shape": "one",
-              "title": "Right",
-              "variadic": false
-            }
-          ],
-          "key": "arithmetic.subtract@1",
-          "output_schema": {
-            "fields": [
-              "result"
-            ],
-            "required": [
-              "result"
-            ],
-            "sha256": "ad6f5f94e1e3f02572c8db747d51a4cf2e60a54664e8b9026d0eb297c6f086b1"
-          },
-          "outputs": [
-            {
-              "accepted_shapes": [
-                "one"
-              ],
-              "artifact": "scalar.integer@1",
-              "description": "Resulting integer value.",
-              "instance_plugs": false,
-              "name": "result",
-              "required": true,
-              "shape": "one",
-              "title": null,
-              "variadic": false
-            }
-          ],
-          "required_capabilities": [],
-          "secret_inputs": [],
-          "title": "Subtract integers"
-        },
-        {
-          "cache_policy": "exact",
-          "config": {
-            "fields": [],
-            "required": [],
-            "sha256": "febba04b0ec95e74aa128b08a6dab81e47e290fd863588187f2bfdea359bafdd"
-          },
-          "description": "Multiplies two integer inputs.",
-          "input_schema": {
-            "fields": [
-              "left",
-              "right"
-            ],
-            "required": [
-              "left",
-              "right"
-            ],
-            "sha256": "8b22f735aaf860a323392155184e1a0197e7ad4ae78e03901d4a06da3ad18bf4"
-          },
-          "inputs": [
-            {
-              "accepted_shapes": [
-                "one"
-              ],
-              "artifact": "scalar.integer@1",
-              "description": "Left-hand integer operand.",
-              "instance_plugs": false,
-              "name": "left",
-              "required": true,
-              "shape": "one",
-              "title": "Left",
-              "variadic": false
-            },
-            {
-              "accepted_shapes": [
-                "one"
-              ],
-              "artifact": "scalar.integer@1",
-              "description": "Right-hand integer operand.",
-              "instance_plugs": false,
-              "name": "right",
-              "required": true,
-              "shape": "one",
-              "title": "Right",
-              "variadic": false
-            }
-          ],
-          "key": "arithmetic.multiply@1",
-          "output_schema": {
-            "fields": [
-              "result"
-            ],
-            "required": [
-              "result"
-            ],
-            "sha256": "ad6f5f94e1e3f02572c8db747d51a4cf2e60a54664e8b9026d0eb297c6f086b1"
-          },
-          "outputs": [
-            {
-              "accepted_shapes": [
-                "one"
-              ],
-              "artifact": "scalar.integer@1",
-              "description": "Resulting integer value.",
-              "instance_plugs": false,
-              "name": "result",
-              "required": true,
-              "shape": "one",
-              "title": null,
-              "variadic": false
-            }
-          ],
-          "required_capabilities": [],
-          "secret_inputs": [],
-          "title": "Multiply"
-        },
-        {
-          "cache_policy": "exact",
-          "config": {
-            "fields": [],
-            "required": [],
-            "sha256": "febba04b0ec95e74aa128b08a6dab81e47e290fd863588187f2bfdea359bafdd"
-          },
-          "description": "Sums an ordered integer sequence into one integer value.",
-          "input_schema": {
-            "fields": [
-              "values"
-            ],
-            "required": [
-              "values"
-            ],
-            "sha256": "cdc0e5cf96062e968a7930c2395ce17595bc5b0422c8ce23ce18d4db8bfec0dd"
-          },
-          "inputs": [
-            {
-              "accepted_shapes": [
-                "many"
-              ],
-              "artifact": "scalar.integer@1",
-              "description": "Ordered integer sequence to sum.",
-              "instance_plugs": false,
-              "name": "values",
-              "required": true,
-              "shape": "many",
-              "title": "Values",
-              "variadic": false
-            }
-          ],
-          "key": "arithmetic.sum@1",
-          "output_schema": {
-            "fields": [
-              "result"
-            ],
-            "required": [
-              "result"
-            ],
-            "sha256": "a642213d4def767f500f3b3c1965f8a7fb0014d7acceadef17b11db9aca36ee3"
-          },
-          "outputs": [
-            {
-              "accepted_shapes": [
-                "one"
-              ],
-              "artifact": "scalar.integer@1",
-              "description": "Sum of all input integers.",
-              "instance_plugs": false,
-              "name": "result",
-              "required": true,
-              "shape": "one",
-              "title": null,
-              "variadic": false
-            }
-          ],
-          "required_capabilities": [],
-          "secret_inputs": [],
-          "title": "Sum integers"
-        }
-      ],
-      "title": "Arithmetic"
-    },
     "external.gis": {
       "artifact_dependencies": [
         {
@@ -3277,6 +2866,81 @@
         }
       ],
       "title": "Text"
+    },
+    "value": {
+      "artifact_dependencies": [],
+      "artifact_types": [
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "scalar.integer@1",
+          "materialized_json_type": "integer",
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [
+              "value"
+            ],
+            "required": [
+              "value"
+            ],
+            "sha256": "13dd5c9edb1aae47e4bae5d6f924e7600b5aa7d29dd9fb573bee7c75f683a4af"
+          },
+          "title": "Integer value"
+        }
+      ],
+      "capabilities": [],
+      "conversions": [],
+      "nodes": [
+        {
+          "cache_policy": "exact",
+          "config": {
+            "fields": [
+              "value"
+            ],
+            "required": [
+              "value"
+            ],
+            "sha256": "ac1bc0e092ecaa5945546d78045da06c6da4977350681a8ca74b6ab3bb52955d"
+          },
+          "description": "Produces a configured integer value.",
+          "input_schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "cd08e61f02baf2b60693133f419e5f6155f44e84c23aba3d77025009bdda6e6d"
+          },
+          "inputs": [],
+          "key": "value.integer@1",
+          "output_schema": {
+            "fields": [
+              "value"
+            ],
+            "required": [
+              "value"
+            ],
+            "sha256": "cf668da065d757fb70c1f193ea3126e98d39f68e4fa59a21c3feb65648139bc5"
+          },
+          "outputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "scalar.integer@1",
+              "description": "The configured integer value.",
+              "instance_plugs": false,
+              "name": "value",
+              "required": true,
+              "shape": "one",
+              "title": "Value",
+              "variadic": false
+            }
+          ],
+          "required_capabilities": [],
+          "secret_inputs": [],
+          "title": "Integer"
+        }
+      ],
+      "title": "Value"
     }
   },
   "schema_version": 1

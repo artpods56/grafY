@@ -58,7 +58,7 @@ from grafy_core.artifact_contracts import (
     TextValue,
 )
 from grafy_core.prompt_contracts import PROMPT_MESSAGE
-from grafy_workbench.arithmetic import ARITHMETIC
+from grafy_workbench.value import VALUE
 from grafy_workbench.table import TABLES
 from grafy_workbench.text import TEXT
 from grafy_core.plugins import Plugin
@@ -243,13 +243,13 @@ def test_catalog_manifest_rejects_owned_dependency_overlap() -> None:
 
 
 def test_builtin_scalar_and_table_catalogs_preserve_portable_contracts() -> None:
-    arithmetic = PluginCatalogManifest.from_plugin(ARITHMETIC)
+    value = PluginCatalogManifest.from_plugin(VALUE)
     text = PluginCatalogManifest.from_plugin(TEXT)
     tables = PluginCatalogManifest.from_plugin(TABLES)
 
     integer_contract = next(
         artifact
-        for artifact in arithmetic.artifact_types
+        for artifact in value.artifact_types
         if artifact.key.id == "scalar.integer"
     )
     text_contract = next(

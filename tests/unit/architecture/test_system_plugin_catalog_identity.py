@@ -11,7 +11,6 @@ from grafy_core.domain.plugin_releases import (
     PluginPortContract,
 )
 from grafy_core.plugins import Plugin
-from grafy_workbench.arithmetic import ARITHMETIC
 from grafy_plugin_gis import GIS
 from grafy_workbench.file import FILES
 from grafy_workbench.image import IMAGES
@@ -22,13 +21,14 @@ from grafy_workbench.sequence import SEQUENCES
 from grafy_plugin_sql import SQL
 from grafy_workbench.table import TABLES
 from grafy_workbench.text import TEXT
+from grafy_workbench.value import VALUE
 
 
 SNAPSHOT_PATH = Path(__file__).with_name("system_plugin_catalog_identity.json")
 SYSTEM_PLUGINS = (
-    ARITHMETIC,
     IMAGES,
     SEQUENCES,
+    VALUE,
     TEXT,
     SCHEMAS,
     TABLES,
@@ -39,9 +39,9 @@ SYSTEM_PLUGINS = (
     SQL,
 )
 EXPECTED_SYSTEM_PLUGIN_SLUGS = (
-    "arithmetic",
     "image",
     "sequence",
+    "value",
     "text",
     "schema",
     "table",

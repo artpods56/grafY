@@ -92,7 +92,8 @@ const outputBoundary: ModuleBoundarySummary = {
   direction: "output",
   portName: "normalized",
   description: null,
-  artifactType: "table.data@1",
+  artifactType: "Table",
+  artifactTypeIdentity: "table.data@1",
   connectionCount: 1,
 };
 

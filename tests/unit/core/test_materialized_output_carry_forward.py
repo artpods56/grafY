@@ -32,7 +32,7 @@ def _node(
     return SavedGraphNode(
         kind="builtin",
         id=node_id,
-        operator_id="arithmetic.number",
+        operator_id="value.integer",
         operator_version=1,
         config=config or {"value": 1},
         position=GraphPoint(x=x, y=0),

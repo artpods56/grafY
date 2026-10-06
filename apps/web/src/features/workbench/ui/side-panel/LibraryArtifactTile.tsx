@@ -11,6 +11,11 @@ import {
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
+  formatArtifactTypeLabel,
+  formatArtifactTypeTooltip,
+} from "../../canvas/artifact-type-label";
+import { useArtifactTypeCatalog } from "../../canvas/use-artifact-type-catalog";
+import {
   formatLibraryByteSize,
   isItemImage,
   isItemText,
@@ -48,6 +53,11 @@ export function LibraryArtifactTile({
   const location = ["Library", ...libraryFolderPath(folders, item.folder_id)];
   const size = formatLibraryByteSize(item.artifact.byte_size);
   const [imageFailed, setImageFailed] = React.useState(false);
+  const artifactTypes = useArtifactTypeCatalog();
+  const artifactType = {
+    id: item.artifact.artifact_type,
+    schema_version: item.artifact.schema_version,
+  };
   const preview = useTextHead(isItemText(item) ? contentUrl : null);
 
   return (
@@ -69,8 +79,11 @@ export function LibraryArtifactTile({
       <span {...stylex.props(s.facts)}>
         {location.join(" / ")}
         {" · "}
-        <span {...stylex.props(s.mono)}>
-          {item.artifact.artifact_type}@{item.artifact.schema_version}
+        <span
+          title={formatArtifactTypeTooltip(artifactType)}
+          {...stylex.props(s.mono)}
+        >
+          {formatArtifactTypeLabel(artifactType, artifactTypes)}
         </span>
         {size ? ` · ${size}` : null}
       </span>

@@ -7,6 +7,7 @@ import type {
   WorkflowEdgeRouteOption,
 } from "../canvas/types";
 import { connectionRouteTitle } from "./graph-authoring";
+import type { ArtifactTypeCatalog } from "../canvas/artifact-type-label";
 
 export interface ConnectionFeedChoice {
   key: string;
@@ -93,8 +94,10 @@ export function orderFeedRoutes(
     const leftWhole = isWholeFeedRoute(left) ? 0 : 1;
     const rightWhole = isWholeFeedRoute(right) ? 0 : 1;
     if (leftWhole !== rightWhole) return leftWhole - rightWhole;
-    return connectionRouteFeedTitle(left).localeCompare(
-      connectionRouteFeedTitle(right),
+    // Ordered by identity, so the picker's order does not move when the
+    // catalog arrives.
+    return connectionRouteFeedTitle(left, null).localeCompare(
+      connectionRouteFeedTitle(right, null),
     );
   });
 }
@@ -195,8 +198,16 @@ export function edgeTransportChipLabel(params: {
   return label;
 }
 
-export function connectionRouteFeedTitle(route: ConnectionRoute): string {
-  return connectionRouteTitle(route);
+/**
+ * The route as the picker reads it, in the catalog's names. Pass `null` for the
+ * identity behind a title (`Whole output · scalar.text@1`), which is what a
+ * tooltip carries.
+ */
+export function connectionRouteFeedTitle(
+  route: ConnectionRoute,
+  artifactTypes: ArtifactTypeCatalog,
+): string {
+  return connectionRouteTitle(route, artifactTypes);
 }
 
 export function connectionRouteFeedDescription(

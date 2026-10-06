@@ -11,6 +11,7 @@ import {
   type SavedGraphNode,
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { artifactTypeKey } from "./artifact-type-key";
 import { connectionRouteForSelection, encodeHandleId } from "./handles";
 import { hydrateNodeLayout } from "./node-layout";
 import { artifactTypeColor } from "./nodes.css";
@@ -228,9 +229,7 @@ function requireArtifactTypeBindings(
 ): WorkflowArtifactTypeBindings {
   const declaredVariables = new Set(declaredArtifactTypeVariables(spec));
   const registryArtifactTypes = new Set(
-    registry.artifact_types.map(
-      (artifact) => `${artifact.key.id}@${artifact.key.schema_version}`,
-    ),
+    registry.artifact_types.map((artifact) => artifactTypeKey(artifact.key)),
   );
   const bindings: Record<
     string,
@@ -247,10 +246,10 @@ function requireArtifactTypeBindings(
         `Cannot open “${savedGraph.name}”: node ${savedNode.id} binds artifact type variable ${binding.variable} more than once`,
       );
     }
-    const artifactTypeKey = `${binding.artifact_type.id}@${binding.artifact_type.schema_version}`;
-    if (!registryArtifactTypes.has(artifactTypeKey)) {
+    const bindingKey = artifactTypeKey(binding.artifact_type);
+    if (!registryArtifactTypes.has(bindingKey)) {
       throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”: node ${savedNode.id} binds unavailable artifact type ${artifactTypeKey}`,
+        `Cannot open “${savedGraph.name}”: node ${savedNode.id} binds unavailable artifact type ${bindingKey}`,
       );
     }
     bindings[binding.variable] = {

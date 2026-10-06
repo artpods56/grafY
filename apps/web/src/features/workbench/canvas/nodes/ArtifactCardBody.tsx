@@ -31,6 +31,7 @@ import {
   DEFAULT_ARTIFACT_FILE_CARD_WIDTH,
   DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH,
   artifactCardContract,
+  artifactCardContractTooltip,
   artifactCardMediaHeight,
   artifactCardValue,
   cardArtifactRefs,
@@ -47,6 +48,11 @@ import {
   type CanvasNode,
 } from "../artifact-viewer";
 import { artifactTypeColor } from "../nodes.css";
+import { useArtifactTypeCatalog } from "../use-artifact-type-catalog";
+import {
+  formatArtifactTypeContract,
+  formatArtifactTypeTooltip,
+} from "../artifact-type-label";
 import {
   WORKFLOW_NODE_TYPE,
   effectivePortShape,
@@ -334,6 +340,7 @@ export function ArtifactCardBody({
   const { data: library } = useSWR(["library-tree", workspace.id], () =>
     libraryFoldersApi.listTree(workspace.id),
   );
+  const artifactTypes = useArtifactTypeCatalog();
   const [reordering, setReordering] = React.useState(false);
   const [overlayOpen, setOverlayOpen] = React.useState(false);
   const [imageSizes, setImageSizes] = React.useState<
@@ -375,13 +382,22 @@ export function ArtifactCardBody({
       : null;
   const declaredContract =
     declaredType && producer && feedPort
-      ? effectivePortShape(producer.data, feedPort) === "many"
-        ? `Sequence<${declaredType.id}@${declaredType.schema_version}>`
-        : `${declaredType.id}@${declaredType.schema_version}`
+      ? formatArtifactTypeContract(
+          declaredType,
+          artifactTypes,
+          effectivePortShape(producer.data, feedPort) === "many",
+        )
       : null;
   const contract = shownValue
-    ? artifactCardContract(shownValue)
+    ? artifactCardContract(shownValue, artifactTypes)
     : (declaredContract ?? feedPortName ?? "Artifact");
+  // The label hides the schema version a person never chose; the tooltip keeps
+  // the full identity available.
+  const contractTooltip = shownValue
+    ? artifactCardContractTooltip(shownValue)
+    : declaredType
+      ? formatArtifactTypeTooltip(declaredType)
+      : undefined;
   const producerBusy =
     producer?.data.execution?.status === "queued" ||
     producer?.data.execution?.status === "running" ||
@@ -640,6 +656,7 @@ export function ArtifactCardBody({
               <ArtifactLabel
                 title={titleLabel}
                 contract={contract}
+                contractTooltip={contractTooltip}
                 selected={selected ?? false}
                 image={imageArtifact}
               />

@@ -29,15 +29,22 @@ import {
   type ModuleLibraryEntry,
   type Workspace,
 } from "@/lib/api";
-import { useWorkspaces } from "@/hooks/use-api";
+import { useNodeRegistry, useWorkspaces } from "@/hooks/use-api";
 import { useAuthSession } from "@/features/auth/AuthSessionBoundary";
 import { workbenchGraphPath } from "@/features/workbench/routes";
+import { artifactTypeKey } from "@/features/workbench/canvas/artifact-type-key";
+import {
+  formatArtifactTypeLabel,
+  formatArtifactTypeTooltip,
+  type ArtifactTypeCatalog,
+} from "@/features/workbench/canvas/artifact-type-label";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 function artifactTypeLabel(
   port: NonNullable<ModuleLibraryEntry["inputs"]>[number],
+  artifactTypes: ArtifactTypeCatalog,
 ) {
-  return `${port.artifact_type.id}@${port.artifact_type.schema_version}`;
+  return formatArtifactTypeLabel(port.artifact_type, artifactTypes);
 }
 
 function moduleSearchText(module: ModuleLibraryEntry): string {
@@ -48,7 +55,11 @@ function moduleSearchText(module: ModuleLibraryEntry): string {
     module.publication_state,
     module.source_graph_id,
     String(module.current_library_release ?? ""),
-    ...ports.flatMap((port) => [port.name, artifactTypeLabel(port)]),
+    // Search still matches a type by its raw identity, not just its title.
+    ...ports.flatMap((port) => [
+      port.name,
+      artifactTypeKey(port.artifact_type),
+    ]),
   ]
     .join(" ")
     .toLocaleLowerCase();
@@ -336,9 +347,11 @@ const s = stylex.create({
 function ContractPorts({
   label,
   ports,
+  artifactTypes,
 }: {
   label: "Inputs" | "Outputs";
   ports: NonNullable<ModuleLibraryEntry["inputs"]>;
+  artifactTypes: ArtifactTypeCatalog;
 }) {
   return (
     <div {...stylex.props(s.contractGroup)}>
@@ -353,7 +366,10 @@ function ContractPorts({
               key={`${port.direction}:${port.name}`}
               {...stylex.props(s.port)}
             >
-              {port.name} · {artifactTypeLabel(port)}
+              {port.name} ·{" "}
+              <span title={formatArtifactTypeTooltip(port.artifact_type)}>
+                {artifactTypeLabel(port, artifactTypes)}
+              </span>
               {label === "Inputs"
                 ? port.required
                   ? " · required"
@@ -383,6 +399,10 @@ export function WorkspaceModuleLibrary({
   const router = useRouter();
   const { session } = useAuthSession();
   const { data: workspaces = [] } = useWorkspaces(session.user_id);
+  // The Module contract names its ports' types, so it reads them the way the
+  // workspace's own catalog does.
+  const { data: registry } = useNodeRegistry(workspace.id);
+  const artifactTypes = registry?.artifact_types ?? null;
   const [query, setQuery] = React.useState("");
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -647,10 +667,15 @@ export function WorkspaceModuleLibrary({
                     aria-label={`${module.name} contract`}
                     {...stylex.props(s.contract, s.mobileContract)}
                   >
-                    <ContractPorts label="Inputs" ports={module.inputs ?? []} />
+                    <ContractPorts
+                      label="Inputs"
+                      ports={module.inputs ?? []}
+                      artifactTypes={artifactTypes}
+                    />
                     <ContractPorts
                       label="Outputs"
                       ports={module.outputs ?? []}
+                      artifactTypes={artifactTypes}
                     />
                   </div>
                 </div>

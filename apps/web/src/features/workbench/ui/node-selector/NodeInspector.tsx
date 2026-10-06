@@ -20,6 +20,10 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 import { schemaFields, type SchemaField } from "../../canvas/config-schema";
 import { artifactTypeColor } from "../../canvas/nodes.css";
 import {
+  formatArtifactTypeLabel,
+  formatArtifactTypeTooltip,
+} from "../../canvas/artifact-type-label";
+import {
   acceptedPortShapes,
   portArtifactType,
   portArtifactTypeVariable,
@@ -471,8 +475,11 @@ function PortList({
 function PortRow({ port, registry }: { port: Port; registry: NodeRegistry }) {
   const artifactType = portArtifactType(port);
   const contract = artifactType
-    ? `${artifactType.id}@${artifactType.schema_version}`
+    ? formatArtifactTypeLabel(artifactType, registry.artifact_types)
     : (portArtifactTypeVariable(port) ?? "generic");
+  const contractTooltip = artifactType
+    ? formatArtifactTypeTooltip(artifactType)
+    : undefined;
   const shapes = acceptedPortShapes(port)
     .map((shape) => (shape === "many" ? "sequence" : "single value"))
     .join(" or ");
@@ -501,7 +508,7 @@ function PortRow({ port, registry }: { port: Port; registry: NodeRegistry }) {
       />
       <div {...stylex.props(s.minZero)}>
         <div {...stylex.props(s.rowTitle)}>{port.title ?? port.name}</div>
-        <div {...stylex.props(s.contract)}>
+        <div title={contractTooltip} {...stylex.props(s.contract)}>
           {artifactTitleFor(registry, port)} · {contract}
         </div>
         <div {...stylex.props(s.rules)}>{rules}</div>

@@ -683,8 +683,14 @@ export function PublishModuleDialog({
                             </p>
                             <p {...stylex.props(s.boundaryMeta)}>
                               {boundary.direction} ·{" "}
-                              {boundary.artifactType ?? "type not bound"} ·{" "}
-                              {boundaryConnectionLabel(boundary)}
+                              <span
+                                title={
+                                  boundary.artifactTypeIdentity ?? undefined
+                                }
+                              >
+                                {boundary.artifactType ?? "type not bound"}
+                              </span>{" "}
+                              · {boundaryConnectionLabel(boundary)}
                             </p>
                             {boundary.description ? (
                               <p {...stylex.props(s.boundaryMeta)}>

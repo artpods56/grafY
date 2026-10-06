@@ -113,7 +113,7 @@ def test_count_slice_and_item_at_preserve_refs_and_artifact_content(
                 RunNodeRequest(
                     kind="builtin",
                     id="numbers",
-                    operator_id="arithmetic.integer_sequence",
+                    operator_id="test.arithmetic.integer_sequence",
                     operator_version=1,
                     config={"start": 10, "count": 4, "step": 10},
                 ),
@@ -301,7 +301,7 @@ def test_collect_converts_each_input_to_its_bound_text_type(
                 RunNodeRequest(
                     kind="builtin",
                     id="number",
-                    operator_id="arithmetic.number",
+                    operator_id="value.integer",
                     operator_version=1,
                     config={"value": 42},
                 ),
@@ -511,7 +511,7 @@ def test_collect_rejects_an_input_with_a_different_artifact_type(
                 RunNodeRequest(
                     kind="builtin",
                     id="number",
-                    operator_id="arithmetic.number",
+                    operator_id="value.integer",
                     operator_version=1,
                     config={"value": 7},
                 ),

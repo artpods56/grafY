@@ -4,8 +4,8 @@ import type {
   Port,
   SavedGraphOrigin,
 } from "@/lib/api";
+import { artifactTypeKey } from "../canvas/artifact-type-key";
 import {
-  artifactTypeKey,
   decodeHandleId,
   shortestConversionPathsToAny,
 } from "../canvas/handles";

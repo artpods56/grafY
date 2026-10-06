@@ -6,6 +6,7 @@ import type {
   FieldProjection,
 } from "@/lib/api";
 import type { HandleFeedIntent, PortMeta } from "./types";
+import { artifactTypeKey } from "./artifact-type-key";
 
 export type { HandleFeedIntent };
 
@@ -22,7 +23,7 @@ function encodeHandleAlsoAcceptsSegment(
   accepted: readonly ArtifactTypeKey[],
 ): string {
   return `${HANDLE_ALSO_ACCEPTS_PREFIX}${accepted
-    .map((key) => encodeURIComponent(`${key.id}@${key.schema_version}`))
+    .map((key) => encodeURIComponent(artifactTypeKey(key)))
     .join(",")}`;
 }
 
@@ -356,13 +357,6 @@ function artifactTypeMatches(
   return (
     artifactType.id === id && artifactType.schema_version === schemaVersion
   );
-}
-
-export function artifactTypeKey(artifactType: {
-  id: string;
-  schema_version: number;
-}): string {
-  return `${artifactType.id}@${artifactType.schema_version}`;
 }
 
 function compareConversions(

@@ -37,7 +37,7 @@ describe("connection feed presentation", () => {
       ],
     } satisfies ConnectionRoute;
 
-    expect(connectionRouteFeedTitle(route)).toBe("Age → Integer to text");
+    expect(connectionRouteFeedTitle(route, null)).toBe("Age → Integer to text");
     expect(connectionRouteFeedDescription("payload", route)).toBe(
       "Field payload.profile.age · Integer to text",
     );

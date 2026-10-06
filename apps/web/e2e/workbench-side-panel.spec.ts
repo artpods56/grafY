@@ -1251,7 +1251,7 @@ test.describe("collections", () => {
     await expect(collection).toHaveCount(1);
     await expect(cards).toHaveCount(0);
     await expect(collection).toContainText("2 items");
-    await expect(collection).toContainText("Sequence<file.csv@1>");
+    await expect(collection).toContainText("Sequence<CSV file>");
     await expect(page.locator("[data-canvas-node-shell]")).toHaveCount(0);
 
     // A Library item dropped on the stack joins it on the spare plug; one it
@@ -1317,7 +1317,7 @@ test.describe("collections", () => {
     // Info and actions share the collection's one "⋯", like any card.
     await collection.click();
     const actions = collection.getByRole("button", {
-      name: "Actions for Sequence<file.csv@1>",
+      name: "Actions for Sequence<CSV file>",
     });
     await actions.click();
     await page.getByRole("menuitem", { name: "Reorder members" }).click();

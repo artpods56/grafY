@@ -13,6 +13,7 @@ import {
   type ConnectionRoute,
   type HandleFeedIntent,
 } from "../canvas/handles";
+import { artifactTypeKey } from "../canvas/artifact-type-key";
 import { schemaFields } from "../canvas/config-schema";
 import {
   acceptedPortShapes,
@@ -76,12 +77,8 @@ export function catalogNodeKey(spec: NodeSpec): string {
     : operator;
 }
 
-export function artifactTypeKeyId(key: ArtifactTypeKey): string {
-  return `${key.id}@${key.schema_version}`;
-}
-
 export function artifactFilterId(key: ArtifactTypeKey): CatalogFilterId {
-  return `artifact:${key.id}@${key.schema_version}`;
+  return `artifact:${artifactTypeKey(key)}`;
 }
 
 export function sourceFilterId(slug: string): CatalogFilterId {
@@ -200,8 +197,8 @@ export function buildCatalogFilters(
     .sort((left, right) => {
       const byTitle = left.title.localeCompare(right.title);
       if (byTitle !== 0) return byTitle;
-      return artifactTypeKeyId(left.key).localeCompare(
-        artifactTypeKeyId(right.key),
+      return artifactTypeKey(left.key).localeCompare(
+        artifactTypeKey(right.key),
       );
     })
     .map((artifact): CatalogFilter => {

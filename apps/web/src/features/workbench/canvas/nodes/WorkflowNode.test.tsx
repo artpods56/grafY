@@ -1754,6 +1754,8 @@ describe("WorkflowNode artifact type binding", () => {
       "file.png@1",
       "image.raster@1",
     ]);
+    // Each choice still reveals the full type identity it binds.
+    expect(options[1]?.getAttribute("title")).toBe("file.jpeg@1");
     expect(container.querySelector('[data-port-open="true"]')).not.toBeNull();
 
     React.act(() => {

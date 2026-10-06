@@ -15,6 +15,8 @@ import type { RunEdgeCollectionMode } from "@/lib/api";
 import { overlay } from "@/lib/stylex/overlay.stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type { ConnectionRoute } from "../canvas/handles";
+import { formatArtifactTypeTooltip } from "../canvas/artifact-type-label";
+import { useArtifactTypeCatalog } from "../canvas/use-artifact-type-catalog";
 import {
   connectionRouteFeedDescription,
   connectionRouteFeedTitle,
@@ -145,6 +147,7 @@ export function ConnectionRouteDialog({
   onSelect,
   onClose,
 }: ConnectionRouteDialogProps) {
+  const artifactTypes = useArtifactTypeCatalog();
   return (
     <Dialog
       open={pendingRoute !== null}
@@ -202,17 +205,28 @@ export function ConnectionRouteDialog({
               </p>
               <div {...stylex.props(s.projectionChoices)}>
                 {pendingRoute.candidates.map((candidate, index) => {
-                  const title = connectionRouteFeedTitle(candidate);
+                  const title = connectionRouteFeedTitle(
+                    candidate,
+                    artifactTypes,
+                  );
                   const description = connectionRouteFeedDescription(
                     pendingRoute.source.portName,
                     candidate,
                   );
+                  // The title names the type the way the catalog does; the
+                  // identity it hides stays one hover away.
+                  const identityTooltip = candidate.artifactTypeBinding
+                    ? formatArtifactTypeTooltip(
+                        candidate.artifactTypeBinding.artifactType,
+                      )
+                    : undefined;
                   return (
                     <button
                       key={`${candidate.kind}-${description}-${index}`}
                       type="button"
                       autoFocus={index === 0}
                       aria-label={`Feed ${title} from ${pendingRoute.source.nodeTitle}`}
+                      title={identityTooltip}
                       {...stylex.props(overlay.item, s.projectionChoice)}
                       onClick={() => {
                         onSelect(candidate);

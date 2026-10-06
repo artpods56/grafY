@@ -144,9 +144,19 @@ describe("connection route presentation", () => {
       },
     } satisfies ConnectionRoute;
 
-    expect(connectionRouteTitle(route)).toBe(
+    // With no catalog, the route carries the type's full identity.
+    expect(connectionRouteTitle(route, null)).toBe(
       "Age → Integer to text · scalar.text@1",
     );
+    // A catalog title replaces the identity.
+    expect(
+      connectionRouteTitle(route, [
+        {
+          key: { id: "scalar.text", schema_version: 1 },
+          title: "Text value",
+        },
+      ]),
+    ).toBe("Age → Integer to text · Text value");
     expect(connectionRouteDescription("payload", route)).toBe(
       "payload.profile.age → Integer to text · builtin.scalar.integer_to_text@1",
     );

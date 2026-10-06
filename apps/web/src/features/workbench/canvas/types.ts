@@ -20,6 +20,10 @@ import {
   type WorkflowInputPlug,
   type WorkflowInputPlugBinding,
 } from "./input-plugs";
+import {
+  formatArtifactTypeLabel,
+  type ArtifactTypeCatalog,
+} from "./artifact-type-label";
 import type { WorkflowNodeLayout } from "./node-layout";
 import {
   ARTIFACT_QUERY_OPERATOR_ID,
@@ -588,20 +592,25 @@ export function portHasInstancePlugs(port: Port): boolean {
 
 export function portTypeLabel(
   port: Port,
-  artifactTypeBindings: WorkflowArtifactTypeBindings = {},
+  artifactTypeBindings: WorkflowArtifactTypeBindings,
+  artifactTypes: ArtifactTypeCatalog,
 ): string {
   const artifactType = resolvedPortArtifactType(port, artifactTypeBindings);
   return artifactType
-    ? `${artifactType.id}@${artifactType.schema_version}`
+    ? formatArtifactTypeLabel(artifactType, artifactTypes)
     : "Any artifact";
 }
 
-export function portSummary(port: Port): string {
+export function portSummary(
+  port: Port,
+  artifactTypeBindings: WorkflowArtifactTypeBindings,
+  artifactTypes: ArtifactTypeCatalog,
+): string {
   const extras = [port.shape, port.variadic ? "variadic" : null].filter(
     Boolean,
   );
 
-  return `${portTypeLabel(port)}${
+  return `${portTypeLabel(port, artifactTypeBindings, artifactTypes)}${
     extras.length ? ` · ${extras.join(" · ")}` : ""
   }`;
 }

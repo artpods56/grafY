@@ -3,7 +3,7 @@ from pathlib import Path
 from grafy_core.plugins import PluginRuntimeContext
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_storage import LocalFileObjectStore
-from grafy_workbench.arithmetic.nodes import (
+from grafy_workbench.value.nodes import (
     INTEGER_VALUE,
     IntegerValueOutputWriter,
     IntegerValueResolver,

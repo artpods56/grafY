@@ -52,8 +52,8 @@ flowchart LR
   adapters for saved graphs and graph materialization bindings. Alembic is the
   only schema authority.
 - `libs/storage` owns the local and S3-compatible object stores.
-- `libs/workbench` owns the app-built-in node families: Arithmetic, Image,
-  Sequence, Text, Schema, and Table. These run in-process with the API and are
+- `libs/workbench` owns the app-built-in node families: Image, Sequence, Value,
+  Text, Schema, Table, and File. These run in-process with the API and are
   not Plugin packages.
 - `plugins/ocr` is an independently packaged System Plugin. It owns the OCR
   page node, its artifacts and persistence/resolution, and the Tesseract OCR

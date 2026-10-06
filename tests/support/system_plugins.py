@@ -37,9 +37,17 @@ from grafy_api.execution.requests import (
     RunNodeRequest,
 )
 
+from tests.support.scenarios.arithmetic import ARITHMETIC_TEST_PLUGIN
 
-TEST_SYSTEM_PLUGINS: tuple[Plugin, ...] = BUILTIN_FAMILIES
+
+# Plugins installed into the test registry as builtins purely to give engine
+# tests richer fixtures than the shipped catalog needs. They are never published
+# as Plugin releases and never reach production.
+TEST_FIXTURE_PLUGINS: tuple[Plugin, ...] = (ARITHMETIC_TEST_PLUGIN,)
+TEST_SYSTEM_PLUGINS: tuple[Plugin, ...] = (*BUILTIN_FAMILIES, *TEST_FIXTURE_PLUGINS)
 TEST_BUILD_DIGEST = "a" * 64
+
+_REGISTRY_INSTALLED_SLUGS = {plugin.slug for plugin in TEST_SYSTEM_PLUGINS}
 
 
 def build_explicit_plugin_registry(
@@ -249,7 +257,7 @@ def build_selected_system_plugin_deployment(
     plugins: Iterable[Plugin] = TEST_SYSTEM_PLUGINS,
 ) -> SelectedSystemPluginDeployment:
     registry = build_explicit_plugin_registry(plugins)
-    builtin_slugs = {family.slug for family in BUILTIN_FAMILIES}
+    builtin_slugs = _REGISTRY_INSTALLED_SLUGS
     releases = tuple(
         synthetic_system_release(plugin)
         for plugin in plugins
@@ -328,6 +336,7 @@ def selected_system_run_node(
 
 __all__ = [
     "TEST_BUILD_DIGEST",
+    "TEST_FIXTURE_PLUGINS",
     "TEST_SYSTEM_PLUGINS",
     "SelectedSystemPluginDeployment",
     "SelectedSystemReleaseLookup",

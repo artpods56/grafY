@@ -16,6 +16,10 @@ const mocks = vi.hoisted(() => ({
   withdrawModule: vi.fn(),
   routerPush: vi.fn(),
   workspaces: [] as Workspace[],
+  artifactTypes: [] as {
+    key: { id: string; schema_version: number };
+    title: string;
+  }[],
 }));
 
 vi.mock("@stylexjs/stylex", () => ({
@@ -36,6 +40,7 @@ vi.mock("@/lib/api", () => ({
 
 vi.mock("@/hooks/use-api", () => ({
   useWorkspaces: () => ({ data: mocks.workspaces }),
+  useNodeRegistry: () => ({ data: { artifact_types: mocks.artifactTypes } }),
 }));
 
 vi.mock("@/features/auth/AuthSessionBoundary", () => ({
@@ -157,6 +162,7 @@ afterEach(async () => {
   roots.clear();
   vi.clearAllMocks();
   mocks.workspaces = [];
+  mocks.artifactTypes = [];
 });
 
 beforeEach(() => {
@@ -222,6 +228,9 @@ describe("WorkspaceModuleLibrary", () => {
   });
 
   it("renders state, current release, contract, source graph, and filters without a dead end", async () => {
+    mocks.artifactTypes = [
+      { key: { id: "table.data", schema_version: 1 }, title: "Table data" },
+    ];
     mocks.listWorkspaceModules.mockResolvedValue({ modules: [moduleEntry()] });
     const container = await renderLibrary();
 
@@ -231,10 +240,10 @@ describe("WorkspaceModuleLibrary", () => {
     expect(container.textContent).toContain("published");
     expect(container.textContent).toContain("Current release 4");
     expect(container.textContent).toContain("2 immutable releases");
-    expect(container.textContent).toContain(
-      "invoice · table.data@1 · required",
-    );
-    expect(container.textContent).toContain("normalized · table.data@1");
+    expect(container.textContent).toContain("invoice · Table data · required");
+    expect(container.textContent).toContain("normalized · Table data");
+    // The contract names the type; the identity it carries stays on hover.
+    expect(container.querySelectorAll('[title="table.data@1"]').length).toBe(2);
     expect(container.textContent).toContain("Source graph graph-1");
 
     const search = container.querySelector('[aria-label="Search Modules"]');

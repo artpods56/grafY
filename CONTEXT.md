@@ -549,7 +549,7 @@ Builtin nodes are identified by family slug and the deployment's build digest;
 they do not carry a Plugin release pin.
 
 Grafy's builtin families contain broadly reusable operations: Image, Sequence,
-Arithmetic, Text, Schema, and Table. A builtin artifact type must have precise,
+Value, Text, Schema, Table, and File. A builtin artifact type must have precise,
 producer-neutral meaning and be independently reusable. A builtin node must be
 broadly reusable, deterministic, dependency-light, and must not duplicate
 projection, conversion, mapping, or other edge/runtime behavior.

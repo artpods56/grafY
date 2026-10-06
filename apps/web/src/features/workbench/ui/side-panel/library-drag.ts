@@ -7,7 +7,7 @@ import {
   type ArtifactDropValue,
 } from "../../model/artifact-drop";
 import { artifactCardValue } from "../../canvas/artifact-card";
-import { artifactTypeKey } from "../../canvas/handles";
+import { artifactTypeKey } from "../../canvas/artifact-type-key";
 
 /**
  * What the Library tree can be handed by a drag: files from the desktop, one or

@@ -14,6 +14,9 @@ import { Check } from "lucide-react";
 import type { ArtifactTypeKey } from "@/lib/api";
 import { overlay } from "@/lib/stylex/overlay.stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { formatArtifactTypeLabel } from "../artifact-type-label";
+import { artifactTypeKey } from "../artifact-type-key";
+import { useArtifactTypeCatalog } from "../use-artifact-type-catalog";
 import { PORT_RING_REACH, portMarkStyle } from "../handle-style";
 
 export { PORT_RING_REACH };
@@ -338,7 +341,7 @@ export interface PortBallProps {
 
 export interface PortTip {
   name: string;
-  /** "Sequence<file.png@1>", or "Any type" while open. */
+  /** "Sequence<Text value>", or "Any type" while open. */
   type: string;
   /** What the person can do with the ball. */
   hint?: string;
@@ -352,10 +355,6 @@ export interface PortTypeChoice {
 }
 
 const ANY_TYPE = "Any type";
-
-function typeKeyText(type: ArtifactTypeKey): string {
-  return `${type.id}@${type.schema_version}`;
-}
 
 /** The types a generic port can take, opened from its ball. */
 function PortTypeMenu({
@@ -374,6 +373,7 @@ function PortTypeMenu({
   side: "left" | "right";
 }) {
   const popup = stylex.props(overlay.popup, s.menu);
+  const artifactTypes = useArtifactTypeCatalog();
   return (
     <Menu.Root open={open} onOpenChange={onOpenChange}>
       <Menu.Portal>
@@ -397,13 +397,14 @@ function PortTypeMenu({
             </Menu.Item>
             {choice.options.map((type) => (
               <Menu.Item
-                key={typeKeyText(type)}
+                key={artifactTypeKey(type)}
+                title={artifactTypeKey(type)}
                 onClick={() => choice.onPick(type)}
                 {...stylex.props(overlay.item, s.option)}
               >
-                {typeKeyText(type)}
+                {formatArtifactTypeLabel(type, artifactTypes)}
                 {choice.current &&
-                typeKeyText(choice.current) === typeKeyText(type) ? (
+                artifactTypeKey(choice.current) === artifactTypeKey(type) ? (
                   <Check size={12} />
                 ) : null}
               </Menu.Item>

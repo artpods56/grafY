@@ -48,7 +48,7 @@ from grafy_core.domain.saved_graphs import (
 )
 from grafy_core.nodes import NodeExecutionContext, PortShape
 from grafy_core.operators.modules import MODULE_BOUNDARY_REGISTRATIONS
-from grafy_workbench.arithmetic import ARITHMETIC
+from grafy_workbench.value import VALUE
 from grafy_core.artifact_contracts import RASTER_IMAGE, TEXT_VALUE
 from grafy_core.table_contracts import TABLE_DATA
 from grafy_core.schema_contracts import JSON_SCHEMA
@@ -604,7 +604,7 @@ def test_catalog_keeps_withdrawn_release_visible_disabled_and_exactly_pinned() -
 
 def test_builtin_catalog_exposes_host_artifact_and_conversion_contracts() -> None:
     registry = PluginRegistry()
-    registry.install(ARITHMETIC)
+    registry.install(VALUE)
     registry.install(TEXT)
     registry.freeze()
 
@@ -629,7 +629,7 @@ def test_builtin_catalog_exposes_host_artifact_and_conversion_contracts() -> Non
 
 def test_system_release_accepts_exact_installed_foreign_artifact_dependency() -> None:
     registry = PluginRegistry()
-    registry.install(ARITHMETIC)
+    registry.install(VALUE)
     registry.install(TEXT)
     registry.freeze()
     release = _system_release(HOST_NOTES)
