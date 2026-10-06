@@ -98,7 +98,7 @@ def test_system_guest_rejects_manifest_and_contract_identity_drift(
     manifest_path = tmp_path / "plugin-loader.json"
     manifest_path.write_bytes(
         PluginGuestLoaderManifest(
-            slug="arithmetic",
+            slug="value",
             loader_target="grafy_workbench.text.plugin:TEXT",
         ).canonical_json_bytes()
     )

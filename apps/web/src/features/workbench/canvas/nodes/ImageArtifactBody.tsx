@@ -78,11 +78,14 @@ export const ARTIFACT_LABEL_HEIGHT = "24px";
 export function ArtifactLabel({
   title,
   contract,
+  contractTooltip,
   selected,
   image = false,
 }: {
   title: string;
   contract: string;
+  /** The full `id@version` behind the label, shown on hover. */
+  contractTooltip?: string;
   selected: boolean;
   image?: boolean;
 }) {
@@ -95,7 +98,7 @@ export function ArtifactLabel({
       <span title={title} {...stylex.props(s.name)}>
         {title}
       </span>
-      <span title={contract} {...stylex.props(s.contract)}>
+      <span title={contractTooltip ?? contract} {...stylex.props(s.contract)}>
         {contract}
       </span>
     </div>

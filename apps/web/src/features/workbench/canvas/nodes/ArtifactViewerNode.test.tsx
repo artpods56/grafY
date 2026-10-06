@@ -113,12 +113,33 @@ vi.mock("@base-ui/react/popover", () => ({
   },
 }));
 
+const registryMocks = vi.hoisted(() => ({
+  artifactTypes: [] as {
+    key: { id: string; schema_version: number };
+    title: string;
+  }[],
+}));
+
 vi.mock("@/hooks/use-api", () => ({
-  useNodeRegistry: () => ({ data: { artifact_types: [] } }),
+  useNodeRegistry: () => ({
+    data: { artifact_types: registryMocks.artifactTypes },
+  }),
 }));
 
 vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
   useWorkspaceContext: () => ({
+    workspace: {
+      id: "workspace-1",
+      slug: "team",
+      name: "Local",
+      kind: "personal",
+      role: "owner",
+      capabilities: [],
+    },
+    workspaces: [],
+    refreshWorkspaces: async () => undefined,
+  }),
+  useOptionalWorkspaceContext: () => ({
     workspace: {
       id: "workspace-1",
       slug: "team",
@@ -343,6 +364,7 @@ beforeEach(() => {
   flowMocks.nodes.clear();
   flowMocks.updateNodeInternals.mockClear();
   previewMocks.render.mockClear();
+  registryMocks.artifactTypes = [];
 });
 
 afterEach(() => {
@@ -506,6 +528,35 @@ describe("ArtifactViewerNode", () => {
     expect(container.textContent).not.toContain("Follow selection");
     expect(container.textContent).not.toContain("Selected rows");
     expect(previewMocks.render).not.toHaveBeenCalled();
+  });
+
+  it("names the connected type by its catalog title, identity in the tooltip", () => {
+    registryMocks.artifactTypes = [
+      {
+        key: { id: "image.raster", schema_version: 1 },
+        title: "Raster image",
+      },
+    ];
+    const preview = runOutput(
+      "preview",
+      "single",
+      artifact("titled-preview", "image.raster"),
+    );
+    flowMocks.edges = [viewerEdge()];
+    flowMocks.nodes.set(
+      "source-node",
+      sourceNode("one", {
+        node_id: "source-node",
+        status: "succeeded",
+        outputs: [preview],
+        error: null,
+      }),
+    );
+
+    const container = renderViewer({}, true);
+
+    expect(container.textContent).toContain("Raster image · single");
+    expect(container.querySelector('[title="image.raster@1"]')).not.toBeNull();
   });
 
   it.each([

@@ -28,9 +28,9 @@ PUBLISHED_PLUGIN_FAMILIES = (
     "sql",
 )
 WORKBENCH_FAMILIES = (
-    "arithmetic",
     "image",
     "sequence",
+    "value",
     "text",
     "schema",
     "table",
@@ -350,7 +350,6 @@ def test_retained_python_sources_do_not_use_legacy_namespace() -> None:
 
 def test_converged_operator_implementations_are_owned_by_the_application() -> None:
     for module in (
-        "arithmetic.py",
         "images.py",
         "prompts.py",
         "schemas.py",

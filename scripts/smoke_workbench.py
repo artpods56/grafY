@@ -16,12 +16,11 @@ from grafy_core.artifacts import (
 from grafy_core.file_contracts import PNG_FILE
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.ports.storage import SaveFileCommand
-from grafy_workbench.arithmetic.nodes import (
+from grafy_core.artifact_contracts import (
     INTEGER_VALUE,
-    IntegerValueOutputWriter,
     IntegerValuePayload,
+    RASTER_IMAGE,
 )
-from grafy_core.artifact_contracts import RASTER_IMAGE
 from grafy_workbench.image import IMAGES
 from grafy_workbench.sequence.nodes import (
     CollectNode,
@@ -29,6 +28,7 @@ from grafy_workbench.sequence.nodes import (
     ItemAtNode,
     SliceNode,
 )
+from grafy_workbench.value.nodes import IntegerValueOutputWriter
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.runtime.execution import NodeRuntime, PersistedNodeOutput
 from grafy_core.runtime.materialization import InputMaterializer

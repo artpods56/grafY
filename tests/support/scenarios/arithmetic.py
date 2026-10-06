@@ -1,51 +1,31 @@
-from typing import Annotated, final
+"""Arithmetic test scenario: integer math nodes used as cheap engine fixtures.
+
+The production catalog ships no arithmetic operators; ``value.integer`` is the
+only integer source users get. These nodes stay behind a ``test.arithmetic``
+plugin so engine tests can still exercise multi-node graphs, mapped edges,
+conversion paths, and cache policies without widening the shipped catalog.
+"""
+
+from typing import Annotated
 
 from pydantic import Field, StrictInt
 
-from grafy_core.artifact_contracts import INTEGER_VALUE, IntegerValuePayload
+from grafy_core.artifact_contracts import INTEGER_VALUE
 from grafy_core.artifacts import (
-    Artifact,
     NoConfig,
     NodeConfig,
     NodeInput,
     NodeOutput,
 )
-from grafy_core.ports.artifacts import UnitOfWorkPort
-from grafy_core.nodes import (
-    InPort,
-    OutPort,
+from grafy_core.nodes import InPort, OutPort
+from grafy_core.plugins import NodeCachePolicy, Plugin
+
+
+ARITHMETIC_TEST_PLUGIN = Plugin(
+    slug="test.arithmetic",
+    title="Arithmetic test plugin",
 )
-from grafy_core.plugins import NodeCachePolicy
-
-from grafy_workbench.arithmetic.declaration import ARITHMETIC
-from grafy_workbench.scalar_persistence import ScalarOutputWriter, ScalarResolver
-
-
-class NumberConfig(NodeConfig):
-    value: StrictInt = Field(description="Integer emitted by the node.")
-
-
-class NumberInput(NodeInput):
-    pass
-
-
-class NumberOutput(NodeOutput):
-    value: Annotated[
-        StrictInt,
-        OutPort(INTEGER_VALUE),
-        Field(title="Value", description="The configured integer value."),
-    ]
-
-
-@ARITHMETIC.function_node(
-    operator_id="arithmetic.number",
-    version=1,
-    title="Number",
-    cache_policy=NodeCachePolicy.EXACT,
-)
-async def number(config: NumberConfig, _inputs: NumberInput) -> NumberOutput:
-    """Produces a configured integer value."""
-    return NumberOutput(value=config.value)
+ARITHMETIC_TEST_PLUGIN.register_artifact_type_dependency(INTEGER_VALUE)
 
 
 class IntegerSequenceConfig(NodeConfig):
@@ -71,8 +51,8 @@ class IntegerSequenceOutput(NodeOutput):
     ]
 
 
-@ARITHMETIC.function_node(
-    operator_id="arithmetic.integer_sequence",
+@ARITHMETIC_TEST_PLUGIN.function_node(
+    operator_id="test.arithmetic.integer_sequence",
     version=1,
     title="Integer sequence",
     cache_policy=NodeCachePolicy.EXACT,
@@ -108,8 +88,8 @@ class IntegerResultOutput(NodeOutput):
     ]
 
 
-@ARITHMETIC.function_node(
-    operator_id="arithmetic.add",
+@ARITHMETIC_TEST_PLUGIN.function_node(
+    operator_id="test.arithmetic.add",
     version=1,
     title="Add integers",
     cache_policy=NodeCachePolicy.EXACT,
@@ -122,8 +102,8 @@ async def add_integers(
     return IntegerResultOutput(result=inputs.left + inputs.right)
 
 
-@ARITHMETIC.function_node(
-    operator_id="arithmetic.subtract",
+@ARITHMETIC_TEST_PLUGIN.function_node(
+    operator_id="test.arithmetic.subtract",
     version=1,
     title="Subtract integers",
     cache_policy=NodeCachePolicy.EXACT,
@@ -136,8 +116,8 @@ async def subtract_integers(
     return IntegerResultOutput(result=inputs.left - inputs.right)
 
 
-@ARITHMETIC.function_node(
-    operator_id="arithmetic.multiply",
+@ARITHMETIC_TEST_PLUGIN.function_node(
+    operator_id="test.arithmetic.multiply",
     version=1,
     title="Multiply",
     cache_policy=NodeCachePolicy.EXACT,
@@ -170,8 +150,8 @@ class SumIntegersOutput(NodeOutput):
     ]
 
 
-@ARITHMETIC.function_node(
-    operator_id="arithmetic.sum",
+@ARITHMETIC_TEST_PLUGIN.function_node(
+    operator_id="test.arithmetic.sum",
     version=1,
     title="Sum integers",
     cache_policy=NodeCachePolicy.EXACT,
@@ -184,30 +164,18 @@ async def sum_integers(
     return SumIntegersOutput(result=sum(inputs.values))
 
 
-@final
-class IntegerValueOutputWriter(ScalarOutputWriter):
-    """Keep the existing constructor used by runtime clients."""
-
-    def __init__(self, *, uow: UnitOfWorkPort) -> None:
-        super().__init__(
-            artifact_type=INTEGER_VALUE.key, model=IntegerValuePayload, uow=uow
-        )
-
-
-@final
-class IntegerValueResolver(ScalarResolver[int]):
-    """Keep the existing constructor used by runtime clients."""
-
-    def __init__(self, *, uow: UnitOfWorkPort) -> None:
-        super().__init__(
-            source=INTEGER_VALUE.key, target=int, model=IntegerValuePayload, uow=uow
-        )
-
-
-ARITHMETIC.register(
-    Artifact(
-        spec=INTEGER_VALUE,
-        resolver=lambda context: IntegerValueResolver(uow=context.uow),
-        writer=lambda context: IntegerValueOutputWriter(uow=context.uow),
-    )
-)
+__all__ = [
+    "ARITHMETIC_TEST_PLUGIN",
+    "BinaryIntegerInput",
+    "IntegerResultOutput",
+    "IntegerSequenceConfig",
+    "IntegerSequenceInput",
+    "IntegerSequenceOutput",
+    "SumIntegersInput",
+    "SumIntegersOutput",
+    "add_integers",
+    "integer_sequence",
+    "multiply_integers",
+    "subtract_integers",
+    "sum_integers",
+]

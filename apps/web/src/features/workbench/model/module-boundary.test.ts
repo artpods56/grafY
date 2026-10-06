@@ -88,6 +88,7 @@ describe("moduleBoundaries", () => {
     const summaries = moduleBoundaries(
       [node("step-1", "text.concat"), node("entry", "module.input")],
       [],
+      null,
     );
 
     expect(summaries).toEqual([
@@ -97,12 +98,13 @@ describe("moduleBoundaries", () => {
         portName: null,
         description: null,
         artifactType: null,
+        artifactTypeIdentity: null,
         connectionCount: 0,
       },
     ]);
   });
 
-  it("reports the declared public name, description, and bound artifact type", () => {
+  it("names a bound type by its catalog title and keeps its identity beside it", () => {
     const summaries = moduleBoundaries(
       [
         node("exit", "module.output", {
@@ -111,6 +113,12 @@ describe("moduleBoundaries", () => {
         }),
       ],
       [],
+      [
+        {
+          key: { id: "integer.value", schema_version: 3 },
+          title: "Integer value",
+        },
+      ],
     );
 
     expect(summaries).toEqual([
@@ -119,10 +127,26 @@ describe("moduleBoundaries", () => {
         direction: "output",
         portName: "score",
         description: "Model score",
-        artifactType: "integer.value@3",
+        artifactType: "Integer value \u00b7 v3",
+        artifactTypeIdentity: "integer.value@3",
         connectionCount: 0,
       },
     ]);
+  });
+
+  it("shows the full identity for a type the catalog does not list", () => {
+    const summaries = moduleBoundaries(
+      [
+        node("exit", "module.output", {
+          artifactType: { id: "integer.value", schema_version: 3 },
+        }),
+      ],
+      [],
+      null,
+    );
+
+    expect(summaries[0]?.artifactType).toBe("integer.value@3");
+    expect(summaries[0]?.artifactTypeIdentity).toBe("integer.value@3");
   });
 
   it("counts only live connections on the boundary side", () => {
@@ -134,6 +158,7 @@ describe("moduleBoundaries", () => {
         edge("step-1", "exit"),
         edge("entry", "exit"),
       ],
+      null,
     );
 
     expect(

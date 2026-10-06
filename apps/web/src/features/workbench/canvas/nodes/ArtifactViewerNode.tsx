@@ -35,6 +35,11 @@ import {
   type WorkflowNodeLayout,
 } from "../node-layout";
 import { artifactTypeColor } from "../nodes.css";
+import { useArtifactTypeCatalog } from "../use-artifact-type-catalog";
+import {
+  formatArtifactTypeLabel,
+  formatArtifactTypeTooltip,
+} from "../artifact-type-label";
 import {
   WORKFLOW_NODE_TYPE,
   effectivePortShape,
@@ -153,11 +158,19 @@ function RichArtifactViewerNode({
           sourceNode.data.artifactTypeBindings,
         )
       : null;
-  const artifactTypeLabel = firstArtifact
-    ? `${firstArtifact.artifact_type}@${firstArtifact.schema_version}`
-    : declaredArtifactType
-      ? `${declaredArtifactType.id}@${declaredArtifactType.schema_version}`
-      : null;
+  const artifactTypes = useArtifactTypeCatalog();
+  const shownArtifactType = firstArtifact
+    ? {
+        id: firstArtifact.artifact_type,
+        schema_version: firstArtifact.schema_version,
+      }
+    : declaredArtifactType;
+  const artifactTypeLabel = shownArtifactType
+    ? formatArtifactTypeLabel(shownArtifactType, artifactTypes)
+    : null;
+  const artifactTypeTooltip = shownArtifactType
+    ? formatArtifactTypeTooltip(shownArtifactType)
+    : null;
   const artifactShapeLabel = output
     ? output.kind
     : sourcePort && sourceNode
@@ -299,7 +312,10 @@ function RichArtifactViewerNode({
           }
           aboutFooter={
             artifactContract ? (
-              <span title={artifactContract} {...stylex.props(s.aboutMeta)}>
+              <span
+                title={artifactTypeTooltip ?? artifactContract}
+                {...stylex.props(s.aboutMeta)}
+              >
                 {artifactContract}
               </span>
             ) : null

@@ -12,6 +12,10 @@ import {
   type ConnectionRoute,
 } from "../canvas/handles";
 import {
+  formatArtifactTypeLabel,
+  type ArtifactTypeCatalog,
+} from "../canvas/artifact-type-label";
+import {
   collectContributionLabel,
   inputPlugsForPort,
   type WorkflowInputPlugBinding,
@@ -49,7 +53,10 @@ export interface GraphAuthoringConversion {
 type WorkflowPort = WorkflowNodeData["spec"]["inputs"][number];
 type CollectionMode = NonNullable<WorkflowEdge["data"]>["collectionMode"];
 
-export function connectionRouteTitle(route: ConnectionRoute): string {
+export function connectionRouteTitle(
+  route: ConnectionRoute,
+  artifactTypes: ArtifactTypeCatalog,
+): string {
   const conversionTitle = route.conversionPath
     .map((conversion) => conversion.title)
     .join(" → ");
@@ -61,7 +68,7 @@ export function connectionRouteTitle(route: ConnectionRoute): string {
   }
   const binding = route.artifactTypeBinding;
   return binding
-    ? `${title} · ${binding.artifactType.id}@${binding.artifactType.schema_version}`
+    ? `${title} · ${formatArtifactTypeLabel(binding.artifactType, artifactTypes)}`
     : title;
 }
 

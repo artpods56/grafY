@@ -15,9 +15,9 @@ from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriterRegistry, ArtifactWriteContext
 from grafy_core.runtime.resolvers import ResolutionError, ResolverRegistry
 from grafy_core.schema_contracts import JSON_SCHEMA
-from grafy_workbench.arithmetic import ARITHMETIC
 from grafy_workbench.schema import SCHEMAS
 from grafy_workbench.text import TEXT
+from grafy_workbench.value import VALUE
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000001")
 SCHEMA_INPUT = (
@@ -41,7 +41,7 @@ def scalar_runtime(
         bucket="artifacts",
     )
     registry = PluginRegistry()
-    for family in (ARITHMETIC, TEXT, SCHEMAS):
+    for family in (VALUE, TEXT, SCHEMAS):
         registry.install(family)
     registry.freeze()
     return (

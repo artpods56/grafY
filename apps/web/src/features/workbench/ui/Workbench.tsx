@@ -180,6 +180,7 @@ import {
   collectArtifactCardRefs,
   originCarriesCardArtifacts,
 } from "../canvas/artifact-card";
+import { formatArtifactTypeLabel } from "../canvas/artifact-type-label";
 import {
   hydrateAuthoredGraphDocument,
   savedGraphExecutionFingerprint,
@@ -531,8 +532,8 @@ function WorkbenchBody({
     "Editing is unavailable until this graph is synchronized.",
   );
   const moduleBoundarySummaries = React.useMemo(
-    () => moduleBoundaries(nodes, edges),
-    [edges, nodes],
+    () => moduleBoundaries(nodes, edges, registry?.artifact_types ?? null),
+    [edges, nodes, registry],
   );
   const [executionHistoryTarget, setExecutionHistoryTarget] = React.useState<{
     nodeId: string | null;
@@ -2431,13 +2432,14 @@ function WorkbenchBody({
         return;
       }
       setRunError(
-        `That input will not take ${artifactCardContract(payload.value)}: the port refuses the type, or two conversions tie.`,
+        `That input will not take ${artifactCardContract(payload.value, registry?.artifact_types ?? null)}: the port refuses the type, or two conversions tie.`,
       );
     },
     [
       applyAuthoringCommands,
       dropArtifactOnCanvas,
       registry?.artifact_conversions,
+      registry?.artifact_types,
       setRunError,
     ],
   );
@@ -2807,14 +2809,20 @@ function WorkbenchBody({
           nodeTitle: sourceNode.data.spec.title,
           portName: sourcePort?.title ?? source.portName,
           artifactType: sourceArtifactType
-            ? `${sourceArtifactType.id}@${sourceArtifactType.schema_version}`
+            ? formatArtifactTypeLabel(
+                sourceArtifactType,
+                registry?.artifact_types ?? null,
+              )
             : `Any artifact · ${source.artifactTypeVariable}`,
         },
         target: {
           nodeTitle: targetNode.data.spec.title,
           portName: targetPort?.title ?? target.portName,
           artifactType: targetArtifactType
-            ? `${targetArtifactType.id}@${targetArtifactType.schema_version}`
+            ? formatArtifactTypeLabel(
+                targetArtifactType,
+                registry?.artifact_types ?? null,
+              )
             : `Any artifact · ${target.artifactTypeVariable}`,
         },
       });

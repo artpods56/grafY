@@ -15,6 +15,12 @@ import { useHandleIsDocked } from "../../edges/useDockedConnection";
 import { decodeHandleId, encodeHandleId } from "../../handles";
 import { artifactTypeColor } from "../../nodes.css";
 import {
+  formatArtifactTypeContract,
+  formatArtifactTypeLabel,
+  formatArtifactTypeTooltip,
+} from "../../artifact-type-label";
+import { useArtifactTypeCatalog } from "../../use-artifact-type-catalog";
+import {
   compatibilityHandleId,
   effectivePortShape,
   portHasInstancePlugs,
@@ -255,6 +261,7 @@ function PortTab({
 }) {
   const input = port.direction === "input";
   const connection = useOptionalInputConnection(id, port);
+  const artifactTypes = useArtifactTypeCatalog();
   const visibleName = port.title ?? port.name;
   const artifactType = resolvedPortArtifactType(
     port,
@@ -264,8 +271,11 @@ function PortTab({
     ? artifactTypeColor(artifactType.id, tokens.colorAccent)
     : tokens.colorAccent;
   const artifactContract = artifactType
-    ? `${artifactType.id}@${artifactType.schema_version}`
+    ? formatArtifactTypeContract(artifactType, artifactTypes)
     : "Any artifact";
+  const contractTooltip = artifactType
+    ? ` (${formatArtifactTypeTooltip(artifactType)})`
+    : "";
   const effectiveContract =
     shape === "many" ? `list[${artifactContract}]` : artifactContract;
   const accessibleLabel = input
@@ -310,7 +320,10 @@ function PortTab({
           <Popover.Trigger
             type="button"
             aria-label={`Inspect ${visibleName} type`}
-            title={port.description ?? `Inspect ${visibleName} type`}
+            title={
+              port.description ??
+              `Inspect ${visibleName} type${contractTooltip}`
+            }
             {...nodeInteractionProps(stylex.props(s.tabTrigger))}
           >
             <span {...stylex.props(nodeChrome.tabLabel)}>{visibleName}</span>
@@ -340,7 +353,7 @@ function PortTab({
         color={color}
         sequence={shape === "many"}
         docked={docked}
-        {...portBallTypeProps({
+        {...usePortBallTypeProps({
           id,
           data,
           port,
@@ -366,7 +379,7 @@ export const ANY_TYPE_LABEL = "Any type";
  * in its colour; a generic port still open is dashed. Hovering tells the type
  * in full; clicking a free generic port's ball picks it.
  */
-export function portBallTypeProps({
+export function usePortBallTypeProps({
   id,
   data,
   port,
@@ -385,13 +398,14 @@ export function portBallTypeProps({
   "open" | "tip" | "typeChoice"
 > {
   const variable = port.artifact_type_variable ?? null;
+  const artifactTypes = useArtifactTypeCatalog();
   const artifactType = resolvedPortArtifactType(
     port,
     data.artifactTypeBindings,
   );
   const open = Boolean(variable) && !artifactType;
   const inner = artifactType
-    ? `${artifactType.id}@${artifactType.schema_version}`
+    ? formatArtifactTypeLabel(artifactType, artifactTypes)
     : "any";
   const type =
     shape === "many"

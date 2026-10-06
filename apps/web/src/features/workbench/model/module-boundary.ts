@@ -1,4 +1,9 @@
 import type { WorkflowEdge } from "../canvas/types";
+import {
+  formatArtifactTypeLabel,
+  formatArtifactTypeTooltip,
+  type ArtifactTypeCatalog,
+} from "../canvas/artifact-type-label";
 import type { WorkflowNode } from "./execution-plan";
 
 const MODULE_INPUT_OPERATOR_ID = "module.input";
@@ -9,7 +14,10 @@ export interface ModuleBoundarySummary {
   direction: "input" | "output";
   portName: string | null;
   description: string | null;
+  /** The bound type as a person reads it: `Text value`, or its identity. */
   artifactType: string | null;
+  /** That type's full `id@version`, behind the label in the publish dialog. */
+  artifactTypeIdentity: string | null;
   connectionCount: number;
 }
 
@@ -20,6 +28,7 @@ export interface ModuleBoundarySummary {
 export function moduleBoundaries(
   nodes: readonly WorkflowNode[],
   edges: readonly WorkflowEdge[],
+  artifactTypes: ArtifactTypeCatalog,
 ): ModuleBoundarySummary[] {
   return nodes.flatMap((node) => {
     const operatorId = node.data.spec.operator_id;
@@ -48,7 +57,10 @@ export function moduleBoundaries(
         portName: typeof portName === "string" ? portName : null,
         description: typeof description === "string" ? description : null,
         artifactType: artifactType
-          ? `${artifactType.id}@${artifactType.schema_version}`
+          ? formatArtifactTypeLabel(artifactType, artifactTypes)
+          : null,
+        artifactTypeIdentity: artifactType
+          ? formatArtifactTypeTooltip(artifactType)
           : null,
         connectionCount,
       },

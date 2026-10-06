@@ -763,7 +763,7 @@ async def test_manager_replays_lifecycle_and_mapped_progress_events(
                     RunNodeRequest(
                         kind="builtin",
                         id="sequence",
-                        operator_id="arithmetic.integer_sequence",
+                        operator_id="test.arithmetic.integer_sequence",
                         operator_version=1,
                         config={"start": 1, "count": 3, "step": 1},
                     ),

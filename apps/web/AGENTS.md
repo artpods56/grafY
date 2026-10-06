@@ -73,6 +73,23 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - `--grafy-rail-width` is the single source of truth for sidebar width. Main
   content padding must reference it via `calc(var(--grafy-rail-width, 200px) + …)`.
 
+## Artifact type labels
+
+- `features/workbench/canvas/artifact-type-label.ts` is the single place that
+  names an artifact type for a person: the catalog title (`Text value`,
+  `Sequence<Text value>`), with the schema version inline as `Text value · v2`
+  — the node catalog's separator — only once it is past `@1`. Keep the full
+  `id@version` reachable in a tooltip or the port type inspector.
+- Every label helper takes its catalog as a required argument. A call site with
+  a registry passes `registry.artifact_types`; one without passes `null` on
+  purpose, and reads back the full identity (`scalar.text@1`) — never a bare
+  id. Omitting the catalog is a type error, so a surface cannot quietly degrade
+  to raw ids.
+- `artifactTypeKey` in `canvas/artifact-type-key.ts` is identity, not a label:
+  port compatibility, handle ids, saved bindings, and API payloads compare it.
+  Never swap a label into one of those, and never print one as a card or port
+  caption.
+
 ## Tests
 
 - `@testing-library/react` is **not** installed. Tests use

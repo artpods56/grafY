@@ -35,6 +35,12 @@ import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
 import { gridAlignedWidth } from "../grid-layout";
 import { encodeHandleId } from "../handles";
 import { artifactTypeColor } from "../nodes.css";
+import { useArtifactTypeCatalog } from "../use-artifact-type-catalog";
+import {
+  formatArtifactTypeLabel,
+  formatArtifactTypeSequence,
+  formatArtifactTypeSequenceTooltip,
+} from "../artifact-type-label";
 import {
   portMetaForPort,
   resolvedPortArtifactType,
@@ -276,9 +282,15 @@ export function CollectionCard({
   const artifactType = itemsPort
     ? resolvedPortArtifactType(itemsPort, data.artifactTypeBindings)
     : null;
+  const artifactTypes = useArtifactTypeCatalog();
   const contract = artifactType
-    ? `Sequence<${artifactType.id}@${artifactType.schema_version}>`
+    ? formatArtifactTypeSequence(
+        formatArtifactTypeLabel(artifactType, artifactTypes),
+      )
     : "Sequence";
+  const contractTooltip = artifactType
+    ? formatArtifactTypeSequenceTooltip(artifactType)
+    : undefined;
   const color = artifactType
     ? artifactTypeColor(artifactType.id, tokens.colorAccent)
     : tokens.colorAccent;
@@ -435,6 +447,7 @@ export function CollectionCard({
           <ArtifactLabel
             title={title}
             contract={contract}
+            contractTooltip={contractTooltip}
             selected={Boolean(selected)}
           />
           <div

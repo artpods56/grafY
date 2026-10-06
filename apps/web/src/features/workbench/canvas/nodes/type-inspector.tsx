@@ -16,6 +16,10 @@ import {
   type WorkflowArtifactTypeBindings,
 } from "../types";
 import {
+  formatArtifactTypeLabel,
+  formatArtifactTypeTooltip,
+} from "../artifact-type-label";
+import {
   findOutlineNode,
   outlineCrumbLabel,
   schemaOutline,
@@ -60,6 +64,11 @@ const s = stylex.create({
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     fontSize: tokens.fontSizeXs,
     fontWeight: 700,
+  },
+  typeTitle: {
+    color: tokens.colorText,
+    fontSize: tokens.fontSizeSm,
+    fontWeight: 650,
   },
   description: {
     color: tokens.colorMuted,
@@ -306,8 +315,13 @@ export function PortTypePopover({
       )
     : undefined;
   const contract = artifactType
-    ? `${artifactType.id}@${artifactType.schema_version}`
+    ? formatArtifactTypeLabel(artifactType, registry?.artifact_types ?? null)
     : "Any artifact";
+  // The header names the type the way the catalog does; the identity it carries
+  // (id and schema version) stays readable underneath.
+  const contractKey = artifactType
+    ? formatArtifactTypeTooltip(artifactType)
+    : null;
   const payloadSchema = (spec?.payload_schema ?? {}) as Record<string, unknown>;
   const rootLabel = schemaTitle(payloadSchema, spec?.title ?? "Payload");
 
@@ -331,9 +345,12 @@ export function PortTypePopover({
             {...canvasOverlayProps(stylex.props(overlay.popup, s.popup))}
           >
             <header {...stylex.props(s.header)}>
-              <span {...stylex.props(s.contract)}>
+              <span {...stylex.props(s.typeTitle)}>
                 {shape === "many" ? `list[${contract}]` : contract}
               </span>
+              {contractKey ? (
+                <span {...stylex.props(s.contract)}>{contractKey}</span>
+              ) : null}
               {port.description ? (
                 <span {...stylex.props(s.description)}>{port.description}</span>
               ) : null}
@@ -359,7 +376,7 @@ export function PortTypePopover({
                 </p>
               ) : spec ? (
                 <SchemaDrill
-                  key={contract}
+                  key={contractKey ?? contract}
                   schema={payloadSchema}
                   rootLabel={rootLabel}
                 />

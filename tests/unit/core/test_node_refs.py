@@ -28,7 +28,7 @@ def _node(**overrides: Any) -> SavedGraphNode:
     payload: dict[str, Any] = {
         "kind": "builtin",
         "id": "n1",
-        "operator_id": "arithmetic.add",
+        "operator_id": "test.arithmetic.add",
         "operator_version": 1,
         "config": {},
         "position": GraphPoint(x=0.0, y=0.0),

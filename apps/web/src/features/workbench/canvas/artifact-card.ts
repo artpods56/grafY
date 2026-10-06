@@ -1,5 +1,11 @@
 import type { ArtifactRef, SavedGraphOrigin } from "@/lib/api";
 import { createUuid } from "@/features/workbench/model/uuid";
+import {
+  formatArtifactTypeContract,
+  formatArtifactTypeSequenceTooltip,
+  formatArtifactTypeTooltip,
+  type ArtifactTypeCatalog,
+} from "./artifact-type-label";
 
 /**
  * What one canvas artifact card presents: a single artifact, or an ordered run
@@ -206,9 +212,32 @@ export function originCarriesCardArtifacts(
   );
 }
 
-/** The value contract, including sequence shape even for one item. */
-export function artifactCardContract(value: ArtifactCardValue | null): string {
+/** The value contract as a person reads it, including sequence shape. */
+export function artifactCardContract(
+  value: ArtifactCardValue | null,
+  artifactTypes: ArtifactTypeCatalog,
+): string {
   if (!value) return "";
-  const contract = `${value.artifact_type}@${value.schema_version}`;
-  return "item_refs" in value ? `Sequence<${contract}>` : contract;
+  return formatArtifactTypeContract(
+    { id: value.artifact_type, schema_version: value.schema_version },
+    artifactTypes,
+    "item_refs" in value,
+  );
+}
+
+/**
+ * The contract as identity, for the tooltip behind {@link artifactCardContract}:
+ * `Sequence<file.jpg@1>`.
+ */
+export function artifactCardContractTooltip(
+  value: ArtifactCardValue | null,
+): string {
+  if (!value) return "";
+  const type = {
+    id: value.artifact_type,
+    schema_version: value.schema_version,
+  };
+  return "item_refs" in value
+    ? formatArtifactTypeSequenceTooltip(type)
+    : formatArtifactTypeTooltip(type);
 }

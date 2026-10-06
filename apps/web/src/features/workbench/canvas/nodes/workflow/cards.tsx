@@ -12,6 +12,7 @@ import { TriangleAlert, X } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { CanvasNodeHeader, nodeChrome } from "../CanvasNodeChrome";
+import { artifactTypeKey } from "../../artifact-type-key";
 import { schemaFields, validateConfig } from "../../config-schema";
 import { nodeSecretInputs } from "../../node-secrets";
 import {
@@ -349,7 +350,7 @@ export function SupportedWorkflowNodeCard({
   const artifactTypeBindingRevision = Object.entries(data.artifactTypeBindings)
     .map(
       ([variable, artifactType]) =>
-        `${variable}:${artifactType.id}@${artifactType.schema_version}`,
+        `${variable}:${artifactTypeKey(artifactType)}`,
     )
     .sort()
     .join("|");

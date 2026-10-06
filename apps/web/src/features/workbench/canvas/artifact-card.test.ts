@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { ArtifactRef } from "@/lib/api";
+import type { ArtifactRef, ArtifactTypeSpec } from "@/lib/api";
 
 import {
   artifactCardContract,
+  artifactCardContractTooltip,
   artifactCardValue,
   canMergeIntoCard,
   cardArtifactRefs,
@@ -33,7 +34,29 @@ describe("artifact card value", () => {
     const single = ref("11111111-1111-1111-1111-111111111111");
 
     expect(cardArtifactRefs(single)).toEqual([single]);
-    expect(artifactCardContract(single)).toBe("file.jpg@1");
+    expect(artifactCardContract(single, null)).toBe("file.jpg@1");
+  });
+
+  it("names the card's contract with the catalog title", () => {
+    const single = ref("aaaa");
+    const catalog = [
+      {
+        key: { id: "file.jpg", schema_version: 1 },
+        title: "Image file",
+      },
+    ] as ArtifactTypeSpec[];
+
+    expect(artifactCardContract(single, catalog)).toBe("Image file");
+    expect(artifactCardContract(single, null)).toBe("file.jpg@1");
+  });
+
+  it("keeps the full type identity in the card's tooltip", () => {
+    const single = ref("aaaa");
+    const sequence = artifactCardValue([ref("aaaa"), ref("bbbb")]);
+
+    expect(artifactCardContractTooltip(single)).toBe("file.jpg@1");
+    expect(artifactCardContractTooltip(sequence)).toBe("Sequence<file.jpg@1>");
+    expect(artifactCardContractTooltip(null)).toBe("");
   });
 
   it("reads a sequence as the ordered run it presents", () => {
@@ -44,14 +67,14 @@ describe("artifact card value", () => {
       "aaaa",
       "bbbb",
     ]);
-    expect(artifactCardContract(value)).toBe("Sequence<file.jpg@1>");
+    expect(artifactCardContract(value, null)).toBe("Sequence<file.jpg@1>");
   });
 
   it("preserves a sequence with one remaining item", () => {
     const original = artifactCardValue([ref("first"), ref("second")]);
     const next = artifactCardValue([ref("first")], original);
     expect(next).toMatchObject({ item_refs: [ref("first")] });
-    expect(artifactCardContract(next)).toBe("Sequence<file.jpg@1>");
+    expect(artifactCardContract(next, null)).toBe("Sequence<file.jpg@1>");
   });
 
   it("refuses one card for two artifact types", () => {
