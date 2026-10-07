@@ -71,7 +71,9 @@ export interface ContextualCandidate {
 const MODULE_PLUGIN_SLUG = "graph.module";
 
 export function catalogNodeKey(spec: NodeSpec): string {
-  const operator = `${spec.operator_id}@${spec.operator_version}`;
+  const operator = spec.preset
+    ? `preset:${spec.preset.id}@${spec.preset.version}`
+    : `${spec.operator_id}@${spec.operator_version}`;
   return spec.plugin_release
     ? `plugin-release:${spec.plugin_release.scope}:${spec.plugin_release.slug}:${operator}`
     : operator;
@@ -380,7 +382,10 @@ export function catalogNodeSpecs(
   registry: NodeRegistry,
   activeGraphId: string | null,
 ): readonly NodeSpec[] {
-  return registry.nodes.filter(
+  return [
+    ...registry.nodes,
+    ...(registry.presets ?? []).map((preset) => ({ ...preset.node, preset })),
+  ].filter(
     (spec) =>
       spec.catalog_visible !== false &&
       // Collections are made from artifacts on the canvas, not picked here.
@@ -557,7 +562,9 @@ export function downstreamCandidatesFromOutput(options: {
   const conversions = registry.artifact_conversions;
   const candidates: ContextualCandidate[] = [];
 
-  for (const spec of sortCatalogNodes(nodes)) {
+  for (const spec of sortCatalogNodes(
+    nodes.filter((node) => node.catalog_visible !== false),
+  )) {
     const choices: ContextualRouteChoice[] = [];
 
     for (const input of spec.inputs) {
@@ -617,7 +624,9 @@ export function upstreamCandidatesFromInput(options: {
   const conversions = registry.artifact_conversions;
   const candidates: ContextualCandidate[] = [];
 
-  for (const spec of sortCatalogNodes(nodes)) {
+  for (const spec of sortCatalogNodes(
+    nodes.filter((node) => node.catalog_visible !== false),
+  )) {
     const choices: ContextualRouteChoice[] = [];
 
     for (const output of spec.outputs) {

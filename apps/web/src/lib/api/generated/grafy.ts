@@ -1118,6 +1118,26 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/python/apply": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Apply Python Code
+         * @description Derive the contract of Python node code without running it on the host.
+         */
+        readonly post: operations["apply_python_code_v1_workspaces__workspace_id__python_apply_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/runs": {
         readonly parameters: {
             readonly query?: never;
@@ -1312,6 +1332,22 @@ export interface components {
             readonly upload_id: string;
             /** Url */
             readonly url: string;
+        };
+        /** ApplyPythonCodeRequest */
+        readonly ApplyPythonCodeRequest: {
+            /** Code */
+            readonly code: string;
+            /** @description The Python runner release the node pins. */
+            readonly plugin_release: components["schemas"]["PluginReleasePinModel"];
+        };
+        /** ApplyPythonCodeResponse */
+        readonly ApplyPythonCodeResponse: {
+            /** Code Sha256 */
+            readonly code_sha256: string;
+            /** @description The ports and params schema to store; null when diagnostics block Apply. */
+            readonly contract: components["schemas"]["PythonCodeContract"] | null;
+            /** Diagnostics */
+            readonly diagnostics: readonly components["schemas"]["PythonDiagnostic"][];
         };
         /** ArtifactBundleContractResponse */
         readonly ArtifactBundleContractResponse: {
@@ -2477,6 +2513,7 @@ export interface components {
             /** Name */
             readonly name: string;
         };
+        readonly JsonValue: unknown;
         /** LibraryFolderListResponse */
         readonly LibraryFolderListResponse: {
             /** Folders */
@@ -2745,6 +2782,24 @@ export interface components {
             /** Positions */
             readonly positions: readonly components["schemas"]["MoveNodePosition"][];
         };
+        /**
+         * NodePresetResponse
+         * @description A ready filled node: inserting it copies config and bindings by value.
+         */
+        readonly NodePresetResponse: {
+            /** Artifact Type Bindings */
+            readonly artifact_type_bindings: readonly components["schemas"]["ArtifactTypeBindingModel"][];
+            /** Config */
+            readonly config: {
+                readonly [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Id */
+            readonly id: string;
+            /** @description The preset's target operator, titled and typed as the preset so the node library can list and match it like any node. */
+            readonly node: components["schemas"]["NodeSpecResponse"];
+            /** Version */
+            readonly version: number;
+        };
         /** NodeRegistryResponse */
         readonly NodeRegistryResponse: {
             /** Artifact Conversions */
@@ -2755,6 +2810,8 @@ export interface components {
             readonly nodes: readonly components["schemas"]["NodeSpecResponse"][];
             /** Plugins */
             readonly plugins: readonly components["schemas"]["PluginSpecResponse"][];
+            /** Presets */
+            readonly presets?: readonly components["schemas"]["NodePresetResponse"][];
             /** Unavailable Modules */
             readonly unavailable_modules?: readonly components["schemas"]["UnavailableGraphModuleResponse"][];
         };
@@ -3032,6 +3089,11 @@ export interface components {
              */
             readonly required: boolean;
             readonly shape: components["schemas"]["PortShape"];
+            /**
+             * Shape Field
+             * @description Config field that chooses this port's shape for one node instance. Its value, 'one' or 'many', replaces shape and accepted_shapes.
+             */
+            readonly shape_field?: string | null;
             /** Title */
             readonly title?: string | null;
             /**
@@ -3058,6 +3120,41 @@ export interface components {
              * Format: uuid
              */
             readonly source_graph_id: string;
+        };
+        /** PythonArtifactType */
+        readonly PythonArtifactType: {
+            /** Id */
+            readonly id: string;
+            /** Schema Version */
+            readonly schema_version: number;
+        };
+        /** PythonCodeContract */
+        readonly PythonCodeContract: {
+            readonly input: components["schemas"]["PythonPortContract"];
+            /** Input Name */
+            readonly input_name: string;
+            readonly output: components["schemas"]["PythonPortContract"];
+            /** Params Schema */
+            readonly params_schema?: {
+                readonly [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+        };
+        /** PythonDiagnostic */
+        readonly PythonDiagnostic: {
+            /**
+             * Column
+             * @default 0
+             */
+            readonly column: number;
+            /** Line */
+            readonly line: number;
+            /** Message */
+            readonly message: string;
+        };
+        /** PythonPortContract */
+        readonly PythonPortContract: {
+            readonly artifact_type: components["schemas"]["PythonArtifactType"];
+            readonly shape: components["schemas"]["PortShape"];
         };
         /** RemoveEdgesCommand */
         readonly RemoveEdgesCommand: {
@@ -7241,6 +7338,41 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly apply_python_code_v1_workspaces__workspace_id__python_apply_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ApplyPythonCodeRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ApplyPythonCodeResponse"];
+                };
             };
             /** @description Validation Error */
             readonly 422: {

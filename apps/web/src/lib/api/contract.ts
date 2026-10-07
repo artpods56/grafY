@@ -31,7 +31,10 @@ export type ArtifactConversionSpec = Schemas["ArtifactConversionSpecResponse"];
 export type ArtifactConversionInput = Schemas["ArtifactConversionRequest"];
 export type FieldProjection = Schemas["FieldProjectionResponse"];
 export type Port = Schemas["PortResponse"];
-export type NodeSpec = Schemas["NodeSpecResponse"];
+export type NodeSpec = Schemas["NodeSpecResponse"] & {
+  readonly preset?: Schemas["NodePresetResponse"];
+};
+export type ApplyPythonCodeResponse = Schemas["ApplyPythonCodeResponse"];
 export type PluginReleasePin = Schemas["PluginReleasePinModel"];
 export type PluginReleaseScope = Schemas["PluginReleaseScope"];
 export type ImageUploadItem = Schemas["ImageUploadItemResponse"];

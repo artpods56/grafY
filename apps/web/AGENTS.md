@@ -97,6 +97,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
   tests with `react-dom/client` and `act`.
 - Test files need `.tsx` extension when they contain JSX.
 - `npm test` runs the Vitest suite (`vitest run`).
+- When verifying a worktree, use `GRAFY_E2E_PORT` to give its dev server a free
+  port. Do not reuse a server from another checkout; its compiled code does not
+  verify this worktree.
 - Run Playwright invocations serially with the default configuration. Separate
   invocations share the output and report directories; a new run can delete
   another run's active traces and cause teardown failures. Parallel invocations

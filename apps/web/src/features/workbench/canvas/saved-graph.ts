@@ -21,6 +21,7 @@ import {
   acceptedPortShapes,
   compatibilityHandleId,
   createWorkflowNodeData,
+  resolveInstancePortShapes,
   defaultNodeLayout,
   declaredArtifactTypeVariables,
   portHasInstancePlugs,
@@ -465,6 +466,7 @@ export function hydrateSavedGraph(
           );
           data.pluginReleasePin = persistedPluginReleasePin(savedNode);
           data.config = structuredClone(savedNode.config ?? {});
+          data.spec = resolveInstancePortShapes(spec, data.config);
           data.layout =
             hydrateNodeLayout(savedNode.layout) ?? defaultNodeLayout(spec);
         } catch (error) {

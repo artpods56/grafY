@@ -637,3 +637,41 @@ describe("catalogSearchRank", () => {
     ).toEqual(["Split text"]);
   });
 });
+
+it("keeps hidden text operators out of the library and both discovery directions", () => {
+  const catalog = registry();
+  const input = { ...port("text", "input"), direction: "input" as const };
+  const output = { ...port("text", "output"), direction: "output" as const };
+  const hidden = [
+    "text.split",
+    "text.replace",
+    "text.join",
+    "text.as_markdown",
+  ].map((id) =>
+    nodeSpec(id, "builtin", 1, null, false, {
+      inputs: [input],
+      outputs: [output],
+    }),
+  );
+  const visible = nodeSpec("text.visible", "builtin", 1, null, true, {
+    inputs: [input],
+    outputs: [output],
+  });
+  const nodes = [...hidden, visible];
+  const listed = catalogNodeSpecs({ ...catalog, nodes }, null);
+  expect(listed.map((node) => node.operator_id)).toEqual(["text.visible"]);
+  const downstream = downstreamCandidatesFromOutput({
+    sourcePort: output,
+    sourceHandle: encodeHandleId(portMetaForPort(output)),
+    registry: catalog,
+    nodes,
+  });
+  const upstream = upstreamCandidatesFromInput({
+    targetPort: input,
+    targetHandle: encodeHandleId(portMetaForPort(input)),
+    registry: catalog,
+    nodes,
+  });
+  expect(downstream).toHaveLength(1);
+  expect(upstream).toHaveLength(1);
+});

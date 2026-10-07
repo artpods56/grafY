@@ -488,6 +488,7 @@ class DockerPluginRuntime(
             release,
             node_contract=request.contract,
             revocation=revocation,
+            artifact_type_bindings=request.artifact_type_bindings,
         )
         if isinstance(decision, ReleaseExecutionRejection):
             raise PluginGuestRunError(

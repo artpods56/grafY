@@ -1,11 +1,12 @@
 """Deployment-owned admission policy for exact Plugin releases."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Literal
 
 from grafy_core.artifact_contracts import INTEGER_VALUE, RASTER_IMAGE, TEXT_VALUE
-from grafy_core.artifacts import ArtifactBundleFormat
+from grafy_core.artifacts import ArtifactBundleFormat, ArtifactTypeKey
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.domain.plugin_releases import (
@@ -146,6 +147,7 @@ class ReleaseExecutionAdmission:
         node_contract: PluginNodeContract | None = None,
         selection: PluginReleaseSelection | None = None,
         revocation: PluginReleaseRevocation | None = None,
+        artifact_type_bindings: Mapping[str, ArtifactTypeKey] | None = None,
     ) -> ReleaseExecutionDecision:
         if revocation is not None:
             return ReleaseExecutionRejection(
@@ -227,12 +229,24 @@ class ReleaseExecutionAdmission:
         unsupported_types: set[str] = set()
         for contract in contracts:
             for port in (*contract.inputs, *contract.outputs):
+                accepted_types = port.accepted_types
                 if port.artifact_type is None:
-                    unsupported_types.add(
-                        f"type variable {port.artifact_type_variable!r}"
-                    )
-                    continue
-                for accepted in port.accepted_types:
+                    variable = port.artifact_type_variable or ""
+                    if artifact_type_bindings is None:
+                        accepted_types = tuple(
+                            artifact.key
+                            for artifact in (
+                                *release.release.catalog.artifact_types,
+                                *release.release.catalog.artifact_type_dependencies,
+                            )
+                        )
+                    else:
+                        bound = artifact_type_bindings.get(variable)
+                        accepted_types = () if bound is None else (bound,)
+                    if not accepted_types:
+                        unsupported_types.add(f"type variable {variable!r} (unbound)")
+                        continue
+                for accepted in accepted_types:
                     key = (accepted.id, accepted.schema_version)
                     artifact_contract = artifact_contracts.get(key)
                     if artifact_contract is None:

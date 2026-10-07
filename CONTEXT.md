@@ -300,6 +300,30 @@ also require shared execution state, event replay, cancellation routing, and an
 owner lease; adding more HTTP stream endpoints alone would not make execution
 multi-worker safe.
 
+### Python node
+
+A node of the published `external.python` System Plugin that runs an applied
+`transform` function in the existing Plugin sandbox. It has one data input and
+one output, whose annotations choose registered artifact types and ONE or MANY
+shape through `list[T]`. An optional `Params` Pydantic class supplies the settings
+form in the card. Apply derives and stores the contract and code hash; opening or
+compiling a graph needs no sandbox. Code edits stay drafts until Apply.
+
+Python transforms use EXACT caching and are expected to be deterministic. Code,
+params, bindings, the exact release and inputs participate in the key. Invocation
+metadata is read-only and must not be used to make outputs depend on a run ID.
+Containers are reused within a run scope, including mapped invocations.
+
+### Preset
+
+A versioned, ready-filled single node copied into a graph. A Python preset carries
+code, port types and shapes, params schema and defaults. The node stores the preset
+id and version, but later preset changes never update the copied node. Split text,
+Replace text, Join text and As Markdown are presets of the Python node. The old
+operators stay registered for saved graphs and are hidden from the node browser.
+
+A Preset fills one node. A Template copies a whole graph.
+
 ### Invocation cache entry
 
 A global, content-addressed reuse record for one node invocation. It is not a

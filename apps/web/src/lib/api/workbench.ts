@@ -736,3 +736,15 @@ export function getArtifactTableCell(
     { signal },
   );
 }
+
+export function applyPythonCode(
+  workspaceId: string,
+  code: string,
+  pluginRelease: import("./contract").PluginReleasePin,
+): Promise<import("./contract").ApplyPythonCodeResponse> {
+  return request(
+    "POST",
+    `/v1/workspaces/${encodeURIComponent(workspaceId)}/python/apply`,
+    { body: { code, plugin_release: pluginRelease } },
+  );
+}

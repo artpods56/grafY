@@ -48,6 +48,7 @@ from grafy_api.plugins.runtime.admission import (
 from grafy_api.plugins.runtime.artifacts import ArtifactBundlePluginInvoker
 from grafy_api.plugins.runtime.docker import DockerPluginRuntime
 from grafy_api.plugins.runtime.network_policy import NetworkPolicy
+from grafy_api.python_nodes import PythonApplyService
 from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.uploads import UploadService, UploadServiceConfig
 from grafy_core.ports.storage import PresigningStorage
@@ -78,6 +79,7 @@ class WorkbenchComponents:
     plugin_invoker: ArtifactBundlePluginInvoker | None
     plugin_runtime: DockerPluginRuntime | None
     release_admission: ReleaseExecutionAdmission | None
+    python_apply: PythonApplyService | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,6 +206,7 @@ def build_workbench_components(
     library_folders = LibraryFoldersService(resolved_unit_of_work)
     plugin_invoker = None
     artifact_plugin_invoker = None
+    python_apply: PythonApplyService | None = None
     release_admission: ReleaseExecutionAdmission | None = None
     if plugin_releases is not None:
         if plugin_runtime is None:
@@ -227,6 +230,13 @@ def build_workbench_components(
             )
             plugin_invoker = artifact_plugin_invoker
             release_admission = plugin_runtime.release_admission
+            python_apply = PythonApplyService(
+                releases=plugin_releases,
+                admission=release_admission,
+                sandbox=plugin_runtime,
+                storage=resolved_storage,
+                bucket=bucket,
+            )
     compiler = GraphCompiler(
         plugin_registry=plugin_registry,
         plugin_context=plugin_context,
@@ -305,6 +315,7 @@ def build_workbench_components(
         plugin_invoker=artifact_plugin_invoker,
         plugin_runtime=plugin_runtime,
         release_admission=release_admission,
+        python_apply=python_apply,
     )
 
 

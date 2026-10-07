@@ -101,6 +101,59 @@
         "title": "ApiUploadTargetResponse",
         "type": "object"
       },
+      "ApplyPythonCodeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 65536,
+            "title": "Code",
+            "type": "string"
+          },
+          "plugin_release": {
+            "$ref": "#/components/schemas/PluginReleasePinModel",
+            "description": "The Python runner release the node pins."
+          }
+        },
+        "required": [
+          "code",
+          "plugin_release"
+        ],
+        "title": "ApplyPythonCodeRequest",
+        "type": "object"
+      },
+      "ApplyPythonCodeResponse": {
+        "properties": {
+          "code_sha256": {
+            "title": "Code Sha256",
+            "type": "string"
+          },
+          "contract": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PythonCodeContract"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The ports and params schema to store; null when diagnostics block Apply."
+          },
+          "diagnostics": {
+            "items": {
+              "$ref": "#/components/schemas/PythonDiagnostic"
+            },
+            "title": "Diagnostics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "code_sha256",
+          "contract",
+          "diagnostics"
+        ],
+        "title": "ApplyPythonCodeResponse",
+        "type": "object"
+      },
       "ArtifactBundleContractResponse": {
         "properties": {
           "format": {
@@ -3390,6 +3443,7 @@
         "title": "InstantiateTemplateRequest",
         "type": "object"
       },
+      "JsonValue": {},
       "LibraryFolderListResponse": {
         "properties": {
           "folders": {
@@ -4065,6 +4119,47 @@
         "title": "MoveNodesCommand",
         "type": "object"
       },
+      "NodePresetResponse": {
+        "description": "A ready filled node: inserting it copies config and bindings by value.",
+        "properties": {
+          "artifact_type_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactTypeBindingModel"
+            },
+            "title": "Artifact Type Bindings",
+            "type": "array"
+          },
+          "config": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Config",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "node": {
+            "$ref": "#/components/schemas/NodeSpecResponse",
+            "description": "The preset's target operator, titled and typed as the preset so the node library can list and match it like any node."
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "node",
+          "config",
+          "artifact_type_bindings"
+        ],
+        "title": "NodePresetResponse",
+        "type": "object"
+      },
       "NodeRegistryResponse": {
         "properties": {
           "artifact_conversions": {
@@ -4093,6 +4188,13 @@
               "$ref": "#/components/schemas/PluginSpecResponse"
             },
             "title": "Plugins",
+            "type": "array"
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/NodePresetResponse"
+            },
+            "title": "Presets",
             "type": "array"
           },
           "unavailable_modules": {
@@ -4913,6 +5015,18 @@
           "shape": {
             "$ref": "#/components/schemas/PortShape"
           },
+          "shape_field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Config field that chooses this port's shape for one node instance. Its value, 'one' or 'many', replaces shape and accepted_shapes.",
+            "title": "Shape Field"
+          },
           "title": {
             "anyOf": [
               {
@@ -4996,6 +5110,105 @@
           "source_graph_id"
         ],
         "title": "PublishModuleReleaseRequest",
+        "type": "object"
+      },
+      "PythonArtifactType": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "minimum": 1.0,
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "schema_version"
+        ],
+        "title": "PythonArtifactType",
+        "type": "object"
+      },
+      "PythonCodeContract": {
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/PythonPortContract"
+          },
+          "input_name": {
+            "title": "Input Name",
+            "type": "string"
+          },
+          "output": {
+            "$ref": "#/components/schemas/PythonPortContract"
+          },
+          "params_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Params Schema"
+          }
+        },
+        "required": [
+          "input_name",
+          "input",
+          "output"
+        ],
+        "title": "PythonCodeContract",
+        "type": "object"
+      },
+      "PythonDiagnostic": {
+        "additionalProperties": false,
+        "properties": {
+          "column": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Column",
+            "type": "integer"
+          },
+          "line": {
+            "minimum": 1.0,
+            "title": "Line",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "line",
+          "message"
+        ],
+        "title": "PythonDiagnostic",
+        "type": "object"
+      },
+      "PythonPortContract": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_type": {
+            "$ref": "#/components/schemas/PythonArtifactType"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/PortShape"
+          }
+        },
+        "required": [
+          "artifact_type",
+          "shape"
+        ],
+        "title": "PythonPortContract",
         "type": "object"
       },
       "RemoveEdgesCommand": {
@@ -13782,6 +13995,68 @@
         "summary": "Revoke Personal Access Token",
         "tags": [
           "workspaces"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/python/apply": {
+      "post": {
+        "description": "Derive the contract of Python node code without running it on the host.",
+        "operationId": "apply_python_code_v1_workspaces__workspace_id__python_apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyPythonCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyPythonCodeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Apply Python Code",
+        "tags": [
+          "python nodes"
         ]
       }
     },

@@ -1,14 +1,15 @@
-from typing import Annotated, cast, final
+from typing import Annotated, final
 
-from pydantic import BaseModel, ConfigDict, Field, StrictStr
+from pydantic import Field, StrictStr
 
-from grafy_core.artifact_contracts import TEXT_VALUE, TextValuePayload
+from grafy_core.artifact_contracts import (
+    MARKDOWN,
+    TEXT_VALUE,
+    MarkdownValue,
+    TextValuePayload,
+)
 from grafy_core.artifacts import (
     Artifact,
-    ArtifactExportFormat,
-    ArtifactTypeKey,
-    ArtifactTypeSpec,
-    JsonObject,
     NoConfig,
     NodeConfig,
     NodeInput,
@@ -22,26 +23,6 @@ from grafy_core.runtime.resolvers import InlineModelResolver
 
 from grafy_workbench.text.declaration import TEXT
 from grafy_workbench.scalar_persistence import ScalarOutputWriter, ScalarResolver
-
-
-class MarkdownValue(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    markdown: StrictStr
-
-
-MARKDOWN = ArtifactTypeSpec(
-    key=ArtifactTypeKey("text.markdown", 1),
-    title="Markdown",
-    payload_schema=cast(JsonObject, MarkdownValue.model_json_schema()),
-    export_formats=(
-        ArtifactExportFormat(
-            format="txt",
-            content_type="text/plain; charset=utf-8",
-            filename="markdown.txt",
-        ),
-    ),
-)
 
 
 class TextInputConfig(NodeConfig):
@@ -100,6 +81,8 @@ class AsMarkdownOutput(NodeOutput):
     version=1,
     title="As Markdown",
     cache_policy=NodeCachePolicy.EXACT,
+    # Replaced in the node library by Python presets (ADR 0012).
+    listed=False,
 )
 async def as_markdown(
     _config: NoConfig,
@@ -140,6 +123,8 @@ class SplitTextOutput(NodeOutput):
     version=1,
     title="Split text",
     cache_policy=NodeCachePolicy.EXACT,
+    # Replaced in the node library by Python presets (ADR 0012).
+    listed=False,
 )
 async def split_text(
     config: SplitTextConfig, inputs: SplitTextInput
@@ -183,6 +168,8 @@ class ReplaceTextOutput(NodeOutput):
     version=1,
     title="Replace text",
     cache_policy=NodeCachePolicy.EXACT,
+    # Replaced in the node library by Python presets (ADR 0012).
+    listed=False,
 )
 async def replace_text(
     config: ReplaceTextConfig,
@@ -225,6 +212,8 @@ class JoinTextOutput(NodeOutput):
     version=1,
     title="Join text",
     cache_policy=NodeCachePolicy.EXACT,
+    # Replaced in the node library by Python presets (ADR 0012).
+    listed=False,
 )
 async def join_text(config: JoinTextConfig, inputs: JoinTextInput) -> JoinTextOutput:
     """Joins an ordered text sequence with a configured separator."""

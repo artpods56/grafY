@@ -11,6 +11,8 @@ from grafy_core.domain.plugin_releases import PluginCatalogManifest
 _PRE_CANONICALIZATION_EMPTY_FRAGMENTS = (
     ',"http_egress":null',
     ',"also_accepts":[]',
+    ',"shape_field":null',
+    ',"listed":true',
 )
 
 

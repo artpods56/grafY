@@ -80,15 +80,16 @@ class NodeRuntime:
         implementation: ImplementationIdentity | None = None,
     ) -> PersistedNodeOutput | BaseModel:
         effective_bindings = artifact_type_bindings or {}
+        raw_config: JsonObject = {} if config is None else config
         resolved_contracts = resolve_node_contracts(
             node,
             effective_bindings,
+            raw_config,
         )
         context = replace(
             context,
             artifact_type_bindings=effective_bindings,
         )
-        raw_config: JsonObject = {} if config is None else config
         validated_config = node.config_contract.model.model_validate(raw_config)
 
         cache_key: str | None = None

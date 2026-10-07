@@ -73,8 +73,32 @@ TEXT_VALUE = ArtifactTypeSpec(
 )
 
 
+class MarkdownValue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    markdown: StrictStr
+
+
+# Owned by the Text family. It lives here so a Plugin that reads or writes
+# Markdown carries the same exact contract as a release dependency.
+MARKDOWN = ArtifactTypeSpec(
+    key=ArtifactTypeKey("text.markdown", 1),
+    title="Markdown",
+    payload_schema=cast(JsonObject, MarkdownValue.model_json_schema()),
+    export_formats=(
+        ArtifactExportFormat(
+            format="txt",
+            content_type="text/plain; charset=utf-8",
+            filename="markdown.txt",
+        ),
+    ),
+)
+
+
 __all__ = [
     "INTEGER_VALUE",
+    "MARKDOWN",
+    "MarkdownValue",
     "RASTER_IMAGE",
     "TEXT_VALUE",
     "IntegerValuePayload",

@@ -25,6 +25,7 @@ PUBLISHED_PLUGIN_FAMILIES = (
     "gis",
     "llm",
     "ocr",
+    "python",
     "sql",
 )
 WORKBENCH_FAMILIES = (
@@ -372,7 +373,7 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
         assert "grafy-core==0.1.0" in cast(list[str], project["dependencies"])
         core_wheel = project_root / "wheels/grafy_core-0.1.0-py3-none-any.whl"
         assert sha256(core_wheel.read_bytes()).hexdigest() == (
-            "0761bb6cdba470e34e7462282b4d9ec312dcbd168aeccc7df0bd27565353f9e3"
+            "cb869c224f456a6ac1b9eb9b1efd9308119d26a8a72e91f1e493f5ab04abf888"
         )
         assert "workspace = true" not in (project_root / "pyproject.toml").read_text()
 
