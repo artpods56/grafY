@@ -138,7 +138,8 @@ def test_compose_publishes_loopback_gateway_and_keeps_api_web_internal() -> None
     dockerfile = (repository / "infra/docker/api.Dockerfile").read_text()
 
     assert re.search(r"^  gateway:\s*$", compose, re.MULTILINE)
-    assert "./gateway/nginx.conf:/etc/nginx/nginx.conf:ro" in compose
+    # The gateway image bakes the config in, so no checkout file is mounted.
+    assert "dockerfile: infra/docker/gateway.Dockerfile" in compose
     assert (
         "${GRAFY_BIND_ADDRESS:-127.0.0.1}:${GRAFY_GATEWAY_PORT:-8080}:8080" in compose
     )

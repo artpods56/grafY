@@ -199,10 +199,9 @@ prod *args:
         -f "{{ grafy_override }}" \
         {{ args }}
 
-# Pull the current branch, build, start, and wait for healthy production services.
-deploy:
-    git pull --ff-only
-    just prod up --build --detach --wait
+# Deploy a CI-published commit from its pre-built images; no checkout or host build.
+deploy sha:
+    GRAFY_ENV_FILE="{{ grafy_env }}" GRAFY_STORAGE_COMPOSE_OVERRIDE="{{ grafy_override }}" scripts/deploy-production.sh {{ sha }}
 
 # Show production Grafy service status.
 status:

@@ -14,9 +14,10 @@ x-api-environment: &api-environment
   <<: *persistence-environment
   OPENAI_CUSTOM_HEADERS: ${OPENAI_CUSTOM_HEADERS:-}
   GRAFY_ENVIRONMENT: ${GRAFY_ENVIRONMENT:-development}
-  # Import a configured digest, but leave the setting absent in development.
-  # An empty string fails the Settings field's 64-character digest pattern.
-  GRAFY_BUILD_DIGEST:
+  # GRAFY_BUILD_DIGEST is deliberately not listed. Release images bake it in
+  # (api.Dockerfile, api-release), and listing it here, even as a null import,
+  # removes the baked value from the container. Local builds leave it absent so
+  # development settings fall back to an ephemeral digest.
   GRAFY_LOG_LEVEL: ${GRAFY_LOG_LEVEL:-INFO}
   GRAFY_LOG_RENDERER: ${GRAFY_LOG_RENDERER:-json}
   GRAFY_PUBLIC_ORIGIN: ${GRAFY_PUBLIC_ORIGIN:-https://grafy.example.com}
@@ -52,10 +53,11 @@ x-api-environment: &api-environment
 
 services:
   migrate:
+    image: ${GRAFY_API_IMAGE:-grafy-api:local}
     build:
       context: ../..
       dockerfile: infra/docker/api.Dockerfile
-      target: api
+      target: api-plugins
     command: [".venv/bin/alembic", "upgrade", "head"]
     environment: *persistence-environment
     logging: *default-logging
@@ -65,6 +67,7 @@ services:
       - grafy-data:/data
 
   api:
+    image: ${GRAFY_API_IMAGE:-grafy-api:local}
     build:
       context: ../..
       dockerfile: infra/docker/api.Dockerfile
@@ -98,6 +101,7 @@ services:
       start_period: 20s
 
   web:
+    image: ${GRAFY_WEB_IMAGE:-grafy-web:local}
     build:
       context: ../..
       dockerfile: infra/docker/web.Dockerfile
@@ -126,14 +130,15 @@ services:
       start_period: 20s
 
   gateway:
-    image: nginx:1.28-alpine
+    image: ${GRAFY_GATEWAY_IMAGE:-grafy-gateway:local}
+    build:
+      context: ../..
+      dockerfile: infra/docker/gateway.Dockerfile
     logging: *default-logging
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
     stop_grace_period: 20s
-    volumes:
-      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
       - "${GRAFY_BIND_ADDRESS:-127.0.0.1}:${GRAFY_GATEWAY_PORT:-8080}:8080"
     depends_on:
