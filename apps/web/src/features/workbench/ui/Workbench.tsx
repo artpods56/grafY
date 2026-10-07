@@ -16,6 +16,7 @@ import {
   type OnEdgesChange,
   type OnNodesChange,
   type ReactFlowInstance,
+  type XYPosition,
 } from "@xyflow/react";
 import {
   Circle,
@@ -48,6 +49,10 @@ import {
   WorkbenchActivityBar,
   type WorkbenchActivity,
 } from "./WorkbenchActivityBar";
+import {
+  ArtifactFolderDropDialog,
+  type PendingFolderDrop,
+} from "./ArtifactFolderDropDialog";
 import {
   ConnectionRouteDialog,
   type PendingConnectionRoute,
@@ -245,7 +250,10 @@ import {
   artifactDropTargetFromRow,
   isArtifactDrop,
   readArtifactDrop,
+  readArtifactDropFolder,
   readArtifactDropGroups,
+  type ArtifactDropPayload,
+  type ArtifactDropTarget,
 } from "../model/artifact-drop";
 import {
   collectionModeForConnection,
@@ -302,6 +310,14 @@ interface PendingBoundEdge {
   variable: string;
   artifactType: ArtifactTypeKey;
   edge: WorkflowEdge;
+}
+
+/** A mixed folder waiting on the user's choice, and where it was dropped. */
+interface PendingFolderDropState {
+  drop: PendingFolderDrop;
+  destination:
+    | { kind: "canvas"; point: XYPosition }
+    | { kind: "input"; target: ArtifactDropTarget };
 }
 
 interface ActiveArtifactViewerActivity {
@@ -557,6 +573,8 @@ function WorkbenchBody({
   );
   const [pendingConnectionRoute, setPendingConnectionRoute] =
     React.useState<PendingConnectionRoute | null>(null);
+  const [pendingFolderDrop, setPendingFolderDrop] =
+    React.useState<PendingFolderDropState | null>(null);
   const [fitRevision, setFitRevision] = React.useState(0);
   const executionRunningRef = React.useRef(false);
   const isExecutionRunning = React.useCallback(
@@ -2314,13 +2332,32 @@ function WorkbenchBody({
     nodes,
   ]);
 
+  /** One card per group, laid side by side from `point` in one commit. */
+  const placeArtifactGroups = React.useCallback(
+    (groups: readonly ArtifactDropPayload[], point: XYPosition) => {
+      const positions = artifactCardDropPositions(
+        point,
+        groups.map((group) => cardArtifactRefs(group.value).length),
+      );
+      addArtifactCards(
+        groups.map((group, index) => ({
+          value: group.value,
+          position: positions[index] ?? point,
+        })),
+      );
+    },
+    [addArtifactCards],
+  );
+
   /**
    * Drop the carried artifacts on empty canvas: one card per group they form.
    *
    * A Library drag of several artifacts arrives as one group per artifact type,
    * so a same-type selection lands as one sequence card and a mixed selection as
    * several cards laid side by side. A drop that asks for more than one card and
-   * lands on empty canvas is still one drop: one commit places all of them.
+   * lands on empty canvas is still one drop: one commit places all of them. A
+   * whole folder holding several types is the exception: it asks first, because
+   * the user dragged one thing and may want only one of its groups.
    */
   const dropArtifactOnCanvas = React.useCallback(
     (event: DragEvent | React.DragEvent<HTMLElement>) => {
@@ -2334,18 +2371,17 @@ function WorkbenchBody({
         x: event.clientX,
         y: event.clientY,
       }) ?? { x: 0, y: 0 };
-      const positions = artifactCardDropPositions(
-        point,
-        groups.map((group) => cardArtifactRefs(group.value).length),
-      );
-      addArtifactCards(
-        groups.map((group, index) => ({
-          value: group.value,
-          position: positions[index] ?? point,
-        })),
-      );
+      const folder = readArtifactDropFolder(event.dataTransfer);
+      if (folder && groups.length > 1) {
+        setPendingFolderDrop({
+          drop: { folderName: folder.name, groups, canPlaceAll: true },
+          destination: { kind: "canvas", point },
+        });
+        return;
+      }
+      placeArtifactGroups(groups, point);
     },
-    [addArtifactCards, flow],
+    [flow, placeArtifactGroups],
   );
 
   /**
@@ -2367,29 +2403,9 @@ function WorkbenchBody({
     [],
   );
 
-  const dropArtifact = React.useCallback(
-    (event: DragEvent | React.DragEvent<HTMLElement>) => {
-      if (!event.dataTransfer || !isArtifactDrop(event.dataTransfer)) return;
-      const row = artifactDropRowAt(event.clientX, event.clientY);
-      if (!row) {
-        dropArtifactOnCanvas(event);
-        return;
-      }
-      event.preventDefault();
-      // One input row takes one artifact value. A drag of several artifact types
-      // has no honest reading here — filling the row with the first group and
-      // silently dropping the rest would lose what the user picked up — so the
-      // drop is refused and said.
-      const groups = readArtifactDropGroups(event.dataTransfer);
-      if (groups.length > 1) {
-        setRunError(
-          `Drop one artifact type at a time onto an input: this drag carries ${groups.length} kinds of artifact.`,
-        );
-        return;
-      }
-      const payload = readArtifactDrop(event.dataTransfer);
-      const target = artifactDropTargetFromRow(row);
-      if (!payload || !target) return;
+  /** Put one artifact value on an input row, or say why the input refuses it. */
+  const placeArtifactOnInput = React.useCallback(
+    (payload: ArtifactDropPayload, target: ArtifactDropTarget) => {
       // Read the graph at drop time: a drag captures its state when it starts,
       // so acting on that snapshot would miss an earlier drop.
       const node = nodesRef.current.find(
@@ -2437,11 +2453,63 @@ function WorkbenchBody({
     },
     [
       applyAuthoringCommands,
-      dropArtifactOnCanvas,
       registry?.artifact_conversions,
       registry?.artifact_types,
       setRunError,
     ],
+  );
+
+  const dropArtifact = React.useCallback(
+    (event: DragEvent | React.DragEvent<HTMLElement>) => {
+      if (!event.dataTransfer || !isArtifactDrop(event.dataTransfer)) return;
+      const row = artifactDropRowAt(event.clientX, event.clientY);
+      if (!row) {
+        dropArtifactOnCanvas(event);
+        return;
+      }
+      event.preventDefault();
+      const groups = readArtifactDropGroups(event.dataTransfer);
+      const target = artifactDropTargetFromRow(row);
+      // One input row takes one artifact value. A whole folder of several types
+      // asks which group to place; any other drag of several types has no
+      // honest reading here — filling the row with the first group and silently
+      // dropping the rest would lose what the user picked up — so it is refused
+      // and said.
+      if (groups.length > 1) {
+        const folder = readArtifactDropFolder(event.dataTransfer);
+        if (folder && target) {
+          setPendingFolderDrop({
+            drop: { folderName: folder.name, groups, canPlaceAll: false },
+            destination: { kind: "input", target },
+          });
+          return;
+        }
+        setRunError(
+          `Drop one artifact type at a time onto an input: this drag carries ${groups.length} kinds of artifact.`,
+        );
+        return;
+      }
+      const payload = readArtifactDrop(event.dataTransfer);
+      if (!payload || !target) return;
+      placeArtifactOnInput(payload, target);
+    },
+    [dropArtifactOnCanvas, placeArtifactOnInput, setRunError],
+  );
+
+  const placeFolderDropGroups = React.useCallback(
+    (groups: readonly ArtifactDropPayload[]) => {
+      const pending = pendingFolderDrop;
+      setPendingFolderDrop(null);
+      if (!pending) return;
+      if (pending.destination.kind === "canvas") {
+        placeArtifactGroups(groups, pending.destination.point);
+        return;
+      }
+      if (groups.length === 1) {
+        placeArtifactOnInput(groups[0], pending.destination.target);
+      }
+    },
+    [pendingFolderDrop, placeArtifactGroups, placeArtifactOnInput],
   );
 
   React.useEffect(() => {
@@ -4780,6 +4848,15 @@ function WorkbenchBody({
         }}
         onOpenSourceGraph={openGraphInNewTab}
         onPublished={() => refreshNodeRegistry()}
+      />
+
+      <ArtifactFolderDropDialog
+        pending={pendingFolderDrop?.drop ?? null}
+        onPlaceAll={() =>
+          placeFolderDropGroups(pendingFolderDrop?.drop.groups ?? [])
+        }
+        onPlaceGroup={(group) => placeFolderDropGroups([group])}
+        onClose={() => setPendingFolderDrop(null)}
       />
 
       <ConnectionRouteDialog

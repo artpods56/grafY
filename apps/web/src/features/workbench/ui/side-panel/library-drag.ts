@@ -3,11 +3,13 @@ import {
   ARTIFACT_DROP_DATA_TYPE,
   artifactDropPayload,
   readArtifactDrop,
+  writeArtifactDropFolder,
   writeArtifactDropGroups,
   type ArtifactDropValue,
 } from "../../model/artifact-drop";
 import { artifactCardValue } from "../../canvas/artifact-card";
 import { artifactTypeKey } from "../../canvas/artifact-type-key";
+import type { LibraryFolderNode } from "./library-tree";
 
 /**
  * What the Library tree can be handed by a drag: files from the desktop, one or
@@ -155,12 +157,41 @@ export function writeLibraryArtifactDrag(
   dataTransfer.effectAllowed = "copyMove";
 }
 
+/**
+ * Every artifact a folder shows, at any depth, in the order its rows appear:
+ * subfolders first, then the folder's own artifacts. A filter that hides rows
+ * hides them from the drag too, so the drag carries what the user can see.
+ */
+export function folderArtifactItems(
+  folder: LibraryFolderNode,
+): PlacedLibraryItem[] {
+  return folder.nodes.flatMap((node) =>
+    node.kind === "folder" ? folderArtifactItems(node) : [node.item],
+  );
+}
+
+/**
+ * Write a Library folder drag.
+ *
+ * Inside the Library it moves the folder. Onto the canvas it carries the
+ * folder's artifacts as one group per type, marked as a folder so the drop can
+ * ask which groups to place when the folder holds more than one type. An empty
+ * folder carries nothing the canvas could use, so it stays a Library-only drag.
+ */
 export function writeLibraryFolderDrag(
   dataTransfer: DataTransfer,
-  folderId: string,
+  folder: LibraryFolderNode,
 ): void {
-  dataTransfer.setData(LIBRARY_FOLDER_DATA_TYPE, folderId);
-  dataTransfer.effectAllowed = "move";
+  dataTransfer.setData(LIBRARY_FOLDER_DATA_TYPE, folder.id);
+  const groups = artifactDropGroups(folderArtifactItems(folder));
+  if (groups.length === 0) {
+    dataTransfer.effectAllowed = "move";
+    return;
+  }
+  writeArtifactDropGroups(dataTransfer, groups.map(artifactDropPayload));
+  writeArtifactDropFolder(dataTransfer, folder.name);
+  // Copy onto the canvas, move between folders.
+  dataTransfer.effectAllowed = "copyMove";
 }
 
 export function dropEffectFor(kind: LibraryDragKind): "copy" | "move" {

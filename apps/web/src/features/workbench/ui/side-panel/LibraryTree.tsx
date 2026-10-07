@@ -393,7 +393,7 @@ function FolderRow({ folder }: { folder: LibraryFolderNode }) {
         onFocus={() => tree.onRowFocus(folder.key)}
         onClick={() => tree.setFolderOpen(folder.key, !open)}
         onDragStart={(event) =>
-          writeLibraryFolderDrag(event.dataTransfer, folder.id)
+          writeLibraryFolderDrag(event.dataTransfer, folder)
         }
         onDragEnd={() => tree.setDropTarget(null)}
         {...drop}
