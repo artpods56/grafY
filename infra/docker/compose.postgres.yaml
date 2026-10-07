@@ -38,7 +38,6 @@ services:
     environment:
       GRAFY_DATABASE_URL: postgresql+asyncpg://${GRAFY_POSTGRES_USER:-grafy}:${GRAFY_POSTGRES_PASSWORD:?GRAFY_POSTGRES_PASSWORD must be set and non-empty}@postgres:5432/${GRAFY_POSTGRES_DB:-grafy}
       GRAFY_ENVIRONMENT: ${GRAFY_ENVIRONMENT:-production}
-      GRAFY_BUILD_DIGEST: ${GRAFY_BUILD_DIGEST:?GRAFY_BUILD_DIGEST must be set to the 64-character source archive SHA-256}
 
   publisher:
     environment:

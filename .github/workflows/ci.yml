@@ -10,7 +10,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push to main must not cancel the publish of an earlier green commit.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   backend-tests:
@@ -278,3 +279,64 @@ jobs:
         run: |
           docker run --rm --entrypoint .venv/bin/grafy grafy-publisher-ci --help
           docker run --rm --entrypoint docker grafy-publisher-ci buildx version
+
+  publish-images:
+    name: Publish ${{ matrix.image }} image
+    # Images exist only for commits that passed every job above on main, so a
+    # deployable SHA is by construction a reviewed, CI-green commit.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - backend-tests
+      - native-runtime
+      - quality-contracts
+      - web
+      - generated-browser
+      - deployment-images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: grafy-api
+            dockerfile: infra/docker/api.Dockerfile
+            target: api-release
+          - image: grafy-publisher
+            dockerfile: infra/docker/api.Dockerfile
+            target: publisher
+          - image: grafy-web
+            dockerfile: infra/docker/web.Dockerfile
+            target: runner
+          - image: grafy-gateway
+            dockerfile: infra/docker/gateway.Dockerfile
+            target: ""
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute source archive digest
+        id: source
+        run: echo "digest=$(git archive HEAD | sha256sum | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ github.sha }}
+          build-args: |
+            ${{ matrix.image == 'grafy-api' && format('GRAFY_BUILD_DIGEST={0}', steps.source.outputs.digest) || '' }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max

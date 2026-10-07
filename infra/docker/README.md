@@ -19,6 +19,12 @@ registered public origin. This repository does not provide that TLS or the
 complete forwarded-header design between an additional edge proxy and the
 Compose gateway.
 
+The commands below build images from this checkout, which suits local runs. A
+production host pulls the SHA-tagged images that CI publishes instead; see
+`docs/how-to-deploy-production.md`. Each service reads its image from
+`GRAFY_API_IMAGE`, `GRAFY_WEB_IMAGE`, `GRAFY_GATEWAY_IMAGE`, or
+`GRAFY_PUBLISHER_IMAGE`, defaulting to a `:local` tag that `--build` produces.
+
 ## Prepare the VPS
 
 Install Docker Engine with the Compose plugin, clone the repository, and create

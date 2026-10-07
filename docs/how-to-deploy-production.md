@@ -1,6 +1,8 @@
 # Deploy Grafy from GitHub
 
-This guide deploys one reviewed `main` commit to a single Linux host. PostgreSQL
+This guide deploys one reviewed `main` commit to a single Linux host from
+pre-built container images. The host needs no Git checkout and builds nothing.
+PostgreSQL
 runs inside the Grafy Compose project and stores its data in a dedicated Docker
 volume. The database has no host port.
 
@@ -13,21 +15,56 @@ privileges inside the private Grafy container network.
 flowchart LR
 	PR["Pull request"] --> CI["Required CI"]
 	CI --> SHA["Approved main SHA"]
-	SHA --> Build["Build exact source"]
-	Build --> DB["Back up and migrate PostgreSQL"]
+	SHA --> Images["CI publishes images tagged with the SHA"]
+	Images --> Pull["Host pulls the SHA's images"]
+	Pull --> DB["Back up and migrate PostgreSQL"]
 	DB --> Ready["Check /api/ready"]
 ```
 
+## Release images
+
+The `publish-images` job in `.github/workflows/ci.yml` runs only for pushes to
+`main`, and only after every other CI job passes. It builds `linux/amd64`
+images and pushes them to GitHub Container Registry, tagged with the full
+40-character commit SHA:
+
+| Image | Source | Used by |
+| --- | --- | --- |
+| `ghcr.io/artpods56/grafy-api` | `api.Dockerfile`, `api-release` target | `migrate`, `api` |
+| `ghcr.io/artpods56/grafy-web` | `web.Dockerfile` | `web` |
+| `ghcr.io/artpods56/grafy-gateway` | `gateway.Dockerfile` (nginx config baked in) | `gateway` |
+| `ghcr.io/artpods56/grafy-publisher` | `api.Dockerfile`, `publisher` target | `publisher` profile |
+
+Because images are pushed only after green CI on `main`, a SHA that has images
+is an approved commit. `GRAFY_BUILD_DIGEST` is the SHA-256 digest of
+`git archive <sha>`, computed by CI and baked into the API image. Do not set it
+on the host: Compose would override or remove the baked value.
+
+The first publish creates each package as private. Either make the four
+packages public in the GitHub package settings, or run `docker login ghcr.io`
+on the host with a token that has `read:packages`.
+
 ## Prepare the host
 
-Install Docker Engine, the Docker Compose plugin, Git, and `curl`. Clone the
-repository at `/opt/graphy`, then create the production environment file:
+Install Docker Engine, the Docker Compose plugin, and `curl`. No repository
+clone is needed. Create the deployment directory and download the example
+environment file for the commit you are deploying:
 
 ```bash
 sudo install -d -m 700 -o "$USER" /opt/graphy/.deployment
-sudo install -m 600 -o "$USER" \
-	/opt/graphy/infra/docker/.env.production.example \
-	/opt/graphy/.deployment/grafy.env
+curl --fail --location \
+	--output /opt/graphy/.deployment/grafy.env \
+	https://raw.githubusercontent.com/artpods56/grafY/<40-character-commit-sha>/infra/docker/.env.production.example
+chmod 600 /opt/graphy/.deployment/grafy.env
+```
+
+Download the deployment script once, from a commit you trust, and keep it on the
+host:
+
+```bash
+curl --fail --location --output /opt/graphy/deploy-production.sh \
+	https://raw.githubusercontent.com/artpods56/grafY/<40-character-commit-sha>/scripts/deploy-production.sh
+chmod 700 /opt/graphy/deploy-production.sh
 ```
 
 Set the existing OIDC, public-origin, encryption, HMAC, and storage values in
@@ -73,16 +110,17 @@ the legacy backup. The exact backup command depends on the old Compose project
 and volume names. Confirm both names with `docker compose ls` and
 `docker volume ls`.
 
-Run the checked-in deployment script from `/opt/graphy`:
+Run the deployment script:
 
 ```bash
-cd /opt/graphy
-./scripts/deploy-production.sh <40-character-commit-sha>
+/opt/graphy/deploy-production.sh <40-character-commit-sha>
 ```
 
-The script accepts only a commit reachable from `origin/main`. It renders the
-merged Compose configuration and builds the images before stopping API traffic.
-It then creates a PostgreSQL dump and removes the previous one-shot `migrate`
+The script downloads that commit's `compose.yaml` and `compose.postgres.yaml`
+into `/opt/graphy/.deployment/releases/<sha>/`, renders the merged Compose
+configuration, and pulls the four SHA-tagged images before stopping API
+traffic. A SHA without published images fails at the pull, while the previous
+release is still serving. The script then creates a PostgreSQL dump and removes the previous one-shot `migrate`
 container. Compose runs Alembic once before it starts the API, waits for every
 long-lived service, and requests `/api/ready` through the configured loopback
 gateway port. A migration failure leaves the gateway stopped.
@@ -100,7 +138,8 @@ The script records the deployed and previous SHAs in `/opt/graphy/.deployment`.
 Database dumps use the timestamp and previous SHA in their filenames.
 
 If the release fails before Alembic changes the database, run the script with
-the previous SHA. If Alembic changed the database, stop Grafy and restore the
+the previous SHA. Rollback targets must have published images, so they must be
+commits from after the images were introduced. If Alembic changed the database, stop Grafy and restore the
 matching dump before you start the previous commit. Do not run an older binary
 against a newer schema.
 
@@ -110,34 +149,35 @@ Restore a dump only during a maintenance window:
 docker compose \
 	--project-name grafy \
 	--env-file /opt/graphy/.deployment/grafy.env \
-	-f infra/docker/compose.yaml \
-	-f infra/docker/compose.postgres.yaml \
+	-f /opt/graphy/.deployment/releases/<sha>/compose.yaml \
+	-f /opt/graphy/.deployment/releases/<sha>/compose.postgres.yaml \
 	stop gateway api
 
 docker compose \
 	--project-name grafy \
 	--env-file /opt/graphy/.deployment/grafy.env \
-	-f infra/docker/compose.yaml \
-	-f infra/docker/compose.postgres.yaml \
+	-f /opt/graphy/.deployment/releases/<sha>/compose.yaml \
+	-f /opt/graphy/.deployment/releases/<sha>/compose.postgres.yaml \
 	exec -T postgres dropdb --if-exists --username grafy grafy
 
 docker compose \
 	--project-name grafy \
 	--env-file /opt/graphy/.deployment/grafy.env \
-	-f infra/docker/compose.yaml \
-	-f infra/docker/compose.postgres.yaml \
+	-f /opt/graphy/.deployment/releases/<sha>/compose.yaml \
+	-f /opt/graphy/.deployment/releases/<sha>/compose.postgres.yaml \
 	exec -T postgres createdb --username grafy --owner grafy grafy
 
 docker compose \
 	--project-name grafy \
 	--env-file /opt/graphy/.deployment/grafy.env \
-	-f infra/docker/compose.yaml \
-	-f infra/docker/compose.postgres.yaml \
+	-f /opt/graphy/.deployment/releases/<sha>/compose.yaml \
+	-f /opt/graphy/.deployment/releases/<sha>/compose.postgres.yaml \
 	exec -T postgres pg_restore --clean --if-exists --no-owner \
 		--username grafy --dbname grafy < /opt/graphy/.deployment/<backup>.dump
 ```
 
-Check out the previous SHA, build it, and start the Compose project. Use the
+Run the deployment script with the previous SHA, and set the same
+`GRAFY_*_IMAGE` variables the script exports if you restore by hand. Use the
 database name and user from `/opt/graphy/.deployment/grafy.env` when they differ
 from the defaults above.
 
@@ -146,7 +186,8 @@ from the defaults above.
 The current `.github/workflows/ci.yml` is the release gate. It applies every
 Alembic migration to PostgreSQL, runs backend tests, checks Python and web code,
 builds the production web application and runs the automated test suites.
-The workflow runs for pull requests and pushes to `main`.
+The workflow runs for pull requests and pushes to `main`. On `main`, it ends by
+publishing the release images.
 
 Keep production deployment separate from CI until the host has a dedicated
 self-hosted runner or a narrowly scoped SSH deployment account. Add a
@@ -155,9 +196,9 @@ follows:
 
 1. Require the GitHub `production` environment and its reviewer approval.
 2. Accept a 40-character commit SHA as input.
-3. Verify that the SHA belongs to `origin/main` and that CI passed for it.
+3. Verify that the SHA's images exist. They exist only for CI-green `main` commits.
 4. Send only the SHA to the host-side deployment command.
-5. Run `/opt/graphy/scripts/deploy-production.sh <sha>` on the host.
+5. Run `/opt/graphy/deploy-production.sh <sha>` on the host.
 6. Record the SHA and health-check result in the GitHub job summary.
 
 Store the SSH key, host key, and connection details in GitHub environment
@@ -169,7 +210,5 @@ Protect `main`, require the existing CI jobs, and disable force pushes. The
 manual job must deploy the approved SHA rather than whichever commit happens to
 be at the tip of `main` when the job starts.
 
-The host script computes `GRAFY_BUILD_DIGEST` as the SHA-256 digest of
-`git archive <sha>` and passes it to the API container. This value identifies
-the exact checked-in source used by built-in node implementations. The Git
-commit SHA remains the release identifier used for checkout and rollback.
+The Git commit SHA remains the release identifier for image tags, Compose files,
+and rollback.

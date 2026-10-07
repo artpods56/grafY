@@ -37,6 +37,16 @@ RUN uv sync --locked --no-dev --package grafy-api
 # package and adds the Docker CLI/buildx tools above for sibling sandboxes.
 FROM api-plugins AS publisher
 
+# Release image for deployment. The digest identifies the exact source archive
+# the built-in node implementations were built from, so it is fixed at build
+# time instead of being supplied by the host. Local builds use the targets above.
+FROM api-plugins AS api-release
+
+ARG GRAFY_BUILD_DIGEST
+RUN printf '%s' "$GRAFY_BUILD_DIGEST" | grep -Eq '^[0-9a-f]{64}$' \
+    || { echo "GRAFY_BUILD_DIGEST build argument must be a 64-character SHA-256" >&2; exit 1; }
+ENV GRAFY_BUILD_DIGEST=$GRAFY_BUILD_DIGEST
+
 FROM source AS api
 
 RUN uv sync --locked --no-dev --package grafy-api
