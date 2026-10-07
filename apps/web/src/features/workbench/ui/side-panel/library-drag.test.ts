@@ -5,6 +5,7 @@ import {
   ARTIFACT_DROP_DATA_TYPE,
   ARTIFACT_GROUPS_DATA_TYPE,
   readArtifactDrop,
+  readArtifactDropFolder,
   readArtifactDropGroups,
   writeArtifactDrop,
 } from "../../model/artifact-drop";
@@ -13,11 +14,17 @@ import {
   LIBRARY_MOVE_DATA_TYPE,
   artifactDropGroups,
   dropEffectFor,
+  folderArtifactItems,
   libraryDragKind,
   readLibraryDrop,
   writeLibraryArtifactDrag,
   writeLibraryFolderDrag,
 } from "./library-drag";
+import type {
+  LibraryFileNode,
+  LibraryFolderNode,
+  LibraryTreeNode,
+} from "./library-tree";
 
 /**
  * A drag's data, as the browser holds it: readable by type, and `types` reports
@@ -73,6 +80,35 @@ function item(
     },
     run: null,
     folder_id: overrides.folder_id ?? null,
+  };
+}
+
+function fileNode(placed: PlacedLibraryItem): LibraryFileNode {
+  return {
+    kind: "file",
+    key: `file:${placed.artifact.artifact_id}`,
+    parentId: placed.folder_id,
+    depth: 1,
+    icon: "table",
+    item: placed,
+  };
+}
+
+function folderNode(
+  id: string,
+  nodes: LibraryTreeNode[],
+  name = id,
+): LibraryFolderNode {
+  return {
+    kind: "folder",
+    key: `folder:${id}`,
+    parentId: null,
+    id,
+    depth: 0,
+    name,
+    nodes,
+    total: nodes.length,
+    matched: nodes.length,
   };
 }
 
@@ -276,16 +312,17 @@ describe("readLibraryDrop", () => {
 
   it("reads a folder drag and a desktop drop by what they carry", () => {
     const folderDrag = transfer();
-    writeLibraryFolderDrag(folderDrag, "fieldwork");
+    writeLibraryFolderDrag(folderDrag, folderNode("fieldwork", []));
     expect(libraryDragKind(folderDrag)).toBe("folder");
     expect(readLibraryDrop(folderDrag)).toEqual({
       kind: "folder",
       folderId: "fieldwork",
     });
-    // A folder travels on its own type and carries no artifact payload, so a
-    // canvas cannot read it as a card.
+    // An empty folder carries no artifact payload, so a canvas cannot read it
+    // as a card.
     expect(folderDrag.getData(LIBRARY_FOLDER_DATA_TYPE)).toBe("fieldwork");
     expect(folderDrag.getData(ARTIFACT_DROP_DATA_TYPE)).toBe("");
+    expect(readArtifactDropFolder(folderDrag)).toBeNull();
 
     const desktop = transfer(["Files"]);
     Object.defineProperty(desktop, "files", {
@@ -304,5 +341,64 @@ describe("readLibraryDrop", () => {
     expect(dropEffectFor("upload")).toBe("copy");
     expect(dropEffectFor("artifact")).toBe("move");
     expect(dropEffectFor("folder")).toBe("move");
+  });
+});
+
+describe("folder drags", () => {
+  it("lists a folder's artifacts at any depth in the order the rows show", () => {
+    const folder = folderNode("fieldwork", [
+      folderNode("nested", [fileNode(item("deep"))]),
+      fileNode(item("a")),
+      fileNode(item("b")),
+    ]);
+
+    expect(
+      folderArtifactItems(folder).map((placed) => placed.artifact.artifact_id),
+    ).toEqual(["deep", "a", "b"]);
+  });
+
+  it("offers a one-type folder as a single sequence and names the folder", () => {
+    const dataTransfer = transfer();
+    writeLibraryFolderDrag(
+      dataTransfer,
+      folderNode(
+        "fieldwork",
+        [fileNode(item("a")), fileNode(item("b"))],
+        "Field work",
+      ),
+    );
+
+    const groups = readArtifactDropGroups(dataTransfer);
+    expect(groups).toHaveLength(1);
+    expect(
+      sequence(groups[0].value).item_refs.map((ref) => ref.artifact_id),
+    ).toEqual(["a", "b"]);
+    expect(readArtifactDropFolder(dataTransfer)).toEqual({
+      name: "Field work",
+    });
+    // It still moves as a folder inside the Library, and may copy to a canvas.
+    expect(libraryDragKind(dataTransfer)).toBe("folder");
+    expect(dataTransfer.effectAllowed).toBe("copyMove");
+  });
+
+  it("splits a mixed folder into one group per artifact type", () => {
+    const dataTransfer = transfer();
+    writeLibraryFolderDrag(
+      dataTransfer,
+      folderNode("mixed", [
+        fileNode(item("a")),
+        fileNode(item("p", { artifact_type: "file.png" })),
+        fileNode(item("b")),
+      ]),
+    );
+
+    const groups = readArtifactDropGroups(dataTransfer);
+    expect(groups.map((group) => group.value.artifact_type)).toEqual([
+      "file.csv",
+      "file.png",
+    ]);
+    expect(
+      sequence(groups[0].value).item_refs.map((ref) => ref.artifact_id),
+    ).toEqual(["a", "b"]);
   });
 });

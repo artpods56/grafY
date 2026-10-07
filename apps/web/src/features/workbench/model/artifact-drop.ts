@@ -27,6 +27,13 @@ export const ARTIFACT_DROP_DATA_TYPE = "application/x-grafy-artifact";
  */
 export const ARTIFACT_GROUPS_DATA_TYPE = "application/x-grafy-artifact-groups";
 
+/**
+ * Marks a grouped drag as one whole Library folder, and names it. The groups it
+ * rides with are the folder's artifacts split by type; the marker is what lets
+ * a drop that finds several types ask which to place instead of placing all.
+ */
+export const ARTIFACT_FOLDER_DATA_TYPE = "application/x-grafy-artifact-folder";
+
 export type ArtifactDropValue = SavedGraphOrigin["value"];
 
 export interface ArtifactDropPayload {
@@ -149,6 +156,26 @@ export function writeArtifactDropGroups(
   if (payloads.length > 1) {
     dataTransfer.setData(ARTIFACT_GROUPS_DATA_TYPE, JSON.stringify(payloads));
   }
+}
+
+/** Mark the drag as a Library folder: see {@link ARTIFACT_FOLDER_DATA_TYPE}. */
+export function writeArtifactDropFolder(
+  dataTransfer: DataTransfer,
+  folderName: string,
+): void {
+  dataTransfer.setData(ARTIFACT_FOLDER_DATA_TYPE, folderName);
+}
+
+/** The folder a drag was picked up as, or null when it is not a folder drag. */
+export function readArtifactDropFolder(
+  dataTransfer: DataTransfer,
+): { readonly name: string } | null {
+  if (
+    !Array.from(dataTransfer.types ?? []).includes(ARTIFACT_FOLDER_DATA_TYPE)
+  ) {
+    return null;
+  }
+  return { name: dataTransfer.getData(ARTIFACT_FOLDER_DATA_TYPE) };
 }
 
 /**
