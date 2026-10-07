@@ -52,4 +52,18 @@ describe("formatTextHead", () => {
     );
     expect(formatTextHead({ text: '{"a":1', truncated: true })).toBe('{"a":1');
   });
+
+  it("expands JSON carried inside a string only when asked", () => {
+    const head = {
+      text: JSON.stringify({
+        value: '{"refs":[{"id":"a"}]}',
+        note: "{not json",
+      }),
+      truncated: false,
+    };
+    expect(formatTextHead(head)).toContain('"value": "{\\"refs');
+    expect(
+      JSON.parse(formatTextHead(head, { expandEmbeddedJson: true })),
+    ).toEqual({ value: { refs: [{ id: "a" }] }, note: "{not json" });
+  });
 });

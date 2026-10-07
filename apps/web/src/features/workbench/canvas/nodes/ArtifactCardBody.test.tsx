@@ -316,6 +316,75 @@ describe("artifact on the canvas", () => {
     libraryMocks.value = undefined;
   });
 
+  it("bounds long text and scrolls it only once the card is selected", () => {
+    // jsdom does no layout: say the text renders 400px tall in a 180px box.
+    const scrollHeight = vi
+      .spyOn(HTMLElement.prototype, "scrollHeight", "get")
+      .mockReturnValue(400);
+    const clientHeight = vi
+      .spyOn(HTMLElement.prototype, "clientHeight", "get")
+      .mockReturnValue(180);
+    // One logical line that wraps: a newline count would call it short.
+    libraryMocks.value = { text: "x".repeat(900), truncated: true };
+    const long = {
+      artifact_id: "long-1",
+      artifact_type: "json.schema",
+      schema_version: 1,
+    };
+
+    const idle = mount(long);
+    const idleText = idle.container.querySelector<HTMLElement>(
+      "[data-artifact-value] pre",
+    );
+    expect(idleText?.className).not.toContain("nowheel");
+    expect(idleText?.style.maxHeight).toBe("180px");
+    // At the top, only the bottom edge has more beyond it.
+    expect(idleText?.style.maskImage).toBe(
+      "linear-gradient(to bottom, black, black calc(100% - 32px), transparent)",
+    );
+
+    const picked = mount(long, {}, true);
+    expect(
+      picked.container.querySelector("[data-artifact-value] pre")?.className,
+    ).toContain("nodrag nowheel");
+
+    // Scrolled into the middle, both edges fade.
+    const pickedText = picked.container.querySelector<HTMLElement>(
+      "[data-artifact-value] pre",
+    );
+    const scrollTop = vi
+      .spyOn(HTMLElement.prototype, "scrollTop", "get")
+      .mockReturnValue(100);
+    React.act(() => {
+      pickedText?.dispatchEvent(new Event("scroll"));
+    });
+    expect(pickedText?.style.maskImage).toBe(
+      "linear-gradient(to bottom, transparent, black 32px, black calc(100% - 32px), transparent)",
+    );
+    scrollTop.mockRestore();
+
+    // The operator's height replaces the default cap.
+    const tall = mount(long, { layout: { width: 264, bodyHeight: 900 } });
+    expect(
+      tall.container.querySelector<HTMLElement>("[data-artifact-value] pre")
+        ?.style.maxHeight,
+    ).toBe("900px");
+
+    // Text that fits does not fade and does not take the wheel.
+    scrollHeight.mockReturnValue(100);
+    const short = mount(long, {}, true);
+    expect(
+      short.container.querySelector<HTMLElement>("[data-artifact-value] pre")
+        ?.style.maskImage,
+    ).toBe("");
+    expect(
+      short.container.querySelector("[data-artifact-value] pre")?.className,
+    ).not.toContain("nowheel");
+    scrollHeight.mockRestore();
+    clientHeight.mockRestore();
+    libraryMocks.value = undefined;
+  });
+
   it("follows the output port wired into it", () => {
     flowMocks.nodes = new Map<string, unknown>([
       [
