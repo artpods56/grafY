@@ -180,13 +180,17 @@ const s = stylex.create({
   },
   // Readable content shows itself instead of a file tile.
   textBody: {
-    alignItems: "flex-start",
+    flexDirection: "column",
+    alignItems: "stretch",
+    gap: "6px",
     overflow: "hidden",
   },
   textContent: {
-    flex: 1,
     minWidth: 0,
     margin: 0,
+    // Pretty-printed JSON can run to hundreds of lines. The card keeps a
+    // bounded height (set inline from the layout); the rest is reached by
+    // selecting the card and scrolling.
     overflow: "hidden",
     color: tokens.colorText,
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -195,6 +199,7 @@ const s = stylex.create({
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
   },
+  textScrollable: { overflow: "auto" },
   stack: {
     position: "relative",
     width: "100%",
@@ -299,6 +304,22 @@ const s = stylex.create({
 
 /** How much of an artifact's bytes a card reads to show as text. */
 const CARD_TEXT_BYTES = 4096;
+
+/** Height a text card opens at before the operator resizes it: twelve lines. */
+const TEXT_BODY_HEIGHT_DEFAULT = 180;
+
+const NO_TEXT_EDGES = { above: false, below: false };
+/** How far the fade at a clipped edge of a card's text reaches. */
+const TEXT_FADE = "32px";
+
+function textFadeMask({ above, below }: typeof NO_TEXT_EDGES) {
+  if (!above && !below) return undefined;
+  const top = above ? `transparent, black ${TEXT_FADE}` : "black";
+  const bottom = below
+    ? `black calc(100% - ${TEXT_FADE}), transparent`
+    : "black";
+  return `linear-gradient(to bottom, ${top}, ${bottom})`;
+}
 
 async function fetchArtifactText([, workspaceId, artifactId]: readonly [
   string,
@@ -470,7 +491,47 @@ export function ArtifactCardBody({
       ? (["artifact-card-text", workspace.id, first.artifact_id] as const)
       : null;
   const { data: textHead } = useSWR(textKey, fetchArtifactText);
-  const shownText = textHead ? formatTextHead(textHead) : null;
+  const shownText = textHead
+    ? formatTextHead(textHead, { expandEmbeddedJson: true })
+    : null;
+  const textMaxHeight = layout?.bodyHeight ?? TEXT_BODY_HEIGHT_DEFAULT;
+  // Overflow is measured, not counted: a long line wraps, so the number of
+  // newlines says little about how tall the text renders.
+  const textRef = React.useRef<HTMLPreElement>(null);
+  // Clipped text fades out at each edge that has more beyond it, instead of
+  // ending on a half line.
+  const [textEdges, setTextEdges] = React.useState(NO_TEXT_EDGES);
+  const measureText = React.useCallback(() => {
+    const element = textRef.current;
+    const next = element
+      ? {
+          above: element.scrollTop > 1,
+          below:
+            element.scrollTop + element.clientHeight < element.scrollHeight - 1,
+        }
+      : NO_TEXT_EDGES;
+    setTextEdges((current) =>
+      current.above === next.above && current.below === next.below
+        ? current
+        : next,
+    );
+  }, []);
+  React.useLayoutEffect(() => {
+    const element = textRef.current;
+    measureText();
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measureText);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [measureText, shownText, textMaxHeight]);
+  const textOverflows = textEdges.above || textEdges.below;
+  // Only a card that shows text takes a height: the others have no body to size.
+  const textCard = !isSequence && !awaitingFeed && shownText !== null;
+  const textHeight = textCard ? textMaxHeight : null;
+  const textProps = stylex.props(
+    s.textContent,
+    textOverflows && selected ? s.textScrollable : null,
+  );
   const feedLabel = feed
     ? `${producer?.data.spec.title ?? "Output"} → ${feedPort?.title ?? feedPortName ?? "output"}`
     : null;
@@ -564,6 +625,7 @@ export function ArtifactCardBody({
     updateNodeInternals,
     mediaWidth,
     mediaHeight,
+    textHeight,
     reordering,
     titleLabel,
     subtitle,
@@ -762,7 +824,23 @@ export function ArtifactCardBody({
                       tier === "dragged" ? s.fileBodyDragged : null,
                     )}
                   >
-                    <pre {...stylex.props(s.textContent)}>{shownText}</pre>
+                    <pre
+                      {...textProps}
+                      ref={textRef}
+                      onScroll={measureText}
+                      style={{
+                        ...textProps.style,
+                        maxHeight: textMaxHeight,
+                        maskImage: textFadeMask(textEdges),
+                      }}
+                      className={
+                        textOverflows && selected
+                          ? `nodrag nowheel ${textProps.className ?? ""}`
+                          : textProps.className
+                      }
+                    >
+                      {shownText}
+                    </pre>
                   </div>
                 ) : first && !awaitingFeed ? (
                   <div
@@ -797,8 +875,16 @@ export function ArtifactCardBody({
             )}
             {allowCornerResize ? (
               <LayoutResizeHandle
-                layout={layout ?? { width: requestedWidth }}
-                axes={["width"]}
+                layout={
+                  textCard
+                    ? {
+                        ...layout,
+                        width: requestedWidth,
+                        bodyHeight: textMaxHeight,
+                      }
+                    : (layout ?? { width: requestedWidth })
+                }
+                axes={textCard ? ["width", "bodyHeight"] : ["width"]}
                 ariaLabel="Resize artifact"
                 onDraft={setDraftLayout}
                 onCommit={commitLayout}

@@ -58,12 +58,47 @@ function decodeText(bytes: Uint8Array, limit: number): TextHead | null {
   }
 }
 
-/** Indents a JSON document; any other text comes back unchanged. */
-export function formatTextHead(head: TextHead): string {
+/**
+ * Indents a JSON document; any other text comes back unchanged. With
+ * `expandEmbeddedJson`, a string value that is itself a JSON object or array
+ * (a text artifact carrying serialized JSON) is shown as that JSON, not as one
+ * escaped line.
+ */
+export function formatTextHead(
+  head: TextHead,
+  { expandEmbeddedJson = false }: { expandEmbeddedJson?: boolean } = {},
+): string {
   if (head.truncated) return head.text;
   try {
-    return JSON.stringify(JSON.parse(head.text), null, 2);
+    const value: unknown = JSON.parse(head.text);
+    return JSON.stringify(
+      expandEmbeddedJson ? expandJsonStrings(value) : value,
+      null,
+      2,
+    );
   } catch {
     return head.text;
   }
+}
+
+function expandJsonStrings(value: unknown): unknown {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!/^[[{]/.test(trimmed)) return value;
+    try {
+      return expandJsonStrings(JSON.parse(trimmed));
+    } catch {
+      return value;
+    }
+  }
+  if (Array.isArray(value)) return value.map(expandJsonStrings);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        expandJsonStrings(entry),
+      ]),
+    );
+  }
+  return value;
 }
