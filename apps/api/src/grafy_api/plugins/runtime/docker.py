@@ -1322,11 +1322,21 @@ class DockerPluginRuntime(
                 egress_plan=egress_plan,
             )
         except BaseException:
-            for container_id in (sandbox_container_id, broker_container_id):
-                if container_id is None:
+            # A cancelled or timed-out `docker create` can leave the daemon with
+            # a container whose ID was never read, so fall back to its exact name.
+            broker_name = (
+                None
+                if egress_plan is None
+                else f"grafy-plugin-broker-{egress_plan.sandbox_key_sha256[:16]}"
+            )
+            for container_ref in (
+                sandbox_container_id or name,
+                broker_container_id or broker_name,
+            ):
+                if container_ref is None:
                     continue
                 try:
-                    await self._remove_container(container_id)
+                    await self._remove_container(container_ref)
                 except Exception:
                     pass
             for network in (guest_network, egress_network):

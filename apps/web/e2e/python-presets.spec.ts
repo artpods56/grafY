@@ -62,9 +62,7 @@ test("Python presets show params, keep drafts local, and confirm breaking wires"
       .getByRole("button", { name: "Add to canvas", exact: true })
       .click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    return page
-      .locator(".react-flow__node")
-      .filter({ hasText: title });
+    return page.locator(".react-flow__node").filter({ hasText: title });
   }
   const source = await insert("Test text source");
   const target = await insert("Replace text");

@@ -145,9 +145,7 @@ function presentCopiedPreset(
     ...spec,
     title: preset.node.title,
     description: preset.node.description,
-    inputs: unchanged
-      ? retitle(spec.inputs, preset.node.inputs)
-      : spec.inputs,
+    inputs: unchanged ? retitle(spec.inputs, preset.node.inputs) : spec.inputs,
     outputs: unchanged
       ? retitle(spec.outputs, preset.node.outputs)
       : spec.outputs,
