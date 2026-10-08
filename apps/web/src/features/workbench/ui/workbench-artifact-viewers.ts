@@ -49,7 +49,6 @@ export type ArtifactViewerCommandDeps = {
   localAuthoringEnabledRef: React.RefObject<boolean>;
   localAuthoringBlockedMessageRef: React.RefObject<string>;
   presentationRoomSyncRef: React.RefObject<ArtifactViewerRoomSync>;
-  artifactViewerGraphIdRef: React.RefObject<string | null>;
   artifactViewerActivityRevisionRef: React.RefObject<number>;
   setRunError: React.Dispatch<React.SetStateAction<string | null>>;
   setArtifactViewers: React.Dispatch<
@@ -72,8 +71,8 @@ export type ArtifactViewerCommandDeps = {
  * Edits to the artifact-viewer layer: the mapping from a user gesture to a committed
  * `ArtifactViewerCanvasState`, plus the per-node interaction state that travels with it.
  *
- * Every committed edit takes the same path: refuse while local authoring is blocked,
- * stamp the graph the edit belongs to, publish the whole state to the room on a microtask.
+ * Every committed edit takes the same path: refuse while local authoring is blocked, then
+ * publish the whole state to the room on a microtask.
  * The state itself stays in the workbench, because room synchronisation, deletion and
  * selection write to it directly; what lives here is the commit rule, not the storage.
  */
@@ -81,7 +80,6 @@ export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
   const {
     artifactViewers,
     artifactViewerActivityRevisionRef,
-    artifactViewerGraphIdRef,
     applyAuthoringCommands,
     authoredDocumentRef,
     localAuthoringBlockedMessageRef,
@@ -105,10 +103,7 @@ export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
         return;
       }
       setArtifactViewers((current) => {
-        const next = {
-          ...updater(current),
-          graphId: artifactViewerGraphIdRef.current,
-        };
+        const next = updater(current);
         queueMicrotask(() => {
           presentationRoomSyncRef.current.submitReplace(next);
         });
@@ -116,7 +111,6 @@ export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
       });
     },
     [
-      artifactViewerGraphIdRef,
       localAuthoringBlockedMessageRef,
       localAuthoringEnabledRef,
       presentationRoomSyncRef,

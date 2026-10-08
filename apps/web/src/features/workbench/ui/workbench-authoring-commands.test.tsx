@@ -69,7 +69,6 @@ function cardLink(
 
 function initialViewers(): ArtifactViewerCanvasState {
   return {
-    graphId: "graph-1",
     nodes: [card("artifact-viewer-1"), card("artifact-viewer-2")],
     edges: [
       cardLink("artifact-viewer-edge-1", "card-source", "artifact-viewer-1"),

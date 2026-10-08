@@ -19,7 +19,7 @@ describe("shared presentation", () => {
       schema_version: 1,
       content_hash: "c".repeat(64),
     };
-    const loaded = artifactViewersFromPresentation("graph-1", {
+    const loaded = artifactViewersFromPresentation({
       viewers: [
         {
           id: "artifact-card",
@@ -153,8 +153,7 @@ describe("shared presentation", () => {
     expect(JSON.stringify(presentation)).not.toContain("do-not-persist");
     expect(JSON.stringify(presentation)).not.toContain("private.example");
 
-    expect(artifactViewersFromPresentation("graph-1", presentation)).toEqual({
-      graphId: "graph-1",
+    expect(artifactViewersFromPresentation(presentation)).toEqual({
       nodes: [
         {
           id: "artifact-viewer-1",
@@ -230,7 +229,7 @@ describe("shared presentation", () => {
     });
 
     expect(
-      artifactViewersFromPresentation("graph-1", presentation).edges[0]?.data,
+      artifactViewersFromPresentation(presentation).edges[0]?.data,
     ).toEqual({
       sourcePortName: "items",
       projection: { path: ["role"] },
@@ -311,7 +310,7 @@ describe("shared presentation", () => {
   });
 
   it("hydrates API snake_case layout and drops invalid links", () => {
-    const state = artifactViewersFromPresentation("graph-1", {
+    const state = artifactViewersFromPresentation({
       viewers: [
         {
           id: "artifact-viewer-1",

@@ -557,7 +557,6 @@ describe("useSavedGraphLifecycle document ownership", () => {
     expect(hook.result.current.isDirty).toBe(true);
     expect(hook.result.current.canMaterializeSavedGraph).toBe(false);
     expect(callbacks.replacePresentation).toHaveBeenLastCalledWith(
-      GRAPH_A_ID,
       peerPresentation,
     );
   });
@@ -1026,7 +1025,6 @@ describe("useSavedGraphLifecycle presentation ownership", () => {
    */
   function presentationCanvas() {
     const held = {
-      graphId: null as string | null,
       presentation: {
         viewers: [],
         links: [],
@@ -1036,8 +1034,7 @@ describe("useSavedGraphLifecycle presentation ownership", () => {
     };
     return {
       held,
-      replace(graphId: string | null, presentation: typeof held.presentation) {
-        held.graphId = graphId;
+      replace(presentation: typeof held.presentation) {
         held.presentation = presentation;
       },
     };
@@ -1076,7 +1073,9 @@ describe("useSavedGraphLifecycle presentation ownership", () => {
     await hook.rerender(props());
 
     // Opening a graph puts its cards on the canvas.
-    expect(canvas.held.graphId).toBe(GRAPH_A_ID);
+    expect(canvas.held.presentation.viewers.map((viewer) => viewer.id)).toEqual(
+      ["artifact-viewer-1"],
+    );
     expect(canvas.held.presentation.links.map((link) => link.id)).toEqual([
       "artifact-viewer-edge-1",
     ]);
@@ -1104,7 +1103,6 @@ describe("useSavedGraphLifecycle presentation ownership", () => {
     });
 
     expect(hook.result.current.activeGraph).toBeNull();
-    expect(canvas.held.graphId).toBeNull();
     expect(canvas.held.presentation.viewers).toEqual([]);
     expect(canvas.held.presentation.links).toEqual([]);
 
@@ -1116,5 +1114,68 @@ describe("useSavedGraphLifecycle presentation ownership", () => {
     expect(body?.document.nodes).toEqual([]);
     expect(body?.document.presentation?.links).toEqual([]);
     expect(body?.document.presentation?.viewers).toEqual([]);
+  });
+
+  it("keeps the cards a collaborator moved during a delete on the draft it keeps", async () => {
+    const graphA: SavedGraph = {
+      ...savedGraph(GRAPH_A_ID, "Graph with cards", 4),
+      document: {
+        ...savedGraph(GRAPH_A_ID, "Graph with cards", 4).document,
+        nodes: [producerNode],
+        presentation: {
+          viewers: [cardViewer],
+          links: [cardLink],
+          bindings: [],
+          annotations: [],
+        },
+      },
+    };
+    api.getSavedGraph.mockResolvedValue(graphA);
+    const deleteResponse = deferred<void>();
+    api.deleteSavedGraph.mockReturnValue(deleteResponse.promise);
+
+    const canvas = presentationCanvas();
+    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID);
+    options.registry = { ...registry, nodes: [sourceSpec] };
+    callbacks.replacePresentation.mockImplementation(canvas.replace);
+    const props = () => ({
+      ...options,
+      presentation: canvas.held.presentation,
+    });
+
+    const hook = await renderHook(useSavedGraphLifecycle, props());
+    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
+    await hook.rerender(props());
+
+    let deletePromise!: Promise<void>;
+    await React.act(async () => {
+      deletePromise = hook.result.current.removeSavedGraph(
+        savedGraphSummary(graphA),
+      );
+      await Promise.resolve();
+    });
+
+    // The card moves while the delete is in flight. Local editing is paused for the
+    // whole delete, so this can only be a command that arrived from the room.
+    canvas.replace({
+      ...canvas.held.presentation,
+      viewers: [{ ...cardViewer, position: { x: 999, y: 0 } }],
+    });
+    await React.act(async () => {
+      await hook.rerender(props());
+    });
+
+    await React.act(async () => {
+      deleteResponse.resolve();
+      await deletePromise;
+    });
+
+    expect(canvas.held.presentation.viewers[0]?.position).toEqual({
+      x: 999,
+      y: 0,
+    });
+    expect(hook.result.current.persistenceError).toContain(
+      "remain as an unsaved draft",
+    );
   });
 });

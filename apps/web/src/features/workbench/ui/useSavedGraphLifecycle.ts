@@ -74,14 +74,11 @@ interface UseSavedGraphLifecycleOptions {
     overlayNodes?: readonly WorkflowNode[],
   ) => void;
   /**
-   * Apply the presentation that belongs to `graphId`, which becomes the graph the canvas
-   * holds. Pass `null` for the unsaved new-graph draft. Every change of active graph goes
-   * through here so the cards on the canvas and the cards in the save body are one value.
+   * Replace the artifact cards on the canvas with `presentation`. Every change of active
+   * graph goes through here, so the cards the canvas draws and the cards the save body
+   * sends are one value that moves together with the document.
    */
-  replacePresentation: (
-    graphId: string | null,
-    presentation: GraphPresentation,
-  ) => void;
+  replacePresentation: (presentation: GraphPresentation) => void;
   updateDocumentName: (name: string) => void;
   attachNodeCallbacks: (data: WorkflowNodeData) => WorkflowNodeData;
   refreshNodeSecretStatuses: (
@@ -193,6 +190,7 @@ export function useSavedGraphLifecycle({
   const documentGenerationRef = React.useRef(0);
   const mountedRef = React.useRef(true);
   const currentFingerprintRef = React.useRef("");
+  const presentationRef = React.useRef(presentation);
 
   const currentDraft = React.useMemo(
     () => createSavedGraphRequest(document, presentation),
@@ -216,7 +214,8 @@ export function useSavedGraphLifecycle({
 
   React.useEffect(() => {
     currentFingerprintRef.current = currentFingerprint;
-  }, [currentFingerprint]);
+    presentationRef.current = presentation;
+  }, [currentFingerprint, presentation]);
 
   const {
     isDirty,
@@ -271,9 +270,9 @@ export function useSavedGraphLifecycle({
       { name: NEW_GRAPH_NAME, nodes: [], edges: [], origins: [] },
       [],
     );
-    // A blank draft owns no cards. Without this the previous graph's presentation stays
-    // stamped with the graph it came from, and the new graph's first save carries it.
-    replacePresentation(null, emptyGraphPresentation());
+    // A blank draft owns no cards. Without this the previous graph's cards stay on the
+    // canvas and ride into the new graph's first save.
+    replacePresentation(emptyGraphPresentation());
     clearGraphSecretStatuses();
     setActiveGraph(null);
     setSavedFingerprint(null);
@@ -333,7 +332,7 @@ export function useSavedGraphLifecycle({
       setPersistenceError(null);
       // Preserve execution overlays: room sync must not clear materialized pins.
       replaceDocument(responseDocument);
-      replacePresentation(head.graph_id, responsePresentation);
+      replacePresentation(responsePresentation);
       if (headIsCheckpointed) {
         const checkpointNodes = registry
           ? hydrateAuthoredGraphDocument(responseDocument, registry).nodes.map(
@@ -436,7 +435,7 @@ export function useSavedGraphLifecycle({
         rememberSavedDraft(
           createSavedGraphRequest(responseDocument, responsePresentation),
         );
-        replacePresentation(savedGraph.id, responsePresentation);
+        replacePresentation(responsePresentation);
         if (createdGraph) {
           router.replace(workbenchGraphPath(workspaceSlug, savedGraph.id), {
             scroll: false,
@@ -513,7 +512,7 @@ export function useSavedGraphLifecycle({
       },
       [],
     );
-    replacePresentation(null, emptyGraphPresentation());
+    replacePresentation(emptyGraphPresentation());
   }, [
     clearGraphSecretStatuses,
     clearPendingConnectionRoute,
@@ -626,7 +625,7 @@ export function useSavedGraphLifecycle({
           data: attachNodeCallbacks(node.data),
         }));
         replaceDocument(responseDocument, openedNodes);
-        replacePresentation(savedGraph.id, responsePresentation);
+        replacePresentation(responsePresentation);
         const nextActiveGraph = {
           id: savedGraph.id,
           revision: savedGraph.revision,
@@ -783,8 +782,10 @@ export function useSavedGraphLifecycle({
             setSavedExecutionFingerprint(null);
             clearGraphSecretStatuses();
             // The kept draft is a new graph, so the cards on it now belong to the draft
-            // rather than to the graph that was just deleted.
-            replacePresentation(null, presentation);
+            // rather than to the graph that was just deleted. Read them as they are now:
+            // this branch runs precisely because something changed during the delete, and
+            // local editing is paused, so that change came in from the room.
+            replacePresentation(presentationRef.current);
             setPersistenceError(
               "The saved graph was deleted. Changes made while deletion was in progress remain as an unsaved draft.",
             );
@@ -822,7 +823,6 @@ export function useSavedGraphLifecycle({
       clearGraphSecretStatuses,
       currentFingerprint,
       isDirty,
-      presentation,
       refreshGraphSummaries,
       refreshNodeRegistry,
       replacePresentation,

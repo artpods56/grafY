@@ -83,7 +83,6 @@ function state(
   overrides: Partial<ArtifactViewerCanvasState> = {},
 ): ArtifactViewerCanvasState {
   return {
-    graphId: "graph-1",
     nodes: [],
     edges: [],
     bindings: [],
@@ -107,13 +106,6 @@ describe("artifact viewer presentation edits", () => {
     });
     expect(next.nodes[1]).toBe(current.nodes[1]);
     expect(current.nodes[0]?.data?.layout).toBeNull();
-  });
-
-  it("keeps the graph identity it was handed", () => {
-    const next = withViewerMode(state({ graphId: "graph-7" }), "a", "json");
-
-    expect(next.graphId).toBe("graph-7");
-    expect(next.nodes).toEqual([]);
   });
 
   it("sets the display mode on the addressed card", () => {

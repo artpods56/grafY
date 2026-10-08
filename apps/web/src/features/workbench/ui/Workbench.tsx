@@ -493,7 +493,6 @@ function WorkbenchBody({
   }, []);
   const [artifactViewers, setArtifactViewers] =
     React.useState<ArtifactViewerCanvasState>({
-      graphId: null,
       nodes: [],
       edges: [],
       bindings: [],
@@ -515,8 +514,6 @@ function WorkbenchBody({
   const [artifactViewerActivities, setArtifactViewerActivities] =
     React.useState<Record<string, ActiveArtifactViewerActivity>>({});
   const artifactViewerActivityRevisionRef = React.useRef(0);
-  const artifactViewersInitializedRef = React.useRef(initialGraphId === null);
-  const artifactViewerGraphIdRef = React.useRef<string | null>(initialGraphId);
   const {
     nodeSecretStatuses,
     refreshNodeSecretStatuses,
@@ -807,7 +804,6 @@ function WorkbenchBody({
   } = useArtifactViewerCommands({
     artifactViewers,
     artifactViewerActivityRevisionRef,
-    artifactViewerGraphIdRef,
     applyAuthoringCommands,
     authoredDocumentRef,
     localAuthoringBlockedMessageRef,
@@ -1046,25 +1042,17 @@ function WorkbenchBody({
     [dispatchAuthoringState],
   );
   const replacePresentation = React.useCallback(
-    (graphId: string | null, presentation: GraphPresentation) => {
-      artifactViewersInitializedRef.current = true;
-      // Every graph transition arrives here, so the id the viewer layer is stamped with
-      // moves together with the canvas it belongs to.
-      artifactViewerGraphIdRef.current = graphId;
-      setArtifactViewers(
-        artifactViewersFromPresentation(graphId, presentation),
-      );
+    (presentation: GraphPresentation) => {
+      setArtifactViewers(artifactViewersFromPresentation(presentation));
     },
     [],
   );
   /**
-   * The artifact-card layer always holds the presentation of the graph on the canvas:
-   * `replacePresentation` stamps its graph id on every graph transition and
-   * `commitArtifactViewers` stamps that same id on every card edit. There is therefore
-   * one value for the canvas and the save body to read, so the two cannot disagree about
-   * whose cards are current and a graph opened earlier in the session cannot ride into
-   * this save. A presentation that still reached the request holding references the
-   * document dropped is filtered in `createSavedGraphRequest`.
+   * The artifact-card layer is replaced whole whenever the active graph changes, and both
+   * the canvas and the save body read this one value, so they cannot disagree about whose
+   * cards are current and a graph opened earlier in the session cannot ride into this
+   * save. A presentation that still reached the request holding references the document
+   * dropped is filtered in `createSavedGraphRequest`.
    */
   const activeArtifactViewers = artifactViewers;
   const sharedPresentation = React.useMemo(
@@ -1262,9 +1250,9 @@ function WorkbenchBody({
         return;
       }
       if (message.command.kind === "replace_presentation") {
-        const graphId = activeGraphIdRef.current;
-        if (!graphId) return;
-        replacePresentation(graphId, message.command.presentation);
+        // Cards only belong on a saved graph's canvas; the blank draft has no room.
+        if (!activeGraphIdRef.current) return;
+        replacePresentation(message.command.presentation);
         return;
       }
       if (message.command.kind === "move_artifact_viewers") {
@@ -1309,9 +1297,8 @@ function WorkbenchBody({
           message.command.kind === "replace_document" &&
           message.command.document.presentation
         ) {
-          const graphId = activeGraphIdRef.current;
-          if (graphId) {
-            replacePresentation(graphId, message.command.document.presentation);
+          if (activeGraphIdRef.current) {
+            replacePresentation(message.command.document.presentation);
           }
         }
         return;
@@ -1349,8 +1336,7 @@ function WorkbenchBody({
   React.useLayoutEffect(() => {
     replaceHeadRef.current = graphRoom.replaceHead;
     graphRoomHeadRef.current = graphRoom.head;
-    artifactViewerGraphIdRef.current = activeGraph?.id ?? null;
-  }, [activeGraph?.id, graphRoom.head, graphRoom.replaceHead]);
+  }, [graphRoom.head, graphRoom.replaceHead]);
   React.useEffect(() => {
     roomCommandSyncRef.current = {
       submitLocal: (commands, before) => {

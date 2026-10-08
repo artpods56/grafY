@@ -121,13 +121,12 @@ export type CanvasEdge =
   | ArtifactViewerEdge
   | ArtifactViewerInteractionEdge;
 
+/**
+ * The artifact cards on the canvas. Whose cards they are is not recorded here: the
+ * workbench replaces this state whole whenever the active graph changes, so a graph id
+ * kept alongside the cards would be a second copy of a fact the transition already owns.
+ */
 export interface ArtifactViewerCanvasState {
-  /**
-   * The graph these cards belong to. `null` is the unsaved new-graph draft. The workbench
-   * re-stamps it on every graph transition, so the canvas and the save body read one
-   * presentation rather than two that can disagree about which graph is current.
-   */
-  graphId: string | null;
   nodes: ArtifactViewerNode[];
   edges: ArtifactViewerEdge[];
   bindings: ArtifactViewerBinding[];
@@ -182,7 +181,6 @@ export function presentationFromArtifactViewers(
 }
 
 export function artifactViewersFromPresentation(
-  graphId: string | null,
   presentation: GraphPresentation | null | undefined,
 ): ArtifactViewerCanvasState {
   const viewers = presentation?.viewers ?? [];
@@ -291,7 +289,7 @@ export function artifactViewersFromPresentation(
 
   const annotations = annotationsFromPresentation(presentation);
 
-  return { graphId, nodes, edges, bindings, annotations };
+  return { nodes, edges, bindings, annotations };
 }
 
 export function presentationFromCollaborativeHead(
