@@ -5,13 +5,6 @@ import * as stylex from "@stylexjs/stylex";
 import { Trash2 } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import { useHandleIsDocked } from "../edges/useDockedConnection";
-import {
-  GRID_CELL_SIZE_DEFAULT,
-  PORT_RAIL_ROW_HEIGHT_CELLS,
-  lengthFromSpan,
-} from "../grid-layout";
-import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
 import { NodeMenu, type NodeMenuItem } from "./NodeMenu";
 import { PortBall } from "./PortBall";
 
@@ -20,9 +13,8 @@ export const NODE_HEADER_HEIGHT = 24;
 
 /**
  * Shared chrome for operator nodes and Artifact Viewers, on the artifact
- * card's layout: the name sits above the plate, port labels sit inside it at
- * its edges, and each label's ball sits just outside, on a stem back to the
- * plate.
+ * card's layout: the name sits above the plate, and port balls hang outside
+ * on rails (option B — names appear on hover, not as plate labels).
  */
 export const nodeChrome = stylex.create({
   header: {
@@ -262,43 +254,11 @@ export function CanvasNodeHeader({
   );
 }
 
-export function CanvasPortRail({
-  rows,
-}: {
-  rows: readonly { input?: React.ReactNode; output?: React.ReactNode }[];
-}) {
-  const grid = useOptionalCanvasGridSettings();
-  const cellSize = grid?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
-  const rowHeight = lengthFromSpan(PORT_RAIL_ROW_HEIGHT_CELLS, cellSize);
-  if (!rows.length) return null;
-
-  return (
-    <div data-testid="port-rail" {...stylex.props(nodeChrome.portRail)}>
-      {rows.map((row, index) => (
-        <div
-          key={index}
-          data-testid="port-rail-row"
-          style={{ height: rowHeight }}
-          {...stylex.props(nodeChrome.portRailRow)}
-        >
-          <div {...stylex.props(nodeChrome.portRailSlot)}>{row.input}</div>
-          <div
-            {...stylex.props(
-              nodeChrome.portRailSlot,
-              nodeChrome.portRailSlotOut,
-            )}
-          >
-            {row.output}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /**
  * A port's ball, hung outside the plate level with its row. `centerY` pins the
- * ball's centre that far down a tall row instead of at its middle.
+ * ball's centre that far down a tall row instead of at its middle. Prefer the
+ * shared `CanvasCardLeftRail` / `CanvasCardRightRail` layout for new ports;
+ * this anchor remains for in-plate plug rows that still label beside the ball.
  */
 export function CanvasPortBall({
   centerY,
@@ -318,69 +278,5 @@ export function CanvasPortBall({
     >
       <PortBall {...props} />
     </span>
-  );
-}
-
-export function CanvasPortTab({
-  nodeId,
-  label,
-  hint,
-  direction,
-  handleId,
-  color,
-  isConnectable,
-  ariaLabel,
-  title,
-  multiple = false,
-  inactive = false,
-}: {
-  nodeId: string;
-  label: string;
-  hint?: string;
-  direction: "input" | "output";
-  handleId: string;
-  color: string;
-  isConnectable?: boolean;
-  ariaLabel: string;
-  title?: string;
-  /** Sequence (or plug collection) shape: the mark draws a second ring. */
-  multiple?: boolean;
-  /** Nothing to pass yet: the label and mark read as inert. */
-  inactive?: boolean;
-}) {
-  const input = direction === "input";
-  const docked = useHandleIsDocked(nodeId, handleId);
-  return (
-    <div
-      data-docked-port={docked ? "true" : undefined}
-      {...stylex.props(nodeChrome.tabRow, input ? null : nodeChrome.tabRowOut)}
-    >
-      <div
-        {...stylex.props(
-          nodeChrome.tab,
-          input ? nodeChrome.tabIn : nodeChrome.tabOut,
-          docked ? nodeChrome.tabDocked : null,
-          inactive ? nodeChrome.tabInactive : null,
-        )}
-        title={title}
-      >
-        <span {...stylex.props(nodeChrome.tabLabel)}>{label}</span>
-        {hint ? (
-          <span {...stylex.props(nodeChrome.tabShape)}>{hint}</span>
-        ) : null}
-      </div>
-      <CanvasPortBall
-        nodeId={nodeId}
-        handleId={handleId}
-        side={direction}
-        color={color}
-        sequence={multiple}
-        isConnectable={isConnectable !== false}
-        idle={inactive}
-        docked={docked}
-        ariaLabel={ariaLabel}
-        title={title}
-      />
-    </div>
   );
 }

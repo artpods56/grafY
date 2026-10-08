@@ -603,7 +603,7 @@ export function CollectionCard({
                       {...stylex.props(...tileStyle)}
                       style={{
                         width: `calc(100% - ${(stackDepth - 1) * 12}px)`,
-                        left: (stackDepth - 1 - index) * 12,
+                        left: index * 12,
                         top: index * 8,
                         zIndex: stackDepth - index,
                       }}

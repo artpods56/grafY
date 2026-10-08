@@ -21,6 +21,16 @@ operator_prefixes = ["llm", "prompt"]
 artifact_type_prefixes = ["llm", "prompt.message"]
 
 [[plugins]]
+slug = "external.mistral"
+project = "plugins/mistral"
+distribution_name = "grafy-plugin-mistral"
+loader_target = "grafy_plugin_mistral.plugin:MISTRAL"
+execution_policy = "isolated-only"
+capabilities = ["network.egress", "node.secrets"]
+operator_prefixes = ["mistral"]
+artifact_type_prefixes = ["mistral"]
+
+[[plugins]]
 slug = "external.ocr"
 project = "plugins/ocr"
 distribution_name = "grafy-plugin-ocr"
@@ -49,3 +59,13 @@ execution_policy = "isolated-only"
 capabilities = ["node.secrets", "postgresql.egress", "sql.untrusted"]
 operator_prefixes = ["sql"]
 artifact_type_prefixes = ["sql"]
+
+[[plugins]]
+slug = "external.typesafe"
+project = "plugins/typesafe"
+distribution_name = "grafy-plugin-typesafe"
+loader_target = "grafy_plugin_typesafe.plugin:TYPESAFE"
+execution_policy = "isolated-only"
+capabilities = ["network.egress", "node.secrets"]
+operator_prefixes = ["typesafe"]
+artifact_type_prefixes = ["typesafe"]

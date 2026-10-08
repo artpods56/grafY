@@ -37,6 +37,24 @@ async function addFromMenu(
 const mouseOnly = (page: Page) =>
   test.skip(viewportWidth(page) < 1024, "A mouse's right button");
 
+test("the toolbar and canvas menu omit the deprecated Artifact Viewer", async ({
+  page,
+}) => {
+  mouseOnly(page);
+  const box = await paneBox(page);
+  await expect(
+    page.getByRole("button", { name: "Add Artifact Viewer", exact: true }),
+  ).toHaveCount(0);
+  await page.mouse.click(box.x + 80, box.y + 100, { button: "right" });
+  await expect(menu(page)).toBeVisible();
+  await expect(
+    menu(page).getByRole("menuitem", { name: "Artifact viewer", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    menu(page).getByRole("menuitem", { name: "Add node", exact: true }),
+  ).toBeVisible();
+});
+
 test("a right click on the canvas adds a node where it was made", async ({
   page,
 }) => {

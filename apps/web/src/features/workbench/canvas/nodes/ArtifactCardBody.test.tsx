@@ -693,9 +693,47 @@ describe("artifact on the canvas", () => {
     expect(container.textContent).toContain("3 items");
     expect(container.textContent).toContain("Sequence<file.jpeg@1>");
     expect(thumbs).toHaveLength(3);
-    expect(thumbs?.[0].parentElement?.style.left).toBe("24px");
-    expect(thumbs?.[2].parentElement?.style.left).toBe("0px");
+    expect(thumbs?.[0].parentElement?.style.left).toBe("0px");
+    expect(thumbs?.[2].parentElement?.style.left).toBe("24px");
     expect(stack?.closest("[data-artifact-content]")).not.toBeNull();
+  });
+
+  it("stacks file items the same way: first in front at the top-left", () => {
+    const ref = (artifactId: string): ArtifactRef => ({
+      artifact_id: artifactId,
+      artifact_type: "file.csv",
+      schema_version: 1,
+    });
+    const { container } = mount(
+      {
+        artifact_type: "file.csv",
+        schema_version: 1,
+        item_refs: [ref("f1"), ref("f2")],
+        ordered: true,
+        index_key: "order_index",
+        sequence_id: "22222222-2222-4222-8222-222222222222",
+      },
+      {},
+      true,
+    );
+
+    const stack = container.querySelector<HTMLElement>(
+      '[aria-label="2 items in sequence"]',
+    );
+    const layers = [
+      ...(stack?.querySelectorAll<HTMLElement>(
+        '[data-artifact-shadow-scope="sequence-item"]',
+      ) ?? []),
+    ];
+    expect(layers).toHaveLength(2);
+    expect(layers[0].style.left).toBe("0px");
+    expect(layers[0].style.top).toBe("0px");
+    expect(layers[0].style.zIndex).toBe("2");
+    expect(layers[1].style.left).toBe("12px");
+    expect(layers[1].style.top).toBe("8px");
+    // The back layer ends at the stack's bottom-right, where the output port is.
+    expect(layers[1].style.width).toBe("calc(100% - 12px)");
+    expect(stack?.style.height).toBe("113px");
   });
 
   it("takes an input only when pulled out of a node's output port", () => {

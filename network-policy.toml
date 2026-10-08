@@ -24,6 +24,18 @@ profile = "configured-public"
 
 [[assignments]]
 plane = "plugin-execution"
+scope = "system"
+slug = "external.mistral"
+profile = "configured-public"
+
+[[assignments]]
+plane = "plugin-execution"
+scope = "system"
+slug = "external.typesafe"
+profile = "configured-public"
+
+[[assignments]]
+plane = "plugin-execution"
 scope = "workspace"
 workspace_id = "5ff0b54e-a3fd-4904-8d58-ee157e419b3a"
 slug = "external.notarius"
