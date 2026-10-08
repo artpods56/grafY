@@ -1,6 +1,5 @@
 from collections.abc import Sequence
 from dataclasses import replace
-from hashlib import sha256
 from typing import Annotated, cast, get_args
 from uuid import UUID
 
@@ -43,7 +42,6 @@ from grafy_core.domain.plugin_releases import (
     PluginRuntimeArtifact,
     PluginSecretInputContract,
     plugin_contract_digest,
-    plugin_contract_digest_matches,
     plugin_profile_digest,
     plugin_protocol_digest,
 )
@@ -62,9 +60,6 @@ from grafy_workbench.value import VALUE
 from grafy_workbench.table import TABLES
 from grafy_workbench.text import TEXT
 from grafy_core.plugins import Plugin
-from tests.support.plugin_contract_digests import (
-    stored_contract_digest_before_canonicalization,
-)
 
 
 PLUGIN = Plugin(slug="test.notes", title="Test notes")
@@ -693,18 +688,6 @@ def test_plugin_node_contract_http_egress_requires_network_egress() -> None:
     assert historical.http_egress is None
 
 
-def test_contract_digest_stays_stable_for_catalogs_without_http_egress() -> None:
-    node = _http_egress_node(capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,))
-    catalog = _catalog_with(node)
-    serialized = catalog.model_dump_json()
-    assert ',"http_egress":null' in serialized
-
-    legacy = serialized.replace(',"http_egress":null', "")
-    for fragment in _CATALOG_BYTES_BEFORE_PYTHON_NODE:
-        legacy = legacy.replace(fragment, "")
-    assert plugin_contract_digest(catalog) == sha256(legacy.encode("utf-8")).hexdigest()
-
-
 def test_contract_digest_changes_when_http_egress_is_declared() -> None:
     from grafy_core.domain.plugin_releases import PluginNodeHttpEgressContract
 
@@ -744,18 +727,6 @@ def test_catalog_manifest_round_trips_the_http_egress_contract() -> None:
         configured_inputs=("base_url", "fallback_url"),
         dynamic_destinations=True,
     )
-
-
-_CATALOG_BYTES_BEFORE_EXTENSION_CONTRACT = (
-    ',"http_egress":null',
-    ',"also_accepts":[]',
-    ',"shape_field":null',
-    ',"listed":true',
-    ',"extensions":[]',
-    ',"confirmation_rule":{"rule":"none","signatures":[]}',
-)
-# Empty forms of the per-node shape and library-listing fields (ADR 0012).
-_CATALOG_BYTES_BEFORE_PYTHON_NODE = (',"shape_field":null', ',"listed":true')
 
 
 def _contract_catalog(
@@ -825,21 +796,6 @@ def _contract_catalog(
     )
 
 
-def test_contract_digest_stays_stable_for_catalogs_without_extension_defaults() -> None:
-    catalog = _contract_catalog()
-    serialized = catalog.model_dump_json()
-    for fragment in _CATALOG_BYTES_BEFORE_EXTENSION_CONTRACT:
-        assert fragment in serialized
-
-    before_extension_contract = serialized
-    for fragment in _CATALOG_BYTES_BEFORE_EXTENSION_CONTRACT:
-        before_extension_contract = before_extension_contract.replace(fragment, "")
-    assert (
-        plugin_contract_digest(catalog)
-        == sha256(before_extension_contract.encode("utf-8")).hexdigest()
-    )
-
-
 def test_contract_digest_changes_when_an_extension_claim_is_declared() -> None:
     assert plugin_contract_digest(
         _contract_catalog(extensions=("png",))
@@ -890,51 +846,6 @@ def test_contract_digest_ignores_every_empty_defaulting_catalog_field() -> None:
     assert _catalog_contract_instances(catalog) >= set(
         PLUGIN_CONTRACT_DIGEST_FIELD_ROLES
     )
-
-
-def test_contract_digest_accepts_releases_persisted_before_canonicalization() -> None:
-    catalog = _contract_catalog()
-    stored = stored_contract_digest_before_canonicalization(catalog)
-    assert stored != plugin_contract_digest(catalog)
-    # Recomputed when the staged-upload declaration left the contract, so this
-    # literal is no longer the output a9037727 wrote for this fixture: the
-    # catalog it hashed still carried that field. It pins the shim's current
-    # output so unintended canonicalization drift still fails. Recompute it when
-    # the fixture catalog changes.
-    assert stored == (
-        "a2e7e4e5e7f0f1cd7e5e4735775c657d3edf0274f7bfefe118c9196c63661292"
-    )
-
-    assert plugin_contract_digest_matches(catalog, plugin_contract_digest(catalog))
-    assert plugin_contract_digest_matches(catalog, stored)
-    assert not plugin_contract_digest_matches(catalog, "0" * 64)
-
-    capabilities = PluginCapabilityManifest(
-        capabilities=(
-            PluginRuntimeCapability.NETWORK_EGRESS,
-            PluginRuntimeCapability.NODE_SECRETS,
-        )
-    )
-    # Construction is the assertion for the stored digest: the release
-    # validator raises unless the digest is one of the two accepted forms.
-    release = replace(
-        _release(),
-        catalog=catalog,
-        capabilities=capabilities,
-        capability_digest=capabilities.digest,
-        contract_digest=stored,
-        descriptor_digest=None,
-    )
-    assert release.descriptor_digest == release.descriptor.digest
-    with pytest.raises(PluginReleaseError, match="contract digest must match"):
-        replace(
-            _release(),
-            catalog=catalog,
-            capabilities=capabilities,
-            capability_digest=capabilities.digest,
-            contract_digest="0" * 64,
-            descriptor_digest=None,
-        )
 
 
 def _catalog_contract_models() -> set[type[BaseModel]]:

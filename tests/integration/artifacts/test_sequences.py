@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactRefSequence
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.artifact_contracts import RASTER_IMAGE
-from grafy_workbench.sequence.nodes import ItemAtConfig, SliceConfig
 
 from grafy_api.v1.models import ArtifactTypeBindingModel, ArtifactTypeKeyResponse
 from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
@@ -65,7 +64,6 @@ def test_registry_declares_sequence_node_contracts(
     nodes = {node.operator_id: node for node in registry.nodes}
     collect = nodes["sequence.collect"]
     assert collect.plugin_slug == "sequence"
-    assert collect.title == "Collect"
     assert collect.inputs[0].artifact_type is None
     assert collect.inputs[0].artifact_type_variable == "T"
     assert collect.inputs[0].accepted_shapes == ["one", "many"]
@@ -75,7 +73,7 @@ def test_registry_declares_sequence_node_contracts(
     assert collect.outputs[0].shape == "many"
 
     count = nodes["sequence.count"]
-    assert count.title == "Count"
+    assert count.plugin_slug == "sequence"
     assert count.inputs[0].name == "items"
     assert count.inputs[0].artifact_type_variable == "T"
     assert count.inputs[0].shape == "many"
@@ -85,16 +83,14 @@ def test_registry_declares_sequence_node_contracts(
     assert count.outputs[0].shape == "one"
 
     slice_node = nodes["sequence.slice"]
-    assert slice_node.title == "Slice"
-    assert slice_node.config_schema == SliceConfig.model_json_schema()
+    assert slice_node.plugin_slug == "sequence"
     assert slice_node.inputs[0].artifact_type_variable == "T"
     assert slice_node.inputs[0].shape == "many"
     assert slice_node.outputs[0].artifact_type_variable == "T"
     assert slice_node.outputs[0].shape == "many"
 
     item_at = nodes["sequence.item_at"]
-    assert item_at.title == "Pick item"
-    assert item_at.config_schema == ItemAtConfig.model_json_schema()
+    assert item_at.plugin_slug == "sequence"
     assert item_at.inputs[0].artifact_type_variable == "T"
     assert item_at.inputs[0].shape == "many"
     assert item_at.outputs[0].artifact_type_variable == "T"

@@ -227,41 +227,32 @@ def test_registry_declares_integer_value_and_arithmetic_fixture_nodes(
 
     result_type = artifact_types["test.compound_result"]
     assert [
-        projection.model_dump() for projection in result_type.field_projections
+        (
+            list(projection.path),
+            projection.target_artifact_type.id,
+            projection.target_artifact_type.schema_version,
+        )
+        for projection in result_type.field_projections
     ] == [
-        {
-            "path": ["addition"],
-            "target_artifact_type": {
-                "id": "scalar.integer",
-                "schema_version": 1,
-            },
-            "title": "Addition",
-        },
-        {
-            "path": ["subtraction"],
-            "target_artifact_type": {
-                "id": "scalar.integer",
-                "schema_version": 1,
-            },
-            "title": "Subtraction",
-        },
+        (["addition"], "scalar.integer", 1),
+        (["subtraction"], "scalar.integer", 1),
     ]
 
     nodes = {node.operator_id: node for node in registry.nodes}
-    assert [
-        (nodes[operator_id].title, nodes[operator_id].plugin_slug)
+    assert {
+        operator_id: nodes[operator_id].plugin_slug
         for operator_id in (
             "value.integer",
             "test.arithmetic.add",
             "test.arithmetic.subtract",
             "test.arithmetic.multiply",
         )
-    ] == [
-        ("Integer", "value"),
-        ("Add integers", "test.arithmetic"),
-        ("Subtract integers", "test.arithmetic"),
-        ("Multiply", "test.arithmetic"),
-    ]
+    } == {
+        "value.integer": "value",
+        "test.arithmetic.add": "test.arithmetic",
+        "test.arithmetic.subtract": "test.arithmetic",
+        "test.arithmetic.multiply": "test.arithmetic",
+    }
 
 
 def test_integer_output_converts_to_text_before_text_node_execution(

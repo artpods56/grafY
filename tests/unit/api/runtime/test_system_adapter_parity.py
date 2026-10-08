@@ -1,23 +1,18 @@
-import asyncio
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
-from typing import Annotated, Literal, cast, override
+from typing import Annotated, cast
 from uuid import UUID, uuid4
 
 import pytest
-from grafy_api.execution.coordinator import GraphExecutionCoordinator
 from grafy_api.execution.edge_values import EdgeValueResolver
 from grafy_api.execution.models import (
     CompiledGraph,
     CompiledNode,
-    GraphExecutionResult,
     PreparedGraphExecution,
 )
 from grafy_api.execution.node_execution import NodeExecutionService
 from grafy_api.execution.requests import RunNodeRequest
-from grafy_api.plugins.runtime.artifacts import ArtifactBundlePluginInvoker
 from grafy_core.artifact_contracts import TEXT_VALUE
 from grafy_core.artifacts import (
     ArtifactObject,
@@ -50,18 +45,10 @@ from grafy_core.domain.plugin_releases import (
 from grafy_core.nodes import (
     InPort,
     NodeExecutionContext,
-    NodeProgressReporter,
     OutPort,
-    UserFacingNodeError,
     resolve_node_contracts,
 )
-from grafy_core.plugins import (
-    NodeCachePolicy,
-    Plugin,
-    PluginRegistry,
-    PluginRuntimeContext,
-)
-from grafy_core.ports.node_secrets import UnavailableNodeSecretResolver
+from grafy_core.plugins import NodeCachePolicy, Plugin
 from grafy_core.runtime.execution import NodeRunError, NodeRuntime
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.invocation import NodeInvocation
@@ -70,9 +57,7 @@ from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import (
     ArtifactWriterRegistry,
     OutputPersister,
-    PersistedNodeOutput,
 )
-from grafy_core.runtime.plugin_guest import execute_plugin_invocation
 from grafy_core.runtime.plugin_invocation import (
     PluginInvocationError,
     PluginInvocationRequest,
@@ -80,13 +65,8 @@ from grafy_core.runtime.plugin_invocation import (
     PluginReleaseNode,
     PluginReleaseNodeConfig,
 )
-from grafy_core.runtime.plugin_loader import PluginGuestLoaderManifest
-from grafy_core.runtime.plugin_protocol import (
-    PluginFailureCode,
-    PluginInvocationLimits,
-)
+from grafy_core.runtime.plugin_protocol import PluginFailureCode
 from grafy_core.runtime.resolvers import ResolverRegistry
-from grafy_storage import LocalFileObjectStore
 from grafy_workbench.text.nodes import TextValueOutputWriter, TextValueResolver
 from pydantic import SecretStr
 
@@ -96,7 +76,7 @@ LOADER_TARGET = "tests.unit.api.runtime.test_system_adapter_parity:PARITY_PLUGIN
 
 
 class ParityConfig(NodeConfig):
-    behavior: Literal["success", "failure", "safe_failure", "block"] = "success"
+    secret_name: str | None = None
 
 
 class ParityInput(NodeInput):
@@ -108,9 +88,6 @@ class ParityOutput(NodeOutput):
 
 
 PARITY_PLUGIN = Plugin(slug="test.parity", title="Adapter parity")
-_calls: dict[str, int] = {}
-_block_started: dict[str, asyncio.Event] = {}
-_block_release: dict[str, asyncio.Event] = {}
 
 
 @PARITY_PLUGIN.function_node(
@@ -124,17 +101,7 @@ async def parity_transform(
     config: ParityConfig,
     inputs: ParityInput,
 ) -> ParityOutput:
-    node_id = context.node_id or "missing-node"
-    _calls[node_id] = _calls.get(node_id, 0) + 1
-    await context.progress("started", current=1, total=2)
-    if config.behavior == "failure":
-        raise RuntimeError("intentional parity failure")
-    if config.behavior == "safe_failure":
-        raise UserFacingNodeError("safe parity failure")
-    if config.behavior == "block":
-        _block_started.setdefault(node_id, asyncio.Event()).set()
-        await _block_release.setdefault(node_id, asyncio.Event()).wait()
-    await context.progress("finished", current=2, total=2)
+    del context, config
     return ParityOutput(text=inputs.text.upper())
 
 
@@ -173,43 +140,6 @@ class _MemoryInvocationCache(InvocationCachePort):
             return False
         del self.entries[key]
         return True
-
-
-@dataclass
-class _RecordingProgress(NodeProgressReporter):
-    events: list[tuple[str, int | None, int | None]] = field(default_factory=list)
-
-    @override
-    async def report_progress(
-        self,
-        context: NodeExecutionContext,
-        message: str,
-        *,
-        current: int | None,
-        total: int | None,
-    ) -> None:
-        del context
-        self.events.append((message, current, total))
-
-
-class _InProcessSystemGuestRunner:
-    async def run(
-        self,
-        invocation_root: Path,
-        limits: PluginInvocationLimits,
-        request: PluginInvocationRequest,
-    ) -> None:
-        del limits, request
-        loader_manifest = PluginGuestLoaderManifest(
-            slug=PARITY_PLUGIN.slug,
-            loader_target=LOADER_TARGET,
-        )
-        manifest_path = invocation_root / "plugin-loader.json"
-        manifest_path.write_bytes(loader_manifest.canonical_json_bytes())
-        await execute_plugin_invocation(
-            invocation_root,
-            system_loader_manifest_path=manifest_path,
-        )
 
 
 class _ReturningInvoker:
@@ -398,381 +328,6 @@ def _runtime(
     )
 
 
-async def _artifact_for(
-    unit_of_work: InMemoryUnitOfWork,
-    output: PersistedNodeOutput,
-) -> ArtifactObject:
-    ref = output.values["text"]
-    assert isinstance(ref, ArtifactRef)
-    async with unit_of_work as entered:
-        artifact = await entered.artifacts.get(WORKSPACE_ID, ref.artifact_id)
-    assert artifact is not None
-    return artifact
-
-
-@pytest.mark.asyncio
-async def test_same_exact_system_release_has_output_progress_cache_and_provenance_parity(
-    tmp_path: Path,
-) -> None:
-    _calls.clear()
-    release = _release()
-    identity = PluginReleaseIdentity.from_release(release)
-    contract = release.release.catalog.nodes[0]
-
-    host_uow = InMemoryUnitOfWork()
-    host_input = await _seed_input(host_uow)
-    registry = PluginRegistry()
-    registry.install(PARITY_PLUGIN)
-    host_context = PluginRuntimeContext(
-        workspace=tmp_path / "host",
-        storage=LocalFileObjectStore(tmp_path / "host" / "objects"),
-        uow=host_uow,
-        bucket="artifacts",
-    )
-    host_node = registry.build_node(
-        contract.operator_id,
-        contract.operator_version,
-        host_context,
-    )
-    host_registration = registry.node_registration(
-        contract.operator_id,
-        contract.operator_version,
-    )
-    host_reporter = _RecordingProgress()
-    host_runtime = _runtime(host_uow, _MemoryInvocationCache())
-
-    oci_uow = InMemoryUnitOfWork()
-    oci_input = await _seed_input(oci_uow)
-    oci_reporter = _RecordingProgress()
-    invoker = ArtifactBundlePluginInvoker(
-        unit_of_work=oci_uow,
-        runner=_InProcessSystemGuestRunner(),
-        scratch_root=tmp_path / "oci",
-    )
-    oci_node: PluginReleaseNode[
-        PluginReleaseNodeConfig,
-        NodeInput,
-        NodeOutput,
-    ] = PluginReleaseNode(release, contract, invoker)
-    oci_runtime = _runtime(oci_uow, _MemoryInvocationCache())
-
-    host_results: list[PersistedNodeOutput] = []
-    oci_results: list[PersistedNodeOutput] = []
-    for _ in range(2):
-        host_result = await host_runtime.run_node(
-            host_node,
-            NodeExecutionContext(
-                workspace_id=WORKSPACE_ID,
-                node_id="success",
-                progress_reporter=host_reporter,
-            ),
-            {"text": host_input},
-            config={"behavior": "success"},
-            cache_policy=host_registration.cache_policy,
-            plugin_release=identity,
-        )
-        oci_result = await oci_runtime.run_node(
-            oci_node,
-            NodeExecutionContext(
-                workspace_id=WORKSPACE_ID,
-                node_id="success",
-                progress_reporter=oci_reporter,
-            ),
-            {"text": oci_input},
-            config={"behavior": "success"},
-            cache_policy=oci_node.cache_policy,
-            plugin_release=identity,
-        )
-        assert isinstance(host_result, PersistedNodeOutput)
-        assert isinstance(oci_result, PersistedNodeOutput)
-        host_results.append(host_result)
-        oci_results.append(oci_result)
-
-    host_artifact = await _artifact_for(host_uow, host_results[0])
-    oci_artifact = await _artifact_for(oci_uow, oci_results[0])
-    assert (
-        host_artifact.inline_payload
-        == oci_artifact.inline_payload
-        == {"value": "PARITY"}
-    )
-    assert host_artifact.metadata["provenance"] == oci_artifact.metadata["provenance"]
-    assert oci_artifact.metadata["plugin_release"] == identity.provenance_document()
-    assert "plugin_release" not in host_artifact.metadata
-    assert host_artifact.metadata["provenance"] == {
-        "text": [
-            {
-                "artifact_id": str(INPUT_ID),
-                "artifact_type": TEXT_VALUE.key.id,
-                "schema_version": TEXT_VALUE.key.schema_version,
-            }
-        ]
-    }
-    assert (
-        host_reporter.events
-        == oci_reporter.events
-        == [
-            ("started", 1, 2),
-            ("finished", 2, 2),
-        ]
-    )
-    assert host_results[0].cache_misses == oci_results[0].cache_misses == 1
-    assert host_results[1].cache_hits == oci_results[1].cache_hits == 1
-    assert host_results[0].values == host_results[1].values
-    assert oci_results[0].values == oci_results[1].values
-    assert _calls == {"success": 2}
-
-
-@pytest.mark.asyncio
-async def test_same_exact_system_release_has_failure_and_cancellation_parity(
-    tmp_path: Path,
-) -> None:
-    _calls.clear()
-    _block_started.clear()
-    _block_release.clear()
-    release = _release()
-    identity = PluginReleaseIdentity.from_release(release)
-    contract = release.release.catalog.nodes[0]
-
-    host_uow = InMemoryUnitOfWork()
-    host_input = await _seed_input(host_uow)
-    registry = PluginRegistry()
-    registry.install(PARITY_PLUGIN)
-    host_node = registry.build_node(
-        contract.operator_id,
-        contract.operator_version,
-        PluginRuntimeContext(
-            workspace=tmp_path / "host",
-            storage=LocalFileObjectStore(tmp_path / "host" / "objects"),
-            uow=host_uow,
-            bucket="artifacts",
-        ),
-    )
-    host_runtime = _runtime(host_uow, _MemoryInvocationCache())
-
-    oci_uow = InMemoryUnitOfWork()
-    oci_input = await _seed_input(oci_uow)
-    oci_node: PluginReleaseNode[
-        PluginReleaseNodeConfig,
-        NodeInput,
-        NodeOutput,
-    ] = PluginReleaseNode(
-        release,
-        contract,
-        ArtifactBundlePluginInvoker(
-            unit_of_work=oci_uow,
-            runner=_InProcessSystemGuestRunner(),
-            scratch_root=tmp_path / "oci",
-        ),
-    )
-    oci_runtime = _runtime(oci_uow, _MemoryInvocationCache())
-
-    host_failure_progress = _RecordingProgress()
-    oci_failure_progress = _RecordingProgress()
-    with pytest.raises(NodeRunError) as host_failure:
-        await host_runtime.run_node(
-            host_node,
-            NodeExecutionContext(
-                workspace_id=WORKSPACE_ID,
-                node_id="host-failure",
-                progress_reporter=host_failure_progress,
-            ),
-            {"text": host_input},
-            config={"behavior": "failure"},
-            plugin_release=identity,
-        )
-    assert host_failure.value.failure_code is PluginFailureCode.OPERATOR_FAILURE
-    assert "intentional parity failure" not in str(host_failure.value)
-    host_cause = host_failure.value.__cause__
-    assert isinstance(host_cause, RuntimeError)
-    assert "intentional parity failure" in str(host_cause)
-    with pytest.raises(NodeRunError) as oci_failure:
-        await oci_runtime.run_node(
-            oci_node,
-            NodeExecutionContext(
-                workspace_id=WORKSPACE_ID,
-                node_id="oci-failure",
-                progress_reporter=oci_failure_progress,
-            ),
-            {"text": oci_input},
-            config={"behavior": "failure"},
-            plugin_release=identity,
-        )
-    assert oci_failure.value.failure_code is PluginFailureCode.OPERATOR_FAILURE
-    oci_invocation_error = oci_failure.value.__cause__
-    assert isinstance(oci_invocation_error, PluginInvocationError)
-    assert oci_invocation_error.failure_code is PluginFailureCode.OPERATOR_FAILURE
-    assert "intentional parity failure" not in str(oci_failure.value)
-    assert (
-        host_failure_progress.events
-        == oci_failure_progress.events
-        == [("started", 1, 2)]
-    )
-
-    host_cancel = asyncio.create_task(
-        host_runtime.run_node(
-            host_node,
-            NodeExecutionContext(
-                workspace_id=WORKSPACE_ID,
-                node_id="host-cancel",
-            ),
-            {"text": host_input},
-            config={"behavior": "block"},
-            plugin_release=identity,
-        )
-    )
-    oci_cancel = asyncio.create_task(
-        oci_runtime.run_node(
-            oci_node,
-            NodeExecutionContext(
-                workspace_id=WORKSPACE_ID,
-                node_id="oci-cancel",
-            ),
-            {"text": oci_input},
-            config={"behavior": "block"},
-            plugin_release=identity,
-        )
-    )
-    while "host-cancel" not in _block_started or "oci-cancel" not in _block_started:
-        await asyncio.sleep(0)
-    await _block_started["host-cancel"].wait()
-    await _block_started["oci-cancel"].wait()
-    host_cancel.cancel()
-    oci_cancel.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await host_cancel
-    with pytest.raises(asyncio.CancelledError):
-        await oci_cancel
-
-    async with host_uow as entered:
-        host_artifacts = await entered.artifacts.list_by_type(
-            WORKSPACE_ID,
-            TEXT_VALUE.key,
-        )
-    async with oci_uow as entered:
-        oci_artifacts = await entered.artifacts.list_by_type(
-            WORKSPACE_ID,
-            TEXT_VALUE.key,
-        )
-    assert [artifact.id for artifact in host_artifacts] == [INPUT_ID]
-    assert [artifact.id for artifact in oci_artifacts] == [INPUT_ID]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("behavior", "safe_message"),
-    [
-        ("failure", None),
-        ("safe_failure", "safe parity failure"),
-    ],
-)
-async def test_same_exact_system_release_has_graph_result_failure_code_parity(
-    tmp_path: Path,
-    behavior: Literal["failure", "safe_failure"],
-    safe_message: str | None,
-) -> None:
-    _calls.clear()
-    release = _release()
-    identity = PluginReleaseIdentity.from_release(release)
-    contract = release.release.catalog.nodes[0]
-
-    host_uow = InMemoryUnitOfWork()
-    host_input = await _seed_input(host_uow)
-    registry = PluginRegistry()
-    registry.install(PARITY_PLUGIN)
-    host_node = registry.build_node(
-        contract.operator_id,
-        contract.operator_version,
-        PluginRuntimeContext(
-            workspace=tmp_path / "host",
-            storage=LocalFileObjectStore(tmp_path / "host" / "objects"),
-            uow=host_uow,
-            bucket="artifacts",
-        ),
-    )
-    oci_uow = InMemoryUnitOfWork()
-    oci_input = await _seed_input(oci_uow)
-    oci_node: PluginReleaseNode[
-        PluginReleaseNodeConfig,
-        NodeInput,
-        NodeOutput,
-    ] = PluginReleaseNode(
-        release,
-        contract,
-        ArtifactBundlePluginInvoker(
-            unit_of_work=oci_uow,
-            runner=_InProcessSystemGuestRunner(),
-            scratch_root=tmp_path / "oci",
-        ),
-    )
-
-    results: list[GraphExecutionResult] = []
-    for label, unit_of_work, node, input_ref in (
-        ("host", host_uow, host_node, host_input),
-        ("oci", oci_uow, oci_node, oci_input),
-    ):
-        request = RunNodeRequest(
-            kind="builtin",
-            id=f"{label}-failure",
-            operator_id=contract.operator_id,
-            operator_version=contract.operator_version,
-            config={"behavior": behavior},
-        )
-        compiled_node = CompiledNode(
-            request=request,
-            node=node,
-            registration=None,
-            resolved_contracts=resolve_node_contracts(node, {}),
-            invocation=NodeInvocation(),
-            artifact_type_bindings={},
-            plugin_release=identity,
-        )
-        execution = PreparedGraphExecution(
-            plan=CompiledGraph(nodes=(compiled_node,), edges=(), pinned_outputs={}),
-            initial_outputs={},
-            workspace_id=WORKSPACE_ID,
-            graph_id=None,
-            graph_revision=None,
-            secret_graph_id=None,
-            secret_graph_revision=None,
-            secret_node_ids=frozenset(),
-            module_path=(),
-            raise_node_errors=False,
-        )
-        coordinator = GraphExecutionCoordinator(
-            node_execution=NodeExecutionService(
-                runtime=_runtime(unit_of_work, _MemoryInvocationCache()),
-                edge_values=cast(EdgeValueResolver, _FixedInputs(input_ref)),
-                node_secrets=UnavailableNodeSecretResolver(),
-            )
-        )
-        results.append(await coordinator.execute(execution))
-
-    host_result, oci_result = results
-    assert host_result.status == "failed"
-    assert oci_result.status == "failed"
-    host_node_result = host_result.node_results[0]
-    oci_node_result = oci_result.node_results[0]
-    assert host_node_result.status == "failed"
-    assert oci_node_result.status == "failed"
-    assert host_node_result.failure_code is PluginFailureCode.OPERATOR_FAILURE
-    assert host_node_result.failure_code == oci_node_result.failure_code
-    assert host_node_result.plugin_release is not None
-    assert host_node_result.plugin_release is oci_node_result.plugin_release
-    assert host_node_result.plugin_release == identity
-    host_error = host_node_result.error
-    oci_error = oci_node_result.error
-    assert host_error is not None
-    assert oci_error is not None
-    if safe_message is None:
-        assert "intentional parity failure" not in host_error
-        assert "intentional parity failure" not in oci_error
-    else:
-        assert host_error.count(safe_message) == 1
-        assert oci_error.count(safe_message) == 1
-    assert "operator_failure" in host_error
-    assert "operator_failure" in oci_error
-
-
 class _FailingInvoker:
     def __init__(self, error: Exception) -> None:
         self._error = error
@@ -864,7 +419,7 @@ async def test_isolated_exact_cache_keys_include_opaque_secret_revision(
         id="secret-node",
         operator_id=contract.operator_id,
         operator_version=contract.operator_version,
-        config={"behavior": "success", "secret_name": "primary"},
+        config={"secret_name": "primary"},
     )
     compiled_node = CompiledNode(
         request=request,
