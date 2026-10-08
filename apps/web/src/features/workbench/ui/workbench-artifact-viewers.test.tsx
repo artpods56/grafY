@@ -23,7 +23,6 @@ import {
 } from "./workbench-artifact-viewers";
 
 const EMPTY_STATE: ArtifactViewerCanvasState = {
-  graphId: null,
   nodes: [],
   edges: [],
   bindings: [],
@@ -48,7 +47,6 @@ type Harness = {
 
 async function mountHarness(options: {
   enabled?: boolean;
-  graphId?: string | null;
   submits: ArtifactViewerCanvasState[];
 }) {
   const submitted: ArtifactViewerCanvasState[] = options.submits;
@@ -67,9 +65,6 @@ async function mountHarness(options: {
 
     const localAuthoringEnabledRef = React.useRef(options.enabled ?? true);
     const localAuthoringBlockedMessageRef = React.useRef(BLOCKED_MESSAGE);
-    const artifactViewerGraphIdRef = React.useRef<string | null>(
-      options.graphId ?? null,
-    );
     const artifactViewerActivityRevisionRef = React.useRef(0);
     const presentationRoomSyncRef = React.useRef<ArtifactViewerRoomSync>({
       submitReplace: (state) => {
@@ -82,7 +77,6 @@ async function mountHarness(options: {
     const commands = useArtifactViewerCommands({
       artifactViewers,
       artifactViewerActivityRevisionRef,
-      artifactViewerGraphIdRef,
       applyAuthoringCommands,
       authoredDocumentRef,
       localAuthoringBlockedMessageRef,
@@ -141,22 +135,16 @@ describe("useArtifactViewerCommands", () => {
     view.unmount();
   });
 
-  it("stamps the current graph id and publishes the committed state to the room", async () => {
+  it("publishes the committed state to the room once per edit", async () => {
     const submitted: ArtifactViewerCanvasState[] = [];
-    const view = await mountHarness({
-      graphId: "graph-77",
-      submits: submitted,
-    });
+    const view = await mountHarness({ submits: submitted });
 
     await act(async () => {
       view.harness.commands.updateAnnotationColor("note-1", "amber");
-    });
-    await act(async () => {
       await Promise.resolve();
     });
 
-    expect(submitted).toHaveLength(1);
-    expect(submitted[0]?.graphId).toBe("graph-77");
+    expect(submitted).toEqual([EMPTY_STATE]);
     view.unmount();
   });
 

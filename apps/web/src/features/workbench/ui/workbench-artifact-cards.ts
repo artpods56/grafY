@@ -195,6 +195,9 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
         DEFAULT_ARTIFACT_CARD_WIDTH,
         artifactCardMediaHeight(DEFAULT_ARTIFACT_CARD_WIDTH),
       );
+      // Removing the collection node retires the card links it sourced, applied where the
+      // command lands. The links added below are sourced from the nodes that fed the
+      // collection, so this order is what keeps those new cards wired.
       applyAuthoringCommands([{ kind: "remove_nodes", node_ids: [nodeId] }]);
       const added = cards.map((card) => ({
         card,

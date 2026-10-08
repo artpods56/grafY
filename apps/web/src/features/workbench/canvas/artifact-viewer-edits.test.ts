@@ -23,7 +23,7 @@ import {
   withViewerMode,
   withoutAnnotation,
   withoutViewer,
-  withoutViewerEdgesFrom,
+  withoutViewerEdgesFromNodes,
 } from "./artifact-viewer-edits";
 import type { ArtifactViewerBinding } from "./artifact-interactions";
 
@@ -83,7 +83,6 @@ function state(
   overrides: Partial<ArtifactViewerCanvasState> = {},
 ): ArtifactViewerCanvasState {
   return {
-    graphId: "graph-1",
     nodes: [],
     edges: [],
     bindings: [],
@@ -107,13 +106,6 @@ describe("artifact viewer presentation edits", () => {
     });
     expect(next.nodes[1]).toBe(current.nodes[1]);
     expect(current.nodes[0]?.data?.layout).toBeNull();
-  });
-
-  it("keeps the graph identity it was handed", () => {
-    const next = withViewerMode(state({ graphId: "graph-7" }), "a", "json");
-
-    expect(next.graphId).toBe("graph-7");
-    expect(next.nodes).toEqual([]);
   });
 
   it("sets the display mode on the addressed card", () => {
@@ -204,17 +196,28 @@ describe("artifact viewer presentation edits", () => {
     expect(next.bindings.map((item) => item.id)).toEqual(["from-b"]);
   });
 
-  it("drops viewer edges leaving a removed workflow node but keeps incoming ones", () => {
+  it("drops viewer edges leaving removed workflow nodes but keeps incoming ones", () => {
     const current = state({
       edges: [
         viewerEdge("from-node", "node-1", "a"),
+        viewerEdge("from-other", "node-2", "b"),
         viewerEdge("to-node", "b", "node-1"),
       ],
     });
 
-    const next = withoutViewerEdgesFrom(current, "node-1");
+    const next = withoutViewerEdgesFromNodes(current, ["node-1", "node-2"]);
 
     expect(next.edges.map((edge) => edge.id)).toEqual(["to-node"]);
+    expect(next.nodes.map((node) => node.id)).toEqual(
+      current.nodes.map((node) => node.id),
+    );
+  });
+
+  it("keeps the viewer state identical when no removed node sourced a card link", () => {
+    const current = state({ edges: [viewerEdge("from-node", "node-1", "a")] });
+
+    expect(withoutViewerEdgesFromNodes(current, ["node-9"])).toBe(current);
+    expect(withoutViewerEdgesFromNodes(current, [])).toBe(current);
   });
 
   it("edits annotation presentation without touching siblings", () => {

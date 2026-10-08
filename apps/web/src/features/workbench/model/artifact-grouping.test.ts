@@ -36,7 +36,6 @@ function card(id: string, x: number, selected = true): ArtifactViewerNode {
 
 function canvas(): ArtifactViewerCanvasState {
   return {
-    graphId: null,
     nodes: [card("b", 400), card("a", 100), card("other", 900, false)],
     edges: [],
     bindings: [],
@@ -106,7 +105,6 @@ describe("artifact grouping", () => {
       item_refs: [...value.item_refs].reverse(),
     };
     const reopened = artifactViewersFromPresentation(
-      "graph-1",
       presentationFromArtifactViewers(grouped),
     );
     const ungrouped = ungroupArtifactCard({

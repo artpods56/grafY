@@ -374,6 +374,46 @@ def test_artifact_card_cannot_be_a_presentation_link_target() -> None:
         )
 
 
+def test_saved_graph_document_rejects_presentation_link_to_a_missing_node() -> None:
+    """A card link naming a node the document does not hold stays refused.
+
+    The web client now drops such links before building a save request, which is what
+    turns the reported 422 into an ordinary save. This check is the last line of
+    defence and the authority, so it must not weaken along with the client fix.
+    """
+    presentation = GraphPresentationDocument(
+        viewers=(
+            GraphPresentationViewer(
+                id="artifact-viewer-1",
+                position=GraphPoint(x=0.0, y=0.0),
+            ),
+        ),
+        links=(
+            GraphPresentationLink(
+                id="artifact-viewer-edge-1",
+                source_node_id="deleted-node",
+                source_port_name="result",
+                target_viewer_id="artifact-viewer-1",
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match=(
+            "Presentation link artifact-viewer-edge-1 references missing "
+            "source node deleted-node"
+        ),
+    ):
+        SavedGraphDocument(nodes=(_node("surviving-node"),), presentation=presentation)
+
+    accepted = SavedGraphDocument(
+        nodes=(_node("surviving-node"), _node("deleted-node")),
+        presentation=presentation,
+    )
+    assert accepted.presentation.links[0].source_node_id == "deleted-node"
+
+
 def test_saved_graph_node_config_is_deeply_immutable_and_serializable() -> None:
     node = SavedGraphNode(
         kind="builtin",

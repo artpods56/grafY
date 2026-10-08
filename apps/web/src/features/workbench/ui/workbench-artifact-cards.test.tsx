@@ -55,7 +55,6 @@ function state(
   nodes: readonly ArtifactViewerNode[],
 ): ArtifactViewerCanvasState {
   return {
-    graphId: "graph-1",
     nodes: [...nodes],
     edges: [],
     bindings: [],
