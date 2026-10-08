@@ -14,8 +14,11 @@ Node configuration is rendered directly inside each node from the live
 `config_schema`. Primitive JSON Schema fields use a compact preset: text,
 number/integer (including bounds), boolean, or enum selection. Uploaded images and
 run artifacts are also managed from the node, so the canvas does not depend on
-a separate inspector sidebar. The node header keeps only two local controls:
-help from the registered description and removal from the canvas.
+a separate inspector sidebar. Drag Library artifacts or a materialized output
+port onto the canvas to render artifacts as cards. The standalone Artifact
+Viewer is deprecated; existing saved viewers continue to work, but the toolbar
+and canvas menu no longer create them. The node header keeps only two local
+controls: help from the registered description and removal from the canvas.
 
 The node catalog separates host-assigned built-in families from registered
 external plugins and marks external entries. A plugin cannot choose its own

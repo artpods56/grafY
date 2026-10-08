@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Circle,
   Copy,
-  Eye,
   Grid3x3,
   Layers,
   LayoutGrid,
@@ -57,7 +56,6 @@ export interface CanvasMenuSelection {
 export interface CanvasMenuActions {
   searchNodes: () => void;
   addNodeHere: (spec: NodeSpec) => void;
-  addViewerHere: () => void;
   addAnnotationHere: (kind: AnnotationKind) => void;
   selectAll: () => void;
   fitView: () => void;
@@ -285,12 +283,6 @@ function PaneItems({
           </Submenu>
         ))}
       </Submenu>
-      <Item
-        icon={Eye}
-        label="Artifact viewer"
-        disabled={!canEdit}
-        onClick={actions.addViewerHere}
-      />
       <Submenu icon={StickyNote} label="Annotation" disabled={!canEdit}>
         {ANNOTATIONS.map((annotation) => (
           <Item

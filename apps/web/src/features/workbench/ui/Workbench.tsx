@@ -23,7 +23,6 @@ import {
 import {
   Circle,
   Copy,
-  Eye,
   Grid3x3,
   History,
   Layers,
@@ -3308,69 +3307,6 @@ function WorkbenchBody({
       ? contextualDiscovery
       : null;
 
-  /** Adds a viewer at `at`, else beside the selected node or mid-canvas. */
-  const addArtifactViewer = React.useCallback(
-    (at?: { x: number; y: number }) => {
-      const id = `artifact-viewer-${createUuid()}`;
-      const center = canvasCenter({ x: 600, y: 280 });
-      const selectedSource = at
-        ? undefined
-        : nodes.find((node) => node.selected);
-      const position =
-        at ??
-        (selectedSource
-          ? {
-              x: selectedSource.position.x + 380,
-              y: selectedSource.position.y - 20,
-            }
-          : { x: center.x - 260, y: center.y - 180 });
-      setNodes((current) =>
-        current.map((node) => ({ ...node, selected: false })),
-      );
-      commitArtifactViewers((current) => ({
-        ...current,
-        nodes: [
-          ...current.nodes.map((node) => ({ ...node, selected: false })),
-          {
-            id,
-            type: ARTIFACT_VIEWER_NODE_TYPE,
-            position,
-            selected: true,
-            data: {
-              layout: { width: DEFAULT_NODE_WIDTH },
-              mode: null,
-            },
-          },
-        ],
-        annotations: current.annotations.map((node) => ({
-          ...node,
-          selected: false,
-        })),
-      }));
-      setLibraryOpen(false);
-      setShapesMenuOpen(false);
-      closeGraphBrowser();
-      if (flow && selectedSource) {
-        window.requestAnimationFrame(() => {
-          void flow.fitView({
-            nodes: [{ id: selectedSource.id }, { id }],
-            padding: 0.22,
-            maxZoom: 0.94,
-            duration: 220,
-          });
-        });
-      }
-    },
-    [
-      canvasCenter,
-      closeGraphBrowser,
-      commitArtifactViewers,
-      flow,
-      nodes,
-      setNodes,
-    ],
-  );
-
   /** Adds an annotation with its corner at `at`, else mid-canvas. */
   const addAnnotation = React.useCallback(
     (kind: AnnotationKind, at?: { x: number; y: number }) => {
@@ -4294,7 +4230,6 @@ function WorkbenchBody({
       setLibraryOpen(true);
     },
     addNodeHere: (spec) => addCatalogNode(spec, canvasMenuPoint ?? undefined),
-    addViewerHere: () => addArtifactViewer(canvasMenuPoint ?? undefined),
     addAnnotationHere: (kind) =>
       addAnnotation(kind, canvasMenuPoint ?? undefined),
     selectAll: () =>
@@ -4686,17 +4621,6 @@ function WorkbenchBody({
         >
           <Upload size={14} />
           <span {...stylex.props(s.railLabel)}>Module</span>
-        </button>
-        <button
-          type="button"
-          aria-label="Add Artifact Viewer"
-          title="Add a presentation-only Artifact Viewer"
-          disabled={!localAuthoringEnabled}
-          {...stylex.props(s.railButton)}
-          onClick={() => addArtifactViewer()}
-        >
-          <Eye size={14} />
-          <span {...stylex.props(s.railLabel)}>Viewer</span>
         </button>
         <div {...stylex.props(s.shapesMenuWrap)}>
           <button
