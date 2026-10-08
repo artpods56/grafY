@@ -77,7 +77,11 @@ export function ArtifactLeftRail({
         isConnectable={isConnectable}
         ariaLabel="Input port Artifact, accepts any artifact"
         title="Connect a producer output"
-        tip={{ name: "Artifact", type: "Any artifact", hint: "Connect a producer output" }}
+        tip={{
+          name: "Artifact",
+          type: "Any artifact",
+          hint: "Connect a producer output",
+        }}
         slotProps={{ "data-artifact-port-side": "input" }}
       />
     </div>

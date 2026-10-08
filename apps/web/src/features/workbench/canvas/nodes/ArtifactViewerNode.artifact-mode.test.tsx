@@ -39,7 +39,11 @@ vi.mock("./PortBall", () => ({
   PortRevealProvider: ({ children }: { children: React.ReactNode }) => (
     <>{children}</>
   ),
-  usePortReveal: () => ({ active: false, connecting: false, connected: new Set() }),
+  usePortReveal: () => ({
+    active: false,
+    connecting: false,
+    connected: new Set(),
+  }),
 }));
 
 vi.mock("./ArtifactCardBody", () => ({

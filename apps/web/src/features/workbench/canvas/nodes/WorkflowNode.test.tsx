@@ -1416,9 +1416,7 @@ describe("WorkflowNode port rail", () => {
     // Option B: names live on hover tips, not as plate labels.
     expect(leftRail?.textContent ?? "").not.toMatch(/\btext\b/);
     expect(rightRail?.textContent ?? "").not.toMatch(/\bmeta\b/);
-    expect(
-      leftRail?.querySelector('[data-port-name="text"]'),
-    ).not.toBeNull();
+    expect(leftRail?.querySelector('[data-port-name="text"]')).not.toBeNull();
     expect(
       container.querySelector('[data-artifact-body="true"]'),
     ).not.toBeNull();

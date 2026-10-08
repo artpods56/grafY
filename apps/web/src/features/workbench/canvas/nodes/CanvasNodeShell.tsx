@@ -5,7 +5,11 @@ import * as stylex from "@stylexjs/stylex";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { RemoteSelectionRing } from "../../room/RemoteSelectionRing";
-import { CanvasCardFrame, CanvasCardHead, canvasCard } from "./CanvasCardLayout";
+import {
+  CanvasCardFrame,
+  CanvasCardHead,
+  canvasCard,
+} from "./CanvasCardLayout";
 import { NODE_HEADER_HEIGHT } from "./CanvasNodeChrome";
 import { PortRevealProvider, usePortReveal } from "./PortBall";
 import { usePickupLift } from "./usePickupLift";

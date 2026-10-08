@@ -379,10 +379,7 @@ export function usePortBallTypeProps({
   shape: Port["shape"];
   locked: boolean;
   name: string;
-}): Pick<
-  React.ComponentProps<typeof PortBall>,
-  "open" | "tip" | "typeChoice"
-> {
+}): Pick<React.ComponentProps<typeof PortBall>, "open" | "tip" | "typeChoice"> {
   const variable = port.artifact_type_variable ?? null;
   const artifactTypes = useArtifactTypeCatalog();
   const artifactType = resolvedPortArtifactType(

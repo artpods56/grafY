@@ -90,7 +90,11 @@ export function CanvasCardFrame({
   ...rest
 }: React.ComponentProps<"div">) {
   return (
-    <div data-artifact-frame="true" {...stylex.props(canvasCard.frame)} {...rest}>
+    <div
+      data-artifact-frame="true"
+      {...stylex.props(canvasCard.frame)}
+      {...rest}
+    >
       {children}
     </div>
   );
