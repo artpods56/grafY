@@ -20,6 +20,7 @@ SYSTEM_PLUGIN_SLUGS = frozenset(
         "external.llm",
         "external.ocr",
         "external.sql",
+        "external.typesafe",
     }
 )
 

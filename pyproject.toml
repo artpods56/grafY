@@ -19,6 +19,7 @@ gis = ["grafy-plugin-gis"]
 llm = ["grafy-plugin-llm"]
 ocr = ["grafy-plugin-ocr"]
 sql = ["grafy-plugin-sql"]
+typesafe = ["grafy-plugin-typesafe"]
 
 [tool.uv]
 package = false
@@ -40,6 +41,7 @@ exclude = [
     "plugins/llm",
     "plugins/ocr",
     "plugins/sql",
+    "plugins/typesafe",
 ]
 
 [tool.uv.sources]
@@ -61,6 +63,7 @@ grafy-plugin-llm = { path = "plugins/llm", editable = true }
 grafy-plugin-ocr = { path = "plugins/ocr", editable = true }
 grafy-plugin-gis = { path = "plugins/gis", editable = true }
 grafy-plugin-sql = { path = "plugins/sql", editable = true }
+grafy-plugin-typesafe = { path = "plugins/typesafe", editable = true }
 
 [dependency-groups]
 dev = [
@@ -91,6 +94,7 @@ include = [
     "plugins/ocr/*",
     "plugins/gis/*",
     "plugins/sql/*",
+    "plugins/typesafe/*",
     "apps/api/*",
     "apps/plugin-egress-broker/*",
     "tests/*",
@@ -115,6 +119,7 @@ executionEnvironments = [
         "plugins/ocr/src",
         "plugins/gis/src",
         "plugins/sql/src",
+        "plugins/typesafe/src",
         "apps/api/src",
         "apps/plugin-egress-broker/src",
     ] },

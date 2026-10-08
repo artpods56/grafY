@@ -19,6 +19,7 @@ from grafy_plugin_ocr import OCR
 from grafy_workbench.schema import SCHEMAS
 from grafy_workbench.sequence import SEQUENCES
 from grafy_plugin_sql import SQL
+from grafy_plugin_typesafe import TYPESAFE
 from grafy_workbench.table import TABLES
 from grafy_workbench.text import TEXT
 from grafy_workbench.value import VALUE
@@ -37,6 +38,7 @@ SYSTEM_PLUGINS = (
     LLM,
     OCR,
     SQL,
+    TYPESAFE,
 )
 EXPECTED_SYSTEM_PLUGIN_SLUGS = (
     "image",
@@ -50,6 +52,7 @@ EXPECTED_SYSTEM_PLUGIN_SLUGS = (
     "external.llm",
     "external.ocr",
     "external.sql",
+    "external.typesafe",
 )
 
 

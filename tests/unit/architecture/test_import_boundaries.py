@@ -26,6 +26,7 @@ PUBLISHED_PLUGIN_FAMILIES = (
     "llm",
     "ocr",
     "sql",
+    "typesafe",
 )
 WORKBENCH_FAMILIES = (
     "image",
@@ -61,6 +62,7 @@ FORBIDDEN_API_PLUGIN_IMPORTS = (
     "grafy_plugin_llm",
     "grafy_plugin_ocr",
     "grafy_plugin_sql",
+    "grafy_plugin_typesafe",
 )
 LEGACY_NAMESPACE = "proto" + "type"
 
@@ -141,14 +143,24 @@ def test_optional_plugin_dependencies_are_not_owned_by_host_projects() -> None:
     assert not any(
         requirement.startswith("grafy-plugin-sql") for requirement in root_dependencies
     )
+    assert not any(
+        requirement.startswith("grafy-plugin-typesafe")
+        for requirement in root_dependencies
+    )
     assert root_extras["ocr"] == ["grafy-plugin-ocr"]
     assert root_extras["llm"] == ["grafy-plugin-llm"]
     assert root_extras["sql"] == ["grafy-plugin-sql"]
+    assert root_extras["typesafe"] == ["grafy-plugin-typesafe"]
 
     for dependencies in (api_dependencies, core_dependencies):
         assert not any(
             requirement.startswith(
-                ("grafy-plugin-llm", "grafy-plugin-ocr", "grafy-plugin-sql")
+                (
+                    "grafy-plugin-llm",
+                    "grafy-plugin-ocr",
+                    "grafy-plugin-sql",
+                    "grafy-plugin-typesafe",
+                )
             )
             for requirement in dependencies
         )
@@ -372,7 +384,7 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
         assert "grafy-core==0.1.0" in cast(list[str], project["dependencies"])
         core_wheel = project_root / "wheels/grafy_core-0.1.0-py3-none-any.whl"
         assert sha256(core_wheel.read_bytes()).hexdigest() == (
-            "0761bb6cdba470e34e7462282b4d9ec312dcbd168aeccc7df0bd27565353f9e3"
+            "49011475b923afd4c52d6c153d1c2843e38c1ebed251926ff5af584336c2f231"
         )
         assert "workspace = true" not in (project_root / "pyproject.toml").read_text()
 
