@@ -7,6 +7,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 <!-- BEGIN:grafy-workbench-rules -->
 # React Flow canvas checks
 
+- The standalone Artifact Viewer is deprecated. New artifact presentation uses
+  direct canvas cards from Library drops or materialized output-port drops. Do
+  not add viewer creation actions. Preserve saved viewer rendering and bindings
+  until an explicit document migration replaces them.
+
 - When changing an artifact card's default size, update its drop placement and
   multi-card spacing. Verify a mixed selection lands without overlapping bodies.
 - Do not let global `svg` sizing or media resets constrain React Flow's edge
