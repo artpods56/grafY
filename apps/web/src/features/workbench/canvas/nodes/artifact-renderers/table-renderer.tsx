@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
+import { X } from "lucide-react";
 import useSWR from "swr";
 
 import {
@@ -54,6 +55,9 @@ interface TableCellSelection {
   columnTitle: string;
 }
 
+/** Which sticky edges have rows or columns scrolled beneath them. */
+const UNSCROLLED = { top: false, left: false };
+
 interface TableArtifactRendererProps {
   artifact: Pick<ArtifactSummary, "artifact_id" | "content_url">;
   mode: string;
@@ -89,6 +93,15 @@ function TableArtifactRendererState({
   const activityChangeRef = React.useRef(interaction?.onActivityChange);
   const cellDetailId = React.useId();
   const cellTriggerRef = React.useRef<HTMLButtonElement | null>(null);
+  const viewportRef = React.useRef<HTMLDivElement | null>(null);
+  const [scrolled, setScrolled] = React.useState(UNSCROLLED);
+  // On the canvas the value opens over the rows, so focusing it must not
+  // scroll the card's clipped ancestors; in a panel it scrolls into view.
+  const focusCellValue = React.useCallback(
+    (element: HTMLTextAreaElement | null) =>
+      element?.focus({ preventScroll: canvas }),
+    [canvas],
+  );
   const {
     data: tableSchema,
     error: tableSchemaError,
@@ -206,6 +219,14 @@ function TableArtifactRendererState({
   React.useEffect(() => {
     activityChangeRef.current = interaction?.onActivityChange;
   }, [interaction?.onActivityChange]);
+
+  // A new page or filter starts at its first row, not where the last one was
+  // left.
+  const shownOffset = page?.offset;
+  React.useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (viewport) viewport.scrollTop = 0;
+  }, [shownOffset, pageSize, filterSignature]);
 
   React.useEffect(
     () => () => {
@@ -381,6 +402,84 @@ function TableArtifactRendererState({
       }
     }
   };
+  const closeCellDetail = () => {
+    const trigger = cellTriggerRef.current;
+    setSelectedCell(null);
+    window.requestAnimationFrame(() =>
+      trigger?.focus({ preventScroll: canvas }),
+    );
+  };
+  const cellDetail =
+    mode !== "raw" && selectedCell ? (
+      <div
+        id={cellDetailId}
+        role="region"
+        aria-label="Full table cell value"
+        {...stylex.props(
+          s.tableCellDetail,
+          canvas ? s.tableCanvasCellDetail : null,
+        )}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          event.stopPropagation();
+          closeCellDetail();
+        }}
+      >
+        <div {...stylex.props(s.tableCellDetailHeader)}>
+          <span {...stylex.props(s.tableCellDetailTitle)}>
+            <span>Row {selectedCell.rowIndex + 1}</span>
+            <span aria-hidden="true" {...stylex.props(s.tableSummaryDivider)}>
+              ·
+            </span>
+            <span {...stylex.props(s.tableCellDetailName)}>
+              {selectedCell.columnTitle}
+            </span>
+            {fullCell ? (
+              <span {...stylex.props(s.tableCellDetailLength)}>
+                {fullCellText.length.toLocaleString()}{" "}
+                {fullCellText.length === 1 ? "character" : "characters"}
+              </span>
+            ) : null}
+          </span>
+          <button
+            type="button"
+            aria-label="Close full cell value"
+            title="Close (Esc)"
+            {...stylex.props(s.tablePagerButton, s.tablePagerIconButton)}
+            onClick={closeCellDetail}
+          >
+            <X size={13} aria-hidden="true" />
+          </button>
+        </div>
+        {fullCellLoading ? (
+          <span
+            role="status"
+            aria-live="polite"
+            {...stylex.props(s.tableLimit)}
+          >
+            Loading full cell…
+          </span>
+        ) : fullCellError ? (
+          <span role="alert" {...stylex.props(s.tableLimit)}>
+            Could not load the full cell value.
+          </span>
+        ) : fullCell ? (
+          <textarea
+            ref={focusCellValue}
+            readOnly
+            aria-label="Full cell value"
+            value={fullCellText}
+            {...stylex.props(
+              s.tableCellDetailValue,
+              canvas ? s.tableCanvasCellDetailValue : null,
+            )}
+          />
+        ) : null}
+      </div>
+    ) : null;
+  // The cell detail covers the rows on the canvas, so they leave the tab order.
+  const rowsCovered = canvas && cellDetail !== null;
   return (
     <div
       aria-busy={pageLoading || selectingRowIndex !== null}
@@ -432,158 +531,195 @@ function TableArtifactRendererState({
           ) : null}
         </span>
       </div>
-      {mode === "raw" ? (
-        <pre {...stylex.props(sharedStyles.jsonCode)}>
-          {JSON.stringify(page, null, 2)}
-        </pre>
-      ) : (
-        <div
-          role="region"
-          aria-label="Table preview"
-          tabIndex={0}
-          className="nodrag nowheel"
-          {...stylex.props(
-            s.tableViewport,
-            canvas ? s.tableCanvasViewport : null,
-          )}
-          style={{ maxHeight: canvas ? undefined : viewportHeight }}
-        >
-          <table {...stylex.props(s.dataTable)}>
-            <thead>
-              <tr>
-                <th scope="col" {...stylex.props(s.tableIndexHeader)}>
-                  #
-                </th>
-                {page.columns.map((column) => (
+      <div {...stylex.props(s.tableStage, canvas ? s.tableCanvasStage : null)}>
+        {mode === "raw" ? (
+          <pre {...stylex.props(sharedStyles.jsonCode)}>
+            {JSON.stringify(page, null, 2)}
+          </pre>
+        ) : (
+          <div
+            ref={viewportRef}
+            role="region"
+            aria-label="Table preview"
+            tabIndex={0}
+            inert={rowsCovered}
+            className="nodrag nowheel"
+            {...stylex.props(
+              s.tableViewport,
+              canvas ? s.tableCanvasViewport : null,
+            )}
+            style={{ maxHeight: canvas ? undefined : viewportHeight }}
+            onScroll={(event) => {
+              const { scrollTop, scrollLeft } = event.currentTarget;
+              const top = scrollTop > 0;
+              const left = scrollLeft > 0;
+              setScrolled((current) =>
+                current.top === top && current.left === left
+                  ? current
+                  : { top, left },
+              );
+            }}
+          >
+            <table {...stylex.props(s.dataTable)}>
+              <thead>
+                <tr>
                   <th
-                    key={column.id}
                     scope="col"
-                    title={`${column.title || column.id} · ${column.value_type}`}
-                    {...stylex.props(s.tableHeader)}
-                  >
-                    <span {...stylex.props(s.tableHeaderTitle)}>
-                      {column.title || column.id}
-                    </span>
-                    <span {...stylex.props(s.tableHeaderType)}>
-                      {column.value_type}
-                    </span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {page.rows.map((row, pageRowIndex) => {
-                const rowIndex =
-                  page.row_indices?.[pageRowIndex] ??
-                  page.offset + pageRowIndex;
-                const selected = selectedSourceIndices.has(rowIndex);
-                const highlighted = highlightedSourceIndices.has(rowIndex);
-                return (
-                  <tr
-                    key={rowIndex}
-                    tabIndex={interaction ? 0 : undefined}
-                    aria-selected={interaction ? selected : undefined}
                     {...stylex.props(
-                      interaction ? s.tableRowInteractive : null,
+                      s.tableIndexHeader,
+                      scrolled.top && scrolled.left
+                        ? s.tableIndexHeaderScrolled
+                        : scrolled.top
+                          ? s.tableHeaderScrolled
+                          : scrolled.left
+                            ? s.tableIndexCellScrolled
+                            : null,
                     )}
-                    onClick={() => void selectRow(rowIndex, row)}
-                    onKeyDown={(event) => {
-                      if (
-                        interaction &&
-                        (event.key === "Enter" || event.key === " ")
-                      ) {
-                        event.preventDefault();
-                        void selectRow(rowIndex, row);
-                      }
-                    }}
                   >
+                    #
+                  </th>
+                  {page.columns.map((column) => (
                     <th
-                      scope="row"
+                      key={column.id}
+                      scope="col"
+                      title={`${column.title || column.id} · ${column.value_type}`}
                       {...stylex.props(
-                        s.tableIndexCell,
-                        selected ? s.tableCellSelected : null,
-                        !selected && highlighted
-                          ? s.tableCellHighlighted
-                          : null,
+                        s.tableHeader,
+                        scrolled.top ? s.tableHeaderScrolled : null,
                       )}
                     >
-                      {rowIndex + 1}
+                      <span {...stylex.props(s.tableHeaderTitle)}>
+                        {column.title || column.id}
+                      </span>
+                      <span {...stylex.props(s.tableHeaderType)}>
+                        {column.value_type}
+                      </span>
                     </th>
-                    {page.columns.map((column) => {
-                      const cell = row[column.id];
-                      const text = tableCellText(cell.display);
-                      const numeric =
-                        column.value_type === "integer" ||
-                        column.value_type === "number" ||
-                        column.value_type === "decimal";
-                      const code =
-                        column.value_type !== "text" &&
-                        column.value_type !== "boolean";
-                      return (
-                        <td
-                          key={column.id}
-                          title={
-                            cell.truncated
-                              ? "Preview truncated; click to inspect"
-                              : undefined
-                          }
-                          {...stylex.props(
-                            s.tableCell,
-                            code ? s.tableCellCode : null,
-                            numeric ? s.tableCellNumeric : null,
-                            cell.display === null ? s.tableCellNull : null,
-                            selected ? s.tableCellSelected : null,
-                            !selected && highlighted
-                              ? s.tableCellHighlighted
-                              : null,
-                          )}
-                        >
-                          {cell.truncated ? (
-                            <button
-                              type="button"
-                              aria-expanded={
-                                selectedCell?.rowIndex === rowIndex &&
-                                selectedCell.columnId === column.id
-                              }
-                              aria-controls={cellDetailId}
-                              {...stylex.props(s.tableTruncatedCellButton)}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                cellTriggerRef.current = event.currentTarget;
-                                setSelectedCell({
-                                  rowIndex,
-                                  columnId: column.id,
-                                  columnTitle: column.title || column.id,
-                                });
-                              }}
-                            >
-                              {text}
-                            </button>
-                          ) : (
-                            text
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-              {!page.rows.length ? (
-                <tr>
-                  <td
-                    colSpan={Math.max(1, page.columns.length + 1)}
-                    {...stylex.props(s.tableEmpty)}
-                  >
-                    {page.columns.length
-                      ? "This table has no rows"
-                      : "This table has no columns or rows"}
-                  </td>
+                  ))}
                 </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {page.rows.map((row, pageRowIndex) => {
+                  const rowIndex =
+                    page.row_indices?.[pageRowIndex] ??
+                    page.offset + pageRowIndex;
+                  const selected = selectedSourceIndices.has(rowIndex);
+                  const highlighted = highlightedSourceIndices.has(rowIndex);
+                  return (
+                    <tr
+                      key={rowIndex}
+                      tabIndex={interaction ? 0 : undefined}
+                      aria-selected={interaction ? selected : undefined}
+                      {...stylex.props(
+                        s.tableRow,
+                        selected
+                          ? s.tableRowSelected
+                          : highlighted
+                            ? s.tableRowHighlighted
+                            : null,
+                        interaction ? s.tableRowInteractive : null,
+                      )}
+                      onClick={() => void selectRow(rowIndex, row)}
+                      onKeyDown={(event) => {
+                        if (
+                          interaction &&
+                          (event.key === "Enter" || event.key === " ")
+                        ) {
+                          event.preventDefault();
+                          void selectRow(rowIndex, row);
+                        }
+                      }}
+                    >
+                      <th
+                        scope="row"
+                        {...stylex.props(
+                          s.tableIndexCell,
+                          selected && scrolled.left
+                            ? s.tableIndexCellSelectedScrolled
+                            : selected
+                              ? s.tableIndexCellSelected
+                              : scrolled.left
+                                ? s.tableIndexCellScrolled
+                                : null,
+                        )}
+                      >
+                        {rowIndex + 1}
+                      </th>
+                      {page.columns.map((column) => {
+                        const cell = row[column.id];
+                        const text = tableCellText(cell.display);
+                        const numeric =
+                          column.value_type === "integer" ||
+                          column.value_type === "number" ||
+                          column.value_type === "decimal";
+                        const code =
+                          column.value_type !== "text" &&
+                          column.value_type !== "boolean";
+                        return (
+                          <td
+                            key={column.id}
+                            title={
+                              cell.truncated
+                                ? "Preview truncated; click to inspect"
+                                : undefined
+                            }
+                            {...stylex.props(
+                              s.tableCell,
+                              code ? s.tableCellCode : null,
+                              numeric ? s.tableCellNumeric : null,
+                              cell.display === null ? s.tableCellNull : null,
+                            )}
+                          >
+                            {cell.truncated ? (
+                              <button
+                                type="button"
+                                aria-expanded={
+                                  selectedCell?.rowIndex === rowIndex &&
+                                  selectedCell.columnId === column.id
+                                }
+                                aria-controls={cellDetailId}
+                                {...stylex.props(s.tableTruncatedCellButton)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  cellTriggerRef.current = event.currentTarget;
+                                  setSelectedCell({
+                                    rowIndex,
+                                    columnId: column.id,
+                                    columnTitle: column.title || column.id,
+                                  });
+                                }}
+                              >
+                                {text}
+                              </button>
+                            ) : (
+                              text
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+                {!page.rows.length ? (
+                  <tr>
+                    <td
+                      colSpan={Math.max(1, page.columns.length + 1)}
+                      {...stylex.props(s.tableEmpty)}
+                    >
+                      <div {...stylex.props(s.tableEmptyMessage)}>
+                        {page.columns.length
+                          ? "This table has no rows"
+                          : "This table has no columns or rows"}
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {canvas ? cellDetail : null}
+      </div>
       <TablePageNavigation
         canvas={canvas}
         page={page}
@@ -599,56 +735,7 @@ function TableArtifactRendererState({
           setPageSize(nextPageSize);
         }}
       />
-      {mode !== "raw" && selectedCell ? (
-        <div
-          id={cellDetailId}
-          role="region"
-          aria-label="Full table cell value"
-          {...stylex.props(
-            s.tableCellDetail,
-            canvas ? s.tableCanvasCellDetail : null,
-          )}
-        >
-          <div {...stylex.props(s.tableCellDetailHeader)}>
-            <span>
-              Row {selectedCell.rowIndex + 1} · {selectedCell.columnTitle}
-            </span>
-            <button
-              type="button"
-              aria-label="Close full cell value"
-              {...stylex.props(s.tablePagerButton)}
-              onClick={() => {
-                const trigger = cellTriggerRef.current;
-                setSelectedCell(null);
-                window.requestAnimationFrame(() => trigger?.focus());
-              }}
-            >
-              Close
-            </button>
-          </div>
-          {fullCellLoading ? (
-            <span
-              role="status"
-              aria-live="polite"
-              {...stylex.props(s.tableLimit)}
-            >
-              Loading full cell…
-            </span>
-          ) : fullCellError ? (
-            <span role="alert" {...stylex.props(s.tableLimit)}>
-              Could not load the full cell value.
-            </span>
-          ) : fullCell ? (
-            <textarea
-              autoFocus
-              readOnly
-              aria-label="Full cell value"
-              value={fullCellText}
-              {...stylex.props(s.tableCellDetailValue)}
-            />
-          ) : null}
-        </div>
-      ) : null}
+      {canvas ? null : cellDetail}
     </div>
   );
 }

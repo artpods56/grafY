@@ -61,7 +61,12 @@ export function TablePageNavigation({
           <option value={100}>100 / page</option>
         </select>
       </span>
-      <span {...stylex.props(s.tablePagerActions)}>
+      <span
+        {...stylex.props(
+          s.tablePagerActions,
+          canvas ? s.tableCanvasPagerActions : null,
+        )}
+      >
         <button
           type="button"
           aria-label="First page"

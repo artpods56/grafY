@@ -138,24 +138,6 @@ test("canvas tables page, scroll and inspect cells without moving the canvas", a
 }) => {
   test.skip(hasTouch, "Library drag and mouse wheel workflow");
   const card = await placeTable(page);
-  const cardBounds = await card.boundingBox();
-  if (!cardBounds) throw new Error("Canvas table missing");
-  const clip = {
-    x: cardBounds.x - 45,
-    y: cardBounds.y - 12,
-    width: cardBounds.width + 90,
-    height: cardBounds.height + 24,
-  };
-  const _ = await page.screenshot({
-    path: "../../output/canvas-table-light.png",
-    clip,
-  });
-  await page.emulateMedia({ colorScheme: "dark" });
-  const _dark = await page.screenshot({
-    path: "../../output/canvas-table-dark.png",
-    clip,
-  });
-  await page.emulateMedia({ colorScheme: "light" });
   const viewport = card.getByRole("region", { name: "Table preview" });
   const transform = await page
     .locator(".react-flow__viewport")
@@ -183,14 +165,28 @@ test("canvas tables page, scroll and inspect cells without moving the canvas", a
   await viewport.evaluate((el) => {
     el.scrollTop = 0;
   });
-  await card.locator("tbody tr").first().getByRole("button").click();
-  await expect(
-    card.getByRole("textbox", { name: "Full cell value" }),
-  ).toHaveValue(fullNotes);
-  await expect(
-    card.getByRole("button", { name: "Close full cell value" }),
-  ).toBeVisible();
+  const preview = card.locator("tbody tr").first().getByRole("button");
+  await preview.click();
+  const fullValue = card.getByRole("textbox", { name: "Full cell value" });
+  await expect(fullValue).toHaveValue(fullNotes);
+  await expect(fullValue).toBeFocused();
+  // The value opens over the rows, with the room they had, instead of being
+  // squeezed in below the pager.
+  const detailRegion = card.getByRole("region", {
+    name: "Full table cell value",
+  });
+  const rows = await viewport.boundingBox();
+  const detail = await detailRegion.boundingBox();
+  if (!rows || !detail) throw new Error("Full cell value missing");
+  expect(Math.abs(detail.y - rows.y)).toBeLessThan(2);
+  expect(detail.height).toBeGreaterThan(rows.height - 2);
+  expect(await detailRegion.evaluate((el) => el.scrollTop)).toBe(0);
+  await page.keyboard.press("Escape");
+  await expect(fullValue).toHaveCount(0);
+  await expect(preview).toBeFocused();
+  await preview.click();
   await card.getByRole("button", { name: "Close full cell value" }).click();
+  await expect(fullValue).toHaveCount(0);
   await card
     .getByRole("button", { name: "Choose visible table columns" })
     .click();
@@ -199,9 +195,14 @@ test("canvas tables page, scroll and inspect cells without moving the canvas", a
   await expect(
     card.getByRole("columnheader", { name: "Verified boolean" }),
   ).toHaveCount(0);
+  await viewport.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
   await card.getByRole("button", { name: "Next page" }).click();
   await expect(card).toContainText("51–100 of 128");
   await expect(card.locator("tbody tr").first()).toContainText("Station 51");
+  // A new page opens at its first row, not where the last one was left.
+  await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBe(0);
   await card
     .getByRole("combobox", { name: "Rows per page" })
     .selectOption("25");
