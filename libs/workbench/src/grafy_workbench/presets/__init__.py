@@ -9,6 +9,7 @@ Each file in this package is one preset.
 import tomllib
 from hashlib import sha256
 from importlib.resources import files
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
@@ -67,6 +68,15 @@ class NodePreset(_PresetValue):
             for name, property_schema in properties.items()
             if isinstance(property_schema, dict) and "default" in property_schema
         }
+
+    def display_port_title(self, side: Literal["input", "output"]) -> str:
+        """Label shown on the card. The runtime port is still named input or output."""
+
+        if side == "input":
+            return self.contract.input_name
+        if self.contract.output.shape is PortShape.MANY:
+            return "parts"
+        return self.contract.output.artifact_type.id.rsplit(".", 1)[-1]
 
     def node_config(self) -> dict[str, JsonValue]:
         """The configuration of a new Python node in its applied state."""

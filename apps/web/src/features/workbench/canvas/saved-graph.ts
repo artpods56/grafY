@@ -5,6 +5,7 @@ import {
   type NodeRegistry,
   type NodeSpec,
   type PluginReleasePin,
+  type Port,
   type RunNodeResult,
   type SavedGraph,
   type SavedGraphEdge,
@@ -110,6 +111,47 @@ function scopedOperatorKey(
   return pluginRelease
     ? `${operator}::${pluginRelease.scope}:${pluginRelease.slug}`
     : operator;
+}
+
+function presentCopiedPreset(
+  spec: NodeSpec,
+  config: WorkflowNodeData["config"],
+  registry: NodeRegistry,
+): NodeSpec {
+  const presetId = config.preset_id;
+  const presetVersion = config.preset_version;
+  const codeSha256 = config.code_sha256;
+  if (
+    typeof presetId !== "string" ||
+    typeof presetVersion !== "number" ||
+    typeof codeSha256 !== "string"
+  ) {
+    return spec;
+  }
+  const preset = (registry.presets ?? []).find(
+    (candidate) =>
+      candidate.id === presetId && candidate.version === presetVersion,
+  );
+  if (!preset) return spec;
+  const unchanged = preset.config.code_sha256 === codeSha256;
+  const retitle = (ports: readonly Port[], source: readonly Port[]): Port[] =>
+    ports.map((port) => {
+      const match = source.find((candidate) => candidate.name === port.name);
+      return match
+        ? { ...port, title: match.title, description: match.description }
+        : port;
+    });
+  return {
+    ...spec,
+    title: preset.node.title,
+    description: preset.node.description,
+    inputs: unchanged
+      ? retitle(spec.inputs, preset.node.inputs)
+      : spec.inputs,
+    outputs: unchanged
+      ? retitle(spec.outputs, preset.node.outputs)
+      : spec.outputs,
+  };
 }
 
 function compatibilityEndpoints(
@@ -466,7 +508,11 @@ export function hydrateSavedGraph(
           );
           data.pluginReleasePin = persistedPluginReleasePin(savedNode);
           data.config = structuredClone(savedNode.config ?? {});
-          data.spec = resolveInstancePortShapes(spec, data.config);
+          data.spec = presentCopiedPreset(
+            resolveInstancePortShapes(spec, data.config),
+            data.config,
+            registry,
+          );
           data.layout =
             hydrateNodeLayout(savedNode.layout) ?? defaultNodeLayout(spec);
         } catch (error) {

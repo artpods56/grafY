@@ -35,6 +35,14 @@ def test_preset_contract_is_derived_from_its_copied_code(preset: NodePreset) -> 
     config = preset.node_config()
     assert config["code_sha256"] == sha256(preset.code.encode()).hexdigest()
     assert config["preset_id"] == preset.id
+    assert preset.display_port_title("input") == preset.contract.input_name
+    assert preset.display_port_title("output") == {
+        "as-markdown": "markdown",
+        "join-text": "text",
+        "python": "text",
+        "replace-text": "text",
+        "split-text": "parts",
+    }[preset.id]
 
 
 @pytest.mark.parametrize(

@@ -269,12 +269,25 @@ export function sortCatalogNodes(nodes: readonly NodeSpec[]): NodeSpec[] {
   });
 }
 
+/**
+ * Settings the library should show. A preset's editable values live in
+ * `params_schema`; the operator schema is the runner's code, hash and shapes.
+ */
+export function catalogSettingsSchema(spec: NodeSpec): unknown {
+  if (!spec.preset) return spec.config_schema;
+  const params = spec.preset.config.params_schema;
+  if (typeof params === "object" && params !== null && !Array.isArray(params)) {
+    return params;
+  }
+  return { type: "object", properties: {} };
+}
+
 export function nodeCatalogSearchText(
   spec: NodeSpec,
   registry: NodeRegistry,
 ): string {
   const plugin = catalogPlugin(registry, spec.plugin_slug);
-  const fields = schemaFields(spec.config_schema);
+  const fields = schemaFields(catalogSettingsSchema(spec));
   return [
     spec.title,
     spec.operator_id,

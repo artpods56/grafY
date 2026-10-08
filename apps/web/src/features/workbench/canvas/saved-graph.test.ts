@@ -1104,3 +1104,143 @@ describe("saved graph module nodes", () => {
     ).toBe("many");
   });
 });
+
+describe("copied Python presets", () => {
+  function pythonSpec(): NodeSpec {
+    const port = (direction: "input" | "output") => ({
+      name: direction,
+      title: null,
+      description: "runner port",
+      direction,
+      artifact_type: { id: "scalar.text", schema_version: 1 },
+      shape: "one" as const,
+      accepted_shapes: ["one" as const],
+      instance_plugs: false,
+      variadic: false,
+      required: true,
+      shape_field: `${direction}_shape`,
+    });
+    return {
+      operator_id: "python.transform",
+      operator_version: 1,
+      plugin_slug: "external.python",
+      origin: "plugin",
+      title: "Python",
+      description: "Runs applied Python code.",
+      catalog_visible: false,
+      runnable: true,
+      config_schema: { type: "object" },
+      input_schema: {},
+      output_schema: {},
+      inputs: [port("input")],
+      outputs: [port("output")],
+    };
+  }
+
+  function splitGraph(codeSha256: string): SavedGraph {
+    return {
+      id: "00000000-0000-4000-8000-000000000010",
+      revision: 1,
+      name: "Split",
+      created_at: "2026-07-16T12:00:00Z",
+      updated_at: "2026-07-16T12:00:00Z",
+      document: {
+        schema_version: 7,
+        origins: [],
+        nodes: [
+          {
+            id: "split",
+            kind: "builtin",
+            operator_id: "python.transform",
+            operator_version: 1,
+            config: {
+              preset_id: "split-text",
+              preset_version: 1,
+              code_sha256: codeSha256,
+              input_shape: "one",
+              output_shape: "many",
+            },
+            input_plugs: [],
+            artifact_type_bindings: [],
+            position: { x: 0, y: 0 },
+          },
+        ],
+        edges: [],
+        presentation: {
+          viewers: [],
+          links: [],
+          bindings: [],
+          annotations: [],
+        },
+      },
+    };
+  }
+
+  function splitRegistry(spec: NodeSpec): NodeRegistry {
+    return {
+      plugins: [],
+      artifact_types: [
+        {
+          key: { id: "scalar.text", schema_version: 1 },
+          title: "Text",
+          payload_schema: {},
+          field_projections: [],
+          bundle: { format: "inline-json", version: 1 },
+        },
+      ],
+      artifact_conversions: [],
+      nodes: [spec],
+      presets: [
+        {
+          id: "split-text",
+          version: 1,
+          config: { code_sha256: "abc" },
+          artifact_type_bindings: [],
+          node: {
+            ...spec,
+            title: "Split text",
+            description: "Splits text on an exact separator.",
+            catalog_visible: true,
+            config_schema: { type: "object", properties: { separator: {} } },
+            inputs: spec.inputs.map((port) => ({
+              ...port,
+              title: "text",
+              description: null,
+            })),
+            outputs: spec.outputs.map((port) => ({
+              ...port,
+              title: "parts",
+              description: null,
+            })),
+          },
+        },
+      ],
+    };
+  }
+
+  it("shows the preset title and port labels while the copied code is unchanged", () => {
+    const spec = pythonSpec();
+    const hydrated = hydrateSavedGraph(splitGraph("abc"), splitRegistry(spec));
+    const node = hydrated.nodes[0]?.data.spec;
+
+    expect(node?.title).toBe("Split text");
+    expect(node?.description).toBe("Splits text on an exact separator.");
+    expect(node?.inputs[0]?.title).toBe("text");
+    expect(node?.inputs[0]?.description).toBeNull();
+    expect(node?.outputs[0]?.title).toBe("parts");
+    expect(node?.outputs[0]?.shape).toBe("many");
+    expect(node?.config_schema).toEqual({ type: "object" });
+  });
+
+  it("keeps the preset name and drops stale port labels after the code changes", () => {
+    const hydrated = hydrateSavedGraph(
+      splitGraph("changed"),
+      splitRegistry(pythonSpec()),
+    );
+
+    expect(hydrated.nodes[0]?.data.spec.title).toBe("Split text");
+    expect(hydrated.nodes[0]?.data.spec.inputs[0]?.title).toBeNull();
+    expect(hydrated.nodes[0]?.data.spec.outputs[0]?.title).toBeNull();
+    expect(hydrated.nodes[0]?.data.spec.outputs[0]?.shape).toBe("many");
+  });
+});

@@ -64,7 +64,7 @@ test("Python presets show params, keep drafts local, and confirm breaking wires"
     await expect(page.getByRole("dialog")).toHaveCount(0);
     return page
       .locator(".react-flow__node")
-      .filter({ hasText: title == "Replace text" ? "Python" : title });
+      .filter({ hasText: title });
   }
   const source = await insert("Test text source");
   const target = await insert("Replace text");

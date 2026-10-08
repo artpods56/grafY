@@ -17,14 +17,37 @@ import {
   indentWithTab,
 } from "@codemirror/commands";
 import {
+  HighlightStyle,
   bracketMatching,
-  defaultHighlightStyle,
   indentOnInput,
   syntaxHighlighting,
 } from "@codemirror/language";
 import { python } from "@codemirror/lang-python";
 import { setDiagnostics } from "@codemirror/lint";
+import { tags } from "@lezer/highlight";
 import type { ApplyPythonCodeResponse } from "@/lib/api";
+
+const ink = "light-dark(#111111, #F5F5F5)";
+const muted = "light-dark(#6B6B6B, #8A8A8A)";
+
+const pythonHighlight = HighlightStyle.define([
+  { tag: tags.comment, color: muted, fontStyle: "italic" },
+  { tag: tags.keyword, color: ink, fontWeight: "600" },
+  {
+    tag: [
+      tags.string,
+      tags.special(tags.string),
+      tags.number,
+      tags.bool,
+      tags.null,
+    ],
+    color: "light-dark(#3F3F3F, #D4D4D4)",
+  },
+  {
+    tag: [tags.function(tags.variableName), tags.className, tags.typeName],
+    color: ink,
+  },
+]);
 
 export function PythonCodeEditor({
   code,
@@ -57,7 +80,7 @@ export function PythonCodeEditor({
           indentOnInput(),
           bracketMatching(),
           highlightActiveLine(),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          syntaxHighlighting(pythonHighlight),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           EditorView.lineWrapping,
           python(),
@@ -68,18 +91,30 @@ export function PythonCodeEditor({
           }),
           EditorView.theme({
             "&": {
-              minHeight: "160px",
+              minHeight: "148px",
               fontSize: "12px",
+              color: ink,
               backgroundColor: "transparent",
             },
+            "&.cm-focused": { outline: "none" },
             ".cm-scroller": {
               overflow: "auto",
               fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              lineHeight: "1.45",
             },
+            ".cm-content": { padding: "8px 0" },
             ".cm-gutters": {
               backgroundColor: "transparent",
-              color: "inherit",
+              color: muted,
               border: "none",
+            },
+            ".cm-activeLine, .cm-activeLineGutter": {
+              backgroundColor:
+                "light-dark(rgba(17, 17, 17, 0.04), rgba(255, 255, 255, 0.05))",
+            },
+            ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+              backgroundColor:
+                "light-dark(rgba(17, 17, 17, 0.12), rgba(255, 255, 255, 0.16))",
             },
           }),
           EditorView.updateListener.of((update) => {

@@ -275,6 +275,10 @@ def test_module_boundaries_register_without_a_plugin_family() -> None:
     assert {registration.plugin_slug for registration in registry.nodes} == {
         "graph.module"
     }
+    assert [registration.listed for registration in registry.nodes] == [
+        False,
+        False,
+    ]
 
 
 @pytest.mark.parametrize(

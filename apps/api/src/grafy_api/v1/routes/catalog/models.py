@@ -623,10 +623,19 @@ class NodePresetResponse(ApiResponse):
                     "title": preset.title,
                     "description": preset.description,
                     "inputs": [
-                        _preset_port(port, ports.get(port.name)) for port in spec.inputs
+                        _preset_port(
+                            port,
+                            ports.get(port.name),
+                            preset.display_port_title("input"),
+                        )
+                        for port in spec.inputs
                     ],
                     "outputs": [
-                        _preset_port(port, ports.get(port.name))
+                        _preset_port(
+                            port,
+                            ports.get(port.name),
+                            preset.display_port_title("output"),
+                        )
                         for port in spec.outputs
                     ],
                     "catalog_visible": True,
@@ -645,11 +654,17 @@ class NodePresetResponse(ApiResponse):
         )
 
 
-def _preset_port(port: PortResponse, preset_port: PresetPort | None) -> PortResponse:
+def _preset_port(
+    port: PortResponse,
+    preset_port: PresetPort | None,
+    title: str,
+) -> PortResponse:
     if preset_port is None:
         return port
     return port.model_copy(
         update={
+            "title": title,
+            "description": None,
             "artifact_type": ArtifactTypeKeyResponse.from_key(
                 preset_port.artifact_type.key()
             ),

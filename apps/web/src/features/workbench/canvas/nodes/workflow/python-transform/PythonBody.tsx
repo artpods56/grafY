@@ -2,26 +2,92 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
+import { ChevronDown } from "lucide-react";
+
 import type { ApplyPythonCodeResponse } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type { WorkflowNodeData } from "../../../types";
 import { GenericBody } from "../generic-body";
+import { nodeInteractionProps } from "../ports";
 import { PythonCodeEditor } from "./PythonCodeEditor";
 
 const styles = stylex.create({
-  code: { padding: "8px 16px", minWidth: 0 },
-  summary: { cursor: "pointer", fontSize: tokens.fontSizeXs },
-  error: { color: tokens.colorDanger, fontSize: tokens.fontSizeXs },
-  button: {
-    marginTop: "8px",
-    padding: "4px 8px",
-    borderRadius: tokens.radiusSm,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    backgroundColor: tokens.colorSurface,
-    color: tokens.colorText,
+  section: {
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorDivider,
+    padding: "0 16px 10px",
+  },
+  summary: {
+    minHeight: "34px",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    listStyle: "none",
+    color: tokens.colorMuted,
     cursor: "pointer",
+    fontSize: tokens.fontSizeSm,
+    fontWeight: 650,
+    "::-webkit-details-marker": { display: "none" },
+    "::marker": { content: "none" },
+  },
+  summaryLabel: { flex: "1 1 auto" },
+  pending: {
+    color: tokens.colorSubtle,
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 500,
+  },
+  chevron: {
+    flexShrink: 0,
+    color: tokens.colorSubtle,
+  },
+  editor: {
+    overflow: "hidden",
+    marginBottom: "8px",
+    borderRadius: tokens.radiusMd,
+    backgroundColor: tokens.colorSurfaceMuted,
+    outline: {
+      default: "none",
+      ":focus-within": `2px solid ${tokens.colorAccentBorder}`,
+    },
+  },
+  error: {
+    margin: "0 0 8px",
+    color: tokens.colorDanger,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.4,
+  },
+  apply: {
+    width: "100%",
+    minHeight: "29px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 0,
+    borderRadius: tokens.radiusMd,
+    backgroundColor: {
+      default: tokens.colorSurfaceRaised,
+      ":hover": tokens.colorHover,
+      ":disabled": tokens.colorSurfaceMuted,
+    },
+    color: {
+      default: tokens.colorText,
+      ":disabled": tokens.colorTextDisabled,
+    },
+    cursor: { default: "pointer", ":disabled": "not-allowed" },
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 500,
+  },
+  applyPending: {
+    backgroundColor: {
+      default: tokens.colorAccent,
+      ":hover": tokens.colorAccentHover,
+      ":disabled": tokens.colorSurfaceMuted,
+    },
+    color: {
+      default: tokens.colorOnAccent,
+      ":disabled": tokens.colorTextDisabled,
+    },
   },
 });
 
@@ -65,6 +131,7 @@ export function PythonBody({
           })
       : undefined,
   };
+  const unapplied = draft !== code;
   async function apply() {
     if (!data.onApplyPythonCode) return;
     setBusy(true);
@@ -72,8 +139,8 @@ export function PythonBody({
     try {
       const result = await data.onApplyPythonCode(id, draft);
       setDiagnostics(result.diagnostics);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Apply failed");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Apply failed");
     } finally {
       setBusy(false);
     }
@@ -81,17 +148,29 @@ export function PythonBody({
   return (
     <>
       <GenericBody id={id} data={formData} bodyHeight={null} {...layoutProps} />
-      <details {...stylex.props(styles.code)} className="nodrag nowheel">
-        <summary {...stylex.props(styles.summary)}>Code</summary>
-        <PythonCodeEditor
-          code={draft}
-          disabled={!data.onApplyPythonCode || busy}
-          diagnostics={diagnostics}
-          onChange={(value) => {
-            setDraft(value);
-            setDiagnostics([]);
-          }}
-        />
+      <details {...nodeInteractionProps(stylex.props(styles.section))}>
+        <summary {...stylex.props(styles.summary)}>
+          <span {...stylex.props(styles.summaryLabel)}>Code</span>
+          {unapplied ? (
+            <span {...stylex.props(styles.pending)}>Unapplied changes</span>
+          ) : null}
+          <ChevronDown
+            size={14}
+            aria-hidden="true"
+            {...stylex.props(styles.chevron)}
+          />
+        </summary>
+        <div {...stylex.props(styles.editor)}>
+          <PythonCodeEditor
+            code={draft}
+            disabled={!data.onApplyPythonCode || busy}
+            diagnostics={diagnostics}
+            onChange={(value) => {
+              setDraft(value);
+              setDiagnostics([]);
+            }}
+          />
+        </div>
         {diagnostics.map((diagnostic, index) => (
           <p key={index} role="alert" {...stylex.props(styles.error)}>
             Line {diagnostic.line}: {diagnostic.message}
@@ -106,11 +185,13 @@ export function PythonBody({
           type="button"
           disabled={busy || !data.onApplyPythonCode}
           onClick={() => void apply()}
-          {...stylex.props(styles.button)}
+          {...stylex.props(
+            styles.apply,
+            unapplied ? styles.applyPending : null,
+          )}
         >
           {busy ? "Applying…" : "Apply"}
         </button>
-        {draft !== code ? <span> Unapplied changes</span> : null}
       </details>
     </>
   );
