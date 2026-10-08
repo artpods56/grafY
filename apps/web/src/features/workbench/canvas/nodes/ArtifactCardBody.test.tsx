@@ -508,8 +508,8 @@ describe("artifact on the canvas", () => {
     expect(container.textContent).toContain("3 items");
     expect(container.textContent).toContain("Sequence<file.jpeg@1>");
     expect(thumbs).toHaveLength(3);
-    expect(thumbs?.[0].parentElement?.style.left).toBe("24px");
-    expect(thumbs?.[2].parentElement?.style.left).toBe("0px");
+    expect(thumbs?.[0].parentElement?.style.left).toBe("0px");
+    expect(thumbs?.[2].parentElement?.style.left).toBe("24px");
     expect(stack?.closest("[data-artifact-content]")).not.toBeNull();
   });
 

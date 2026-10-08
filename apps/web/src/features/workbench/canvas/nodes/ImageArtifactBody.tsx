@@ -124,7 +124,8 @@ export function ImageArtifactBody({
   onSize: (id: string, width: number, height: number) => void;
   onError: (id: string) => void;
 }) {
-  // The first item is the front image; the visible layers behind it follow order.
+  // The first item is the front image, top-left where the input port sits; the
+  // layers behind it step down and right toward the output port.
   const visible = images.slice(0, 3);
   return (
     <div
@@ -151,7 +152,7 @@ export function ImageArtifactBody({
             ...(sequence
               ? {
                   width: `calc(100% - ${(visible.length - 1) * 12}px)`,
-                  left: (visible.length - 1 - index) * 12,
+                  left: index * 12,
                   top: index * 8,
                   zIndex: visible.length - index,
                 }
