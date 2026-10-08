@@ -119,9 +119,11 @@ rebuild-plugin-sdk:
     wheel="$wheel_dir/grafy_core-0.1.0-py3-none-any.whl"
     cp "$wheel" plugins/gis/wheels/grafy_core-0.1.0-py3-none-any.whl
     cp "$wheel" plugins/llm/wheels/grafy_core-0.1.0-py3-none-any.whl
+    cp "$wheel" plugins/mistral/wheels/grafy_core-0.1.0-py3-none-any.whl
     cp "$wheel" plugins/ocr/wheels/grafy_core-0.1.0-py3-none-any.whl
     cp "$wheel" plugins/python/wheels/grafy_core-0.1.0-py3-none-any.whl
     cp "$wheel" plugins/sql/wheels/grafy_core-0.1.0-py3-none-any.whl
+    cp "$wheel" plugins/typesafe/wheels/grafy_core-0.1.0-py3-none-any.whl
     cp "$wheel" plugins/notarius/wheels/grafy_core-0.1.0-py3-none-any.whl
     cp "$wheel" examples/plugin-notes/wheels/grafy_core-0.1.0-py3-none-any.whl
     uv lock --directory examples/plugin-notes --refresh-package grafy-core

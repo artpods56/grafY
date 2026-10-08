@@ -1703,6 +1703,422 @@
       ],
       "title": "SQL"
     },
+    "external.typesafe": {
+      "artifact_dependencies": [
+        {
+          "bundle": "inline-json@1",
+          "exports": [
+            {
+              "content_type": "text/plain; charset=utf-8",
+              "filename": "text.txt",
+              "format": "txt"
+            }
+          ],
+          "key": "scalar.text@1",
+          "materialized_json_type": "string",
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [
+              "value"
+            ],
+            "required": [
+              "value"
+            ],
+            "sha256": "01a09e0f987d874bf05f4512b09d0980e8c5ddb2330fa659b75e673c4cabcab7"
+          },
+          "title": "Text value"
+        }
+      ],
+      "artifact_types": [
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "typesafe.question@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [
+              "question_id",
+              "kind",
+              "body"
+            ],
+            "required": [
+              "question_id",
+              "kind",
+              "body"
+            ],
+            "sha256": "8eadd1936dd5e6cf2d5704e535ed805a37dceb55cabb1d055cf7788dc83a6b60"
+          },
+          "title": "TypeSafe question"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "typesafe.evaluation@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [
+              "requested_model",
+              "model",
+              "base_url",
+              "request_id",
+              "usage",
+              "nouls",
+              "choices",
+              "scores"
+            ],
+            "required": [
+              "requested_model",
+              "model",
+              "base_url",
+              "usage"
+            ],
+            "sha256": "dfe1bebf2fd0012dc3a8f6949cfc2a847c5a5e1750eca72cabfb95bf3d1bc9a2"
+          },
+          "title": "TypeSafe evaluation"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "typesafe.decision@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [
+              "disposition",
+              "outcome",
+              "reason",
+              "question_id",
+              "signal"
+            ],
+            "required": [
+              "disposition",
+              "outcome",
+              "reason"
+            ],
+            "sha256": "86f109e4b5488b22b2308625127b782b5b5a1aa00c7d21bd67d3437654badadc"
+          },
+          "title": "TypeSafe decision"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "typesafe.composite_score@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [
+              "value",
+              "components"
+            ],
+            "required": [
+              "value",
+              "components"
+            ],
+            "sha256": "0a8ecac17fb0afebdc9f471f5e780375fcda75fe70155d1c4923d744ca93f20d"
+          },
+          "title": "Composite score"
+        }
+      ],
+      "capabilities": [
+        "network.egress",
+        "node.secrets"
+      ],
+      "conversions": [],
+      "nodes": [
+        {
+          "cache_policy": "exact",
+          "config": {
+            "fields": [
+              "scores"
+            ],
+            "required": [
+              "scores"
+            ],
+            "sha256": "34295a8e87d9dc359021e0e34e5cc78726ff964163d3becb2d77c84d4296d42d"
+          },
+          "description": "Scales each score to 0–1 and averages them with your weights. Runs locally.",
+          "input_schema": {
+            "fields": [
+              "evaluation"
+            ],
+            "required": [
+              "evaluation"
+            ],
+            "sha256": "a37cf28139bdad17f8e8092df87a9fc39d3376a6bbb7c0382d9df59b5b475d26"
+          },
+          "inputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "typesafe.evaluation@1",
+              "description": "Evaluation that holds the score answers.",
+              "instance_plugs": false,
+              "name": "evaluation",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "key": "typesafe.score.combine@1",
+          "output_schema": {
+            "fields": [
+              "score"
+            ],
+            "required": [
+              "score"
+            ],
+            "sha256": "635293961e8a29a1e76da9e66dc3acb76f3070df0e7dea7614fb7e0055c2b648"
+          },
+          "outputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "typesafe.composite_score@1",
+              "description": "Weighted average of scores scaled to 0–1.",
+              "instance_plugs": false,
+              "name": "score",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "required_capabilities": [],
+          "secret_inputs": [],
+          "title": "Combine scores"
+        },
+        {
+          "cache_policy": "exact",
+          "config": {
+            "fields": [
+              "question_ids",
+              "require",
+              "yes_at",
+              "no_at",
+              "minimum_confidence",
+              "allow"
+            ],
+            "required": [
+              "question_ids"
+            ],
+            "sha256": "1230a33393b263e7afc9747f9ab2513d37adc20d40021d850aa6b4d2c17deb63"
+          },
+          "description": "Turns nouls into yes, no, or review, or accepts a choice. Runs locally.",
+          "input_schema": {
+            "fields": [
+              "evaluation"
+            ],
+            "required": [
+              "evaluation"
+            ],
+            "sha256": "10ef2e1092c40e27ecee1a55551f6f5ce900253f0eb8ae80c03d903b606f0bea"
+          },
+          "inputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "typesafe.evaluation@1",
+              "description": "Evaluation that holds the answers to decide on.",
+              "instance_plugs": false,
+              "name": "evaluation",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "key": "typesafe.decide@1",
+          "output_schema": {
+            "fields": [
+              "decision"
+            ],
+            "required": [
+              "decision"
+            ],
+            "sha256": "fa12fb7809d9730ffbd5b3577000f67354b25d62ec5117b3d913cd76bbda6cd0"
+          },
+          "outputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "typesafe.decision@1",
+              "description": "Act on the outcome, or send it to review.",
+              "instance_plugs": false,
+              "name": "decision",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "required_capabilities": [],
+          "secret_inputs": [],
+          "title": "Decide"
+        },
+        {
+          "cache_policy": "never",
+          "config": {
+            "fields": [
+              "base_url",
+              "model",
+              "timeout_seconds",
+              "max_retries",
+              "state_form"
+            ],
+            "required": [],
+            "sha256": "0e1e11241206d47773d0887bd75a26736aa9544415e2399b56d6f5d5cde73cbf"
+          },
+          "description": "Asks every connected question about one state in a single TypeSafe request.",
+          "input_schema": {
+            "fields": [
+              "state",
+              "questions"
+            ],
+            "required": [
+              "state",
+              "questions"
+            ],
+            "sha256": "eb1e84431b055df8f3301c95853fb3dd38bb29440c6eb8ae8847db55925572d5"
+          },
+          "inputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "scalar.text@1",
+              "description": "Text or JSON that every question is asked about.",
+              "instance_plugs": false,
+              "name": "state",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            },
+            {
+              "accepted_shapes": [
+                "many"
+              ],
+              "artifact": "typesafe.question@1",
+              "description": "Questions asked together in one request. Collect Question outputs into a stack and connect it here.",
+              "instance_plugs": false,
+              "name": "questions",
+              "required": true,
+              "shape": "many",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "key": "typesafe.evaluate@1",
+          "output_schema": {
+            "fields": [
+              "evaluation"
+            ],
+            "required": [
+              "evaluation"
+            ],
+            "sha256": "65aa11f10d8f7583644e52d00093d6f3277b3aac94c50684850110baa9e698df"
+          },
+          "outputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "typesafe.evaluation@1",
+              "description": "Model, usage, and one answer per question.",
+              "instance_plugs": false,
+              "name": "evaluation",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "required_capabilities": [
+            "network.egress",
+            "node.secrets"
+          ],
+          "secret_inputs": [
+            {
+              "config_dependencies": [
+                "base_url"
+              ],
+              "description": "Write-only TypeSafe API key for the configured base URL.",
+              "name": "api_key",
+              "title": "API key"
+            }
+          ],
+          "title": "Evaluate"
+        },
+        {
+          "cache_policy": "exact",
+          "config": {
+            "fields": [
+              "question_id",
+              "kind",
+              "instructions",
+              "instructions_form",
+              "yes_means",
+              "no_means",
+              "options",
+              "levels"
+            ],
+            "required": [
+              "question_id",
+              "instructions"
+            ],
+            "sha256": "6b6280176d085e5990df84e6963c809aee9e1542ebe0249890002ec4805600ba"
+          },
+          "description": "Builds one noul, choice, or score question from its settings.",
+          "input_schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "62335906a9213c42cda24a642a78337ecd93d362afd41fc45eb4fec084bc0da9"
+          },
+          "inputs": [],
+          "key": "typesafe.question@1",
+          "output_schema": {
+            "fields": [
+              "question"
+            ],
+            "required": [
+              "question"
+            ],
+            "sha256": "0b25bb6f8605c66e3f76e1bff7f6127a45ec6ef7b695500f64706dc28e7c1931"
+          },
+          "outputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "typesafe.question@1",
+              "description": "One question. Collect several into a stack for Evaluate.",
+              "instance_plugs": false,
+              "name": "question",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "required_capabilities": [],
+          "secret_inputs": [],
+          "title": "Question"
+        }
+      ],
+      "title": "TypeSafe"
+    },
     "file": {
       "artifact_dependencies": [
         {
