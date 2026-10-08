@@ -45,6 +45,47 @@ function canvas(): ArtifactViewerCanvasState {
 }
 
 describe("artifact grouping", () => {
+  it("ungroups a table sequence into readable cards without overlapping rows", () => {
+    const state = canvas();
+    state.nodes = [0, 1, 2].map((index) => ({
+      ...card(`table-${index}`, index * 100),
+      data: {
+        mode: null,
+        layout: null,
+        artifactRef: {
+          artifact_id: `table-${index}`,
+          artifact_type: "table.data",
+          schema_version: 1,
+        },
+      },
+    }));
+    const grouped = collectArtifactCards({ state, origins: [] });
+    const stack = grouped.nodes.find((node) => node.selected);
+    if (!stack) throw new Error("Table sequence missing");
+    const ungrouped = ungroupArtifactCard({
+      state: grouped,
+      origins: [],
+      nodeId: stack.id,
+    });
+    expect(ungrouped.nodes.map((node) => node.data.layout?.width)).toEqual([
+      600, 600, 600,
+    ]);
+    expect(
+      ungrouped.nodes.map((node) => ({
+        x: node.position.x - stack.position.x,
+        y: node.position.y - stack.position.y,
+      })),
+    ).toEqual([
+      { x: 0, y: 0 },
+      { x: 664, y: 0 },
+      { x: 0, y: 448 },
+    ]);
+    expect(
+      ungrouped.nodes.map(
+        (node) => cardArtifactRefs(node.data.artifactRef)[0].artifact_id,
+      ),
+    ).toEqual(["table-0", "table-1", "table-2"]);
+  });
   it("replaces selected cards, persists the sequence, and ungroups in its current order", () => {
     const state = canvas();
     const grouped = collectArtifactCards({ state, origins: [] });

@@ -1,0 +1,16 @@
+id = "python"
+version = 1
+title = "Python"
+description = "Runs your own Python code on one input to produce one output."
+code = '''
+# One data input and one output, typed by their annotations: str, int,
+# Markdown, or list[...] of one of them. For settings shown as a form, add
+# `class Params(BaseModel)` and a `params: Params` parameter.
+def transform(text: str, context: Context) -> str:
+    return text
+'''
+
+[contract]
+input_name = "text"
+input = { artifact_type = { id = "scalar.text", schema_version = 1 }, shape = "one" }
+output = { artifact_type = { id = "scalar.text", schema_version = 1 }, shape = "one" }

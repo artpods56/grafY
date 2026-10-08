@@ -30,12 +30,15 @@ import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
   DEFAULT_ARTIFACT_FILE_CARD_WIDTH,
   DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH,
+  DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
+  DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
   artifactCardContract,
   artifactCardContractTooltip,
   artifactCardMediaHeight,
   artifactCardValue,
   cardArtifactRefs,
   isImageArtifact,
+  isTableArtifact,
   moveArtifactCardRef,
   type ArtifactCardValue,
 } from "../artifact-card";
@@ -58,7 +61,7 @@ import {
   effectivePortShape,
   resolvedPortArtifactType,
 } from "../types";
-import type { WorkflowNodeLayout } from "../node-layout";
+import { NODE_WIDTH_MIN, type WorkflowNodeLayout } from "../node-layout";
 import { LayoutResizeHandle } from "./LayoutResizeHandle";
 import {
   ArtifactLeftRail,
@@ -66,17 +69,28 @@ import {
   ArtifactSequenceBar,
 } from "./ArtifactControls";
 import {
+  CanvasCardBody,
+  CanvasCardFrame,
+  CanvasCardHead,
+} from "./CanvasCardLayout";
+import {
   formatTextHead,
   readTextHead,
   type TextHead,
 } from "./artifact-renderers/text-head";
 import { ArtifactLabel, ImageArtifactBody } from "./ImageArtifactBody";
+import { TableArtifactBody } from "./TableArtifactBody";
 import { usePickupLift } from "./usePickupLift";
 import { PortRevealProvider, usePortReveal } from "./PortBall";
 import {
   formatLibraryByteSize,
   libraryFileDisplayName,
 } from "../../ui/side-panel/library-tree";
+
+// Each layer behind a sequence's front item steps this far right and down.
+const STACK_STEP_X = 12;
+const STACK_STEP_Y = 8;
+const STACK_THUMB_HEIGHT = 105;
 
 const s = stylex.create({
   artifactNode: {
@@ -143,15 +157,6 @@ const s = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  // The frame is exactly the card: head over body. The rails hang off the
-  // body's sides, so picking the card up never changes its geometry.
-  frame: {
-    display: "grid",
-    gridTemplateRows: "auto minmax(0, 1fr)",
-    position: "relative",
-  },
-  head: { gridRow: 1, minWidth: 0 },
-  body: { gridRow: 2, minWidth: 0, position: "relative" },
   // Where an output will land before it has run: the card's outline, dashed,
   // saying what it is waiting for.
   waitingBody: {
@@ -200,17 +205,12 @@ const s = stylex.create({
     overflowWrap: "anywhere",
   },
   textScrollable: { overflow: "auto" },
-  stack: {
-    position: "relative",
-    width: "100%",
-    height: "130px",
-  },
+  stack: { position: "relative", width: "100%" },
   stackThumb: {
     position: "absolute",
     display: "grid",
     placeItems: "center",
-    width: "calc(100% - 48px)",
-    height: "105px",
+    height: STACK_THUMB_HEIGHT,
     objectFit: "cover",
     borderRadius: tokens.radiusSm,
     backgroundColor: "transparent",
@@ -470,6 +470,11 @@ export function ArtifactCardBody({
   const imageArtifact =
     first !== null && isImageArtifact(first, firstSummary?.content_type);
   const isSequence = shownValue !== null && "item_refs" in shownValue;
+  const tableCard = !isSequence && first !== null && isTableArtifact(first);
+  const tableHeight = Math.max(
+    160,
+    layout?.bodyHeight ?? DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
+  );
   const imageSize = first ? imageSizes[first.artifact_id] : undefined;
   const recordedName = firstSummary?.metadata?.original_filename;
   const fileName =
@@ -485,7 +490,7 @@ export function ArtifactCardBody({
     first?.artifact_type.startsWith("table.") ||
     fileName?.toLowerCase().endsWith(".csv");
   // Readable bytes are shown as they are, JSON indented, instead of a file
-  // tile. Binary bytes, images, PDFs and tables keep their tile.
+  // tile. Binary bytes and file containers keep their tile.
   const textKey =
     first && !isSequence && !imageArtifact && !isPdf && !isTableFile
       ? (["artifact-card-text", workspace.id, first.artifact_id] as const)
@@ -540,24 +545,27 @@ export function ArtifactCardBody({
       ? `${refs.length} ${refs.length === 1 ? "item" : "items"}`
       : "File sequence"
     : first
-      ? (fileName ?? feedLabel ?? (imageArtifact ? "Image" : "File"))
+      ? (fileName ??
+        feedLabel ??
+        (imageArtifact ? "Image" : tableCard ? "Table" : "File"))
       : // Nothing produced yet: name the card by what it follows.
         (feedLabel ?? "Artifact");
   const byteSize = formatLibraryByteSize(firstSummary?.byte_size);
   const fileKind = isPdf ? "PDF" : isTableFile ? "Table" : "File";
   const fileLabel = byteSize ? `${fileKind} · ${byteSize}` : fileKind;
-  // A file card has no pixels to size itself from, so it opens narrow; an image
-  // card opens wide enough to read the picture.
+  const defaultWidth = tableCard
+    ? DEFAULT_ARTIFACT_TABLE_CARD_WIDTH
+    : imageArtifact
+      ? DEFAULT_ARTIFACT_CARD_WIDTH
+      : feed
+        ? DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH
+        : DEFAULT_ARTIFACT_FILE_CARD_WIDTH;
+  const minimumWidth = tableCard ? NODE_WIDTH_MIN : ARTIFACT_CARD_WIDTH_MIN;
   const requestedWidth = gridAlignedWidth(
-    layout?.width ??
-      (imageArtifact
-        ? DEFAULT_ARTIFACT_CARD_WIDTH
-        : feed
-          ? DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH
-          : DEFAULT_ARTIFACT_FILE_CARD_WIDTH),
+    Math.max(minimumWidth, layout?.width ?? defaultWidth),
     grid?.settings,
     grid?.bypassSnap,
-    ARTIFACT_CARD_WIDTH_MIN,
+    minimumWidth,
   );
 
   const subtitle = awaitingFeed
@@ -626,25 +634,35 @@ export function ArtifactCardBody({
     mediaWidth,
     mediaHeight,
     textHeight,
+    tableCard,
+    tableHeight,
     reordering,
     titleLabel,
     subtitle,
   ]);
 
   const reorderStyle = stylex.props(s.reorder);
+  // Same direction as every stack: the first item in front at the top-left,
+  // where the input port sits, with the ones behind it stepping down and right
+  // toward the output port.
+  const stacked = refs.slice(0, 3);
   const sequenceStack = isSequence ? (
     <div
       aria-label={`${refs.length} items in sequence`}
       {...stylex.props(s.stack)}
+      style={{
+        height: STACK_THUMB_HEIGHT + (stacked.length - 1) * STACK_STEP_Y,
+      }}
     >
       {!selected && data.remoteSelectionColor ? (
         <RemoteSelectionRing color={data.remoteSelectionColor} radius={5} />
       ) : null}
-      {refs.slice(0, 4).map((ref, index) => {
+      {stacked.map((ref, index) => {
         const position = {
-          left: 6 + index * 12,
-          top: index * 6,
-          zIndex: index + 1,
+          width: `calc(100% - ${(stacked.length - 1) * STACK_STEP_X}px)`,
+          left: index * STACK_STEP_X,
+          top: index * STACK_STEP_Y,
+          zIndex: stacked.length - index,
         };
         return isImageArtifact(
           ref,
@@ -652,7 +670,8 @@ export function ArtifactCardBody({
         ) && !imagesFailed[ref.artifact_id] ? (
           /* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */
           <img
-            key={ref.artifact_id}
+            // Keyed by position: a sequence may show one artifact twice.
+            key={`${index}:${ref.artifact_id}`}
             data-artifact-shadow-scope="sequence-item"
             src={artifactInlineContentUrl(workspace.id, ref.artifact_id)}
             alt={nameOf(ref.artifact_id) ?? `Item ${index + 1}`}
@@ -674,7 +693,7 @@ export function ArtifactCardBody({
           />
         ) : (
           <span
-            key={ref.artifact_id}
+            key={`${index}:${ref.artifact_id}`}
             data-artifact-shadow-scope="sequence-item"
             {...stylex.props(
               s.stackThumb,
@@ -708,13 +727,9 @@ export function ArtifactCardBody({
         role="group"
         aria-label={`Artifact ${contract}`}
       >
-        <div
-          data-artifact-frame="true"
-          data-artifact-content="true"
-          {...stylex.props(s.frame)}
-        >
+        <CanvasCardFrame data-artifact-content="true">
           {headless ? null : (
-            <div data-artifact-head="true" {...stylex.props(s.head)}>
+            <CanvasCardHead>
               <ArtifactLabel
                 title={titleLabel}
                 contract={contract}
@@ -722,9 +737,9 @@ export function ArtifactCardBody({
                 selected={selected ?? false}
                 image={imageArtifact}
               />
-            </div>
+            </CanvasCardHead>
           )}
-          <div data-artifact-body="true" {...stylex.props(s.body)}>
+          <CanvasCardBody>
             {followsOutput ? (
               <ArtifactLeftRail
                 nodeId={id}
@@ -780,6 +795,14 @@ export function ArtifactCardBody({
                     [artifactId]: true,
                   }))
                 }
+              />
+            ) : tableCard && first ? (
+              <TableArtifactBody
+                artifact={first}
+                height={tableHeight}
+                selected={selected ?? false}
+                tier={tier}
+                remoteSelectionColor={data.remoteSelectionColor}
               />
             ) : (
               <>
@@ -876,21 +899,23 @@ export function ArtifactCardBody({
             {allowCornerResize ? (
               <LayoutResizeHandle
                 layout={
-                  textCard
+                  textCard || tableCard
                     ? {
                         ...layout,
                         width: requestedWidth,
-                        bodyHeight: textMaxHeight,
+                        bodyHeight: tableCard ? tableHeight : textMaxHeight,
                       }
                     : (layout ?? { width: requestedWidth })
                 }
-                axes={textCard ? ["width", "bodyHeight"] : ["width"]}
+                axes={
+                  textCard || tableCard ? ["width", "bodyHeight"] : ["width"]
+                }
                 ariaLabel="Resize artifact"
                 onDraft={setDraftLayout}
                 onCommit={commitLayout}
               />
             ) : null}
-          </div>
+          </CanvasCardBody>
           {selected && isSequence && !feed && isConnectable ? (
             <ArtifactSequenceBar
               onRearrange={() => setReordering((open) => !open)}
@@ -900,7 +925,7 @@ export function ArtifactCardBody({
               ungroupDisabledReason={data.ungroupDisabledReason}
             />
           ) : null}
-        </div>
+        </CanvasCardFrame>
 
         {reordering && !feed && refs.length > 1 ? (
           <div

@@ -28,6 +28,7 @@ from grafy_api.v1.routes.library.views import folders_router as library_folders_
 from grafy_api.v1.routes.library.views import router as library_router
 from grafy_api.v1.routes.modules.views import router as modules_router
 from grafy_api.v1.routes.node_secrets.views import router as node_secrets_router
+from grafy_api.v1.routes.python_nodes.views import router as python_nodes_router
 from grafy_api.v1.routes.saved_graphs.views import (
     browser_router as graph_browser_router,
 )
@@ -163,6 +164,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(collaboration_router, prefix="/v1")
     application.include_router(node_secrets_router, prefix="/v1")
     application.include_router(catalog_router, prefix="/v1")
+    application.include_router(python_nodes_router, prefix="/v1")
     application.include_router(modules_router, prefix="/v1")
     application.include_router(templates_router, prefix="/v1")
     application.include_router(uploads_router, prefix="/v1")

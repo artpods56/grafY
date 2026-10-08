@@ -24,7 +24,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 PUBLISHED_PLUGIN_FAMILIES = (
     "gis",
     "llm",
+    "mistral",
     "ocr",
+    "python",
     "sql",
     "typesafe",
 )
@@ -60,6 +62,7 @@ FORBIDDEN_PLUGIN_OUTER_LAYER_IMPORTS = (
 FORBIDDEN_API_PLUGIN_IMPORTS = (
     "grafy_plugin_gis",
     "grafy_plugin_llm",
+    "grafy_plugin_mistral",
     "grafy_plugin_ocr",
     "grafy_plugin_sql",
     "grafy_plugin_typesafe",
@@ -144,11 +147,16 @@ def test_optional_plugin_dependencies_are_not_owned_by_host_projects() -> None:
         requirement.startswith("grafy-plugin-sql") for requirement in root_dependencies
     )
     assert not any(
+        requirement.startswith("grafy-plugin-mistral")
+        for requirement in root_dependencies
+    )
+    assert not any(
         requirement.startswith("grafy-plugin-typesafe")
         for requirement in root_dependencies
     )
     assert root_extras["ocr"] == ["grafy-plugin-ocr"]
     assert root_extras["llm"] == ["grafy-plugin-llm"]
+    assert root_extras["mistral"] == ["grafy-plugin-mistral"]
     assert root_extras["sql"] == ["grafy-plugin-sql"]
     assert root_extras["typesafe"] == ["grafy-plugin-typesafe"]
 
@@ -157,6 +165,7 @@ def test_optional_plugin_dependencies_are_not_owned_by_host_projects() -> None:
             requirement.startswith(
                 (
                     "grafy-plugin-llm",
+                    "grafy-plugin-mistral",
                     "grafy-plugin-ocr",
                     "grafy-plugin-sql",
                     "grafy-plugin-typesafe",
@@ -384,7 +393,7 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
         assert "grafy-core==0.1.0" in cast(list[str], project["dependencies"])
         core_wheel = project_root / "wheels/grafy_core-0.1.0-py3-none-any.whl"
         assert sha256(core_wheel.read_bytes()).hexdigest() == (
-            "49011475b923afd4c52d6c153d1c2843e38c1ebed251926ff5af584336c2f231"
+            "222bf117f35e3c6bb8d04792488036f91632e4ecfbdad67f6f3806ca1b8492ff"
         )
         assert "workspace = true" not in (project_root / "pyproject.toml").read_text()
 

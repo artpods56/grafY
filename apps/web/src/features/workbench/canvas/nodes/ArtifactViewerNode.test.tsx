@@ -401,8 +401,6 @@ describe("ArtifactViewerNode", () => {
     const container = renderViewer();
 
     expect(container.textContent).toContain("Artifact Viewer");
-    expect(container.textContent).toContain("Artifact");
-    expect(container.textContent).toContain("any");
     expect(container.textContent).not.toContain("linked input");
     expect(container.textContent).not.toContain("Follow selection");
     expect(container.querySelector('[data-testid="port-rail"]')).not.toBeNull();
@@ -411,6 +409,8 @@ describe("ArtifactViewerNode", () => {
         '[aria-label="Input port Artifact, accepts Any artifact"]',
       ),
     ).not.toBeNull();
+    // Option B: open/any is on the ball tip + dashed ring, not a plate label.
+    expect(container.querySelector('[data-port-open="true"]')).not.toBeNull();
     expect(
       container.querySelector('[aria-label="Remove Artifact viewer"]'),
     ).toBeNull();
@@ -665,8 +665,9 @@ describe("ArtifactViewerNode", () => {
     );
 
     const container = renderViewer();
-    expect(container.textContent).toContain("Follow selection");
-    expect(container.textContent).toContain("Selected rows");
+    // Option B: follow ports are unlabeled balls; assert via aria, not plate text.
+    expect(container.textContent).not.toContain("Follow selection");
+    expect(container.textContent).not.toContain("Selected rows");
     expect(
       container.querySelector(
         '[aria-label="Follow selection from another Artifact Viewer"]',
@@ -707,7 +708,15 @@ describe("ArtifactViewerNode", () => {
     );
 
     const container = renderViewer();
-    expect(container.textContent).toContain("Follow selection");
-    expect(container.textContent).toContain("Selected rows");
+    expect(
+      container.querySelector(
+        '[aria-label="Follow selection from another Artifact Viewer"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[aria-label="Selected rows from this Artifact Viewer"]',
+      ),
+    ).not.toBeNull();
   });
 });

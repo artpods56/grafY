@@ -1,0 +1,35 @@
+id = "replace-text"
+version = 1
+title = "Replace text"
+description = "Replaces every exact occurrence of the search text."
+code = '''
+class Params(BaseModel):
+    search: str = Field(min_length=1, description="Exact text to find.")
+    replacement: str = Field("", description="Text substituted for every match.")
+
+
+def transform(text: str, params: Params, context: Context) -> str:
+    return text.replace(params.search, params.replacement)
+'''
+
+[contract]
+input_name = "text"
+input = { artifact_type = { id = "scalar.text", schema_version = 1 }, shape = "one" }
+output = { artifact_type = { id = "scalar.text", schema_version = 1 }, shape = "one" }
+
+[contract.params_schema]
+title = "Params"
+type = "object"
+required = ["search"]
+
+[contract.params_schema.properties.search]
+title = "Search"
+type = "string"
+minLength = 1
+description = "Exact text to find."
+
+[contract.params_schema.properties.replacement]
+title = "Replacement"
+type = "string"
+default = ""
+description = "Text substituted for every match."

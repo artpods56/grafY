@@ -21,6 +21,16 @@ operator_prefixes = ["llm", "prompt"]
 artifact_type_prefixes = ["llm", "prompt.message"]
 
 [[plugins]]
+slug = "external.mistral"
+project = "plugins/mistral"
+distribution_name = "grafy-plugin-mistral"
+loader_target = "grafy_plugin_mistral.plugin:MISTRAL"
+execution_policy = "isolated-only"
+capabilities = ["network.egress", "node.secrets"]
+operator_prefixes = ["mistral"]
+artifact_type_prefixes = ["mistral"]
+
+[[plugins]]
 slug = "external.ocr"
 project = "plugins/ocr"
 distribution_name = "grafy-plugin-ocr"
@@ -29,6 +39,16 @@ execution_policy = "isolated-only"
 capabilities = ["native.tesseract"]
 operator_prefixes = ["ocr"]
 artifact_type_prefixes = ["ocr"]
+
+[[plugins]]
+slug = "external.python"
+project = "plugins/python"
+distribution_name = "grafy-plugin-python"
+loader_target = "grafy_plugin_python.plugin:PYTHON"
+execution_policy = "isolated-only"
+capabilities = []
+operator_prefixes = ["python"]
+artifact_type_prefixes = []
 
 [[plugins]]
 slug = "external.sql"

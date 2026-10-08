@@ -7,11 +7,16 @@ This version has breaking changes — APIs, conventions, and file structure may 
 <!-- BEGIN:grafy-workbench-rules -->
 # React Flow canvas checks
 
+- When changing an artifact card's default size, update its drop placement and
+  multi-card spacing. Verify a mixed selection lands without overlapping bodies.
 - Do not let global `svg` sizing or media resets constrain React Flow's edge
   layers. Keep any required override scoped to `.react-flow__edges > svg`.
 - After changing node dimensions, handles, edge SVG styles, or canvas layout,
   verify at least one real pointer-drag connection in the rendered workbench.
   Compilation and programmatic edge insertion do not prove that wiring works.
+- During a connection drag, wait for target-port reveal animations before
+  measuring the handle. Playwright trial clicks can scroll clipped ancestors
+  and give stale target coordinates.
 - After changing canvas pointer/touch handlers or React Flow interaction options,
   run the Playwright gesture suite described in `README.md`. Cover touch pan,
   pinch, cancellation, blank-pane tap deselection, node dragging, port wiring,
@@ -97,6 +102,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
   tests with `react-dom/client` and `act`.
 - Test files need `.tsx` extension when they contain JSX.
 - `npm test` runs the Vitest suite (`vitest run`).
+- When verifying a worktree, use `GRAFY_E2E_PORT` to give its dev server a free
+  port. Do not reuse a server from another checkout; its compiled code does not
+  verify this worktree.
 - Run Playwright invocations serially with the default configuration. Separate
   invocations share the output and report directories; a new run can delete
   another run's active traces and cause teardown failures. Parallel invocations

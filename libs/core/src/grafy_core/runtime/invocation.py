@@ -1,9 +1,15 @@
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, ClassVar, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from grafy_core.nodes import InputContract, OutputContract, PortShape
+from grafy_core.nodes import (
+    InputContract,
+    OutputContract,
+    PortShape,
+    ResolvedNodeContracts,
+)
 
 
 class InvocationMode(StrEnum):
@@ -38,7 +44,34 @@ class NodeContractProvider(Protocol):
     output_contract: ClassVar[OutputContract[Any]]
 
 
-NodeContractSource = NodeContractProvider | type[NodeContractProvider]
+@dataclass(frozen=True, slots=True)
+class ResolvedNodeContractView:
+    """One node instance's contracts after its bindings and config resolved.
+
+    Shapes a node chooses through config exist only on resolved contracts, so
+    invocation checks for a compiled node read this view, not the operator.
+    """
+
+    operator_id: str
+    input_contract: InputContract[Any]
+    output_contract: OutputContract[Any]
+
+    @classmethod
+    def of(
+        cls,
+        operator_id: str,
+        resolved: ResolvedNodeContracts,
+    ) -> "ResolvedNodeContractView":
+        return cls(
+            operator_id=operator_id,
+            input_contract=resolved.input_contract,
+            output_contract=resolved.output_contract,
+        )
+
+
+NodeContractSource = (
+    NodeContractProvider | type[NodeContractProvider] | ResolvedNodeContractView
+)
 
 
 def map_input_candidates(node: NodeContractSource) -> tuple[str, ...]:

@@ -22,6 +22,7 @@ import {
   catalogNodeKey,
   catalogNodePortSummary,
   catalogNodeProviderLabel,
+  catalogSettingsSchema,
   type ContextualCandidate,
   type ContextualRouteChoice,
 } from "../model/node-catalog";
@@ -648,7 +649,9 @@ export function ContextualNodeDiscovery({
               <CatalogNodePreview
                 spec={previewedCandidate.spec}
                 registry={registry}
-                fields={schemaFields(previewedCandidate.spec.config_schema)}
+                fields={schemaFields(
+                  catalogSettingsSchema(previewedCandidate.spec),
+                )}
                 selectedPortKey={
                   previewedChoice
                     ? portKey(previewedChoice.candidatePort)

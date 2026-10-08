@@ -320,9 +320,10 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
 export function artifactCardDropPosition(
   center: { x: number; y: number },
   artifactCount: number,
+  width = DEFAULT_ARTIFACT_CARD_WIDTH,
 ): { x: number; y: number } {
   return {
-    x: center.x - DEFAULT_ARTIFACT_CARD_WIDTH / 2,
+    x: center.x - width / 2,
     y: center.y - (artifactCount > 1 ? 76 : 24),
   };
 }
@@ -330,8 +331,7 @@ export function artifactCardDropPosition(
 /**
  * The gutter between cards that land from one drop.
  *
- * Stride is the widest card a drop can produce plus this gutter, so two cards
- * never overlap whatever widths the cards end up opening at.
+ * Each card contributes its own width, so a table and an image do not overlap.
  */
 export const ARTIFACT_CARD_DROP_GUTTER = 24;
 
@@ -345,14 +345,19 @@ export const ARTIFACT_CARD_DROP_GUTTER = 24;
  */
 export function artifactCardDropPositions(
   center: { x: number; y: number },
-  artifactCounts: readonly number[],
+  cards: readonly { artifactCount: number; width: number }[],
 ): { x: number; y: number }[] {
-  const stride = DEFAULT_ARTIFACT_CARD_WIDTH + ARTIFACT_CARD_DROP_GUTTER;
-  const span = (artifactCounts.length - 1) * stride;
-  return artifactCounts.map((count, index) => ({
-    ...artifactCardDropPosition(
-      { x: center.x - span / 2 + index * stride, y: center.y },
-      count,
-    ),
-  }));
+  const span =
+    cards.reduce((sum, card) => sum + card.width, 0) +
+    Math.max(0, cards.length - 1) * ARTIFACT_CARD_DROP_GUTTER;
+  let left = center.x - span / 2;
+  return cards.map(({ artifactCount, width }) => {
+    const position = artifactCardDropPosition(
+      { x: left + width / 2, y: center.y },
+      artifactCount,
+      width,
+    );
+    left += width + ARTIFACT_CARD_DROP_GUTTER;
+    return position;
+  });
 }

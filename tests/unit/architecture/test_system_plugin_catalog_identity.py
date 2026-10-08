@@ -15,6 +15,7 @@ from grafy_plugin_gis import GIS
 from grafy_workbench.file import FILES
 from grafy_workbench.image import IMAGES
 from grafy_plugin_llm import LLM
+from grafy_plugin_mistral import MISTRAL
 from grafy_plugin_ocr import OCR
 from grafy_workbench.schema import SCHEMAS
 from grafy_workbench.sequence import SEQUENCES
@@ -36,6 +37,7 @@ SYSTEM_PLUGINS = (
     FILES,
     GIS,
     LLM,
+    MISTRAL,
     OCR,
     SQL,
     TYPESAFE,
@@ -50,6 +52,7 @@ EXPECTED_SYSTEM_PLUGIN_SLUGS = (
     "file",
     "external.gis",
     "external.llm",
+    "external.mistral",
     "external.ocr",
     "external.sql",
     "external.typesafe",

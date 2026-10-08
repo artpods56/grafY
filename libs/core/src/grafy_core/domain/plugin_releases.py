@@ -60,8 +60,14 @@ def plugin_profile_digest(runtime_profile: str) -> str:
     return sha256(runtime_profile.strip().encode("utf-8")).hexdigest()
 
 
-_EMPTY_HTTP_EGRESS_SERIALIZATION = ',"http_egress":null'
-_EMPTY_ALSO_ACCEPTS_SERIALIZATION = ',"also_accepts":[]'
+# Empty forms of fields added after releases began storing the historical
+# digest. That digest never hashed them, so verification drops them again.
+_PRE_CANONICALIZATION_EMPTY_FRAGMENTS = (
+    ',"http_egress":null',
+    ',"also_accepts":[]',
+    ',"shape_field":null',
+    ',"listed":true',
+)
 
 
 def _contract_digest_exclusions_for_model(
@@ -127,10 +133,8 @@ def _stored_contract_digest_before_canonicalization(
     """
 
     serialized = catalog.model_dump_json()
-    if _EMPTY_HTTP_EGRESS_SERIALIZATION in serialized:
-        serialized = serialized.replace(_EMPTY_HTTP_EGRESS_SERIALIZATION, "")
-    if _EMPTY_ALSO_ACCEPTS_SERIALIZATION in serialized:
-        serialized = serialized.replace(_EMPTY_ALSO_ACCEPTS_SERIALIZATION, "")
+    for fragment in _PRE_CANONICALIZATION_EMPTY_FRAGMENTS:
+        serialized = serialized.replace(fragment, "")
     return sha256(serialized.encode("utf-8")).hexdigest()
 
 
@@ -405,6 +409,7 @@ class PluginPortContract(PluginReleaseValue):
     instance_plugs: bool = False
     variadic: bool = False
     required: bool = True
+    shape_field: str | None = Field(default=None, min_length=1, max_length=255)
 
     @model_validator(mode="after")
     def validate_artifact_type_contract(self) -> Self:
@@ -463,6 +468,7 @@ class PluginPortContract(PluginReleaseValue):
             instance_plugs=port.instance_plugs,
             variadic=port.variadic,
             required=port.required,
+            shape_field=port.shape_field,
         )
 
     @classmethod
@@ -485,6 +491,7 @@ class PluginPortContract(PluginReleaseValue):
             shape=port.shape,
             accepted_shapes=(port.shape,),
             required=port.required,
+            shape_field=port.shape_field,
         )
 
 
@@ -535,6 +542,7 @@ class PluginNodeContract(PluginReleaseValue):
     required_capabilities: tuple[PluginRuntimeCapability, ...] = ()
     cache_policy: NodeCachePolicy = NodeCachePolicy.NEVER
     http_egress: PluginNodeHttpEgressContract | None = None
+    listed: bool = True
 
     @field_validator("required_capabilities")
     @classmethod
@@ -605,6 +613,7 @@ class PluginNodeContract(PluginReleaseValue):
                     dynamic_destinations=registration.http_egress.dynamic_destinations,
                 )
             ),
+            listed=registration.listed,
         )
 
 
@@ -775,6 +784,7 @@ PLUGIN_CONTRACT_DIGEST_FIELD_ROLES: Mapping[
         "required_capabilities": "keep",
         "cache_policy": "keep",
         "http_egress": "omit",
+        "listed": "omit",
     },
     PluginNodeHttpEgressContract: {
         "configured_inputs": "keep",
@@ -789,6 +799,7 @@ PLUGIN_CONTRACT_DIGEST_FIELD_ROLES: Mapping[
         "instance_plugs": "keep",
         "variadic": "keep",
         "required": "keep",
+        "shape_field": "omit",
     },
     PluginSecretInputContract: {
         "config_dependencies": "keep",

@@ -32,6 +32,7 @@ class CatalogPort(ClientModel):
     instance_plugs: bool = False
     variadic: bool = False
     required: bool = True
+    shape_field: str | None = None
 
     @model_validator(mode="after")
     def require_one_artifact_contract(self) -> Self:
@@ -98,6 +99,7 @@ class NodeCatalog(ClientModel):
     artifact_types: tuple[dict[str, object], ...]
     nodes: tuple[CatalogNode, ...]
     artifact_conversions: tuple[CatalogConversion, ...]
+    presets: tuple[dict[str, object], ...] = ()
     unavailable_modules: tuple[dict[str, object], ...] = ()
 
 

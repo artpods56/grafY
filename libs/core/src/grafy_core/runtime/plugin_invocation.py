@@ -39,6 +39,7 @@ from grafy_core.nodes import (
     Node,
     NodeExecutionContext,
     OutPort,
+    PortShape,
     derive_input_contract,
     derive_output_contract,
 )
@@ -83,6 +84,10 @@ class PluginInvocationRequest:
             ArtifactTypeKey,
             tuple[PluginArtifactReferenceContract, ...],
         ]
+    )
+    # Exact payload schemas the host validates inline outputs against.
+    artifact_payload_schemas: Mapping[ArtifactTypeKey, JsonObject] = field(
+        default_factory=dict[ArtifactTypeKey, JsonObject]
     )
     required_capabilities: tuple[PluginRuntimeCapability, ...] = ()
     node_id: str | None = None
@@ -218,6 +223,16 @@ class PluginReleaseNode[
             )
             if artifact.references
         }
+        self._artifact_payload_schemas = {
+            ArtifactTypeKey(
+                artifact.key.id,
+                artifact.key.schema_version,
+            ): artifact.payload_schema
+            for artifact in (
+                *release.release.catalog.artifact_types,
+                *release.release.catalog.artifact_type_dependencies,
+            )
+        }
 
         dynamic_attributes = self.__dict__
         dynamic_attributes["operator_id"] = contract.operator_id
@@ -252,12 +267,15 @@ class PluginReleaseNode[
         inputs: InputT,
         /,
     ) -> OutputT:
+        config_payload = config.model_dump(mode="json", by_alias=True)
         request_inputs: dict[str, object] = {}
         for port in self._contract.inputs:
             value = getattr(inputs, port.name)
             if value is None and not port.required:
                 continue
-            _require_ref_container(port, value)
+            _require_ref_container(
+                port, resolve_plugin_port_shape(port, config_payload), value
+            )
             request_inputs[port.name] = value
 
         try:
@@ -266,10 +284,11 @@ class PluginReleaseNode[
                     release=self._identity,
                     contract=self._contract,
                     artifact_type_bindings=self._artifact_type_bindings,
-                    config=config.model_dump(mode="json", by_alias=True),
+                    config=config_payload,
                     inputs=request_inputs,
                     artifact_bundle_contracts=self._artifact_bundle_contracts,
                     artifact_reference_contracts=(self._artifact_reference_contracts),
+                    artifact_payload_schemas=self._artifact_payload_schemas,
                     required_capabilities=self._contract.required_capabilities,
                     workspace_id=context.workspace_id,
                     node_id=context.node_id,
@@ -294,6 +313,7 @@ class PluginReleaseNode[
             self._contract,
             result.outputs,
             self._artifact_type_bindings,
+            config_payload,
         )
         output_model = cast(type[OutputT], self.output_contract.model)
         return output_model.model_validate(output_values)
@@ -304,8 +324,25 @@ _CONFIG_CONTRACT: ConfigContract[PluginReleaseNodeConfig] = ConfigContract(
 )
 
 
+def resolve_plugin_port_shape(
+    port: PluginPortContract, config: JsonObject
+) -> PortShape:
+    """The shape one node instance gives a port; compilation validated it."""
+
+    if port.shape_field is None:
+        return port.shape
+    chosen = config.get(port.shape_field, port.shape)
+    if not isinstance(chosen, str) or chosen not in {"one", "many"}:
+        raise PluginReleaseNodeError(
+            f"Plugin port {port.name!r} shape field {port.shape_field!r} must be "
+            "'one' or 'many'"
+        )
+    return PortShape(chosen)
+
+
 def _require_ref_container(
     port: PluginPortContract,
+    shape: PortShape,
     value: object,
 ) -> None:
     if port.instance_plugs or port.variadic:
@@ -314,7 +351,7 @@ def _require_ref_container(
                 f"Plugin input {port.name!r} expected one authorized "
                 "artifact reference container per incoming edge"
             )
-        expected_type = ArtifactRefSequence if port.shape == "many" else ArtifactRef
+        expected_type = ArtifactRefSequence if shape == "many" else ArtifactRef
         if not all(
             isinstance(item, expected_type) for item in cast(list[object], value)
         ):
@@ -323,7 +360,7 @@ def _require_ref_container(
                 "container with the wrong cardinality"
             )
         return
-    if port.shape == "many":
+    if shape == "many":
         if not isinstance(value, ArtifactRefSequence):
             raise PluginReleaseNodeError(
                 f"Plugin input {port.name!r} expected an "
@@ -341,6 +378,7 @@ def _validated_outputs(
     contract: PluginNodeContract,
     outputs: Mapping[str, ArtifactRef | ArtifactRefSequence],
     artifact_type_bindings: Mapping[str, ArtifactTypeKey],
+    config: JsonObject,
 ) -> dict[str, object]:
     expected_names = {port.name for port in contract.outputs}
     unexpected = sorted(set(outputs) - expected_names)
@@ -358,9 +396,10 @@ def _validated_outputs(
                 )
             continue
         produces = _artifact_type_key_of(port, artifact_type_bindings)
+        shape = resolve_plugin_port_shape(port, config)
         if isinstance(value, ArtifactRefSequence):
             if (
-                port.shape != "many"
+                shape != "many"
                 or value.artifact_type != produces.id
                 or value.schema_version != produces.schema_version
             ):
@@ -369,7 +408,7 @@ def _validated_outputs(
                     f"{produces.id}@{produces.schema_version}, got "
                     f"{value.artifact_type}@{value.schema_version}"
                 )
-        elif value.key() != produces or port.shape == "many":
+        elif value.key() != produces or shape == "many":
             raise PluginReleaseNodeError(
                 f"Plugin output {port.name!r} expected "
                 f"{produces.id}@{produces.schema_version}, got "
@@ -406,7 +445,7 @@ def _accepts_of(
             port.artifact_type.schema_version,
         )
     variable = port.artifact_type_variable or ""
-    return artifact_type_bindings.get(variable, ArtifactTypeVariable(variable))
+    return ArtifactTypeVariable(variable)
 
 
 def _also_accepts_of(port: PluginPortContract) -> tuple[ArtifactTypeKey, ...]:
@@ -424,7 +463,14 @@ def _input_model_for(
         accepts = _accepts_of(port, artifact_type_bindings)
         also_accepts = _also_accepts_of(port)
         description = port.description
-        if port.instance_plugs:
+        if port.shape_field is not None:
+            annotation = ArtifactRef | ArtifactRefSequence
+            meta = InPort(
+                accepts,
+                also_accepts=also_accepts,
+                shape_field=port.shape_field,
+            )
+        elif port.instance_plugs:
             annotation = list[ArtifactRef | ArtifactRefSequence]
             meta = InPort(
                 accepts,
@@ -468,15 +514,22 @@ def _output_model_for(
     for port in contract.outputs:
         produces = _accepts_of(port, artifact_type_bindings)
         description = port.description
-        annotation = ArtifactRefSequence if port.shape == "many" else ArtifactRef
+        meta = OutPort(produces, shape_field=port.shape_field)
+        annotation: object = (
+            ArtifactRef | ArtifactRefSequence
+            if port.shape_field is not None
+            else ArtifactRefSequence
+            if port.shape == "many"
+            else ArtifactRef
+        )
         if port.required:
             fields[port.name] = (
-                Annotated[annotation, OutPort(produces)],
+                Annotated[annotation, meta],  # type: ignore[valid-type]
                 Field(description=description),
             )
         else:
             fields[port.name] = (
-                Annotated[annotation | None, OutPort(produces)],
+                Annotated[annotation | None, meta],  # type: ignore[operator]
                 Field(default=None, description=description),
             )
     model = create_model(
@@ -488,6 +541,7 @@ def _output_model_for(
 
 
 __all__ = [
+    "resolve_plugin_port_shape",
     "PluginInvocationError",
     "PluginInvocationRequest",
     "PluginInvocationResult",

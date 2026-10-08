@@ -1165,9 +1165,13 @@ test("image resizing and a two-image stack preserve image geometry", async ({
   const back = await layers.nth(1).boundingBox();
   const stack = await cards.boundingBox();
   if (!front || !back || !stack) throw new Error("Stack geometry missing");
-  expect(front.x).toBeGreaterThan(back.x);
+  // The front image meets the input port at the top-left and the back one the
+  // output port at the bottom-right, so a wire lands on a card at either end.
+  expect(front.x).toBeLessThan(back.x);
   expect(front.y).toBeLessThan(back.y);
-  expect(front.x + front.width).toBeCloseTo(stack.x + stack.width, 0);
+  expect(front.x).toBeCloseTo(stack.x, 0);
+  expect(back.x + back.width).toBeCloseTo(stack.x + stack.width, 0);
+  expect(back.y + back.height).toBeCloseTo(stack.y + stack.height, 0);
   expect(front.width / front.height).toBeCloseTo(640 / 360, 1);
   await page.screenshot({
     path: testInfo.outputPath("image-artifact-stack.png"),

@@ -180,12 +180,19 @@ WriterFactory: TypeAlias = Callable[
 
 @dataclass(frozen=True, slots=True)
 class NodeRegistration:
+    """One registered operator.
+
+    An unlisted node stays registered, so saved graphs that use it keep
+    opening and running, but the node library does not offer it for insertion.
+    """
+
     node_class: type[Node[Any, Any, Any]]
     factory: NodeFactory | None
     secret_inputs: tuple[NodeSecretInput, ...] = ()
     http_egress: NodeHttpEgressContract | None = None
     required_capabilities: tuple[PluginRuntimeCapability, ...] = ()
     cache_policy: NodeCachePolicy = NodeCachePolicy.NEVER
+    listed: bool = True
 
     @property
     def plugin_slug(self) -> str:
@@ -253,6 +260,7 @@ class Plugin:
         http_egress: NodeHttpEgressContract | None = None,
         required_capabilities: tuple[PluginRuntimeCapability, ...] = (),
         cache_policy: NodeCachePolicy = NodeCachePolicy.NEVER,
+        listed: bool = True,
     ) -> Callable[[type[NodeT]], type[NodeT]]:
         if operator_id.strip() == "":
             raise PluginRegistrationError(
@@ -357,6 +365,7 @@ class Plugin:
                 http_egress=http_egress,
                 required_capabilities=normalized_capabilities,
                 cache_policy=cache_policy,
+                listed=listed,
             )
             self._nodes[key] = registration
             return node_class
@@ -376,6 +385,7 @@ class Plugin:
         http_egress: NodeHttpEgressContract | None = None,
         required_capabilities: tuple[PluginRuntimeCapability, ...] = (),
         cache_policy: NodeCachePolicy = NodeCachePolicy.NEVER,
+        listed: bool = True,
     ) -> Callable[
         [NodeFunction[ConfigT, InputT, OutputT]],
         NodeFunction[ConfigT, InputT, OutputT],
@@ -482,6 +492,7 @@ class Plugin:
                 http_egress=http_egress,
                 required_capabilities=required_capabilities,
                 cache_policy=cache_policy,
+                listed=listed,
             )(FunctionNodeAdapter)
             return function
 

@@ -59,6 +59,7 @@ from grafy_core.runtime.invocation import (
     InvocationError,
     InvocationMode,
     NodeInvocation,
+    ResolvedNodeContractView,
     effective_input_shape,
     effective_output_shape,
     validate_invocation,
@@ -279,7 +280,11 @@ class GraphCompiler:
             }
             node = nodes_by_id[node_request.id]
             try:
-                resolved_contracts = resolve_node_contracts(node, bindings)
+                resolved_contracts = resolve_node_contracts(
+                    node,
+                    bindings,
+                    node_request.config,
+                )
             except NodeContractResolutionError as exc:
                 raise GraphExecutionError(
                     f"Node {node_request.id!r} ({node.operator_id}@"
@@ -309,7 +314,14 @@ class GraphCompiler:
             request.nodes,
             [*request.edges, *request.origins],
         )
-        invocations_by_id = _derive_invocations(nodes_by_id, request.edges)
+        views_by_id = {
+            node_id: ResolvedNodeContractView.of(
+                node.operator_id,
+                resolved_contracts_by_node[node_id],
+            )
+            for node_id, node in nodes_by_id.items()
+        }
+        invocations_by_id = _derive_invocations(views_by_id, request.edges)
         for origin in request.origins:
             invocation = invocations_by_id[origin.to_node]
             if (
@@ -321,6 +333,7 @@ class GraphCompiler:
                 )
         compiled_edges = _compile_edges(
             nodes_by_id=nodes_by_id,
+            views_by_id=views_by_id,
             resolved_contracts_by_node=resolved_contracts_by_node,
             invocations_by_id=invocations_by_id,
             edges=[*request.edges, *request.origins],
@@ -590,6 +603,12 @@ class GraphCompiler:
             node_contract=contract,
             selection=snapshot.selection,
             revocation=snapshot.revocation,
+            artifact_type_bindings={
+                binding.variable: ArtifactTypeKey(
+                    binding.artifact_type.id, binding.artifact_type.schema_version
+                )
+                for binding in request.artifact_type_bindings
+            },
         )
         if isinstance(decision, ReleaseExecutionRejection):
             raise GraphExecutionError(
@@ -830,6 +849,7 @@ def _artifact_type_keys_label(keys: Sequence[ArtifactTypeKey]) -> str:
 def _compile_edges(
     *,
     nodes_by_id: dict[str, Node[Any, Any, Any]],
+    views_by_id: dict[str, ResolvedNodeContractView],
     resolved_contracts_by_node: dict[str, ResolvedNodeContracts],
     invocations_by_id: dict[str, NodeInvocation],
     edges: Sequence[RunConnectionRequest],
@@ -844,7 +864,7 @@ def _compile_edges(
     compiled_edges: list[CompiledEdge] = []
     for edge in edges:
         label = connection_label(edge)
-        target_node = nodes_by_id[edge.to_node]
+        target_view = views_by_id[edge.to_node]
         target_port = resolved_contracts_by_node[edge.to_node].input_contract.ports.get(
             edge.to_port
         )
@@ -883,8 +903,8 @@ def _compile_edges(
             )
             source_key = _value_key(edge.value)
         else:
-            source_node = nodes_by_id.get(edge.from_node)
-            if source_node is None:
+            source_view = views_by_id.get(edge.from_node)
+            if source_view is None:
                 pinned_value = pinned_outputs[(edge.from_node, edge.from_port)]
                 source_shape = (
                     PortShape.MANY
@@ -902,7 +922,7 @@ def _compile_edges(
                         f"on node {edge.from_node!r}"
                     )
                 source_shape = effective_output_shape(
-                    source_node,
+                    source_view,
                     invocations_by_id[edge.from_node],
                     edge.from_port,
                 )
@@ -1022,7 +1042,7 @@ def _compile_edges(
         ):
             accepted_shapes = (
                 effective_input_shape(
-                    target_node,
+                    target_view,
                     invocation,
                     edge.to_port,
                 ),
@@ -1066,7 +1086,7 @@ def _compile_edges(
 
 
 def _derive_invocations(
-    nodes_by_id: dict[str, Node[Any, Any, Any]],
+    views_by_id: dict[str, ResolvedNodeContractView],
     edges: list[RunEdgeRequest],
 ) -> dict[str, NodeInvocation]:
     map_edges_by_target: dict[str, RunEdgeRequest] = {}
@@ -1091,7 +1111,7 @@ def _derive_invocations(
         map_edges_by_target[edge.to_node] = edge
 
     invocations: dict[str, NodeInvocation] = {}
-    for node_id, node in nodes_by_id.items():
+    for node_id, view in views_by_id.items():
         map_edge = map_edges_by_target.get(node_id)
         if map_edge is None:
             invocations[node_id] = NodeInvocation()
@@ -1102,7 +1122,7 @@ def _derive_invocations(
             map_input=map_edge.to_port,
         )
         try:
-            validate_invocation(node, invocation)
+            validate_invocation(view, invocation)
         except InvocationError as exc:
             raise GraphExecutionError(
                 f"Edge {map_edge.from_node!r}.{map_edge.from_port!r} -> "

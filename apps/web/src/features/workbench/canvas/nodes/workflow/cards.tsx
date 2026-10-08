@@ -46,6 +46,7 @@ import { NodeHeader } from "./node-header";
 import type { WorkflowNode } from "./node-type";
 import { CompatibilityPortRail, PortRail, nodeInteractionProps } from "./ports";
 import type { IncompatibleWorkflowNodeCompatibility } from "./ports";
+import { PythonBody } from "./python-transform/PythonBody";
 import { SchemaBuilderBody } from "./schema-builder";
 import { sharedStyles } from "./styles";
 
@@ -490,7 +491,15 @@ export function SupportedWorkflowNodeCard({
             ))}
         </div>
       ) : null}
-      {isSchemaBuilder ? (
+      {data.spec.operator_id === "python.transform" ? (
+        <PythonBody
+          id={id}
+          data={data}
+          layout={layout}
+          onLayoutDraft={setDraftLayout}
+          onLayoutCommit={commitLayout}
+        />
+      ) : isSchemaBuilder ? (
         <SchemaBuilderBody id={id} data={data} />
       ) : isArtifactQuery ? (
         <ArtifactQueryTablesBody id={id} data={data} />

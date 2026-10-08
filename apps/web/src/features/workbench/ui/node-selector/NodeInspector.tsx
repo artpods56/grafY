@@ -29,7 +29,11 @@ import {
   portArtifactTypeVariable,
   portHasInstancePlugs,
 } from "../../canvas/types";
-import { catalogNodeKey, catalogPlugin } from "../../model/node-catalog";
+import {
+  catalogNodeKey,
+  catalogPlugin,
+  catalogSettingsSchema,
+} from "../../model/node-catalog";
 import {
   artifactTitleFor,
   CatalogNodePreview,
@@ -86,8 +90,8 @@ export function NodeInspector({
   onOpenGraph?: (graphId: string) => void;
 }) {
   const fields = React.useMemo(
-    () => schemaFields(spec.config_schema),
-    [spec.config_schema],
+    () => schemaFields(catalogSettingsSchema(spec)),
+    [spec],
   );
   const ports = React.useMemo(
     () => [...spec.inputs, ...spec.outputs],

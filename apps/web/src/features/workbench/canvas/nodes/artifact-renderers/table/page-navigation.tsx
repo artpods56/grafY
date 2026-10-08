@@ -18,12 +18,14 @@ export function TablePageNavigation({
   pageSize,
   onOffsetChange,
   onPageSizeChange,
+  canvas = false,
 }: {
   page: TablePage;
   requestedOffset: number;
   pageSize: number;
   onOffsetChange: (offset: number) => void;
   onPageSizeChange: (pageSize: number) => void;
+  canvas?: boolean;
 }) {
   const pageEnd = page.offset + page.rows.length;
   const waitingForRows = requestedOffset !== page.offset;
@@ -38,7 +40,7 @@ export function TablePageNavigation({
     <div
       role="group"
       aria-label="Table row pages"
-      {...stylex.props(s.tablePager)}
+      {...stylex.props(s.tablePager, canvas ? s.tableCanvasPager : null)}
     >
       <span {...stylex.props(s.tablePagerMeta)}>
         <span aria-live="polite" {...stylex.props(s.tableLimit)}>
@@ -59,7 +61,12 @@ export function TablePageNavigation({
           <option value={100}>100 / page</option>
         </select>
       </span>
-      <span {...stylex.props(s.tablePagerActions)}>
+      <span
+        {...stylex.props(
+          s.tablePagerActions,
+          canvas ? s.tableCanvasPagerActions : null,
+        )}
+      >
         <button
           type="button"
           aria-label="First page"

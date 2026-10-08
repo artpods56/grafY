@@ -25,6 +25,12 @@ profile = "configured-public"
 [[assignments]]
 plane = "plugin-execution"
 scope = "system"
+slug = "external.mistral"
+profile = "configured-public"
+
+[[assignments]]
+plane = "plugin-execution"
+scope = "system"
 slug = "external.typesafe"
 profile = "configured-public"
 
