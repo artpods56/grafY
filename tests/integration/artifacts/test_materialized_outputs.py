@@ -307,7 +307,7 @@ def _collect_graph_payload() -> dict[str, object]:
         SavedGraphNodeModel(
             kind="builtin",
             id="collect",
-            operator_id="sequence.collect",
+            operator_id="test.sequence.collect",
             operator_version=1,
             config={},
             position=GraphPointModel(x=600.0, y=0.0),

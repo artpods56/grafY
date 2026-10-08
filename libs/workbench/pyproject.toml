@@ -8,10 +8,7 @@ version = "0.1.0"
 requires-python = "==3.14.*"
 dependencies = [
     "grafy-core",
-    "openpyxl>=3.1.5",
     "pydantic",
-    "rapidfuzz>=3.14.3",
-    "Unidecode>=1.4.0",
 ]
 
 [tool.uv.sources]

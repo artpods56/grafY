@@ -540,7 +540,7 @@ def _optional_input_module_payload() -> dict[str, object]:
             SavedGraphNodeModel(
                 kind="builtin",
                 id="collect",
-                operator_id="sequence.collect",
+                operator_id="test.sequence.collect",
                 operator_version=1,
                 config={},
                 position=GraphPointModel(x=240, y=160),
@@ -553,7 +553,7 @@ def _optional_input_module_payload() -> dict[str, object]:
             SavedGraphNodeModel(
                 kind="builtin",
                 id="pick",
-                operator_id="sequence.item_at",
+                operator_id="test.sequence.item_at",
                 operator_version=1,
                 config={"index": 0},
                 position=GraphPointModel(x=480, y=160),

@@ -16,6 +16,8 @@ from grafy_core.domain.plugin_releases import (
 
 SYSTEM_PLUGIN_SLUGS = frozenset(
     {
+        "external.image",
+        "external.table",
         "external.gis",
         "external.llm",
         "external.mistral",

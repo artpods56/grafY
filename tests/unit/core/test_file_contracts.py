@@ -153,3 +153,10 @@ def test_confirmation_rule_requires_a_signature_only_for_magic() -> None:
             rule=cast(ConfirmationRule, "json"),
             signatures=_spec("file.png").confirmation_rule.signatures,
         )
+
+
+def test_builtin_file_formats_cross_plugin_boundaries_as_bytes() -> None:
+    assert all(
+        spec.bundle.format == "binary-file" and spec.bundle.version == 1
+        for spec in BUILTIN_FILE_FORMATS
+    )

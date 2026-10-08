@@ -36,7 +36,7 @@ def test_checked_in_system_inventory_is_complete_finite_and_excludes_modules() -
 
     assert {plugin.slug for plugin in inventory.plugins} == SYSTEM_PLUGIN_SLUGS
     assert "builtin.module" not in SYSTEM_PLUGIN_SLUGS
-    assert len(inventory.plugins) == 7
+    assert len(inventory.plugins) == 9
     assert next(
         plugin for plugin in inventory.plugins if plugin.slug == "external.sql"
     ).capabilities == (
@@ -51,6 +51,8 @@ def test_checked_in_system_inventory_is_complete_finite_and_excludes_modules() -
         )
         for entry in inventory.plugins
     } == {
+        "external.image": (("image",), ()),
+        "external.table": (("table",), ()),
         "external.gis": (("gis",), ("geo",)),
         "external.llm": (("llm", "prompt"), ("llm", "prompt.message")),
         "external.mistral": (("mistral",), ("mistral",)),

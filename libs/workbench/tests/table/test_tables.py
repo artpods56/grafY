@@ -34,15 +34,6 @@ from pydantic import ValidationError
 
 from grafy_workbench.table import TABLES
 
-from grafy_workbench.table.nodes import (
-    FuzzyMatchScorer,
-    FuzzyMatchTablesNode,
-    NormalizeTableTextNode,
-    TableFuzzyMatchConfig,
-    TableFuzzyMatchInput,
-    TableTextNormalizeConfig,
-    TableTextNormalizeInput,
-)
 from grafy_workbench.table.persistence import TableArtifactResolver, TableArtifactWriter
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
@@ -183,166 +174,6 @@ def test_table_model_rejects_non_rectangular_or_mistyped_rows() -> None:
         Table(columns=columns, rows=[{"count": "1"}])
 
 
-@pytest.mark.asyncio
-async def test_text_normalization_adds_transliteration_without_replacing_source() -> (
-    None
-):
-    source = Table(
-        columns=[TableColumn(id="name", title="Name", value_type=TableValueType.TEXT)],
-        rows=[{"name": "м. Бѣлыничи"}, {"name": None}],
-    )
-
-    output = await NormalizeTableTextNode().run(
-        NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="normalize"),
-        TableTextNormalizeConfig(source_column="Name"),
-        TableTextNormalizeInput(table=source),
-    )
-
-    assert [column.id for column in output.table.columns] == [
-        "name",
-        "normalized_name",
-    ]
-    assert output.table.rows == [
-        {"name": "м. Бѣлыничи", "normalized_name": "m belynichi"},
-        {"name": None, "normalized_name": None},
-    ]
-
-
-@pytest.mark.asyncio
-async def test_fuzzy_match_returns_ranked_candidates_and_unmatched_sources() -> None:
-    left = Table(
-        columns=[
-            TableColumn(id="id", title="ID", value_type=TableValueType.INTEGER),
-            TableColumn(id="name", title="Name", value_type=TableValueType.TEXT),
-            TableColumn(
-                id="district",
-                title="District",
-                value_type=TableValueType.TEXT,
-            ),
-        ],
-        rows=[
-            {"id": 1, "name": "belynichi", "district": "mohylewski"},
-            {"id": 2, "name": "wendoroz", "district": "mohylewski"},
-            {"id": 3, "name": "missing", "district": "mohylewski"},
-        ],
-    )
-    right = Table(
-        columns=[
-            TableColumn(id="id", title="ID", value_type=TableValueType.INTEGER),
-            TableColumn(id="name", title="Name", value_type=TableValueType.TEXT),
-            TableColumn(
-                id="district",
-                title="District",
-                value_type=TableValueType.TEXT,
-            ),
-            TableColumn(
-                id="description",
-                title="Description",
-                value_type=TableValueType.TEXT,
-            ),
-        ],
-        rows=[
-            {
-                "id": 10,
-                "name": "belynichi",
-                "district": "mohylewski",
-                "description": "SGKP entry",
-            },
-            {
-                "id": 11,
-                "name": "belynichi",
-                "district": "homelski",
-                "description": "Wrong district",
-            },
-            {
-                "id": 12,
-                "name": "wendoroz",
-                "district": "mohylewski",
-                "description": "Historical entry",
-            },
-        ],
-    )
-
-    output = await FuzzyMatchTablesNode().run(
-        NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="fuzzy-match"),
-        TableFuzzyMatchConfig(
-            left_text_column="name",
-            right_text_column="name",
-            left_block_column="district",
-            right_block_column="district",
-            scorer=FuzzyMatchScorer.RATIO,
-            score_threshold=90.0,
-            max_candidates=2,
-        ),
-        TableFuzzyMatchInput(left=left, right=right),
-    )
-
-    assert len(output.matches.rows) == 3
-    assert output.matches.rows[0]["match_score"] == 100.0
-    assert output.matches.rows[0]["match_rank"] == 1
-    assert output.matches.rows[0]["right__id"] == 10
-    assert output.matches.rows[0]["right__description"] == "SGKP entry"
-    assert output.matches.rows[1]["right__id"] == 12
-    assert output.matches.rows[2]["left__id"] == 3
-    assert output.matches.rows[2]["right_row_index"] is None
-    assert output.matches.rows[2]["match_rank"] is None
-
-
-@pytest.mark.asyncio
-async def test_fuzzy_match_uses_alias_columns_and_reports_the_best_pair() -> None:
-    left = Table(
-        columns=[
-            TableColumn(id="name", title="Name", value_type=TableValueType.TEXT),
-        ],
-        rows=[{"name": "belynichi"}],
-    )
-    right = Table(
-        columns=[
-            TableColumn(
-                id="historical_name",
-                title="Historical name",
-                value_type=TableValueType.TEXT,
-            ),
-            TableColumn(
-                id="current_name",
-                title="Current name",
-                value_type=TableValueType.TEXT,
-            ),
-        ],
-        rows=[
-            {
-                "historical_name": "beliki",
-                "current_name": None,
-            },
-            {
-                "historical_name": "bialenicze",
-                "current_name": "byalynichy",
-            },
-        ],
-    )
-
-    output = await FuzzyMatchTablesNode().run(
-        NodeExecutionContext(
-            workspace_id=TEST_WORKSPACE_ID,
-            node_id="fuzzy-match-aliases",
-        ),
-        TableFuzzyMatchConfig(
-            left_text_column="name",
-            right_text_column="historical_name",
-            right_alias_columns=["current_name"],
-            scorer=FuzzyMatchScorer.RATIO,
-            score_threshold=50.0,
-            max_candidates=2,
-        ),
-        TableFuzzyMatchInput(left=left, right=right),
-    )
-
-    assert output.matches.rows[0]["right__historical_name"] == "bialenicze"
-    assert output.matches.rows[0]["match_right_column"] == "current_name"
-    assert output.matches.rows[1]["right__historical_name"] == "beliki"
-    assert output.matches.rows[1]["match_right_column"] == "historical_name"
-
-
 def test_table_plugin_registers_chunked_persistence(tmp_path: Path) -> None:
     registry = PluginRegistry()
     registry.install(TABLES)
@@ -365,10 +196,7 @@ def test_table_plugin_registers_chunked_persistence(tmp_path: Path) -> None:
     assert isinstance(writer, TableArtifactWriter)
     assert writer.artifact_type == TABLE_DATA.key
     assert sample_table().rows[0]["column_2"] == "19.99"
-    assert {node.key for node in registry.nodes} >= {
-        ("table.text.normalize", 1),
-        ("table.fuzzy_match", 1),
-    }
+    assert registry.nodes == ()
 
 
 @pytest.mark.asyncio
@@ -585,8 +413,6 @@ class AsyncStatOnlyStorage:
         if not file_path.is_file():
             return None
 
-    async def open_chunks(self, bucket: str, path: str):
-        return await self.load(bucket, path)
         return StoredObjectInfo(
             bucket=bucket,
             path=path,
@@ -594,6 +420,9 @@ class AsyncStatOnlyStorage:
             etag=None,
             version_id=None,
         )
+
+    async def open_chunks(self, bucket: str, path: str):
+        return await self.load(bucket, path)
 
     async def load_range(
         self,

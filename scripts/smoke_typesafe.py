@@ -37,8 +37,8 @@ from grafy_plugin_typesafe.models import (
     EvaluationPayload,
 )
 from grafy_storage import LocalFileObjectStore
-from grafy_workbench.sequence import SEQUENCES
 from grafy_workbench.text import TEXT
+from tests.support.scenarios.sequences import SEQUENCES
 
 
 class ProcessKey:
@@ -197,7 +197,7 @@ async def run_case(
         )
         question_refs.append(single_ref(output, "question"))
     collected = await graph.run(
-        "sequence.collect",
+        "test.sequence.collect",
         case + "-stack",
         {"items": question_refs},
         bindings={"T": QUESTION.key},

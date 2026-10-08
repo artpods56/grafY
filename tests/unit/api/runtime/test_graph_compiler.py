@@ -303,7 +303,7 @@ async def test_compiler_binds_a_variable_to_a_dependency_artifact_type(
             RunNodeRequest(
                 kind="builtin",
                 id="collect",
-                operator_id="sequence.collect",
+                operator_id="test.sequence.collect",
                 operator_version=1,
                 input_plugs=[RunInputPlugRequest(id="item", port="items")],
                 artifact_type_bindings=[
@@ -590,7 +590,7 @@ def test_from_saved_graph_copies_origins_and_origin_plugs() -> None:
                 SavedGraphNode(
                     kind="builtin",
                     id="collect",
-                    operator_id="sequence.collect",
+                    operator_id="test.sequence.collect",
                     operator_version=1,
                     config={},
                     position=GraphPoint(x=0, y=0),
@@ -754,7 +754,7 @@ async def test_compiler_rejects_origin_shape_map_and_invalid_plugs(
     collect = RunNodeRequest(
         kind="builtin",
         id="collect",
-        operator_id="sequence.collect",
+        operator_id="test.sequence.collect",
         operator_version=1,
         input_plugs=[RunInputPlugRequest(id="item", port="items")],
         artifact_type_bindings=[

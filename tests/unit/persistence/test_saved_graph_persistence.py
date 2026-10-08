@@ -323,7 +323,7 @@ async def test_sql_json_loads_then_updates_current_documents_in_a_fresh_session(
             {
                 "kind": "builtin",
                 "id": "collect",
-                "operator_id": "sequence.collect",
+                "operator_id": "test.sequence.collect",
                 "operator_version": 1,
                 "config": {},
                 "position": {"x": 200.0, "y": 0.0},

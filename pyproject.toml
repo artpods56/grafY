@@ -15,6 +15,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+image = ["grafy-plugin-image"]
+table = ["grafy-plugin-table"]
 gis = ["grafy-plugin-gis"]
 llm = ["grafy-plugin-llm"]
 mistral = ["grafy-plugin-mistral"]
@@ -39,6 +41,8 @@ members = [
 ]
 exclude = [
     "examples/plugin-notes",
+    "plugins/image",
+    "plugins/table",
     "plugins/gis",
     "plugins/llm",
     "plugins/mistral",
@@ -63,6 +67,8 @@ grafy-shared = { workspace = true }
 # non-editable path install is a snapshot: uv reports "Checked 110 packages"
 # and never rebuilds it after plugins/*/src changes, so the monorepo silently
 # tests stale Plugin code. Editable keeps the root import pointed at source.
+grafy-plugin-image = { path = "plugins/image", editable = true }
+grafy-plugin-table = { path = "plugins/table", editable = true }
 grafy-plugin-llm = { path = "plugins/llm", editable = true }
 grafy-plugin-mistral = { path = "plugins/mistral", editable = true }
 grafy-plugin-ocr = { path = "plugins/ocr", editable = true }
@@ -97,6 +103,8 @@ include = [
     "libs/storage/*",
     "libs/workbench/*",
     "libs/shared/*",
+    "plugins/image/*",
+    "plugins/table/*",
     "plugins/llm/*",
     "plugins/mistral/*",
     "plugins/ocr/*",
@@ -124,6 +132,8 @@ executionEnvironments = [
         "libs/storage/src",
         "libs/workbench/src",
         "libs/shared/src",
+        "plugins/image/src",
+        "plugins/table/src",
         "plugins/llm/src",
         "plugins/mistral/src",
         "plugins/ocr/src",

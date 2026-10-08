@@ -27,11 +27,10 @@ from grafy_plugin_ocr.resolvers import PilImageResolver
 from grafy_plugin_ocr.tesseract import FakeOcrEngine, TesseractOcrNode
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.image import IMAGES
-from grafy_workbench.image.nodes import (
-    DecodeImagesNode,
-    RasterImageOutputWriter,
-)
-from grafy_workbench.sequence.nodes import CollectNode
+from grafy_plugin_image import IMAGES as IMAGE_OPERATORS
+from grafy_plugin_image.nodes import DecodeImagesNode
+from grafy_plugin_image.persistence import RasterImageOutputWriter
+from tests.support.scenarios.sequences import CollectNode
 from PIL import Image
 
 from tests.support.file_artifacts import seed_file_artifact
@@ -235,9 +234,10 @@ async def test_raster_writer_persists_content_without_upload_metadata(
     )
 
 
-def test_image_plugin_owns_the_raster_type_and_writer(tmp_path: Path) -> None:
+def test_image_plugin_uses_builtin_raster_type_and_registers_writer(tmp_path: Path) -> None:
     registry = PluginRegistry()
     registry.install(IMAGES)
+    registry.install(IMAGE_OPERATORS)
     context = PluginRuntimeContext(
         workspace=tmp_path,
         storage=LocalFileObjectStore(tmp_path / "objects"),

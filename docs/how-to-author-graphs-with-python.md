@@ -1,5 +1,9 @@
 # Build and run a graph with Python
 
+> Historical example. The upload and sequence operators shown below are retired.
+> Use Library uploads, artifact-card Collect, and the published Image Plugin.
+> See [the builtin cleanup migration](how-to-deploy-builtin-cleanup.md).
+
 Use `grafy-client` to build a typed graph, save it through the HTTP API, and
 wait for its execution. The client uses the public API only.
 

@@ -140,7 +140,7 @@ async def test_compiler_accepts_a_question_stack_and_asks_once(
             ),
             _node(
                 "stack",
-                "sequence.collect",
+                "test.sequence.collect",
                 input_plugs=[
                     RunInputPlugRequest(id="first", port="items"),
                     RunInputPlugRequest(id="second", port="items"),

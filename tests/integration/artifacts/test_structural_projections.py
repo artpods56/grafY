@@ -147,7 +147,7 @@ def test_projected_values_feed_generic_collect_with_optional_conversion(
                 RunNodeRequest(
                     kind="builtin",
                     id="collect",
-                    operator_id="sequence.collect",
+                    operator_id="test.sequence.collect",
                     operator_version=1,
                     config={},
                     input_plugs=[

@@ -1,12 +1,8 @@
 from grafy_core.artifacts import Artifact
 from grafy_core.table_contracts import TABLE_DATA
 
-from grafy_workbench.table import nodes
 from grafy_workbench.table.declaration import TABLES
 from grafy_workbench.table.persistence import TableArtifactResolver, TableArtifactWriter
-
-
-_NODE_MODULES = (nodes,)
 
 
 TABLES.register(

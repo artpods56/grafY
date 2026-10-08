@@ -1,7 +1,6 @@
 from grafy_workbench.image import IMAGES
 from grafy_core.operators.modules import MODULE_BOUNDARY_REGISTRATIONS
 from grafy_workbench.schema import SCHEMAS
-from grafy_workbench.sequence import SEQUENCES
 from grafy_workbench.text import TEXT
 from grafy_workbench.value import VALUE
 from grafy_core.plugins import NodeCachePolicy
@@ -15,7 +14,6 @@ def test_builtin_node_cache_policy_inventory_is_fail_closed() -> None:
         for registration in (
             *IMAGES.nodes,
             *MODULE_BOUNDARY_REGISTRATIONS,
-            *SEQUENCES.nodes,
             *VALUE.nodes,
             *TEXT.nodes,
             *SCHEMAS.nodes,
@@ -24,13 +22,8 @@ def test_builtin_node_cache_policy_inventory_is_fail_closed() -> None:
     }
 
     assert policies == {
-        ("image.decode", 1): NodeCachePolicy.NEVER,
         ("module.input", 1): NodeCachePolicy.NEVER,
         ("module.output", 1): NodeCachePolicy.EXACT,
-        ("sequence.collect", 1): NodeCachePolicy.EXACT,
-        ("sequence.count", 1): NodeCachePolicy.EXACT,
-        ("sequence.slice", 1): NodeCachePolicy.EXACT,
-        ("sequence.item_at", 1): NodeCachePolicy.EXACT,
         ("value.integer", 1): NodeCachePolicy.EXACT,
         ("test.arithmetic.integer_sequence", 1): NodeCachePolicy.EXACT,
         ("test.arithmetic.add", 1): NodeCachePolicy.EXACT,

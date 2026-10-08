@@ -51,6 +51,8 @@ from grafy_workbench.file.nodes import (
     InterpretFileNode,
 )
 from grafy_workbench.image import IMAGES
+from grafy_plugin_image import IMAGES as IMAGE_OPERATORS
+from grafy_plugin_table import TABLES as TABLE_OPERATORS
 from grafy_workbench.table import TABLES
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000969")
@@ -255,7 +257,9 @@ def test_interpret_declares_an_explicit_format_output_and_a_blob_input() -> None
     registry = PluginRegistry()
     registry.install(FILES)
     registry.install(IMAGES)
+    registry.install(IMAGE_OPERATORS)
     registry.install(TABLES)
+    registry.install(TABLE_OPERATORS)
     registry.freeze()
 
     registration = registry.node_registration("file.interpret", 1)

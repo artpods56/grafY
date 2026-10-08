@@ -22,6 +22,8 @@ from tests.support.plugin_contract_digests import (
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 PUBLISHED_PLUGIN_FAMILIES = (
+    "image",
+    "table",
     "gis",
     "llm",
     "mistral",
@@ -32,7 +34,6 @@ PUBLISHED_PLUGIN_FAMILIES = (
 )
 WORKBENCH_FAMILIES = (
     "image",
-    "sequence",
     "value",
     "text",
     "schema",
@@ -270,7 +271,8 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
 
     for family in WORKBENCH_FAMILIES:
         assert (REPO_ROOT / "libs/workbench/src/grafy_workbench" / family).is_dir()
-        assert not (REPO_ROOT / "plugins" / family).exists()
+        if family not in {"image", "table"}:
+            assert not (REPO_ROOT / "plugins" / family).exists()
 
     for family in PUBLISHED_PLUGIN_FAMILIES:
         project_root = REPO_ROOT / "plugins" / family
@@ -281,7 +283,7 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
         assert "grafy-core==0.1.0" in cast(list[str], project["dependencies"])
         core_wheel = project_root / "wheels/grafy_core-0.1.0-py3-none-any.whl"
         assert sha256(core_wheel.read_bytes()).hexdigest() == (
-            "222bf117f35e3c6bb8d04792488036f91632e4ecfbdad67f6f3806ca1b8492ff"
+            "9349883d5f9b96a423655300f2a87f9c5dd9d870f068444819cf5095ff3c5eaf"
         )
         assert "workspace = true" not in (project_root / "pyproject.toml").read_text()
 
