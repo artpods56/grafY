@@ -5,8 +5,8 @@ import * as stylex from "@stylexjs/stylex";
 
 /**
  * Shared card chrome for artifact cards and operator nodes: name above the
- * plate, rails hung outside the body, no layout reserved for the marks.
- * Option B keeps port names off the plate — balls carry them on hover.
+ * body. An artifact card hangs its ports on rails outside the body; a node
+ * labels its ports on rows inside its plate.
  */
 
 export const canvasCard = stylex.create({
@@ -38,9 +38,8 @@ export const canvasCardRail = stylex.create({
   },
   left: {
     right: "calc(100% + 8px)",
-    flexDirection: "column",
-    justifyContent: "flex-start",
-    alignItems: "center",
+    justifyContent: "center",
+    alignItems: "flex-start",
   },
   right: {
     left: "calc(100% + 8px)",
@@ -48,31 +47,12 @@ export const canvasCardRail = stylex.create({
     justifyContent: "flex-start",
     alignItems: "center",
   },
-  // Stack of port slots; each slot is lattice-tall so ball centres stay on
-  // the same mid-cell lines the old in-plate rail used.
-  stack: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    width: "100%",
-  },
-  // Outputs pin to the body's bottom edge, like an artifact's single out.
-  output: {
-    marginTop: "auto",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    width: "100%",
-  },
-  slot: {
-    display: "grid",
-    placeItems: "center",
-    width: "100%",
-    flexShrink: 0,
-  },
+  // Only the output port sets the rail height, so a short file card still pins
+  // that port to the body's bottom edge.
+  output: { marginTop: "auto" },
   // Out of the rail's flow. The rail is as wide as a port, so centring here
   // puts the button on the port line; the 4px top pad (half of 30 − 22) sets
-  // it level with the first input port.
+  // it level with the input port.
   actions: {
     position: "absolute",
     top: 0,
@@ -117,65 +97,6 @@ export function CanvasCardBody({
 }: React.ComponentProps<"div">) {
   return (
     <div data-artifact-body="true" {...stylex.props(canvasCard.body)} {...rest}>
-      {children}
-    </div>
-  );
-}
-
-export function CanvasCardLeftRail({
-  children,
-  testId,
-}: {
-  children: React.ReactNode;
-  testId?: string;
-}) {
-  return (
-    <div
-      data-artifact-rail="left"
-      data-testid={testId}
-      {...stylex.props(canvasCardRail.rail, canvasCardRail.left)}
-    >
-      <div {...stylex.props(canvasCardRail.stack)}>{children}</div>
-    </div>
-  );
-}
-
-export function CanvasCardRightRail({
-  children,
-  actions,
-  testId,
-}: {
-  children: React.ReactNode;
-  actions?: React.ReactNode;
-  testId?: string;
-}) {
-  return (
-    <div
-      data-artifact-rail="right"
-      data-testid={testId}
-      {...stylex.props(canvasCardRail.rail, canvasCardRail.right)}
-    >
-      {actions}
-      <div {...stylex.props(canvasCardRail.output)}>{children}</div>
-    </div>
-  );
-}
-
-export function CanvasCardRailSlot({
-  height,
-  children,
-  ...rest
-}: {
-  height: number;
-  children: React.ReactNode;
-} & React.ComponentProps<"div">) {
-  return (
-    <div
-      data-testid="port-rail-row"
-      {...stylex.props(canvasCardRail.slot)}
-      style={{ height }}
-      {...rest}
-    >
       {children}
     </div>
   );

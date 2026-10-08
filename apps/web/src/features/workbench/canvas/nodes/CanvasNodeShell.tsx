@@ -39,7 +39,7 @@ const s = stylex.create({
   },
   // The plate: the node's body under its name. Flat at rest; it takes the same
   // ground shadow as an artifact's media when picked up, and a deeper one when
-  // carried. Rails hang off this plate via `data-artifact-rail`.
+  // carried.
   shell: {
     position: "relative",
     width: "300px",
@@ -129,9 +129,11 @@ interface CanvasNodeShellProps {
 }
 
 /**
- * A node on the canvas, sharing the artifact card's DOM: frame → head / body,
- * with port rails hung outside the plate. Port names stay off the plate
- * (option B) — each ball carries its name on hover.
+ * A node on the canvas, sharing the artifact card's DOM: frame → head / body.
+ * The plate labels each port on its own row, and the row's ball hangs just
+ * outside the plate on a stem. Picking it up lifts the whole stack and slides
+ * the ports out; a port that carries an edge stays out regardless, so the
+ * edge always meets its ball.
  */
 export function CanvasNodeShell({
   state,

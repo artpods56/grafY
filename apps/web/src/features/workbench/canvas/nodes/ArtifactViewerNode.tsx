@@ -50,24 +50,14 @@ import { ArtifactPortPreview } from "./ArtifactsAppendix";
 import { presentsArtifacts } from "../artifact-card";
 import { rendererCanBrush } from "./artifact-renderers/registry";
 import {
-  CanvasCardLeftRail,
-  CanvasCardRailSlot,
-  CanvasCardRightRail,
-} from "./CanvasCardLayout";
-import {
   type CanvasNodeOverflowItem,
   CanvasNodeHeader,
+  CanvasPortRail,
+  CanvasPortTab,
   canvasNodeInteractionProps,
 } from "./CanvasNodeChrome";
 import { CanvasNodeShell, useCanvasNodeShell } from "./CanvasNodeShell";
 import { LayoutResizeHandle } from "./LayoutResizeHandle";
-import { PortBall } from "./PortBall";
-import {
-  GRID_CELL_SIZE_DEFAULT,
-  PORT_RAIL_ROW_HEIGHT_CELLS,
-  lengthFromSpan,
-} from "../grid-layout";
-import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
 
 const s = stylex.create({
   viewport: {
@@ -363,12 +353,54 @@ function RichArtifactViewerNode({
         ) : undefined
       }
     >
-      <ArtifactViewerPortRails
-        nodeId={id}
-        artifactColor={artifactColor}
-        isConnectable={isConnectable}
-        showInteractionRow={showInteractionRow}
-        openTypeHint={!incomingEdge}
+      <CanvasPortRail
+        rows={[
+          {
+            input: (
+              <CanvasPortTab
+                nodeId={id}
+                label="Artifact"
+                hint={incomingEdge ? undefined : "any"}
+                direction="input"
+                handleId={ARTIFACT_VIEWER_INPUT_HANDLE}
+                color={artifactColor}
+                isConnectable={isConnectable}
+                ariaLabel="Input port Artifact, accepts Any artifact"
+                title="Accepts any artifact or artifact sequence. Connect an output here."
+              />
+            ),
+          },
+          ...(showInteractionRow
+            ? [
+                {
+                  input: (
+                    <CanvasPortTab
+                      nodeId={id}
+                      label="Follow selection"
+                      direction="input"
+                      handleId={ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE}
+                      color={tokens.colorInfo}
+                      isConnectable={isConnectable}
+                      ariaLabel="Follow selection from another Artifact Viewer"
+                      title="Accept a key selection from another Artifact Viewer."
+                    />
+                  ),
+                  output: (
+                    <CanvasPortTab
+                      nodeId={id}
+                      label="Selected rows"
+                      direction="output"
+                      handleId={ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE}
+                      color={tokens.colorInfo}
+                      isConnectable={isConnectable}
+                      ariaLabel="Selected rows from this Artifact Viewer"
+                      title="Send this viewer's key selection to another Artifact Viewer."
+                    />
+                  ),
+                },
+              ]
+            : []),
+        ]}
       />
       {showPreview && renderableOutput ? (
         <div
@@ -395,89 +427,5 @@ function RichArtifactViewerNode({
         </div>
       ) : null}
     </CanvasNodeShell>
-  );
-}
-
-/** Option B rails for the Artifact Viewer: unlabeled balls, names on hover. */
-function ArtifactViewerPortRails({
-  nodeId,
-  artifactColor,
-  isConnectable,
-  showInteractionRow,
-  openTypeHint,
-}: {
-  nodeId: string;
-  artifactColor: string;
-  isConnectable: boolean;
-  showInteractionRow: boolean;
-  openTypeHint: boolean;
-}) {
-  const grid = useOptionalCanvasGridSettings();
-  const cellSize = grid?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
-  const rowHeight = lengthFromSpan(PORT_RAIL_ROW_HEIGHT_CELLS, cellSize);
-
-  return (
-    <>
-      <CanvasCardLeftRail testId="port-rail">
-        <CanvasCardRailSlot height={rowHeight}>
-          <PortBall
-            nodeId={nodeId}
-            handleId={ARTIFACT_VIEWER_INPUT_HANDLE}
-            side="input"
-            color={artifactColor}
-            isConnectable={isConnectable}
-            open={openTypeHint}
-            order={0}
-            ariaLabel="Input port Artifact, accepts Any artifact"
-            title="Accepts any artifact or artifact sequence. Connect an output here."
-            tip={{
-              name: "Artifact",
-              type: openTypeHint ? "Any artifact" : "Connected",
-              hint: "Connect an output here.",
-            }}
-          />
-        </CanvasCardRailSlot>
-        {showInteractionRow ? (
-          <CanvasCardRailSlot height={rowHeight}>
-            <PortBall
-              nodeId={nodeId}
-              handleId={ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE}
-              side="input"
-              color={tokens.colorInfo}
-              isConnectable={isConnectable}
-              order={1}
-              ariaLabel="Follow selection from another Artifact Viewer"
-              title="Accept a key selection from another Artifact Viewer."
-              tip={{
-                name: "Follow selection",
-                type: "Selection",
-                hint: "Accept a key selection from another Artifact Viewer.",
-              }}
-            />
-          </CanvasCardRailSlot>
-        ) : null}
-      </CanvasCardLeftRail>
-      {showInteractionRow ? (
-        <CanvasCardRightRail testId="port-rail-out">
-          <CanvasCardRailSlot height={rowHeight}>
-            <PortBall
-              nodeId={nodeId}
-              handleId={ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE}
-              side="output"
-              color={tokens.colorInfo}
-              isConnectable={isConnectable}
-              order={0}
-              ariaLabel="Selected rows from this Artifact Viewer"
-              title="Send this viewer's key selection to another Artifact Viewer."
-              tip={{
-                name: "Selected rows",
-                type: "Selection",
-                hint: "Send this viewer's key selection to another Artifact Viewer.",
-              }}
-            />
-          </CanvasCardRailSlot>
-        </CanvasCardRightRail>
-      ) : null}
-    </>
   );
 }

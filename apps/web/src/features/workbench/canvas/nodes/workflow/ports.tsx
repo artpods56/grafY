@@ -10,17 +10,14 @@ import type { Port } from "@/lib/api";
 import { artifactTypeVariableOptions } from "@/features/workbench/model/claimed-formats";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-import {
-  CanvasCardLeftRail,
-  CanvasCardRailSlot,
-  CanvasCardRightRail,
-} from "../CanvasCardLayout";
+import { CanvasPortBall, nodeChrome } from "../CanvasNodeChrome";
 import { useHandleIsDocked } from "../../edges/useDockedConnection";
 import { decodeHandleId, encodeHandleId } from "../../handles";
 import { artifactTypeColor } from "../../nodes.css";
 import {
   formatArtifactTypeContract,
   formatArtifactTypeLabel,
+  formatArtifactTypeTooltip,
 } from "../../artifact-type-label";
 import { useArtifactTypeCatalog } from "../../use-artifact-type-catalog";
 import {
@@ -38,22 +35,40 @@ import {
   PORT_RAIL_ROW_HEIGHT_CELLS,
   lengthFromSpan,
 } from "../../grid-layout";
-import { PortBall } from "../PortBall";
 import { PortTypePopover } from "../type-inspector";
 
+import { sharedStyles } from "./styles";
+
 const s = stylex.create({
-  // Keeps "Inspect … type" reachable for assistive tech and Playwright without
-  // putting a label back on the plate (option B).
-  inspectHit: {
-    position: "absolute",
-    width: "1px",
-    height: "1px",
+  compatibilityPort: {
+    backgroundColor: {
+      default: tokens.colorSurfaceSunken,
+      ":hover": tokens.colorSurfaceSunken,
+    },
+    color: tokens.colorTextDisabled,
+  },
+  tabWithToggle: {
+    paddingInlineEnd: "5px",
+  },
+  tabTrigger: {
+    minWidth: 0,
+    display: "flex",
+    alignItems: "center",
+    gap: "7px",
+    height: "100%",
     padding: 0,
-    margin: "-1px",
-    overflow: "hidden",
-    clipPath: "inset(50%)",
     borderWidth: 0,
-    whiteSpace: "nowrap",
+    backgroundColor: "transparent",
+    color: "inherit",
+    cursor: "pointer",
+    font: "inherit",
+  },
+  tabDisabled: {
+    color: tokens.colorTextDisabled,
+    backgroundColor: {
+      default: tokens.colorSurfaceSunken,
+      ":hover": tokens.colorSurfaceSunken,
+    },
   },
   connectionToggle: {
     width: "18px",
@@ -70,7 +85,6 @@ const s = stylex.create({
     },
     color: tokens.colorMuted,
     cursor: "pointer",
-    pointerEvents: "auto",
   },
   connectionToggleEnabled: {
     color: tokens.colorAccent,
@@ -90,18 +104,6 @@ const s = stylex.create({
     width: "18px",
     height: "20px",
     borderRadius: "5px",
-  },
-  // Optional-connection switch sits above its ball in the rail slot so the
-  // ball stays on the mid-cell line.
-  railToggle: {
-    position: "absolute",
-    top: "2px",
-    left: "50%",
-    transform: "translateX(-50%)",
-    zIndex: 2,
-  },
-  railSlot: {
-    position: "relative",
   },
 });
 
@@ -176,9 +178,8 @@ export function OptionalConnectionToggle({
 }
 
 /**
- * Option B port rails: balls hang outside the plate like an artifact card.
- * Names stay off the plate and appear on ball hover via `PortBall` tips.
- * Inputs stack from the top; outputs pin to the bottom.
+ * Shared port rail: one lattice-tall row per index, input on the left and
+ * output on the right so neighboring nodes can Lego-join on the same Y.
  */
 export function PortRail({
   id,
@@ -196,67 +197,71 @@ export function PortRail({
   const grid = useOptionalCanvasGridSettings();
   const cellSize = grid?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
   const rowHeight = lengthFromSpan(PORT_RAIL_ROW_HEIGHT_CELLS, cellSize);
-  if (inputPorts.length === 0 && outputPorts.length === 0) return null;
+  const rowCount = Math.max(inputPorts.length, outputPorts.length);
+  if (rowCount === 0) return null;
 
   return (
-    <>
-      {inputPorts.length > 0 ? (
-        <CanvasCardLeftRail testId="port-rail">
-          {inputPorts.map((port, index) => (
-            <CanvasCardRailSlot key={`in-${port.name}`} height={rowHeight}>
-              <RailPort
-                id={id}
-                data={data}
-                port={port}
-                shape={effectivePortShape(data, port)}
-                typeLocked={typeLocked}
-                order={index}
-              />
-            </CanvasCardRailSlot>
-          ))}
-        </CanvasCardLeftRail>
-      ) : null}
-      {outputPorts.length > 0 ? (
-        <CanvasCardRightRail
-          testId={inputPorts.length === 0 ? "port-rail" : "port-rail-out"}
-        >
-          {outputPorts.map((port, index) => (
-            <CanvasCardRailSlot key={`out-${port.name}`} height={rowHeight}>
-              <RailPort
-                id={id}
-                data={data}
-                port={port}
-                shape={effectivePortShape(data, port)}
-                typeLocked={typeLocked}
-                order={index}
-              />
-            </CanvasCardRailSlot>
-          ))}
-        </CanvasCardRightRail>
-      ) : null}
-    </>
+    <div data-testid="port-rail" {...stylex.props(nodeChrome.portRail)}>
+      {Array.from({ length: rowCount }, (_, index) => {
+        const input = inputPorts[index];
+        const output = outputPorts[index];
+        return (
+          <div
+            key={`port-rail-row-${index}`}
+            data-testid="port-rail-row"
+            style={{ height: rowHeight }}
+            {...stylex.props(nodeChrome.portRailRow)}
+          >
+            <div {...stylex.props(nodeChrome.portRailSlot)}>
+              {input ? (
+                <PortTab
+                  id={id}
+                  data={data}
+                  port={input}
+                  shape={effectivePortShape(data, input)}
+                  typeLocked={typeLocked}
+                />
+              ) : null}
+            </div>
+            <div
+              {...stylex.props(
+                nodeChrome.portRailSlot,
+                nodeChrome.portRailSlotOut,
+              )}
+            >
+              {output ? (
+                <PortTab
+                  id={id}
+                  data={data}
+                  port={output}
+                  shape={effectivePortShape(data, output)}
+                  typeLocked={typeLocked}
+                />
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
-function RailPort({
+function PortTab({
   id,
   data,
   port,
   shape,
   typeLocked,
-  order,
 }: {
   id: string;
   data: WorkflowNodeData;
   port: Port;
   shape: Port["shape"];
   typeLocked: boolean;
-  order: number;
 }) {
   const input = port.direction === "input";
   const connection = useOptionalInputConnection(id, port);
   const artifactTypes = useArtifactTypeCatalog();
-  const [inspectOpen, setInspectOpen] = React.useState(false);
   const visibleName = port.title ?? port.name;
   const artifactType = resolvedPortArtifactType(
     port,
@@ -268,11 +273,15 @@ function RailPort({
   const artifactContract = artifactType
     ? formatArtifactTypeContract(artifactType, artifactTypes)
     : "Any artifact";
+  const contractTooltip = artifactType
+    ? ` (${formatArtifactTypeTooltip(artifactType)})`
+    : "";
   const effectiveContract =
     shape === "many" ? `list[${artifactContract}]` : artifactContract;
   const accessibleLabel = input
     ? `Input port ${visibleName}, accepts ${effectiveContract}${port.required ? ", required" : ""}`
     : `Output port ${visibleName}, provides ${effectiveContract}`;
+  const connectionDisabled = Boolean(connection && !connection.enabled);
   const handleId = encodeHandleId(
     portMetaForPort(
       port,
@@ -282,79 +291,84 @@ function RailPort({
     ),
   );
   const docked = useHandleIsDocked(id, handleId);
-  // A drawer drop lands on the slot itself, so only a plain input port
+  // A drawer drop lands on the row itself, so only a plain input port row
   // publishes the identity a drop reads. A port that takes plugs publishes it
   // on each plug row instead.
   const artifactDropRow = input && !portHasInstancePlugs(port);
-  const typeProps = usePortBallTypeProps({
-    id,
-    data,
-    port,
-    shape,
-    locked: typeLocked,
-    name: visibleName,
-  });
-  const tip = typeProps.tip
-    ? {
-        ...typeProps.tip,
-        hint: typeProps.tip.hint
-          ? `${typeProps.tip.hint} Double-click to inspect its schema.`
-          : "Double-click to inspect its schema.",
-      }
-    : null;
 
   return (
-    <PortTypePopover
-      port={port}
-      shape={shape}
-      artifactTypeBindings={data.artifactTypeBindings}
-      open={inspectOpen}
-      onOpenChange={setInspectOpen}
+    <div
+      data-docked-port={docked ? "true" : undefined}
+      data-input-node-id={artifactDropRow ? id : undefined}
+      data-input-port-name={artifactDropRow ? port.name : undefined}
+      {...stylex.props(nodeChrome.tabRow, input ? null : nodeChrome.tabRowOut)}
     >
       <div
-        data-docked-port={docked ? "true" : undefined}
-        data-input-node-id={artifactDropRow ? id : undefined}
-        data-input-port-name={artifactDropRow ? port.name : undefined}
-        data-port-name={port.name}
-        {...stylex.props(s.railSlot)}
-        onDoubleClick={(event) => {
-          event.stopPropagation();
-          setInspectOpen(true);
-        }}
+        {...stylex.props(
+          nodeChrome.tab,
+          input ? nodeChrome.tabIn : nodeChrome.tabOut,
+          connection ? s.tabWithToggle : null,
+          connectionDisabled ? s.tabDisabled : null,
+          docked ? nodeChrome.tabDocked : null,
+        )}
       >
-        <Popover.Trigger
-          type="button"
-          aria-label={`Inspect ${visibleName} type`}
-          title={port.description ?? `Inspect ${visibleName} type`}
-          {...nodeInteractionProps(stylex.props(s.inspectHit))}
-        />
+        <PortTypePopover
+          port={port}
+          shape={shape}
+          artifactTypeBindings={data.artifactTypeBindings}
+        >
+          <Popover.Trigger
+            type="button"
+            aria-label={`Inspect ${visibleName} type`}
+            title={
+              port.description ??
+              `Inspect ${visibleName} type${contractTooltip}`
+            }
+            {...nodeInteractionProps(stylex.props(s.tabTrigger))}
+          >
+            <span {...stylex.props(nodeChrome.tabLabel)}>{visibleName}</span>
+            {input && port.required ? (
+              <span
+                {...stylex.props(sharedStyles.required, nodeChrome.tabShape)}
+              >
+                *
+              </span>
+            ) : null}
+            {shape === "many" ? (
+              <span {...stylex.props(nodeChrome.tabShape)}>· many</span>
+            ) : null}
+          </Popover.Trigger>
+        </PortTypePopover>
         {connection ? (
-          <span {...stylex.props(s.railToggle)}>
-            <OptionalConnectionToggle
-              connection={connection}
-              label={visibleName}
-            />
-          </span>
+          <OptionalConnectionToggle
+            connection={connection}
+            label={visibleName}
+          />
         ) : null}
-        <PortBall
-          nodeId={id}
-          handleId={handleId}
-          side={input ? "input" : "output"}
-          color={color}
-          sequence={shape === "many"}
-          docked={docked}
-          order={order}
-          {...typeProps}
-          tip={tip}
-          ariaLabel={accessibleLabel}
-          title={
-            input
-              ? `${accessibleLabel}. Connect a compatible output here.${port.description ? ` ${port.description}` : ""}`
-              : `${accessibleLabel}. Drag to a compatible input. If fields are available, you can choose what arrives after connecting.${port.description ? ` ${port.description}` : ""}`
-          }
-        />
       </div>
-    </PortTypePopover>
+      <CanvasPortBall
+        nodeId={id}
+        handleId={handleId}
+        side={input ? "input" : "output"}
+        color={color}
+        sequence={shape === "many"}
+        docked={docked}
+        {...usePortBallTypeProps({
+          id,
+          data,
+          port,
+          shape,
+          locked: typeLocked,
+          name: visibleName,
+        })}
+        ariaLabel={accessibleLabel}
+        title={
+          input
+            ? `${accessibleLabel}. Connect a compatible output here.${port.description ? ` ${port.description}` : ""}`
+            : `${accessibleLabel}. Drag to a compatible input. If fields are available, you can choose what arrives after connecting.${port.description ? ` ${port.description}` : ""}`
+        }
+      />
+    </div>
   );
 }
 
@@ -379,7 +393,10 @@ export function usePortBallTypeProps({
   shape: Port["shape"];
   locked: boolean;
   name: string;
-}): Pick<React.ComponentProps<typeof PortBall>, "open" | "tip" | "typeChoice"> {
+}): Pick<
+  React.ComponentProps<typeof CanvasPortBall>,
+  "open" | "tip" | "typeChoice"
+> {
   const variable = port.artifact_type_variable ?? null;
   const artifactTypes = useArtifactTypeCatalog();
   const artifactType = resolvedPortArtifactType(
@@ -460,36 +477,43 @@ export type IncompatibleWorkflowNodeCompatibility = Exclude<
   { status: "supported" }
 >;
 
-function CompatibilityRailPort({
+function CompatibilityPort({
   nodeId,
   direction,
   endpoint,
-  order,
 }: {
   nodeId: string;
   direction: "input" | "output";
   endpoint: IncompatibleWorkflowNodeCompatibility["inputs"][number];
-  order: number;
 }) {
+  const input = direction === "input";
   const label = endpoint.plugId
     ? `${endpoint.portName} · ${endpoint.plugId}`
     : endpoint.portName;
   return (
-    <PortBall
-      nodeId={nodeId}
-      handleId={compatibilityHandleId(direction, endpoint)}
-      side={direction}
-      color={tokens.colorMuted}
-      locked
-      order={order}
-      ariaLabel={`Unavailable ${direction} port ${label}`}
-      title={`This historical ${direction} cannot accept new connections.`}
-      tip={{
-        name: label,
-        type: "Unavailable",
-        hint: "This historical port cannot accept new connections.",
-      }}
-    />
+    <div
+      {...stylex.props(nodeChrome.tabRow, input ? null : nodeChrome.tabRowOut)}
+    >
+      <div
+        {...stylex.props(
+          nodeChrome.tab,
+          input ? nodeChrome.tabIn : nodeChrome.tabOut,
+          s.compatibilityPort,
+        )}
+        title={`Historical ${direction} ${label}`}
+      >
+        <span {...stylex.props(nodeChrome.tabLabel)}>{label}</span>
+      </div>
+      <CanvasPortBall
+        nodeId={nodeId}
+        handleId={compatibilityHandleId(direction, endpoint)}
+        side={direction}
+        color={tokens.colorMuted}
+        locked
+        ariaLabel={`Unavailable ${direction} port ${label}`}
+        title={`This historical ${direction} cannot accept new connections.`}
+      />
+    </div>
   );
 }
 
@@ -505,46 +529,47 @@ export function CompatibilityPortRail({
   const grid = useOptionalCanvasGridSettings();
   const cellSize = grid?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
   const rowHeight = lengthFromSpan(PORT_RAIL_ROW_HEIGHT_CELLS, cellSize);
-  if (inputs.length === 0 && outputs.length === 0) return null;
+  const rowCount = Math.max(inputs.length, outputs.length);
+  if (rowCount === 0) return null;
 
   return (
-    <>
-      {inputs.length > 0 ? (
-        <CanvasCardLeftRail testId="port-rail">
-          {inputs.map((endpoint, index) => (
-            <CanvasCardRailSlot
-              key={`compat-in-${endpoint.portName}-${endpoint.plugId ?? ""}`}
-              height={rowHeight}
+    <div data-testid="port-rail" {...stylex.props(nodeChrome.portRail)}>
+      {Array.from({ length: rowCount }, (_, index) => {
+        const input = inputs[index];
+        const output = outputs[index];
+        return (
+          <div
+            key={`compat-rail-row-${index}`}
+            data-testid="port-rail-row"
+            style={{ height: rowHeight }}
+            {...stylex.props(nodeChrome.portRailRow)}
+          >
+            <div {...stylex.props(nodeChrome.portRailSlot)}>
+              {input ? (
+                <CompatibilityPort
+                  nodeId={nodeId}
+                  direction="input"
+                  endpoint={input}
+                />
+              ) : null}
+            </div>
+            <div
+              {...stylex.props(
+                nodeChrome.portRailSlot,
+                nodeChrome.portRailSlotOut,
+              )}
             >
-              <CompatibilityRailPort
-                nodeId={nodeId}
-                direction="input"
-                endpoint={endpoint}
-                order={index}
-              />
-            </CanvasCardRailSlot>
-          ))}
-        </CanvasCardLeftRail>
-      ) : null}
-      {outputs.length > 0 ? (
-        <CanvasCardRightRail
-          testId={inputs.length === 0 ? "port-rail" : "port-rail-out"}
-        >
-          {outputs.map((endpoint, index) => (
-            <CanvasCardRailSlot
-              key={`compat-out-${endpoint.portName}-${endpoint.plugId ?? ""}`}
-              height={rowHeight}
-            >
-              <CompatibilityRailPort
-                nodeId={nodeId}
-                direction="output"
-                endpoint={endpoint}
-                order={index}
-              />
-            </CanvasCardRailSlot>
-          ))}
-        </CanvasCardRightRail>
-      ) : null}
-    </>
+              {output ? (
+                <CompatibilityPort
+                  nodeId={nodeId}
+                  direction="output"
+                  endpoint={output}
+                />
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
