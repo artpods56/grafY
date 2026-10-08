@@ -56,14 +56,13 @@ from grafy_plugin_gis.nodes import (
 )
 from grafy_plugin_gis.plugin import GIS
 from grafy_storage import LocalFileObjectStore
-from grafy_workbench.image.declaration import IMAGES
-from grafy_workbench.image.nodes import (
-    DecodeImagesNode,
-    ImageDecodeInput,
-    RasterImageOutputWriter,
-)
-from grafy_workbench.table.declaration import TABLES
-from grafy_workbench.table.nodes import (
+from grafy_plugin_image import IMAGES
+from grafy_workbench.image import IMAGES as IMAGE_ARTIFACTS
+from grafy_plugin_image.nodes import DecodeImagesNode, ImageDecodeInput
+from grafy_plugin_image.persistence import RasterImageOutputWriter
+from grafy_plugin_table import TABLES
+from grafy_workbench.table import TABLES as TABLE_ARTIFACTS
+from grafy_plugin_table.nodes import (
     ImportTableNode,
     TableFileImportError,
     TableImportConfig,
@@ -518,6 +517,8 @@ async def test_file_artifact_reader_fails_closed_without_stored_bytes() -> None:
 
 def test_replacement_nodes_declare_their_catalog_contracts() -> None:
     registry = PluginRegistry()
+    registry.install(IMAGE_ARTIFACTS)
+    registry.install(TABLE_ARTIFACTS)
     registry.install(IMAGES)
     registry.install(TABLES)
     registry.install(GIS)
@@ -583,6 +584,7 @@ def test_replacement_nodes_declare_their_catalog_contracts() -> None:
     assert import_raster.required_capabilities == (PluginRuntimeCapability.NATIVE_GDAL,)
 
     assert {spec.key for spec in IMAGES.artifact_type_dependencies} == {
+        RASTER_IMAGE.key,
         PNG_FILE.key,
         JPEG_FILE.key,
         WEBP_FILE.key,
@@ -590,6 +592,7 @@ def test_replacement_nodes_declare_their_catalog_contracts() -> None:
         BMP_FILE.key,
     }
     assert {spec.key for spec in TABLES.artifact_type_dependencies} == {
+        TABLE_DATA.key,
         CSV_FILE.key,
         XLSX_FILE.key,
     }

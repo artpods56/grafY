@@ -30,6 +30,9 @@ from grafy_core.domain.modules import (
 from grafy_core.operators.modules import MODULE_BOUNDARY_REGISTRATIONS
 from grafy_core.plugins import Plugin, PluginRegistry, UnknownOperatorError
 from grafy_workbench import BUILTIN_FAMILIES
+from grafy_plugin_image import IMAGES as IMAGE_OPERATORS
+from grafy_plugin_table import TABLES as TABLE_OPERATORS
+from tests.support.scenarios.sequences import SEQUENCES
 
 from grafy_api.v1.models import ArtifactTypeBindingModel
 from grafy_api.execution.requests import (
@@ -43,7 +46,12 @@ from tests.support.scenarios.arithmetic import ARITHMETIC_TEST_PLUGIN
 # Plugins installed into the test registry as builtins purely to give engine
 # tests richer fixtures than the shipped catalog needs. They are never published
 # as Plugin releases and never reach production.
-TEST_FIXTURE_PLUGINS: tuple[Plugin, ...] = (ARITHMETIC_TEST_PLUGIN,)
+TEST_FIXTURE_PLUGINS: tuple[Plugin, ...] = (
+    ARITHMETIC_TEST_PLUGIN,
+    SEQUENCES,
+    IMAGE_OPERATORS,
+    TABLE_OPERATORS,
+)
 TEST_SYSTEM_PLUGINS: tuple[Plugin, ...] = (*BUILTIN_FAMILIES, *TEST_FIXTURE_PLUGINS)
 TEST_BUILD_DIGEST = "a" * 64
 

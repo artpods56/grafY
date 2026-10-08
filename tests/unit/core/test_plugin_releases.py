@@ -245,7 +245,7 @@ def test_catalog_manifest_rejects_owned_dependency_overlap() -> None:
 def test_builtin_scalar_and_table_catalogs_preserve_portable_contracts() -> None:
     value = PluginCatalogManifest.from_plugin(VALUE)
     text = PluginCatalogManifest.from_plugin(TEXT)
-    tables = PluginCatalogManifest.from_plugin(TABLES)
+    table_contracts = tuple(PluginArtifactTypeContract.from_spec(spec) for spec in TABLES.artifact_types)
 
     integer_contract = next(
         artifact
@@ -257,7 +257,7 @@ def test_builtin_scalar_and_table_catalogs_preserve_portable_contracts() -> None
     )
     table_contract = next(
         artifact
-        for artifact in tables.artifact_types
+        for artifact in table_contracts
         if artifact.key.id == "table.data"
     )
 

@@ -49,7 +49,7 @@ def _collect_run_payload() -> dict[str, object]:
             RunNodeRequest(
                 kind="builtin",
                 id="collect",
-                operator_id="sequence.collect",
+                operator_id="test.sequence.collect",
                 operator_version=1,
                 config={},
                 input_plugs=[
@@ -151,7 +151,7 @@ def test_registry_declares_text_artifact_and_operator_contracts(
     assert nodes["text.join"].inputs[0].name == "parts"
     assert nodes["text.join"].inputs[0].shape == "many"
 
-    collect_input = nodes["sequence.collect"].inputs[0]
+    collect_input = nodes["test.sequence.collect"].inputs[0]
     assert collect_input.name == "items"
     assert collect_input.shape == "one"
     assert collect_input.accepted_shapes == ["one", "many"]

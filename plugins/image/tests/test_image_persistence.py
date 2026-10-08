@@ -16,8 +16,8 @@ from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext
 
-from grafy_workbench.image import IMAGES
-from grafy_workbench.image.nodes import RasterImageOutputWriter
+from grafy_plugin_image import IMAGES
+from grafy_plugin_image.persistence import RasterImageOutputWriter
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -127,7 +127,9 @@ async def test_raster_writer_preserves_storage_layout_and_metadata() -> None:
     }
 
 
-def test_image_plugin_owns_the_raster_type_and_writer(tmp_path: Path) -> None:
+def test_image_plugin_uses_builtin_raster_type_and_registers_writer(
+    tmp_path: Path,
+) -> None:
     registry = PluginRegistry()
     registry.install(IMAGES)
     context = PluginRuntimeContext(
@@ -137,7 +139,8 @@ def test_image_plugin_owns_the_raster_type_and_writer(tmp_path: Path) -> None:
         bucket="artifacts",
     )
 
-    assert registry.artifact_types == (RASTER_IMAGE,)
+    assert RASTER_IMAGE in registry.artifact_type_dependencies
+    assert registry.artifact_types == ()
     writers = registry.build_writers(context)
     assert len(writers) == 1
     assert writers[0].artifact_type == RASTER_IMAGE.key

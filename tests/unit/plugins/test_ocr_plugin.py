@@ -62,9 +62,8 @@ def test_ocr_plugin_declares_complete_runtime_contributions(tmp_path: Path) -> N
         for resolver in resolvers
         if isinstance(resolver, PilImageResolver)
     } == {RASTER_IMAGE.key}
-    assert len(writers) == 2
+    assert len(writers) == 1
     assert {writer.artifact_type for writer in writers} == {
-        RASTER_IMAGE.key,
         OCR_PAGE_RESULT.key,
     }
 

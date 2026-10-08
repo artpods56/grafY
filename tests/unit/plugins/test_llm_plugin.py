@@ -14,7 +14,6 @@ from grafy_plugin_llm.openai_compatible import OpenAICompatibleNode
 from grafy_workbench.value import VALUE
 from grafy_workbench.image import IMAGES
 from grafy_workbench.schema import SCHEMAS
-from grafy_workbench.sequence import SEQUENCES
 from grafy_workbench.text import TEXT
 
 
@@ -58,7 +57,7 @@ class EmptyStorage:
 
 def test_llm_plugin_declares_complete_runtime_contributions(tmp_path: Path) -> None:
     registry = PluginRegistry()
-    for builtin in (IMAGES, SEQUENCES, VALUE, TEXT, SCHEMAS):
+    for builtin in (IMAGES, VALUE, TEXT, SCHEMAS):
         registry.install(builtin)
     registry.install(LLM)
     context = PluginRuntimeContext(

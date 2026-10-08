@@ -257,7 +257,7 @@ def test_replacing_input_plugs_drops_wiring_to_removed_plugs() -> None:
     collect = SavedGraphNode(
         kind="builtin",
         id="collect",
-        operator_id="sequence.collect",
+        operator_id="test.sequence.collect",
         operator_version=1,
         position=GraphPoint(x=10, y=20),
         input_plugs=(

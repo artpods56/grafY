@@ -59,3 +59,23 @@ execution_policy = "isolated-only"
 capabilities = ["node.secrets", "postgresql.egress", "sql.untrusted"]
 operator_prefixes = ["sql"]
 artifact_type_prefixes = ["sql"]
+
+[[plugins]]
+slug = "external.image"
+project = "plugins/image"
+distribution_name = "grafy-plugin-image"
+loader_target = "grafy_plugin_image.plugin:IMAGES"
+execution_policy = "isolated-only"
+capabilities = []
+operator_prefixes = ["image"]
+artifact_type_prefixes = []
+
+[[plugins]]
+slug = "external.table"
+project = "plugins/table"
+distribution_name = "grafy-plugin-table"
+loader_target = "grafy_plugin_table.plugin:TABLES"
+execution_policy = "isolated-only"
+capabilities = []
+operator_prefixes = ["table"]
+artifact_type_prefixes = []

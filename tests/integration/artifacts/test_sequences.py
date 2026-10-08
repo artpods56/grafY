@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactRefSequence
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.artifact_contracts import RASTER_IMAGE
-from grafy_workbench.sequence.nodes import ItemAtConfig, SliceConfig
+from tests.support.scenarios.sequences import ItemAtConfig, SliceConfig
 
 from grafy_api.v1.models import ArtifactTypeBindingModel, ArtifactTypeKeyResponse
 from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
@@ -63,8 +63,8 @@ def test_registry_declares_sequence_node_contracts(
     assert response.status_code == 200
     registry = NodeRegistryResponse.model_validate(response.json())
     nodes = {node.operator_id: node for node in registry.nodes}
-    collect = nodes["sequence.collect"]
-    assert collect.plugin_slug == "sequence"
+    collect = nodes["test.sequence.collect"]
+    assert collect.plugin_slug == "test.sequence"
     assert collect.title == "Collect"
     assert collect.inputs[0].artifact_type is None
     assert collect.inputs[0].artifact_type_variable == "T"
@@ -74,7 +74,7 @@ def test_registry_declares_sequence_node_contracts(
     assert collect.outputs[0].artifact_type_variable == "T"
     assert collect.outputs[0].shape == "many"
 
-    count = nodes["sequence.count"]
+    count = nodes["test.sequence.count"]
     assert count.title == "Count"
     assert count.inputs[0].name == "items"
     assert count.inputs[0].artifact_type_variable == "T"
@@ -84,7 +84,7 @@ def test_registry_declares_sequence_node_contracts(
     assert count.outputs[0].artifact_type.id == "scalar.integer"
     assert count.outputs[0].shape == "one"
 
-    slice_node = nodes["sequence.slice"]
+    slice_node = nodes["test.sequence.slice"]
     assert slice_node.title == "Slice"
     assert slice_node.config_schema == SliceConfig.model_json_schema()
     assert slice_node.inputs[0].artifact_type_variable == "T"
@@ -92,7 +92,7 @@ def test_registry_declares_sequence_node_contracts(
     assert slice_node.outputs[0].artifact_type_variable == "T"
     assert slice_node.outputs[0].shape == "many"
 
-    item_at = nodes["sequence.item_at"]
+    item_at = nodes["test.sequence.item_at"]
     assert item_at.title == "Pick item"
     assert item_at.config_schema == ItemAtConfig.model_json_schema()
     assert item_at.inputs[0].artifact_type_variable == "T"
@@ -120,7 +120,7 @@ def test_count_slice_and_item_at_preserve_refs_and_artifact_content(
                 RunNodeRequest(
                     kind="builtin",
                     id="count",
-                    operator_id="sequence.count",
+                    operator_id="test.sequence.count",
                     operator_version=1,
                     config={},
                     artifact_type_bindings=_binding("scalar.integer"),
@@ -128,7 +128,7 @@ def test_count_slice_and_item_at_preserve_refs_and_artifact_content(
                 RunNodeRequest(
                     kind="builtin",
                     id="slice",
-                    operator_id="sequence.slice",
+                    operator_id="test.sequence.slice",
                     operator_version=1,
                     config={"start": 1, "count": 2},
                     artifact_type_bindings=_binding("scalar.integer"),
@@ -136,7 +136,7 @@ def test_count_slice_and_item_at_preserve_refs_and_artifact_content(
                 RunNodeRequest(
                     kind="builtin",
                     id="pick",
-                    operator_id="sequence.item_at",
+                    operator_id="test.sequence.item_at",
                     operator_version=1,
                     config={"index": 1},
                     artifact_type_bindings=_binding("scalar.integer"),
@@ -219,7 +219,7 @@ def test_collect_flattens_image_scalar_and_sequence_in_plug_order(
                 RunNodeRequest(
                     kind="builtin",
                     id="collect",
-                    operator_id="sequence.collect",
+                    operator_id="test.sequence.collect",
                     operator_version=1,
                     config={},
                     input_plugs=[
@@ -315,7 +315,7 @@ def test_collect_converts_each_input_to_its_bound_text_type(
                 RunNodeRequest(
                     kind="builtin",
                     id="collect",
-                    operator_id="sequence.collect",
+                    operator_id="test.sequence.collect",
                     operator_version=1,
                     config={},
                     input_plugs=[
@@ -404,7 +404,7 @@ def test_collect_rejects_invalid_type_bindings(
                 RunNodeRequest(
                     kind="builtin",
                     id="collect",
-                    operator_id="sequence.collect",
+                    operator_id="test.sequence.collect",
                     operator_version=1,
                     config={},
                     input_plugs=[RunInputPlugRequest(id="value", port="items")],
@@ -452,7 +452,7 @@ def test_collect_rejects_removed_page_image_artifact_type(
                 RunNodeRequest(
                     kind="builtin",
                     id="collect",
-                    operator_id="sequence.collect",
+                    operator_id="test.sequence.collect",
                     operator_version=1,
                     config={},
                     input_plugs=[RunInputPlugRequest(id="image", port="items")],
@@ -479,7 +479,7 @@ def test_collect_rejects_non_integer_artifact_type_schema_versions(
             "nodes": [
                 {
                     "id": "collect",
-                    "operator_id": "sequence.collect",
+                    "operator_id": "test.sequence.collect",
                     "operator_version": 1,
                     "config": {},
                     "input_plugs": [{"id": "value", "port": "items"}],
@@ -518,7 +518,7 @@ def test_collect_rejects_an_input_with_a_different_artifact_type(
                 RunNodeRequest(
                     kind="builtin",
                     id="collect",
-                    operator_id="sequence.collect",
+                    operator_id="test.sequence.collect",
                     operator_version=1,
                     config={},
                     input_plugs=[RunInputPlugRequest(id="number", port="items")],

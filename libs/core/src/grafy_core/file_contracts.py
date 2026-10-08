@@ -11,6 +11,7 @@ from collections.abc import Iterable, Mapping
 from types import MappingProxyType
 
 from grafy_core.artifacts import (
+    ArtifactBundleContract,
     ArtifactConfirmationRule,
     ArtifactTypeKey,
     ArtifactTypeSpec,
@@ -39,6 +40,7 @@ def _magic(*signatures: tuple[tuple[int, bytes], ...]) -> ArtifactConfirmationRu
 
 
 PNG_FILE = ArtifactTypeSpec(
+    bundle=ArtifactBundleContract(format="binary-file", version=1),
     key=ArtifactTypeKey("file.png", 1),
     title="PNG image",
     extensions=("png",),
@@ -46,6 +48,7 @@ PNG_FILE = ArtifactTypeSpec(
 )
 
 JPEG_FILE = ArtifactTypeSpec(
+    bundle=ArtifactBundleContract(format="binary-file", version=1),
     key=ArtifactTypeKey("file.jpeg", 1),
     title="JPEG image",
     extensions=("jpg", "jpeg"),
@@ -53,6 +56,7 @@ JPEG_FILE = ArtifactTypeSpec(
 )
 
 TIFF_FILE = ArtifactTypeSpec(
+    bundle=ArtifactBundleContract(format="binary-file", version=1),
     key=ArtifactTypeKey("file.tiff", 1),
     title="TIFF image",
     extensions=("tif", "tiff"),
@@ -63,6 +67,7 @@ TIFF_FILE = ArtifactTypeSpec(
 )
 
 WEBP_FILE = ArtifactTypeSpec(
+    bundle=ArtifactBundleContract(format="binary-file", version=1),
     key=ArtifactTypeKey("file.webp", 1),
     title="WebP image",
     extensions=("webp",),
@@ -70,6 +75,7 @@ WEBP_FILE = ArtifactTypeSpec(
 )
 
 BMP_FILE = ArtifactTypeSpec(
+    bundle=ArtifactBundleContract(format="binary-file", version=1),
     key=ArtifactTypeKey("file.bmp", 1),
     title="BMP image",
     extensions=("bmp",),
@@ -77,6 +83,7 @@ BMP_FILE = ArtifactTypeSpec(
 )
 
 XLSX_FILE = ArtifactTypeSpec(
+    bundle=ArtifactBundleContract(format="binary-file", version=1),
     key=ArtifactTypeKey("file.xlsx", 1),
     title="Excel workbook",
     extensions=("xlsx",),
@@ -84,6 +91,7 @@ XLSX_FILE = ArtifactTypeSpec(
 )
 
 GEOJSON_FILE = ArtifactTypeSpec(
+    bundle=ArtifactBundleContract(format="binary-file", version=1),
     key=ArtifactTypeKey("file.geojson", 1),
     title="GeoJSON document",
     extensions=("geojson",),
@@ -91,6 +99,7 @@ GEOJSON_FILE = ArtifactTypeSpec(
 )
 
 JSON_FILE = ArtifactTypeSpec(
+    bundle=ArtifactBundleContract(format="binary-file", version=1),
     key=ArtifactTypeKey("file.json", 1),
     title="JSON document",
     extensions=("json",),
@@ -98,18 +107,21 @@ JSON_FILE = ArtifactTypeSpec(
 )
 
 CSV_FILE = ArtifactTypeSpec(
+    bundle=ArtifactBundleContract(format="binary-file", version=1),
     key=ArtifactTypeKey("file.csv", 1),
     title="CSV file",
     extensions=("csv",),
 )
 
 TXT_FILE = ArtifactTypeSpec(
+    bundle=ArtifactBundleContract(format="binary-file", version=1),
     key=ArtifactTypeKey("file.txt", 1),
     title="Text file",
     extensions=("txt",),
 )
 
 BLOB_FILE = ArtifactTypeSpec(
+    bundle=ArtifactBundleContract(format="binary-file", version=1),
     key=ArtifactTypeKey("file.blob", 1),
     title="Binary blob",
 )

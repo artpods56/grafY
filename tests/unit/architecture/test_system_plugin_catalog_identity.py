@@ -6,11 +6,13 @@ from typing import cast
 
 from grafy_core.domain.plugin_releases import (
     PluginArtifactTypeContract,
-    PluginCatalogManifest,
+    PluginArtifactConversionContract,
     PluginNodeContract,
     PluginPortContract,
 )
 from grafy_core.plugins import Plugin
+from grafy_plugin_image import IMAGES as IMAGE_OPERATORS
+from grafy_plugin_table import TABLES as TABLE_OPERATORS
 from grafy_plugin_gis import GIS
 from grafy_workbench.file import FILES
 from grafy_workbench.image import IMAGES
@@ -18,7 +20,6 @@ from grafy_plugin_llm import LLM
 from grafy_plugin_mistral import MISTRAL
 from grafy_plugin_ocr import OCR
 from grafy_workbench.schema import SCHEMAS
-from grafy_workbench.sequence import SEQUENCES
 from grafy_plugin_sql import SQL
 from grafy_workbench.table import TABLES
 from grafy_workbench.text import TEXT
@@ -28,12 +29,13 @@ from grafy_workbench.value import VALUE
 SNAPSHOT_PATH = Path(__file__).with_name("system_plugin_catalog_identity.json")
 SYSTEM_PLUGINS = (
     IMAGES,
-    SEQUENCES,
     VALUE,
     TEXT,
     SCHEMAS,
     TABLES,
     FILES,
+    IMAGE_OPERATORS,
+    TABLE_OPERATORS,
     GIS,
     LLM,
     MISTRAL,
@@ -42,12 +44,13 @@ SYSTEM_PLUGINS = (
 )
 EXPECTED_SYSTEM_PLUGIN_SLUGS = (
     "image",
-    "sequence",
     "value",
     "text",
     "schema",
     "table",
     "file",
+    "external.image",
+    "external.table",
     "external.gis",
     "external.llm",
     "external.mistral",
@@ -167,14 +170,20 @@ def _node_identity(node: PluginNodeContract) -> dict[str, object]:
 
 
 def _plugin_identity(plugin: Plugin) -> dict[str, object]:
-    catalog = PluginCatalogManifest.from_plugin(plugin)
     return {
         "artifact_dependencies": [
             _artifact_identity(artifact)
-            for artifact in catalog.artifact_type_dependencies
+            for artifact in (
+                PluginArtifactTypeContract.from_spec(spec)
+                for spec in plugin.artifact_type_dependencies
+            )
         ],
         "artifact_types": [
-            _artifact_identity(artifact) for artifact in catalog.artifact_types
+            _artifact_identity(artifact)
+            for artifact in (
+                PluginArtifactTypeContract.from_spec(spec)
+                for spec in plugin.artifact_types
+            )
         ],
         "capabilities": sorted(capability.value for capability in plugin.capabilities),
         "conversions": [
@@ -188,10 +197,18 @@ def _plugin_identity(plugin: Plugin) -> dict[str, object]:
                 ),
                 "title": conversion.title,
             }
-            for conversion in catalog.artifact_conversions
+            for conversion in (
+                PluginArtifactConversionContract.from_conversion(item)
+                for item in plugin.artifact_conversions
+            )
         ],
-        "nodes": [_node_identity(node) for node in catalog.nodes],
-        "title": catalog.title,
+        "nodes": [
+            _node_identity(node)
+            for node in (
+                PluginNodeContract.from_registration(item) for item in plugin.nodes
+            )
+        ],
+        "title": plugin.title,
     }
 
 

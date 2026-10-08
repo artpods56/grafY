@@ -13,7 +13,6 @@ from grafy_core.plugins import (
 from grafy_workbench.file import FILES
 from grafy_workbench.image import IMAGES
 from grafy_workbench.schema import SCHEMAS
-from grafy_workbench.sequence import SEQUENCES
 from grafy_workbench.table import TABLES
 from grafy_workbench.text import TEXT
 from grafy_workbench.value import VALUE
@@ -21,7 +20,6 @@ from grafy_workbench.value import VALUE
 
 BUILTIN_FAMILIES: tuple[Plugin, ...] = (
     IMAGES,
-    SEQUENCES,
     VALUE,
     TEXT,
     SCHEMAS,

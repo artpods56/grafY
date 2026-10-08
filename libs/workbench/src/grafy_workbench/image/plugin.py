@@ -1,8 +1,9 @@
-from grafy_workbench.image import nodes
+from grafy_core.artifact_contracts import RASTER_IMAGE
+
 from grafy_workbench.image.declaration import IMAGES
 
 
-_NODE_MODULES = (nodes,)
+IMAGES.register_artifact_type(RASTER_IMAGE)
 
 
 __all__ = ["IMAGES"]

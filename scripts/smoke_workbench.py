@@ -17,18 +17,11 @@ from grafy_core.file_contracts import PNG_FILE
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.ports.storage import SaveFileCommand
 from grafy_core.artifact_contracts import (
-    INTEGER_VALUE,
-    IntegerValuePayload,
     RASTER_IMAGE,
 )
 from grafy_workbench.image import IMAGES
-from grafy_workbench.sequence.nodes import (
-    CollectNode,
-    CountNode,
-    ItemAtNode,
-    SliceNode,
-)
-from grafy_workbench.value.nodes import IntegerValueOutputWriter
+from grafy_plugin_image import IMAGES as IMAGE_OPERATORS
+
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.runtime.execution import NodeRuntime, PersistedNodeOutput
 from grafy_core.runtime.materialization import InputMaterializer
@@ -56,6 +49,7 @@ async def main() -> None:
     storage = LocalFileObjectStore(OBJECT_STORE)
     plugin_registry = PluginRegistry()
     plugin_registry.install(IMAGES)
+    plugin_registry.install(IMAGE_OPERATORS)
     plugin_registry.install(OCR)
     plugin_registry.freeze()
     plugin_context = PluginRuntimeContext(
@@ -72,7 +66,6 @@ async def main() -> None:
         persister=OutputPersister(
             ArtifactWriterRegistry(
                 [
-                    IntegerValueOutputWriter(uow=uow),
                     *plugin_registry.build_writers(plugin_context),
                 ]
             )
@@ -101,49 +94,10 @@ async def main() -> None:
     )
     decoded_images = output_sequence(decode_output, "images")
 
-    collect_output = await runtime.run_node(
-        CollectNode(),
-        NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="collect_1"),
-        {"items": [decoded_images]},
-        artifact_type_bindings={"T": RASTER_IMAGE.key},
-    )
-    collected_images = output_sequence(collect_output, "items")
-
-    count_output = await runtime.run_node(
-        CountNode(),
-        NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="count_1"),
-        {"items": collected_images},
-        artifact_type_bindings={"T": RASTER_IMAGE.key},
-    )
-    count_ref = output_ref(count_output, "count")
-
-    slice_output = await runtime.run_node(
-        SliceNode(),
-        NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="slice_1"),
-        {"items": collected_images},
-        config={"start": 0, "count": 1},
-        artifact_type_bindings={"T": RASTER_IMAGE.key},
-    )
-    selected_pages = output_sequence(slice_output, "items")
-
-    pick_output = await runtime.run_node(
-        ItemAtNode(),
-        NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="pick_1"),
-        {"items": collected_images},
-        config={"index": 0},
-        artifact_type_bindings={"T": RASTER_IMAGE.key},
-    )
-    first_image_ref = output_ref(pick_output, "item")
-    first_image = await resolver_registry.resolve(
-        first_image_ref,
-        Image.Image,
-        WORKSPACE_ID,
-    )
-
     ocr_output = await runtime.run_node(
         plugin_registry.build_node("ocr.tesseract.pages", 2, plugin_context),
         NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="ocr_1"),
-        {"pages": selected_pages},
+        {"pages": decoded_images},
     )
     ocr_pages = output_sequence(ocr_output, "results")
 
@@ -152,23 +106,11 @@ async def main() -> None:
             WORKSPACE_ID,
             RASTER_IMAGE.key,
         )
-        integer_artifacts = await entered.artifacts.list_by_type(
-            WORKSPACE_ID,
-            INTEGER_VALUE.key,
-        )
         ocr_artifacts = await entered.artifacts.list_by_type(
             WORKSPACE_ID,
             OCR_PAGE_RESULT.key,
         )
 
-    if len(integer_artifacts) != 1:
-        raise RuntimeError("Count did not persist exactly one integer artifact")
-    count_payload = integer_artifacts[0].inline_payload
-    if count_payload is None:
-        raise RuntimeError("Count did not persist an inline payload")
-    count_value = IntegerValuePayload.model_validate(count_payload).value
-    if count_value != len(collected_images.item_refs):
-        raise RuntimeError("Count did not persist the collected sequence length")
     if len(ocr_artifacts) == 0:
         raise RuntimeError("OCR writer did not persist an artifact")
     ocr_payload = ocr_artifacts[0].inline_payload
@@ -178,18 +120,12 @@ async def main() -> None:
     result: dict[str, object] = {
         "workspace": str(WORKSPACE),
         "decoded_sequence_id": decoded_images.sequence_id,
-        "collected_sequence_id": collected_images.sequence_id,
-        "selected_sequence_id": selected_pages.sequence_id,
         "ocr_sequence_id": ocr_pages.sequence_id,
         "raster_image_count": len(image_artifacts),
-        "sequence_item_count": count_value,
+        "sequence_item_count": len(decoded_images.item_refs),
         "ocr_artifact_count": len(ocr_artifacts),
-        "count_artifact_ref": count_ref.model_dump(mode="json"),
-        "first_artifact_ref": first_image_ref.model_dump(mode="json"),
         "first_ocr_ref": ocr_pages.item_refs[0].model_dump(mode="json"),
-        "first_image_size": list(first_image.size),
         "first_ocr_text": ocr_payload["text"],
-        "segments": collected_images.metadata["collect_segments"],
     }
     print(json.dumps(result, indent=2, default=str))
 
@@ -239,15 +175,6 @@ def output_sequence(output: object, name: str) -> ArtifactRefSequence:
     return value
 
 
-def output_ref(output: object, name: str) -> ArtifactRef:
-    if not isinstance(output, PersistedNodeOutput):
-        raise RuntimeError(f"Node output is not persisted for {name!r}")
-    value = output[name]
-    if not isinstance(value, ArtifactRef):
-        raise RuntimeError(f"Output {name!r} is not an ArtifactRef")
-    return value
-
-
 def create_sample_images(directory: Path) -> list[Path]:
     directory.mkdir(parents=True, exist_ok=True)
     paths = [directory / "page-001.png", directory / "page-002.png"]
@@ -260,4 +187,4 @@ def create_sample_images(directory: Path) -> list[Path]:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    _ = asyncio.run(main())

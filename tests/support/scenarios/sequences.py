@@ -21,7 +21,11 @@ from grafy_core.nodes import (
 )
 from grafy_core.plugins import NodeCachePolicy
 
-from grafy_workbench.sequence.declaration import SEQUENCES
+from grafy_core.plugins import Plugin
+
+
+SEQUENCES = Plugin(slug="test.sequence", title="Sequence fixtures")
+SEQUENCES.register_artifact_type_dependency(INTEGER_VALUE)
 
 
 SEQUENCE_ARTIFACT_TYPE = ArtifactTypeVariable("T")
@@ -51,7 +55,7 @@ class CollectOutput(NodeOutput):
 
 
 @SEQUENCES.function_node(
-    operator_id="sequence.collect",
+    operator_id="test.sequence.collect",
     version=1,
     title="Collect",
     cache_policy=NodeCachePolicy.EXACT,
@@ -140,7 +144,7 @@ class CountOutput(NodeOutput):
 
 
 @SEQUENCES.function_node(
-    operator_id="sequence.count",
+    operator_id="test.sequence.count",
     version=1,
     title="Count",
     cache_policy=NodeCachePolicy.EXACT,
@@ -183,7 +187,7 @@ class SliceOutput(NodeOutput):
 
 
 @SEQUENCES.function_node(
-    operator_id="sequence.slice",
+    operator_id="test.sequence.slice",
     version=1,
     title="Slice",
     cache_policy=NodeCachePolicy.EXACT,
@@ -241,7 +245,7 @@ class ItemAtOutput(NodeOutput):
 
 
 @SEQUENCES.function_node(
-    operator_id="sequence.item_at",
+    operator_id="test.sequence.item_at",
     version=1,
     title="Pick item",
     cache_policy=NodeCachePolicy.EXACT,

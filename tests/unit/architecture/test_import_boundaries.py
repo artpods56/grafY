@@ -22,6 +22,8 @@ from tests.support.plugin_contract_digests import (
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 PUBLISHED_PLUGIN_FAMILIES = (
+    "image",
+    "table",
     "gis",
     "llm",
     "mistral",
@@ -31,7 +33,6 @@ PUBLISHED_PLUGIN_FAMILIES = (
 )
 WORKBENCH_FAMILIES = (
     "image",
-    "sequence",
     "value",
     "text",
     "schema",
@@ -59,6 +60,8 @@ FORBIDDEN_PLUGIN_OUTER_LAYER_IMPORTS = (
     "grafy_storage",
 )
 FORBIDDEN_API_PLUGIN_IMPORTS = (
+    "grafy_plugin_image",
+    "grafy_plugin_table",
     "grafy_plugin_gis",
     "grafy_plugin_llm",
     "grafy_plugin_mistral",
@@ -374,7 +377,8 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
 
     for family in WORKBENCH_FAMILIES:
         assert (REPO_ROOT / "libs/workbench/src/grafy_workbench" / family).is_dir()
-        assert not (REPO_ROOT / "plugins" / family).exists()
+        if family not in {"image", "table"}:
+            assert not (REPO_ROOT / "plugins" / family).exists()
 
     for family in PUBLISHED_PLUGIN_FAMILIES:
         project_root = REPO_ROOT / "plugins" / family
@@ -385,7 +389,7 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
         assert "grafy-core==0.1.0" in cast(list[str], project["dependencies"])
         core_wheel = project_root / "wheels/grafy_core-0.1.0-py3-none-any.whl"
         assert sha256(core_wheel.read_bytes()).hexdigest() == (
-            "cb869c224f456a6ac1b9eb9b1efd9308119d26a8a72e91f1e493f5ab04abf888"
+            "d3417f3077e1080e176923647a05db0f9045a74db3db3426a0b9a8e9183c2aff"
         )
         assert "workspace = true" not in (project_root / "pyproject.toml").read_text()
 

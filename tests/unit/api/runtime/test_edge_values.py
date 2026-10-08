@@ -19,7 +19,7 @@ from grafy_workbench.value.nodes import (
     IntegerValueOutputWriter,
     IntegerValueResolver,
 )
-from grafy_workbench.sequence.nodes import CollectNode
+from tests.support.scenarios.sequences import CollectNode
 from grafy_workbench.text.nodes import (
     TEXT_VALUE,
     ReplaceTextNode,

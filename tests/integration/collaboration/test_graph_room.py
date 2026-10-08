@@ -497,7 +497,7 @@ def _wired_collect_graph() -> SavedGraphDocument:
             SavedGraphNode(
                 kind="builtin",
                 id="collect",
-                operator_id="sequence.collect",
+                operator_id="test.sequence.collect",
                 operator_version=1,
                 position=GraphPoint(x=200, y=0),
                 input_plugs=(

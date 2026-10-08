@@ -82,7 +82,7 @@ class CollectOutput(NodeOutput):
 
 
 class CollectNode(Node[NoConfig, CollectInput, CollectOutput]):
-    operator_id: ClassVar[str] = "sequence.collect"
+    operator_id: ClassVar[str] = "test.sequence.collect"
     operator_version: ClassVar[int] = 1
     plugin_slug: ClassVar[str] = "sequence"
     title: ClassVar[str] = "Collect"
@@ -183,7 +183,7 @@ def _catalog() -> NodeCatalog:
             ),
             CatalogNode(
                 origin="builtin",
-                operator_id="sequence.collect",
+                operator_id="test.sequence.collect",
                 operator_version=1,
                 plugin_slug="sequence",
                 title="Collect",
@@ -492,7 +492,7 @@ def test_builder_requires_every_artifact_type_variable_before_build() -> None:
 
     with pytest.raises(
         GraphBuilderError,
-        match="sequence.collect@1 is missing artifact type binding T",
+        match="test.sequence.collect@1 is missing artifact type binding T",
     ):
         graph.build()
 
