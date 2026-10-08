@@ -4,52 +4,12 @@ import { ArrowUpDown, Download, Trash2 } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { ARTIFACT_CARD_OUTPUT_HANDLE } from "../artifact-connections";
 import { ARTIFACT_VIEWER_INPUT_HANDLE } from "../artifact-viewer";
+import { canvasCardRail } from "./CanvasCardLayout";
 import { NodeMenu, type NodeMenuItem } from "./NodeMenu";
 import { PortBall, revealDelay, revealStyles } from "./PortBall";
 
-export const artifactRail = stylex.create({
-  // A rail is one port slot (30px) wide, a small gap (8px) away from the body.
-  // Every mark centres on it, so the two rails mirror each other and the
-  // action cannot drift off the port centreline. Rails sit outside the body
-  // and take no layout space, so revealing them moves nothing but the marks.
-  // They come before the media in the DOM, so the card paints over whatever
-  // part of a mark is still tucked under it.
-  rail: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    width: "30px",
-    display: "flex",
-    pointerEvents: "none",
-  },
-  left: {
-    right: "calc(100% + 8px)",
-    justifyContent: "center",
-    alignItems: "flex-start",
-  },
-  right: {
-    left: "calc(100% + 8px)",
-    flexDirection: "column",
-    justifyContent: "flex-start",
-    alignItems: "center",
-  },
-  // Only the output port sets the rail height, so a short file card still pins
-  // that port to the body's bottom edge.
-  output: { marginTop: "auto" },
-  // Out of the rail's flow. The rail is as wide as a port, so centring here
-  // puts the button on the port line; the 4px top pad (half of 30 − 22) sets
-  // it level with the input port.
-  actions: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    paddingTop: "4px",
-  },
-});
+/** @deprecated Prefer `canvasCardRail` from `CanvasCardLayout`. */
+export const artifactRail = canvasCardRail;
 
 const s = stylex.create({
   textButton: {
@@ -106,7 +66,7 @@ export function ArtifactLeftRail({
   return (
     <div
       data-artifact-rail="left"
-      {...stylex.props(artifactRail.rail, artifactRail.left)}
+      {...stylex.props(canvasCardRail.rail, canvasCardRail.left)}
     >
       <PortBall
         nodeId={nodeId}
@@ -117,6 +77,7 @@ export function ArtifactLeftRail({
         isConnectable={isConnectable}
         ariaLabel="Input port Artifact, accepts any artifact"
         title="Connect a producer output"
+        tip={{ name: "Artifact", type: "Any artifact", hint: "Connect a producer output" }}
         slotProps={{ "data-artifact-port-side": "input" }}
       />
     </div>
@@ -157,7 +118,7 @@ export function ArtifactRightRail({
   onRemove?: () => void;
 }) {
   const actions = stylex.props(
-    artifactRail.actions,
+    canvasCardRail.actions,
     revealStyles(showActions, "output"),
   );
   const items: NodeMenuItem[] = [
@@ -194,7 +155,7 @@ export function ArtifactRightRail({
   return (
     <div
       data-artifact-rail="right"
-      {...stylex.props(artifactRail.rail, artifactRail.right)}
+      {...stylex.props(canvasCardRail.rail, canvasCardRail.right)}
     >
       <div
         data-artifact-chrome={showActions ? "on" : "off"}
@@ -210,7 +171,7 @@ export function ArtifactRightRail({
           onOpenChange={onOverlayChange}
         />
       </div>
-      <div {...stylex.props(artifactRail.output)}>
+      <div {...stylex.props(canvasCardRail.output)}>
         <PortBall
           nodeId={nodeId}
           handleId={ARTIFACT_CARD_OUTPUT_HANDLE}
@@ -222,6 +183,11 @@ export function ArtifactRightRail({
           order={1}
           ariaLabel={`Connect ${contract} to a node input`}
           title="Connect to a compatible input"
+          tip={{
+            name: contract,
+            type: sequence ? `Sequence<${contract}>` : contract,
+            hint: "Connect to a compatible input",
+          }}
           slotProps={{ "data-artifact-port-side": "output" }}
         />
       </div>

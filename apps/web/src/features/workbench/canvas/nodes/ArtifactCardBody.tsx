@@ -66,6 +66,11 @@ import {
   ArtifactSequenceBar,
 } from "./ArtifactControls";
 import {
+  CanvasCardBody,
+  CanvasCardFrame,
+  CanvasCardHead,
+} from "./CanvasCardLayout";
+import {
   formatTextHead,
   readTextHead,
   type TextHead,
@@ -143,15 +148,6 @@ const s = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  // The frame is exactly the card: head over body. The rails hang off the
-  // body's sides, so picking the card up never changes its geometry.
-  frame: {
-    display: "grid",
-    gridTemplateRows: "auto minmax(0, 1fr)",
-    position: "relative",
-  },
-  head: { gridRow: 1, minWidth: 0 },
-  body: { gridRow: 2, minWidth: 0, position: "relative" },
   // Where an output will land before it has run: the card's outline, dashed,
   // saying what it is waiting for.
   waitingBody: {
@@ -708,13 +704,9 @@ export function ArtifactCardBody({
         role="group"
         aria-label={`Artifact ${contract}`}
       >
-        <div
-          data-artifact-frame="true"
-          data-artifact-content="true"
-          {...stylex.props(s.frame)}
-        >
+        <CanvasCardFrame data-artifact-content="true">
           {headless ? null : (
-            <div data-artifact-head="true" {...stylex.props(s.head)}>
+            <CanvasCardHead>
               <ArtifactLabel
                 title={titleLabel}
                 contract={contract}
@@ -722,9 +714,9 @@ export function ArtifactCardBody({
                 selected={selected ?? false}
                 image={imageArtifact}
               />
-            </div>
+            </CanvasCardHead>
           )}
-          <div data-artifact-body="true" {...stylex.props(s.body)}>
+          <CanvasCardBody>
             {followsOutput ? (
               <ArtifactLeftRail
                 nodeId={id}
@@ -890,7 +882,7 @@ export function ArtifactCardBody({
                 onCommit={commitLayout}
               />
             ) : null}
-          </div>
+          </CanvasCardBody>
           {selected && isSequence && !feed && isConnectable ? (
             <ArtifactSequenceBar
               onRearrange={() => setReordering((open) => !open)}
@@ -900,7 +892,7 @@ export function ArtifactCardBody({
               ungroupDisabledReason={data.ungroupDisabledReason}
             />
           ) : null}
-        </div>
+        </CanvasCardFrame>
 
         {reordering && !feed && refs.length > 1 ? (
           <div

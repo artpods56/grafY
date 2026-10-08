@@ -1385,7 +1385,7 @@ describe("WorkflowNode multiline fields", () => {
 });
 
 describe("WorkflowNode port rail", () => {
-  it("pairs inputs and outputs on shared lattice-tall rows before the body", () => {
+  it("hangs unlabeled ports in outside rails with lattice-tall slots", () => {
     const data = createWorkflowNodeData(textPipeSpec());
     const container = document.createElement("div");
     const root = createRoot(container);
@@ -1401,18 +1401,30 @@ describe("WorkflowNode port rail", () => {
       );
     });
 
-    const rail = container.querySelector('[data-testid="port-rail"]');
-    expect(rail).not.toBeNull();
+    const leftRail = container.querySelector(
+      '[data-artifact-rail="left"][data-testid="port-rail"]',
+    );
+    const rightRail = container.querySelector('[data-artifact-rail="right"]');
+    expect(leftRail).not.toBeNull();
+    expect(rightRail).not.toBeNull();
     const rows = [
       ...container.querySelectorAll('[data-testid="port-rail-row"]'),
     ] as HTMLElement[];
-    expect(rows).toHaveLength(2);
-    expect(rows[0]?.style.height).toBe("50px");
-    expect(rows[1]?.style.height).toBe("50px");
-    // First row carries both the required input and the first output.
-    expect(rows[0]?.textContent).toContain("text");
-    expect(rows[0]?.textContent).toMatch(/\*/);
-    expect(rows[1]?.textContent).toContain("meta");
+    // One input + two outputs, each in its own lattice-tall slot.
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.style.height === "50px")).toBe(true);
+    // Option B: names live on hover tips, not as plate labels.
+    expect(leftRail?.textContent ?? "").not.toMatch(/\btext\b/);
+    expect(rightRail?.textContent ?? "").not.toMatch(/\bmeta\b/);
+    expect(
+      leftRail?.querySelector('[data-port-name="text"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-artifact-body="true"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-artifact-frame="true"]'),
+    ).not.toBeNull();
 
     React.act(() => root.unmount());
   });
