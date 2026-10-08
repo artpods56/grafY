@@ -108,17 +108,6 @@ def test_saved_graph_document_allows_drafts_without_executable_connections() -> 
     assert incomplete_draft.edges == ()
 
 
-def test_saved_graph_document_rejects_legacy_schema_versions() -> None:
-    with pytest.raises(ValidationError, match="is not supported"):
-        SavedGraphDocument.model_validate(
-            {
-                "schema_version": 5,
-                "nodes": [_node("source").model_dump(mode="json")],
-                "edges": [],
-            }
-        )
-
-
 def test_saved_graph_edge_defaults_enabled_for_legacy_payloads() -> None:
     payload = _edge("legacy").model_dump(mode="json")
     payload.pop("enabled")

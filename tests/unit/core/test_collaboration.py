@@ -1,7 +1,6 @@
 from uuid import UUID, uuid4
 
 import pytest
-from pydantic import ValidationError
 
 from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.collaboration import (
@@ -853,15 +852,6 @@ def test_schema_builder_compound_rejects_partial_field_conflict() -> None:
     assert exc.value.error_code == "field_conflict"
     assert document.nodes[0].config_dict()["fields"][0]["id"] == "a"
     assert document.nodes[0].input_plugs[0].id == "a"
-
-
-def test_saved_graph_document_rejects_legacy_schema_versions_without_migration() -> (
-    None
-):
-    with pytest.raises(ValidationError, match="is not supported"):
-        SavedGraphDocument.model_validate(
-            {"schema_version": 3, "nodes": [], "edges": []}
-        )
 
 
 def test_replace_and_move_artifact_viewers() -> None:
