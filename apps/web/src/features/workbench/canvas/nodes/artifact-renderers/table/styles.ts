@@ -11,6 +11,42 @@ export const s = stylex.create({
     gap: "6px",
     minWidth: 0,
   },
+  tableCanvas: {
+    display: "flex",
+    flexDirection: "column",
+    height: "100%",
+    gap: 0,
+    minHeight: 0,
+  },
+  tableCanvasLoading: {
+    height: "100%",
+    boxSizing: "border-box",
+    padding: "16px",
+    alignContent: "center",
+    justifyItems: "center",
+  },
+  tableCanvasToolbar: {
+    flexShrink: 0,
+    flexWrap: "wrap",
+    padding: "7px 10px",
+    minHeight: "26px",
+  },
+  tableCanvasPager: {
+    flexShrink: 0,
+    flexWrap: "wrap",
+    padding: "7px 18px 7px 10px",
+  },
+  tableCanvasViewport: {
+    flex: "1 1 auto",
+    minHeight: 0,
+    maxHeight: "none",
+  },
+  tableCanvasCellDetail: {
+    flexShrink: 1,
+    minHeight: 0,
+    overflow: "auto",
+    margin: "0 10px 8px",
+  },
   tableSummary: {
     display: "flex",
     alignItems: "center",
@@ -159,6 +195,7 @@ export const s = stylex.create({
     outlineOffset: "-2px",
   },
   tableCellCode: { fontFamily: MONO, fontSize: "10px" },
+  tableCellNumeric: { textAlign: "right", fontVariantNumeric: "tabular-nums" },
   tableCellNull: { color: tokens.colorSubtle, fontStyle: "italic" },
   tableEmpty: {
     padding: "28px 14px",

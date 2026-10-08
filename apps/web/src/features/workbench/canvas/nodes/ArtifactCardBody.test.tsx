@@ -4,7 +4,12 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ArtifactRef, PlacedLibraryItem } from "@/lib/api";
+import type {
+  ArtifactRef,
+  PlacedLibraryItem,
+  TablePage,
+  TableSchema,
+} from "@/lib/api";
 import type { ArtifactCardValue } from "../artifact-card";
 import {
   ARTIFACT_VIEWER_EDGE_TYPE,
@@ -23,6 +28,19 @@ const flowMocks = vi.hoisted(() => ({
   edges: [] as unknown[],
   nodes: new Map<string, unknown>(),
 }));
+const tableMocks = vi.hoisted(
+  (): {
+    page: TablePage | undefined;
+    schema: TableSchema | undefined;
+    error: Error | undefined;
+    retry: ReturnType<typeof vi.fn>;
+  } => ({
+    page: undefined,
+    schema: undefined,
+    error: undefined,
+    retry: vi.fn(),
+  }),
+);
 
 vi.mock("@stylexjs/stylex", () => ({
   create: <Styles,>(styles: Styles) => styles,
@@ -72,6 +90,14 @@ vi.mock("swr", () => ({
     if (typeof key === "string") {
       return { data: { artifact_types: registryMocks.artifactTypes } };
     }
+    if (key[0] === "table-artifact-schema") {
+      return {
+        data: tableMocks.schema,
+        error: tableMocks.error,
+        mutate: tableMocks.retry,
+      };
+    }
+    if (key[0] === "table-artifact-page") return { data: tableMocks.page };
     return key[0] === "artifact-card-text"
       ? { data: libraryMocks.value }
       : { data: { folders: [], items: libraryMocks.items } };
@@ -210,6 +236,11 @@ afterEach(() => {
   mountedRoots.length = 0;
   document.body.replaceChildren();
   libraryMocks.items = [];
+  libraryMocks.value = undefined;
+  tableMocks.page = undefined;
+  tableMocks.schema = undefined;
+  tableMocks.error = undefined;
+  const _ = tableMocks.retry.mockClear();
   registryMocks.artifactTypes = [];
   flowMocks.edges = [];
   flowMocks.nodes = new Map();
@@ -218,6 +249,160 @@ afterEach(() => {
 describe("artifact on the canvas", () => {
   beforeEach(() => {
     libraryMocks.items = [libraryItem("a1", "boat.jpg")];
+  });
+
+  const table: ArtifactRef = {
+    artifact_id: "table-1",
+    artifact_type: "table.data",
+    schema_version: 1,
+  };
+
+  function loadTable() {
+    libraryMocks.items = [
+      {
+        ...libraryItem(table.artifact_id, "Survey results"),
+        artifact: { ...table, content_type: "application/json" },
+      },
+    ];
+    tableMocks.schema = {
+      columns: [
+        { id: "name", title: "Result", value_type: "text" },
+        { id: "count", title: "Result", value_type: "integer" },
+        { id: "active", title: "Active", value_type: "boolean" },
+      ],
+      total_rows: 80,
+    };
+    tableMocks.page = {
+      ...tableMocks.schema,
+      rows: [
+        {
+          name: { display: "<strong>River</strong>", truncated: false },
+          count: { display: 42, truncated: false },
+          active: { display: false, truncated: false },
+        },
+        {
+          name: { display: null, truncated: false },
+          count: { display: 0, truncated: false },
+          active: { display: true, truncated: false },
+        },
+      ],
+      offset: 0,
+      limit: 50,
+      column_offset: 0,
+      column_limit: 25,
+      total_columns: 3,
+    };
+  }
+
+  it("renders table cells below the label with the same artifact rails", () => {
+    loadTable();
+    const { container } = mount(table, { layout: null });
+    const body = container.querySelector<HTMLElement>(
+      "[data-artifact-table-body]",
+    );
+    expect(
+      container.querySelector("[data-artifact-head]")?.textContent,
+    ).toContain("Survey results");
+    expect(
+      container.querySelector("[data-artifact-card-id]")?.getAttribute("style"),
+    ).toContain("width: 600px");
+    expect(body?.style.height).toBe("360px");
+    expect(body?.querySelectorAll("thead th")).toHaveLength(4);
+    expect(body?.querySelectorAll("tbody td")).toHaveLength(6);
+    expect(body?.textContent).toContain("<strong>River</strong>");
+    expect(body?.querySelector("strong")).toBeNull();
+    expect(body?.textContent).toContain("42");
+    expect(body?.textContent).toContain("false");
+    expect(body?.textContent).toContain("—");
+    expect(body?.querySelector('[aria-label="Next page"]')).not.toBeNull();
+    expect(
+      body?.querySelector('[aria-label="Choose visible table columns"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-artifact-rail="right"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[data-artifact-rail="left"]')).toBeNull();
+    expect(container.querySelector("[data-artifact-file-body]")).toBeNull();
+  });
+
+  it("keeps the input rail on an output table and honors its saved dimensions", () => {
+    loadTable();
+    const { container } = mount(table, {
+      mode: "artifact",
+      layout: { width: 280, bodyHeight: 520 },
+    });
+    expect(
+      container.querySelector('[data-artifact-rail="left"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-artifact-rail="right"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector<HTMLElement>("[data-artifact-table-body]")?.style
+        .height,
+    ).toBe("520px");
+    expect(
+      container.querySelector<HTMLElement>("[data-artifact-card-id]")?.style
+        .width,
+    ).toBe("280px");
+    const narrow = mount(table, { layout: { width: 150, bodyHeight: 80 } });
+    expect(
+      narrow.container.querySelector<HTMLElement>("[data-artifact-card-id]")
+        ?.style.width,
+    ).toBe("260px");
+    expect(
+      narrow.container.querySelector<HTMLElement>("[data-artifact-table-body]")
+        ?.style.height,
+    ).toBe("160px");
+  });
+
+  it("keeps the table frame while its page loads and offers retry for an error", () => {
+    libraryMocks.items = [];
+    const loading = mount(table);
+    expect(
+      loading.container.querySelector('[role="status"]')?.textContent,
+    ).toContain("Loading table page");
+    expect(
+      loading.container.querySelector("[data-artifact-table-body]"),
+    ).not.toBeNull();
+    tableMocks.error = new Error("Table unavailable");
+    const failed = mount(table);
+    expect(
+      failed.container.querySelector('[role="alert"]')?.textContent,
+    ).toContain("Could not load the table columns");
+    const retry = Array.from(failed.container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Retry",
+    );
+    if (!retry) throw new Error("Table retry missing");
+    React.act(() => retry.click());
+    expect(tableMocks.retry).toHaveBeenCalledOnce();
+  });
+
+  it("renders an empty table with column headers and a clear empty state", () => {
+    loadTable();
+    if (!tableMocks.page) throw new Error("Table page missing");
+    tableMocks.page = { ...tableMocks.page, rows: [], total_rows: 0 };
+    const { container } = mount(table);
+    expect(container.querySelector("thead")?.textContent).toContain("Active");
+    expect(container.textContent).toContain("This table has no rows");
+    expect(
+      container.querySelector<HTMLButtonElement>('[aria-label="Next page"]')
+        ?.disabled,
+    ).toBe(true);
+  });
+
+  it("keeps CSV containers and unsupported table versions as file tiles", () => {
+    loadTable();
+    for (const ref of [
+      { ...table, artifact_type: "file.csv" },
+      { ...table, schema_version: 2 },
+    ]) {
+      const { container } = mount(ref);
+      expect(container.querySelector("table")).toBeNull();
+      expect(
+        container.querySelector("[data-artifact-file-body]"),
+      ).not.toBeNull();
+    }
   });
 
   it("keeps filename and type above the image in both selection states", () => {

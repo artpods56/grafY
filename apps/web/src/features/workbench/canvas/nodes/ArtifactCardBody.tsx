@@ -30,12 +30,15 @@ import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
   DEFAULT_ARTIFACT_FILE_CARD_WIDTH,
   DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH,
+  DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
+  DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
   artifactCardContract,
   artifactCardContractTooltip,
   artifactCardMediaHeight,
   artifactCardValue,
   cardArtifactRefs,
   isImageArtifact,
+  isTableArtifact,
   moveArtifactCardRef,
   type ArtifactCardValue,
 } from "../artifact-card";
@@ -58,7 +61,7 @@ import {
   effectivePortShape,
   resolvedPortArtifactType,
 } from "../types";
-import type { WorkflowNodeLayout } from "../node-layout";
+import { NODE_WIDTH_MIN, type WorkflowNodeLayout } from "../node-layout";
 import { LayoutResizeHandle } from "./LayoutResizeHandle";
 import {
   ArtifactLeftRail,
@@ -71,6 +74,7 @@ import {
   type TextHead,
 } from "./artifact-renderers/text-head";
 import { ArtifactLabel, ImageArtifactBody } from "./ImageArtifactBody";
+import { TableArtifactBody } from "./TableArtifactBody";
 import { usePickupLift } from "./usePickupLift";
 import { PortRevealProvider, usePortReveal } from "./PortBall";
 import {
@@ -470,6 +474,11 @@ export function ArtifactCardBody({
   const imageArtifact =
     first !== null && isImageArtifact(first, firstSummary?.content_type);
   const isSequence = shownValue !== null && "item_refs" in shownValue;
+  const tableCard = !isSequence && first !== null && isTableArtifact(first);
+  const tableHeight = Math.max(
+    160,
+    layout?.bodyHeight ?? DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
+  );
   const imageSize = first ? imageSizes[first.artifact_id] : undefined;
   const recordedName = firstSummary?.metadata?.original_filename;
   const fileName =
@@ -485,7 +494,7 @@ export function ArtifactCardBody({
     first?.artifact_type.startsWith("table.") ||
     fileName?.toLowerCase().endsWith(".csv");
   // Readable bytes are shown as they are, JSON indented, instead of a file
-  // tile. Binary bytes, images, PDFs and tables keep their tile.
+  // tile. Binary bytes and file containers keep their tile.
   const textKey =
     first && !isSequence && !imageArtifact && !isPdf && !isTableFile
       ? (["artifact-card-text", workspace.id, first.artifact_id] as const)
@@ -540,24 +549,27 @@ export function ArtifactCardBody({
       ? `${refs.length} ${refs.length === 1 ? "item" : "items"}`
       : "File sequence"
     : first
-      ? (fileName ?? feedLabel ?? (imageArtifact ? "Image" : "File"))
+      ? (fileName ??
+        feedLabel ??
+        (imageArtifact ? "Image" : tableCard ? "Table" : "File"))
       : // Nothing produced yet: name the card by what it follows.
         (feedLabel ?? "Artifact");
   const byteSize = formatLibraryByteSize(firstSummary?.byte_size);
   const fileKind = isPdf ? "PDF" : isTableFile ? "Table" : "File";
   const fileLabel = byteSize ? `${fileKind} · ${byteSize}` : fileKind;
-  // A file card has no pixels to size itself from, so it opens narrow; an image
-  // card opens wide enough to read the picture.
+  const defaultWidth = tableCard
+    ? DEFAULT_ARTIFACT_TABLE_CARD_WIDTH
+    : imageArtifact
+      ? DEFAULT_ARTIFACT_CARD_WIDTH
+      : feed
+        ? DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH
+        : DEFAULT_ARTIFACT_FILE_CARD_WIDTH;
+  const minimumWidth = tableCard ? NODE_WIDTH_MIN : ARTIFACT_CARD_WIDTH_MIN;
   const requestedWidth = gridAlignedWidth(
-    layout?.width ??
-      (imageArtifact
-        ? DEFAULT_ARTIFACT_CARD_WIDTH
-        : feed
-          ? DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH
-          : DEFAULT_ARTIFACT_FILE_CARD_WIDTH),
+    Math.max(minimumWidth, layout?.width ?? defaultWidth),
     grid?.settings,
     grid?.bypassSnap,
-    ARTIFACT_CARD_WIDTH_MIN,
+    minimumWidth,
   );
 
   const subtitle = awaitingFeed
@@ -626,6 +638,8 @@ export function ArtifactCardBody({
     mediaWidth,
     mediaHeight,
     textHeight,
+    tableCard,
+    tableHeight,
     reordering,
     titleLabel,
     subtitle,
@@ -781,6 +795,14 @@ export function ArtifactCardBody({
                   }))
                 }
               />
+            ) : tableCard && first ? (
+              <TableArtifactBody
+                artifact={first}
+                height={tableHeight}
+                selected={selected ?? false}
+                tier={tier}
+                remoteSelectionColor={data.remoteSelectionColor}
+              />
             ) : (
               <>
                 {awaitingFeed ? (
@@ -876,15 +898,17 @@ export function ArtifactCardBody({
             {allowCornerResize ? (
               <LayoutResizeHandle
                 layout={
-                  textCard
+                  textCard || tableCard
                     ? {
                         ...layout,
                         width: requestedWidth,
-                        bodyHeight: textMaxHeight,
+                        bodyHeight: tableCard ? tableHeight : textMaxHeight,
                       }
                     : (layout ?? { width: requestedWidth })
                 }
-                axes={textCard ? ["width", "bodyHeight"] : ["width"]}
+                axes={
+                  textCard || tableCard ? ["width", "bodyHeight"] : ["width"]
+                }
                 ariaLabel="Resize artifact"
                 onDraft={setDraftLayout}
                 onCommit={commitLayout}

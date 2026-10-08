@@ -15,6 +15,7 @@ import {
   type TableQueryInput,
 } from "@/lib/api";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
+import { isTableArtifact } from "../../artifact-card";
 import {
   interactionScalarFromIntegerEncoding,
   interactionScalarFromTableCell,
@@ -53,17 +54,22 @@ interface TableCellSelection {
   columnTitle: string;
 }
 
+interface TableArtifactRendererProps {
+  artifact: Pick<ArtifactSummary, "artifact_id" | "content_url">;
+  mode: string;
+  availableHeight?: number;
+  interaction?: ArtifactViewerInteractionContext;
+  presentation?: "inspector" | "canvas";
+}
+
 function TableArtifactRendererState({
   artifact,
   mode,
   availableHeight,
   interaction,
-}: {
-  artifact: ArtifactSummary;
-  mode: string;
-  availableHeight?: number;
-  interaction?: ArtifactViewerInteractionContext;
-}) {
+  presentation = "inspector",
+}: TableArtifactRendererProps) {
+  const canvas = presentation === "canvas";
   const { workspace } = useWorkspaceContext();
   const [requestedPage, setRequestedPage] = React.useState({
     filterSignature: "",
@@ -217,7 +223,9 @@ function TableArtifactRendererState({
 
   if (!page) {
     return (
-      <div {...stylex.props(s.tablePreview)}>
+      <div
+        {...stylex.props(s.tablePreview, canvas ? s.tableCanvasLoading : null)}
+      >
         <span
           role={tableSchemaError || pageError ? "alert" : "status"}
           aria-live={tableSchemaError || pageError ? undefined : "polite"}
@@ -376,7 +384,7 @@ function TableArtifactRendererState({
   return (
     <div
       aria-busy={pageLoading || selectingRowIndex !== null}
-      {...stylex.props(s.tablePreview)}
+      {...stylex.props(s.tablePreview, canvas ? s.tableCanvas : null)}
     >
       {pageError ? (
         <span role="alert" {...stylex.props(s.tableLimit)}>
@@ -387,7 +395,9 @@ function TableArtifactRendererState({
           </button>
         </span>
       ) : null}
-      <div {...stylex.props(s.tableSummary)}>
+      <div
+        {...stylex.props(s.tableSummary, canvas ? s.tableCanvasToolbar : null)}
+      >
         <span {...stylex.props(s.tableSummaryMeta)}>
           <span {...stylex.props(s.tableSummaryStrong)}>{page.total_rows}</span>
           <span>{page.total_rows === 1 ? "row" : "rows"}</span>
@@ -432,8 +442,11 @@ function TableArtifactRendererState({
           aria-label="Table preview"
           tabIndex={0}
           className="nodrag nowheel"
-          {...stylex.props(s.tableViewport)}
-          style={{ maxHeight: viewportHeight }}
+          {...stylex.props(
+            s.tableViewport,
+            canvas ? s.tableCanvasViewport : null,
+          )}
+          style={{ maxHeight: canvas ? undefined : viewportHeight }}
         >
           <table {...stylex.props(s.dataTable)}>
             <thead>
@@ -499,6 +512,10 @@ function TableArtifactRendererState({
                     {page.columns.map((column) => {
                       const cell = row[column.id];
                       const text = tableCellText(cell.display);
+                      const numeric =
+                        column.value_type === "integer" ||
+                        column.value_type === "number" ||
+                        column.value_type === "decimal";
                       const code =
                         column.value_type !== "text" &&
                         column.value_type !== "boolean";
@@ -513,6 +530,7 @@ function TableArtifactRendererState({
                           {...stylex.props(
                             s.tableCell,
                             code ? s.tableCellCode : null,
+                            numeric ? s.tableCellNumeric : null,
                             cell.display === null ? s.tableCellNull : null,
                             selected ? s.tableCellSelected : null,
                             !selected && highlighted
@@ -567,6 +585,7 @@ function TableArtifactRendererState({
         </div>
       )}
       <TablePageNavigation
+        canvas={canvas}
         page={page}
         requestedOffset={offset}
         pageSize={pageSize}
@@ -585,7 +604,10 @@ function TableArtifactRendererState({
           id={cellDetailId}
           role="region"
           aria-label="Full table cell value"
-          {...stylex.props(s.tableCellDetail)}
+          {...stylex.props(
+            s.tableCellDetail,
+            canvas ? s.tableCanvasCellDetail : null,
+          )}
         >
           <div {...stylex.props(s.tableCellDetailHeader)}>
             <span>
@@ -631,12 +653,7 @@ function TableArtifactRendererState({
   );
 }
 
-function TableArtifactRenderer(props: {
-  artifact: ArtifactSummary;
-  mode: string;
-  availableHeight?: number;
-  interaction?: ArtifactViewerInteractionContext;
-}) {
+export function TableArtifactRenderer(props: TableArtifactRendererProps) {
   return (
     <TableArtifactRendererState key={props.artifact.artifact_id} {...props} />
   );
@@ -649,8 +666,7 @@ export const tableRenderer: ArtifactRendererSpec = {
     emits: ["key-selection"],
     accepts: ["filter", "highlight"],
   },
-  matches: (artifact) =>
-    artifact.artifact_type === "table.data" && artifact.schema_version === 1,
+  matches: isTableArtifact,
   Component: ({ artifact, mode, availableHeight, interaction }) => (
     <TableArtifactRenderer
       artifact={artifact}

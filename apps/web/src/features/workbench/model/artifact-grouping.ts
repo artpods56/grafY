@@ -10,6 +10,9 @@ import {
   cardArtifactRefs,
   collectArtifactCardRefs,
   DEFAULT_ARTIFACT_CARD_WIDTH,
+  DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
+  DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
+  isTableArtifact,
 } from "../canvas/artifact-card";
 import { createUuid } from "./uuid";
 
@@ -106,7 +109,16 @@ export function ungroupArtifactCard({
   )
     return state;
   if (!value.item_refs.length) return state;
-  const width = stack.data.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH;
+  const table = isTableArtifact(value);
+  const width = table
+    ? Math.max(
+        stack.data.layout?.width ?? DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
+        DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
+      )
+    : (stack.data.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH);
+  const bodyHeight = table
+    ? DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT
+    : artifactCardMediaHeight(width);
   const columns = Math.ceil(Math.sqrt(value.item_refs.length));
   const cards = value.item_refs.map((ref, index): ArtifactViewerNode => ({
     id: `artifact-viewer-${createUuid()}`,
@@ -114,9 +126,7 @@ export function ungroupArtifactCard({
     selected: true,
     position: {
       x: stack.position.x + (index % columns) * (Math.max(width, 300) + 64),
-      y:
-        stack.position.y +
-        Math.floor(index / columns) * (artifactCardMediaHeight(width) + 88),
+      y: stack.position.y + Math.floor(index / columns) * (bodyHeight + 88),
     },
     data: { layout: { width }, mode: null, artifactRef: ref },
   }));
