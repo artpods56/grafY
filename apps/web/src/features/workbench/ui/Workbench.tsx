@@ -181,11 +181,13 @@ import {
 } from "../canvas/artifact-connections";
 import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
+  DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
   artifactCardContract,
   artifactCardMediaHeight,
   cardArtifactRefs,
   collectArtifactCardRefs,
   originCarriesCardArtifacts,
+  isTableArtifact,
 } from "../canvas/artifact-card";
 import { formatArtifactTypeLabel } from "../canvas/artifact-type-label";
 import {
@@ -2445,7 +2447,13 @@ function WorkbenchBody({
     (groups: readonly ArtifactDropPayload[], point: XYPosition) => {
       const positions = artifactCardDropPositions(
         point,
-        groups.map((group) => cardArtifactRefs(group.value).length),
+        groups.map((group) => ({
+          artifactCount: cardArtifactRefs(group.value).length,
+          width:
+            !("item_refs" in group.value) && isTableArtifact(group.value)
+              ? DEFAULT_ARTIFACT_TABLE_CARD_WIDTH
+              : DEFAULT_ARTIFACT_CARD_WIDTH,
+        })),
       );
       addArtifactCards(
         groups.map((group, index) => ({

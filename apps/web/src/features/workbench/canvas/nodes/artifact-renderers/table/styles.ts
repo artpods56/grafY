@@ -5,11 +5,100 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 /** Style keys of the table artifact renderer and its parts. */
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
+/**
+ * A body row's tint, set on the `<tr>` and painted by each of its cells. The
+ * sticky row number keeps an opaque surface under the tint, so cells that
+ * scroll beneath it stay hidden on a hovered or selected row.
+ */
+const ROW_TINT = "--grafy-table-row-tint";
+const ROW_TINT_LAYER = `linear-gradient(var(${ROW_TINT}, transparent), var(${ROW_TINT}, transparent))`;
+
+/** Separates sticky headers from the rows and columns scrolled beneath them. */
+const STICKY_EDGE_SHADOW_COLOR =
+  "light-dark(rgba(17, 17, 17, 0.12), rgba(0, 0, 0, 0.55))";
+
+/**
+ * Sticky cells meet the scrollport on a fractional pixel at most canvas zoom
+ * levels, so a sliver of the cells scrolled beneath them shows through. Each
+ * sticky edge reaches past the scrollport, where the overflow clips it.
+ */
+const STICKY_COVER = {
+  content: '""',
+  position: "absolute",
+  pointerEvents: "none",
+  backgroundColor: "inherit",
+  backgroundImage: "inherit",
+} as const;
+
 export const s = stylex.create({
   tablePreview: {
     display: "grid",
     gap: "6px",
     minWidth: 0,
+  },
+  tableCanvas: {
+    display: "flex",
+    flexDirection: "column",
+    height: "100%",
+    gap: 0,
+    minHeight: 0,
+  },
+  tableCanvasLoading: {
+    height: "100%",
+    boxSizing: "border-box",
+    padding: "16px",
+    alignContent: "center",
+    justifyItems: "center",
+  },
+  tableCanvasToolbar: {
+    flexShrink: 0,
+    flexWrap: "wrap",
+    padding: "7px 10px",
+    minHeight: "26px",
+  },
+  tableCanvasPager: {
+    flexShrink: 0,
+    flexWrap: "wrap",
+    padding: "7px 18px 7px 10px",
+  },
+  // Wrapped onto its own line, the page buttons stay at the trailing edge.
+  tableCanvasPagerActions: { marginLeft: "auto" },
+  // Holds the rows and anything laid over them. As the preview's grid item it
+  // must not take the table's width, or the rows would stop scrolling.
+  tableStage: { position: "relative", minWidth: 0 },
+  tableCanvasStage: {
+    display: "flex",
+    flexDirection: "column",
+    flex: "1 1 auto",
+    minHeight: 0,
+  },
+  tableCanvasViewport: {
+    flex: "1 1 auto",
+    minHeight: 0,
+    maxHeight: "none",
+  },
+  // Covers the rows instead of squeezing them, so the value gets the room the
+  // table had and the rows keep their scroll position underneath.
+  tableCanvasCellDetail: {
+    position: "absolute",
+    inset: 0,
+    zIndex: 4,
+    gridTemplateRows: "auto minmax(0, 1fr)",
+    gap: "8px",
+    padding: "8px 10px 10px",
+    borderRadius: 0,
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorDivider,
+    borderBottomWidth: 1,
+    borderBottomStyle: "solid",
+    borderBottomColor: tokens.colorDivider,
+    backgroundColor: tokens.colorSurface,
+  },
+  tableCanvasCellDetailValue: {
+    height: "100%",
+    minHeight: 0,
+    resize: "none",
   },
   tableSummary: {
     display: "flex",
@@ -41,6 +130,8 @@ export const s = stylex.create({
     width: "100%",
     maxHeight: "420px",
     overflow: "auto",
+    // Lets the empty state size itself to the visible width, not the table's.
+    containerType: "inline-size",
     borderTopWidth: 1,
     borderTopStyle: "solid",
     borderTopColor: tokens.colorDivider,
@@ -76,6 +167,20 @@ export const s = stylex.create({
     fontSize: "9px",
     fontWeight: 600,
     textAlign: "right",
+    "::before": {
+      ...STICKY_COVER,
+      top: 0,
+      bottom: 0,
+      left: "-2px",
+      width: "2px",
+    },
+    "::after": {
+      ...STICKY_COVER,
+      top: "-2px",
+      left: 0,
+      right: 0,
+      height: "2px",
+    },
   },
   tableHeader: {
     position: "sticky",
@@ -93,6 +198,19 @@ export const s = stylex.create({
     backgroundColor: tokens.colorSurfaceSunken,
     textAlign: "left",
     verticalAlign: "bottom",
+    "::after": {
+      ...STICKY_COVER,
+      top: "-2px",
+      left: 0,
+      right: 0,
+      height: "2px",
+    },
+  },
+  tableHeaderScrolled: {
+    boxShadow: `0 6px 8px -6px ${STICKY_EDGE_SHADOW_COLOR}`,
+  },
+  tableIndexHeaderScrolled: {
+    boxShadow: `0 6px 8px -6px ${STICKY_EDGE_SHADOW_COLOR}, 6px 0 8px -6px ${STICKY_EDGE_SHADOW_COLOR}`,
   },
   tableHeaderTitle: {
     display: "block",
@@ -124,10 +242,28 @@ export const s = stylex.create({
     borderBottomStyle: "solid",
     borderBottomColor: tokens.colorDivider,
     backgroundColor: tokens.colorSurface,
+    backgroundImage: ROW_TINT_LAYER,
     color: tokens.colorSubtle,
     fontFamily: MONO,
     fontSize: "9px",
     textAlign: "right",
+    "::before": {
+      ...STICKY_COVER,
+      top: 0,
+      bottom: 0,
+      left: "-2px",
+      width: "2px",
+    },
+  },
+  tableIndexCellScrolled: {
+    boxShadow: `6px 0 8px -6px ${STICKY_EDGE_SHADOW_COLOR}`,
+  },
+  // Marks a selected row at its number, where the tint alone is faint.
+  tableIndexCellSelected: {
+    boxShadow: `inset 2px 0 0 ${tokens.colorAccent}`,
+  },
+  tableIndexCellSelectedScrolled: {
+    boxShadow: `inset 2px 0 0 ${tokens.colorAccent}, 6px 0 8px -6px ${STICKY_EDGE_SHADOW_COLOR}`,
   },
   tableCell: {
     minWidth: "132px",
@@ -140,16 +276,20 @@ export const s = stylex.create({
     borderBottomWidth: 1,
     borderBottomStyle: "solid",
     borderBottomColor: tokens.colorDivider,
+    backgroundImage: ROW_TINT_LAYER,
     color: tokens.colorText,
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
     verticalAlign: "top",
   },
-  tableCellSelected: {
-    backgroundColor: tokens.colorAccentSoft,
+  tableRow: {
+    [ROW_TINT]: { default: "transparent", ":hover": tokens.colorHover },
   },
-  tableCellHighlighted: {
-    backgroundColor: tokens.colorHoverStrong,
+  tableRowSelected: {
+    [ROW_TINT]: tokens.colorAccentSoft,
+  },
+  tableRowHighlighted: {
+    [ROW_TINT]: tokens.colorHoverStrong,
   },
   tableRowInteractive: {
     cursor: "pointer",
@@ -159,8 +299,17 @@ export const s = stylex.create({
     outlineOffset: "-2px",
   },
   tableCellCode: { fontFamily: MONO, fontSize: "10px" },
+  tableCellNumeric: { textAlign: "right", fontVariantNumeric: "tabular-nums" },
   tableCellNull: { color: tokens.colorSubtle, fontStyle: "italic" },
   tableEmpty: {
+    padding: 0,
+  },
+  // Pinned to the visible width, so a wide table still centers the message.
+  tableEmptyMessage: {
+    position: "sticky",
+    left: 0,
+    boxSizing: "border-box",
+    width: "100cqi",
     padding: "28px 14px",
     color: tokens.colorMuted,
     fontSize: tokens.fontSizeXs,
@@ -337,9 +486,14 @@ export const s = stylex.create({
     cursor: "pointer",
     fontFamily: "inherit",
     fontSize: "inherit",
-    textAlign: "left",
+    textAlign: "inherit",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    // A dotted underline on hover says the preview opens to the whole value.
+    textDecorationLine: { default: "none", ":hover": "underline" },
+    textDecorationStyle: "dotted",
+    textDecorationColor: tokens.colorSubtle,
+    textUnderlineOffset: "3px",
   },
   tableCellDetail: {
     display: "grid",
@@ -350,23 +504,52 @@ export const s = stylex.create({
   },
   tableCellDetailHeader: {
     display: "flex",
+    alignItems: "center",
     justifyContent: "space-between",
     gap: "8px",
+    minWidth: 0,
     color: tokens.colorMuted,
     fontSize: "10px",
   },
+  tableCellDetailTitle: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: "6px",
+    minWidth: 0,
+    overflow: "hidden",
+    whiteSpace: "nowrap",
+  },
+  tableCellDetailName: {
+    overflow: "hidden",
+    color: tokens.colorTextEmphasis,
+    fontWeight: 600,
+    textOverflow: "ellipsis",
+  },
+  tableCellDetailLength: {
+    flexShrink: 0,
+    color: tokens.colorSubtle,
+    fontFamily: MONO,
+    fontSize: "9px",
+  },
   tableCellDetailValue: {
+    boxSizing: "border-box",
     width: "100%",
     minHeight: "100px",
+    padding: "8px",
     resize: "vertical",
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: tokens.colorDivider,
+    borderColor: {
+      default: tokens.colorDivider,
+      ":focus": tokens.colorBorderStrong,
+    },
     borderRadius: "6px",
+    outline: "none",
     backgroundColor: tokens.colorSurface,
     color: tokens.colorText,
     fontFamily: MONO,
     fontSize: "10px",
+    lineHeight: 1.55,
   },
   tableDownload: {
     color: tokens.colorAccent,

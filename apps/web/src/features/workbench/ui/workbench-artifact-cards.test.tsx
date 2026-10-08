@@ -246,10 +246,10 @@ describe("addArtifactCards", () => {
 
 describe("artifactCardDropPositions", () => {
   it("centres the row a drop lays out on the cursor", () => {
-    const [first, second] = artifactCardDropPositions(
-      { x: 500, y: 300 },
-      [1, 1],
-    );
+    const [first, second] = artifactCardDropPositions({ x: 500, y: 300 }, [
+      { artifactCount: 1, width: 250 },
+      { artifactCount: 1, width: 250 },
+    ]);
 
     expect(first!.y).toBe(second!.y);
     expect(second!.x - first!.x).toBe(
@@ -261,10 +261,26 @@ describe("artifactCardDropPositions", () => {
   });
 
   it("lifts a card that carries a set exactly as a single drop does", () => {
-    const [single] = artifactCardDropPositions({ x: 300, y: 200 }, [1]);
-    const [set] = artifactCardDropPositions({ x: 300, y: 200 }, [3]);
+    const [single] = artifactCardDropPositions({ x: 300, y: 200 }, [
+      { artifactCount: 1, width: 250 },
+    ]);
+    const [set] = artifactCardDropPositions({ x: 300, y: 200 }, [
+      { artifactCount: 3, width: 250 },
+    ]);
 
     expect(single!.x).toBe(set!.x);
     expect(single!.y - set!.y).toBe(52);
+  });
+
+  it("centres a mixed table and image drop with a gap between their bodies", () => {
+    expect(
+      artifactCardDropPositions({ x: 500, y: 300 }, [
+        { artifactCount: 1, width: 600 },
+        { artifactCount: 1, width: 250 },
+      ]),
+    ).toEqual([
+      { x: 63, y: 276 },
+      { x: 687, y: 276 },
+    ]);
   });
 });

@@ -23,6 +23,9 @@ export const DEFAULT_ARTIFACT_CARD_WIDTH = 250;
  */
 export const DEFAULT_ARTIFACT_FILE_CARD_WIDTH = 150;
 
+export const DEFAULT_ARTIFACT_TABLE_CARD_WIDTH = 600;
+export const DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT = 360;
+
 /**
  * Width a card following a node output opens at when it is not a picture:
  * four lattice cells, room for "Producer → port" beside its type while it
@@ -170,6 +173,12 @@ const IMAGE_ARTIFACT_TYPES = new Set([
   "file.webp",
   "file.bmp",
 ]);
+
+export function isTableArtifact(
+  ref: Pick<ArtifactRef, "artifact_type" | "schema_version">,
+): boolean {
+  return ref.artifact_type === "table.data" && ref.schema_version === 1;
+}
 
 /** Whether a card paints this artifact as a picture. */
 export function isImageArtifact(
