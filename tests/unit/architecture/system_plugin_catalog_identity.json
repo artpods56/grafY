@@ -1048,6 +1048,248 @@
       ],
       "title": "LLM"
     },
+    "external.mistral": {
+      "artifact_dependencies": [
+        {
+          "bundle": "inline-json@1",
+          "exports": [
+            {
+              "content_type": "text/plain; charset=utf-8",
+              "filename": "text.txt",
+              "format": "txt"
+            }
+          ],
+          "key": "scalar.text@1",
+          "materialized_json_type": "string",
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [
+              "value"
+            ],
+            "required": [
+              "value"
+            ],
+            "sha256": "01a09e0f987d874bf05f4512b09d0980e8c5ddb2330fa659b75e673c4cabcab7"
+          },
+          "title": "Text value"
+        },
+        {
+          "bundle": "binary-file@1",
+          "exports": [],
+          "key": "image.raster@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [],
+            "required": [],
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "title": "Raster image"
+        },
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "json.schema@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [
+              "value"
+            ],
+            "required": [
+              "value"
+            ],
+            "sha256": "a87e5da78277e882134429ee13975ca6626389ab9791133d63de003daf9aae44"
+          },
+          "title": "JSON Schema"
+        }
+      ],
+      "artifact_types": [
+        {
+          "bundle": "inline-json@1",
+          "exports": [],
+          "key": "mistral.ocr.document@1",
+          "materialized_json_type": null,
+          "projections": [],
+          "references": [],
+          "schema": {
+            "fields": [
+              "markdown",
+              "pages",
+              "model",
+              "base_url",
+              "document_kind",
+              "source_image_artifact_id",
+              "pages_processed",
+              "doc_size_bytes",
+              "document_annotation",
+              "document_annotation_schema",
+              "document_annotation_schema_name",
+              "bbox_annotation_schema",
+              "bbox_annotation_schema_name",
+              "table_format",
+              "include_image_base64",
+              "include_blocks"
+            ],
+            "required": [
+              "markdown",
+              "pages",
+              "model",
+              "base_url",
+              "document_kind",
+              "pages_processed",
+              "include_image_base64",
+              "include_blocks"
+            ],
+            "sha256": "8ade8018661b2fe6cdff09aac6d786254c89e467208366ec0ee71f62fbbe95ea"
+          },
+          "title": "Mistral OCR document"
+        }
+      ],
+      "capabilities": [
+        "network.egress",
+        "node.secrets"
+      ],
+      "conversions": [],
+      "nodes": [
+        {
+          "cache_policy": "never",
+          "config": {
+            "fields": [
+              "base_url",
+              "model",
+              "document_name",
+              "pages",
+              "include_image_base64",
+              "image_limit",
+              "image_min_size",
+              "table_format",
+              "extract_header",
+              "extract_footer",
+              "include_blocks",
+              "confidence_scores_granularity",
+              "document_annotation_prompt",
+              "document_annotation_schema_name",
+              "bbox_annotation_schema_name",
+              "strict",
+              "timeout_ms",
+              "max_retries"
+            ],
+            "required": [],
+            "sha256": "5f1ca8bdf7337fdc69f10d871dcb26a295ae595b0eb437b0f7e4faa3122182da"
+          },
+          "description": "Recognizes a document URL or raster image with Mistral OCR.",
+          "input_schema": {
+            "fields": [
+              "document_url",
+              "image",
+              "document_annotation_schema",
+              "bbox_annotation_schema"
+            ],
+            "required": [],
+            "sha256": "e1bdb201a7b95b79a175d7b17660eeabdf77d68d981815e311c30cf463cfc094"
+          },
+          "inputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "scalar.text@1",
+              "description": "HTTPS URL of a PDF, presentation, or other document Mistral OCR can fetch. Leave empty when a raster image is connected.",
+              "instance_plugs": false,
+              "name": "document_url",
+              "required": false,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            },
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "image.raster@1",
+              "description": "Raster image to recognize. Leave empty when a document URL is connected.",
+              "instance_plugs": false,
+              "name": "image",
+              "required": false,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            },
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "json.schema@1",
+              "description": "Optional JSON Schema extracted from the whole document.",
+              "instance_plugs": false,
+              "name": "document_annotation_schema",
+              "required": false,
+              "shape": "one",
+              "title": "Document annotation schema",
+              "variadic": false
+            },
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "json.schema@1",
+              "description": "Optional JSON Schema extracted for each image in the document.",
+              "instance_plugs": false,
+              "name": "bbox_annotation_schema",
+              "required": false,
+              "shape": "one",
+              "title": "Image annotation schema",
+              "variadic": false
+            }
+          ],
+          "key": "mistral.ocr.process@1",
+          "output_schema": {
+            "fields": [
+              "document"
+            ],
+            "required": [
+              "document"
+            ],
+            "sha256": "f78ece97614ed219e364a2a391cf73042e1c19ac5bef6139891d4d4fb204fe47"
+          },
+          "outputs": [
+            {
+              "accepted_shapes": [
+                "one"
+              ],
+              "artifact": "mistral.ocr.document@1",
+              "description": "Recognized pages, tables, images, and annotations.",
+              "instance_plugs": false,
+              "name": "document",
+              "required": true,
+              "shape": "one",
+              "title": null,
+              "variadic": false
+            }
+          ],
+          "required_capabilities": [
+            "network.egress",
+            "node.secrets"
+          ],
+          "secret_inputs": [
+            {
+              "config_dependencies": [
+                "base_url"
+              ],
+              "description": "Write-only bearer credential for the configured API origin.",
+              "name": "api_key",
+              "title": "API key"
+            }
+          ],
+          "title": "Mistral OCR"
+        }
+      ],
+      "title": "Mistral"
+    },
     "external.ocr": {
       "artifact_dependencies": [
         {

@@ -24,6 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 PUBLISHED_PLUGIN_FAMILIES = (
     "gis",
     "llm",
+    "mistral",
     "ocr",
     "python",
     "sql",
@@ -60,6 +61,7 @@ FORBIDDEN_PLUGIN_OUTER_LAYER_IMPORTS = (
 FORBIDDEN_API_PLUGIN_IMPORTS = (
     "grafy_plugin_gis",
     "grafy_plugin_llm",
+    "grafy_plugin_mistral",
     "grafy_plugin_ocr",
     "grafy_plugin_sql",
 )
@@ -142,14 +144,24 @@ def test_optional_plugin_dependencies_are_not_owned_by_host_projects() -> None:
     assert not any(
         requirement.startswith("grafy-plugin-sql") for requirement in root_dependencies
     )
+    assert not any(
+        requirement.startswith("grafy-plugin-mistral")
+        for requirement in root_dependencies
+    )
     assert root_extras["ocr"] == ["grafy-plugin-ocr"]
     assert root_extras["llm"] == ["grafy-plugin-llm"]
+    assert root_extras["mistral"] == ["grafy-plugin-mistral"]
     assert root_extras["sql"] == ["grafy-plugin-sql"]
 
     for dependencies in (api_dependencies, core_dependencies):
         assert not any(
             requirement.startswith(
-                ("grafy-plugin-llm", "grafy-plugin-ocr", "grafy-plugin-sql")
+                (
+                    "grafy-plugin-llm",
+                    "grafy-plugin-mistral",
+                    "grafy-plugin-ocr",
+                    "grafy-plugin-sql",
+                )
             )
             for requirement in dependencies
         )
