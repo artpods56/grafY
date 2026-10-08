@@ -170,9 +170,7 @@ test("port schema fits the viewport and supports drilling back", async ({
     .getByRole("button", { name: "Add to canvas", exact: true })
     .click();
   await page.getByRole("button", { name: "Fit", exact: true }).click();
-  // The port's name is off the plate: pointers double-click the ball, and the
-  // inspect control is the keyboard's way in.
-  await page.getByRole("button", { name: "Inspect Text type" }).press("Enter");
+  await page.getByRole("button", { name: "Inspect Text type" }).click();
   const popup = page.getByRole("dialog");
   await expectInsideViewport(popup);
   const fields = popup.getByRole("region", { name: "Payload schema fields" });
@@ -202,7 +200,7 @@ test("port schema fits the viewport and supports drilling back", async ({
   await expect(popup).toBeHidden();
   await page.setViewportSize({ width: 568, height: 360 });
   await page.getByRole("button", { name: "Fit", exact: true }).click();
-  await page.getByRole("button", { name: "Inspect Text type" }).press("Enter");
+  await page.getByRole("button", { name: "Inspect Text type" }).click();
   await expectInsideViewport(popup);
   await expectInsideViewport(fields);
   await page.keyboard.press("Escape");

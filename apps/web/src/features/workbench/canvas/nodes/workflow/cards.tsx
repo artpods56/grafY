@@ -11,7 +11,6 @@ import { TriangleAlert, X } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-import { useCanvasRailRowHeight } from "../CanvasCardLayout";
 import { CanvasNodeHeader, nodeChrome } from "../CanvasNodeChrome";
 import { artifactTypeKey } from "../../artifact-type-key";
 import { schemaFields, validateConfig } from "../../config-schema";
@@ -224,10 +223,6 @@ export function IncompatibleWorkflowNodeCard({
       variant="incompatible"
       ariaLabel={`${data.spec.title} ${compatibility.status} node`}
       menuOpen={menuOpen}
-      railRows={Math.max(
-        compatibility.inputs.length,
-        compatibility.outputs.length,
-      )}
       header={
         <CanvasNodeHeader
           title={data.spec.title}
@@ -339,17 +334,6 @@ export function SupportedWorkflowNodeCard({
     }
     return true;
   });
-  const railInputPorts = visibleInputPorts.filter(
-    (port) => !portHasInstancePlugs(port),
-  );
-  const plugInputPorts = visibleInputPorts.filter((port) =>
-    portHasInstancePlugs(port),
-  );
-  // Plug rows and these bodies hang their own balls off the plate's left
-  // edge, so they start below the left rail's slots instead of under them.
-  const hasPlateBalls =
-    plugInputPorts.length > 0 || isSchemaBuilder || isArtifactQuery;
-  const railRowHeight = useCanvasRailRowHeight();
   const hasConfig =
     fields.length > 0 || secretInputs.length > 0 || configIssues.length > 0;
   const hasExecutionError = Boolean(data.execution.error);
@@ -444,7 +428,6 @@ export function SupportedWorkflowNodeCard({
       selected={selected}
       remoteSelectionColor={data.remoteSelectionColor}
       menuOpen={menuOpen}
-      railRows={Math.max(railInputPorts.length, data.spec.outputs.length)}
       header={
         <NodeHeader
           id={id}
@@ -487,27 +470,25 @@ export function SupportedWorkflowNodeCard({
       <PortRail
         id={id}
         data={data}
-        inputPorts={railInputPorts}
+        inputPorts={visibleInputPorts.filter(
+          (port) => !portHasInstancePlugs(port),
+        )}
         outputPorts={data.spec.outputs}
         typeLocked={typeLocked}
       />
-      {hasPlateBalls && railInputPorts.length > 0 ? (
-        <div
-          aria-hidden
-          style={{ height: railInputPorts.length * railRowHeight }}
-        />
-      ) : null}
-      {plugInputPorts.length > 0 ? (
+      {visibleInputPorts.some((port) => portHasInstancePlugs(port)) ? (
         <div {...stylex.props(s.plugPorts)}>
-          {plugInputPorts.map((port) => (
-            <InstancePlugPort
-              key={`in-${port.name}`}
-              id={id}
-              data={data}
-              port={port}
-              typeLocked={typeLocked}
-            />
-          ))}
+          {visibleInputPorts
+            .filter((port) => portHasInstancePlugs(port))
+            .map((port) => (
+              <InstancePlugPort
+                key={`in-${port.name}`}
+                id={id}
+                data={data}
+                port={port}
+                typeLocked={typeLocked}
+              />
+            ))}
         </div>
       ) : null}
       {data.spec.operator_id === "python.transform" ? (

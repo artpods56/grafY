@@ -31,19 +31,9 @@ vi.mock("./CanvasNodeShell", () => ({
 
 vi.mock("./CanvasNodeChrome", () => ({
   CanvasNodeHeader: () => <span>Generic viewer</span>,
+  CanvasPortRail: () => null,
+  CanvasPortTab: () => null,
   canvasNodeInteractionProps: () => ({}),
-}));
-
-vi.mock("./PortBall", () => ({
-  PortBall: () => null,
-  PortRevealProvider: ({ children }: { children: React.ReactNode }) => (
-    <>{children}</>
-  ),
-  usePortReveal: () => ({
-    active: false,
-    connecting: false,
-    connected: new Set(),
-  }),
 }));
 
 vi.mock("./ArtifactCardBody", () => ({

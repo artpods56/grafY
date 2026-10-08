@@ -9,7 +9,6 @@ import {
   CanvasCardFrame,
   CanvasCardHead,
   canvasCard,
-  useCanvasRailRowHeight,
 } from "./CanvasCardLayout";
 import { NODE_HEADER_HEIGHT } from "./CanvasNodeChrome";
 import { PortRevealProvider, usePortReveal } from "./PortBall";
@@ -40,7 +39,7 @@ const s = stylex.create({
   },
   // The plate: the node's body under its name. Flat at rest; it takes the same
   // ground shadow as an artifact's media when picked up, and a deeper one when
-  // carried. Rails hang off this plate via `data-artifact-rail`.
+  // carried.
   shell: {
     position: "relative",
     width: "300px",
@@ -76,10 +75,7 @@ const s = stylex.create({
     borderColor: tokens.colorBorderStrong,
     backgroundColor: tokens.colorSurfaceMuted,
   },
-  // The rails hang off this box rather than the plate, so a plate stretched to
-  // the lattice does not push an output off its input's row.
   content: {
-    position: "relative",
     boxSizing: "border-box",
     flexShrink: 0,
     width: "100%",
@@ -127,20 +123,17 @@ interface CanvasNodeShellProps {
   header: React.ReactNode;
   /** Keeps the ports out while one of the node's menus is open. */
   menuOpen?: boolean;
-  /**
-   * Slots on the taller port rail. The rails hang outside the plate and take
-   * no space, so the plate keeps one lattice row per slot to sit beside them.
-   */
-  railRows?: number;
   children: React.ReactNode;
   resizeHandle?: React.ReactNode;
   appendix?: React.ReactNode;
 }
 
 /**
- * A node on the canvas, sharing the artifact card's DOM: frame → head / body,
- * with port rails hung outside the plate. Port names stay off the plate; each
- * ball carries its name on hover.
+ * A node on the canvas, sharing the artifact card's DOM: frame → head / body.
+ * The plate labels each port on its own row, and the row's ball hangs just
+ * outside the plate on a stem. Picking it up lifts the whole stack and slides
+ * the ports out; a port that carries an edge stays out regardless, so the
+ * edge always meets its ball.
  */
 export function CanvasNodeShell({
   state,
@@ -151,12 +144,10 @@ export function CanvasNodeShell({
   testId,
   header,
   menuOpen = false,
-  railRows = 0,
   children,
   resizeHandle,
   appendix,
 }: CanvasNodeShellProps) {
-  const railRowHeight = useCanvasRailRowHeight();
   const {
     id,
     updateNodeInternals,
@@ -212,15 +203,7 @@ export function CanvasNodeShell({
             {!selected && remoteSelectionColor ? (
               <RemoteSelectionRing color={remoteSelectionColor} />
             ) : null}
-            <div
-              ref={contentRef}
-              {...stylex.props(s.content)}
-              style={
-                railRows > 0
-                  ? { minHeight: railRows * railRowHeight }
-                  : undefined
-              }
-            >
+            <div ref={contentRef} {...stylex.props(s.content)}>
               {children}
             </div>
             {resizeHandle}
