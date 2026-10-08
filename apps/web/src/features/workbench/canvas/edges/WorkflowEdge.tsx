@@ -248,9 +248,31 @@ export default function WorkflowEdgeControl({
     compatible,
   });
   const bridge = docked ? dockedBridgeLayout(source, target, cellSize) : null;
+  const sourceStroke = style?.stroke;
+  const targetStroke = edgeData.targetStroke;
+  // A converting route blends the source type's color into the delivered one.
+  const typeBlendId =
+    !docked && sourceStroke && targetStroke && targetStroke !== sourceStroke
+      ? `${id.replace(/[^\w-]/g, "_")}-type-blend`
+      : null;
 
   return (
     <>
+      {typeBlendId ? (
+        <defs>
+          <linearGradient
+            id={typeBlendId}
+            gradientUnits="userSpaceOnUse"
+            x1={source.x}
+            y1={source.y}
+            x2={target.x}
+            y2={target.y}
+          >
+            <stop offset="30%" style={{ stopColor: sourceStroke }} />
+            <stop offset="70%" style={{ stopColor: targetStroke }} />
+          </linearGradient>
+        </defs>
+      ) : null}
       <BaseEdge
         id={id}
         path={
@@ -261,6 +283,7 @@ export default function WorkflowEdgeControl({
         markerEnd={docked ? undefined : markerEnd}
         style={{
           ...style,
+          ...(typeBlendId ? { stroke: `url(#${typeBlendId})` } : {}),
           opacity: docked
             ? 0
             : !compatible

@@ -203,6 +203,7 @@ import {
 } from "../canvas/artifact-interactions";
 import {
   canonicalHandleId,
+  connectionRouteDeliveredArtifactType,
   connectionRouteForSelection,
   connectionRouteMatchesSelection,
   connectionRouteSelection,
@@ -3505,6 +3506,9 @@ function WorkbenchBody({
           routes.push(activeRoute);
         }
         const routeOptions = routes.map(workflowEdgeRouteOption);
+        const deliveredArtifactType = activeRoute
+          ? connectionRouteDeliveredArtifactType(activeRoute)
+          : null;
         const conversionTitles = activeSelection.conversionPath.map(
           (requestedConversion) =>
             registry?.artifact_conversions.find(
@@ -3531,6 +3535,9 @@ function WorkbenchBody({
             collectionMode: edge.data?.collectionMode ?? "direct",
             sourcePortName: source?.portName ?? edge.data?.sourcePortName,
             conversionTitles,
+            targetStroke: deliveredArtifactType
+              ? artifactTypeColor(deliveredArtifactType.id, tokens.colorAccent)
+              : undefined,
             routeOptions,
             allowedCollectionModes:
               edge.data?.compatibilityIssues?.length || !validMode
