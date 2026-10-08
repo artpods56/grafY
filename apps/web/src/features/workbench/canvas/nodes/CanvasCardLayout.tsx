@@ -3,10 +3,18 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 
+import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
+import {
+  GRID_CELL_SIZE_DEFAULT,
+  PORT_RAIL_ROW_HEIGHT_CELLS,
+  lengthFromSpan,
+} from "../grid-layout";
+
 /**
  * Shared card chrome for artifact cards and operator nodes: name above the
- * plate, rails hung outside the body, no layout reserved for the marks.
- * Option B keeps port names off the plate — balls carry them on hover.
+ * plate, rails hung outside the body. The rails take no layout space, so the
+ * body must be at least as tall as its rails' slots. Port names stay off the
+ * plate; balls carry them on hover.
  */
 
 export const canvasCard = stylex.create({
@@ -84,6 +92,18 @@ export const canvasCardRail = stylex.create({
     paddingTop: "4px",
   },
 });
+
+/**
+ * Height of one rail slot: a lattice row, so ball centres sit on the mid-cell
+ * lines. A plate is never shorter than its taller rail's slots.
+ */
+export function useCanvasRailRowHeight() {
+  const grid = useOptionalCanvasGridSettings();
+  return lengthFromSpan(
+    PORT_RAIL_ROW_HEIGHT_CELLS,
+    grid?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT,
+  );
+}
 
 export function CanvasCardFrame({
   children,

@@ -14,6 +14,7 @@ import {
   CanvasCardLeftRail,
   CanvasCardRailSlot,
   CanvasCardRightRail,
+  useCanvasRailRowHeight,
 } from "../CanvasCardLayout";
 import { useHandleIsDocked } from "../../edges/useDockedConnection";
 import { decodeHandleId, encodeHandleId } from "../../handles";
@@ -32,18 +33,12 @@ import {
   type WorkflowEdge,
   type WorkflowNodeData,
 } from "../../types";
-import { useOptionalCanvasGridSettings } from "../../canvas-grid-settings";
-import {
-  GRID_CELL_SIZE_DEFAULT,
-  PORT_RAIL_ROW_HEIGHT_CELLS,
-  lengthFromSpan,
-} from "../../grid-layout";
 import { PortBall } from "../PortBall";
 import { PortTypePopover } from "../type-inspector";
 
 const s = stylex.create({
   // Keeps "Inspect … type" reachable for assistive tech and Playwright without
-  // putting a label back on the plate (option B).
+  // putting a label back on the plate.
   inspectHit: {
     position: "absolute",
     width: "1px",
@@ -91,13 +86,13 @@ const s = stylex.create({
     height: "20px",
     borderRadius: "5px",
   },
-  // Optional-connection switch sits above its ball in the rail slot so the
-  // ball stays on the mid-cell line.
+  // An optional input's switch sits on its wire, just outside the ball, so it
+  // never covers the ring and the ball stays on the mid-cell line.
   railToggle: {
     position: "absolute",
-    top: "2px",
-    left: "50%",
-    transform: "translateX(-50%)",
+    top: "50%",
+    right: "calc(100% + 2px)",
+    transform: "translateY(-50%)",
     zIndex: 2,
   },
   railSlot: {
@@ -176,9 +171,10 @@ export function OptionalConnectionToggle({
 }
 
 /**
- * Option B port rails: balls hang outside the plate like an artifact card.
- * Names stay off the plate and appear on ball hover via `PortBall` tips.
- * Inputs stack from the top; outputs pin to the bottom.
+ * Port rails: balls hang outside the plate like an artifact card's. Names stay
+ * off the plate and appear on ball hover via `PortBall` tips. Inputs stack
+ * from the top; outputs pin to the bottom. The card gives the plate a floor of
+ * one row per slot on the taller rail (`CanvasNodeShell`'s `railRows`).
  */
 export function PortRail({
   id,
@@ -193,9 +189,7 @@ export function PortRail({
   outputPorts: readonly Port[];
   typeLocked: boolean;
 }) {
-  const grid = useOptionalCanvasGridSettings();
-  const cellSize = grid?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
-  const rowHeight = lengthFromSpan(PORT_RAIL_ROW_HEIGHT_CELLS, cellSize);
+  const rowHeight = useCanvasRailRowHeight();
   if (inputPorts.length === 0 && outputPorts.length === 0) return null;
 
   return (
@@ -502,9 +496,7 @@ export function CompatibilityPortRail({
   inputs: IncompatibleWorkflowNodeCompatibility["inputs"];
   outputs: IncompatibleWorkflowNodeCompatibility["outputs"];
 }) {
-  const grid = useOptionalCanvasGridSettings();
-  const cellSize = grid?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
-  const rowHeight = lengthFromSpan(PORT_RAIL_ROW_HEIGHT_CELLS, cellSize);
+  const rowHeight = useCanvasRailRowHeight();
   if (inputs.length === 0 && outputs.length === 0) return null;
 
   return (

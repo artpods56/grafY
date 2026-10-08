@@ -9,6 +9,7 @@ import {
   CanvasCardFrame,
   CanvasCardHead,
   canvasCard,
+  useCanvasRailRowHeight,
 } from "./CanvasCardLayout";
 import { NODE_HEADER_HEIGHT } from "./CanvasNodeChrome";
 import { PortRevealProvider, usePortReveal } from "./PortBall";
@@ -75,7 +76,10 @@ const s = stylex.create({
     borderColor: tokens.colorBorderStrong,
     backgroundColor: tokens.colorSurfaceMuted,
   },
+  // The rails hang off this box rather than the plate, so a plate stretched to
+  // the lattice does not push an output off its input's row.
   content: {
+    position: "relative",
     boxSizing: "border-box",
     flexShrink: 0,
     width: "100%",
@@ -123,6 +127,11 @@ interface CanvasNodeShellProps {
   header: React.ReactNode;
   /** Keeps the ports out while one of the node's menus is open. */
   menuOpen?: boolean;
+  /**
+   * Slots on the taller port rail. The rails hang outside the plate and take
+   * no space, so the plate keeps one lattice row per slot to sit beside them.
+   */
+  railRows?: number;
   children: React.ReactNode;
   resizeHandle?: React.ReactNode;
   appendix?: React.ReactNode;
@@ -130,8 +139,8 @@ interface CanvasNodeShellProps {
 
 /**
  * A node on the canvas, sharing the artifact card's DOM: frame → head / body,
- * with port rails hung outside the plate. Port names stay off the plate
- * (option B) — each ball carries its name on hover.
+ * with port rails hung outside the plate. Port names stay off the plate; each
+ * ball carries its name on hover.
  */
 export function CanvasNodeShell({
   state,
@@ -142,10 +151,12 @@ export function CanvasNodeShell({
   testId,
   header,
   menuOpen = false,
+  railRows = 0,
   children,
   resizeHandle,
   appendix,
 }: CanvasNodeShellProps) {
+  const railRowHeight = useCanvasRailRowHeight();
   const {
     id,
     updateNodeInternals,
@@ -201,7 +212,15 @@ export function CanvasNodeShell({
             {!selected && remoteSelectionColor ? (
               <RemoteSelectionRing color={remoteSelectionColor} />
             ) : null}
-            <div ref={contentRef} {...stylex.props(s.content)}>
+            <div
+              ref={contentRef}
+              {...stylex.props(s.content)}
+              style={
+                railRows > 0
+                  ? { minHeight: railRows * railRowHeight }
+                  : undefined
+              }
+            >
               {children}
             </div>
             {resizeHandle}

@@ -14,7 +14,7 @@ export const NODE_HEADER_HEIGHT = 24;
 /**
  * Shared chrome for operator nodes and Artifact Viewers, on the artifact
  * card's layout: the name sits above the plate, and port balls hang outside
- * on rails (option B — names appear on hover, not as plate labels).
+ * on rails; names appear on hover, not as plate labels.
  */
 export const nodeChrome = stylex.create({
   header: {

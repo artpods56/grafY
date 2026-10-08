@@ -1413,7 +1413,7 @@ describe("WorkflowNode port rail", () => {
     // One input + two outputs, each in its own lattice-tall slot.
     expect(rows).toHaveLength(3);
     expect(rows.every((row) => row.style.height === "50px")).toBe(true);
-    // Option B: names live on hover tips, not as plate labels.
+    // Names live on hover tips, not as plate labels.
     expect(leftRail?.textContent ?? "").not.toMatch(/\btext\b/);
     expect(rightRail?.textContent ?? "").not.toMatch(/\bmeta\b/);
     expect(leftRail?.querySelector('[data-port-name="text"]')).not.toBeNull();
@@ -1423,6 +1423,24 @@ describe("WorkflowNode port rail", () => {
     expect(
       container.querySelector('[data-artifact-frame="true"]'),
     ).not.toBeNull();
+
+    React.act(() => root.unmount());
+  });
+
+  it("keeps the plate as tall as its taller rail", () => {
+    // No config: before the floor, the plate collapsed and the balls hung
+    // below it.
+    const { container, root } = renderNode(
+      "text-pipe",
+      createWorkflowNodeData(textPipeSpec()),
+    );
+
+    const rightRail = container.querySelector(
+      '[data-artifact-rail="right"]',
+    ) as HTMLElement | null;
+    // One input, two outputs: the rails hang off the content box, which keeps
+    // two lattice rows.
+    expect(rightRail?.parentElement?.style.minHeight).toBe("100px");
 
     React.act(() => root.unmount());
   });

@@ -53,6 +53,7 @@ import {
   CanvasCardLeftRail,
   CanvasCardRailSlot,
   CanvasCardRightRail,
+  useCanvasRailRowHeight,
 } from "./CanvasCardLayout";
 import {
   type CanvasNodeOverflowItem,
@@ -62,12 +63,6 @@ import {
 import { CanvasNodeShell, useCanvasNodeShell } from "./CanvasNodeShell";
 import { LayoutResizeHandle } from "./LayoutResizeHandle";
 import { PortBall } from "./PortBall";
-import {
-  GRID_CELL_SIZE_DEFAULT,
-  PORT_RAIL_ROW_HEIGHT_CELLS,
-  lengthFromSpan,
-} from "../grid-layout";
-import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
 
 const s = stylex.create({
   viewport: {
@@ -309,6 +304,7 @@ function RichArtifactViewerNode({
       ariaLabel="Artifact viewer"
       testId="artifact-viewer-node"
       menuOpen={menuOpen}
+      railRows={showInteractionRow ? 2 : 1}
       header={
         <CanvasNodeHeader
           title="Artifact Viewer"
@@ -398,7 +394,7 @@ function RichArtifactViewerNode({
   );
 }
 
-/** Option B rails for the Artifact Viewer: unlabeled balls, names on hover. */
+/** The Artifact Viewer's rails: unlabeled balls, names on hover. */
 function ArtifactViewerPortRails({
   nodeId,
   artifactColor,
@@ -412,9 +408,7 @@ function ArtifactViewerPortRails({
   showInteractionRow: boolean;
   openTypeHint: boolean;
 }) {
-  const grid = useOptionalCanvasGridSettings();
-  const cellSize = grid?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
-  const rowHeight = lengthFromSpan(PORT_RAIL_ROW_HEIGHT_CELLS, cellSize);
+  const rowHeight = useCanvasRailRowHeight();
 
   return (
     <>
