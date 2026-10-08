@@ -66,6 +66,9 @@ flowchart LR
   Chat Completions node wraps the official OpenAI Python SDK, consumes exact
   prompt messages and an optional runtime JSON Schema, and keeps credentials
   outside core. Deterministic prompt-message construction lives in this plugin.
+- `plugins/mistral` owns Mistral OCR. It wraps `mistralai` and recognizes an
+  HTTPS document URL or a raster image, including tables, content blocks, and
+  JSON Schema annotations. The API key stays in node-secret storage.
 - `plugins/sql` owns engine-neutral parameterized statement artifacts, the
   existing atomic PostgreSQL batch executor, and an isolated DuckDB executor
   for joining materialized `table.data@1` artifacts. PostgreSQL connection

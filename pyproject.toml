@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 gis = ["grafy-plugin-gis"]
 llm = ["grafy-plugin-llm"]
+mistral = ["grafy-plugin-mistral"]
 ocr = ["grafy-plugin-ocr"]
 python = ["grafy-plugin-python"]
 sql = ["grafy-plugin-sql"]
@@ -39,6 +40,7 @@ exclude = [
     "examples/plugin-notes",
     "plugins/gis",
     "plugins/llm",
+    "plugins/mistral",
     "plugins/ocr",
     "plugins/python",
     "plugins/sql",
@@ -60,6 +62,7 @@ grafy-shared = { workspace = true }
 # and never rebuilds it after plugins/*/src changes, so the monorepo silently
 # tests stale Plugin code. Editable keeps the root import pointed at source.
 grafy-plugin-llm = { path = "plugins/llm", editable = true }
+grafy-plugin-mistral = { path = "plugins/mistral", editable = true }
 grafy-plugin-ocr = { path = "plugins/ocr", editable = true }
 grafy-plugin-gis = { path = "plugins/gis", editable = true }
 grafy-plugin-python = { path = "plugins/python", editable = true }
@@ -92,6 +95,7 @@ include = [
     "libs/workbench/*",
     "libs/shared/*",
     "plugins/llm/*",
+    "plugins/mistral/*",
     "plugins/ocr/*",
     "plugins/gis/*",
     "plugins/python/*",
@@ -117,6 +121,7 @@ executionEnvironments = [
         "libs/workbench/src",
         "libs/shared/src",
         "plugins/llm/src",
+        "plugins/mistral/src",
         "plugins/ocr/src",
         "plugins/gis/src",
         "plugins/python/src",

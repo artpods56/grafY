@@ -22,6 +22,7 @@ from grafy_core.domain.plugin_releases import (
 from grafy_core.plugins import Plugin
 from grafy_plugin_gis import GIS
 from grafy_plugin_llm import LLM
+from grafy_plugin_mistral import MISTRAL
 from grafy_plugin_ocr import OCR
 from grafy_plugin_sql import SQL
 
@@ -34,7 +35,7 @@ def test_checked_in_system_inventory_is_complete_finite_and_excludes_modules() -
 
     assert {plugin.slug for plugin in inventory.plugins} == SYSTEM_PLUGIN_SLUGS
     assert "builtin.module" not in SYSTEM_PLUGIN_SLUGS
-    assert len(inventory.plugins) == 5
+    assert len(inventory.plugins) == 6
     assert next(
         plugin for plugin in inventory.plugins if plugin.slug == "external.sql"
     ).capabilities == (
@@ -51,6 +52,7 @@ def test_checked_in_system_inventory_is_complete_finite_and_excludes_modules() -
     } == {
         "external.gis": (("gis",), ("geo",)),
         "external.llm": (("llm", "prompt"), ("llm", "prompt.message")),
+        "external.mistral": (("mistral",), ("mistral",)),
         "external.ocr": (("ocr",), ("ocr",)),
         "external.sql": (("sql",), ("sql",)),
         "external.python": (("python",), ()),
@@ -115,7 +117,7 @@ def test_inventory_enforces_explicit_system_identity_authority() -> None:
         inventory.require_catalog_authority(unauthorized)
 
 
-@pytest.mark.parametrize("plugin", (GIS, LLM, OCR, SQL))
+@pytest.mark.parametrize("plugin", (GIS, LLM, MISTRAL, OCR, SQL))
 def test_inventory_accepts_each_preserved_external_catalog(plugin: Plugin) -> None:
     inventory = load_system_plugin_inventory(INVENTORY_PATH)
 
