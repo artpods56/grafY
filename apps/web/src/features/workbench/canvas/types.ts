@@ -83,6 +83,8 @@ export interface WorkflowEdgeData extends Record<string, unknown> {
   /** Registry compatibility failures disable editing and in-scope execution. */
   compatibilityIssues?: readonly string[];
   conversionTitles?: readonly string[];
+  /** Stroke at the input end when the route delivers a different artifact type. */
+  targetStroke?: string;
   routeOptions?: readonly WorkflowEdgeRouteOption[];
   allowedCollectionModes?: readonly RunEdgeCollectionMode[];
   onUpdate?: (edgeId: string, update: WorkflowEdgeUpdate) => void;

@@ -10,6 +10,7 @@ import {
   MAX_CONVERSION_PATH_LENGTH,
   canonicalHandleId,
   connectionIsValid,
+  connectionRouteDeliveredArtifactType,
   connectionRouteForSelection,
   connectionRouteSelection,
   connectionRoutesFor,
@@ -661,5 +662,67 @@ describe("multi-type input ports", () => {
         targetHandle: multiTypeTarget,
       }),
     ).toBe(false);
+  });
+});
+
+describe("delivered artifact type", () => {
+  const text: FieldProjection = {
+    path: ["text"],
+    target_artifact_type: { id: "scalar.text", schema_version: 1 },
+    title: "Text",
+  };
+  const textToMarkdown = conversion(
+    "builtin.text_to_markdown",
+    "scalar.text",
+    "text.markdown",
+  );
+  const markdownToSql = conversion(
+    "builtin.markdown_to_sql",
+    "text.markdown",
+    "sql.statement",
+  );
+
+  it("is null when the route feeds the output unchanged", () => {
+    const [route] = connectionRoutesFor(
+      connection("scalar.text", "scalar.text"),
+      [],
+      [],
+    );
+
+    expect(connectionRouteDeliveredArtifactType(route!)).toBeNull();
+  });
+
+  it("is the projected field's type", () => {
+    const [route] = connectionRoutesFor(
+      connection("ocr.page_result", "scalar.text"),
+      [artifactType("ocr.page_result", [text])],
+      [],
+    );
+
+    expect(connectionRouteDeliveredArtifactType(route!)).toEqual({
+      id: "scalar.text",
+      schema_version: 1,
+    });
+  });
+
+  it("is the last conversion's target, after any projection", () => {
+    const route = connectionRouteForSelection(
+      connection("ocr.page_result", "sql.statement"),
+      [artifactType("ocr.page_result", [text])],
+      [textToMarkdown, markdownToSql],
+      {
+        projection: { path: ["text"] },
+        conversionPath: [
+          { id: "builtin.text_to_markdown", version: 1 },
+          { id: "builtin.markdown_to_sql", version: 1 },
+        ],
+      },
+    );
+
+    expect(route?.kind).toBe("projection-conversion");
+    expect(connectionRouteDeliveredArtifactType(route!)).toEqual({
+      id: "sql.statement",
+      schema_version: 1,
+    });
   });
 });
