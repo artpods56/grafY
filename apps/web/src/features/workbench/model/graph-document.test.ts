@@ -777,3 +777,121 @@ describe("authored graph document", () => {
     ]);
   });
 });
+
+type Presentation = NonNullable<SavedGraphDocument["presentation"]>;
+
+function viewer(id: string): Presentation["viewers"][number] {
+  return {
+    id,
+    position: { x: 0, y: 0 },
+    layout: null,
+    mode: null,
+    artifact_ref: null,
+  };
+}
+
+function link(
+  id: string,
+  sourceNodeId: string,
+  targetViewerId: string,
+): Presentation["links"][number] {
+  return {
+    id,
+    source_node_id: sourceNodeId,
+    source_port_name: "output",
+    target_viewer_id: targetViewerId,
+    projection: null,
+    route_offset: null,
+  };
+}
+
+function binding(
+  id: string,
+  sourceViewerId: string,
+  targetViewerId: string,
+): Presentation["bindings"][number] {
+  return {
+    id,
+    source_viewer_id: sourceViewerId,
+    target_viewer_id: targetViewerId,
+    mappings: [{ source_field: "name", target_field: "title" }],
+    effects: ["highlight"],
+    empty_selection: "show_all",
+  };
+}
+
+describe("saved graph request presentation", () => {
+  it("drops card links whose source node the document does not hold", () => {
+    const request = createSavedGraphRequest(
+      {
+        name: "Fresh graph",
+        nodes: [node("source")],
+        edges: [],
+        origins: [],
+      },
+      {
+        viewers: [viewer("artifact-viewer-1"), viewer("artifact-viewer-2")],
+        links: [
+          link("artifact-viewer-edge-1", "source", "artifact-viewer-1"),
+          // A link from a graph that is no longer on the canvas.
+          link(
+            "artifact-viewer-edge-2",
+            "node-from-another-graph",
+            "artifact-viewer-2",
+          ),
+        ],
+        bindings: [],
+        annotations: [],
+      },
+    );
+
+    expect(request.document.presentation?.links).toEqual([
+      link("artifact-viewer-edge-1", "source", "artifact-viewer-1"),
+    ]);
+  });
+
+  it("drops card wiring whose viewer is gone and keeps the cards themselves", () => {
+    const request = createSavedGraphRequest(
+      { name: "Cards", nodes: [node("source")], edges: [], origins: [] },
+      {
+        viewers: [viewer("artifact-viewer-1")],
+        links: [
+          link("artifact-viewer-edge-1", "source", "artifact-viewer-1"),
+          link("artifact-viewer-edge-2", "source", "artifact-viewer-gone"),
+        ],
+        bindings: [
+          binding(
+            "artifact-viewer-binding-1",
+            "artifact-viewer-1",
+            "artifact-viewer-gone",
+          ),
+        ],
+        annotations: [],
+      },
+    );
+
+    expect(request.document.presentation?.links.map((item) => item.id)).toEqual(
+      ["artifact-viewer-edge-1"],
+    );
+    expect(request.document.presentation?.bindings).toEqual([]);
+    expect(
+      request.document.presentation?.viewers.map((item) => item.id),
+    ).toEqual(["artifact-viewer-1"]);
+  });
+
+  it("keeps a presentation the document agrees with untouched", () => {
+    const presentation: Presentation = {
+      viewers: [viewer("artifact-viewer-1")],
+      links: [link("artifact-viewer-edge-1", "source", "artifact-viewer-1")],
+      bindings: [],
+      annotations: [],
+    };
+
+    const request = createSavedGraphRequest(
+      { name: "Agreeing", nodes: [node("source")], edges: [], origins: [] },
+      presentation,
+    );
+
+    expect(request.document.presentation).toBe(presentation);
+  });
+});

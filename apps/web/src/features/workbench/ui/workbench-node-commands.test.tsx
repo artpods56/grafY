@@ -53,7 +53,6 @@ async function mount(options: {
   edges?: readonly { source: string; target: string }[];
 }) {
   const commands: GraphCommand[][] = [];
-  const commits: unknown[] = [];
   const forgotten: string[] = [];
   const clearedRoutes: unknown[] = [];
   let harness: Harness | null = null;
@@ -65,9 +64,6 @@ async function mount(options: {
     const api = useNodeCommands({
       applyAuthoringCommands: (batch) => {
         commands.push([...batch]);
-      },
-      commitArtifactViewers: (updater) => {
-        commits.push(updater);
       },
       edges: options.edges ?? [],
       forgetNodeSecretStatuses: (nodeId) => {
@@ -101,7 +97,6 @@ async function mount(options: {
 
   return {
     clearedRoutes,
-    commits,
     commands,
     forgotten,
     read,
@@ -186,7 +181,6 @@ describe("useNodeCommands", () => {
       kind: "remove_nodes",
       node_ids: ["node-1"],
     });
-    expect(view.commits).toHaveLength(1);
     expect(view.forgotten).toEqual(["node-1"]);
     view.unmount();
   });

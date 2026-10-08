@@ -119,15 +119,21 @@ export function withoutViewer(
   };
 }
 
-/** A deleted workflow node leaves viewer edges behind because nothing else prunes them. */
-export function withoutViewerEdgesFrom(
+/**
+ * A deleted workflow node leaves its card links behind because nothing else prunes them.
+ * Every `remove_nodes` goes through this, whichever gesture produced it, so a card never
+ * keeps pointing at a node the document dropped. It mirrors what the room does to its own
+ * head in `GraphPresentationDocument.prune_for_removed_nodes`.
+ */
+export function withoutViewerEdgesFromNodes(
   state: ArtifactViewerCanvasState,
-  nodeId: string,
+  removedNodeIds: Iterable<string>,
 ): ArtifactViewerCanvasState {
-  return {
-    ...state,
-    edges: state.edges.filter((edge) => edge.source !== nodeId),
-  };
+  const removed = new Set(removedNodeIds);
+  if (!removed.size) return state;
+  const edges = state.edges.filter((edge) => !removed.has(edge.source));
+  if (edges.length === state.edges.length) return state;
+  return { ...state, edges };
 }
 
 export function withAnnotationLayout(

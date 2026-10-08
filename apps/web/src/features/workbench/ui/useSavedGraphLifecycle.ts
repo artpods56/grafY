@@ -73,9 +73,13 @@ interface UseSavedGraphLifecycleOptions {
     document: AuthoredGraphDocument,
     overlayNodes?: readonly WorkflowNode[],
   ) => void;
-  /** Apply shared presentation from head/checkpoint/save responses. */
+  /**
+   * Apply the presentation that belongs to `graphId`, which becomes the graph the canvas
+   * holds. Pass `null` for the unsaved new-graph draft. Every change of active graph goes
+   * through here so the cards on the canvas and the cards in the save body are one value.
+   */
   replacePresentation: (
-    graphId: string,
+    graphId: string | null,
     presentation: GraphPresentation,
   ) => void;
   updateDocumentName: (name: string) => void;
@@ -267,6 +271,9 @@ export function useSavedGraphLifecycle({
       { name: NEW_GRAPH_NAME, nodes: [], edges: [], origins: [] },
       [],
     );
+    // A blank draft owns no cards. Without this the previous graph's presentation stays
+    // stamped with the graph it came from, and the new graph's first save carries it.
+    replacePresentation(null, emptyGraphPresentation());
     clearGraphSecretStatuses();
     setActiveGraph(null);
     setSavedFingerprint(null);
@@ -282,6 +289,7 @@ export function useSavedGraphLifecycle({
     clearRunError,
     closeNodeLibrary,
     replaceDocument,
+    replacePresentation,
     requestCanvasRefit,
   ]);
 
@@ -505,7 +513,7 @@ export function useSavedGraphLifecycle({
       },
       [],
     );
-    replacePresentation("", emptyGraphPresentation());
+    replacePresentation(null, emptyGraphPresentation());
   }, [
     clearGraphSecretStatuses,
     clearPendingConnectionRoute,
@@ -774,6 +782,9 @@ export function useSavedGraphLifecycle({
             setSavedFingerprint(null);
             setSavedExecutionFingerprint(null);
             clearGraphSecretStatuses();
+            // The kept draft is a new graph, so the cards on it now belong to the draft
+            // rather than to the graph that was just deleted.
+            replacePresentation(null, presentation);
             setPersistenceError(
               "The saved graph was deleted. Changes made while deletion was in progress remain as an unsaved draft.",
             );
@@ -811,8 +822,10 @@ export function useSavedGraphLifecycle({
       clearGraphSecretStatuses,
       currentFingerprint,
       isDirty,
+      presentation,
       refreshGraphSummaries,
       refreshNodeRegistry,
+      replacePresentation,
       router,
       showBlankGraph,
       workspaceId,

@@ -113,9 +113,9 @@ import {
 } from "./useSavedGraphLifecycle";
 import { useRunExecution } from "./useRunExecution";
 import {
-  shouldBlockAuthoringCommand,
-  type AuthoringCommandOptions,
-} from "./authoring-command-guard";
+  useWorkbenchAuthoringCommands,
+  type WorkbenchRoomCommandSync,
+} from "./workbench-authoring-commands";
 import {
   GraphRoomCommandError,
   PRESENCE_CLIENT_MIN_INTERVAL_MS,
@@ -587,49 +587,24 @@ function WorkbenchBody({
   );
   const pendingBoundEdgesRef = React.useRef<PendingBoundEdge[]>([]);
 
-  const roomCommandSyncRef = React.useRef<{
-    submitLocal: (
-      commands: readonly GraphCommand[],
-      before: AuthoredGraphDocument,
-    ) => void;
-  }>({ submitLocal: () => undefined });
+  const roomCommandSyncRef = React.useRef<WorkbenchRoomCommandSync>({
+    submitLocal: () => undefined,
+  });
 
-  const applyAuthoringCommands = React.useCallback(
-    (commands: readonly GraphCommand[], options?: AuthoringCommandOptions) => {
-      if (!commands.length) return;
-      if (
-        shouldBlockAuthoringCommand(localAuthoringEnabledRef.current, options)
-      ) {
-        setRunError(localAuthoringBlockedMessageRef.current);
-        return;
-      }
-      const before = authoredDocumentRef.current;
-      dispatchAuthoringState({ kind: "apply_commands", commands });
-      setPositionOverrides({});
-      setSelectedNodeIdSet(
-        (current) =>
-          new Set(
-            [...current].filter((nodeId) =>
-              authoredDocument.nodes.some((node) => node.id === nodeId),
-            ),
-          ),
-      );
-      setSelectedEdgeIdSet(
-        (current) =>
-          new Set(
-            [...current].filter((edgeId) =>
-              authoredDocument.edges.some((edge) => edge.id === edgeId),
-            ),
-          ),
-      );
-      setPendingConnectionRoute(null);
-      setRunError(null);
-      if (options?.syncRoom !== false) {
-        roomCommandSyncRef.current.submitLocal(commands, before);
-      }
-    },
-    [authoredDocument.edges, authoredDocument.nodes, dispatchAuthoringState],
-  );
+  const { applyAuthoringCommands } = useWorkbenchAuthoringCommands({
+    authoredDocument,
+    authoredDocumentRef,
+    dispatchAuthoringState,
+    localAuthoringBlockedMessageRef,
+    localAuthoringEnabledRef,
+    roomCommandSyncRef,
+    setArtifactViewers,
+    setPendingConnectionRoute,
+    setPositionOverrides,
+    setRunError,
+    setSelectedEdgeIdSet,
+    setSelectedNodeIdSet,
+  });
 
   React.useLayoutEffect(() => {
     authoredDocumentRef.current = authoredDocument;
@@ -856,7 +831,6 @@ function WorkbenchBody({
     updateSchemaBuilderFields,
   } = useNodeCommands({
     applyAuthoringCommands,
-    commitArtifactViewers,
     edges,
     forgetNodeSecretStatuses,
     nodes,
@@ -1072,17 +1046,30 @@ function WorkbenchBody({
     [dispatchAuthoringState],
   );
   const replacePresentation = React.useCallback(
-    (graphId: string, presentation: GraphPresentation) => {
+    (graphId: string | null, presentation: GraphPresentation) => {
       artifactViewersInitializedRef.current = true;
+      // Every graph transition arrives here, so the id the viewer layer is stamped with
+      // moves together with the canvas it belongs to.
+      artifactViewerGraphIdRef.current = graphId;
       setArtifactViewers(
         artifactViewersFromPresentation(graphId, presentation),
       );
     },
     [],
   );
+  /**
+   * The artifact-card layer always holds the presentation of the graph on the canvas:
+   * `replacePresentation` stamps its graph id on every graph transition and
+   * `commitArtifactViewers` stamps that same id on every card edit. There is therefore
+   * one value for the canvas and the save body to read, so the two cannot disagree about
+   * whose cards are current and a graph opened earlier in the session cannot ride into
+   * this save. A presentation that still reached the request holding references the
+   * document dropped is filtered in `createSavedGraphRequest`.
+   */
+  const activeArtifactViewers = artifactViewers;
   const sharedPresentation = React.useMemo(
-    () => presentationFromArtifactViewers(artifactViewers),
-    [artifactViewers],
+    () => presentationFromArtifactViewers(activeArtifactViewers),
+    [activeArtifactViewers],
   );
   const currentExecutionFingerprint = React.useMemo(
     () =>
@@ -1270,14 +1257,8 @@ function WorkbenchBody({
         ) {
           return;
         }
-        // Workflow remove_nodes also prunes presentation links on the server.
-        if (message.command.kind === "remove_nodes") {
-          const removed = new Set(message.command.node_ids);
-          setArtifactViewers((current) => ({
-            ...current,
-            edges: current.edges.filter((edge) => !removed.has(edge.source)),
-          }));
-        }
+        // Nothing more to mirror locally: applying the command already pruned the card
+        // links it sourced, and the room applied the same pruning to its own head.
         return;
       }
       if (message.command.kind === "replace_presentation") {
@@ -1324,13 +1305,6 @@ function WorkbenchBody({
       );
       if (localCommand) {
         applyAuthoringCommandsRef.current([localCommand], { syncRoom: false });
-        if (localCommand.kind === "remove_nodes") {
-          const removed = new Set(localCommand.node_ids);
-          setArtifactViewers((current) => ({
-            ...current,
-            edges: current.edges.filter((edge) => !removed.has(edge.source)),
-          }));
-        }
         if (
           message.command.kind === "replace_document" &&
           message.command.document.presentation
@@ -1841,22 +1815,6 @@ function WorkbenchBody({
     },
     [dismissPersistenceError, dismissRunError],
   );
-  // A viewer state from another graph must not leak into this one, and the empty
-  // stand-in has to keep its identity or every presentation memo below it re-runs.
-  const activeArtifactViewers = React.useMemo<ArtifactViewerCanvasState>(
-    () =>
-      artifactViewers.graphId === (activeGraph?.id ?? null)
-        ? artifactViewers
-        : {
-            graphId: activeGraph?.id ?? null,
-            nodes: [],
-            edges: [],
-            bindings: [],
-            annotations: [],
-          },
-    [artifactViewers, activeGraph?.id],
-  );
-
   const onNodesChange: OnNodesChange<CanvasNode> = React.useCallback(
     (changes) => {
       const gridSettings = canvasGridSettingsRef.current;
@@ -3660,7 +3618,6 @@ function WorkbenchBody({
               ? undefined
               : (edgeId: string, update: WorkflowEdgeUpdate) => {
                   // React Flow stores this callback and invokes it from edge UI events.
-                  // eslint-disable-next-line react-hooks/refs
                   updateEdge(edgeId, update);
                 },
             onRouteOffsetChange: (
@@ -3668,7 +3625,6 @@ function WorkbenchBody({
               routeOffset: WorkflowEdgeRouteOffset,
             ) => {
               // React Flow stores this callback and invokes it from edge UI events.
-              // eslint-disable-next-line react-hooks/refs
               updateEdgeRoute(edgeId, routeOffset);
             },
           },

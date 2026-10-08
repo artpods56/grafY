@@ -122,6 +122,11 @@ export type CanvasEdge =
   | ArtifactViewerInteractionEdge;
 
 export interface ArtifactViewerCanvasState {
+  /**
+   * The graph these cards belong to. `null` is the unsaved new-graph draft. The workbench
+   * re-stamps it on every graph transition, so the canvas and the save body read one
+   * presentation rather than two that can disagree about which graph is current.
+   */
   graphId: string | null;
   nodes: ArtifactViewerNode[];
   edges: ArtifactViewerEdge[];
@@ -177,7 +182,7 @@ export function presentationFromArtifactViewers(
 }
 
 export function artifactViewersFromPresentation(
-  graphId: string,
+  graphId: string | null,
   presentation: GraphPresentation | null | undefined,
 ): ArtifactViewerCanvasState {
   const viewers = presentation?.viewers ?? [];
