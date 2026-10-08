@@ -71,7 +71,9 @@ export interface ContextualCandidate {
 const MODULE_PLUGIN_SLUG = "graph.module";
 
 export function catalogNodeKey(spec: NodeSpec): string {
-  const operator = `${spec.operator_id}@${spec.operator_version}`;
+  const operator = spec.preset
+    ? `preset:${spec.preset.id}@${spec.preset.version}`
+    : `${spec.operator_id}@${spec.operator_version}`;
   return spec.plugin_release
     ? `plugin-release:${spec.plugin_release.scope}:${spec.plugin_release.slug}:${operator}`
     : operator;
@@ -267,12 +269,25 @@ export function sortCatalogNodes(nodes: readonly NodeSpec[]): NodeSpec[] {
   });
 }
 
+/**
+ * Settings the library should show. A preset's editable values live in
+ * `params_schema`; the operator schema is the runner's code, hash and shapes.
+ */
+export function catalogSettingsSchema(spec: NodeSpec): unknown {
+  if (!spec.preset) return spec.config_schema;
+  const params = spec.preset.config.params_schema;
+  if (typeof params === "object" && params !== null && !Array.isArray(params)) {
+    return params;
+  }
+  return { type: "object", properties: {} };
+}
+
 export function nodeCatalogSearchText(
   spec: NodeSpec,
   registry: NodeRegistry,
 ): string {
   const plugin = catalogPlugin(registry, spec.plugin_slug);
-  const fields = schemaFields(spec.config_schema);
+  const fields = schemaFields(catalogSettingsSchema(spec));
   return [
     spec.title,
     spec.operator_id,
@@ -380,7 +395,10 @@ export function catalogNodeSpecs(
   registry: NodeRegistry,
   activeGraphId: string | null,
 ): readonly NodeSpec[] {
-  return registry.nodes.filter(
+  return [
+    ...registry.nodes,
+    ...(registry.presets ?? []).map((preset) => ({ ...preset.node, preset })),
+  ].filter(
     (spec) =>
       spec.catalog_visible !== false &&
       // Collections are made from artifacts on the canvas, not picked here.
@@ -557,7 +575,9 @@ export function downstreamCandidatesFromOutput(options: {
   const conversions = registry.artifact_conversions;
   const candidates: ContextualCandidate[] = [];
 
-  for (const spec of sortCatalogNodes(nodes)) {
+  for (const spec of sortCatalogNodes(
+    nodes.filter((node) => node.catalog_visible !== false),
+  )) {
     const choices: ContextualRouteChoice[] = [];
 
     for (const input of spec.inputs) {
@@ -617,7 +637,9 @@ export function upstreamCandidatesFromInput(options: {
   const conversions = registry.artifact_conversions;
   const candidates: ContextualCandidate[] = [];
 
-  for (const spec of sortCatalogNodes(nodes)) {
+  for (const spec of sortCatalogNodes(
+    nodes.filter((node) => node.catalog_visible !== false),
+  )) {
     const choices: ContextualRouteChoice[] = [];
 
     for (const output of spec.outputs) {

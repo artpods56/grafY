@@ -19,6 +19,7 @@ SYSTEM_PLUGIN_SLUGS = frozenset(
         "external.gis",
         "external.llm",
         "external.ocr",
+        "external.python",
         "external.sql",
     }
 )

@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grafy-plugin-python"
+version = "0.1.0"
+requires-python = "==3.14.*"
+dependencies = [
+    "grafy-core==0.1.0",
+    "pydantic",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.4.2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.grafy.plugin]
+loader-target = "grafy_plugin_python.plugin:PYTHON"
+
+[tool.basedpyright]
+extends = "../../pyproject.toml"
+venvPath = "."
+venv = ".venv"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

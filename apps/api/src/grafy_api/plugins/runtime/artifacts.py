@@ -5,13 +5,18 @@ from io import BytesIO
 import json
 import os
 import signal
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Protocol, cast, final, override
 from uuid import UUID, uuid4
+
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
+from referencing import Registry
+from referencing.exceptions import Unresolvable
 
 from grafy_core.artifacts import (
     ArtifactObject,
@@ -51,6 +56,7 @@ from grafy_core.ports.node_secrets import (
     UnavailableNodeSecretResolver,
 )
 from grafy_core.runtime.plugin_invocation import (
+    resolve_plugin_port_shape,
     PluginInvocationError,
     PluginInvocationRequest,
     PluginInvocationResult,
@@ -381,16 +387,17 @@ def _group_refs(
     port: PluginPortContract,
     group: ArtifactRef | ArtifactRefSequence,
     expected: ArtifactTypeKey,
+    config: JsonObject,
 ) -> tuple[PluginArtifactShape, list[ArtifactRef]]:
     if isinstance(group, ArtifactRef):
-        if port.shape != "one":
+        if resolve_plugin_port_shape(port, config) != "one":
             raise PluginInvocationError(
                 f"Plugin input {port.name!r} expected cardinality many"
             )
         refs = [group]
         shape = "one"
     else:
-        if port.shape != "many":
+        if resolve_plugin_port_shape(port, config) != "many":
             raise PluginInvocationError(
                 f"Plugin input {port.name!r} expected cardinality one"
             )
@@ -411,6 +418,38 @@ def _bundle_path(invocation_root: Path, relative_path: str) -> Path:
     if not resolved.is_relative_to(root):
         raise PluginInvocationError("Plugin bundle path escapes invocation scratch")
     return path
+
+
+def _require_payload_schema(
+    port: str,
+    key: ArtifactTypeKey,
+    payload: JsonObject,
+    payload_schemas: Mapping[ArtifactTypeKey, JsonObject],
+) -> None:
+    """Hold an inline output to its exact artifact contract before import."""
+
+    schema = payload_schemas.get(key)
+    if not schema:
+        return
+    validate = cast(
+        Callable[[object], None],
+        Draft202012Validator(schema, registry=Registry()).validate,
+    )
+    try:
+        validate(payload)
+    except (JsonSchemaValidationError, Unresolvable) as exc:
+        location = (
+            exc.json_path
+            if isinstance(exc, JsonSchemaValidationError)
+            else f"reference {exc.ref!r}"
+        )
+        message = (
+            exc.message if isinstance(exc, JsonSchemaValidationError) else str(exc)
+        )
+        raise PluginInvocationError(
+            f"Plugin output {port!r} does not match {key.id}@{key.schema_version} "
+            f"at {location}: {message[:300]}"
+        ) from exc
 
 
 def _bundle_contract_for(
@@ -643,6 +682,7 @@ class ArtifactBundlePluginInvoker(PluginInvoker):
                 invocation_root,
                 envelope,
                 result,
+                request.artifact_payload_schemas,
             )
             return await self._import_outputs(request, validated_outputs)
 
@@ -1180,7 +1220,7 @@ class ArtifactBundlePluginInvoker(PluginInvoker):
             )
             groups: list[tuple[PluginArtifactShape, list[ArtifactRef]]] = []
             for group in _input_groups(port, request.inputs[port.name]):
-                shape, group_refs = _group_refs(port, group, expected)
+                shape, group_refs = _group_refs(port, group, expected, request.config)
                 groups.append((shape, group_refs))
                 refs.extend(group_refs)
             staged_groups[port.name] = groups
@@ -1333,7 +1373,8 @@ class ArtifactBundlePluginInvoker(PluginInvoker):
 
         declarations: list[PluginOutputDeclaration] = []
         for port in request.contract.outputs:
-            shape: PluginArtifactShape = "many" if port.shape == "many" else "one"
+            raw_shape = resolve_plugin_port_shape(port, request.config)
+            shape: PluginArtifactShape = "many" if raw_shape == "many" else "one"
             output_key = _resolved_artifact_type(
                 port,
                 request.artifact_type_bindings,
@@ -1442,6 +1483,7 @@ class ArtifactBundlePluginInvoker(PluginInvoker):
         invocation_root: Path,
         request: PluginInvocationEnvelope,
         result: PluginInvocationResultEnvelope,
+        payload_schemas: Mapping[ArtifactTypeKey, JsonObject],
     ) -> dict[str, list[_ValidatedOutputArtifact]]:
         declarations = {
             declaration.port: declaration for declaration in request.outputs
@@ -1593,6 +1635,15 @@ class ArtifactBundlePluginInvoker(PluginInvoker):
                             f"Plugin output bundle "
                             f"{bundle.relative_path!r} is not canonical inline JSON"
                         )
+                    _require_payload_schema(
+                        port,
+                        ArtifactTypeKey(
+                            declaration.artifact_type.id,
+                            declaration.artifact_type.schema_version,
+                        ),
+                        payload,
+                        payload_schemas,
+                    )
                     total_files += 1
                     artifacts.append(
                         _ValidatedInlineOutputArtifact(
@@ -1936,7 +1987,7 @@ class ArtifactBundlePluginInvoker(PluginInvoker):
                 continue
             refs = [artifact.ref() for artifact in output_artifacts]
             key = _resolved_artifact_type(port, request.artifact_type_bindings)
-            if port.shape == "many":
+            if resolve_plugin_port_shape(port, request.config) == "many":
                 outputs[port.name] = ArtifactRefSequence.from_key(
                     key=key,
                     item_refs=refs,

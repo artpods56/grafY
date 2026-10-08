@@ -2202,3 +2202,36 @@ async def test_subprocess_runner_bounds_logs_and_wall_time(tmp_path: Path) -> No
             PluginInvocationLimits(wall_time_seconds=1),
         )
     assert timeout.value.code.value == "timeout"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "external_reference", [False, True], ids=["payload", "remote-reference"]
+)
+async def test_guest_payload_schema_failure_leaves_no_output_visible(
+    tmp_path: Path,
+    external_reference: bool,
+) -> None:
+    unit_of_work = InMemoryUnitOfWork()
+    input_ref = await _seed_inline_artifact(unit_of_work)
+    invoker = ArtifactBundlePluginInvoker(
+        unit_of_work=unit_of_work,
+        runner=ManifestRunner(),
+        scratch_root=tmp_path,
+    )
+    schema: JsonObject = {
+        "type": "object",
+        "properties": {"value": {"type": "integer"}},
+        "required": ["value"],
+    }
+    if external_reference:
+        schema = {"$ref": "https://example.invalid/unavailable-schema"}
+    request = replace(
+        _request(_release(), input_ref),
+        artifact_payload_schemas={TEXT: schema},
+    )
+    with pytest.raises(PluginInvocationError, match="does not match scalar.text@1"):
+        await invoker.invoke(request)
+    async with unit_of_work as entered:
+        outputs = await entered.artifacts.list_by_type(WORKSPACE_ID, TEXT)
+    assert outputs == []

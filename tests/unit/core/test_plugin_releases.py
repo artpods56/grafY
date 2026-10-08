@@ -699,8 +699,10 @@ def test_contract_digest_stays_stable_for_catalogs_without_http_egress() -> None
     serialized = catalog.model_dump_json()
     assert ',"http_egress":null' in serialized
 
-    legacy_bytes = serialized.replace(',"http_egress":null', "").encode("utf-8")
-    assert plugin_contract_digest(catalog) == sha256(legacy_bytes).hexdigest()
+    legacy = serialized.replace(',"http_egress":null', "")
+    for fragment in _CATALOG_BYTES_BEFORE_PYTHON_NODE:
+        legacy = legacy.replace(fragment, "")
+    assert plugin_contract_digest(catalog) == sha256(legacy.encode("utf-8")).hexdigest()
 
 
 def test_contract_digest_changes_when_http_egress_is_declared() -> None:
@@ -747,9 +749,13 @@ def test_catalog_manifest_round_trips_the_http_egress_contract() -> None:
 _CATALOG_BYTES_BEFORE_EXTENSION_CONTRACT = (
     ',"http_egress":null',
     ',"also_accepts":[]',
+    ',"shape_field":null',
+    ',"listed":true',
     ',"extensions":[]',
     ',"confirmation_rule":{"rule":"none","signatures":[]}',
 )
+# Empty forms of the per-node shape and library-listing fields (ADR 0012).
+_CATALOG_BYTES_BEFORE_PYTHON_NODE = (',"shape_field":null', ',"listed":true')
 
 
 def _contract_catalog(

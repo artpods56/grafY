@@ -1,0 +1,13 @@
+id = "as-markdown"
+version = 1
+title = "As Markdown"
+description = "Marks text as Markdown without transforming its source."
+code = '''
+def transform(text: str, context: Context) -> Markdown:
+    return Markdown(markdown=text)
+'''
+
+[contract]
+input_name = "text"
+input = { artifact_type = { id = "scalar.text", schema_version = 1 }, shape = "one" }
+output = { artifact_type = { id = "text.markdown", schema_version = 1 }, shape = "one" }

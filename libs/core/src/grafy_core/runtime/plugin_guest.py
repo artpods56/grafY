@@ -123,9 +123,8 @@ def load_guest_plugin(
             f"Installed project must export Plugin target {loader_target}"
         )
     catalog = PluginCatalogManifest.from_plugin(plugin)
-    if (
-        plugin.slug != release.slug
-        or not plugin_contract_digest_matches(catalog, release.contract_digest)
+    if plugin.slug != release.slug or not plugin_contract_digest_matches(
+        catalog, release.contract_digest
     ):
         raise PluginGuestError(
             "Installed Plugin contract does not match the exact release"
@@ -919,7 +918,11 @@ def _validate_request_contract(
             *catalog.artifact_type_dependencies,
         )
     }
-    resolved = resolve_node_contracts(node, _artifact_type_bindings(request))
+    resolved = resolve_node_contracts(
+        node,
+        _artifact_type_bindings(request),
+        request.config,
+    )
     input_specs = resolved.input_contract.ports
     provided_input_names = {binding.port for binding in request.inputs}
     missing = sorted(
@@ -1420,6 +1423,7 @@ async def execute_plugin_invocation(
         secret_graph_revision=request.secret_graph_revision,
         node_id=request.node_id,
         invocation_index=request.invocation_index,
+        artifact_type_bindings=_artifact_type_bindings(request),
         progress_reporter=progress_reporter,
     )
     try:

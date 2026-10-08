@@ -96,6 +96,8 @@ class GraphModuleExecutionError(UserFacingNodeError):
     operator_id=MODULE_INPUT_OPERATOR_ID,
     version=MODULE_BOUNDARY_OPERATOR_VERSION,
     title="Module input",
+    # Added from Module setup. A normal graph cannot run this boundary.
+    listed=False,
 )
 @final
 class ModuleInputNode(Node[ModuleInputConfig, ModuleInputInput, ModuleInputOutput]):
@@ -121,6 +123,8 @@ class ModuleInputNode(Node[ModuleInputConfig, ModuleInputInput, ModuleInputOutpu
     version=MODULE_BOUNDARY_OPERATOR_VERSION,
     title="Module output",
     cache_policy=NodeCachePolicy.EXACT,
+    # Added from Module setup. A normal graph cannot run this boundary.
+    listed=False,
 )
 @final
 class ModuleOutputNode(

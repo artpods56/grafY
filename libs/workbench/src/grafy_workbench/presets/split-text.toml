@@ -1,0 +1,31 @@
+id = "split-text"
+version = 1
+title = "Split text"
+description = "Splits text on an exact separator while preserving empty parts."
+code = '''
+class Params(BaseModel):
+    separator: str = Field(
+        min_length=1,
+        description="Exact text used to separate the input into parts.",
+    )
+
+
+def transform(text: str, params: Params, context: Context) -> list[str]:
+    return text.split(params.separator)
+'''
+
+[contract]
+input_name = "text"
+input = { artifact_type = { id = "scalar.text", schema_version = 1 }, shape = "one" }
+output = { artifact_type = { id = "scalar.text", schema_version = 1 }, shape = "many" }
+
+[contract.params_schema]
+title = "Params"
+type = "object"
+required = ["separator"]
+
+[contract.params_schema.properties.separator]
+title = "Separator"
+type = "string"
+minLength = 1
+description = "Exact text used to separate the input into parts."

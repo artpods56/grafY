@@ -145,6 +145,13 @@ class SelectedSystemReleaseLookup:
             and release.installation.workspace_id == workspace_id
         ]
 
+    async def list_runtime_artifacts(self) -> list[PluginRuntimeArtifact]:
+        return [
+            release.release.runtime_artifact
+            for release in self._releases.values()
+            if release.release.runtime_artifact is not None
+        ]
+
     async def get_revocation(
         self,
         *,

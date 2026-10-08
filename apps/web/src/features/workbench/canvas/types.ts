@@ -241,6 +241,10 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   historyContext: WorkflowNodeHistoryContext | null;
   /** Ephemeral collaborator selection tint; never persisted. */
   remoteSelectionColor?: string | null;
+  onApplyPythonCode?: (
+    nodeId: string,
+    code: string,
+  ) => Promise<import("@/lib/api").ApplyPythonCodeResponse>;
   onConfigChange?: (nodeId: string, name: string, value: unknown) => void;
   onLayoutChange?: (nodeId: string, layout: WorkflowNodeLayout | null) => void;
   onRemoveNode?: (nodeId: string) => void;
@@ -317,6 +321,25 @@ export function compatibilityHandleId(
   ].join("::");
 }
 
+export function resolveInstancePortShapes(
+  spec: NodeSpec,
+  config: WorkflowNodeConfig,
+): NodeSpec {
+  if (![...spec.inputs, ...spec.outputs].some((port) => port.shape_field))
+    return spec;
+  const resolve = (port: Port): Port => {
+    const shape = port.shape_field ? config[port.shape_field] : undefined;
+    return shape === "one" || shape === "many"
+      ? { ...port, shape, accepted_shapes: [shape] }
+      : port;
+  };
+  return {
+    ...spec,
+    inputs: spec.inputs.map(resolve),
+    outputs: spec.outputs.map(resolve),
+  };
+}
+
 export function defaultNodeLayout(spec: NodeSpec): WorkflowNodeLayout | null {
   return spec.operator_id === GIS_COMPOSE_MAP_OPERATOR_ID
     ? { width: 620, appendixHeight: 420 }
@@ -357,7 +380,9 @@ export function createWorkflowNodeData(
         portName: plug.port,
       }))
     : initialInputPlugs(spec);
-  const config = defaultNodeConfig(spec);
+  const config: WorkflowNodeConfig = spec.preset
+    ? { ...structuredClone(spec.preset.config) }
+    : defaultNodeConfig(spec);
   if (!savedInputPlugs && spec.operator_id === ARTIFACT_QUERY_OPERATOR_ID) {
     const relationPlug = inputPlugs.find(
       (plug) => plug.portName === ARTIFACT_QUERY_RELATIONS_PORT,
@@ -371,9 +396,28 @@ export function createWorkflowNodeData(
     ]);
   }
   return {
-    spec,
+    spec: spec.preset
+      ? {
+          ...spec,
+          inputs: spec.inputs.map((port) => ({
+            ...port,
+            artifact_type: null,
+            artifact_type_variable: port.name,
+          })),
+          outputs: spec.outputs.map((port) => ({
+            ...port,
+            artifact_type: null,
+            artifact_type_variable: port.name,
+          })),
+        }
+      : spec,
     compatibility: { status: "supported" },
-    artifactTypeBindings: {},
+    artifactTypeBindings: Object.fromEntries(
+      (spec.preset?.artifact_type_bindings ?? []).map((binding) => [
+        binding.variable,
+        binding.artifact_type,
+      ]),
+    ),
     pluginReleasePin:
       spec.origin === "plugin" && spec.plugin_release
         ? {

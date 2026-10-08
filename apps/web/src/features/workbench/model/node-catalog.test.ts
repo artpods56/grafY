@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
+import { schemaFields } from "../canvas/config-schema";
 import { encodeHandleId } from "../canvas/handles";
 import { portMetaForPort } from "../canvas/types";
 import {
@@ -11,6 +12,7 @@ import {
   catalogNodeKey,
   catalogNodePortSummary,
   catalogNodeSpecs,
+  catalogSettingsSchema,
   catalogNodesForFilter,
   downstreamCandidatesFromOutput,
   filterAndSearchCatalogNodes,
@@ -636,4 +638,81 @@ describe("catalogSearchRank", () => {
       }).map((spec) => spec.title),
     ).toEqual(["Split text"]);
   });
+});
+
+it("keeps hidden text operators out of the library and both discovery directions", () => {
+  const catalog = registry();
+  const input = { ...port("text", "input"), direction: "input" as const };
+  const output = { ...port("text", "output"), direction: "output" as const };
+  const hidden = [
+    "text.split",
+    "text.replace",
+    "text.join",
+    "text.as_markdown",
+  ].map((id) =>
+    nodeSpec(id, "builtin", 1, null, false, {
+      inputs: [input],
+      outputs: [output],
+    }),
+  );
+  const visible = nodeSpec("text.visible", "builtin", 1, null, true, {
+    inputs: [input],
+    outputs: [output],
+  });
+  const nodes = [...hidden, visible];
+  const listed = catalogNodeSpecs({ ...catalog, nodes }, null);
+  expect(listed.map((node) => node.operator_id)).toEqual(["text.visible"]);
+  const downstream = downstreamCandidatesFromOutput({
+    sourcePort: output,
+    sourceHandle: encodeHandleId(portMetaForPort(output)),
+    registry: catalog,
+    nodes,
+  });
+  const upstream = upstreamCandidatesFromInput({
+    targetPort: input,
+    targetHandle: encodeHandleId(portMetaForPort(input)),
+    registry: catalog,
+    nodes,
+  });
+  expect(downstream).toHaveLength(1);
+  expect(upstream).toHaveLength(1);
+});
+
+it("shows a preset's params in the library, not the runner's code and hash", () => {
+  const node = nodeSpec("python.transform", "external.python", 1, null, true, {
+    title: "Split text",
+  });
+  const spec: NodeSpec = {
+    ...node,
+    config_schema: {
+      type: "object",
+      properties: {
+        code: { type: "string", title: "Code" },
+        code_sha256: { type: "string", title: "Code Sha256" },
+      },
+    },
+    preset: {
+      id: "split-text",
+      version: 1,
+      config: {
+        params_schema: {
+          type: "object",
+          required: ["separator"],
+          properties: {
+            separator: {
+              type: "string",
+              title: "Separator",
+              minLength: 1,
+            },
+          },
+        },
+      },
+      artifact_type_bindings: [],
+      node,
+    },
+  };
+
+  expect(
+    schemaFields(catalogSettingsSchema(spec)).map((field) => field.title),
+  ).toEqual(["Separator"]);
 });

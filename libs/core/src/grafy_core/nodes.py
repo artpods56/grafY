@@ -97,12 +97,15 @@ class InPort:
     ``accepts`` is the primary artifact type (or the single artifact type
     variable). ``also_accepts`` adds the remaining concrete types the same input
     accepts, so one port can take several artifact types without a type variable.
+    ``shape_field`` names the node config field that chooses this port's shape
+    for one node instance; the field holds ``one`` or ``many``.
     """
 
     accepts: ArtifactTypeSpec | ArtifactTypeContract
     variadic: bool = False
     instance_plugs: bool = False
     also_accepts: tuple[ArtifactTypeSpec | ArtifactTypeKey, ...] = ()
+    shape_field: str | None = None
 
     def __post_init__(self) -> None:
         if self.also_accepts and isinstance(self.accepts, ArtifactTypeVariable):
@@ -110,13 +113,22 @@ class InPort:
                 "An input port must declare either an artifact type variable or "
                 "additional accepted artifact types, not both"
             )
+        if self.shape_field is not None and (self.variadic or self.instance_plugs):
+            raise NodeContractError(
+                "A config-chosen port shape cannot be variadic or use instance plugs"
+            )
 
 
 @dataclass(frozen=True, slots=True)
 class OutPort:
-    """Marks an output model field as an artifact port via Annotated metadata."""
+    """Marks an output model field as an artifact port via Annotated metadata.
+
+    ``shape_field`` names the node config field that chooses this port's shape
+    for one node instance; the field holds ``one`` or ``many``.
+    """
 
     produces: ArtifactTypeSpec | ArtifactTypeContract
+    shape_field: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +146,7 @@ class InputPortSpec:
     allows_none: bool = False
     required: bool = True
     also_accepts: tuple[ArtifactTypeKey, ...] = ()
+    shape_field: str | None = None
 
     def __post_init__(self) -> None:
         if not self.also_accepts:
@@ -174,6 +187,7 @@ class OutputPortSpec:
     description: str | None = None
     shape: PortShape = PortShape.ONE
     required: bool = True
+    shape_field: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,19 +330,30 @@ def derive_input_contract[T: BaseModel](model: type[T]) -> InputContract[T]:
         port = _single_port_meta(model, name, field.metadata, InPort, OutPort)
         if port is None:
             continue
-        (
-            shape,
-            accepted_shapes,
-            target_type,
-            preserves_ref_container,
-            allows_none,
-        ) = _input_annotation_contract(
-            model=model,
-            field_name=name,
-            annotation=field.annotation,
-            variadic=port.variadic,
-            instance_plugs=port.instance_plugs,
-        )
+        if port.shape_field is not None:
+            allows_none = _config_shaped_input_allows_none(
+                model,
+                name,
+                field.annotation,
+            )
+            shape = PortShape.ONE
+            accepted_shapes = (PortShape.ONE, PortShape.MANY)
+            target_type = None
+            preserves_ref_container = True
+        else:
+            (
+                shape,
+                accepted_shapes,
+                target_type,
+                preserves_ref_container,
+                allows_none,
+            ) = _input_annotation_contract(
+                model=model,
+                field_name=name,
+                annotation=field.annotation,
+                variadic=port.variadic,
+                instance_plugs=port.instance_plugs,
+            )
         ports[name] = InputPortSpec(
             name=name,
             accepts=_artifact_type_contract(port.accepts),
@@ -345,6 +370,7 @@ def derive_input_contract[T: BaseModel](model: type[T]) -> InputContract[T]:
             preserves_ref_container=preserves_ref_container,
             allows_none=allows_none,
             required=field.is_required(),
+            shape_field=port.shape_field,
         )
     return InputContract(model=model, ports=ports)
 
@@ -367,6 +393,7 @@ def derive_output_contract[T: BaseModel](model: type[T]) -> OutputContract[T]:
             description=field.description,
             shape=shape,
             required=field.is_required(),
+            shape_field=port.shape_field,
         )
     return OutputContract(model=model, ports=ports)
 
@@ -392,6 +419,29 @@ def _single_port_meta[PortT](
         )
         raise NodeContractError(message)
     return ports[0] if ports else None
+
+
+def _config_shaped_input_allows_none(
+    model: type[BaseModel],
+    field_name: str,
+    annotation: object,
+) -> bool:
+    """A config-shaped input receives references of either shape."""
+
+    if get_origin(annotation) is Annotated:
+        annotation = get_args(annotation)[0]
+    members: set[object] = (
+        set(get_args(annotation))
+        if get_origin(annotation) in (UnionType, Union)
+        else set()
+    )
+    if members - {type(None)} == {ArtifactRef, ArtifactRefSequence}:
+        return type(None) in members
+    message = (
+        f"{model.__name__}.{field_name} chooses its shape from config and must "
+        "use exactly ArtifactRef | ArtifactRefSequence"
+    )
+    raise NodeContractError(message)
 
 
 def _input_annotation_contract(
@@ -640,8 +690,13 @@ class Node[
 def resolve_node_contracts(
     node: Node[Any, Any, Any],
     bindings: Mapping[str, ArtifactTypeKey],
+    config: Mapping[str, object] | None = None,
 ) -> ResolvedNodeContracts:
-    """Resolve every artifact type variable declared by one node instance."""
+    """Resolve the artifact type variables and config-chosen shapes of one node.
+
+    A port that names a ``shape_field`` takes its shape from that config field;
+    an absent field leaves the shape the port declares.
+    """
 
     variables: set[str] = set()
     for port in node.input_contract.ports.values():
@@ -700,19 +755,46 @@ def resolve_node_contracts(
             )
 
     node.validate_artifact_type_bindings(bindings)
-    input_ports = {
-        name: replace(port, accepts=bindings[port.accepts.name])
-        if isinstance(port.accepts, ArtifactTypeVariable)
-        else port
-        for name, port in node.input_contract.ports.items()
-    }
-    output_ports = {
-        name: replace(port, produces=bindings[port.produces.name])
-        if isinstance(port.produces, ArtifactTypeVariable)
-        else port
-        for name, port in node.output_contract.ports.items()
-    }
+    input_ports: dict[str, InputPortSpec] = {}
+    for name, port in node.input_contract.ports.items():
+        if isinstance(port.accepts, ArtifactTypeVariable):
+            port = replace(port, accepts=bindings[port.accepts.name])
+        if port.shape_field is not None:
+            shape = _config_shape(node, name, port.shape_field, port.shape, config)
+            port = replace(port, shape=shape, accepted_shapes=(shape,))
+        input_ports[name] = port
+    output_ports: dict[str, OutputPortSpec] = {}
+    for name, port in node.output_contract.ports.items():
+        if isinstance(port.produces, ArtifactTypeVariable):
+            port = replace(port, produces=bindings[port.produces.name])
+        if port.shape_field is not None:
+            port = replace(
+                port,
+                shape=_config_shape(node, name, port.shape_field, port.shape, config),
+            )
+        output_ports[name] = port
     return ResolvedNodeContracts(
         input_contract=replace(node.input_contract, ports=input_ports),
         output_contract=replace(node.output_contract, ports=output_ports),
+    )
+
+
+def _config_shape(
+    node: Node[Any, Any, Any],
+    port_name: str,
+    shape_field: str,
+    declared: PortShape,
+    config: Mapping[str, object] | None,
+) -> PortShape:
+    if config is None or shape_field not in config:
+        return declared
+    raw_shape = config[shape_field]
+    if isinstance(raw_shape, str):
+        try:
+            return PortShape(raw_shape)
+        except ValueError:
+            pass
+    raise NodeContractResolutionError(
+        f"Node {node.operator_id!r} port {port_name!r} shape field "
+        f"{shape_field!r} must be 'one' or 'many', got {raw_shape!r}"
     )

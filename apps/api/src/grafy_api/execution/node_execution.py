@@ -1,10 +1,11 @@
 """Execution semantics for one compiled logical node."""
 
 import asyncio
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import cast
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from grafy_core.artifacts import (
     ArtifactRef,
@@ -299,7 +300,18 @@ class NodeExecutionService:
                     f"Node {node.operator_id!r} MAP output {name!r} has an "
                     "unresolved artifact type contract"
                 )
+            sequence_identity = json.dumps(
+                {
+                    "node_id": context.node_id,
+                    "module_path": context.module_path,
+                    "output": name,
+                    "source": str(raw_sequence.sequence_id),
+                    "items": [str(ref.artifact_id) for ref in refs_by_output[name]],
+                },
+                sort_keys=True,
+            )
             values[name] = ArtifactRefSequence(
+                sequence_id=uuid5(NAMESPACE_URL, sequence_identity),
                 artifact_type=output_port.produces.id,
                 schema_version=output_port.produces.schema_version,
                 item_refs=refs_by_output[name],

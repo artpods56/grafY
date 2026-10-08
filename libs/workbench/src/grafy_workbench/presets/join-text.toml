@@ -1,0 +1,27 @@
+id = "join-text"
+version = 1
+title = "Join text"
+description = "Joins an ordered text sequence with a separator."
+code = '''
+class Params(BaseModel):
+    separator: str = Field("", description="Text inserted between adjacent parts.")
+
+
+def transform(parts: list[str], params: Params, context: Context) -> str:
+    return params.separator.join(parts)
+'''
+
+[contract]
+input_name = "parts"
+input = { artifact_type = { id = "scalar.text", schema_version = 1 }, shape = "many" }
+output = { artifact_type = { id = "scalar.text", schema_version = 1 }, shape = "one" }
+
+[contract.params_schema]
+title = "Params"
+type = "object"
+
+[contract.params_schema.properties.separator]
+title = "Separator"
+type = "string"
+default = ""
+description = "Text inserted between adjacent parts."
