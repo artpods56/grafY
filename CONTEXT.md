@@ -715,11 +715,13 @@ revision, not fields inside the saved graph. Upstream output pins belong to an
 individual run request and remain transient. Drafts may be saved before they
 are executable.
 
-A presentation viewer may carry artifact references instead of a link to a node
-output. Such a viewer is a node-less artifact card: it presents those exact
-artifacts and executes nothing. One reference presents one artifact; a sequence
-presents them in the order the card passes them on, and two artifact types never
-share one card. Passing a card into a node writes an origin on that input, and
+Artifacts render directly on the canvas as node-less artifact cards, either
+carrying artifact references or following a node output. The standalone Artifact
+Viewer is deprecated and cannot be added from the toolbar or canvas menu. Saved
+viewers retain their rendering, links, modes, and interaction bindings during
+the transition. Cards present artifacts and execute nothing. One reference
+presents one artifact; a sequence presents them in the order the card passes them
+on, and two artifact types never share one card. Passing a card into a node writes an origin on that input, and
 the origin stays the executable truth: the card owns the order, so reordering a
 bound card rewrites the origin that carries it, and removing the card removes
 what it passed in. The reference is durable document state and is never dropped

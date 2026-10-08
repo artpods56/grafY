@@ -175,14 +175,53 @@ export function createSavedGraphRequest(
       nodes: document.nodes.map(projectSavedGraphNode),
       edges: document.edges.map(projectSavedGraphEdge),
       origins: (document.origins ?? []).map(projectSavedGraphOrigin),
-      presentation: presentation ?? {
-        viewers: [],
-        links: [],
-        bindings: [],
-        annotations: [],
-      },
+      presentation: presentationForDocument(
+        presentation ?? emptyPresentation(),
+        document.nodes,
+      ),
     },
   };
+}
+
+type PresentationBody = NonNullable<SavedGraphDocument["presentation"]>;
+
+function emptyPresentation(): PresentationBody {
+  return { viewers: [], links: [], bindings: [], annotations: [] };
+}
+
+/**
+ * Drop presentation entries that name something the document no longer holds.
+ *
+ * The canvas keeps its artifact cards in a slice of state separate from the authored
+ * document, so a slice that fell behind the nodes would otherwise be sent as a body the
+ * server has to refuse: a card link naming a deleted node, or card wiring whose viewer is
+ * gone, is a 422 against a canvas the person can see does not contain it. Viewers and
+ * annotations never name a node, so they survive untouched; only the references that can
+ * dangle are reconciled here. The server validates the same invariant and stays the
+ * authority; this only keeps a stale client from proving it.
+ */
+function presentationForDocument(
+  presentation: PresentationBody,
+  nodes: readonly SavedGraphNode[],
+): PresentationBody {
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const viewerIds = new Set(presentation.viewers.map((viewer) => viewer.id));
+  const links = presentation.links.filter(
+    (link) =>
+      nodeIds.has(link.source_node_id) && viewerIds.has(link.target_viewer_id),
+  );
+  const bindings = presentation.bindings.filter(
+    (binding) =>
+      viewerIds.has(binding.source_viewer_id) &&
+      viewerIds.has(binding.target_viewer_id),
+  );
+  if (
+    links.length === presentation.links.length &&
+    bindings.length === presentation.bindings.length
+  ) {
+    return presentation;
+  }
+  return { ...presentation, links, bindings };
 }
 
 export function projectSavedGraphNode(node: SavedGraphNode): SavedGraphNode {

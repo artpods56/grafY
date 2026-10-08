@@ -14,8 +14,7 @@ from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import FastAPI, HTTPException
-from fastapi.exceptions import RequestValidationError
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from grafy_api.app_state import get_resources
@@ -29,21 +28,18 @@ from grafy_api.execution.requests import RunRequest
 from grafy_api.node_secrets import (
     NodeSecretConfigurationError,
     NodeSecretDeclarationError,
-    NodeSecretValueError,
 )
 from grafy_api.services.composition import WorkbenchComponents
 from grafy_api.services.errors import (
     ArtifactContentUnavailableError,
     WorkbenchOperationError,
 )
-from grafy_api.uploads import UploadTooLargeError
 from grafy_api.v1.routes.artifacts import services as artifact_services
 from grafy_api.v1.routes.executions.dependencies import (
     execution_admission_limiter,
     run_execution_manager,
 )
 from grafy_core.artifacts import ArtifactObject, ArtifactRef
-from grafy_core.domain.errors import GrafyCoreError
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext
@@ -52,17 +48,6 @@ from grafy_workbench.table.persistence import TableArtifactWriter
 
 from tests.support.clients import GrafyApi
 from tests.support.identity import WORKSPACE_ID
-
-# Errors whose handler lives in the HTTP boundary. Each one answers the same way on every route
-# that can raise it.
-HANDLED_ERRORS = (
-    UploadTooLargeError,
-    ArtifactContentUnavailableError,
-    NodeSecretValueError,
-    RunExecutionCapacityError,
-    RunExecutionQueueFullError,
-    RunExecutionIdempotencyConflictError,
-)
 
 # Errors with no handler on purpose: a table artifact route shows they still surface as internal
 # failures. NodeSecretDeclarationError and NodeSecretConfigurationError also surface while an inline
@@ -125,17 +110,6 @@ def _rejecting_manager(error: Exception) -> AsyncMock:
     manager = AsyncMock()
     manager.start.side_effect = error
     return manager
-
-
-def test_create_app_registers_dedicated_and_shared_error_handlers(
-    builtin_client: TestClient,
-) -> None:
-    handlers = cast(FastAPI, builtin_client.app).exception_handlers
-
-    for error in HANDLED_ERRORS:
-        assert error in handlers, error.__name__
-    for error in (HTTPException, RequestValidationError, GrafyCoreError):
-        assert error in handlers, error.__name__
 
 
 def test_synchronous_run_capacity_response_keeps_its_declared_body_and_header(

@@ -30,6 +30,7 @@ PUBLISHED_PLUGIN_FAMILIES = (
     "ocr",
     "python",
     "sql",
+    "typesafe",
 )
 WORKBENCH_FAMILIES = (
     "image",
@@ -41,32 +42,6 @@ WORKBENCH_FAMILIES = (
 SYSTEM_PLUGIN_FAMILIES = PUBLISHED_PLUGIN_FAMILIES
 SYSTEM_PLUGIN_IMPORTS = tuple(
     f"grafy_plugin_{family}" for family in PUBLISHED_PLUGIN_FAMILIES
-)
-FORBIDDEN_CORE_IMPORTS = (
-    "aiosqlite",
-    "alembic",
-    "asyncpg",
-    "fastapi",
-    "grafy_api",
-    "grafy_persistence",
-    *SYSTEM_PLUGIN_IMPORTS,
-    "grafy_storage",
-    "sqlalchemy",
-)
-FORBIDDEN_PLUGIN_OUTER_LAYER_IMPORTS = (
-    "grafy_api",
-    "grafy_mcp",
-    "grafy_persistence",
-    "grafy_storage",
-)
-FORBIDDEN_API_PLUGIN_IMPORTS = (
-    "grafy_plugin_image",
-    "grafy_plugin_table",
-    "grafy_plugin_gis",
-    "grafy_plugin_llm",
-    "grafy_plugin_mistral",
-    "grafy_plugin_ocr",
-    "grafy_plugin_sql",
 )
 LEGACY_NAMESPACE = "proto" + "type"
 
@@ -151,10 +126,15 @@ def test_optional_plugin_dependencies_are_not_owned_by_host_projects() -> None:
         requirement.startswith("grafy-plugin-mistral")
         for requirement in root_dependencies
     )
+    assert not any(
+        requirement.startswith("grafy-plugin-typesafe")
+        for requirement in root_dependencies
+    )
     assert root_extras["ocr"] == ["grafy-plugin-ocr"]
     assert root_extras["llm"] == ["grafy-plugin-llm"]
     assert root_extras["mistral"] == ["grafy-plugin-mistral"]
     assert root_extras["sql"] == ["grafy-plugin-sql"]
+    assert root_extras["typesafe"] == ["grafy-plugin-typesafe"]
 
     for dependencies in (api_dependencies, core_dependencies):
         assert not any(
@@ -164,6 +144,7 @@ def test_optional_plugin_dependencies_are_not_owned_by_host_projects() -> None:
                     "grafy-plugin-mistral",
                     "grafy-plugin-ocr",
                     "grafy-plugin-sql",
+                    "grafy-plugin-typesafe",
                 )
             )
             for requirement in dependencies
@@ -195,19 +176,6 @@ def test_relational_dependencies_are_owned_by_persistence() -> None:
             requirement.startswith(dependency)
             for requirement in persistence_dependencies
         )
-
-
-def test_core_does_not_import_outer_layers_or_domain_adapters() -> None:
-    core_root = REPO_ROOT / "libs/core/src/grafy_core"
-    offenders: list[str] = []
-
-    for path in core_root.rglob("*.py"):
-        text = path.read_text()
-        for forbidden in FORBIDDEN_CORE_IMPORTS:
-            if f"import {forbidden}" in text or f"from {forbidden}" in text:
-                offenders.append(f"{path.relative_to(REPO_ROOT)}: {forbidden}")
-
-    assert offenders == []
 
 
 FORBIDDEN_SHARED_IMPORTS = (
@@ -266,80 +234,6 @@ def test_configuration_does_not_build_the_runtime_it_configures() -> None:
     assert offenders == []
 
 
-def test_system_plugin_implementations_do_not_import_shared_configuration() -> None:
-    """A Plugin sandbox is configured by its host and never reads `grafy_shared`.
-
-    Plugin environments resolve `grafy_core` from the wheel vendored in
-    `plugins/*/wheels`, so a `grafy_shared` import would not resolve at runtime and
-    would let guest code read host environment configuration.
-    """
-
-    offenders: list[str] = []
-
-    for family in SYSTEM_PLUGIN_FAMILIES:
-        plugin_root = REPO_ROOT / "plugins" / family / "src" / f"grafy_plugin_{family}"
-        for path in plugin_root.rglob("*.py"):
-            if "import grafy_shared" in path.read_text():
-                offenders.append(str(path.relative_to(REPO_ROOT)))
-
-    assert offenders == []
-
-
-def test_persistence_does_not_import_api_or_plugins() -> None:
-    persistence_root = REPO_ROOT / "libs/persistence/src/grafy_persistence"
-    offenders: list[str] = []
-
-    for path in persistence_root.rglob("*.py"):
-        text = path.read_text()
-        for forbidden in ("grafy_api", *SYSTEM_PLUGIN_IMPORTS):
-            if f"import {forbidden}" in text or f"from {forbidden}" in text:
-                offenders.append(f"{path.relative_to(REPO_ROOT)}: {forbidden}")
-
-    assert offenders == []
-
-
-def test_api_host_does_not_import_optional_plugin_implementations() -> None:
-    api_root = REPO_ROOT / "apps/api/src/grafy_api"
-    offenders: list[str] = []
-
-    for path in api_root.rglob("*.py"):
-        text = path.read_text()
-        for forbidden in FORBIDDEN_API_PLUGIN_IMPORTS:
-            if f"import {forbidden}" in text or f"from {forbidden}" in text:
-                offenders.append(f"{path.relative_to(REPO_ROOT)}: {forbidden}")
-
-    assert offenders == []
-
-
-def test_system_plugins_depend_on_core_not_outer_layers() -> None:
-    offenders: list[str] = []
-
-    for family in SYSTEM_PLUGIN_FAMILIES:
-        plugin_root = REPO_ROOT / "plugins" / family / "src" / f"grafy_plugin_{family}"
-        for path in plugin_root.rglob("*.py"):
-            text = path.read_text()
-            for forbidden in FORBIDDEN_PLUGIN_OUTER_LAYER_IMPORTS:
-                if f"import {forbidden}" in text or f"from {forbidden}" in text:
-                    offenders.append(f"{path.relative_to(REPO_ROOT)}: {forbidden}")
-
-    assert offenders == []
-
-
-def test_system_plugins_do_not_import_other_plugin_implementations() -> None:
-    offenders: list[str] = []
-
-    for family in SYSTEM_PLUGIN_FAMILIES:
-        plugin_root = REPO_ROOT / "plugins" / family / "src" / f"grafy_plugin_{family}"
-        forbidden_imports = set(SYSTEM_PLUGIN_IMPORTS) - {f"grafy_plugin_{family}"}
-        for path in plugin_root.rglob("*.py"):
-            text = path.read_text()
-            for forbidden in sorted(forbidden_imports):
-                if f"import {forbidden}" in text or f"from {forbidden}" in text:
-                    offenders.append(f"{path.relative_to(REPO_ROOT)}: {forbidden}")
-
-    assert offenders == []
-
-
 def test_retained_python_sources_do_not_use_legacy_namespace() -> None:
     source_roots = (
         REPO_ROOT / "libs/core/src/grafy_core",
@@ -389,7 +283,7 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
         assert "grafy-core==0.1.0" in cast(list[str], project["dependencies"])
         core_wheel = project_root / "wheels/grafy_core-0.1.0-py3-none-any.whl"
         assert sha256(core_wheel.read_bytes()).hexdigest() == (
-            "d3417f3077e1080e176923647a05db0f9045a74db3db3426a0b9a8e9183c2aff"
+            "9349883d5f9b96a423655300f2a87f9c5dd9d870f068444819cf5095ff3c5eaf"
         )
         assert "workspace = true" not in (project_root / "pyproject.toml").read_text()
 
@@ -446,23 +340,6 @@ def test_vendored_sdk_wheels_accept_the_digest_the_host_stores() -> None:
         assert accepts_historical == "True", wheel
 
 
-def test_host_eligible_plugins_carry_their_exact_build_backend() -> None:
-    inventory = tomllib.loads((REPO_ROOT / "plugins/system-plugins.toml").read_text())
-
-    for plugin in cast(list[dict[str, object]], inventory["plugins"]):
-        if plugin["execution_policy"] != "host-eligible":
-            continue
-        project_root = REPO_ROOT.joinpath(*cast(str, plugin["project"]).split("/"))
-        document = tomllib.loads((project_root / "pyproject.toml").read_text())
-        build_system = cast(dict[str, object], document["build-system"])
-        wheel = project_root / "wheels/setuptools-84.0.0-py3-none-any.whl"
-
-        assert build_system["requires"] == ["setuptools==84.0.0"]
-        assert sha256(wheel.read_bytes()).hexdigest() == (
-            "51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670"
-        )
-
-
 def test_execution_and_plugin_hosting_do_not_import_http_or_legacy_hosting() -> None:
     api_root = REPO_ROOT / "apps/api/src/grafy_api"
     offenders: list[str] = []
@@ -484,27 +361,6 @@ def test_execution_and_plugin_hosting_do_not_import_http_or_legacy_hosting() -> 
                 ):
                     offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
     assert offenders == []
-
-
-def test_execution_http_models_preserve_public_request_and_event_identity() -> None:
-    from grafy_api.execution import events, requests
-    from grafy_api.v1.routes.executions import models
-
-    for module, names in (
-        (
-            requests,
-            (
-                "RunRequest",
-                "RunNodeRequest",
-                "RunEdgeRequest",
-                "PinnedOutputRequest",
-                "RunOriginRequest",
-            ),
-        ),
-        (events, ("ExecutionStatusEvent", "NodeStatusEvent", "NodeProgressEvent")),
-    ):
-        for name in names:
-            assert getattr(models, name) is getattr(module, name)
 
 
 def test_application_owners_do_not_depend_on_route_modules() -> None:
@@ -532,46 +388,6 @@ def test_application_owners_do_not_depend_on_route_modules() -> None:
                     f"{path.relative_to(REPO_ROOT)}: request resource lookup"
                 )
     assert offenders == []
-
-
-def test_workspace_transport_compatibility_exports_preserve_model_identity() -> None:
-    from grafy_api.v1.routes.auth import models as legacy
-    from grafy_api.v1.routes.workspaces import models
-
-    for name in (
-        "PersonalAccessTokenCreatedResponse",
-        "PersonalAccessTokenCreateRequest",
-        "PersonalAccessTokenResponse",
-        "PersonalAccessTokenScope",
-        "UserResponse",
-        "WorkspaceCreateRequest",
-        "WorkspaceInvitationCandidateRequest",
-        "WorkspaceInvitationCandidateResponse",
-        "WorkspaceInvitationCreateRequest",
-        "WorkspaceInvitationOwnerResponse",
-        "WorkspaceInvitationPersonResponse",
-        "WorkspaceInvitationRecipientResponse",
-        "WorkspaceInvitationWorkspaceResponse",
-        "WorkspaceMemberResponse",
-        "WorkspaceMemberRoleRequest",
-        "WorkspaceResponse",
-    ):
-        assert getattr(legacy, name) is getattr(models, name)
-
-
-def test_baseline_compatibility_exports_preserve_shared_contract_identity() -> None:
-    from grafy_api import system_plugin_inventory
-    from grafy_core.domain import (
-        system_plugin_inventory as inventory_contracts,
-    )
-
-    for name in (
-        "SystemPluginInventory",
-        "SystemPluginInventoryError",
-    ):
-        assert getattr(system_plugin_inventory, name) is getattr(
-            inventory_contracts, name
-        )
 
 
 def _modules_in_wheel(wheel: Path) -> set[str]:

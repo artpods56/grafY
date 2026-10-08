@@ -1091,7 +1091,6 @@ Existing suites to extend include:
 - `tests/unit/plugins/test_openai_compatible_provider.py`
 - `tests/unit/plugins/test_gis_plugin.py`
 - `tests/unit/deployment/test_publisher_compose.py`
-- `tests/unit/deployment/test_proxy_config.py`
 
 ## 21. Deferred decisions
 

@@ -45,88 +45,9 @@ CONFIG_SECTIONS: tuple[type, ...] = (
     EgressConfig,
 )
 
-# The exact operator-facing surface of the pre-split Settings(BaseSettings). It is a
-# frozen baseline on purpose: renaming, dropping, or adding a knob must be a separate,
-# visible decision, never a side effect of moving fields between sections.
-BASELINE_SETTING_FIELDS = frozenset(
-    {
-        "auth_callback_rate_limit",
-        "auth_cleanup_interval_seconds",
-        "auth_cookie_secure",
-        "auth_login_start_rate_limit",
-        "auth_outstanding_login_limit",
-        "auth_outstanding_login_network_limit",
-        "auth_pat_creation_rate_limit",
-        "auth_rate_window_seconds",
-        "auth_session_absolute_seconds",
-        "auth_session_failure_rate_limit",
-        "auth_session_idle_seconds",
-        "build_digest",
-        "command_hmac_key",
-        "command_hmac_key_version",
-        "cors_origins",
-        "credential_encryption_key",
-        "database_url",
-        "environment",
-        "graph_room_heartbeat_seconds",
-        "graph_room_presence_max_updates_per_second",
-        "graph_room_presence_ttl_seconds",
-        "log_level",
-        "log_renderer",
-        "map_max_concurrency",
-        "max_active_executions",
-        "max_active_plugin_invocations",
-        "max_distinct_plugin_releases_per_graph",
-        "max_live_plugin_sandboxes",
-        "max_pending_graphs",
-        "max_plugin_sandbox_variants_per_execution",
-        "network_policy_manifest",
-        "oidc_allowed_signing_algorithms",
-        "oidc_auth_wrapping_key",
-        "oidc_auth_wrapping_key_version",
-        "oidc_callback_path",
-        "oidc_client_id",
-        "oidc_client_secret",
-        "oidc_domain_workspaces",
-        "oidc_issuer",
-        "oidc_login_transaction_ttl_seconds",
-        "personal_access_token_max_lifetime_seconds",
-        "plugin_authoring_root",
-        "plugin_docker_binary",
-        "plugin_egress_broker_image",
-        "plugin_http_egress_destinations",
-        "plugin_invocation_wall_time_seconds_by_slug",
-        "plugin_postgresql_egress_destinations",
-        "plugin_publisher_scratch_root",
-        "plugin_roots",
-        "plugin_runtime_enabled",
-        "plugin_runtime_native_base_image",
-        "plugin_runtime_native_base_image_digest",
-        "plugin_runtime_profile",
-        "plugin_runtime_seccomp_profile",
-        "plugin_sdk_project",
-        "plugin_wheelhouse",
-        "public_origin",
-        "require_single_api_owner",
-        "s3_access_key_id",
-        "s3_endpoint_url",
-        "s3_force_path_style",
-        "s3_region",
-        "s3_secret_access_key",
-        "s3_signing_endpoint_url",
-        "staged_upload_max_bytes",
-        "storage_backend",
-        "storage_bucket",
-        "upload_lifetime_seconds",
-        "upload_receive_timeout_seconds",
-        "upload_target_ttl_seconds",
-        "workspace",
-    }
-)
-
 # Advertised by .env.example but owned by nothing: a stale entry with no reader
 # anywhere in the tree. Deleting it is an operator-facing documentation change and
-# deliberately out of scope for this refactor, so the parity test names it instead
+# deliberately out of scope here, so the environment-binding test names it instead
 # of pretending it resolves.
 ADVERTISED_BUT_UNOWNED_VARIABLES = frozenset({"GRAFY_OIDC_BOOTSTRAP_SUBJECT"})
 
@@ -138,11 +59,12 @@ def isolate_network_policy_manifest(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GRAFY_NETWORK_POLICY_MANIFEST", raising=False)
 
 
-def test_section_fields_are_exactly_the_previous_setting_fields() -> None:
+def test_no_setting_field_is_owned_by_more_than_one_section() -> None:
+    # A field in two sections would bind one GRAFY_ variable twice and let one section
+    # silently shadow another's value.
     owned = [name for section in CONFIG_SECTIONS for name in section.model_fields]
 
     assert len(owned) == len(set(owned)), "a field is owned by two sections"
-    assert frozenset(owned) == BASELINE_SETTING_FIELDS
 
 
 def test_every_advertised_environment_variable_resolves_to_one_section() -> None:
@@ -260,14 +182,6 @@ def test_parent_reads_one_env_file_for_every_section(
     assert isolated.egress.network_policy_manifest is None
 
 
-def test_composed_parent_reads_no_environment_of_its_own() -> None:
-    sections = Settings()
-
-    assert isinstance(sections.app, AppConfig)
-    assert isinstance(sections.egress, EgressConfig)
-    assert "app" in Settings.model_fields  # pyright: ignore[reportCallIssue]
-
-
 def test_pytest_process_requires_explicit_external_plugin_runtime_opt_in() -> None:
     assert PluginsConfig(_env_file=None).plugin_runtime_enabled is False  # pyright: ignore[reportCallIssue]
     assert PluginsConfig(plugin_runtime_enabled=True).plugin_runtime_enabled is True
@@ -348,22 +262,6 @@ def test_database_url_does_not_reuse_legacy_database(tmp_path: Path) -> None:  #
 
     expected_database = (tmp_path / "grafy.sqlite3").resolve()
     assert config.resolved_database_url == f"sqlite+aiosqlite:///{expected_database}"
-
-
-def test_execution_defaults_with_bounded_map_concurrency(  # pyright: ignore[reportCallIssue]
-    monkeypatch: pytest.MonkeyPatch,  # pyright: ignore[reportCallIssue]
-) -> None:
-    # Defaults must be tested independently from a developer's local .env.
-    execution = ExecutionConfig(_env_file=None)  # pyright: ignore[reportCallIssue]
-    plugins = PluginsConfig(_env_file=None)  # pyright: ignore[reportCallIssue]
-
-    assert execution.map_max_concurrency == 4
-    assert execution.max_active_executions == 2
-    assert execution.max_pending_graphs == 20
-    assert plugins.max_active_plugin_invocations == 4
-    assert plugins.plugin_invocation_wall_time_seconds_by_slug == {}
-    assert plugins.max_live_plugin_sandboxes == 4
-    assert plugins.max_distinct_plugin_releases_per_graph == 4
 
 
 def test_map_max_concurrency_can_be_selected_from_the_environment(

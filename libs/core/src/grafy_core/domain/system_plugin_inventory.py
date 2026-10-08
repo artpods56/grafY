@@ -24,6 +24,7 @@ SYSTEM_PLUGIN_SLUGS = frozenset(
         "external.ocr",
         "external.python",
         "external.sql",
+        "external.typesafe",
     }
 )
 

@@ -2,8 +2,6 @@ import * as React from "react";
 
 import type { ArtifactTypeKey } from "@/lib/api";
 
-import type { ArtifactViewerCanvasState } from "../canvas/artifact-viewer";
-import { withoutViewerEdgesFrom } from "../canvas/artifact-viewer-edits";
 import { appendInputPlug } from "../canvas/input-plugs";
 import type { ArtifactQueryRelation } from "../canvas/query-artifact-tables";
 import type { SchemaBuilderField } from "../canvas/schema-builder";
@@ -27,9 +25,6 @@ export type NodeCommandDeps = {
   nodes: readonly NodeSubject[];
   edges: readonly EdgeSubject[];
   applyAuthoringCommands: (commands: readonly GraphCommand[]) => void;
-  commitArtifactViewers: (
-    updater: (current: ArtifactViewerCanvasState) => ArtifactViewerCanvasState,
-  ) => void;
   forgetNodeSecretStatuses: (nodeId: string) => void;
   setPendingConnectionRoute: React.Dispatch<
     React.SetStateAction<PendingConnectionRoute | null>
@@ -49,7 +44,6 @@ export type NodeCommandDeps = {
 export function useNodeCommands(deps: NodeCommandDeps) {
   const {
     applyAuthoringCommands,
-    commitArtifactViewers,
     edges,
     forgetNodeSecretStatuses,
     nodes,
@@ -90,17 +84,15 @@ export function useNodeCommands(deps: NodeCommandDeps) {
 
   const removeNode = React.useCallback(
     (nodeId: string) => {
+      // The card links that sourced this node are pruned where the command is applied,
+      // so every delete gesture behaves alike: this one, the Delete key, an ungroup.
       applyAuthoringCommands([{ kind: "remove_nodes", node_ids: [nodeId] }]);
-      commitArtifactViewers((current) =>
-        withoutViewerEdgesFrom(current, nodeId),
-      );
       forgetNodeSecretStatuses(nodeId);
       setPendingConnectionRoute(null);
       setRunError(null);
     },
     [
       applyAuthoringCommands,
-      commitArtifactViewers,
       forgetNodeSecretStatuses,
       setPendingConnectionRoute,
       setRunError,

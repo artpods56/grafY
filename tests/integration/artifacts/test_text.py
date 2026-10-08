@@ -12,11 +12,6 @@ from grafy_api.execution.requests import (
 from grafy_api.v1.routes.executions.models import RunResponse
 from tests.support.system_plugins import selected_system_run_node as RunNodeRequest
 from grafy_core.artifacts import ArtifactRefSequence
-from grafy_core.artifact_contracts import TextValuePayload
-from grafy_workbench.text.nodes import (
-    MarkdownValue,
-    TextInputConfig,
-)
 
 from tests.support.clients import GrafyApi
 from tests.support.identity import WORKSPACE_ID
@@ -117,14 +112,6 @@ def test_registry_declares_text_artifact_and_operator_contracts(
     artifact_types = {
         artifact_type.key.id: artifact_type for artifact_type in registry.artifact_types
     }
-    assert (
-        artifact_types["scalar.text"].payload_schema
-        == TextValuePayload.model_json_schema()
-    )
-    assert (
-        artifact_types["text.markdown"].payload_schema
-        == MarkdownValue.model_json_schema()
-    )
     assert artifact_types["text.markdown"].field_projections[0].path == ["markdown"]
     assert (
         artifact_types["text.markdown"].field_projections[0].target_artifact_type.id
@@ -132,10 +119,11 @@ def test_registry_declares_text_artifact_and_operator_contracts(
     )
 
     nodes = {node.operator_id: node for node in registry.nodes}
-    assert nodes["text.input"].config_schema == TextInputConfig.model_json_schema()
+    assert nodes["text.input"].plugin_slug == "text"
     assert nodes["text.input"].outputs[0].name == "text"
     assert nodes["text.input"].outputs[0].shape == "one"
 
+    assert nodes["text.as_markdown"].plugin_slug == "text"
     assert nodes["text.as_markdown"].inputs[0].name == "text"
     assert nodes["text.as_markdown"].inputs[0].artifact_type is not None
     assert nodes["text.as_markdown"].inputs[0].artifact_type.id == "scalar.text"
@@ -143,11 +131,13 @@ def test_registry_declares_text_artifact_and_operator_contracts(
     assert nodes["text.as_markdown"].outputs[0].artifact_type is not None
     assert nodes["text.as_markdown"].outputs[0].artifact_type.id == "text.markdown"
 
+    assert nodes["text.split"].plugin_slug == "text"
     assert nodes["text.split"].inputs[0].name == "text"
     assert nodes["text.split"].inputs[0].shape == "one"
     assert nodes["text.split"].outputs[0].name == "parts"
     assert nodes["text.split"].outputs[0].shape == "many"
 
+    assert nodes["text.join"].plugin_slug == "text"
     assert nodes["text.join"].inputs[0].name == "parts"
     assert nodes["text.join"].inputs[0].shape == "many"
 

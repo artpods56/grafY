@@ -79,3 +79,13 @@ execution_policy = "isolated-only"
 capabilities = []
 operator_prefixes = ["table"]
 artifact_type_prefixes = []
+
+[[plugins]]
+slug = "external.typesafe"
+project = "plugins/typesafe"
+distribution_name = "grafy-plugin-typesafe"
+loader_target = "grafy_plugin_typesafe.plugin:TYPESAFE"
+execution_policy = "isolated-only"
+capabilities = ["network.egress", "node.secrets"]
+operator_prefixes = ["typesafe"]
+artifact_type_prefixes = ["typesafe"]

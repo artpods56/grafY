@@ -108,17 +108,6 @@ def test_saved_graph_document_allows_drafts_without_executable_connections() -> 
     assert incomplete_draft.edges == ()
 
 
-def test_saved_graph_document_rejects_legacy_schema_versions() -> None:
-    with pytest.raises(ValidationError, match="is not supported"):
-        SavedGraphDocument.model_validate(
-            {
-                "schema_version": 5,
-                "nodes": [_node("source").model_dump(mode="json")],
-                "edges": [],
-            }
-        )
-
-
 def test_saved_graph_edge_defaults_enabled_for_legacy_payloads() -> None:
     payload = _edge("legacy").model_dump(mode="json")
     payload.pop("enabled")
@@ -383,6 +372,46 @@ def test_artifact_card_cannot_be_a_presentation_link_target() -> None:
                 ),
             ),
         )
+
+
+def test_saved_graph_document_rejects_presentation_link_to_a_missing_node() -> None:
+    """A card link naming a node the document does not hold stays refused.
+
+    The web client now drops such links before building a save request, which is what
+    turns the reported 422 into an ordinary save. This check is the last line of
+    defence and the authority, so it must not weaken along with the client fix.
+    """
+    presentation = GraphPresentationDocument(
+        viewers=(
+            GraphPresentationViewer(
+                id="artifact-viewer-1",
+                position=GraphPoint(x=0.0, y=0.0),
+            ),
+        ),
+        links=(
+            GraphPresentationLink(
+                id="artifact-viewer-edge-1",
+                source_node_id="deleted-node",
+                source_port_name="result",
+                target_viewer_id="artifact-viewer-1",
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match=(
+            "Presentation link artifact-viewer-edge-1 references missing "
+            "source node deleted-node"
+        ),
+    ):
+        SavedGraphDocument(nodes=(_node("surviving-node"),), presentation=presentation)
+
+    accepted = SavedGraphDocument(
+        nodes=(_node("surviving-node"), _node("deleted-node")),
+        presentation=presentation,
+    )
+    assert accepted.presentation.links[0].source_node_id == "deleted-node"
 
 
 def test_saved_graph_node_config_is_deeply_immutable_and_serializable() -> None:

@@ -765,6 +765,17 @@ export function connectionRouteSelection(
   return { projection, conversionPath };
 }
 
+/** Artifact type a route hands to the input, or null when it feeds the output as-is. */
+export function connectionRouteDeliveredArtifactType(
+  route: ConnectionRoute,
+): ArtifactTypeKey | null {
+  const lastConversion = route.conversionPath.at(-1);
+  if (lastConversion) return lastConversion.target_artifact_type;
+  return route.kind === "projection"
+    ? route.projection.target_artifact_type
+    : null;
+}
+
 export function connectionRouteMatchesSelection(
   route: ConnectionRoute,
   selection: ConnectionRouteSelection,

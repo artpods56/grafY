@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   CollaborativeHead,
   NodeRegistry,
+  NodeSpec,
   SavedGraph,
+  SavedGraphDocument,
   SavedGraphSummary,
 } from "@/lib/api";
 import { deferred } from "./test/deferred";
@@ -555,7 +557,6 @@ describe("useSavedGraphLifecycle document ownership", () => {
     expect(hook.result.current.isDirty).toBe(true);
     expect(hook.result.current.canMaterializeSavedGraph).toBe(false);
     expect(callbacks.replacePresentation).toHaveBeenLastCalledWith(
-      GRAPH_A_ID,
       peerPresentation,
     );
   });
@@ -955,5 +956,226 @@ describe("useSavedGraphLifecycle document ownership", () => {
 
       expect(fireBeforeUnload()).toBe(false);
     });
+  });
+});
+
+describe("useSavedGraphLifecycle presentation ownership", () => {
+  const sourceSpec: NodeSpec = {
+    operator_id: "test.source",
+    operator_version: 1,
+    plugin_slug: "test",
+    origin: "builtin",
+    title: "Source",
+    description: "Source",
+    catalog_visible: true,
+    runnable: true,
+    config_schema: {},
+    input_schema: {},
+    output_schema: {},
+    inputs: [],
+    outputs: [
+      {
+        name: "output",
+        title: "Output",
+        description: null,
+        direction: "output",
+        artifact_type: { id: "scalar.text", schema_version: 1 },
+        shape: "one",
+        accepted_shapes: ["one"],
+        instance_plugs: false,
+        variadic: false,
+        required: false,
+      },
+    ],
+  };
+
+  const producerNode = {
+    id: "node-a",
+    kind: "builtin" as const,
+    operator_id: "test.source",
+    operator_version: 1,
+    config: {},
+    input_plugs: [],
+    artifact_type_bindings: [],
+    plugin_release_pin: null,
+    position: { x: 0, y: 0 },
+    layout: null,
+  };
+
+  const cardViewer = {
+    id: "artifact-viewer-1",
+    position: { x: 320, y: 0 },
+    layout: null,
+    mode: null,
+    artifact_ref: null,
+  };
+
+  const cardLink = {
+    id: "artifact-viewer-edge-1",
+    source_node_id: "node-a",
+    source_port_name: "output",
+    target_viewer_id: "artifact-viewer-1",
+    projection: null,
+    route_offset: null,
+  };
+
+  /**
+   * Models the workbench's artifact-card slice: `replacePresentation` is the only writer,
+   * so whatever it last held is what the canvas paints and the save body carries.
+   */
+  function presentationCanvas() {
+    const held = {
+      presentation: {
+        viewers: [],
+        links: [],
+        bindings: [],
+        annotations: [],
+      } as NonNullable<SavedGraphDocument["presentation"]>,
+    };
+    return {
+      held,
+      replace(presentation: typeof held.presentation) {
+        held.presentation = presentation;
+      },
+    };
+  }
+
+  it("saves a new graph without the artifact cards of the graph opened before it", async () => {
+    const graphA: SavedGraph = {
+      ...savedGraph(GRAPH_A_ID, "Graph with cards", 4),
+      document: {
+        ...savedGraph(GRAPH_A_ID, "Graph with cards", 4).document,
+        nodes: [producerNode],
+        presentation: {
+          viewers: [cardViewer],
+          links: [cardLink],
+          bindings: [],
+          annotations: [],
+        },
+      },
+    };
+    api.getSavedGraph.mockResolvedValue(graphA);
+    api.createSavedGraph.mockResolvedValue(
+      savedGraph(GRAPH_B_ID, "Untitled workflow", 1),
+    );
+
+    const canvas = presentationCanvas();
+    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID);
+    options.registry = { ...registry, nodes: [sourceSpec] };
+    callbacks.replacePresentation.mockImplementation(canvas.replace);
+    const props = () => ({
+      ...options,
+      presentation: canvas.held.presentation,
+    });
+
+    const hook = await renderHook(useSavedGraphLifecycle, props());
+    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
+    await hook.rerender(props());
+
+    // Opening a graph puts its cards on the canvas.
+    expect(canvas.held.presentation.viewers.map((viewer) => viewer.id)).toEqual(
+      ["artifact-viewer-1"],
+    );
+    expect(canvas.held.presentation.links.map((link) => link.id)).toEqual([
+      "artifact-viewer-edge-1",
+    ]);
+
+    // Starting a new graph moves the route and renders the blank draft over the top.
+    await React.act(async () => {
+      hook.result.current.requestNewGraph();
+    });
+    expect(router.push).toHaveBeenCalledWith("/workspaces/team/graphs/new", {
+      scroll: false,
+    });
+    await React.act(async () => {
+      await hook.rerender({
+        ...props(),
+        initialGraphId: null,
+      });
+    });
+    // The workbench then renders the blank draft, which hands the hook the presentation
+    // the canvas now holds — the same re-render that replaces the document.
+    await React.act(async () => {
+      await hook.rerender({
+        ...props(),
+        initialGraphId: null,
+      });
+    });
+
+    expect(hook.result.current.activeGraph).toBeNull();
+    expect(canvas.held.presentation.viewers).toEqual([]);
+    expect(canvas.held.presentation.links).toEqual([]);
+
+    await React.act(async () => {
+      await hook.result.current.saveCurrentGraph();
+    });
+
+    const body = api.createSavedGraph.mock.calls[0]?.[1];
+    expect(body?.document.nodes).toEqual([]);
+    expect(body?.document.presentation?.links).toEqual([]);
+    expect(body?.document.presentation?.viewers).toEqual([]);
+  });
+
+  it("keeps the cards a collaborator moved during a delete on the draft it keeps", async () => {
+    const graphA: SavedGraph = {
+      ...savedGraph(GRAPH_A_ID, "Graph with cards", 4),
+      document: {
+        ...savedGraph(GRAPH_A_ID, "Graph with cards", 4).document,
+        nodes: [producerNode],
+        presentation: {
+          viewers: [cardViewer],
+          links: [cardLink],
+          bindings: [],
+          annotations: [],
+        },
+      },
+    };
+    api.getSavedGraph.mockResolvedValue(graphA);
+    const deleteResponse = deferred<void>();
+    api.deleteSavedGraph.mockReturnValue(deleteResponse.promise);
+
+    const canvas = presentationCanvas();
+    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID);
+    options.registry = { ...registry, nodes: [sourceSpec] };
+    callbacks.replacePresentation.mockImplementation(canvas.replace);
+    const props = () => ({
+      ...options,
+      presentation: canvas.held.presentation,
+    });
+
+    const hook = await renderHook(useSavedGraphLifecycle, props());
+    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
+    await hook.rerender(props());
+
+    let deletePromise!: Promise<void>;
+    await React.act(async () => {
+      deletePromise = hook.result.current.removeSavedGraph(
+        savedGraphSummary(graphA),
+      );
+      await Promise.resolve();
+    });
+
+    // The card moves while the delete is in flight. Local editing is paused for the
+    // whole delete, so this can only be a command that arrived from the room.
+    canvas.replace({
+      ...canvas.held.presentation,
+      viewers: [{ ...cardViewer, position: { x: 999, y: 0 } }],
+    });
+    await React.act(async () => {
+      await hook.rerender(props());
+    });
+
+    await React.act(async () => {
+      deleteResponse.resolve();
+      await deletePromise;
+    });
+
+    expect(canvas.held.presentation.viewers[0]?.position).toEqual({
+      x: 999,
+      y: 0,
+    });
+    expect(hook.result.current.persistenceError).toContain(
+      "remain as an unsaved draft",
+    );
   });
 });

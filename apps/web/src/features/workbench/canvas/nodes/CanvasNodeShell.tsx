@@ -5,6 +5,11 @@ import * as stylex from "@stylexjs/stylex";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { RemoteSelectionRing } from "../../room/RemoteSelectionRing";
+import {
+  CanvasCardFrame,
+  CanvasCardHead,
+  canvasCard,
+} from "./CanvasCardLayout";
 import { NODE_HEADER_HEIGHT } from "./CanvasNodeChrome";
 import { PortRevealProvider, usePortReveal } from "./PortBall";
 import { usePickupLift } from "./usePickupLift";
@@ -31,12 +36,6 @@ const s = stylex.create({
     transform: "translate3d(0, -8px, 0)",
     transitionDuration: "200ms",
     transitionTimingFunction: "cubic-bezier(0.34, 1.56, 0.64, 1)",
-  },
-  frame: {
-    position: "relative",
-    boxSizing: "border-box",
-    display: "flex",
-    flexDirection: "column",
   },
   // The plate: the node's body under its name. Flat at rest; it takes the same
   // ground shadow as an artifact's media when picked up, and a deeper one when
@@ -130,10 +129,11 @@ interface CanvasNodeShellProps {
 }
 
 /**
- * A node on the canvas, laid out like an artifact card: its name above, the
- * plate below, and the ports on stems either side of the plate. Picking it up
- * lifts the whole stack and slides the ports out; a port that carries an edge
- * stays out regardless, so the edge always meets its ball.
+ * A node on the canvas, sharing the artifact card's DOM: frame → head / body.
+ * The plate labels each port on its own row, and the row's ball hangs just
+ * outside the plate on a stem. Picking it up lifts the whole stack and slides
+ * the ports out; a port that carries an edge stays out regardless, so the
+ * edge always meets its ball.
  */
 export function CanvasNodeShell({
   state,
@@ -174,6 +174,7 @@ export function CanvasNodeShell({
         ref={liftRef}
         {...holdHandlers}
         data-node-tier={tier}
+        data-artifact-node="true"
         {...stylex.props(
           s.stack,
           tier === "active" ? s.stackActive : null,
@@ -181,15 +182,17 @@ export function CanvasNodeShell({
         )}
         style={{ width: gridWidth }}
       >
-        <div {...stylex.props(s.frame)} style={frameStyle}>
-          {header}
+        <CanvasCardFrame style={frameStyle}>
+          <CanvasCardHead>{header}</CanvasCardHead>
           <article
             aria-label={ariaLabel}
+            data-artifact-body="true"
             data-canvas-node-shell="true"
             data-picked-up={pickedUp}
             data-dragging={draggedTier}
             data-testid={testId}
             {...stylex.props(
+              canvasCard.body,
               s.shell,
               variant === "incompatible" ? s.incompatibleShell : null,
               tier === "active" ? s.shellActive : null,
@@ -205,7 +208,7 @@ export function CanvasNodeShell({
             </div>
             {resizeHandle}
           </article>
-        </div>
+        </CanvasCardFrame>
         {appendix !== undefined ? (
           <div style={gutter ? { marginInline: gutter } : undefined}>
             {appendix}
