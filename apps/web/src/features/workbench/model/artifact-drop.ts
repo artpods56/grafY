@@ -237,7 +237,9 @@ function portAcceptsDropShape(
   shape: ArtifactDropPayload["shape"],
 ): boolean {
   const accepted = acceptedPortShapes(port);
-  return accepted.includes(shape) || (shape === "one" && accepted.includes("many"));
+  return (
+    accepted.includes(shape) || (shape === "one" && accepted.includes("many"))
+  );
 }
 
 function portAcceptsOnlySequences(port: Port): boolean {

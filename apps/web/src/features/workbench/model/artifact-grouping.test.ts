@@ -240,10 +240,7 @@ describe("artifact grouping", () => {
     const stack = grouped.nodes.find((node) => node.selected);
     expect(stack?.data.artifactRef).toMatchObject({
       artifact_type: "typesafe.question",
-      item_refs: [
-        { artifact_id: "question-a" },
-        { artifact_id: "question-b" },
-      ],
+      item_refs: [{ artifact_id: "question-a" }, { artifact_id: "question-b" }],
     });
     expect(grouped.edges).toEqual([]);
   });
