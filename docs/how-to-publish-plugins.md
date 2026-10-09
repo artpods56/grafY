@@ -83,6 +83,10 @@ Use `--if-generation N` only when an automation job must reject a concurrent
 selection change. Ordinary interactive promotion reads and advances the current
 generation automatically.
 
+For production source staging, sibling-container mounts, network admission,
+and credential cleanup, use the
+[native System Plugin publication guide](how-to-publish-native-system-plugins.md).
+
 ## Report expected execution failures
 
 Raise `UserFacingNodeError` when a Plugin can give the graph user a useful,

@@ -53,6 +53,47 @@ docker buildx imagetools inspect "$publisher_repo:$publisher_version"
 
 Set `GRAFY_PUBLISHER_IMAGE` to `127.0.0.1:5000/grafy-publisher@sha256:<manifest-digest>`. The publisher image may use a different registry from the native runtime base.
 
+## Stage source for a published application release
+
+For a production release with CI-published images, use
+`ghcr.io/artpods56/grafy-publisher:<sha>` instead of rebuilding a local publisher.
+Pull that image explicitly; the ordinary application deployment excludes the
+publisher profile.
+
+Archive Plugin source from the same commit, not an older host checkout:
+
+```bash
+git archive <sha> --output=/tmp/grafy-release.tar
+shasum -a 256 /tmp/grafy-release.tar
+```
+
+Transfer the archive to a protected operation directory on the host. Compare its
+SHA-256 digest with the local value before extracting `plugins/` into a fresh
+source directory. Set these variables for the publisher's Compose invocation:
+
+```dotenv
+GRAFY_PUBLISHER_IMAGE=ghcr.io/artpods56/grafy-publisher:<sha>
+GRAFY_PUBLISHER_SOURCE_ROOT=<absolute-path-to-extracted-plugins>
+GRAFY_PUBLISHER_SCRATCH_ROOT=<absolute-host-scratch-path>
+```
+
+Mount the scratch directory at the same absolute path inside the publisher.
+Its verification sandboxes are sibling containers, so Docker resolves bind
+mounts on the host. Use the deployed release's Compose files, environment file,
+and site override, including its storage network and network-policy mount.
+
+Read `plugins/system-plugins.toml` from the archive to choose global publication
+inputs and loader targets. Do not treat every directory under `plugins/` as a
+System Plugin. A directory outside the inventory needs its own publication scope.
+For `ai-ihpan`, leave Notarius unpublished unless the owner requests publication
+in an appropriate scope.
+
+To update the application and Plugins together, deploy the application first.
+Publish the changed Plugins against its SDK and inventory, then promote their
+exact returned revisions. When one Plugin produces a type owned by another,
+publish and promote the type owner first. For example, update Image before
+Mistral when their shared `image.regions` contract changes.
+
 ## Issue and rotate the platform token
 
 Global publication and promotion use a `PlatformAccessToken`. The token needs both `plugin.publish_global` and `plugin.promote_global`. Keep the bearer value in a mode-0600 file outside the checkout, for example `/opt/graphy/.deployment/plugin-publishing-token`. Keep token file paths out of `grafy.env`; pass the path to the publisher as a bind mount.
@@ -73,7 +114,7 @@ docker exec grafy-api-1 .venv/bin/grafy admin platform-token create \
 chmod 600 /opt/graphy/.deployment/plugin-publishing-token
 ```
 
-The token reported for this deployment expires on **2026-10-21**. Rotate it before that date. Issue the replacement to the protected file, use it for the next publish and promotion, then revoke the old token by its database ID with `grafy admin platform-token revoke <token-id>`. Remove the old protected file after revocation. The database stores token metadata and digests, not the bearer value.
+Use a short-lived token for a one-time publication. Read the current token inventory with `grafy admin platform-token list`; expiry and revocation state are deployment data, not fixed dates in this guide. Revoke the operation's token by its database ID with `grafy admin platform-token revoke <token-id>`. Remove its protected file and temporary container copies even if publication or promotion fails. The database stores token metadata and digests, not the bearer value.
 
 ## Publish a candidate
 
@@ -119,6 +160,33 @@ docker exec grafy-api-1 rm /tmp/grafy-platform-token
 ```
 
 Verify the selected revision and a representative run. Revoke the one-time token after the operation, then remove its protected file. Add `--if-generation <generation>` only when an automated promotion must reject a concurrent selection change.
+
+## Resolve promotion failures and verify cleanup
+
+If publication succeeds but promotion fails, keep the returned release inactive
+and read the admission error. Do not republish the same candidate just to retry
+promotion.
+
+For `network_profile_disabled`, assign the Plugin an appropriate profile in the
+deployment's network-policy manifest. Provider-backed Plugins on `ai-ihpan` use
+`configured-public`, restricted to public HTTPS and one origin per execution.
+Validate changes with `grafy network-policy validate`. Restart the API to load a
+changed manifest, then retry promotion through the API container.
+
+For unsupported `postgresql.egress`, configure a permitted PostgreSQL destination
+and its broker before promotion. HTTP policy does not grant database access.
+Keep SQL inactive when the deployment has no permitted database destination.
+
+After publication, verify the selected revisions, stored runtime artifacts, and
+catalog readiness in each affected Workspace. Run a representative graph when
+its inputs and credentials are available. Existing saved nodes retain their
+exact release pins; promotion does not upgrade those nodes automatically.
+
+Revoke the temporary platform token, remove both credential copies, and stop the
+one-shot publisher container. Check that no active token for the operation
+remains. Save publication logs, promotion results, and selection records beside
+the application deployment log. Keep immutable releases required by saved graphs
+or rollback.
 
 ## Retire images through the operator
 
