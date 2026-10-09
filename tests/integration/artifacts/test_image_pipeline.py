@@ -3,7 +3,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from grafy_core.artifact_contracts import RASTER_IMAGE, RasterImageContent
+from grafy_core.artifact_contracts import IMAGE_REGIONS, RASTER_IMAGE, RasterImageContent
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
 from grafy_core.file_contracts import PNG_FILE
 from grafy_core.nodes import NodeExecutionContext
@@ -245,7 +245,12 @@ def test_image_plugin_uses_builtin_raster_type_and_registers_writer(tmp_path: Pa
         bucket="artifacts",
     )
 
-    assert registry.artifact_types == (RASTER_IMAGE,)
+    assert {spec.key for spec in registry.artifact_types} == {
+        RASTER_IMAGE.key,
+        IMAGE_REGIONS.key,
+    }
     writers = registry.build_writers(context)
-    assert len(writers) == 1
-    assert writers[0].artifact_type == RASTER_IMAGE.key
+    assert {writer.artifact_type for writer in writers} == {
+        RASTER_IMAGE.key,
+        IMAGE_REGIONS.key,
+    }

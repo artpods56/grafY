@@ -68,7 +68,7 @@ loader_target = "grafy_plugin_image.plugin:IMAGES"
 execution_policy = "isolated-only"
 capabilities = []
 operator_prefixes = ["image"]
-artifact_type_prefixes = []
+artifact_type_prefixes = ["image.regions"]
 
 [[plugins]]
 slug = "external.table"
