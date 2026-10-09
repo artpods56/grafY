@@ -37,6 +37,11 @@ async function revealRail(page: Page): Promise<void> {
 }
 const tree = (page: Page) =>
   panel(page).getByRole("tree", { name: "Workspace Library" });
+/** The frame React Flow draws around a card, which is where its selection sits. */
+const cardNode = (page: Page) =>
+  page.locator(".react-flow__node").filter({
+    has: page.locator("[data-artifact-card-id]"),
+  });
 
 const LIBRARY: LibraryList = {
   items: [
@@ -587,6 +592,56 @@ test("an artifact dragged out of the Library onto empty canvas lands on it", asy
     .not.toBe("none");
 });
 
+test("a card dropped from the Library takes the selection off the node held before", async ({
+  page,
+}) => {
+  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
+
+  await stubResponses(page, LIBRARY);
+  const node = await addNode(page, "Test text source");
+  await expect(node).toHaveClass(/selected/);
+
+  await openPanel(page);
+  await tree(page)
+    .getByRole("treeitem")
+    .filter({ hasText: "measurements.csv" })
+    .dragTo(page.locator(".react-flow"), {
+      targetPosition: { x: 520, y: 520 },
+    });
+  const card = cardNode(page);
+  await expect(card).toBeVisible();
+
+  // One thing is held: the card the person just placed. The node lets go, so
+  // dragging the card does not drag the node along with it.
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+  await expect(card).toHaveClass(/selected/);
+  await expect(node).not.toHaveClass(/selected/);
+});
+
+test("a node added from the picker takes the selection off the card held before", async ({
+  page,
+}) => {
+  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
+
+  await stubResponses(page, LIBRARY);
+  await openPanel(page);
+  await tree(page)
+    .getByRole("treeitem")
+    .filter({ hasText: "measurements.csv" })
+    .dragTo(page.locator(".react-flow"), {
+      targetPosition: { x: 520, y: 520 },
+    });
+  const card = cardNode(page);
+  await expect(card).toBeVisible();
+  await expect(card).toHaveClass(/selected/);
+
+  const node = await addNode(page, "Test text sink");
+
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+  await expect(node).toHaveClass(/selected/);
+  await expect(card).not.toHaveClass(/selected/);
+});
+
 test("an image keeps dimmed metadata above its pixels and external controls reachable", async ({
   page,
 }) => {
@@ -944,6 +999,11 @@ test.describe("artifact wiring", () => {
     await expect(card).toBeVisible();
     await page.getByRole("button", { name: "Fit", exact: true }).click();
 
+    // The drop left the card the only thing held, so the sink tucked its port
+    // back in. Wiring the two together takes both: shift-click adds the node to
+    // what is held, and its port slides out beside the card's ball.
+    await sink.click({ modifiers: ["Shift"] });
+    await railsSettled(sink);
     const source = card.locator(".react-flow__handle.source");
     const target = sink.locator(".react-flow__handle.target");
     await source.click({ trial: true });

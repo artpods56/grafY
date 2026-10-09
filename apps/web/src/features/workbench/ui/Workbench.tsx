@@ -294,6 +294,10 @@ import {
 } from "./artifact-drop-hit-test";
 import { useWorkbenchFitViewOptions } from "./useWorkbenchFitViewOptions";
 import { useArtifactViewerCommands } from "./workbench-artifact-viewers";
+import {
+  useCanvasSelection,
+  withoutPresentationSelection,
+} from "./workbench-canvas-selection";
 import { useNodeCommands } from "./workbench-node-commands";
 import {
   artifactCardDropPositions,
@@ -501,6 +505,14 @@ function WorkbenchBody({
       bindings: [],
       annotations: [],
     });
+  // The canvas draws nodes, cards, and annotations out of three stores, and one
+  // gesture can hold any mix of them. Anything that moves what is held goes
+  // through here so no layer is left holding what the person already let go.
+  const canvasSelection = useCanvasSelection({
+    setArtifactViewers,
+    setSelectedEdgeIdSet,
+    setSelectedNodeIdSet,
+  });
   const [shapesMenuOpen, setShapesMenuOpen] = React.useState(false);
   const [canvasMenu, setCanvasMenu] = React.useState<CanvasMenuRequest | null>(
     null,
@@ -890,11 +902,10 @@ function WorkbenchBody({
       applyAuthoringCommands([
         { kind: "replace_document", document: nextDocument },
       ]);
-      setSelectedNodeIdSet(new Set([nodeId]));
-      setSelectedEdgeIdSet(new Set());
+      canvasSelection.selectOnly({ nodeIds: [nodeId] });
       setRunError(null);
     },
-    [applyAuthoringCommands, registry],
+    [applyAuthoringCommands, canvasSelection, registry],
   );
 
   const upgradePluginRelease = React.useCallback(
@@ -919,11 +930,10 @@ function WorkbenchBody({
           },
         },
       ]);
-      setSelectedNodeIdSet(new Set([nodeId]));
-      setSelectedEdgeIdSet(new Set());
+      canvasSelection.selectOnly({ nodeIds: [nodeId] });
       setRunError(null);
     },
-    [applyAuthoringCommands],
+    [applyAuthoringCommands, canvasSelection],
   );
 
   const attachNodeCallbacks = React.useCallback(
@@ -2372,14 +2382,14 @@ function WorkbenchBody({
       nodes,
       edges,
       onCollected: (collectionId) => {
-        setSelectedNodeIdSet(new Set([collectionId]));
-        setSelectedEdgeIdSet(new Set());
+        canvasSelection.selectOnly({ nodeIds: [collectionId] });
       },
     },
     groupingDisabledReason,
     localAuthoringEnabled,
     resolveCardValue: (node) =>
       artifactCardConnectionValue(node, artifactViewers.edges, nodes),
+    selection: canvasSelection,
   });
 
   // A collection always keeps one spare plug, the one its next member lands
@@ -3024,12 +3034,16 @@ function WorkbenchBody({
           place ?? { x: center.x - 140, y: center.y - 110 },
         ),
       ]);
-      setSelectedNodeIdSet(new Set([id]));
-      setSelectedEdgeIdSet(new Set());
+      canvasSelection.selectOnly({ nodeIds: [id] });
       setLibraryOpen(false);
       setContextualDiscovery(null);
     },
-    [applyAuthoringCommands, attachNodeCallbacks, canvasCenter],
+    [
+      applyAuthoringCommands,
+      attachNodeCallbacks,
+      canvasCenter,
+      canvasSelection,
+    ],
   );
 
   const onConnectEnd = React.useCallback<OnConnectEnd>(
@@ -3114,24 +3128,28 @@ function WorkbenchBody({
           targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
           data: { sourcePortName: port.name },
         };
-        commitArtifactViewers((current) => ({
-          ...current,
-          nodes: [
-            ...current.nodes.map((node) => ({ ...node, selected: false })),
-            {
-              id: viewerId,
-              type: ARTIFACT_VIEWER_NODE_TYPE,
-              position: flowPosition,
-              selected: true,
-              data: {
-                layout: null,
-                mode: "artifact",
-                artifactRef: null,
-              },
-            },
-          ],
-          edges: [...current.edges, link],
-        }));
+        const placedCard: ArtifactViewerNode = {
+          id: viewerId,
+          type: ARTIFACT_VIEWER_NODE_TYPE,
+          position: flowPosition,
+          selected: true,
+          data: {
+            layout: null,
+            mode: "artifact",
+            artifactRef: null,
+          },
+        };
+        const committed = commitArtifactViewers((current) => {
+          const cleared = withoutPresentationSelection(current);
+          return {
+            ...cleared,
+            nodes: [...cleared.nodes, placedCard],
+            edges: [...cleared.edges, link],
+          };
+        });
+        // The card the person just pulled out is what they hold next, not the
+        // node it came from.
+        if (committed) canvasSelection.clearWorkflowSelection();
         setLibraryOpen(false);
         return;
       }
@@ -3172,6 +3190,7 @@ function WorkbenchBody({
     [
       activeGraph?.id,
       canEditGraph,
+      canvasSelection,
       commitArtifactViewers,
       flow,
       nodes,
@@ -3257,14 +3276,14 @@ function WorkbenchBody({
       );
 
       applyAuthoringCommands([nodeCommand, edgeCommand]);
-      setSelectedNodeIdSet(new Set([id]));
-      setSelectedEdgeIdSet(new Set());
+      canvasSelection.selectOnly({ nodeIds: [id] });
       setContextualDiscovery(null);
       clearRunError();
     },
     [
       applyAuthoringCommands,
       attachNodeCallbacks,
+      canvasSelection,
       canEditGraph,
       clearRunError,
       contextualDiscovery,
@@ -3288,22 +3307,19 @@ function WorkbenchBody({
         kind,
         at ?? { x: center.x - 80, y: center.y - 60 },
       );
-      setNodes((current) =>
-        current.map((node) => ({ ...node, selected: false })),
-      );
-      commitArtifactViewers((current) => ({
-        ...current,
-        nodes: current.nodes.map((node) => ({ ...node, selected: false })),
-        annotations: [
-          ...current.annotations.map((node) => ({ ...node, selected: false })),
-          annotation,
-        ],
-      }));
+      const committed = commitArtifactViewers((current) => {
+        const cleared = withoutPresentationSelection(current);
+        return {
+          ...cleared,
+          annotations: [...cleared.annotations, annotation],
+        };
+      });
+      if (committed) canvasSelection.clearWorkflowSelection();
       setShapesMenuOpen(false);
       setLibraryOpen(false);
       closeGraphBrowser();
     },
-    [canvasCenter, closeGraphBrowser, commitArtifactViewers, setNodes],
+    [canvasCenter, canvasSelection, closeGraphBrowser, commitArtifactViewers],
   );
 
   const duplicateSelectedNodes = React.useCallback(() => {
@@ -3358,52 +3374,50 @@ function WorkbenchBody({
       })),
     ];
     if (commands.length) applyAuthoringCommands(commands);
-    const duplicatedNodeIdSet = new Set(duplicatedNodes.map((node) => node.id));
-    setSelectedNodeIdSet(duplicatedNodeIdSet);
-    setSelectedEdgeIdSet(new Set());
+    const duplicatedViewerIds = new Map(
+      selectedViewers.map((node) => [
+        node.id,
+        `artifact-viewer-${createUuid()}`,
+      ]),
+    );
     if (selectedViewers.length) {
-      const viewerIds = new Map(
-        selectedViewers.map((node) => [
-          node.id,
-          `artifact-viewer-${createUuid()}`,
-        ]),
-      );
-      commitArtifactViewers((current) => ({
-        ...current,
-        nodes: [
-          ...current.nodes.map((node) => ({ ...node, selected: false })),
-          ...selectedViewers.map((node) => ({
-            ...node,
-            id: viewerIds.get(node.id) ?? node.id,
-            position: {
-              x: node.position.x + 36,
-              y: node.position.y + 36,
-            },
-            selected: true,
-            data: {
-              layout: node.data.layout,
-              mode: node.data.mode,
-              artifactRef: node.data.artifactRef,
-            },
-          })),
-        ],
-      }));
-    } else {
-      commitArtifactViewers((current) => ({
-        ...current,
-        nodes: current.nodes.map((node) => ({ ...node, selected: false })),
-        annotations: current.annotations.map((node) => ({
-          ...node,
-          selected: false,
-        })),
-      }));
+      commitArtifactViewers((current) => {
+        const cleared = withoutPresentationSelection(current);
+        return {
+          ...cleared,
+          nodes: [
+            ...cleared.nodes,
+            ...selectedViewers.map((node) => ({
+              ...node,
+              id: duplicatedViewerIds.get(node.id) ?? node.id,
+              position: {
+                x: node.position.x + 36,
+                y: node.position.y + 36,
+              },
+              selected: true,
+              data: {
+                layout: node.data.layout,
+                mode: node.data.mode,
+                artifactRef: node.data.artifactRef,
+              },
+            })),
+          ],
+        };
+      });
     }
+    // The copies are what a person holds after duplicating, in whichever layer
+    // they were copied from.
+    canvasSelection.selectOnly({
+      nodeIds: duplicatedNodes.map((node) => node.id),
+      viewerIds: [...duplicatedViewerIds.values()],
+    });
     setPendingConnectionRoute(null);
     setRunError(null);
   }, [
     applyAuthoringCommands,
     artifactViewers.nodes,
     authoredDocument,
+    canvasSelection,
     commitArtifactViewers,
     nodes,
     running,
@@ -4859,8 +4873,7 @@ function WorkbenchBody({
           if (spec) addCatalogNode(spec);
         }}
         onSelectBoundary={(nodeId) => {
-          setSelectedNodeIdSet(new Set([nodeId]));
-          setSelectedEdgeIdSet(new Set());
+          canvasSelection.selectOnly({ nodeIds: [nodeId] });
           void flow?.fitView({
             nodes: [{ id: nodeId }],
             padding: 0.45,

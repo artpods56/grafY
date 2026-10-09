@@ -40,6 +40,10 @@ import {
   type CollectionSource,
 } from "../model/collection";
 import { createWorkflowNodeData } from "../canvas/types";
+import {
+  withoutPresentationSelection,
+  type CanvasSelectionCommands,
+} from "./workbench-canvas-selection";
 
 /**
  * What the card commands need to make and unmake collections. With the
@@ -64,9 +68,10 @@ export type ArtifactCardCommandDeps = {
   authoredDocumentRef: React.RefObject<{
     readonly origins: readonly AuthoredGraphOrigin[];
   }>;
+  /** Answers whether the state landed, so a refusal leaves the selection where it was. */
   commitArtifactViewers: (
     updater: (current: ArtifactViewerCanvasState) => ArtifactViewerCanvasState,
-  ) => void;
+  ) => boolean;
   groupingDisabledReason: string | null;
   localAuthoringEnabled: boolean;
   collection: CollectionCommandDeps;
@@ -75,6 +80,8 @@ export type ArtifactCardCommandDeps = {
    * ref; this reads the output it is showing so Collect can snapshot it.
    */
   resolveCardValue?: (node: ArtifactViewerNode) => ArtifactCardValue | null;
+  /** Lets go of the nodes and edges so the cards just placed are the whole selection. */
+  selection: Pick<CanvasSelectionCommands, "clearWorkflowSelection">;
 };
 
 /**
@@ -94,6 +101,7 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
     groupingDisabledReason,
     localAuthoringEnabled,
     resolveCardValue,
+    selection,
   } = deps;
 
   const addArtifactCards = React.useCallback(
@@ -106,26 +114,27 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
       if (cards.length === 0) return;
       // One commit, so a drop of several cards is one change to the canvas and
       // one presentation sync rather than a cascade the room replays.
-      commitArtifactViewers((current) => ({
-        ...current,
-        nodes: [
-          ...current.nodes.map((node) => ({ ...node, selected: false })),
-          ...cards.map(({ value, position }): ArtifactViewerNode => ({
-            id: `artifact-viewer-${createUuid()}`,
-            type: ARTIFACT_VIEWER_NODE_TYPE,
-            position,
-            selected: true,
-            data: {
-              // No width: the card takes the one that suits its artifact.
-              layout: null,
-              mode: null,
-              artifactRef: value,
-            },
-          })),
-        ],
+      const added: ArtifactViewerNode[] = cards.map(({ value, position }) => ({
+        id: `artifact-viewer-${createUuid()}`,
+        type: ARTIFACT_VIEWER_NODE_TYPE,
+        position,
+        selected: true,
+        data: {
+          // No width: the card takes the one that suits its artifact.
+          layout: null,
+          mode: null,
+          artifactRef: value,
+        },
       }));
+      const committed = commitArtifactViewers((current) => {
+        const cleared = withoutPresentationSelection(current);
+        return { ...cleared, nodes: [...cleared.nodes, ...added] };
+      });
+      // A held node is not held with the card: the drop is the end of the old
+      // selection, or nothing changes when the commit was refused.
+      if (committed) selection.clearWorkflowSelection();
     },
-    [commitArtifactViewers],
+    [commitArtifactViewers, selection],
   );
 
   const addArtifactCard = React.useCallback(
@@ -218,39 +227,43 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
         card,
         id: `artifact-viewer-${createUuid()}`,
       }));
-      commitArtifactViewers((current) => ({
-        ...current,
-        nodes: [
-          ...current.nodes.map((viewer) => ({ ...viewer, selected: false })),
-          ...added.map(({ card, id }): ArtifactViewerNode => ({
-            id,
-            type: ARTIFACT_VIEWER_NODE_TYPE,
-            position: card.position,
-            selected: true,
-            data:
-              card.kind === "library"
-                ? { layout: null, mode: null, artifactRef: card.value }
-                : { layout: null, mode: "artifact", artifactRef: null },
-          })),
-        ],
-        edges: [
-          ...current.edges,
-          ...added.flatMap(({ card, id }): ArtifactViewerEdge[] =>
-            card.kind === "output"
-              ? [
-                  {
-                    id: `artifact-viewer-edge-${createUuid()}`,
-                    type: ARTIFACT_VIEWER_EDGE_TYPE,
-                    source: card.sourceNodeId,
-                    target: id,
-                    targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
-                    data: { sourcePortName: card.sourcePortName },
-                  },
-                ]
-              : [],
-          ),
-        ],
-      }));
+      const committed = commitArtifactViewers((current) => {
+        const cleared = withoutPresentationSelection(current);
+        return {
+          ...cleared,
+          nodes: [
+            ...cleared.nodes,
+            ...added.map(({ card, id }): ArtifactViewerNode => ({
+              id,
+              type: ARTIFACT_VIEWER_NODE_TYPE,
+              position: card.position,
+              selected: true,
+              data:
+                card.kind === "library"
+                  ? { layout: null, mode: null, artifactRef: card.value }
+                  : { layout: null, mode: "artifact", artifactRef: null },
+            })),
+          ],
+          edges: [
+            ...cleared.edges,
+            ...added.flatMap(({ card, id }): ArtifactViewerEdge[] =>
+              card.kind === "output"
+                ? [
+                    {
+                      id: `artifact-viewer-edge-${createUuid()}`,
+                      type: ARTIFACT_VIEWER_EDGE_TYPE,
+                      source: card.sourceNodeId,
+                      target: id,
+                      targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
+                      data: { sourcePortName: card.sourcePortName },
+                    },
+                  ]
+                : [],
+            ),
+          ],
+        };
+      });
+      if (committed) selection.clearWorkflowSelection();
     },
     [
       applyAuthoringCommands,
@@ -258,6 +271,7 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
       collection.edges,
       collection.nodes,
       commitArtifactViewers,
+      selection,
     ],
   );
 

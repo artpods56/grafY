@@ -14,6 +14,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 - When changing an artifact card's default size, update its drop placement and
   multi-card spacing. Verify a mixed selection lands without overlapping bodies.
+- A gesture that places a node, card, or annotation hands the new thing the whole
+  selection. Selection has four writers — node ids, edge ids, each card's
+  `selected`, each annotation's `selected` — so write them through
+  `useCanvasSelection` (`ui/workbench-canvas-selection.ts`) and verify with a real
+  pointer drag that the thing held before the drop gave up its plate.
 - Do not let global `svg` sizing or media resets constrain React Flow's edge
   layers. Keep any required override scoped to `.react-flow__edges > svg`.
 - After changing node dimensions, handles, edge SVG styles, or canvas layout,

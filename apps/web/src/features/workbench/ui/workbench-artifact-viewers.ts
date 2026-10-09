@@ -75,6 +75,11 @@ export type ArtifactViewerCommandDeps = {
  * publish the whole state to the room on a microtask.
  * The state itself stays in the workbench, because room synchronisation, deletion and
  * selection write to it directly; what lives here is the commit rule, not the storage.
+ *
+ * A commit answers whether it landed. Selection lives partly outside this state, so a
+ * gesture that moves it after placing something needs to know that a refusal left the
+ * canvas as it was — otherwise a drop the server refused would quietly take the
+ * selection away from whatever the person already held.
  */
 export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
   const {
@@ -100,7 +105,7 @@ export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
     ) => {
       if (!localAuthoringEnabledRef.current) {
         setRunError(localAuthoringBlockedMessageRef.current);
-        return;
+        return false;
       }
       setArtifactViewers((current) => {
         const next = updater(current);
@@ -109,6 +114,7 @@ export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
         });
         return next;
       });
+      return true;
     },
     [
       localAuthoringBlockedMessageRef,

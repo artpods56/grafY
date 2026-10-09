@@ -9,6 +9,12 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 import type { ArtifactCardValue } from "../canvas/artifact-card";
 import {
+  ANNOTATION_NODE_TYPE,
+  DEFAULT_ANNOTATION_COLOR,
+  DEFAULT_ANNOTATION_LAYOUT,
+  type AnnotationNode,
+} from "../canvas/annotations";
+import {
   ARTIFACT_VIEWER_NODE_TYPE,
   type ArtifactViewerCanvasState,
   type ArtifactViewerNode,
@@ -51,25 +57,44 @@ function card(id: string, selected = false): ArtifactViewerNode {
   };
 }
 
+function annotation(id: string, selected = false): AnnotationNode {
+  return {
+    id,
+    type: ANNOTATION_NODE_TYPE,
+    position: { x: 0, y: 0 },
+    selected,
+    data: {
+      kind: "text",
+      layout: DEFAULT_ANNOTATION_LAYOUT.text,
+      text: "",
+      color: DEFAULT_ANNOTATION_COLOR,
+    },
+  };
+}
+
 function state(
   nodes: readonly ArtifactViewerNode[],
+  annotations: readonly AnnotationNode[] = [],
 ): ArtifactViewerCanvasState {
   return {
     nodes: [...nodes],
     edges: [],
     bindings: [],
-    annotations: [],
+    annotations: [...annotations],
   };
 }
 
 async function mount(options: {
   nodes?: readonly ArtifactViewerNode[];
+  annotations?: readonly AnnotationNode[];
   localAuthoringEnabled?: boolean;
   groupingDisabledReason?: string | null;
 }) {
-  const base = state(options.nodes ?? []);
+  const base = state(options.nodes ?? [], options.annotations ?? []);
   const committed: ArtifactViewerCanvasState[] = [];
   const commands: GraphCommand[][] = [];
+  /** Every time the card layer asked the node layer to let go. */
+  const cleared: string[] = [];
   let api: ReturnType<typeof useArtifactCardCommands> | null = null;
 
   function HarnessComponent() {
@@ -79,8 +104,11 @@ async function mount(options: {
       },
       artifactViewers: base,
       authoredDocumentRef: { current: { origins: [] } },
+      // The real commit refuses while the canvas cannot author, and says so.
       commitArtifactViewers: (updater) => {
+        if (!(options.localAuthoringEnabled ?? true)) return false;
         committed.push(updater(base));
+        return true;
       },
       collection: {
         spec: null,
@@ -92,6 +120,11 @@ async function mount(options: {
       },
       groupingDisabledReason: options.groupingDisabledReason ?? null,
       localAuthoringEnabled: options.localAuthoringEnabled ?? true,
+      selection: {
+        clearWorkflowSelection: () => {
+          cleared.push("workflow");
+        },
+      },
     });
     return null;
   }
@@ -104,7 +137,7 @@ async function mount(options: {
     if (!api) throw new Error("harness did not render");
     return api;
   };
-  return { commands, committed, read, unmount: () => root.unmount() };
+  return { cleared, commands, committed, read, unmount: () => root.unmount() };
 }
 
 describe("useArtifactCardCommands", () => {
@@ -124,6 +157,37 @@ describe("useArtifactCardCommands", () => {
     expect(placed?.data.layout).toBeNull();
     expect(placed?.data.mode).toBeNull();
     expect(placed?.data.artifactRef).toEqual(cardValue(["art-new"]));
+    // The card is the whole selection, so the node layer is told to let go too.
+    expect(view.cleared).toEqual(["workflow"]);
+    view.unmount();
+  });
+
+  it("takes the selection off an annotation the canvas held before the drop", async () => {
+    const view = await mount({
+      nodes: [],
+      annotations: [annotation("note-1", true)],
+    });
+
+    await act(async () => {
+      view.read().addArtifactCard(cardValue(["art-new"]), { x: 40, y: 60 });
+    });
+
+    expect(view.committed.at(-1)?.annotations[0]?.selected).toBe(false);
+    view.unmount();
+  });
+
+  it("keeps what a person held when the canvas refuses the drop", async () => {
+    const view = await mount({
+      nodes: [card("card-1", true)],
+      localAuthoringEnabled: false,
+    });
+
+    await act(async () => {
+      view.read().addArtifactCard(cardValue(["art-new"]), { x: 40, y: 60 });
+    });
+
+    expect(view.committed).toEqual([]);
+    expect(view.cleared).toEqual([]);
     view.unmount();
   });
 
