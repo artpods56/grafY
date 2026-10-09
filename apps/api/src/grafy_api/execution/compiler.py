@@ -326,7 +326,7 @@ class GraphCompiler:
             invocation = invocations_by_id[origin.to_node]
             if (
                 invocation.mode is InvocationMode.MAP
-                and invocation.map_input == origin.to_port
+                and origin.to_port in invocation.map_inputs
             ):
                 raise GraphExecutionError(
                     f"{connection_label(origin)} cannot use collection mode 'map'"
@@ -1038,7 +1038,7 @@ def _compile_edges(
         invocation = invocations_by_id[edge.to_node]
         if (
             invocation.mode is InvocationMode.MAP
-            and invocation.map_input == edge.to_port
+            and edge.to_port in invocation.map_inputs
         ):
             accepted_shapes = (
                 effective_input_shape(
@@ -1089,7 +1089,7 @@ def _derive_invocations(
     views_by_id: dict[str, ResolvedNodeContractView],
     edges: list[RunEdgeRequest],
 ) -> dict[str, NodeInvocation]:
-    map_edges_by_target: dict[str, RunEdgeRequest] = {}
+    map_edges_by_target: dict[str, dict[str, RunEdgeRequest]] = {}
     for edge in edges:
         if edge.collection_mode != "map":
             continue
@@ -1099,35 +1099,45 @@ def _derive_invocations(
                 f"{edge.to_node!r}.{edge.to_port!r} cannot drive mapped "
                 "execution without a target port"
             )
-        existing = map_edges_by_target.get(edge.to_node)
+        target_edges = map_edges_by_target.setdefault(edge.to_node, {})
+        existing = target_edges.get(edge.to_port)
         if existing is not None:
             raise GraphExecutionError(
-                f"Node {edge.to_node!r} has more than one map edge: "
+                f"Node {edge.to_node!r} has more than one map edge into input {edge.to_port!r}: "
                 f"{existing.from_node!r}.{existing.from_port!r} -> "
                 f"{existing.to_port!r} and {edge.from_node!r}.{edge.from_port!r} "
-                f"-> {edge.to_port!r}; exactly one edge may drive mapped "
+                f"-> {edge.to_port!r}; only one edge per input may drive mapped "
                 "execution"
             )
-        map_edges_by_target[edge.to_node] = edge
+        target_edges[edge.to_port] = edge
 
     invocations: dict[str, NodeInvocation] = {}
     for node_id, view in views_by_id.items():
-        map_edge = map_edges_by_target.get(node_id)
-        if map_edge is None:
+        map_edges = map_edges_by_target.get(node_id)
+        if map_edges is None:
             invocations[node_id] = NodeInvocation()
             continue
 
-        invocation = NodeInvocation(
-            mode=InvocationMode.MAP,
-            map_input=map_edge.to_port,
+        port_order = list(view.input_contract.ports)
+        map_inputs = tuple(
+            sorted(
+                map_edges,
+                key=lambda name: port_order.index(name)
+                if name in port_order
+                else len(port_order),
+            )
         )
+        invocation = NodeInvocation(mode=InvocationMode.MAP, map_inputs=map_inputs)
         try:
             validate_invocation(view, invocation)
         except InvocationError as exc:
+            edge_names = ", ".join(
+                f"{edge.from_node!r}.{edge.from_port!r} -> "
+                f"{edge.to_node!r}.{edge.to_port!r}"
+                for edge in (map_edges[name] for name in map_inputs)
+            )
             raise GraphExecutionError(
-                f"Edge {map_edge.from_node!r}.{map_edge.from_port!r} -> "
-                f"{map_edge.to_node!r}.{map_edge.to_port!r} cannot drive "
-                f"mapped execution: {exc}"
+                f"Edge {edge_names} cannot drive mapped execution: {exc}"
             ) from exc
         invocations[node_id] = invocation
     return invocations

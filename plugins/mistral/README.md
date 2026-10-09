@@ -31,7 +31,7 @@ The six settings are:
   a billable request. Retries cover connection failures, timeouts, and HTTP 408,
   429, 500, 502, 503, and 504. Redirects are disabled; cancellation propagates.
 
-The four outputs are:
+The three outputs are single values, so the node can run under a map edge:
 
 - `markdown`, `text.markdown@1`: page Markdown joined in order with blank lines.
   Table placeholders are replaced with table content; image links stay intact.
@@ -40,24 +40,27 @@ The four outputs are:
   `min_confidence`, and `page_confidence`. Coordinates are page pixels, clamped
   to non-negative and ordered top-left, matching `regions`; block indexes start
   at zero within each page. Pages without blocks contribute no rows.
-- `regions`, a list of `image.regions@1`: one region set per page, with its pixel
-  dimensions, page index, kinds, and labels. A page that reports no pixel
-  dimensions contributes no region set and is logged; its other outputs remain.
-- `figures`, a list of `image.raster@1`: decoded extracted figures in page order,
-  with the provider image id as filename. Unknown image formats are skipped with
-  a warning; invalid base64 fails the request.
+- `regions`, `image.regions@1`: one region set covering every page. `pages`
+  declares each page's index and pixel dimensions; each box carries its `page`,
+  kind, and label. Missing pixel dimensions fail the request with page context.
 
-The request always includes image bytes and content blocks. Annotations are not
-supported in this release. Removed settings in older saved configs are ignored;
+The request includes content blocks and sets `include_image_base64=false`.
+Annotations are not supported in this release. Removed settings in older saved configs are ignored;
 other unknown settings are rejected.
 
 ## Drawing boxes
 
-Connect `regions` to the Image plugin's `image.draw_regions@1` through a `map`
-edge, giving one invocation per page. Connect each page's raster to `image` and
-optionally set `kinds`, such as `table,title`. For an OCR `image` input there is
-one page, and the same input image supplies the raster. Boxes scale from the OCR
-page dimensions to the raster dimensions. No node produces PDF page rasters yet.
+For one image, connect OCR `regions` directly to Image → Draw regions and
+connect the source raster to its `image` input. Set `page` for a document page;
+boxes scale from that page's dimensions to the raster. No node produces PDF
+page rasters yet.
+
+For a batch, put Mistral OCR → Draw regions inside a Module and map the image
+sequence into the Module. A target node has only one map driver, so a top-level
+Draw regions cannot pair each image with its own regions.
+
+For figures, connect the source raster and OCR `regions` to Image → Crop regions
+with `kinds=image`. Crop regions returns a sequence and cannot itself be mapped.
 
 ## Development and compatibility
 
@@ -66,6 +69,6 @@ install against the vendored SDK. The root workspace uses editable source.
 `just api-dev external.image external.mistral` loads both plugins in process.
 
 When upgrading the SDK, verify serialized requests through its HTTP transport
-and conversion of responses into the four outputs. The SDK distinguishes omitted
+and conversion of responses into the three outputs. The SDK distinguishes omitted
 fields from null. Chat, embeddings, uploads, and other endpoints are outside this
 release. Document input uses URLs; there is no PDF upload lifecycle.

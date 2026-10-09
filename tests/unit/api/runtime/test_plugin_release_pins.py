@@ -1256,7 +1256,7 @@ async def test_pinned_plugin_participates_in_ordinary_map_semantics() -> None:
 
     echo_compiled = next(node for node in compiled.nodes if node.request.id == "echo")
     assert echo_compiled.invocation.mode is InvocationMode.MAP
-    assert echo_compiled.invocation.map_input == "text"
+    assert echo_compiled.invocation.map_inputs == ("text",)
     assert echo_compiled.resolved_contracts.input_contract.ports["text"].accepts == (  # noqa: E501
         ArtifactTypeKey(TEXT.id, TEXT.schema_version)
     )

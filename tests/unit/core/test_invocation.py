@@ -341,7 +341,7 @@ async def test_once_invokes_collection_node_once_with_the_whole_sequence() -> No
 
 
 def test_invocation_capabilities_and_effective_shapes() -> None:
-    invocation = NodeInvocation(mode=InvocationMode.MAP, map_input="item")
+    invocation = NodeInvocation(mode=InvocationMode.MAP, map_inputs=("item",))
 
     assert map_input_candidates(ScalarNode) == ("item", "broadcast")
     assert supported_invocation_modes(ScalarNode) == (
@@ -354,7 +354,7 @@ def test_invocation_capabilities_and_effective_shapes() -> None:
 
 
 def test_optional_single_value_input_can_drive_map() -> None:
-    invocation = NodeInvocation(mode=InvocationMode.MAP, map_input="item")
+    invocation = NodeInvocation(mode=InvocationMode.MAP, map_inputs=("item",))
 
     assert map_input_candidates(OptionalDriverNode) == ("item",)
     assert supported_invocation_modes(OptionalDriverNode) == (
@@ -363,8 +363,7 @@ def test_optional_single_value_input_can_drive_map() -> None:
     )
     validate_invocation(OptionalDriverNode, invocation)
     assert (
-        effective_input_shape(OptionalDriverNode, invocation, "item")
-        is PortShape.MANY
+        effective_input_shape(OptionalDriverNode, invocation, "item") is PortShape.MANY
     )
     assert (
         effective_output_shape(OptionalDriverNode, invocation, "value")
@@ -390,7 +389,7 @@ def test_invalid_map_drivers_and_output_contracts_are_rejected(
     with pytest.raises(InvocationError, match=message):
         validate_invocation(
             cast(type[ScalarNode], node),
-            NodeInvocation(mode=InvocationMode.MAP, map_input=map_input),
+            NodeInvocation(mode=InvocationMode.MAP, map_inputs=(map_input,)),
         )
 
 
@@ -831,3 +830,34 @@ def test_invocation_cache_key_scopes_to_implementation_identity() -> None:
 
 def test_invocation_fingerprint_version_covers_implementation_identity() -> None:
     assert INVOCATION_CACHE_FINGERPRINT_VERSION >= 4
+
+
+def test_multiple_map_inputs_validate_and_have_many_shape() -> None:
+    invocation = NodeInvocation(
+        mode=InvocationMode.MAP, map_inputs=("item", "broadcast")
+    )
+    validate_invocation(ScalarNode, invocation)
+    assert effective_input_shape(ScalarNode, invocation, "item") is PortShape.MANY
+    assert effective_input_shape(ScalarNode, invocation, "broadcast") is PortShape.MANY
+    with pytest.raises(InvocationError, match="MAP input 'missing' does not exist"):
+        validate_invocation(
+            ScalarNode,
+            NodeInvocation(mode=InvocationMode.MAP, map_inputs=("item", "missing")),
+        )
+
+
+@pytest.mark.parametrize(
+    ("mode", "names", "message"),
+    [
+        (InvocationMode.MAP, (), "requires at least one"),
+        (InvocationMode.MAP, ("item", "item"), "must be unique"),
+        (InvocationMode.MAP, ("item", " "), "must not be blank"),
+        (InvocationMode.MAP, ("",), "must not be blank"),
+        (InvocationMode.ONCE, ("item",), "does not accept"),
+    ],
+)
+def test_invocation_rejects_invalid_map_inputs(
+    mode: InvocationMode, names: tuple[str, ...], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _ = NodeInvocation(mode=mode, map_inputs=names)

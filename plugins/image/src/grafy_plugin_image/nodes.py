@@ -152,7 +152,27 @@ _FALLBACK = (
 )
 
 
+def _normalize_kinds(value: str | None) -> str | None:
+    if value is None:
+        return None
+    parts: list[str] = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            raise ValueError(
+                "kinds must be comma-separated region kinds, such as table,title"
+            )
+        if part not in parts:
+            parts.append(part)
+    return ",".join(parts)
+
+
 class DrawRegionsConfig(NodeConfig):
+    page: int = Field(
+        default=0,
+        ge=0,
+        description="Page whose boxes to draw. A single image is page 0.",
+    )
     kinds: StrictStr | None = Field(
         default=None,
         description=(
@@ -161,21 +181,7 @@ class DrawRegionsConfig(NodeConfig):
         ),
     )
 
-    @field_validator("kinds")
-    @classmethod
-    def validate_kinds(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        parts: list[str] = []
-        for part in value.split(","):
-            part = part.strip()
-            if not part:
-                raise ValueError(
-                    "kinds must be comma-separated region kinds, such as table,title"
-                )
-            if part not in parts:
-                parts.append(part)
-        return ",".join(parts)
+    _validate_kinds = field_validator("kinds")(_normalize_kinds)
 
     line_width: int = Field(
         default=3, ge=1, le=50, description="Box outline width in output pixels."
@@ -218,15 +224,23 @@ class DrawRegionsOutput(NodeOutput):
 def render_regions(
     image: Image.Image, regions: ImageRegionSet, config: DrawRegionsConfig
 ) -> bytes:
+    page = regions.page(config.page)
+    if page is None:
+        raise DrawRegionsError(
+            f"Region set has no page {config.page}; available pages: "
+            + ", ".join(str(page.index) for page in regions.pages)
+        )
     base = image.convert("RGBA")
     overlay = Image.new("RGBA", image.size)
     draw = ImageDraw.Draw(overlay)
     font = ImageFont.load_default(size=max(10, round(min(image.size) / 60)))
-    sx = image.width / regions.width
-    sy = image.height / regions.height
+    sx = image.width / page.width
+    sy = image.height / page.height
     kinds = set(config.kinds.split(",")) if config.kinds is not None else None
     for region in regions.regions:
-        if kinds is not None and region.kind not in kinds:
+        if region.page != config.page or (
+            kinds is not None and region.kind not in kinds
+        ):
             continue
         left = region.x0 * sx
         top = region.y0 * sy
@@ -277,6 +291,46 @@ def render_regions(
     return output.getvalue()
 
 
+async def _load_image(
+    context: NodeExecutionContext,
+    ref: ArtifactRef,
+    storage: FileStoragePort,
+    uow: UnitOfWorkPort,
+) -> tuple[Image.Image, ArtifactObject]:
+    if ref.key() != RASTER_IMAGE.key:
+        raise DrawRegionsError(
+            f"Expected image.raster@1 for artifact {ref.artifact_id}, "
+            f"got {ref.artifact_type}@{ref.schema_version}"
+        )
+    try:
+        async with uow as transaction:
+            artifact = await transaction.artifacts.get(
+                context.workspace_id, ref.artifact_id
+            )
+    except Exception as exc:
+        raise DrawRegionsError(f"Failed to look up artifact {ref.artifact_id}") from exc
+    if artifact is None:
+        raise DrawRegionsError(f"Raster artifact {ref.artifact_id} was not found")
+    if artifact.workspace_id != context.workspace_id or artifact.ref() != ref:
+        raise DrawRegionsError(
+            f"Repository returned a different workspace or ref for artifact {ref.artifact_id}"
+        )
+    if artifact.bucket is None or artifact.object_key is None:
+        raise DrawRegionsError(f"Artifact {ref.artifact_id} has no storage object")
+    try:
+        stream = await storage.load(bucket=artifact.bucket, path=artifact.object_key)
+        try:
+            data = stream.read()
+        finally:
+            stream.close()
+        with Image.open(BytesIO(data)) as image:
+            return image.copy(), artifact
+    except Exception as exc:
+        raise DrawRegionsError(
+            f"Failed to load artifact {ref.artifact_id} as a raster image"
+        ) from exc
+
+
 @IMAGES.node(
     operator_id="image.draw_regions",
     version=1,
@@ -291,46 +345,6 @@ class DrawRegionsNode(Node[DrawRegionsConfig, DrawRegionsInput, DrawRegionsOutpu
         self._storage = storage
         self._uow = uow
 
-    async def _load_image(
-        self, context: NodeExecutionContext, ref: ArtifactRef
-    ) -> tuple[Image.Image, ArtifactObject]:
-        if ref.key() != RASTER_IMAGE.key:
-            raise DrawRegionsError(
-                f"Expected image.raster@1 for artifact {ref.artifact_id}, "
-                f"got {ref.artifact_type}@{ref.schema_version}"
-            )
-        try:
-            async with self._uow as uow:
-                artifact = await uow.artifacts.get(
-                    context.workspace_id, ref.artifact_id
-                )
-        except Exception as exc:
-            raise DrawRegionsError(
-                f"Failed to look up artifact {ref.artifact_id}"
-            ) from exc
-        if artifact is None:
-            raise DrawRegionsError(f"Raster artifact {ref.artifact_id} was not found")
-        if artifact.workspace_id != context.workspace_id or artifact.ref() != ref:
-            raise DrawRegionsError(
-                f"Repository returned a different workspace or ref for artifact {ref.artifact_id}"
-            )
-        if artifact.bucket is None or artifact.object_key is None:
-            raise DrawRegionsError(f"Artifact {ref.artifact_id} has no storage object")
-        try:
-            stream = await self._storage.load(
-                bucket=artifact.bucket, path=artifact.object_key
-            )
-            try:
-                data = stream.read()
-            finally:
-                stream.close()
-            with Image.open(BytesIO(data)) as image:
-                return image.copy(), artifact
-        except Exception as exc:
-            raise DrawRegionsError(
-                f"Failed to load artifact {ref.artifact_id} as a raster image"
-            ) from exc
-
     @override
     async def run(
         self,
@@ -339,7 +353,9 @@ class DrawRegionsNode(Node[DrawRegionsConfig, DrawRegionsInput, DrawRegionsOutpu
         inputs: DrawRegionsInput,
         /,
     ) -> DrawRegionsOutput:
-        image, artifact = await self._load_image(context, inputs.image)
+        image, artifact = await _load_image(
+            context, inputs.image, self._storage, self._uow
+        )
         filename = "regions.png"
         name = artifact.metadata.get("original_filename")
         if isinstance(name, str) and name:
@@ -351,3 +367,103 @@ class DrawRegionsNode(Node[DrawRegionsConfig, DrawRegionsInput, DrawRegionsOutpu
                 filename=filename,
             )
         )
+
+
+class CropRegionsConfig(NodeConfig):
+    page: int = Field(
+        default=0,
+        ge=0,
+        description="Page whose boxes to crop. A single image is page 0.",
+    )
+    kinds: StrictStr | None = Field(
+        default="image",
+        description=(
+            "Comma-separated region kinds to crop, such as image,table. "
+            "Unset crops every kind."
+        ),
+    )
+    _validate_kinds = field_validator("kinds")(_normalize_kinds)
+    padding: int = Field(
+        default=0,
+        ge=0,
+        le=500,
+        description="Extra pixels kept around each box, in output pixels.",
+    )
+
+
+class CropRegionsInput(NodeInput):
+    image: Annotated[ArtifactRef, InPort(RASTER_IMAGE)]
+    regions: Annotated[ImageRegionSet, InPort(IMAGE_REGIONS)]
+
+
+class CropRegionsOutput(NodeOutput):
+    crops: Annotated[
+        list[RasterImageContent],
+        OutPort(RASTER_IMAGE),
+        Field(description="One PNG per matching box, in region order."),
+    ]
+
+
+@IMAGES.node(
+    operator_id="image.crop_regions",
+    version=1,
+    title="Crop regions",
+    factory=lambda context: CropRegionsNode(storage=context.storage, uow=context.uow),
+)
+@final
+class CropRegionsNode(Node[CropRegionsConfig, CropRegionsInput, CropRegionsOutput]):
+    """Crop matching boxes into PNGs. Its MANY output prevents use as a map target."""
+
+    def __init__(self, *, storage: FileStoragePort, uow: UnitOfWorkPort) -> None:
+        self._storage = storage
+        self._uow = uow
+
+    @override
+    async def run(
+        self,
+        context: NodeExecutionContext,
+        config: CropRegionsConfig,
+        inputs: CropRegionsInput,
+        /,
+    ) -> CropRegionsOutput:
+        page = inputs.regions.page(config.page)
+        if page is None:
+            raise DrawRegionsError(
+                f"Region set has no page {config.page}; available pages: "
+                + ", ".join(str(page.index) for page in inputs.regions.pages)
+            )
+        image, artifact = await _load_image(
+            context, inputs.image, self._storage, self._uow
+        )
+        if image.mode not in ("RGB", "RGBA"):
+            has_alpha = "A" in image.getbands() or "transparency" in image.info
+            image = image.convert("RGBA" if has_alpha else "RGB")
+        stem = "region"
+        name = artifact.metadata.get("original_filename")
+        if isinstance(name, str) and name:
+            stem = PurePosixPath(name).stem
+        sx = image.width / page.width
+        sy = image.height / page.height
+        kinds = set(config.kinds.split(",")) if config.kinds is not None else None
+        crops: list[RasterImageContent] = []
+        for region in inputs.regions.regions:
+            if region.page != config.page or (
+                kinds is not None and region.kind not in kinds
+            ):
+                continue
+            left = max(0, min(round(region.x0 * sx) - config.padding, image.width))
+            top = max(0, min(round(region.y0 * sy) - config.padding, image.height))
+            right = max(0, min(round(region.x1 * sx) + config.padding, image.width))
+            bottom = max(0, min(round(region.y1 * sy) + config.padding, image.height))
+            if right <= left or bottom <= top:
+                continue
+            output = BytesIO()
+            image.crop((left, top, right, bottom)).save(output, format="PNG")
+            crops.append(
+                RasterImageContent(
+                    content=output.getvalue(),
+                    content_type="image/png",
+                    filename=f"{stem}-{region.kind}-{len(crops)}.png",
+                )
+            )
+        return CropRegionsOutput(crops=crops)

@@ -1,5 +1,3 @@
-import base64
-
 import pytest
 from mistralai.client.models.ocrresponse import OCRResponse
 from pydantic import ValidationError
@@ -106,7 +104,7 @@ def test_markdown_inlines_tables_and_preserves_images(table_format: str) -> None
         MistralOcrConfig.model_validate({"table_format": table_format}),
     )
     assert output.markdown.markdown == "TABLE ![img-0.jpeg](img-0.jpeg)\n\nsecond"
-    assert [regions.page_index for regions in output.regions] == [0, 3]
+    assert [page.index for page in output.regions.pages] == [0, 3]
 
 
 @pytest.mark.parametrize("granularity", [None, "block", "page"])
@@ -204,8 +202,8 @@ def test_regions_labels_normalization_and_empty_block_pages() -> None:
         ),
         MistralOcrConfig(),
     )
-    regions = output.regions[0]
-    assert (regions.width, regions.height, regions.page_index) == (600, 800, 0)
+    regions = output.regions
+    assert [(p.width, p.height, p.index) for p in regions.pages] == [(600, 800, 0)]
     assert [(r.kind, r.label) for r in regions.regions] == [
         ("title", "A title"),
         ("image", "img-0.jpeg"),
@@ -244,7 +242,7 @@ def test_images_fallback_only_when_blocks_absent(blocks: list[object] | None) ->
         response([page(blocks=blocks, images=images)]), MistralOcrConfig()
     )
     assert output.blocks.rows == []
-    assert output.regions[0].regions == (
+    assert output.regions.regions == (
         [ImageRegion(x0=0, y0=0, x1=20, y1=30, kind="image", label="complete")]
         if blocks is None
         else []
@@ -259,73 +257,25 @@ def test_images_fallback_only_when_blocks_absent(blocks: list[object] | None) ->
         {"dpi": 300, "width": 600, "height": 0},
     ],
 )
-def test_page_without_dimensions_keeps_other_outputs(
-    dimensions: object, caplog: pytest.LogCaptureFixture
-) -> None:
-    output = build_ocr_output(
-        response([page(markdown="text", dimensions=dimensions, blocks=[block()])]),
-        MistralOcrConfig(),
-    )
-    assert output.markdown.markdown == "text"
-    assert len(output.blocks.rows) == 1
-    assert output.regions == []
-    assert "Skipping regions for OCR page 0" in caplog.text
+def test_page_without_dimensions_fails_with_page_context(dimensions: object) -> None:
+    with pytest.raises(
+        MistralOcrProviderError, match="OCR page 0 reports no pixel dimensions"
+    ):
+        _ = build_ocr_output(
+            response([page(markdown="text", dimensions=dimensions, blocks=[block()])]),
+            MistralOcrConfig(),
+        )
 
 
-@pytest.mark.parametrize(
-    "media_type, content, expected",
-    [
-        ("image/jpeg", b"\xff\xd8jpeg", "image/jpeg"),
-        (None, b"\x89PNGpng", "image/png"),
-        ("image/unknown", b"RIFFabcdWEBPpayload", "image/webp"),
-        ("image/tiff", b"tiff", "image/tiff"),
-        ("image/bmp", b"bmp", "image/bmp"),
-    ],
-)
-def test_figures_decode_data_urls_or_sniff_bare_bytes(
-    media_type: str | None, content: bytes, expected: str
-) -> None:
-    encoded = base64.b64encode(content).decode("ascii")
-    if media_type is not None:
-        encoded = f"data:{media_type};base64,{encoded}"
-    output = build_ocr_output(
-        response([page(images=[{"id": "img-0.jpeg", "image_base64": encoded}])]),
-        MistralOcrConfig(),
-    )
-    assert len(output.figures) == 1
-    assert output.figures[0].content == content
-    assert output.figures[0].content_type == expected
-    assert output.figures[0].filename == "img-0.jpeg"
-
-
-def test_figures_skip_unknown_and_empty_and_preserve_page_order(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_region_pages_and_boxes_preserve_provider_order() -> None:
     output = build_ocr_output(
         response(
             [
-                page(
-                    images=[
-                        {"id": "unknown", "image_base64": "aGVsbG8="},
-                        {"id": "empty", "image_base64": ""},
-                        {"id": "first", "image_base64": "/9g="},
-                    ]
-                ),
-                page(index=2, images=[{"id": "second", "image_base64": "iVBORw=="}]),
+                page(index=3, blocks=[block()]),
+                page(index=1, blocks=[block("image", image_id="figure")]),
             ]
         ),
         MistralOcrConfig(),
     )
-    assert [figure.filename for figure in output.figures] == ["first", "second"]
-    assert "Skipping OCR figure 'unknown'" in caplog.text
-
-
-@pytest.mark.parametrize(
-    "encoded", ["not base64!", "data:image/jpeg;base64,!", "data:image/jpeg,abcd"]
-)
-def test_invalid_figure_base64_raises(encoded: str) -> None:
-    with pytest.raises(MistralOcrProviderError, match="figure 'broken'.*base64"):
-        _ = build_ocr_output(
-            response([page(images=[{"id": "broken", "image_base64": encoded}])]),
-            MistralOcrConfig(),
-        )
+    assert [p.index for p in output.regions.pages] == [3, 1]
+    assert [r.page for r in output.regions.regions] == [3, 1]

@@ -588,16 +588,19 @@ export function hydrateSavedGraph(
       }
     }
   }
-  const mapEdgeByTargetNode = new Map<string, SavedGraphEdge>();
+  const mapEdgeByTargetInput = new Map<string, SavedGraphEdge>();
+  const mappedNodeIds = new Set<string>();
   for (const edge of savedEdges) {
     if (edge.collection_mode !== "map") continue;
-    const existing = mapEdgeByTargetNode.get(edge.to_node);
+    const targetKey = JSON.stringify([edge.to_node, edge.to_port]);
+    const existing = mapEdgeByTargetInput.get(targetKey);
     if (existing) {
       throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”: node ${edge.to_node} has more than one map edge: ${existing.id} targets input ${existing.to_port} and ${edge.id} targets input ${edge.to_port}; exactly one edge may drive mapped execution`,
+        `Cannot open “${savedGraph.name}”: node ${edge.to_node} has more than one map edge into input ${edge.to_port}: ${existing.id} targets input ${existing.to_port} and ${edge.id} targets input ${edge.to_port}; only one edge per input may drive mapped execution`,
       );
     }
-    mapEdgeByTargetNode.set(edge.to_node, edge);
+    mapEdgeByTargetInput.set(targetKey, edge);
+    mappedNodeIds.add(edge.to_node);
   }
   const edgeIds = new Set<string>();
   const occupiedTargetPlugIds = new Set<string>();
@@ -657,7 +660,7 @@ export function hydrateSavedGraph(
         );
       }
       const sourceShape = sourcePort
-        ? mapEdgeByTargetNode.has(sourceNode.id)
+        ? mappedNodeIds.has(sourceNode.id)
           ? "many"
           : sourcePort.shape
         : "one";
@@ -727,10 +730,12 @@ export function hydrateSavedGraph(
         );
       }
 
-      const sourceShape = mapEdgeByTargetNode.has(sourceNode.id)
+      const sourceShape = mappedNodeIds.has(sourceNode.id)
         ? "many"
         : sourcePort.shape;
-      const otherMapEdge = mapEdgeByTargetNode.get(targetNode.id);
+      const otherMapEdge = mapEdgeByTargetInput.get(
+        JSON.stringify([targetNode.id, targetPort.name]),
+      );
       const targetShape =
         otherMapEdge !== savedEdge && otherMapEdge?.to_port === targetPort.name
           ? "many"

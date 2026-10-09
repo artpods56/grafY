@@ -402,7 +402,7 @@ export function SupportedWorkflowNodeCard({
     return () => window.cancelAnimationFrame(frame);
   }, [
     measuredArtifactTypeBindings,
-    data.mappedInputPort,
+    data.mappedInputPorts,
     artifactTypeBindingRevision,
     inputPlugRevision,
     schemaBuilderRevision,

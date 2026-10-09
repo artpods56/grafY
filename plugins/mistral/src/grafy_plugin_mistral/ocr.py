@@ -1,4 +1,3 @@
-import base64
 import logging
 from ipaddress import ip_address
 from typing import Annotated, Literal, Protocol, cast, final, override
@@ -22,8 +21,7 @@ from grafy_core.artifact_contracts import (
     MarkdownValue,
     ImageRegion,
     ImageRegionSet,
-    RasterImageContent,
-    RasterImageContentType,
+    ImagePage,
 )
 from grafy_core.table_contracts import (
     TABLE_DATA,
@@ -157,16 +155,11 @@ class MistralOcrOutput(NodeOutput):
         ),
     ]
     regions: Annotated[
-        list[ImageRegionSet],
+        ImageRegionSet,
         OutPort(IMAGE_REGIONS),
         Field(
-            description="One region set per page, in page pixel coordinates, for drawing boxes."
+            description="Boxes for every page, each tagged with its page, in page pixel coordinates."
         ),
-    ]
-    figures: Annotated[
-        list[RasterImageContent],
-        OutPort(RASTER_IMAGE),
-        Field(description="Figures cropped from the document, in page order."),
     ]
 
 
@@ -332,11 +325,7 @@ def _normalise_box(x0: int, y0: int, x1: int, y1: int) -> tuple[int, int, int, i
     return left, top, right, bottom
 
 
-def _page_regions(page: OcrPage) -> ImageRegionSet | None:
-    dims = page.dimensions
-    if dims is None or dims.width == 0 or dims.height == 0:
-        return None
-
+def _page_regions(page: OcrPage) -> list[ImageRegion]:
     boxes: list[tuple[int, int, int, int, str, str | None]] = []
     if page.blocks is not None:
         for block in page.blocks:
@@ -382,11 +371,17 @@ def _page_regions(page: OcrPage) -> ImageRegionSet | None:
     for x0, y0, x1, y1, kind, label in boxes:
         left, top, right, bottom = _normalise_box(x0, y0, x1, y1)
         regions.append(
-            ImageRegion(x0=left, y0=top, x1=right, y1=bottom, kind=kind, label=label)
+            ImageRegion(
+                page=page.index,
+                x0=left,
+                y0=top,
+                x1=right,
+                y1=bottom,
+                kind=kind,
+                label=label,
+            )
         )
-    return ImageRegionSet(
-        width=dims.width, height=dims.height, page_index=page.index, regions=regions
-    )
+    return regions
 
 
 _BLOCK_COLUMNS = (
@@ -403,13 +398,6 @@ _BLOCK_COLUMNS = (
     ("min_confidence", TableValueType.NUMBER),
     ("page_confidence", TableValueType.NUMBER),
 )
-_FIGURE_TYPES: dict[str, RasterImageContentType] = {
-    "image/jpeg": "image/jpeg",
-    "image/png": "image/png",
-    "image/webp": "image/webp",
-    "image/tiff": "image/tiff",
-    "image/bmp": "image/bmp",
-}
 
 
 def build_ocr_output(
@@ -417,8 +405,8 @@ def build_ocr_output(
 ) -> MistralOcrOutput:
     markdown_pages: list[str] = []
     rows: list[dict[str, TableValue]] = []
-    regions: list[ImageRegionSet] = []
-    figures: list[RasterImageContent] = []
+    pages: list[ImagePage] = []
+    regions: list[ImageRegion] = []
     for sdk_page in response.pages:
         page = OcrPage.model_validate(sdk_page.model_dump(mode="json", by_alias=True))
         tables = {table.id: table.content for table in page.tables or []}
@@ -426,14 +414,13 @@ def build_ocr_output(
         for table_id, content in tables.items():
             markdown = markdown.replace(f"[{table_id}]({table_id})", content)
         markdown_pages.append(markdown)
-        page_regions = _page_regions(page)
-        if page_regions is None:
-            logger.warning(
-                "Skipping regions for OCR page %s because it reports no pixel dimensions",
-                page.index,
+        dims = page.dimensions
+        if dims is None or dims.width <= 0 or dims.height <= 0:
+            raise MistralOcrProviderError(
+                f"OCR page {page.index} reports no pixel dimensions"
             )
-        else:
-            regions.append(page_regions)
+        pages.append(ImagePage(index=page.index, width=dims.width, height=dims.height))
+        regions.extend(_page_regions(page))
         for index, block in enumerate(page.blocks or []):
             box = _normalise_box(
                 block.top_left_x,
@@ -481,43 +468,6 @@ def build_ocr_output(
                     else None,
                 }
             )
-        for image in page.images:
-            encoded = image.image_base64
-            if not encoded:
-                continue
-            content_type = None
-            if encoded.startswith("data:"):
-                header, separator, encoded = encoded.partition(",")
-                if not separator or not header.endswith(";base64"):
-                    raise MistralOcrProviderError(
-                        f"OCR figure {image.id!r} on page {page.index} has an invalid base64 data URL"
-                    )
-                content_type = _FIGURE_TYPES.get(header[5:-7].lower())
-            try:
-                content = base64.b64decode(encoded, validate=True)
-            except ValueError as exc:
-                raise MistralOcrProviderError(
-                    f"OCR figure {image.id!r} on page {page.index} has invalid base64"
-                ) from exc
-            if content_type is None:
-                if content.startswith(b"\x89PNG"):
-                    content_type = "image/png"
-                elif content.startswith(b"\xff\xd8"):
-                    content_type = "image/jpeg"
-                elif content.startswith(b"RIFF") and content[8:12] == b"WEBP":
-                    content_type = "image/webp"
-            if content_type is None or not content:
-                logger.warning(
-                    "Skipping OCR figure %r on page %s with unknown or empty image content",
-                    image.id,
-                    page.index,
-                )
-                continue
-            figures.append(
-                RasterImageContent(
-                    content=content, content_type=content_type, filename=image.id
-                )
-            )
     logger.info(
         "Mistral OCR processed %s pages, document size %s bytes",
         response.usage_info.pages_processed,
@@ -532,6 +482,5 @@ def build_ocr_output(
             ],
             rows=rows,
         ),
-        regions=regions,
-        figures=figures,
+        regions=ImageRegionSet(pages=pages, regions=regions),
     )

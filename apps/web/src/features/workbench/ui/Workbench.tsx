@@ -266,7 +266,7 @@ import {
   collectionModeForConnection,
   inputPlugBindingsForNode,
   isConnectionAccepted,
-  mappedInputPortForNode,
+  mappedInputPortsForNode,
   workflowEdgeRouteOption,
 } from "../model/graph-authoring";
 import {
@@ -3469,7 +3469,7 @@ function WorkbenchBody({
             secretInputScope: `${activeGraph?.id ?? "unsaved"}:${activeGraph?.revision ?? "none"}`,
             onApplyNodeSecret: applyConfiguredNodeSecret,
             onRemoveNodeSecret: removeConfiguredNodeSecret,
-            mappedInputPort: mappedInputPortForNode(node.id, edges),
+            mappedInputPorts: mappedInputPortsForNode(node.id, edges),
             inputPlugBindings: inputPlugBindingsForNode(
               node,
               nodes,

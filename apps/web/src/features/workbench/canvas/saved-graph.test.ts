@@ -471,7 +471,7 @@ describe("saved collection modes", () => {
     expect(decodeHandleId(hydrated.edges[0]?.targetHandle)?.shape).toBe("one");
   });
 
-  it("rejects map edges targeting different inputs on the same node", () => {
+  it("hydrates map edges on different inputs and rejects duplicate drivers", () => {
     const sourceSpec = nodeSpec("source", "output", "x", "many");
     const otherSourceSpec = nodeSpec("other-source", "output", "x", "many");
     const targetSpec = nodeSpec("target", "input", "z");
@@ -523,10 +523,93 @@ describe("saved collection modes", () => {
       },
     };
 
-    expect(() => hydrateSavedGraph(invalidGraph, testRegistry)).toThrow(
-      "node target-node has more than one map edge: map-left targets input left and map-right targets input right; exactly one edge may drive mapped execution",
+    const hydrated = hydrateSavedGraph(invalidGraph, testRegistry);
+    expect(hydrated.edges.map((edge) => edge.data?.collectionMode)).toEqual([
+      "map",
+      "map",
+    ]);
+    expect(() =>
+      hydrateSavedGraph(
+        {
+          ...invalidGraph,
+          document: {
+            ...invalidGraph.document,
+            edges: invalidGraph.document.edges.map((edge) => ({
+              ...edge,
+              to_port: "left",
+            })),
+          },
+        },
+        testRegistry,
+      ),
+    ).toThrow(
+      "node target-node has more than one map edge into input left: map-left targets input left and map-right targets input left; only one edge per input may drive mapped execution",
     );
   });
+
+  it.each([1, 2])(
+    "hydrates downstream sequence edges from a node with %i map inputs",
+    (driverCount) => {
+      const graph = graphWithCollectionMode("map");
+      const sourceNode = graph.document.nodes[0];
+      const targetNode = graph.document.nodes[1];
+      const edge = graph.document.edges[0];
+      if (!sourceNode || !targetNode || !edge)
+        throw new Error("map-edge fixture is incomplete");
+      const targetSpec = nodeSpec("target", "input", "z");
+      const targetInput = targetSpec.inputs[0];
+      if (!targetInput) throw new Error("target input is missing");
+      const testRegistry: NodeRegistry = {
+        ...registry("many", "one"),
+        nodes: [
+          nodeSpec("source", "output", "x", "many"),
+          {
+            ...targetSpec,
+            inputs: [
+              { ...targetInput, name: "left" },
+              { ...targetInput, name: "right", required: false },
+            ],
+            outputs: nodeSpec("target", "output", "z").outputs,
+          },
+          nodeSpec("sink", "input", "z", "many"),
+        ],
+      };
+      const mapEdges = [{ ...edge, id: "map-left", to_port: "left" }];
+      if (driverCount === 2)
+        mapEdges.push({ ...edge, id: "map-right", to_port: "right" });
+      const hydrated = hydrateSavedGraph(
+        {
+          ...graph,
+          document: {
+            ...graph.document,
+            nodes: [
+              sourceNode,
+              targetNode,
+              { ...targetNode, id: "sink-node", operator_id: "sink" },
+            ],
+            edges: [
+              ...mapEdges,
+              {
+                ...edge,
+                id: "downstream",
+                from_node: targetNode.id,
+                to_node: "sink-node",
+                to_port: "input",
+                collection_mode: "direct",
+                conversion_path: [],
+              },
+            ],
+          },
+        },
+        testRegistry,
+      );
+      const downstream = hydrated.edges.find(
+        (edge) => edge.id === "downstream",
+      );
+      expect(decodeHandleId(downstream?.sourceHandle)?.shape).toBe("many");
+      expect(downstream?.data?.collectionMode).toBe("direct");
+    },
+  );
 
   it.each([
     {
@@ -1097,7 +1180,7 @@ describe("saved graph module nodes", () => {
     expect(
       moduleNode
         ? effectivePortShape(
-            { ...moduleNode.data, mappedInputPort: "image" },
+            { ...moduleNode.data, mappedInputPorts: ["image"] },
             moduleNode.data.spec.outputs[0]!,
           )
         : null,

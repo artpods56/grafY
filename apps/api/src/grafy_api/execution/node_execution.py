@@ -36,15 +36,22 @@ class _MappedItemExecutionError(InvocationError):
         self,
         *,
         operator_id: str,
-        map_input: str,
+        mapped_refs: Mapping[str, ArtifactRef],
         index: int,
-        ref: ArtifactRef,
     ) -> None:
         self.index = index
-        super().__init__(
-            f"Node {operator_id!r} MAP input {map_input!r} failed at "
-            f"item {index} ({ref.artifact_id})"
-        )
+        if len(mapped_refs) == 1:
+            map_input, ref = next(iter(mapped_refs.items()))
+            message = (
+                f"Node {operator_id!r} MAP input {map_input!r} failed at "
+                f"item {index} ({ref.artifact_id})"
+            )
+        else:
+            refs = ", ".join(
+                f"{name}={ref.artifact_id}" for name, ref in mapped_refs.items()
+            )
+            message = f"Node {operator_id!r} MAP inputs failed at item {index} ({refs})"
+        super().__init__(message)
 
 
 class NodeExecutionService:
@@ -203,41 +210,59 @@ class NodeExecutionService:
     ) -> PersistedNodeOutput:
         node = compiled_node.node
         invocation = compiled_node.invocation
-        map_input = invocation.map_input
-        if map_input is None:
-            raise InvocationError(
-                f"Node {node.operator_id!r} MAP invocation requires a map_input"
-            )
-        raw_sequence = inputs.get(map_input)
-        if not isinstance(raw_sequence, ArtifactRefSequence):
-            raise InvocationError(
-                f"Node {node.operator_id!r} MAP input {map_input!r} expected an "
-                f"ArtifactRefSequence, got {type(raw_sequence).__name__}"
-            )
-        if not raw_sequence.item_refs:
-            raise InvocationError(
-                f"Node {node.operator_id!r} MAP input {map_input!r} must not be empty"
-            )
+        sequences: dict[str, ArtifactRefSequence] = {}
+        for map_input in invocation.map_inputs:
+            raw_sequence = inputs.get(map_input)
+            if not isinstance(raw_sequence, ArtifactRefSequence):
+                raise InvocationError(
+                    f"Node {node.operator_id!r} MAP input {map_input!r} expected an "
+                    f"ArtifactRefSequence, got {type(raw_sequence).__name__}"
+                )
+            if not raw_sequence.item_refs:
+                raise InvocationError(
+                    f"Node {node.operator_id!r} MAP input {map_input!r} must not be empty"
+                )
 
-        input_port = compiled_node.resolved_contracts.input_contract.ports[map_input]
-        accepted_types = input_port.accepted_types
-        if not accepted_types:
-            raise InvocationError(
-                f"Node {node.operator_id!r} MAP input {map_input!r} has an "
-                "unresolved artifact type contract"
+            input_port = compiled_node.resolved_contracts.input_contract.ports[
+                map_input
+            ]
+            accepted_types = input_port.accepted_types
+            if not accepted_types:
+                raise InvocationError(
+                    f"Node {node.operator_id!r} MAP input {map_input!r} has an "
+                    "unresolved artifact type contract"
+                )
+            sequence_key = ArtifactTypeKey(
+                raw_sequence.artifact_type,
+                raw_sequence.schema_version,
             )
-        sequence_key = ArtifactTypeKey(
-            raw_sequence.artifact_type,
-            raw_sequence.schema_version,
-        )
-        if sequence_key not in accepted_types:
-            expected = ", ".join(
-                f"{key.id}@{key.schema_version}" for key in accepted_types
+            if sequence_key not in accepted_types:
+                expected = ", ".join(
+                    f"{key.id}@{key.schema_version}" for key in accepted_types
+                )
+                raise InvocationError(
+                    f"Node {node.operator_id!r} MAP input {map_input!r} expected "
+                    f"{expected}, got "
+                    f"{sequence_key.id}@{sequence_key.schema_version}"
+                )
+            if len(invocation.map_inputs) > 1 and not raw_sequence.ordered:
+                raise InvocationError(
+                    f"Node {node.operator_id!r} MAP inputs cannot pair unordered "
+                    f"sequence {map_input!r}"
+                )
+            sequences[map_input] = raw_sequence
+
+        first_sequence = next(iter(sequences.values()))
+        item_count = len(first_sequence.item_refs)
+        if any(
+            len(sequence.item_refs) != item_count for sequence in sequences.values()
+        ):
+            lengths = ", ".join(
+                f"{name}={len(sequence.item_refs)}"
+                for name, sequence in sequences.items()
             )
             raise InvocationError(
-                f"Node {node.operator_id!r} MAP input {map_input!r} expected "
-                f"{expected}, got "
-                f"{sequence_key.id}@{sequence_key.schema_version}"
+                f"Node {node.operator_id!r} MAP inputs have different lengths: {lengths}"
             )
 
         output_contract = compiled_node.resolved_contracts.output_contract
@@ -248,16 +273,18 @@ class NodeExecutionService:
         item_tasks: list[asyncio.Task[PersistedNodeOutput]] = []
         try:
             async with asyncio.TaskGroup() as task_group:
-                for index, ref in enumerate(raw_sequence.item_refs):
+                for index in range(item_count):
                     item_tasks.append(
                         task_group.create_task(
                             self._run_mapped_item(
                                 compiled_node=compiled_node,
                                 context=context,
                                 inputs=inputs,
-                                map_input=map_input,
+                                mapped_refs={
+                                    name: sequence.item_refs[index]
+                                    for name, sequence in sequences.items()
+                                },
                                 index=index,
-                                ref=ref,
                                 cache_policy=cache_policy,
                                 opaque_secret_revisions=opaque_secret_revisions,
                                 control=control,
@@ -300,28 +327,35 @@ class NodeExecutionService:
                     f"Node {node.operator_id!r} MAP output {name!r} has an "
                     "unresolved artifact type contract"
                 )
-            sequence_identity = json.dumps(
-                {
-                    "node_id": context.node_id,
-                    "module_path": context.module_path,
-                    "output": name,
-                    "source": str(raw_sequence.sequence_id),
-                    "items": [str(ref.artifact_id) for ref in refs_by_output[name]],
-                },
-                sort_keys=True,
-            )
+            identity: dict[str, object] = {
+                "node_id": context.node_id,
+                "module_path": context.module_path,
+                "output": name,
+                "items": [str(ref.artifact_id) for ref in refs_by_output[name]],
+            }
+            metadata: dict[str, object] = {
+                "invocation_mode": InvocationMode.MAP.value,
+            }
+            if len(sequences) == 1:
+                identity["source"] = str(first_sequence.sequence_id)
+                metadata["map_input"] = next(iter(sequences))
+                metadata["source_sequence_id"] = str(first_sequence.sequence_id)
+            else:
+                source_ids = [
+                    str(sequence.sequence_id) for sequence in sequences.values()
+                ]
+                identity["sources"] = source_ids
+                metadata["map_inputs"] = list(invocation.map_inputs)
+                metadata["source_sequence_ids"] = source_ids
+            sequence_identity = json.dumps(identity, sort_keys=True)
             values[name] = ArtifactRefSequence(
                 sequence_id=uuid5(NAMESPACE_URL, sequence_identity),
                 artifact_type=output_port.produces.id,
                 schema_version=output_port.produces.schema_version,
                 item_refs=refs_by_output[name],
-                ordered=raw_sequence.ordered,
-                index_key=raw_sequence.index_key,
-                metadata={
-                    "invocation_mode": InvocationMode.MAP.value,
-                    "map_input": map_input,
-                    "source_sequence_id": str(raw_sequence.sequence_id),
-                },
+                ordered=first_sequence.ordered,
+                index_key=first_sequence.index_key,
+                metadata=metadata,
             )
         return PersistedNodeOutput(
             values=values,
@@ -335,9 +369,8 @@ class NodeExecutionService:
         compiled_node: CompiledNode,
         context: NodeExecutionContext,
         inputs: Mapping[str, object],
-        map_input: str,
+        mapped_refs: Mapping[str, ArtifactRef],
         index: int,
-        ref: ArtifactRef,
         cache_policy: NodeCachePolicy,
         opaque_secret_revisions: Mapping[str, str],
         control: RunExecutionControl | None,
@@ -347,7 +380,7 @@ class NodeExecutionService:
             if control is not None:
                 control.check_cancelled()
             item_inputs = dict(inputs)
-            item_inputs[map_input] = ref
+            item_inputs.update(mapped_refs)
             item_context = replace(
                 context,
                 node_run_id=uuid4(),
@@ -373,9 +406,8 @@ class NodeExecutionService:
             except Exception as exc:
                 raise _MappedItemExecutionError(
                     operator_id=compiled_node.node.operator_id,
-                    map_input=map_input,
+                    mapped_refs=mapped_refs,
                     index=index,
-                    ref=ref,
                 ) from exc
 
 

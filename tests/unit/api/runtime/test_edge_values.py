@@ -227,7 +227,7 @@ async def test_projection_precedes_conversion_and_preserves_sequence_context() -
         metadata={"caller": "preserved"},
     )
     compiled_node = _compiled_replace(
-        NodeInvocation(mode=InvocationMode.MAP, map_input="text")
+        NodeInvocation(mode=InvocationMode.MAP, map_inputs=("text",))
     )
     edge = CompiledEdge(
         request=RunEdgeRequest(
@@ -331,7 +331,7 @@ async def test_conversion_failure_identifies_step_item_artifact_and_edge() -> No
         await transaction.commit()
 
     compiled_node = _compiled_replace(
-        NodeInvocation(mode=InvocationMode.MAP, map_input="text")
+        NodeInvocation(mode=InvocationMode.MAP, map_inputs=("text",))
     )
     edge = CompiledEdge(
         request=RunEdgeRequest(

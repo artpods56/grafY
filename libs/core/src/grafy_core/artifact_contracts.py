@@ -43,11 +43,22 @@ RASTER_IMAGE = ArtifactTypeSpec(
 )
 
 
+class ImagePage(BaseModel):
+    """Pixel size of one page or image that regions are measured against."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    index: StrictInt = Field(ge=0)
+    width: StrictInt = Field(gt=0)
+    height: StrictInt = Field(gt=0)
+
+
 class ImageRegion(BaseModel):
     """One axis-aligned box in its region set's pixel coordinate space."""
 
     model_config = ConfigDict(extra="forbid")
 
+    page: StrictInt = Field(default=0, ge=0)
     x0: float = Field(ge=0)
     y0: float = Field(ge=0)
     x1: float = Field(ge=0)
@@ -63,17 +74,31 @@ class ImageRegion(BaseModel):
 
 
 class ImageRegionSet(BaseModel):
-    """Boxes measured against one page or image of the given pixel size.
+    """Boxes for one or more pages.
 
-    Consumers scale boxes from ``width`` x ``height`` to the raster they draw on.
+    Each box belongs to ``page``; consumers scale boxes from that page's
+    ``width`` x ``height`` to the raster they draw on.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    width: StrictInt = Field(gt=0)
-    height: StrictInt = Field(gt=0)
-    page_index: StrictInt | None = Field(default=None, ge=0)
+    pages: list[ImagePage] = Field(min_length=1)
     regions: list[ImageRegion]
+
+    @model_validator(mode="after")
+    def validate_pages(self) -> Self:
+        indexes = {page.index for page in self.pages}
+        if len(indexes) != len(self.pages):
+            raise ValueError("region set page indexes must be unique")
+        for region in self.regions:
+            if region.page not in indexes:
+                raise ValueError(
+                    f"region page {region.page} is not declared in the region set"
+                )
+        return self
+
+    def page(self, index: int) -> ImagePage | None:
+        return next((page for page in self.pages if page.index == index), None)
 
 
 # Owned by the Image family. It lives here so a Plugin that produces regions
@@ -152,6 +177,7 @@ __all__ = [
     "MarkdownValue",
     "RASTER_IMAGE",
     "TEXT_VALUE",
+    "ImagePage",
     "ImageRegion",
     "ImageRegionSet",
     "IntegerValuePayload",
