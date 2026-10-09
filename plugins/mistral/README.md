@@ -1,44 +1,71 @@
 # Grafy Mistral Plugin
 
-Self-contained System publication input for the Mistral AI Python SDK.
-The project vendors the exact Grafy SDK wheel referenced by `uv.lock`; it does
-not resolve dependencies through the monorepo Workspace.
-
-The published Plugin identity is `external.mistral`.
-
-The OCR node calls `client.ocr.process_async` from `mistralai` 3.1. It accepts
-either an HTTPS document URL (PDF, PPTX, DOCX, and the other document containers
-Mistral OCR fetches itself) or one raster image artifact, which is sent as an
-image data URL. Page selection, extracted images, tables, headers and footers,
-content blocks, confidence scores, and JSON Schema annotations for the document
-and for each extracted image are part of the same request. The API key is a
-node secret bound to the configured API base URL.
+Independent publication input for `external.mistral`. The project vendors the
+Grafy SDK wheel pinned by `uv.lock` and uses the official `mistralai` 3.1 client.
 
 ## Using OCR
 
-Publish and promote this directory using the [Plugin publication workflow](../../docs/how-to-publish-plugins.md), with slug `external.mistral`. Publication is required before the node appears in the workbench. The checked-in System inventory selects isolated execution and the configured-public egress profile.
+Publish and promote this directory using the [Plugin publication workflow](../../docs/how-to-publish-plugins.md).
+The System inventory selects isolated execution with the configured-public
+network profile. `mistral.ocr.process@1`, titled Mistral OCR, calls
+`https://api.mistral.ai/v1/ocr` with model `mistral-ocr-latest`. The API key is a
+write-only node secret named `api_key`.
 
-Add `mistral.ocr.process@1` to a graph and set its write-only `api_key` secret. Connect exactly one source:
+Connect exactly one input:
 
-- `document_url`: a text artifact containing an HTTPS document URL. Query parameters are supported for temporary download links. The source URL is sent to Mistral and is not copied into the result artifact.
-- `image`: an `image.raster@1` artifact. The node verifies its workspace, size, and available SHA-256 metadata before sending its bytes as a data URL.
+- `document_url`, `scalar.text@1`: an HTTPS document URL for a PDF, presentation,
+  or another document container Mistral can fetch. Query parameters are supported.
+- `image`, `image.raster@1`: one raster image. The node verifies its workspace,
+  size, and available SHA-256 metadata before sending a data URL.
 
-The optional `document_annotation_schema` and `bbox_annotation_schema` ports accept `json.schema@1` artifacts. Annotation schemas must describe JSON objects. Returned annotations are parsed and validated before persistence. A document annotation prompt requires a document annotation schema.
+The six settings are:
 
-The `document` output is `mistral.ocr.document@1`. It contains joined Markdown, ordered pages, dimensions, images, tables, hyperlinks, headers, footers, discriminated content blocks, confidence scores, and annotations. Image bytes are retained only when `include_image_base64` is enabled. The configured model and API origin are recorded with usage information.
+- `table_format`: `markdown`, `html`, or unset. Extracted tables are inserted into
+  page Markdown in place of their table links.
+- `extract_header`: move headers out of page Markdown, default false.
+- `extract_footer`: move footers out of page Markdown, default false.
+- `confidence_scores_granularity`: `block`, `page`, or unset. Scores populate the
+  matching columns in `blocks`; unavailable scores are null.
+- `timeout_ms`: request timeout, 1,000–900,000 milliseconds, default 120,000.
+- `max_retries`: additional attempts, 0–5, default 0. Enabling retries can repeat
+  a billable request. Retries cover connection failures, timeouts, and HTTP 408,
+  429, 500, 502, 503, and 504. Redirects are disabled; cancellation propagates.
 
-`pages` uses zero-based indexes and ranges, such as `0,2-4`. Leave it unset to process all pages. `max_retries` defaults to zero; enabling it can repeat a billable request. Retries cover connection failures, timeouts, and HTTP 408, 429, 500, 502, 503, and 504. Redirects are disabled and cancellation propagates to the caller.
+The four outputs are:
 
-## Drawing OCR boxes
+- `markdown`, `text.markdown@1`: page Markdown joined in order with blank lines.
+  Table placeholders are replaced with table content; image links stay intact.
+- `blocks`, `table.data@1`: one row per returned block. Columns are `page`,
+  `index`, `kind`, `x0`, `y0`, `x1`, `y1`, `text`, `ref`, `confidence`,
+  `min_confidence`, and `page_confidence`. Coordinates are page pixels, clamped
+  to non-negative and ordered top-left, matching `regions`; block indexes start
+  at zero within each page. Pages without blocks contribute no rows.
+- `regions`, a list of `image.regions@1`: one region set per page, with its pixel
+  dimensions, page index, kinds, and labels. A page that reports no pixel
+  dimensions contributes no region set and is logged; its other outputs remain.
+- `figures`, a list of `image.raster@1`: decoded extracted figures in page order,
+  with the provider image id as filename. Unknown image formats are skipped with
+  a warning; invalid base64 fails the request.
 
-Connect the OCR `document` output to `mistral.ocr.regions@1`. Set `page_index` to the OCR page index and optionally filter `kinds` with a comma-separated list such as `table,title`. Connect its `regions` output and the page's raster to the Image plugin's `image.draw_regions@1`.
+The request always includes image bytes and content blocks. Annotations are not
+supported in this release. Removed settings in older saved configs are ignored;
+other unknown settings are rejected.
 
-Boxes use the OCR page's pixel space; the draw node rescales them to the raster it receives. For OCR `image` input, use the same image. No node produces PDF page rasters yet.
+## Drawing boxes
+
+Connect `regions` to the Image plugin's `image.draw_regions@1` through a `map`
+edge, giving one invocation per page. Connect each page's raster to `image` and
+optionally set `kinds`, such as `table,title`. For an OCR `image` input there is
+one page, and the same input image supplies the raster. Boxes scale from the OCR
+page dimensions to the raster dimensions. No node produces PDF page rasters yet.
 
 ## Development and compatibility
 
-The implementation uses the official `mistralai` 3.1 client and requires `>=3.1.0,<4`. From this directory, run `uv sync --locked --no-sources --find-links wheels` to install against the vendored Grafy SDK. The root workspace uses the editable source for integration checks.
+From this directory, run `uv sync --locked --no-sources --find-links wheels` to
+install against the vendored SDK. The root workspace uses editable source.
+`just api-dev external.image external.mistral` loads both plugins in process.
 
-When upgrading the SDK, verify actual serialized requests through its HTTP transport and response conversion into the persisted artifact models. SDK fields may be omitted instead of serialized as null, and Python field names may differ from provider aliases.
-
-This release implements the [OCR process endpoint](https://docs.mistral.ai/api/endpoint/ocr). Chat, embeddings, file management, batch jobs, and other Mistral endpoints are outside this release. Document input currently uses URLs; there is no PDF upload node or file-management lifecycle.
+When upgrading the SDK, verify serialized requests through its HTTP transport
+and conversion of responses into the four outputs. The SDK distinguishes omitted
+fields from null. Chat, embeddings, uploads, and other endpoints are outside this
+release. Document input uses URLs; there is no PDF upload lifecycle.

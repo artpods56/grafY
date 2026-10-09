@@ -10,24 +10,25 @@ from mistralai.client import errors as mistral_errors
 from mistralai.client.models.documenturlchunk import DocumentURLChunkTypedDict
 from mistralai.client.models.imageurlchunk import ImageURLChunkTypedDict
 from mistralai.client.models.ocrresponse import OCRResponse
-from mistralai.client.models.responseformat import ResponseFormat
 from pydantic import SecretStr
 
 from grafy_core.artifact_contracts import RASTER_IMAGE
 from grafy_core.artifacts import ArtifactRef
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.storage import FileStoragePort
-from grafy_core.schema_contracts import parse_json_schema
 
-from grafy_plugin_mistral.artifacts import OcrDocumentPayload
 from grafy_plugin_mistral.ocr import (
     MistralOcrConfig,
+    MistralOcrOutput,
+    build_ocr_output,
     MistralOcrProvider,
     MistralOcrProviderError,
     validate_public_http_url,
 )
 
 
+MISTRAL_API_BASE_URL: Final = "https://api.mistral.ai"
+MISTRAL_OCR_MODEL: Final = "mistral-ocr-latest"
 MISTRAL_OCR_MAX_SOURCE_BYTES: Final = 50_000_000
 MISTRAL_OCR_MAX_IMAGE_BASE64_CHARS: Final = 50_000_000
 _RETRYABLE_STATUS: Final = frozenset({408, 429, 500, 502, 503, 504})
@@ -61,24 +62,14 @@ class MistralOcrSdkProvider(MistralOcrProvider):
         *,
         document_url: str | None,
         image: ArtifactRef | None,
-        document_annotation_schema: str | None,
-        bbox_annotation_schema: str | None,
         config: MistralOcrConfig,
         api_key: SecretStr,
         workspace_id: UUID,
-    ) -> OcrDocumentPayload:
+    ) -> MistralOcrOutput:
         if (document_url is None) == (image is None):
             raise MistralOcrProviderError(
                 "Mistral OCR requires exactly one of a document URL or a raster image"
             )
-        if config.document_annotation_prompt is not None and (
-            document_annotation_schema is None
-        ):
-            raise MistralOcrProviderError(
-                "Mistral OCR document annotation prompt requires a document "
-                "annotation schema"
-            )
-
         document: DocumentURLChunkTypedDict | ImageURLChunkTypedDict
         if document_url is not None:
             try:
@@ -94,32 +85,16 @@ class MistralOcrSdkProvider(MistralOcrProvider):
                 "type": "document_url",
                 "document_url": document_url,
             }
-            if config.document_name is not None:
-                url_document["document_name"] = config.document_name
             document = url_document
-            source_image_id = None
         elif image is not None:
             data_url = await self._image_data_url(image, workspace_id=workspace_id)
             document = {"type": "image_url", "image_url": data_url}
-            source_image_id = image.artifact_id
         else:
             raise MistralOcrProviderError(
                 "Mistral OCR requires exactly one of a document URL or a raster image"
             )
 
-        document_format = _annotation_format(
-            document_annotation_schema,
-            name=config.document_annotation_schema_name,
-            strict=config.strict,
-            label="document annotation",
-        )
-        bbox_format = _annotation_format(
-            bbox_annotation_schema,
-            name=config.bbox_annotation_schema_name,
-            strict=config.strict,
-            label="bounding-box annotation",
-        )
-        endpoint = f"{config.base_url}/v1/ocr"
+        endpoint = f"{MISTRAL_API_BASE_URL}/v1/ocr"
         api_key_value = api_key.get_secret_value()
         attempts = config.max_retries + 1
 
@@ -130,7 +105,7 @@ class MistralOcrSdkProvider(MistralOcrProvider):
             ) as http_client:
                 async with Mistral(
                     api_key=api_key_value,
-                    server_url=config.base_url,
+                    server_url=MISTRAL_API_BASE_URL,
                     async_client=http_client,
                     timeout_ms=config.timeout_ms,
                 ) as client:
@@ -138,35 +113,9 @@ class MistralOcrSdkProvider(MistralOcrProvider):
                     for attempt in range(attempts):
                         try:
                             response = await client.ocr.process_async(
-                                model=config.model,
+                                model=MISTRAL_OCR_MODEL,
                                 document=document,
-                                pages=(
-                                    config.pages if config.pages is not None else UNSET
-                                ),
-                                include_image_base64=config.include_image_base64,
-                                image_limit=(
-                                    config.image_limit
-                                    if config.image_limit is not None
-                                    else UNSET
-                                ),
-                                image_min_size=(
-                                    config.image_min_size
-                                    if config.image_min_size is not None
-                                    else UNSET
-                                ),
-                                bbox_annotation_format=(
-                                    bbox_format if bbox_format is not None else UNSET
-                                ),
-                                document_annotation_format=(
-                                    document_format
-                                    if document_format is not None
-                                    else UNSET
-                                ),
-                                document_annotation_prompt=(
-                                    config.document_annotation_prompt
-                                    if config.document_annotation_prompt is not None
-                                    else UNSET
-                                ),
+                                include_image_base64=True,
                                 table_format=(
                                     config.table_format
                                     if config.table_format is not None
@@ -174,7 +123,7 @@ class MistralOcrSdkProvider(MistralOcrProvider):
                                 ),
                                 extract_header=config.extract_header,
                                 extract_footer=config.extract_footer,
-                                include_blocks=config.include_blocks,
+                                include_blocks=True,
                                 confidence_scores_granularity=(
                                     config.confidence_scores_granularity
                                     if config.confidence_scores_granularity is not None
@@ -191,47 +140,28 @@ class MistralOcrSdkProvider(MistralOcrProvider):
         except MistralOcrProviderError:
             raise
         except Exception as exc:
-            raise _provider_error(exc, endpoint=endpoint, model=config.model) from None
+            raise _provider_error(
+                exc, endpoint=endpoint, model=MISTRAL_OCR_MODEL
+            ) from None
 
         if response is None:
             raise MistralOcrProviderError(
                 f"OCR request to {endpoint!r} produced no response for model "
-                f"{config.model!r}"
+                f"{MISTRAL_OCR_MODEL!r}"
             )
-        try:
-            payload = OcrDocumentPayload.from_sdk(
-                response,
-                base_url=config.base_url,
-                document_kind="document_url"
-                if source_image_id is None
-                else "image_url",
-                source_image_artifact_id=source_image_id,
-                table_format=config.table_format,
-                include_image_base64=config.include_image_base64,
-                include_blocks=config.include_blocks,
-                document_annotation_schema=document_annotation_schema,
-                document_annotation_schema_name=config.document_annotation_schema_name,
-                bbox_annotation_schema=bbox_annotation_schema,
-                bbox_annotation_schema_name=config.bbox_annotation_schema_name,
-            )
-        except ValueError:
-            raise MistralOcrProviderError(
-                f"OCR response for model {config.model!r} could not be stored: "
-                "the response or annotations did not match the expected schema"
-            ) from None
         encoded_chars = sum(
             len(image.image_base64)
-            for page in payload.pages
+            for page in response.pages
             for image in page.images
-            if image.image_base64 is not None
+            if isinstance(image.image_base64, str)
         )
         if encoded_chars > MISTRAL_OCR_MAX_IMAGE_BASE64_CHARS:
             raise MistralOcrProviderError(
                 "Extracted image bytes exceed "
                 f"{MISTRAL_OCR_MAX_IMAGE_BASE64_CHARS} base64 characters. "
-                "Turn off include_image_base64 or lower image_limit."
+                "The OCR response is too large to persist."
             )
-        return payload
+        return build_ocr_output(response, config)
 
     async def _image_data_url(
         self,
@@ -319,31 +249,6 @@ class MistralOcrSdkProvider(MistralOcrProvider):
         return f"data:{content_type};base64,{encoded}"
 
 
-def _annotation_format(
-    schema: str | None,
-    *,
-    name: str,
-    strict: bool,
-    label: str,
-) -> ResponseFormat | None:
-    if schema is None:
-        return None
-    try:
-        definition = parse_json_schema(schema, context=f"{label} schema {name!r}")
-    except ValueError as exc:
-        raise MistralOcrProviderError(str(exc)) from None
-    return ResponseFormat.model_validate(
-        {
-            "type": "json_schema",
-            "json_schema": {
-                "name": name,
-                "schema": definition,
-                "strict": strict,
-            },
-        }
-    )
-
-
 def _retryable(exc: Exception) -> bool:
     if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError)):
         return True
@@ -384,10 +289,7 @@ def _provider_error(
 
 def _status_guidance(status_code: int) -> str:
     if status_code == 400 or status_code == 422:
-        return (
-            "The provider rejected the request. Check the model, document, "
-            "page selection, and annotation schemas."
-        )
+        return "The provider rejected the request. Check the source document."
     if status_code == 401:
         return "The provider did not accept the configured API key."
     if status_code == 402:
@@ -395,7 +297,7 @@ def _status_guidance(status_code: int) -> str:
     if status_code == 403:
         return "The configured API key does not have access to this model or endpoint."
     if status_code == 404:
-        return "Check that the base URL and model identifier are correct."
+        return "The Mistral OCR endpoint or latest model is unavailable."
     if status_code == 408:
         return "The provider timed out while processing the request."
     if status_code == 429:

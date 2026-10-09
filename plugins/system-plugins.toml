@@ -28,7 +28,7 @@ loader_target = "grafy_plugin_mistral.plugin:MISTRAL"
 execution_policy = "isolated-only"
 capabilities = ["network.egress", "node.secrets"]
 operator_prefixes = ["mistral"]
-artifact_type_prefixes = ["mistral"]
+artifact_type_prefixes = []
 
 [[plugins]]
 slug = "external.ocr"

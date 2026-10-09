@@ -1,18 +1,37 @@
-import re
+import base64
+import logging
 from ipaddress import ip_address
-from typing import Annotated, Literal, Protocol, final, override
+from typing import Annotated, Literal, Protocol, cast, final, override
 from uuid import UUID
 
 from pydantic import (
     AnyHttpUrl,
     Field,
     SecretStr,
-    StrictStr,
     TypeAdapter,
-    field_validator,
+    model_validator,
 )
 
-from grafy_core.artifact_contracts import RASTER_IMAGE, TEXT_VALUE
+from mistralai.client.models.ocrresponse import OCRResponse
+
+from grafy_core.artifact_contracts import (
+    RASTER_IMAGE,
+    TEXT_VALUE,
+    MARKDOWN,
+    IMAGE_REGIONS,
+    MarkdownValue,
+    ImageRegion,
+    ImageRegionSet,
+    RasterImageContent,
+    RasterImageContentType,
+)
+from grafy_core.table_contracts import (
+    TABLE_DATA,
+    Table,
+    TableColumn,
+    TableValue,
+    TableValueType,
+)
 from grafy_core.artifacts import ArtifactRef, NodeConfig, NodeInput, NodeOutput
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import (
@@ -24,64 +43,38 @@ from grafy_core.nodes import (
 )
 from grafy_core.plugins import (
     NodeHttpEgressContract,
-    NodeHttpEgressInput,
     NodeSecretInput,
     PluginRuntimeContext,
 )
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
-from grafy_core.schema_contracts import JSON_SCHEMA
 
-from grafy_plugin_mistral.artifacts import OCR_DOCUMENT, OcrDocumentPayload
 from grafy_plugin_mistral.declaration import MISTRAL
+from grafy_plugin_mistral.response import OcrPage
 
 
-_PAGES = re.compile(r"^(?:\d+(?:-\d+)?)(?:,\d+(?:-\d+)?)*$")
 _URL = TypeAdapter(AnyHttpUrl)
-
+logger = logging.getLogger(__name__)
 TableFormat = Literal["markdown", "html"]
-ConfidenceGranularity = Literal["word", "page", "block"]
+ConfidenceGranularity = Literal["page", "block"]
+_LEGACY_CONFIG_KEYS = frozenset(
+    {
+        "base_url",
+        "model",
+        "document_name",
+        "pages",
+        "include_image_base64",
+        "image_limit",
+        "image_min_size",
+        "include_blocks",
+        "document_annotation_prompt",
+        "document_annotation_schema_name",
+        "bbox_annotation_schema_name",
+        "strict",
+    }
+)
 
 
 class MistralOcrConfig(NodeConfig):
-    base_url: StrictStr = Field(
-        default="https://api.mistral.ai",
-        min_length=1,
-        description="Mistral API origin. The SDK appends /v1/ocr.",
-    )
-    model: StrictStr = Field(
-        default="mistral-ocr-latest",
-        min_length=1,
-        description="OCR model identifier.",
-    )
-    document_name: StrictStr | None = Field(
-        default=None,
-        min_length=1,
-        max_length=255,
-        description="Optional document name sent with an HTTPS document URL.",
-    )
-    pages: StrictStr | None = Field(
-        default=None,
-        description=(
-            "Pages to process, as comma-separated indexes and ranges such as "
-            "0,2-4. Indexes start at 0. Empty processes every page."
-        ),
-    )
-    include_image_base64: bool = Field(
-        default=False,
-        description="Persist base64 bytes for images extracted from the document.",
-    )
-    image_limit: int | None = Field(
-        default=None,
-        ge=0,
-        le=1_000,
-        description="Maximum number of images to extract.",
-    )
-    image_min_size: int | None = Field(
-        default=None,
-        ge=0,
-        le=10_000,
-        description="Minimum height and width, in pixels, of an extracted image.",
-    )
     table_format: TableFormat | None = Field(
         default=None,
         description="Render extracted tables as Markdown or HTML.",
@@ -94,40 +87,9 @@ class MistralOcrConfig(NodeConfig):
         default=False,
         description="Move page footers out of the markdown into the footer field.",
     )
-    include_blocks: bool = Field(
-        default=True,
-        description="Include paragraph-level content blocks with bounding boxes.",
-    )
     confidence_scores_granularity: ConfidenceGranularity | None = Field(
         default=None,
-        description="Attach page, word, or block confidence scores.",
-    )
-    document_annotation_prompt: StrictStr | None = Field(
-        default=None,
-        min_length=1,
-        max_length=8_000,
-        description=(
-            "Prompt that guides document-level structured extraction. Requires "
-            "a connected document annotation schema."
-        ),
-    )
-    document_annotation_schema_name: StrictStr = Field(
-        default="document_annotation",
-        min_length=1,
-        max_length=64,
-        pattern=r"^[a-zA-Z0-9_-]+$",
-        description="Provider-facing name for the document annotation schema.",
-    )
-    bbox_annotation_schema_name: StrictStr = Field(
-        default="bbox_annotation",
-        min_length=1,
-        max_length=64,
-        pattern=r"^[a-zA-Z0-9_-]+$",
-        description="Provider-facing name for the image annotation schema.",
-    )
-    strict: bool = Field(
-        default=True,
-        description="Whether annotation schemas are strict JSON Schemas.",
+        description="Attach page or block confidence scores.",
     )
     timeout_ms: int = Field(
         default=120_000,
@@ -146,40 +108,15 @@ class MistralOcrConfig(NodeConfig):
         ),
     )
 
-    @field_validator("base_url")
+    @model_validator(mode="before")
     @classmethod
-    def validate_base_url(cls, value: str) -> str:
-        return validate_public_http_url(
-            value,
-            label="base_url",
-            allow_query=False,
-            strip_trailing_slash=True,
-        )
-
-    @field_validator("document_name", "document_annotation_prompt")
-    @classmethod
-    def reject_surrounding_whitespace(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        if value != value.strip():
-            raise ValueError("must not have surrounding whitespace")
-        return value
-
-    @field_validator("pages")
-    @classmethod
-    def validate_pages(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        if value != value.strip() or _PAGES.fullmatch(value) is None:
-            raise ValueError(
-                "pages must be comma-separated indexes or ranges, such as 0,2-4"
-            )
-        for part in value.split(","):
-            if "-" not in part:
-                continue
-            start_text, end_text = part.split("-", 1)
-            if int(start_text) > int(end_text):
-                raise ValueError(f"page range {part!r} has its end before its start")
+    def drop_legacy_fields(cls, value: object) -> object:
+        if isinstance(value, dict):
+            return {
+                key: item
+                for key, item in cast(dict[str, object], value).items()
+                if key not in _LEGACY_CONFIG_KEYS
+            }
         return value
 
 
@@ -204,31 +141,32 @@ class MistralOcrInput(NodeInput):
             ),
         ),
     ] = None
-    document_annotation_schema: Annotated[
-        str | None,
-        InPort(JSON_SCHEMA),
-        Field(
-            title="Document annotation schema",
-            description="Optional JSON Schema extracted from the whole document.",
-        ),
-    ] = None
-    bbox_annotation_schema: Annotated[
-        str | None,
-        InPort(JSON_SCHEMA),
-        Field(
-            title="Image annotation schema",
-            description=(
-                "Optional JSON Schema extracted for each image in the document."
-            ),
-        ),
-    ] = None
 
 
 class MistralOcrOutput(NodeOutput):
-    document: Annotated[
-        OcrDocumentPayload,
-        OutPort(OCR_DOCUMENT),
-        Field(description="Recognized pages, tables, images, and annotations."),
+    markdown: Annotated[
+        MarkdownValue,
+        OutPort(MARKDOWN),
+        Field(description="Recognized document as Markdown, pages joined in order."),
+    ]
+    blocks: Annotated[
+        Table,
+        OutPort(TABLE_DATA),
+        Field(
+            description="One row per recognized block with its page, kind, box, text, and confidence."
+        ),
+    ]
+    regions: Annotated[
+        list[ImageRegionSet],
+        OutPort(IMAGE_REGIONS),
+        Field(
+            description="One region set per page, in page pixel coordinates, for drawing boxes."
+        ),
+    ]
+    figures: Annotated[
+        list[RasterImageContent],
+        OutPort(RASTER_IMAGE),
+        Field(description="Figures cropped from the document, in page order."),
     ]
 
 
@@ -238,12 +176,10 @@ class MistralOcrProvider(Protocol):
         *,
         document_url: str | None,
         image: ArtifactRef | None,
-        document_annotation_schema: str | None,
-        bbox_annotation_schema: str | None,
         config: MistralOcrConfig,
         api_key: SecretStr,
         workspace_id: UUID,
-    ) -> OcrDocumentPayload: ...
+    ) -> MistralOcrOutput: ...
 
 
 class MistralOcrProviderError(RuntimeError):
@@ -321,11 +257,11 @@ def build_mistral_ocr_node(context: PluginRuntimeContext) -> "MistralOcrNode":
             name="api_key",
             title="API key",
             description="Write-only bearer credential for the configured API origin.",
-            config_dependencies=("base_url",),
+            config_dependencies=(),
         ),
     ),
     http_egress=NodeHttpEgressContract(
-        configured_inputs=(NodeHttpEgressInput(config_field="base_url"),),
+        fixed_destinations=("https://api.mistral.ai",),
     ),
 )
 @final
@@ -354,20 +290,6 @@ class MistralOcrNode(Node[MistralOcrConfig, MistralOcrInput, MistralOcrOutput]):
                 "Mistral OCR requires exactly one of a document URL or a raster "
                 f"image on node {context.node_id!r}"
             )
-        if config.document_name is not None and inputs.document_url is None:
-            raise MistralOcrExecutionError(
-                "Mistral OCR document name applies only to a document URL on "
-                f"node {context.node_id!r}"
-            )
-        if (
-            config.document_annotation_prompt is not None
-            and inputs.document_annotation_schema is None
-        ):
-            raise MistralOcrExecutionError(
-                "Mistral OCR document annotation prompt requires a document "
-                f"annotation schema on node {context.node_id!r}"
-            )
-
         try:
             api_key = await self._node_secrets.resolve_secret(
                 workspace_id=context.workspace_id,
@@ -375,21 +297,18 @@ class MistralOcrNode(Node[MistralOcrConfig, MistralOcrInput, MistralOcrOutput]):
                 graph_revision=context.secret_graph_revision,
                 node_id=context.node_id,
                 name="api_key",
-                dependencies={"base_url": config.base_url},
+                dependencies={},
             )
         except Exception as exc:
             raise MistralOcrExecutionError(
                 "Mistral OCR could not resolve its API key for node "
-                f"{context.node_id!r}, model {config.model!r}, and base URL "
-                f"{config.base_url!r}"
+                f"{context.node_id!r}"
             ) from exc
 
         try:
             document = await self._provider.process(
                 document_url=inputs.document_url,
                 image=inputs.image,
-                document_annotation_schema=inputs.document_annotation_schema,
-                bbox_annotation_schema=inputs.bbox_annotation_schema,
                 config=config,
                 api_key=api_key,
                 workspace_id=context.workspace_id,
@@ -398,7 +317,221 @@ class MistralOcrNode(Node[MistralOcrConfig, MistralOcrInput, MistralOcrOutput]):
             raise MistralOcrExecutionError(str(exc)) from exc
         except Exception as exc:
             raise MistralOcrExecutionError(
-                "Mistral OCR failed for model "
-                f"{config.model!r} and base URL {config.base_url!r}"
+                f"Mistral OCR failed for node {context.node_id!r}"
             ) from exc
-        return MistralOcrOutput(document=document)
+        return document
+
+
+def _normalise_box(x0: int, y0: int, x1: int, y1: int) -> tuple[int, int, int, int]:
+    """Clamp negative corners and swap inverted ones into top-left order."""
+    left, top, right, bottom = max(0, x0), max(0, y0), max(0, x1), max(0, y1)
+    if right < left:
+        left, right = right, left
+    if bottom < top:
+        top, bottom = bottom, top
+    return left, top, right, bottom
+
+
+def _page_regions(page: OcrPage) -> ImageRegionSet | None:
+    dims = page.dimensions
+    if dims is None or dims.width == 0 or dims.height == 0:
+        return None
+
+    boxes: list[tuple[int, int, int, int, str, str | None]] = []
+    if page.blocks is not None:
+        for block in page.blocks:
+            text_label = " ".join(block.content.split())
+            if len(text_label) > 120:
+                text_label = text_label[:120] + "…"
+            label: str | None = text_label or None
+            if block.type == "image":
+                label = block.image_id
+            elif block.type == "table" and block.table_id is not None:
+                label = block.table_id
+            boxes.append(
+                (
+                    block.top_left_x,
+                    block.top_left_y,
+                    block.bottom_right_x,
+                    block.bottom_right_y,
+                    block.type,
+                    label,
+                )
+            )
+    else:
+        for image in page.images:
+            if (
+                image.top_left_x is None
+                or image.top_left_y is None
+                or image.bottom_right_x is None
+                or image.bottom_right_y is None
+            ):
+                continue
+            boxes.append(
+                (
+                    image.top_left_x,
+                    image.top_left_y,
+                    image.bottom_right_x,
+                    image.bottom_right_y,
+                    "image",
+                    image.id,
+                )
+            )
+
+    regions: list[ImageRegion] = []
+    for x0, y0, x1, y1, kind, label in boxes:
+        left, top, right, bottom = _normalise_box(x0, y0, x1, y1)
+        regions.append(
+            ImageRegion(x0=left, y0=top, x1=right, y1=bottom, kind=kind, label=label)
+        )
+    return ImageRegionSet(
+        width=dims.width, height=dims.height, page_index=page.index, regions=regions
+    )
+
+
+_BLOCK_COLUMNS = (
+    ("page", TableValueType.INTEGER),
+    ("index", TableValueType.INTEGER),
+    ("kind", TableValueType.TEXT),
+    ("x0", TableValueType.INTEGER),
+    ("y0", TableValueType.INTEGER),
+    ("x1", TableValueType.INTEGER),
+    ("y1", TableValueType.INTEGER),
+    ("text", TableValueType.TEXT),
+    ("ref", TableValueType.TEXT),
+    ("confidence", TableValueType.NUMBER),
+    ("min_confidence", TableValueType.NUMBER),
+    ("page_confidence", TableValueType.NUMBER),
+)
+_FIGURE_TYPES: dict[str, RasterImageContentType] = {
+    "image/jpeg": "image/jpeg",
+    "image/png": "image/png",
+    "image/webp": "image/webp",
+    "image/tiff": "image/tiff",
+    "image/bmp": "image/bmp",
+}
+
+
+def build_ocr_output(
+    response: OCRResponse, config: MistralOcrConfig
+) -> MistralOcrOutput:
+    markdown_pages: list[str] = []
+    rows: list[dict[str, TableValue]] = []
+    regions: list[ImageRegionSet] = []
+    figures: list[RasterImageContent] = []
+    for sdk_page in response.pages:
+        page = OcrPage.model_validate(sdk_page.model_dump(mode="json", by_alias=True))
+        tables = {table.id: table.content for table in page.tables or []}
+        markdown = page.markdown
+        for table_id, content in tables.items():
+            markdown = markdown.replace(f"[{table_id}]({table_id})", content)
+        markdown_pages.append(markdown)
+        page_regions = _page_regions(page)
+        if page_regions is None:
+            logger.warning(
+                "Skipping regions for OCR page %s because it reports no pixel dimensions",
+                page.index,
+            )
+        else:
+            regions.append(page_regions)
+        for index, block in enumerate(page.blocks or []):
+            box = _normalise_box(
+                block.top_left_x,
+                block.top_left_y,
+                block.bottom_right_x,
+                block.bottom_right_y,
+            )
+            ref = None
+            text = block.content
+            if block.type == "image":
+                ref = block.image_id
+                text = block.image_id
+            elif block.type == "table":
+                ref = block.table_id
+                text = tables.get(ref, text) if ref is not None else text
+            scores = (
+                block.confidence_scores
+                if config.confidence_scores_granularity == "block"
+                else None
+            )
+            page_scores = (
+                page.confidence_scores
+                if config.confidence_scores_granularity == "page"
+                else None
+            )
+            rows.append(
+                {
+                    "page": page.index,
+                    "index": index,
+                    "kind": block.type,
+                    "x0": box[0],
+                    "y0": box[1],
+                    "x1": box[2],
+                    "y1": box[3],
+                    "text": text,
+                    "ref": ref,
+                    "confidence": scores.average_content_confidence_score
+                    if scores is not None
+                    else None,
+                    "min_confidence": scores.minimum_content_confidence_score
+                    if scores is not None
+                    else None,
+                    "page_confidence": page_scores.average_page_confidence_score
+                    if page_scores is not None
+                    else None,
+                }
+            )
+        for image in page.images:
+            encoded = image.image_base64
+            if not encoded:
+                continue
+            content_type = None
+            if encoded.startswith("data:"):
+                header, separator, encoded = encoded.partition(",")
+                if not separator or not header.endswith(";base64"):
+                    raise MistralOcrProviderError(
+                        f"OCR figure {image.id!r} on page {page.index} has an invalid base64 data URL"
+                    )
+                content_type = _FIGURE_TYPES.get(header[5:-7].lower())
+            try:
+                content = base64.b64decode(encoded, validate=True)
+            except ValueError as exc:
+                raise MistralOcrProviderError(
+                    f"OCR figure {image.id!r} on page {page.index} has invalid base64"
+                ) from exc
+            if content_type is None:
+                if content.startswith(b"\x89PNG"):
+                    content_type = "image/png"
+                elif content.startswith(b"\xff\xd8"):
+                    content_type = "image/jpeg"
+                elif content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+                    content_type = "image/webp"
+            if content_type is None or not content:
+                logger.warning(
+                    "Skipping OCR figure %r on page %s with unknown or empty image content",
+                    image.id,
+                    page.index,
+                )
+                continue
+            figures.append(
+                RasterImageContent(
+                    content=content, content_type=content_type, filename=image.id
+                )
+            )
+    logger.info(
+        "Mistral OCR processed %s pages, document size %s bytes",
+        response.usage_info.pages_processed,
+        response.usage_info.doc_size_bytes,
+    )
+    return MistralOcrOutput(
+        markdown=MarkdownValue(markdown="\n\n".join(markdown_pages)),
+        blocks=Table(
+            columns=[
+                TableColumn(id=name, title=name, value_type=value_type)
+                for name, value_type in _BLOCK_COLUMNS
+            ],
+            rows=rows,
+        ),
+        regions=regions,
+        figures=figures,
+    )

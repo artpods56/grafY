@@ -78,7 +78,8 @@ def test_dev_artifact_handler_deduplication(
 ) -> None:
     registry = build_builtin_registry((*BUILTIN_FAMILIES, IMAGES, MISTRAL))
     with pytest.raises(
-        ValueError, match="Output writer already registered for image.regions@1"
+        ValueError,
+        match="Output writer already registered for (image.regions|image.raster|text.markdown)@1",
     ):
         _ = build_workbench_components(plugin_registry=registry, workspace=tmp_path)
     with caplog.at_level("INFO"):

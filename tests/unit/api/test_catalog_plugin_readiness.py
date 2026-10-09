@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from hashlib import sha256
+from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -59,15 +60,19 @@ from grafy_core.ports.modules import GraphModuleExecutionResult
 
 from grafy_api.catalog import CatalogSnapshot
 from grafy_api.plugins.runtime.admission import (
+    PluginNetworkEgressPolicy,
     ReleaseExecutionAdmission,
     ReleaseExecutionRoute,
 )
+from grafy_api.plugins.runtime.egress import PluginEgressBrokerPolicy
+from grafy_api.plugins.runtime.network_policy import load_network_policy_manifest
 from grafy_api.v1.routes.catalog.models import (
     NodeRegistryResponse,
     PluginNonRunnableReason,
     PluginSpecResponse,
 )
 from grafy_api.catalog import PluginCatalogReleaseState, plugin_release_readiness
+from grafy_plugin_mistral import MISTRAL
 
 
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000661")
@@ -872,3 +877,24 @@ def test_snapshot_rejects_duplicate_module_identity_without_an_executor() -> Non
             [],
             workspace_id=WORKSPACE_ID,
         )
+
+
+def test_mistral_fixed_origin_is_admitted_by_checked_in_profile() -> None:
+    release = _system_release(MISTRAL)
+    admission = ReleaseExecutionAdmission(
+        isolated_adapter_available=True,
+        runtime_profile="python-uv",
+        supported_capabilities=frozenset((PluginRuntimeCapability.NODE_SECRETS,)),
+        network_egress=PluginNetworkEgressPolicy(
+            proxy_adapter_available=True,
+            broker=PluginEgressBrokerPolicy(
+                broker_image="registry.example/egress@sha256:" + "a" * 64
+            ),
+        ),
+        network_policy=load_network_policy_manifest(Path("network-policy.toml")),
+    )
+    assert admission.decide(release) is ReleaseExecutionRoute.ISOLATED
+    assert (
+        admission.decide(release, node_contract=release.release.catalog.nodes[0])
+        is ReleaseExecutionRoute.ISOLATED
+    )
