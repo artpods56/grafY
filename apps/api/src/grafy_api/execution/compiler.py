@@ -87,7 +87,10 @@ from grafy_api.execution.requests import (
     RunRequest,
     connection_label,
 )
-from grafy_api.execution.errors import GraphExecutionError
+from grafy_api.execution.errors import (
+    ArtifactTypeMismatchError,
+    GraphExecutionError,
+)
 from grafy_api.execution.releases import (
     ExactPluginReleaseLookup,
     ReleaseContractKey,
@@ -1004,23 +1007,31 @@ def _compile_edges(
                     f"{conversion.key.id}@{conversion.key.version}"
                     for conversion in resolved_conversions
                 )
-                raise GraphExecutionError(
-                    f"{label} converts through {conversion_path} as "
+                reason = (
+                    f"converts through {conversion_path} as "
                     f"{effective_source_key.id}@"
                     f"{effective_source_key.schema_version}, but target expects "
                     f"{target_label}"
                 )
-            if requested_projection is not None:
-                raise GraphExecutionError(
-                    f"{label} projects {'.'.join(requested_projection.path)!r} as "
+            elif requested_projection is not None:
+                reason = (
+                    f"projects {'.'.join(requested_projection.path)!r} as "
                     f"{effective_source_key.id}@"
                     f"{effective_source_key.schema_version}, but target expects "
                     f"{target_label}"
                 )
-            raise GraphExecutionError(
-                f"{label} cannot connect {effective_source_key.id}@"
-                f"{effective_source_key.schema_version} to {target_label} "
-                "without a declared field projection or conversion"
+            else:
+                reason = (
+                    f"cannot connect {effective_source_key.id}@"
+                    f"{effective_source_key.schema_version} to {target_label} "
+                    "without a declared field projection or conversion"
+                )
+            raise ArtifactTypeMismatchError(
+                f"{label} {reason}",
+                node_id=edge.to_node,
+                port=edge.to_port,
+                expected=tuple(target_keys),
+                received=effective_source_key,
             )
 
         invocation = invocations_by_id[edge.to_node]

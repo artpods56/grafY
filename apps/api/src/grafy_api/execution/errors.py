@@ -1,3 +1,4 @@
+from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.nodes import UserFacingNodeError
 from grafy_core.runtime.execution import NodeRunError
 
@@ -6,6 +7,30 @@ from grafy_api.services.errors import WorkbenchOperationError
 
 class GraphExecutionError(WorkbenchOperationError):
     pass
+
+
+class ArtifactTypeMismatchError(GraphExecutionError):
+    """An input binding carries an artifact type its resolved port does not accept.
+
+    Raised while compiling a run, so it reaches the user before a Plugin sandbox
+    is created, and names the port with the accepted and received artifact types
+    instead of the generic in-sandbox ``contract_failure``.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        node_id: str,
+        port: str,
+        expected: tuple[ArtifactTypeKey, ...],
+        received: ArtifactTypeKey,
+    ) -> None:
+        super().__init__(message)
+        self.node_id = node_id
+        self.port = port
+        self.expected = expected
+        self.received = received
 
 
 class NestedGraphExecutionError(UserFacingNodeError, GraphExecutionError):
@@ -31,6 +56,7 @@ def render_execution_error(exception: BaseException) -> str:
 
 
 __all__ = [
+    "ArtifactTypeMismatchError",
     "GraphExecutionError",
     "NestedGraphExecutionError",
     "render_execution_error",
