@@ -141,10 +141,12 @@ function plugEdge(
   plugId: string,
 ): WorkflowEdge {
   const itemsPort = collectSpec.inputs[0];
+  const resizeOut = resizeSpec.outputs[0];
+  if (!itemsPort || !resizeOut) throw new Error("expected spec ports");
   return {
     id: `${source}->${plugId}`,
     source,
-    sourceHandle: encodeHandleId(portMetaForPort(resizeSpec.outputs[0])),
+    sourceHandle: encodeHandleId(portMetaForPort(resizeOut)),
     target,
     targetHandle: encodeHandleId(
       portMetaForPort(itemsPort, itemsPort.shape, plugId, { T: IMAGE }),
@@ -241,7 +243,8 @@ describe("collecting cards", () => {
     if (!plan) throw new Error("expected a plan");
 
     const [addNode, ...rest] = plan.commands;
-    if (addNode.kind !== "add_node") throw new Error("expected add_node");
+    if (!addNode || addNode.kind !== "add_node")
+      throw new Error("expected add_node");
     // Three members in reading order, plus the spare.
     expect(addNode.node.input_plugs).toHaveLength(4);
     expect(addNode.node.operator_id).toBe(COLLECTION_OPERATOR_ID);
@@ -256,6 +259,9 @@ describe("collecting cards", () => {
     ]);
     const [first, wire, last] = rest;
     if (
+      !first ||
+      !wire ||
+      !last ||
       first.kind !== "add_origin" ||
       wire.kind !== "add_edge" ||
       last.kind !== "add_origin"
@@ -297,7 +303,8 @@ describe("collecting cards", () => {
     });
     if (!plan) throw new Error("expected a plan");
     const [addNode, ...members] = plan.commands;
-    if (addNode.kind !== "add_node") throw new Error("expected add_node");
+    if (!addNode || addNode.kind !== "add_node")
+      throw new Error("expected add_node");
     // One Library member, one output member, and the spare.
     expect(addNode.node.input_plugs).toHaveLength(3);
     expect(members.map((command) => command.kind)).toEqual([

@@ -222,8 +222,10 @@ export function resolveArtifactDrop(
   }
   const paths = shortestConversionPathsToAny(source, accepted, conversions);
   if (!paths || paths.length !== 1) return null;
+  const [path] = paths;
+  if (!path) return null;
   return {
-    conversionPath: paths[0].map(({ key }) => ({
+    conversionPath: path.map(({ key }) => ({
       id: key.id,
       version: key.version,
     })),

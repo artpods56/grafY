@@ -61,19 +61,22 @@ const LIBRARY: LibraryList = {
 
 const EMPTY_LIBRARY: LibraryList = { items: [] };
 
+const LIBRARY_ITEM = LIBRARY.items[0];
+if (!LIBRARY_ITEM) throw new Error("Library seed has no first item");
+
 const IMAGE_LIBRARY: LibraryList = {
   items: [
     {
-      ...LIBRARY.items[0],
+      ...LIBRARY_ITEM,
       artifact: {
-        ...LIBRARY.items[0].artifact,
+        ...LIBRARY_ITEM.artifact,
         artifact_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
         artifact_type: "file.png",
         content_type: "image/svg+xml",
       },
       name: "coast.png",
       provenance: {
-        ...LIBRARY.items[0].provenance,
+        ...LIBRARY_ITEM.provenance,
         original_filename: "coast.png",
       },
     },
@@ -82,16 +85,16 @@ const IMAGE_LIBRARY: LibraryList = {
 
 const SEQUENCE_LIBRARY: LibraryList = {
   items: [
-    LIBRARY.items[0],
+    LIBRARY_ITEM,
     {
-      ...LIBRARY.items[0],
+      ...LIBRARY_ITEM,
       artifact: {
-        ...LIBRARY.items[0].artifact,
+        ...LIBRARY_ITEM.artifact,
         artifact_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       },
       name: "forecast.csv",
       provenance: {
-        ...LIBRARY.items[0].provenance,
+        ...LIBRARY_ITEM.provenance,
         original_filename: "forecast.csv",
       },
     },
@@ -102,18 +105,18 @@ const SEQUENCE_LIBRARY: LibraryList = {
 // its artifact back over HTTP, and this page's stub serves the Library only.
 const MIXED_KIND_LIBRARY: LibraryList = {
   items: [
-    LIBRARY.items[0],
+    LIBRARY_ITEM,
     {
-      ...LIBRARY.items[0],
+      ...LIBRARY_ITEM,
       artifact: {
-        ...LIBRARY.items[0].artifact,
+        ...LIBRARY_ITEM.artifact,
         artifact_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         artifact_type: "file.txt",
         content_type: "text/plain",
       },
       name: "field-notes.txt",
       provenance: {
-        ...LIBRARY.items[0].provenance,
+        ...LIBRARY_ITEM.provenance,
         original_filename: "field-notes.txt",
       },
     },
@@ -987,7 +990,7 @@ test.describe("artifact wiring", () => {
     const source = await addNode(page, "CSV source");
     const nodeId = await source.getAttribute("data-id");
     if (!nodeId) throw new Error("CSV source has no node ID");
-    const artifact = LIBRARY.items[0].artifact;
+    const artifact = LIBRARY_ITEM.artifact;
     const completedRun = {
       execution_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       status: "succeeded",
@@ -1078,6 +1081,7 @@ test("image resizing and a two-image stack preserve image geometry", async ({
     }),
   );
   const original = IMAGE_LIBRARY.items[0];
+  if (!original) throw new Error("Image Library seed has no first item");
   await stubResponses(page, {
     items: [
       original,
@@ -1205,18 +1209,22 @@ test.describe("collections", () => {
   }) => {
     test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
 
+    const sequenceSeed = SEQUENCE_LIBRARY.items[0];
+    if (!sequenceSeed)
+      throw new Error("Sequence Library seed has no first item");
+
     await stubResponses(page, {
       items: [
         ...SEQUENCE_LIBRARY.items,
         {
-          ...SEQUENCE_LIBRARY.items[0],
+          ...sequenceSeed,
           artifact: {
-            ...SEQUENCE_LIBRARY.items[0].artifact,
+            ...sequenceSeed.artifact,
             artifact_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
           },
           name: "weather.csv",
           provenance: {
-            ...SEQUENCE_LIBRARY.items[0].provenance,
+            ...sequenceSeed.provenance,
             original_filename: "weather.csv",
           },
         },

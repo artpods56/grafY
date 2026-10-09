@@ -456,7 +456,7 @@ export function ArtifactCardBody({
     const moved = moveArtifactCardRef(refs, index, delta);
     const same =
       moved.length === refs.length &&
-      moved.every((ref, at) => ref.artifact_id === refs[at].artifact_id);
+      moved.every((ref, at) => ref.artifact_id === refs[at]?.artifact_id);
     if (same) return;
     data.onRefsChange?.(id, artifactCardValue(moved, shownValue));
   };

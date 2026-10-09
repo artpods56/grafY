@@ -307,7 +307,8 @@ export function executionValidationIssue(
   );
   if (!missingInputs.length) return null;
 
-  const first = missingInputs[0];
+  const [first] = missingInputs;
+  if (!first) return null;
   return {
     nodeId: first.nodeId,
     message: `${first.nodeTitle}.${first.portName} is required but unconnected in this run.`,

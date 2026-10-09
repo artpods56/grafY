@@ -43,15 +43,20 @@ function outputFor(
     artifact_type: artifact.artifact_type,
     schema_version: artifact.schema_version,
   }));
+  const first = artifacts[0];
+  const firstRef = refs[0];
+  if (!first || !firstRef) {
+    throw new Error("outputFor requires at least one artifact");
+  }
   return {
     port: "result",
     kind,
     value:
       kind === "single"
-        ? refs[0]
+        ? firstRef
         : {
-            artifact_type: artifacts[0].artifact_type,
-            schema_version: artifacts[0].schema_version,
+            artifact_type: first.artifact_type,
+            schema_version: first.schema_version,
             index_key: "order_index",
             ordered: true,
             item_refs: refs,
@@ -178,9 +183,9 @@ describe("artifact payload loading policy", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toContain("/geo/render");
-    expect(String(fetchMock.mock.calls[0][0])).not.toContain("/geo/page");
-    expect(String(fetchMock.mock.calls[0][0])).not.toContain("/content");
+    expect(String(fetchMock.mock.calls[0]![0])).toContain("/geo/render");
+    expect(String(fetchMock.mock.calls[0]![0])).not.toContain("/geo/page");
+    expect(String(fetchMock.mock.calls[0]![0])).not.toContain("/content");
     await act(async () => root.unmount());
   });
 
@@ -244,7 +249,7 @@ describe("artifact payload loading policy", () => {
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toContain(
+    expect(String(fetchMock.mock.calls[0]![0])).toContain(
       "/workspaces/workspace-1/artifacts/first/content",
     );
     expect(container.textContent).toContain(

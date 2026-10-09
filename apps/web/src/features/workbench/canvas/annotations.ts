@@ -22,14 +22,12 @@ const LEGACY_ANNOTATION_COLORS: Record<string, string> = {
   violet: "#6d28d9",
 };
 
-/** Curated swatches for the annotation color popover (readable on canvas). */
+/**
+ * Curated swatches for the annotation color popover (readable on canvas).
+ * The legacy aliases come first, in their declaration order.
+ */
 export const ANNOTATION_COLOR_SWATCHES: readonly AnnotationColor[] = [
-  LEGACY_ANNOTATION_COLORS.slate,
-  LEGACY_ANNOTATION_COLORS.amber,
-  LEGACY_ANNOTATION_COLORS.rose,
-  LEGACY_ANNOTATION_COLORS.emerald,
-  LEGACY_ANNOTATION_COLORS.sky,
-  LEGACY_ANNOTATION_COLORS.violet,
+  ...Object.values(LEGACY_ANNOTATION_COLORS),
   "#171717",
   "#78716c",
 ];

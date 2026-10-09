@@ -80,6 +80,7 @@ export function moveArtifactQueryRelation(
 
   const reordered = [...relations];
   const [movedRelation] = reordered.splice(fromIndex, 1);
+  if (!movedRelation) return [...relations];
   reordered.splice(boundedIndex, 0, movedRelation);
   return reordered;
 }
