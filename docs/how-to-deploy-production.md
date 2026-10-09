@@ -1,10 +1,10 @@
 # Deploy Grafy from GitHub
 
 This guide deploys one reviewed `main` commit to a single Linux host from
-pre-built container images. The host needs no Git checkout and builds nothing.
-PostgreSQL
-runs inside the Grafy Compose project and stores its data in a dedicated Docker
-volume. The database has no host port.
+pre-built container images. Application deployment needs no Git checkout or host
+build. Plugin publication is a separate operation that builds runtime images.
+PostgreSQL runs inside the Grafy Compose project and stores its data in a
+dedicated Docker volume. The database has no host port.
 
 The first SQLite-to-PostgreSQL cutover starts with an empty database. Archive
 the old SQLite volume unless the owner explicitly approved a complete data
@@ -118,9 +118,11 @@ Run the deployment script:
 
 The script downloads that commit's `compose.yaml` and `compose.postgres.yaml`
 into `/opt/graphy/.deployment/releases/<sha>/`, renders the merged Compose
-configuration, and pulls the four SHA-tagged images before stopping API
-traffic. A SHA without published images fails at the pull, while the previous
-release is still serving. The script then creates a PostgreSQL dump and removes the previous one-shot `migrate`
+configuration, and pulls the active services' SHA-tagged images before stopping
+API traffic. The publisher profile is inactive during application deployment.
+Pull `ghcr.io/artpods56/grafy-publisher:<sha>` explicitly before Plugin publication.
+A SHA without published images fails at the pull, while the previous release is
+still serving. The script then creates a PostgreSQL dump and removes the previous one-shot `migrate`
 container. Compose runs Alembic once before it starts the API, waits for every
 long-lived service, and requests `/api/ready` through the configured loopback
 gateway port. A migration failure leaves the gateway stopped.
@@ -132,6 +134,94 @@ The script never removes the `grafy-postgres` or `grafy-data` volume.
 Check the result through the public TLS endpoint. Sign in and run one small
 graph before you remove the archived SQLite volume.
 
+## Deploy another release to ai-ihpan
+
+Choose the release before changing the host:
+
+```bash
+git fetch origin
+gh run list --branch main --workflow CI --limit 10
+gh run view <run-id>
+```
+
+For the newest published image, select the newest `main` run whose four
+`Publish grafy-* image` jobs succeeded. A newer merge can still be queued or
+building. If the request names the newest `main` commit, wait for that commit's
+images instead. Record the full SHA and keep the target fixed during deployment.
+
+Inspect the running release and its Compose file paths:
+
+```bash
+ssh ai-ihpan 'cat /opt/graphy/.deployment/current-revision'
+ssh ai-ihpan 'docker inspect grafy-api-1 --format \
+	"{{ index .Config.Labels \"com.docker.compose.project.config_files\" }}"'
+```
+
+Use the deployment's existing wrapper. On `ai-ihpan`,
+`/opt/graphy/.deployment/current-deployment` identifies the directory containing
+`deploy.sh`. That wrapper supplies the production environment and combined site
+and runtime override. Preserve those paths instead of using the host checkout's
+modified Compose files or replacing the environment with an example file.
+
+Run the pinned release and capture the complete output:
+
+```bash
+ssh ai-ihpan bash -s <<'REMOTE'
+set -euo pipefail
+umask 077
+revision='<40-character-commit-sha>'
+deployment_dir="$(cat /opt/graphy/.deployment/current-deployment)"
+operation_dir="/opt/graphy/.deployment/deploy-${revision:0:8}-$(date -u +%Y%m%dT%H%M%SZ)"
+install -d -m 700 "$operation_dir"
+cp /opt/graphy/.deployment/current-revision "$operation_dir/previous-revision"
+"$deployment_dir/deploy.sh" "$revision" </dev/null >"$operation_dir/deploy.log" 2>&1
+tail -20 "$operation_dir/deploy.log"
+REMOTE
+```
+
+Keep `</dev/null` on the deployment command. A child Docker command can otherwise
+consume the remaining script sent through SSH. Read the saved log after a
+failure; do not pipe a running deployment into `head` or another command that
+closes its input early.
+
+If the release changes a Plugin, publish and promote its matching source after
+the application is ready. Follow the
+[native System Plugin publication guide](how-to-publish-native-system-plugins.md).
+An application restart alone does not update an immutable Plugin release.
+For a web-only change, retain the existing Plugin selections.
+
+## Verify and record the deployment
+
+Check the host and the public endpoint:
+
+```bash
+ssh ai-ihpan 'cat /opt/graphy/.deployment/current-revision'
+ssh ai-ihpan 'docker ps --filter name=grafy --format "{{.Names}} {{.Image}} {{.Status}}"'
+curl --fail --silent --show-error https://graphs.ihpan.edu.pl/api/ready
+curl --fail --silent --show-error --output /dev/null \
+	--write-out 'HTTP %{http_code}\n' https://graphs.ihpan.edu.pl/
+```
+
+Confirm that API, web, and gateway use the target SHA and report healthy.
+Verify Plugin selections and catalog readiness in each affected Workspace.
+If no Plugins changed, compare the exact selection rows before and after.
+If Plugins changed, record their returned revisions and retain unrelated selections.
+
+Verify the source digest when release identity needs an independent check:
+
+```bash
+git archive <sha> --output=/tmp/grafy-release.tar
+shasum -a 256 /tmp/grafy-release.tar
+ssh ai-ihpan 'docker exec grafy-api-1 .venv/bin/python -c \
+	"import os; print(os.environ[\"GRAFY_BUILD_DIGEST\"])"'
+```
+
+Keep the SHA, previous SHA, database dump path, deployment log, Plugin revisions,
+and verification results in the operation directory. Keep exported selections
+and database dumps protected. Never include environment contents or bearer
+credentials in the report. Health and catalog checks do not prove an
+authenticated graph run; record whether you exercised that separately.
+
 ## Roll back a failed release
 
 The script records the deployed and previous SHAs in `/opt/graphy/.deployment`.
@@ -141,7 +231,9 @@ If the release fails before Alembic changes the database, run the script with
 the previous SHA. Rollback targets must have published images, so they must be
 commits from after the images were introduced. If Alembic changed the database, stop Grafy and restore the
 matching dump before you start the previous commit. Do not run an older binary
-against a newer schema.
+against a newer schema. If you also changed Plugin selections, restore compatible
+selections for the old application. Retain the old immutable releases for this
+rollback; do not rewrite their manifests.
 
 Restore a dump only during a maintenance window:
 
