@@ -25,8 +25,10 @@ from grafy_core.ports.storage import FileStoragePort
 from grafy_persistence.database import Database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_workbench import BuiltinNodeCatalog
+from grafy_workbench.catalog import BUILTIN_FAMILIES
 
 from grafy_api.app_state import AppIdentity, AppResources
+from grafy_api.dev_plugins import DevPluginError, load_dev_plugins
 from grafy_api.node_secrets import NodeSecretService
 from grafy_api.plugins.profiles import runtime_profile
 from grafy_api.plugins.runtime.docker import DockerPluginRuntime
@@ -164,7 +166,14 @@ async def build_app_resources(
     """
 
     app = settings.app
-    registry = BuiltinNodeCatalog.load(app.resolved_build_digest).registry
+    if app.environment == "production" and settings.plugins.dev_plugins:
+        raise DevPluginError(
+            "GRAFY_DEV_PLUGINS is development-only and cannot run in production"
+        )
+    dev_plugins = load_dev_plugins(settings.plugins.dev_plugins)
+    registry = BuiltinNodeCatalog.load(
+        app.resolved_build_digest, families=(*BUILTIN_FAMILIES, *dev_plugins)
+    ).registry
     storage = configured_file_storage(settings.storage, app.workspace)
 
     def new_unit_of_work() -> SqlAlchemyUnitOfWork:
@@ -205,6 +214,8 @@ async def build_app_resources(
         database=database,
         workbench=build_workbench_components(
             plugin_registry=registry,
+            dev_plugin_slugs=frozenset(plugin.slug for plugin in dev_plugins),
+            dedupe_artifact_handlers=bool(dev_plugins),
             workspace=app.workspace,
             limits=ExecutionLimits.from_config(settings.execution, settings.plugins),
             unit_of_work=SqlAlchemyUnitOfWork(database.sessions),

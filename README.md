@@ -250,6 +250,19 @@ exact System deployment manifest and selected release when exercising a System
 host binding; use the retained OCI runtime for isolated-only families such as
 GIS, LLM, OCR, and SQL.
 
+### Develop Plugins in-process
+
+Run `just api-dev external.image external.mistral` to load local Plugin projects.
+Slugs come from `plugins/system-plugins.toml`; exact `module:attribute` loader
+targets also work. Edits under `plugins/` reload the server.
+
+Nodes run in the API process with no sandbox, egress policy, or release pin.
+Graph nodes added in dev mode are saved as builtin nodes and will not run on a
+server without the same dev plugins. Published releases with the same slug are
+hidden from the node catalog while dev mode is on. Set
+`GRAFY_PLUGIN_RUNTIME_ENABLED=false` if Docker is not running. Dev plugins are
+rejected in production.
+
 ### Compose vector and raster maps
 
 The GIS workflow separates exact data from rendering instructions:
