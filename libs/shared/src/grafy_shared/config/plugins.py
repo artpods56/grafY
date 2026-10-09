@@ -41,6 +41,10 @@ class PluginsConfig(BaseSettings):
     # Workspace Plugin execution is fail-closed unless the local Docker
     # sandbox owner is explicitly enabled for this single API process.
     plugin_runtime_enabled: bool = False
+    # Development only. System Plugin slugs from plugins/system-plugins.toml, or
+    # exact "module:attribute" loader targets, installed in-process beside the
+    # builtin families. They run unsandboxed and bypass release publication.
+    dev_plugins: tuple[str, ...] = ()
     plugin_docker_binary: str = Field(default="docker", min_length=1, max_length=1_024)
     # The Docker daemon must be able to bind this host path into one-shot
     # publisher containers. The local default stays beneath the repository.

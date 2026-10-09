@@ -9,7 +9,15 @@ from hashlib import sha256
 from typing import TYPE_CHECKING, ClassVar, Literal, Self, cast
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AnyHttpUrl,
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    field_validator,
+    model_validator,
+)
 from pydantic.errors import PydanticInvalidForJsonSchema
 from pydantic.main import IncEx
 
@@ -506,7 +514,32 @@ class PluginNodeHttpEgressContract(PluginReleaseValue):
     """Immutable declaration of one node's network.egress destination sources."""
 
     configured_inputs: tuple[str, ...] = ()
+    fixed_destinations: tuple[str, ...] = ()
     dynamic_destinations: bool = False
+
+    @field_validator("fixed_destinations")
+    @classmethod
+    def validate_fixed_destinations(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        origins: list[str] = []
+        for origin in value:
+            url = TypeAdapter(AnyHttpUrl).validate_python(origin)
+            if (
+                origin != origin.strip()
+                or url.username is not None
+                or url.password is not None
+                or url.query is not None
+                or url.fragment is not None
+                or url.path not in {None, "/"}
+            ):
+                raise ValueError(
+                    "Fixed HTTP destinations must be origins without credentials, paths, queries, or fragments"
+                )
+            origins.append(str(url).rstrip("/"))
+        if len(origins) != len(set(origins)) or len(origins) > 8:
+            raise ValueError(
+                "Fixed HTTP destinations must be unique and contain at most eight origins"
+            )
+        return tuple(origins)
 
     @field_validator("configured_inputs")
     @classmethod
@@ -610,6 +643,7 @@ class PluginNodeContract(PluginReleaseValue):
                         configured_input.config_field
                         for configured_input in registration.http_egress.configured_inputs
                     ),
+                    fixed_destinations=registration.http_egress.fixed_destinations,
                     dynamic_destinations=registration.http_egress.dynamic_destinations,
                 )
             ),
@@ -788,6 +822,7 @@ PLUGIN_CONTRACT_DIGEST_FIELD_ROLES: Mapping[
     },
     PluginNodeHttpEgressContract: {
         "configured_inputs": "keep",
+        "fixed_destinations": "omit",
         "dynamic_destinations": "keep",
     },
     PluginPortContract: {

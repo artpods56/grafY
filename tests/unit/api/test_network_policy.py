@@ -874,3 +874,67 @@ def test_render_effective_policy_is_read_only_and_complete() -> None:
         node_operator="llm.openai_compatible.chat_completion@1",
     )
     assert "Status: denied (network_dynamic_destination_denied)" in rendered
+
+
+def test_fixed_origins_use_configured_public_and_curated_policy_bounds() -> None:
+    contract = _contract(("base_url",))
+    contract = contract.model_copy(
+        update={
+            "http_egress": PluginNodeHttpEgressContract(
+                configured_inputs=("base_url",),
+                fixed_destinations=("https://api.mistral.ai",),
+            )
+        }
+    )
+    public = _public_profile()
+    resolution = _resolve(
+        _policy(public, slug=SLUG), contract, {"base_url": "https://api.example.com"}
+    )
+    assert resolution.allowed
+    assert resolution.origins == (
+        PluginEgressDestination.parse("https://api.example.com:443"),
+        PluginEgressDestination.parse("https://api.mistral.ai:443"),
+    )
+    curated = _public_profile(
+        mode=NetworkProfileMode.CURATED, origins=("https://api.mistral.ai:443",)
+    )
+    resolution = _resolve(_policy(curated, slug=SLUG), contract, {})
+    assert resolution.allowed
+    assert resolution.origins == (
+        PluginEgressDestination.parse("https://api.mistral.ai:443"),
+    )
+    limited = _public_profile(max_origins=1)
+    assert not _resolve(
+        _policy(limited, slug=SLUG), contract, {"base_url": "https://other.example"}
+    ).allowed
+    plain_http = contract.model_copy(
+        update={
+            "http_egress": PluginNodeHttpEgressContract(
+                fixed_destinations=("http://api.example.com",)
+            )
+        }
+    )
+    assert not _resolve(_policy(public, slug=SLUG), plain_http, {}).allowed
+    fixed_only = contract.model_copy(
+        update={
+            "http_egress": PluginNodeHttpEgressContract(
+                fixed_destinations=("https://api.mistral.ai",)
+            )
+        }
+    )
+    assert _resolve(_policy(public, slug=SLUG), fixed_only, {}).allowed
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://user:secret@example.com",
+        "https://example.com/v1",
+        "https://example.com?secret=x",
+        "https://example.com#frag",
+        "not-a-url",
+    ],
+)
+def test_fixed_destination_contract_rejects_non_origins(origin: str) -> None:
+    with pytest.raises(ValueError):
+        _ = PluginNodeHttpEgressContract(fixed_destinations=(origin,))

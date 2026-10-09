@@ -4,6 +4,7 @@ from grafy_core.domain.identity import WorkspaceCapability
 
 from grafy_api.catalog import CatalogSnapshot
 from grafy_api.app_state import get_resources
+from grafy_api.dev_plugins import without_shadowed_releases
 from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
 
 from .dependencies import (
@@ -35,6 +36,9 @@ async def list_nodes(
         []
         if plugin_releases is None
         else await plugin_releases.list_catalog(access.workspace_id)
+    )
+    catalog_releases = without_shadowed_releases(
+        catalog_releases, resources.workbench.dev_plugin_slugs
     )
     releases = [entry.release for entry in catalog_releases]
     release_states = {

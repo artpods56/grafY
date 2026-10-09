@@ -591,12 +591,14 @@ version = "0.1.0"
 source = { editable = "plugins/image" }
 dependencies = [
     { name = "grafy-core" },
+    { name = "pillow" },
     { name = "pydantic" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "grafy-core", specifier = "==0.1.0" },
+    { name = "pillow" },
     { name = "pydantic" },
 ]
 

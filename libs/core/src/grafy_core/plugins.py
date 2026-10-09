@@ -147,6 +147,7 @@ class NodeHttpEgressContract:
     """
 
     configured_inputs: tuple[NodeHttpEgressInput, ...] = ()
+    fixed_destinations: tuple[str, ...] = ()
     dynamic_destinations: bool = False
 
 

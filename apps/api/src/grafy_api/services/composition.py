@@ -1,9 +1,11 @@
 """Composition root for workbench-facing application components."""
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.application.modules import ModuleLibraryService
 from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
@@ -24,10 +26,11 @@ from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import (
     ArtifactWriterRegistry,
+    ArtifactOutputWriter,
     OutputPersister,
 )
 from grafy_core.runtime.persistent_invocation_cache import PersistentInvocationCache
-from grafy_core.runtime.resolvers import ResolverRegistry
+from grafy_core.runtime.resolvers import Resolver, ResolverRegistry
 from grafy_shared.config import ExecutionConfig, PluginsConfig
 from grafy_storage import LocalFileObjectStore
 
@@ -57,6 +60,8 @@ from grafy_api.v1.routes.executions.services import RunResultPresenter
 from grafy_api.v1.routes.library.folders import LibraryFoldersService
 from grafy_api.v1.routes.library.services import LibraryService
 
+logger = logging.getLogger(__name__)
+
 _WORKBENCH_BUCKET = "workbench-artifacts"
 
 
@@ -79,6 +84,7 @@ class WorkbenchComponents:
     plugin_invoker: ArtifactBundlePluginInvoker | None
     plugin_runtime: DockerPluginRuntime | None
     release_admission: ReleaseExecutionAdmission | None
+    dev_plugin_slugs: frozenset[str] = frozenset()
     python_apply: PythonApplyService | None = None
 
 
@@ -118,6 +124,8 @@ def build_workbench_components(
     *,
     plugin_registry: PluginRegistry,
     workspace: Path,
+    dev_plugin_slugs: frozenset[str] = frozenset(),
+    dedupe_artifact_handlers: bool = False,
     limits: ExecutionLimits | None = None,
     unit_of_work: WorkbenchUnitOfWorkPort | None = None,
     storage: FileStoragePort | None = None,
@@ -176,12 +184,39 @@ def build_workbench_components(
         node_secrets=resolved_node_secrets,
     )
 
-    resolver_registry = ResolverRegistry(
-        list(plugin_registry.build_resolvers(plugin_context))
-    )
-    writer_registry = ArtifactWriterRegistry(
-        list(plugin_registry.build_writers(plugin_context))
-    )
+    resolvers = list(plugin_registry.build_resolvers(plugin_context))
+    writers = list(plugin_registry.build_writers(plugin_context))
+    if dedupe_artifact_handlers:
+        resolver_keys: set[tuple[ArtifactTypeKey, type[object]]] = set()
+        unique_resolvers: list[Resolver[object]] = []
+        for resolver in resolvers:
+            key = (resolver.source, resolver.target)
+            if key in resolver_keys:
+                logger.info(
+                    "dev_plugin_duplicate_resolver_dropped source=%s@%s target=%s",
+                    resolver.source.id,
+                    resolver.source.schema_version,
+                    resolver.target,
+                )
+                continue
+            resolver_keys.add(key)
+            unique_resolvers.append(resolver)
+        resolvers = unique_resolvers
+        writer_keys: set[ArtifactTypeKey] = set()
+        unique_writers: list[ArtifactOutputWriter] = []
+        for writer in writers:
+            if writer.artifact_type in writer_keys:
+                logger.info(
+                    "dev_plugin_duplicate_writer_dropped artifact_type=%s@%s",
+                    writer.artifact_type.id,
+                    writer.artifact_type.schema_version,
+                )
+                continue
+            writer_keys.add(writer.artifact_type)
+            unique_writers.append(writer)
+        writers = unique_writers
+    resolver_registry = ResolverRegistry(resolvers)
+    writer_registry = ArtifactWriterRegistry(writers)
 
     availability = ArtifactAvailability(resolved_unit_of_work, resolved_storage)
     artifacts = ArtifactService(
@@ -315,6 +350,7 @@ def build_workbench_components(
         plugin_invoker=artifact_plugin_invoker,
         plugin_runtime=plugin_runtime,
         release_admission=release_admission,
+        dev_plugin_slugs=dev_plugin_slugs,
         python_apply=python_apply,
     )
 

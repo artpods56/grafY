@@ -431,11 +431,18 @@ class NodeHttpEgressInput:
 @dataclass(frozen=True, slots=True)
 class NodeHttpEgressContract:
     configured_inputs: tuple[NodeHttpEgressInput, ...] = ()
+    fixed_destinations: tuple[str, ...] = ()
     dynamic_destinations: bool = False
 ```
 
 `NodeRegistration` and `PluginNodeContract` carry one
 `NodeHttpEgressContract | None`.
+
+`fixed_destinations` contains HTTP or HTTPS origins without credentials, paths,
+queries, or fragments. Fixed origins use the same assigned profile, HTTPS
+restriction, curated allowlist, and origin limits as configured destinations.
+Mistral OCR declares `fixed_destinations=("https://api.mistral.ai",)` and runs
+under `configured-public`; it does not request dynamic destinations.
 
 Example:
 

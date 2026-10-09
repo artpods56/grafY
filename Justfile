@@ -26,6 +26,15 @@ install-all:
 api: db-upgrade
     uv run --exact --no-dev --package grafy-api uvicorn grafy_api.main:app --reload --host 0.0.0.0 --port 8000
 
+# Start the API with local Plugin projects loaded in-process, unsandboxed, for
+# development. Pass System Plugin slugs: just api-dev external.image external.mistral
+# Edits under plugins/ reload the server. Never use this in a deployment.
+api-dev +slugs: db-upgrade
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export GRAFY_DEV_PLUGINS="$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1:]))' {{slugs}})"
+    exec uv run --all-extras uvicorn grafy_api.main:app --reload --reload-dir apps --reload-dir libs --reload-dir plugins --host 0.0.0.0 --port 8000
+
 # Start the web development server.
 web port="":
     npm --prefix apps/web run dev {{ if port != "" {"--port=" + port} else {""} }}

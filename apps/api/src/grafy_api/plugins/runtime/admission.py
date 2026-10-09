@@ -414,7 +414,7 @@ def _node_has_network_source(
         )
     if http_egress.dynamic_destinations:
         return False
-    if not http_egress.configured_inputs:
+    if not http_egress.configured_inputs and not http_egress.fixed_destinations:
         return False
     if profile.mode is NetworkProfileMode.CURATED:
         return bool(profile.allowed_origins)
@@ -452,19 +452,22 @@ def _node_network_rejection(
                 f"profile assignment; assigned profile is {profile.name!r}."
             ),
         )
-    if not http_egress.configured_inputs:
+    if not http_egress.configured_inputs and not http_egress.fixed_destinations:
         return ReleaseExecutionRejection(
             reason=NetworkRejectionReason.DESTINATION_UNDECLARED,
             detail=(
-                "The node declares no configured URL field or dynamic "
+                "The node declares no configured URL field, fixed origin, or dynamic "
                 "destinations, so no origin can be granted."
             ),
         )
-    if len(http_egress.configured_inputs) > profile.limits.max_origins_per_execution:
+    if (
+        len(http_egress.configured_inputs) + len(http_egress.fixed_destinations)
+        > profile.limits.max_origins_per_execution
+    ):
         return ReleaseExecutionRejection(
             reason=NetworkRejectionReason.ORIGIN_LIMIT_EXCEEDED,
             detail=(
-                f"{len(http_egress.configured_inputs)} configured URL fields "
+                f"{len(http_egress.configured_inputs) + len(http_egress.fixed_destinations)} destination sources "
                 "exceed the profile origin limit."
             ),
         )

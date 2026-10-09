@@ -34,3 +34,5 @@ Run API and client regression checks from the repository root:
 ```sh
 uv run --all-extras pytest -q -o log_cli=false tests/unit/api tests/unit/client tests/integration/catalog tests/integration/executions/test_routes.py
 ```
+
+The dev-only in-process Plugin path lives in `grafy_api/dev_plugins.py`.

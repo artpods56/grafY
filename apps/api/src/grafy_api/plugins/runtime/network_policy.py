@@ -643,7 +643,11 @@ def resolve_http_egress_authority(
             ),
         )
 
-    origins = _extract_configured_origins(http_egress.configured_inputs, config)
+    origins = _extract_configured_origins(
+        http_egress.configured_inputs,
+        config,
+        fixed_destinations=http_egress.fixed_destinations,
+    )
     if isinstance(origins, HttpEgressResolution):
         return _with_profile(origins, profile)
     effective = origins
@@ -693,6 +697,8 @@ def resolve_http_egress_authority(
 def _extract_configured_origins(
     configured_inputs: tuple[str, ...],
     config: Mapping[str, object],
+    *,
+    fixed_destinations: tuple[str, ...] = (),
 ) -> tuple[PluginEgressDestination, ...] | HttpEgressResolution:
     origins: set[PluginEgressDestination] = set()
     for field_name in configured_inputs:
@@ -709,6 +715,15 @@ def _extract_configured_origins(
                     f"Config field {field_name!r} is not a valid public "
                     "HTTP(S) destination."
                 ),
+            )
+    for origin in fixed_destinations:
+        try:
+            origins.add(PluginEgressDestination.from_config_url(origin))
+        except ValueError:
+            return HttpEgressResolution(
+                profile=None,
+                reason=NetworkRejectionReason.DESTINATION_UNDECLARED,
+                detail=f"Fixed origin {origin!r} is not a valid public HTTP(S) destination.",
             )
     return tuple(sorted(origins))
 

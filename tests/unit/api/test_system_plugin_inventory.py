@@ -51,11 +51,11 @@ def test_checked_in_system_inventory_is_complete_finite_and_excludes_modules() -
         )
         for entry in inventory.plugins
     } == {
-        "external.image": (("image",), ()),
+        "external.image": (("image",), ("image.regions",)),
         "external.table": (("table",), ()),
         "external.gis": (("gis",), ("geo",)),
         "external.llm": (("llm", "prompt"), ("llm", "prompt.message")),
-        "external.mistral": (("mistral",), ("mistral",)),
+        "external.mistral": (("mistral",), ()),
         "external.ocr": (("ocr",), ("ocr",)),
         "external.sql": (("sql",), ("sql",)),
         "external.python": (("python",), ()),

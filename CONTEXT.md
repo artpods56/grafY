@@ -630,11 +630,13 @@ to enabled when the field is absent.
 
 The transport policy stored on an edge. `direct` passes the produced value to
 the target with its collection shape unchanged. `map` connects a produced
-sequence to one required item input, calls the target operator once for each
-item, broadcasts its other inputs, and aggregates required item outputs into
-source-position-aligned sequences. The runtime derives its internal invocation
-policy from incoming edges. A target has at most one map driver; zip, Cartesian,
-and implicit flattening semantics are not part of the contract.
+sequence to one item input, calls the target operator once for each item,
+broadcasts its other inputs, and aggregates required item outputs into
+source-position-aligned sequences. That input holds one value, is not variadic,
+and may be optional. The edge selects it. An empty source sequence fails the
+run. The runtime derives its internal invocation policy from incoming edges. A
+target has at most one map driver; zip, Cartesian, and implicit flattening
+semantics are not part of the contract.
 
 Ordered sequence consumers that need cross-item context receive a `direct` MANY
 input and execute once. `map` is reserved for invocations whose items are
