@@ -143,6 +143,7 @@ class SavedGraphOriginModel(SavedGraphApiModel):
     to_port: Identifier
     to_plug: Identifier | None = None
     value: ArtifactRef | ArtifactRefSequence
+    collection_mode: Literal["direct", "map"] = "direct"
     conversion_path: list[SavedGraphConversionModel] = Field(
         default_factory=list,
         max_length=MAX_ARTIFACT_CONVERSION_HOPS,

@@ -2,14 +2,52 @@
 
 import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from "@xyflow/react";
 import * as stylex from "@stylexjs/stylex";
-import { Unplug } from "lucide-react";
+import { Layers, Unplug } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type { ArtifactOriginEdge } from "../artifact-origin-edge";
 import { routedBezierPath } from "./edge-path";
 
 const s = stylex.create({
-  disconnect: {
+  controls: {
     position: "absolute",
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    pointerEvents: "all",
+  },
+  mapped: {
+    position: "absolute",
+    padding: "1px 6px",
+    borderRadius: "999px",
+    backgroundColor: tokens.colorSurfaceRaised,
+    color: tokens.colorInfo,
+    fontSize: "10px",
+    fontWeight: 700,
+    pointerEvents: "none",
+    whiteSpace: "nowrap",
+  },
+  mapToggle: {
+    height: "28px",
+    display: "flex",
+    alignItems: "center",
+    gap: "5px",
+    padding: "0 8px",
+    borderRadius: "6px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    backgroundColor: tokens.colorSurfaceRaised,
+    color: tokens.colorText,
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 650,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+  mapToggleActive: {
+    borderColor: tokens.colorInfo,
+    color: tokens.colorInfo,
+  },
+  disconnect: {
     display: "grid",
     placeItems: "center",
     width: "28px",
@@ -20,7 +58,6 @@ const s = stylex.create({
     borderColor: tokens.colorBorder,
     backgroundColor: tokens.colorSurfaceRaised,
     color: tokens.colorText,
-    pointerEvents: "all",
     cursor: "pointer",
   },
 });
@@ -39,6 +76,11 @@ export default function ArtifactOriginEdgeControl(
     targetPosition: props.targetPosition,
     routeOffset: { x: 0, y: 0 },
   });
+  const data = props.data;
+  const mapped = data?.collectionMode === "map";
+  const canToggleMode =
+    Boolean(data?.onCollectionModeChange) &&
+    (data?.allowedCollectionModes?.length ?? 0) > 1;
   return (
     <>
       <BaseEdge
@@ -49,22 +91,62 @@ export default function ArtifactOriginEdgeControl(
           strokeWidth: props.selected ? 3 : 2,
         }}
       />
-      {props.selected && props.data?.onDisconnect ? (
+      {mapped && !props.selected ? (
         <EdgeLabelRenderer>
-          <button
-            type="button"
-            className="nodrag nopan"
-            aria-label="Disconnect artifact input"
-            {...stylex.props(s.disconnect)}
+          <span
+            {...stylex.props(s.mapped)}
             style={{
               transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
             }}
-            onClick={() => {
-              if (props.data) props.data.onDisconnect?.(props.data.originId);
+          >
+            each item
+          </span>
+        </EdgeLabelRenderer>
+      ) : null}
+      {props.selected && (data?.onDisconnect || canToggleMode) ? (
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan"
+            {...stylex.props(s.controls)}
+            style={{
+              transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
             }}
           >
-            <Unplug size={14} />
-          </button>
+            {canToggleMode ? (
+              <button
+                type="button"
+                aria-pressed={mapped}
+                title={
+                  mapped
+                    ? "Invoking the target once for every item"
+                    : "Invoking the target once with the whole sequence"
+                }
+                {...stylex.props(s.mapToggle, mapped && s.mapToggleActive)}
+                onClick={() => {
+                  if (data)
+                    data.onCollectionModeChange?.(
+                      data.originId,
+                      mapped ? "direct" : "map",
+                    );
+                }}
+              >
+                <Layers size={13} />
+                Map each item
+              </button>
+            ) : null}
+            {data?.onDisconnect ? (
+              <button
+                type="button"
+                aria-label="Disconnect artifact input"
+                {...stylex.props(s.disconnect)}
+                onClick={() => {
+                  if (data) data.onDisconnect?.(data.originId);
+                }}
+              >
+                <Unplug size={14} />
+              </button>
+            ) : null}
+          </div>
         </EdgeLabelRenderer>
       ) : null}
     </>

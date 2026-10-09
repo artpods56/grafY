@@ -820,7 +820,7 @@ async def test_compiler_rejects_origin_shape_map_and_invalid_plugs(
     )
     with pytest.raises(
         GraphExecutionError,
-        match=r"Origin 'add'\.'left' cannot use collection mode 'map'",
+        match=r"Node 'add' input 'left' accepts one connection, got 2",
     ):
         await compiler.compile(
             _pin_system_plugins(mapped),
@@ -881,6 +881,38 @@ async def test_compiler_broadcasts_an_origin_beside_a_map_edge(
         edge for edge in compiled.edges if isinstance(edge.request, RunOriginRequest)
     )
     assert origin_edge.origin_value == right_ref
+
+
+@pytest.mark.asyncio
+async def test_compiler_maps_a_sequence_origin_over_its_target(
+    tmp_path: Path,
+) -> None:
+    sequence = ArtifactRefSequence.from_key(
+        key=ArtifactTypeKey("scalar.text", 1),
+        item_refs=[_text_ref(), _text_ref()],
+    )
+    request = RunRequest(
+        nodes=[_replace_node()],
+        origins=[
+            RunOriginRequest(
+                to_node="replace",
+                to_port="text",
+                value=sequence,
+                collection_mode="map",
+            )
+        ],
+    )
+
+    compiled = await _compiler(tmp_path).compile(
+        _pin_system_plugins(request),
+        _UnusedModuleExecutor(),
+        workspace_id=WORKSPACE_ID,
+    )
+
+    replace = compiled.nodes[0]
+    assert replace.invocation.mode is InvocationMode.MAP
+    assert replace.invocation.map_inputs == ("text",)
+    assert compiled.edges[0].origin_value == sequence
 
 
 @pytest.mark.asyncio

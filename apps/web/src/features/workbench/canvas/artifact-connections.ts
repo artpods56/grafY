@@ -7,6 +7,7 @@ import type {
 } from "@/lib/api";
 import {
   artifactDropPayload,
+  originCollectionModes,
   resolveArtifactDrop,
 } from "../model/artifact-drop";
 import { cardArtifactRefs, type ArtifactCardValue } from "./artifact-card";
@@ -194,7 +195,14 @@ export function artifactOriginConnections(
             target.data.artifactTypeBindings,
           ),
         ),
-        data: { originId: origin.id },
+        data: {
+          originId: origin.id,
+          collectionMode: origin.collection_mode ?? "direct",
+          allowedCollectionModes: originCollectionModes(
+            port,
+            artifactDropPayload(origin.value).shape,
+          ),
+        },
       });
       for (const ref of refs) remaining.delete(ref.artifact_id);
       if (remaining.size === 0) break;

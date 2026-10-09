@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { encodeHandleId, type ConnectionRoute } from "../canvas/handles";
 import { createWorkflowNodeData, type WorkflowEdge } from "../canvas/types";
-import type { NodeSpec, Port } from "@/lib/api";
+import type { NodeSpec, Port, SavedGraphOrigin } from "@/lib/api";
 import {
   collectionModeForConnection,
+  collectionModesForConnection,
   connectionRouteDescription,
   connectionRouteTitle,
   inputPlugBindingsForNode,
@@ -230,6 +231,77 @@ describe("connection collection policy", () => {
         [],
       ),
     ).toBe("direct");
+  });
+
+  it("lets a sequence feeding a sequence input pass whole or map each item", () => {
+    const source = node("source", [], [port("output", "output", "many")]);
+    const target = node("target", [port("items", "input", "many")], []);
+    const variadicTarget = node(
+      "variadic_target",
+      [port("items", "input", "many", { variadic: true })],
+      [],
+    );
+    const connection = (targetId: string) => ({
+      source: source.id,
+      sourceHandle: handle("output", "output", "many"),
+      target: targetId,
+      targetHandle: handle("items", "input", "many"),
+    });
+
+    expect(
+      collectionModesForConnection(connection(target.id), [source, target], []),
+    ).toEqual(["direct", "map"]);
+    expect(
+      collectionModeForConnection(connection(target.id), [source, target], []),
+    ).toBe("direct");
+    expect(
+      collectionModesForConnection(
+        connection(variadicTarget.id),
+        [source, variadicTarget],
+        [],
+      ),
+    ).toEqual(["direct"]);
+  });
+
+  it("reads a node mapped by an artifact input as producing sequences", () => {
+    const mapped = node(
+      "mapped",
+      [port("input", "input", "one")],
+      [port("output", "output", "one")],
+    );
+    const target = node("target", [port("input", "input", "one")], []);
+    const origin: SavedGraphOrigin = {
+      id: "origin",
+      to_node: mapped.id,
+      to_port: "input",
+      to_plug: null,
+      value: {
+        artifact_type: "scalar.text",
+        schema_version: 1,
+        item_refs: [],
+        ordered: true,
+        index_key: "order_index",
+      },
+      collection_mode: "map",
+      conversion_path: [],
+    };
+
+    expect(mappedInputPortsForNode(mapped.id, [], false, [origin])).toEqual([
+      "input",
+    ]);
+    expect(
+      collectionModeForConnection(
+        {
+          source: mapped.id,
+          sourceHandle: handle("output", "output", "many"),
+          target: target.id,
+          targetHandle: handle("input", "input", "one"),
+        },
+        [mapped, target],
+        [],
+        [origin],
+      ),
+    ).toBe("map");
   });
 
   it("does not turn a sequence into map transport for an instance-plug input", () => {

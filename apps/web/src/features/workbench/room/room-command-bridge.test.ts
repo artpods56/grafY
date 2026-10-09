@@ -410,6 +410,7 @@ describe("room-command-bridge", () => {
         artifact_type: "scalar.text",
         schema_version: 1,
       },
+      collection_mode: "direct" as const,
       conversion_path: [],
     };
     const withOrigin = { ...document, origins: [origin] };
@@ -452,6 +453,7 @@ describe("room-command-bridge", () => {
         to_port: "other",
         to_plug: null,
         value: origin.value,
+        collection_mode: "direct" as const,
         conversion_path: [],
       },
     });

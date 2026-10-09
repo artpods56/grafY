@@ -1241,6 +1241,7 @@ describe("useRunExecution", () => {
         artifact_type: "text.plain",
         schema_version: 1,
       },
+      collection_mode: "direct",
       conversion_path: [],
     };
     const unused: SavedGraphOrigin = {
@@ -1264,6 +1265,7 @@ describe("useRunExecution", () => {
             to_port: "input",
             to_plug: null,
             value: origin.value,
+            collection_mode: "direct",
             conversion_path: [],
           },
         ],

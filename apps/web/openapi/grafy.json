@@ -5713,6 +5713,15 @@
       },
       "RunOriginRequest": {
         "properties": {
+          "collection_mode": {
+            "default": "direct",
+            "enum": [
+              "direct",
+              "map"
+            ],
+            "title": "Collection Mode",
+            "type": "string"
+          },
           "conversion_path": {
             "items": {
               "$ref": "#/components/schemas/ArtifactConversionRequest"
@@ -6670,6 +6679,15 @@
         "additionalProperties": false,
         "description": "Exact artifact value held on one node input with no incoming edge.",
         "properties": {
+          "collection_mode": {
+            "default": "direct",
+            "enum": [
+              "direct",
+              "map"
+            ],
+            "title": "Collection Mode",
+            "type": "string"
+          },
           "conversion_path": {
             "default": [],
             "items": {
@@ -6734,6 +6752,15 @@
       "SavedGraphOriginModel": {
         "additionalProperties": false,
         "properties": {
+          "collection_mode": {
+            "default": "direct",
+            "enum": [
+              "direct",
+              "map"
+            ],
+            "title": "Collection Mode",
+            "type": "string"
+          },
           "conversion_path": {
             "items": {
               "$ref": "#/components/schemas/SavedGraphConversionModel"

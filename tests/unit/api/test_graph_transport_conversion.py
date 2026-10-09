@@ -349,6 +349,7 @@ def test_origin_conversion_retains_exact_value_and_conversion_path(
             "schema_version": 1,
             "content_hash": None,
         },
+        "collection_mode": "direct",
         "conversion_path": [{"id": "one", "version": 1}, {"id": "two", "version": 2}],
     }
     origin = SavedGraphOrigin.model_validate(payload)

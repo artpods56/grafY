@@ -338,6 +338,7 @@ export function toLocalGraphCommand(
           to_port: command.origin.to_port,
           to_plug: command.origin.to_plug,
           value: command.origin.value,
+          collection_mode: command.origin.collection_mode,
           conversion_path: command.origin.conversion_path,
         },
       };

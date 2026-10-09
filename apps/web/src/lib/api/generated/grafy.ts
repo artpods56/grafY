@@ -3343,6 +3343,12 @@ export interface components {
         };
         /** RunOriginRequest */
         readonly RunOriginRequest: {
+            /**
+             * Collection Mode
+             * @default direct
+             * @enum {string}
+             */
+            readonly collection_mode: "direct" | "map";
             /** Conversion Path */
             readonly conversion_path?: readonly components["schemas"]["ArtifactConversionRequest"][];
             /** To Node */
@@ -3631,6 +3637,12 @@ export interface components {
          */
         readonly SavedGraphOrigin: {
             /**
+             * Collection Mode
+             * @default direct
+             * @enum {string}
+             */
+            readonly collection_mode: "direct" | "map";
+            /**
              * Conversion Path
              * @default []
              */
@@ -3648,6 +3660,12 @@ export interface components {
         };
         /** SavedGraphOriginModel */
         readonly SavedGraphOriginModel: {
+            /**
+             * Collection Mode
+             * @default direct
+             * @enum {string}
+             */
+            readonly collection_mode: "direct" | "map";
             /** Conversion Path */
             readonly conversion_path?: readonly components["schemas"]["SavedGraphConversionModel"][];
             /** Id */

@@ -711,6 +711,7 @@ describe("execution request planning", () => {
       to_port: "input",
       to_plug: null,
       value: artifactValue,
+      collection_mode: "direct",
       conversion_path: [{ id: "builtin.scalar.integer_to_text", version: 1 }],
     };
     const unusedOrigin: SavedGraphOrigin = {
@@ -719,6 +720,7 @@ describe("execution request planning", () => {
       to_port: "input",
       to_plug: null,
       value: artifactValue,
+      collection_mode: "direct",
       conversion_path: [],
     };
 
@@ -743,6 +745,7 @@ describe("execution request planning", () => {
         to_port: "input",
         to_plug: null,
         value: artifactValue,
+        collection_mode: "direct",
         conversion_path: [{ id: "builtin.scalar.integer_to_text", version: 1 }],
       },
     ]);
@@ -763,6 +766,7 @@ describe("execution request planning", () => {
       to_port: "items",
       to_plug: "plug",
       value: artifactValue,
+      collection_mode: "direct",
       conversion_path: [],
     };
     const execution = executionSubgraphFor("selected", [collect], []);
@@ -781,6 +785,7 @@ describe("execution request planning", () => {
         to_port: "items",
         to_plug: "plug",
         value: artifactValue,
+        collection_mode: "direct",
         conversion_path: [],
       },
     ]);

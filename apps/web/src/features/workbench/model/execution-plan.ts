@@ -89,6 +89,7 @@ function serializeRunOrigin(origin: SavedGraphOrigin): RunOriginInput {
     to_port: origin.to_port,
     to_plug: origin.to_plug ?? null,
     value: structuredClone(origin.value),
+    collection_mode: origin.collection_mode ?? "direct",
     conversion_path: (origin.conversion_path ?? []).map((step) => ({
       id: step.id,
       version: step.version,

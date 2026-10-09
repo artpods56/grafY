@@ -565,6 +565,7 @@ describe("authored graph document", () => {
           artifact_type: "scalar.text",
           schema_version: 1,
         },
+        collection_mode: "direct" as const,
         conversion_path: [],
       },
     });
@@ -580,6 +581,7 @@ describe("authored graph document", () => {
           artifact_type: "scalar.text",
           schema_version: 1,
         },
+        collection_mode: "direct" as const,
         conversion_path: [],
       },
     ]);
@@ -615,6 +617,7 @@ describe("authored graph document", () => {
           artifact_type: "scalar.text",
           schema_version: 1,
         },
+        collection_mode: "direct" as const,
         conversion_path: [],
       },
     });
@@ -646,6 +649,7 @@ describe("authored graph document", () => {
         artifact_type: "scalar.text",
         schema_version: 1,
       },
+      collection_mode: "direct" as const,
       conversion_path: [],
     };
     const withOrigin = applyGraphCommand(document(), {

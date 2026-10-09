@@ -144,6 +144,7 @@ describe("artifact grouping", () => {
     if (!value) throw new Error("Artifact missing");
     const origin: SavedGraphOrigin = {
       id: "origin",
+      collection_mode: "direct",
       conversion_path: [],
       to_node: "sink",
       to_port: "files",
