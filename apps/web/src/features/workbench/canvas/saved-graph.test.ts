@@ -471,6 +471,16 @@ describe("saved collection modes", () => {
     expect(decodeHandleId(hydrated.edges[0]?.targetHandle)?.shape).toBe("one");
   });
 
+  it("hydrates a map edge from a many source into a many target", () => {
+    const hydrated = hydrateSavedGraph(
+      graphWithCollectionMode("map"),
+      registry("many", "many"),
+    );
+
+    expect(hydrated.edges[0]?.data?.collectionMode).toBe("map");
+    expect(decodeHandleId(hydrated.edges[0]?.targetHandle)?.shape).toBe("many");
+  });
+
   it("hydrates map edges on different inputs and rejects duplicate drivers", () => {
     const sourceSpec = nodeSpec("source", "output", "x", "many");
     const otherSourceSpec = nodeSpec("other-source", "output", "x", "many");
@@ -631,13 +641,6 @@ describe("saved collection modes", () => {
       sourceShape: "one" as const,
       targetShape: "one" as const,
       targetAcceptedShapes: ["one"] as const,
-      expectedMode: "direct",
-    },
-    {
-      collectionMode: "map" as const,
-      sourceShape: "many" as const,
-      targetShape: "many" as const,
-      targetAcceptedShapes: ["many"] as const,
       expectedMode: "direct",
     },
     {

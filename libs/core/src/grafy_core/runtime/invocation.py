@@ -84,7 +84,7 @@ def map_input_candidates(node: NodeContractSource) -> tuple[str, ...]:
     return tuple(
         name
         for name, port in node.input_contract.ports.items()
-        if not port.variadic and port.shape is PortShape.ONE
+        if not port.variadic and not port.instance_plugs
     )
 
 
@@ -109,14 +109,9 @@ def validate_invocation(
             raise InvocationError(
                 f"Node {node.operator_id!r} MAP input {map_input!r} does not exist"
             )
-        if input_port.variadic:
+        if input_port.variadic or input_port.instance_plugs:
             raise InvocationError(
                 f"Node {node.operator_id!r} MAP input {map_input!r} cannot be variadic"
-            )
-        if input_port.shape is not PortShape.ONE:
-            raise InvocationError(
-                f"Node {node.operator_id!r} MAP input {map_input!r} must have shape "
-                f"{PortShape.ONE.value!r}, got {input_port.shape.value!r}"
             )
 
     output_ports = node.output_contract.ports

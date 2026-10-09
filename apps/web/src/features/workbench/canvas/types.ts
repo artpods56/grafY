@@ -636,6 +636,37 @@ export function portHasInstancePlugs(port: Port): boolean {
   return port.direction === "input" && port.instance_plugs === true;
 }
 
+/**
+ * Collection modes an edge may use from a source of `sourceShape` into
+ * `targetPort`, whose effective shape is `targetShape`; the default comes first.
+ * A sequence feeding a non-variadic sequence input may be passed whole or
+ * mapped, in which case each invocation receives a sequence of one.
+ */
+export function collectionModesForShapes(
+  sourceShape: Port["shape"],
+  targetPort: Port,
+  targetShape: Port["shape"],
+): RunEdgeCollectionMode[] {
+  const modes: RunEdgeCollectionMode[] = [];
+  const instancePlugs = portHasInstancePlugs(targetPort);
+  if (
+    acceptedPortShapes(targetPort).includes(sourceShape) ||
+    (!instancePlugs && sourceShape === targetShape)
+  ) {
+    modes.push("direct");
+  }
+  if (
+    sourceShape === "many" &&
+    !instancePlugs &&
+    ((targetShape === "one" &&
+      !acceptedPortShapes(targetPort).includes("many")) ||
+      (targetPort.shape === "many" && !targetPort.variadic))
+  ) {
+    modes.push("map");
+  }
+  return modes;
+}
+
 export function portTypeLabel(
   port: Port,
   artifactTypeBindings: WorkflowArtifactTypeBindings,

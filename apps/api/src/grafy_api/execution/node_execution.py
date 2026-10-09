@@ -14,7 +14,7 @@ from grafy_core.artifacts import (
 )
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.node_secrets import JsonValue
-from grafy_core.nodes import NodeExecutionContext
+from grafy_core.nodes import NodeExecutionContext, PortShape
 from grafy_core.plugins import NodeCachePolicy
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_core.runtime.execution import NodeRuntime
@@ -380,7 +380,13 @@ class NodeExecutionService:
             if control is not None:
                 control.check_cancelled()
             item_inputs = dict(inputs)
-            item_inputs.update(mapped_refs)
+            input_ports = compiled_node.resolved_contracts.input_contract.ports
+            for name, ref in mapped_refs.items():
+                item_inputs[name] = (
+                    _single_item_sequence(ref)
+                    if input_ports[name].shape is PortShape.MANY
+                    else ref
+                )
             item_context = replace(
                 context,
                 node_run_id=uuid4(),
@@ -409,6 +415,17 @@ class NodeExecutionService:
                     mapped_refs=mapped_refs,
                     index=index,
                 ) from exc
+
+
+def _single_item_sequence(ref: ArtifactRef) -> ArtifactRefSequence:
+    """Hand one mapped item to a sequence input as a sequence of one."""
+    identity = json.dumps({"item": str(ref.artifact_id)}, sort_keys=True)
+    return ArtifactRefSequence(
+        sequence_id=uuid5(NAMESPACE_URL, identity),
+        artifact_type=ref.artifact_type,
+        schema_version=ref.schema_version,
+        item_refs=[ref],
+    )
 
 
 __all__ = ["NodeExecutionService"]

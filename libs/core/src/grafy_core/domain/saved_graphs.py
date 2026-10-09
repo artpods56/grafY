@@ -349,6 +349,7 @@ class SavedGraphOrigin(SavedGraphValue):
     to_port: GraphIdentifier
     to_plug: GraphIdentifier | None = None
     value: ArtifactRef | ArtifactRefSequence
+    collection_mode: Literal["direct", "map"] = "direct"
     conversion_path: tuple[SavedGraphConversion, ...] = Field(
         default=(),
         max_length=MAX_ARTIFACT_CONVERSION_HOPS,

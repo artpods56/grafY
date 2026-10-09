@@ -12,6 +12,7 @@ import {
 } from "../canvas/handles";
 import {
   acceptedPortShapes,
+  portHasInstancePlugs,
   resolvedPortArtifactType,
   type WorkflowEdge,
 } from "../canvas/types";
@@ -50,6 +51,8 @@ export interface ArtifactDropTarget {
 
 export interface ArtifactDropResolution {
   readonly conversionPath: readonly { id: string; version: number }[];
+  /** `map` when a sequence feeds an input that takes one item at a time. */
+  readonly collectionMode: SavedGraphOrigin["collection_mode"];
 }
 
 export interface ArtifactDropGraphState {
@@ -207,7 +210,8 @@ export function resolveArtifactDrop(
   conversions: readonly ArtifactConversionSpec[],
 ): ArtifactDropResolution | null {
   if (port.direction !== "input") return null;
-  if (!portAcceptsDropShape(port, payload.shape)) return null;
+  const collectionMode = dropCollectionMode(port, payload.shape);
+  if (!collectionMode) return null;
   const source = artifactTypeForValue(payload.value);
   const accepted = [
     resolvedPortArtifactType(port, bindings),
@@ -219,7 +223,7 @@ export function resolveArtifactDrop(
       (candidate) => artifactTypeKey(candidate) === artifactTypeKey(source),
     )
   ) {
-    return { conversionPath: [] };
+    return { conversionPath: [], collectionMode };
   }
   const paths = shortestConversionPathsToAny(source, accepted, conversions);
   if (!paths || paths.length !== 1) return null;
@@ -228,18 +232,42 @@ export function resolveArtifactDrop(
       id: key.id,
       version: key.version,
     })),
+    collectionMode,
   };
 }
 
-/** A many-only port takes one artifact by holding it as a sequence of one. */
-function portAcceptsDropShape(
+/**
+ * Collection modes an artifact input may use, the default first. A many-only
+ * port takes one artifact by holding it as a sequence of one. A sequence on a
+ * port that takes one item maps the node over its items; on a port that takes
+ * a sequence it may also be mapped, one sequence of one per item.
+ */
+export function originCollectionModes(
   port: Port,
   shape: ArtifactDropPayload["shape"],
-): boolean {
+): SavedGraphOrigin["collection_mode"][] {
   const accepted = acceptedPortShapes(port);
-  return (
-    accepted.includes(shape) || (shape === "one" && accepted.includes("many"))
-  );
+  const modes: SavedGraphOrigin["collection_mode"][] = [];
+  if (
+    accepted.includes(shape) ||
+    (shape === "one" && accepted.includes("many"))
+  )
+    modes.push("direct");
+  if (
+    shape === "many" &&
+    !port.variadic &&
+    !portHasInstancePlugs(port) &&
+    (port.shape === "many" || !accepted.includes("many"))
+  )
+    modes.push("map");
+  return modes;
+}
+
+function dropCollectionMode(
+  port: Port,
+  shape: ArtifactDropPayload["shape"],
+): SavedGraphOrigin["collection_mode"] | null {
+  return originCollectionModes(port, shape)[0] ?? null;
 }
 
 function portAcceptsOnlySequences(port: Port): boolean {
@@ -342,6 +370,12 @@ export function artifactDropCommands(
     existing,
     resolution.conversionPath,
   );
+  // A sequence replacing a mapped sequence keeps being mapped.
+  const collectionMode =
+    resolution.collectionMode === "map" ||
+    (existing?.collection_mode === "map" && payload.shape === "many")
+      ? "map"
+      : "direct";
   // An origin and an enabled edge never satisfy one input, so a deliberate
   // drop over a wired input removes that edge. A disabled edge may wait beside
   // the origin and is left alone.
@@ -367,6 +401,7 @@ export function artifactDropCommands(
       origin_id: existing.id,
       update: {
         value,
+        collection_mode: collectionMode,
         conversion_path: resolution.conversionPath,
       },
     });
@@ -380,6 +415,7 @@ export function artifactDropCommands(
       to_port: target.portName,
       to_plug: target.plugId,
       value,
+      collection_mode: collectionMode,
       conversion_path: resolution.conversionPath,
     },
   });

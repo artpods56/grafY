@@ -76,6 +76,8 @@ def _incoming_origin_signature(origin: "SavedGraphOrigin") -> tuple[object, ...]
         origin.to_plug,
         value,
         tuple((step.id, step.version) for step in origin.conversion_path),
+        # Direct origins predate the mode; keep their existing bindings current.
+        *(() if origin.collection_mode == "direct" else (origin.collection_mode,)),
     )
 
 

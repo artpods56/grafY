@@ -314,6 +314,7 @@ export function collectCardsCommands({
           to_port: COLLECTION_PORT,
           to_plug: plugId,
           value: source.value,
+          collection_mode: "direct",
           conversion_path: [],
         },
       });

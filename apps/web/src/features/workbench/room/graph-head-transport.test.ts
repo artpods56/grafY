@@ -60,6 +60,7 @@ const canonical: CollaborativeHead = {
           artifact_type: "rows",
           schema_version: 1,
         },
+        collection_mode: "direct",
         conversion_path: [],
       },
     ],

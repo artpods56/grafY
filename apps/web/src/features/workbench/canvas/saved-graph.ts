@@ -19,7 +19,7 @@ import { artifactTypeColor } from "./nodes.css";
 import {
   WORKFLOW_EDGE_TYPE,
   WORKFLOW_NODE_TYPE,
-  acceptedPortShapes,
+  collectionModesForShapes,
   compatibilityHandleId,
   createWorkflowNodeData,
   resolveInstancePortShapes,
@@ -602,6 +602,9 @@ export function hydrateSavedGraph(
     mapEdgeByTargetInput.set(targetKey, edge);
     mappedNodeIds.add(edge.to_node);
   }
+  for (const origin of savedGraph.document.origins ?? []) {
+    if (origin.collection_mode === "map") mappedNodeIds.add(origin.to_node);
+  }
   const edgeIds = new Set<string>();
   const occupiedTargetPlugIds = new Set<string>();
 
@@ -740,20 +743,14 @@ export function hydrateSavedGraph(
         otherMapEdge !== savedEdge && otherMapEdge?.to_port === targetPort.name
           ? "many"
           : targetPort.shape;
-      let expectedCollectionMode: SavedGraphEdge["collection_mode"] | null =
-        null;
-      if (acceptedPortShapes(targetPort).includes(sourceShape)) {
-        expectedCollectionMode = "direct";
-      } else if (!portHasInstancePlugs(targetPort)) {
-        if (sourceShape === targetShape) {
-          expectedCollectionMode = "direct";
-        } else if (sourceShape === "many" && targetShape === "one") {
-          expectedCollectionMode = "map";
-        }
-      }
-      if (savedEdge.collection_mode !== expectedCollectionMode) {
-        const expectedMode = expectedCollectionMode
-          ? `'${expectedCollectionMode}'`
+      const expectedCollectionModes = collectionModesForShapes(
+        sourceShape,
+        targetPort,
+        targetShape,
+      );
+      if (!expectedCollectionModes.includes(savedEdge.collection_mode)) {
+        const expectedMode = expectedCollectionModes.length
+          ? expectedCollectionModes.map((mode) => `'${mode}'`).join(" or ")
           : "no supported collection mode";
         throw new SavedGraphHydrationError(
           `Cannot open “${savedGraph.name}”: edge ${savedEdge.id} uses collection mode '${savedEdge.collection_mode}' for source shape '${sourceShape}' and target shape '${targetShape}', expected ${expectedMode}`,

@@ -414,6 +414,117 @@ async def test_inline_map_reuses_cache_and_preserves_sequence_envelope() -> None
     assert writer.item_indexes == [0, 1]
 
 
+class SumInput(NodeInput):
+    items: Annotated[list[int], InPort(VALUE)]
+    broadcast: Annotated[int, InPort(VALUE)]
+
+
+class SumNode(Node[NoConfig, SumInput, AddOutput]):
+    operator_id: ClassVar[str] = "test.local_execution.sum"
+    operator_version: ClassVar[int] = 1
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[int | None, list[int]]] = []
+
+    @override
+    async def run(
+        self,
+        context: NodeExecutionContext,
+        _config: NoConfig,
+        inputs: SumInput,
+        /,
+    ) -> AddOutput:
+        self.calls.append((context.invocation_index, list(inputs.items)))
+        return AddOutput(value=sum(inputs.items) + inputs.broadcast)
+
+
+@pytest.mark.asyncio
+async def test_map_into_sequence_input_hands_each_invocation_a_sequence_of_one() -> (
+    None
+):
+    item_refs = [
+        ArtifactRef.from_key(
+            artifact_id=uuid4(),
+            key=VALUE.key,
+            content_hash=f"{index:064x}",
+        )
+        for index in (1, 2)
+    ]
+    broadcast_ref = ArtifactRef.from_key(
+        artifact_id=uuid4(),
+        key=VALUE.key,
+        content_hash="9" * 64,
+    )
+    resolver = IntegerResolver(
+        {
+            item_refs[0].artifact_id: 2,
+            item_refs[1].artifact_id: 4,
+            broadcast_ref.artifact_id: 10,
+        }
+    )
+    writer = RecordingWriter()
+    node = SumNode()
+    compiled_node = CompiledNode(
+        request=RunNodeRequest(
+            kind="builtin",
+            id="mapped",
+            operator_id=node.operator_id,
+            operator_version=node.operator_version,
+        ),
+        node=node,
+        registration=NodeRegistration(
+            node_class=SumNode,
+            factory=None,
+            cache_policy=NodeCachePolicy.EXACT,
+        ),
+        resolved_contracts=resolve_node_contracts(node, {}),
+        invocation=NodeInvocation(mode=InvocationMode.MAP, map_inputs=("items",)),
+        artifact_type_bindings={},
+    )
+    edge_values = StubEdgeValueResolver(
+        {
+            "mapped": {
+                "items": ArtifactRefSequence.from_key(
+                    key=VALUE.key,
+                    item_refs=item_refs,
+                ),
+                "broadcast": broadcast_ref,
+            }
+        }
+    )
+    coordinator = GraphExecutionCoordinator(
+        node_execution=NodeExecutionService(
+            runtime=_runtime(resolver, writer, MemoryInvocationCache()),
+            edge_values=cast(EdgeValueResolver, edge_values),
+            node_secrets=UnavailableNodeSecretResolver(),
+        )
+    )
+    execution = PreparedGraphExecution(
+        workspace_id=WORKSPACE_ID,
+        plan=CompiledGraph(nodes=(compiled_node,), edges=(), pinned_outputs={}),
+        initial_outputs={},
+        graph_id=None,
+        graph_revision=None,
+        secret_graph_id=None,
+        secret_graph_revision=None,
+        secret_node_ids=frozenset(),
+        module_path=(),
+        raise_node_errors=False,
+    )
+
+    first = await coordinator.execute(execution)
+    second = await coordinator.execute(execution)
+
+    assert first.status == "succeeded"
+    assert second.status == "succeeded"
+    output = first.node_results[0].outputs["value"]
+    assert isinstance(output, ArtifactRefSequence)
+    assert output.item_refs == writer.refs
+    assert node.calls == [(0, [2]), (1, [4])]
+    assert writer.values == [12, 14]
+    assert second.node_results[0].outputs["value"] == output
+
+
 @pytest.mark.asyncio
 async def test_map_execution_overlaps_items_and_aggregates_in_source_order() -> None:
     item_refs = [

@@ -2,6 +2,7 @@ import type {
   ArtifactConversionSpec,
   ArtifactTypeKey,
   ArtifactTypeSpec,
+  SavedGraphOrigin,
 } from "@/lib/api";
 
 import {
@@ -21,7 +22,7 @@ import {
   type WorkflowInputPlugBinding,
 } from "../canvas/input-plugs";
 import {
-  acceptedPortShapes,
+  collectionModesForShapes,
   effectivePortShape,
   portHasInstancePlugs,
   type WorkflowEdge,
@@ -114,17 +115,26 @@ export function mappedInputPortsForNode(
   nodeId: string,
   edges: readonly WorkflowEdge[],
   includeDisabledEdges = false,
+  origins: readonly SavedGraphOrigin[] = [],
 ): string[] {
-  return edges.flatMap((edge) => {
-    if (
-      edge.target !== nodeId ||
-      (!includeDisabledEdges && edge.data?.enabled === false) ||
-      edge.data?.collectionMode !== "map"
-    )
-      return [];
-    const portName = decodeHandleId(edge.targetHandle)?.portName;
-    return portName ? [portName] : [];
-  });
+  return [
+    ...edges.flatMap((edge) => {
+      if (
+        edge.target !== nodeId ||
+        (!includeDisabledEdges && edge.data?.enabled === false) ||
+        edge.data?.collectionMode !== "map"
+      )
+        return [];
+      const portName = decodeHandleId(edge.targetHandle)?.portName;
+      return portName ? [portName] : [];
+    }),
+    ...origins
+      .filter(
+        (origin) =>
+          origin.to_node === nodeId && origin.collection_mode === "map",
+      )
+      .map((origin) => origin.to_port),
+  ];
 }
 
 function effectiveShapeForPort(
@@ -132,6 +142,7 @@ function effectiveShapeForPort(
   port: WorkflowPort,
   edges: readonly WorkflowEdge[],
   includeDisabledEdges = false,
+  origins: readonly SavedGraphOrigin[] = [],
 ): WorkflowPort["shape"] {
   return effectivePortShape(
     {
@@ -140,6 +151,7 @@ function effectiveShapeForPort(
         node.id,
         edges,
         includeDisabledEdges,
+        origins,
       ),
     },
     port,
@@ -150,7 +162,19 @@ export function collectionModeForConnection(
   connection: GraphAuthoringConnection,
   nodes: readonly GraphAuthoringNode[],
   edges: readonly WorkflowEdge[],
+  origins: readonly SavedGraphOrigin[] = [],
 ): CollectionMode | null {
+  return (
+    collectionModesForConnection(connection, nodes, edges, origins)[0] ?? null
+  );
+}
+
+export function collectionModesForConnection(
+  connection: GraphAuthoringConnection,
+  nodes: readonly GraphAuthoringNode[],
+  edges: readonly WorkflowEdge[],
+  origins: readonly SavedGraphOrigin[] = [],
+): CollectionMode[] {
   const sourceHandle = decodeHandleId(connection.sourceHandle);
   const targetHandle = decodeHandleId(connection.targetHandle);
   const sourceNode = nodes.find((node) => node.id === connection.source);
@@ -161,7 +185,7 @@ export function collectionModeForConnection(
     !workflowNodeIsSupported(sourceNode.data) ||
     !workflowNodeIsSupported(targetNode.data)
   ) {
-    return null;
+    return [];
   }
   const sourcePort = sourceNode?.data.spec.outputs.find(
     (port) => port.name === sourceHandle?.portName,
@@ -169,26 +193,23 @@ export function collectionModeForConnection(
   const targetPort = targetNode?.data.spec.inputs.find(
     (port) => port.name === targetHandle?.portName,
   );
-  if (!sourcePort || !targetPort) return null;
+  if (!sourcePort || !targetPort) return [];
 
   const sourceShape = effectiveShapeForPort(
     sourceNode,
     sourcePort,
     edges,
     true,
+    origins,
   );
-  if (acceptedPortShapes(targetPort).includes(sourceShape)) return "direct";
-  if (portHasInstancePlugs(targetPort)) return null;
-
   const targetShape = effectiveShapeForPort(
     targetNode,
     targetPort,
     edges,
     true,
+    origins,
   );
-  if (sourceShape === targetShape) return "direct";
-  if (sourceShape === "many" && targetShape === "one") return "map";
-  return null;
+  return collectionModesForShapes(sourceShape, targetPort, targetShape);
 }
 
 export function isConnectionAccepted(
@@ -198,8 +219,14 @@ export function isConnectionAccepted(
   artifactTypes: readonly ArtifactTypeSpec[],
   artifactConversions: readonly ArtifactConversionSpec[],
   existingEdgeId: string | null = null,
+  origins: readonly SavedGraphOrigin[] = [],
 ): boolean {
-  const collectionMode = collectionModeForConnection(connection, nodes, edges);
+  const collectionMode = collectionModeForConnection(
+    connection,
+    nodes,
+    edges,
+    origins,
+  );
   if (
     !collectionMode ||
     !connectionRoutesFor(connection, artifactTypes, artifactConversions).length

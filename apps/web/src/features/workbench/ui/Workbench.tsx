@@ -264,6 +264,7 @@ import {
 } from "../model/artifact-drop";
 import {
   collectionModeForConnection,
+  collectionModesForConnection,
   inputPlugBindingsForNode,
   isConnectionAccepted,
   mappedInputPortsForNode,
@@ -2197,6 +2198,17 @@ function WorkbenchBody({
             applyAuthoringCommands([
               { kind: "remove_origins", origin_ids: [originId] },
             ]),
+          onCollectionModeChange: (
+            originId: string,
+            collectionMode: RunEdgeCollectionMode,
+          ) =>
+            applyAuthoringCommands([
+              {
+                kind: "update_origin",
+                origin_id: originId,
+                update: { collection_mode: collectionMode },
+              },
+            ]),
         },
       })),
     [
@@ -2811,9 +2823,11 @@ function WorkbenchBody({
         registry?.artifact_types ?? [],
         registry?.artifact_conversions ?? [],
         "id" in connection ? connection.id : null,
+        authoredDocument.origins,
       );
     },
     [
+      authoredDocument.origins,
       activeArtifactViewers.nodes,
       activeArtifactViewers.edges,
       activeArtifactViewers.bindings,
@@ -2916,6 +2930,7 @@ function WorkbenchBody({
         connection,
         nodes,
         edges,
+        authoredDocument.origins,
       );
       if (!collectionMode) return;
 
@@ -2987,6 +3002,7 @@ function WorkbenchBody({
       });
     },
     [
+      authoredDocument.origins,
       activeArtifactViewers.nodes,
       activeArtifactViewers.edges,
       applyAuthoringCommands,
@@ -3469,7 +3485,12 @@ function WorkbenchBody({
             secretInputScope: `${activeGraph?.id ?? "unsaved"}:${activeGraph?.revision ?? "none"}`,
             onApplyNodeSecret: applyConfiguredNodeSecret,
             onRemoveNodeSecret: removeConfiguredNodeSecret,
-            mappedInputPorts: mappedInputPortsForNode(node.id, edges),
+            mappedInputPorts: mappedInputPortsForNode(
+              node.id,
+              edges,
+              false,
+              authoredDocument.origins,
+            ),
             inputPlugBindings: inputPlugBindingsForNode(
               node,
               nodes,
@@ -3563,10 +3584,11 @@ function WorkbenchBody({
         const otherEdges = edges.filter(
           (candidate) => candidate.id !== edge.id,
         );
-        const validMode = collectionModeForConnection(
+        const validModes = collectionModesForConnection(
           connection,
           nodes,
           otherEdges,
+          authoredDocument.origins,
         );
         return {
           ...edge,
@@ -3581,10 +3603,9 @@ function WorkbenchBody({
               ? artifactTypeColor(deliveredArtifactType.id, tokens.colorAccent)
               : undefined,
             routeOptions,
-            allowedCollectionModes:
-              edge.data?.compatibilityIssues?.length || !validMode
-                ? []
-                : [validMode],
+            allowedCollectionModes: edge.data?.compatibilityIssues?.length
+              ? []
+              : validModes,
             onUpdate: edge.data?.compatibilityIssues?.length
               ? undefined
               : (edgeId: string, update: WorkflowEdgeUpdate) => {
@@ -3602,6 +3623,7 @@ function WorkbenchBody({
         };
       }),
     [
+      authoredDocument.origins,
       edges,
       nodes,
       registry?.artifact_conversions,

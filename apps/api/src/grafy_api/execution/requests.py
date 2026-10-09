@@ -194,6 +194,7 @@ class RunOriginRequest(BaseModel):
         default_factory=list,
         max_length=MAX_ARTIFACT_CONVERSION_HOPS,
     )
+    collection_mode: Literal["direct", "map"] = "direct"
 
     @property
     def from_node(self) -> str:
@@ -210,6 +211,7 @@ class RunOriginRequest(BaseModel):
             to_port=origin.to_port,
             to_plug=origin.to_plug,
             value=origin.value,
+            collection_mode=origin.collection_mode,
             conversion_path=[
                 ArtifactConversionRequest(id=step.id, version=step.version)
                 for step in origin.conversion_path

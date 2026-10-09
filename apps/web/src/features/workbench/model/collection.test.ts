@@ -160,6 +160,7 @@ function origin(plugId: string, value: ArtifactRef): SavedGraphOrigin {
     to_port: COLLECTION_PORT,
     to_plug: plugId,
     value,
+    collection_mode: "direct",
     conversion_path: [],
   };
 }

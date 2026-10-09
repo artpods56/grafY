@@ -13,6 +13,7 @@ import {
   isArtifactDrop,
   readArtifactDrop,
   readArtifactDropGroups,
+  originCollectionModes,
   resolveArtifactDrop,
   writeArtifactDropGroups,
   writeArtifactDrop,
@@ -95,6 +96,7 @@ function origin(overrides: Partial<SavedGraphOrigin> = {}): SavedGraphOrigin {
     to_port: "input",
     to_plug: null,
     value: ref("table"),
+    collection_mode: "direct",
     conversion_path: [],
     ...overrides,
   };
@@ -219,7 +221,7 @@ describe("artifact drop acceptance", () => {
         {},
         [],
       ),
-    ).toEqual({ conversionPath: [] });
+    ).toEqual({ conversionPath: [], collectionMode: "direct" });
   });
 
   it("accepts another type in the port's declared accepted set", () => {
@@ -229,7 +231,7 @@ describe("artifact drop acceptance", () => {
 
     expect(
       resolveArtifactDrop({ value: ref("csv"), shape: "one" }, target, {}, []),
-    ).toEqual({ conversionPath: [] });
+    ).toEqual({ conversionPath: [], collectionMode: "direct" });
   });
 
   it("prefers the exact accepted type over a declared conversion", () => {
@@ -239,7 +241,7 @@ describe("artifact drop acceptance", () => {
       resolveArtifactDrop({ value: ref("table"), shape: "one" }, target, {}, [
         conversion("to-csv", "table", "csv"),
       ]),
-    ).toEqual({ conversionPath: [] });
+    ).toEqual({ conversionPath: [], collectionMode: "direct" });
   });
 
   it("auto-selects one unique shortest declared conversion", () => {
@@ -255,7 +257,10 @@ describe("artifact drop acceptance", () => {
         {},
         conversions,
       ),
-    ).toEqual({ conversionPath: [{ id: "to-table", version: 1 }] });
+    ).toEqual({
+      conversionPath: [{ id: "to-table", version: 1 }],
+      collectionMode: "direct",
+    });
   });
 
   it("refuses two equally short conversions instead of choosing one", () => {
@@ -287,7 +292,7 @@ describe("artifact drop acceptance", () => {
     ).toBeNull();
   });
 
-  it("refuses a shape the port does not accept", () => {
+  it("maps a sequence over an input that takes one item", () => {
     expect(
       resolveArtifactDrop(
         { value: sequence("a"), shape: "many" },
@@ -295,7 +300,30 @@ describe("artifact drop acceptance", () => {
         {},
         [],
       ),
+    ).toEqual({ conversionPath: [], collectionMode: "map" });
+  });
+
+  it("refuses a sequence on a variadic input that takes one item", () => {
+    expect(
+      resolveArtifactDrop(
+        { value: sequence("a"), shape: "many" },
+        port({ accepted_shapes: ["one"], variadic: true }),
+        {},
+        [],
+      ),
     ).toBeNull();
+  });
+
+  it("offers whole or mapped transport for a sequence on a sequence input", () => {
+    expect(
+      originCollectionModes(
+        port({ shape: "many", accepted_shapes: ["many"] }),
+        "many",
+      ),
+    ).toEqual(["direct", "map"]);
+    expect(
+      originCollectionModes(port({ accepted_shapes: ["one"] }), "one"),
+    ).toEqual(["direct"]);
   });
 
   it("resolves a bound generic port from its artifact type binding", () => {
@@ -313,7 +341,7 @@ describe("artifact drop acceptance", () => {
         },
         [],
       ),
-    ).toEqual({ conversionPath: [] });
+    ).toEqual({ conversionPath: [], collectionMode: "direct" });
   });
 });
 
@@ -335,6 +363,7 @@ describe("artifact drop commands", () => {
         to_port: "input",
         to_plug: null,
         value: ref("table"),
+        collection_mode: "direct",
         conversion_path: [],
       },
     });
@@ -469,6 +498,56 @@ describe("artifact drop commands", () => {
         origin_id: "origin-1",
         update: {
           value: ref("csv"),
+          collection_mode: "direct",
+          conversion_path: [],
+        },
+      },
+    ]);
+  });
+
+  it("maps a dropped sequence over an input that takes one item", () => {
+    const commands = artifactDropCommands(
+      { value: sequence("a", "b"), shape: "many" },
+      TARGET,
+      port(),
+      {},
+      state(),
+    );
+
+    expect(commands).toEqual([
+      {
+        kind: "add_origin",
+        origin: expect.objectContaining({
+          to_node: "node-a",
+          to_port: "input",
+          value: sequence("a", "b"),
+          collection_mode: "map",
+        }) as unknown,
+      },
+    ]);
+  });
+
+  it("keeps a mapped sequence input mapped when its sequence is replaced", () => {
+    const sequencePort = port({ shape: "many", accepted_shapes: ["many"] });
+    const commands = artifactDropCommands(
+      { value: sequence("c"), shape: "many" },
+      TARGET,
+      sequencePort,
+      {},
+      state({
+        origins: [
+          origin({ value: sequence("a", "b"), collection_mode: "map" }),
+        ],
+      }),
+    );
+
+    expect(commands).toEqual([
+      {
+        kind: "update_origin",
+        origin_id: "origin-1",
+        update: {
+          value: sequence("c"),
+          collection_mode: "map",
           conversion_path: [],
         },
       },

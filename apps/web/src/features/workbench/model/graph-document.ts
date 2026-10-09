@@ -41,7 +41,12 @@ type SavedGraphEdgeUpdate = Partial<
 type SavedGraphOriginUpdate = Partial<
   Pick<
     AuthoredGraphOrigin,
-    "to_node" | "to_port" | "to_plug" | "value" | "conversion_path"
+    | "to_node"
+    | "to_port"
+    | "to_plug"
+    | "value"
+    | "collection_mode"
+    | "conversion_path"
   >
 >;
 
@@ -364,6 +369,7 @@ export function projectSavedGraphOrigin(
     to_plug: origin.to_plug ?? null,
     to_port: origin.to_port,
     value: structuredClone(origin.value),
+    collection_mode: origin.collection_mode ?? "direct",
   };
 }
 
@@ -394,6 +400,9 @@ function projectSavedGraphOriginUpdate(
     projected.conversion_path = (update.conversion_path ?? []).map(
       ({ id, version }) => ({ id, version }),
     );
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "collection_mode")) {
+    projected.collection_mode = update.collection_mode;
   }
   return projected;
 }

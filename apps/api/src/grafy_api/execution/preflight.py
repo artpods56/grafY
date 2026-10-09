@@ -379,6 +379,7 @@ def _validate_saved_graph_fragment(
             origin.to_port,
             origin.to_plug,
             origin.value.model_dump_json(),
+            origin.collection_mode,
             tuple((step.id, step.version) for step in origin.conversion_path),
         )
         for origin in graph.document.origins
@@ -390,6 +391,7 @@ def _validate_saved_graph_fragment(
             origin.to_port,
             origin.to_plug,
             origin.value.model_dump_json(),
+            origin.collection_mode,
             tuple((step.id, step.version) for step in origin.conversion_path),
         )
         for origin in origins

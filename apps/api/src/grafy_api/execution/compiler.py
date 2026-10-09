@@ -321,16 +321,10 @@ class GraphCompiler:
             )
             for node_id, node in nodes_by_id.items()
         }
-        invocations_by_id = _derive_invocations(views_by_id, request.edges)
-        for origin in request.origins:
-            invocation = invocations_by_id[origin.to_node]
-            if (
-                invocation.mode is InvocationMode.MAP
-                and origin.to_port in invocation.map_inputs
-            ):
-                raise GraphExecutionError(
-                    f"{connection_label(origin)} cannot use collection mode 'map'"
-                )
+        invocations_by_id = _derive_invocations(
+            views_by_id,
+            [*request.edges, *request.origins],
+        )
         compiled_edges = _compile_edges(
             nodes_by_id=nodes_by_id,
             views_by_id=views_by_id,
@@ -791,11 +785,7 @@ def _validate_input_plugs(
         target_port = target_node.input_contract.ports.get(connection.to_port)
         if target_port is None:
             continue
-        collection_mode = (
-            "direct"
-            if isinstance(connection, RunOriginRequest)
-            else connection.collection_mode
-        )
+        collection_mode = connection.collection_mode
         if not target_port.instance_plugs:
             if connection.to_plug is not None:
                 raise GraphExecutionError(
@@ -891,9 +881,7 @@ def _compile_edges(
         requested_projection = (
             None if isinstance(edge, RunOriginRequest) else edge.projection
         )
-        collection_mode = (
-            "direct" if isinstance(edge, RunOriginRequest) else edge.collection_mode
-        )
+        collection_mode = edge.collection_mode
         if isinstance(edge, RunOriginRequest):
             origin_value = edge.value
             source_shape = (
@@ -1087,9 +1075,9 @@ def _compile_edges(
 
 def _derive_invocations(
     views_by_id: dict[str, ResolvedNodeContractView],
-    edges: list[RunEdgeRequest],
+    edges: list[RunConnectionRequest],
 ) -> dict[str, NodeInvocation]:
-    map_edges_by_target: dict[str, dict[str, RunEdgeRequest]] = {}
+    map_edges_by_target: dict[str, dict[str, RunConnectionRequest]] = {}
     for edge in edges:
         if edge.collection_mode != "map":
             continue
