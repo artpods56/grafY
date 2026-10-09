@@ -627,7 +627,10 @@ def test_builtin_catalog_exposes_host_artifact_and_conversion_contracts() -> Non
         for conversion in response.artifact_conversions
     ]
     assert len(artifact_keys) == len(set(artifact_keys))
-    assert conversion_keys == [("builtin.scalar.integer_to_text", 1)]
+    assert conversion_keys == [
+        ("builtin.scalar.integer_to_text", 1),
+        ("builtin.file.txt_to_text", 1),
+    ]
     assert ("scalar.integer", 1) in artifact_keys
     assert ("scalar.text", 1) in artifact_keys
 
