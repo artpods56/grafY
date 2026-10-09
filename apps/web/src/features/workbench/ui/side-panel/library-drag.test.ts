@@ -371,7 +371,7 @@ describe("folder drags", () => {
     const groups = readArtifactDropGroups(dataTransfer);
     expect(groups).toHaveLength(1);
     expect(
-      sequence(groups[0].value).item_refs.map((ref) => ref.artifact_id),
+      sequence(groups[0]!.value).item_refs.map((ref) => ref.artifact_id),
     ).toEqual(["a", "b"]);
     expect(readArtifactDropFolder(dataTransfer)).toEqual({
       name: "Field work",
@@ -397,8 +397,10 @@ describe("folder drags", () => {
       "file.csv",
       "file.png",
     ]);
+    const firstGroup = groups[0];
+    if (!firstGroup) throw new Error("expected a first group");
     expect(
-      sequence(groups[0].value).item_refs.map((ref) => ref.artifact_id),
+      sequence(firstGroup.value).item_refs.map((ref) => ref.artifact_id),
     ).toEqual(["a", "b"]);
   });
 });

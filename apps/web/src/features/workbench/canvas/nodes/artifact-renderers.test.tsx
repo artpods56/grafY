@@ -534,7 +534,7 @@ describe("Table artifact rendering", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(String(fetchMock.mock.calls[2][0])).toContain("offset=50");
+    expect(String(fetchMock.mock.calls[2]![0])).toContain("offset=50");
     expect(container.textContent).toContain("still visible");
     expect(container.textContent).toContain("previous page is still available");
     const previousButton = container.querySelector<HTMLButtonElement>(
@@ -609,7 +609,7 @@ describe("Table artifact rendering", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(String(fetchMock.mock.calls[2][0])).toContain(
+    expect(String(fetchMock.mock.calls[2]![0])).toContain(
       "/table/cell?row_index=0&column_id=geometry%2Fwkt",
     );
     expect(container.querySelector("textarea")?.value).toBe(
@@ -1221,11 +1221,11 @@ describe("GIS map artifact rendering", () => {
     await clickButton(container, "Load interactive map");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toBe(
+    expect(String(fetchMock.mock.calls[0]![0])).toBe(
       "/api/v1/workspaces/workspace-1/artifacts/map-artifact/geo/render",
     );
-    expect(String(fetchMock.mock.calls[0][0])).not.toContain("/content");
-    expect(String(fetchMock.mock.calls[0][0])).not.toContain("/geo/page");
+    expect(String(fetchMock.mock.calls[0]![0])).not.toContain("/content");
+    expect(String(fetchMock.mock.calls[0]![0])).not.toContain("/geo/page");
     expect(maplibreMock.instances).toHaveLength(1);
     expect(maplibreMock.addProtocol).toHaveBeenCalledTimes(1);
 
@@ -1319,7 +1319,7 @@ describe("GIS map artifact rendering", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(String(fetchMock.mock.calls[1][0])).toContain("/geo/query");
+    expect(String(fetchMock.mock.calls[1]![0])).toContain("/geo/query");
     const map = maplibreMock.instances[0] as unknown as {
       fitBounds: ReturnType<typeof vi.fn>;
       setFilter: ReturnType<typeof vi.fn>;

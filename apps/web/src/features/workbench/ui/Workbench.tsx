@@ -2566,7 +2566,8 @@ function WorkbenchBody({
         return;
       }
       if (groups.length === 1) {
-        placeArtifactOnInput(groups[0], pending.destination.target);
+        const [only] = groups;
+        if (only) placeArtifactOnInput(only, pending.destination.target);
       }
     },
     [pendingFolderDrop, placeArtifactGroups, placeArtifactOnInput],

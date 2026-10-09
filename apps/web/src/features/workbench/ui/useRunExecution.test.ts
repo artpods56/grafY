@@ -425,7 +425,7 @@ describe("useRunExecution", () => {
 
     expect(apiMocks.startRunExecution).toHaveBeenCalledOnce();
     expect(hook.result.current.visibleExecution?.status).toBe("preparing");
-    expect(harness.nodes()[0].data.execution.status).toBe("queued");
+    expect(harness.nodes()[0]?.data.execution.status).toBe("queued");
 
     await React.act(async () => {
       started.resolve(execution("queued", { queue_position: 2 }));
@@ -439,15 +439,15 @@ describe("useRunExecution", () => {
     });
     expect(hook.result.current.visibleExecution?.status).toBe("running");
     expect(hook.result.current.visibleExecution?.queuePosition).toBeNull();
-    expect(harness.nodes()[0].data.execution.status).toBe("running");
+    expect(harness.nodes()[0]?.data.execution.status).toBe("running");
 
     await React.act(async () => {
       await vi.advanceTimersByTimeAsync(500);
       await runPromise;
     });
     expect(hook.result.current.running).toBe(false);
-    expect(harness.nodes()[0].data.execution.status).toBe("succeeded");
-    expect(harness.nodes()[0].data.run?.node_id).toBe("node-1");
+    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
+    expect(harness.nodes()[0]?.data.run?.node_id).toBe("node-1");
     expect(hook.result.current.announcement).toBe(
       "Execution completed successfully.",
     );
@@ -946,7 +946,7 @@ describe("useRunExecution", () => {
       started.resolve(succeededExecution());
       await Promise.all([firstRun, duplicateRun]);
     });
-    expect(harness.nodes()[0].data.execution.status).toBe("succeeded");
+    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
   });
 
   it("records the user scope on the submitted execution", async () => {
@@ -1049,8 +1049,10 @@ describe("useRunExecution", () => {
 
   it("clears a stale upstream pin when the current saved revision has no materialization", async () => {
     const graph = connectedSelection();
-    graph.nodes[0].data.run = materializedRun("source", "stale-artifact");
-    graph.nodes[0].data.execution = { status: "succeeded" };
+    const source = graph.nodes[0];
+    if (!source) throw new Error("expected a source node");
+    source.data.run = materializedRun("source", "stale-artifact");
+    source.data.execution = { status: "succeeded" };
     apiMocks.getGraphMaterializations.mockResolvedValue({
       graph_id: "graph-1",
       graph_revision: 7,
@@ -1080,8 +1082,10 @@ describe("useRunExecution", () => {
 
   it("does not restore an old successful pin from a preserved failure display", async () => {
     const graph = connectedSelection();
-    graph.nodes[0].data.run = materializedRun("source", "stale-artifact");
-    graph.nodes[0].data.execution = {
+    const source = graph.nodes[0];
+    if (!source) throw new Error("expected a source node");
+    source.data.run = materializedRun("source", "stale-artifact");
+    source.data.execution = {
       status: "failed",
       error: "A later attempt failed",
     };
@@ -1114,8 +1118,10 @@ describe("useRunExecution", () => {
 
   it("pins the current saved-revision materialization and preserves an unrelated failure", async () => {
     const graph = connectedSelection();
-    graph.nodes[0].data.run = materializedRun("source", "stale-artifact");
-    graph.nodes[0].data.execution = { status: "succeeded" };
+    const source = graph.nodes[0];
+    if (!source) throw new Error("expected a source node");
+    source.data.run = materializedRun("source", "stale-artifact");
+    source.data.execution = { status: "succeeded" };
     const failed = workflowNode("failed-node");
     failed.data.run = {
       node_id: failed.id,
@@ -1177,8 +1183,10 @@ describe("useRunExecution", () => {
     },
   ])("keeps a local selected-run pin for $name", async ({ activeGraph }) => {
     const graph = connectedSelection();
-    graph.nodes[0].data.run = materializedRun("source", "local-artifact");
-    graph.nodes[0].data.execution = { status: "succeeded" };
+    const source = graph.nodes[0];
+    if (!source) throw new Error("expected a source node");
+    source.data.run = materializedRun("source", "local-artifact");
+    source.data.execution = { status: "succeeded" };
     apiMocks.startRunExecution.mockResolvedValue(succeededExecution("target"));
     const harness = hookHarness({
       ...graph,
@@ -1309,8 +1317,8 @@ describe("useRunExecution", () => {
       await runPromise;
     });
 
-    expect(harness.nodes()[0].data.execution.status).toBe("succeeded");
-    expect(harness.nodes()[0].data.run?.node_id).toBe("node-1");
+    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
+    expect(harness.nodes()[0]?.data.run?.node_id).toBe("node-1");
     expect(harness.runError()).toBeNull();
   });
 
@@ -1343,20 +1351,22 @@ describe("useRunExecution", () => {
     await React.act(async () => {
       live.handlers.onEvent(executionStatusEvent(1, "running"));
     });
-    expect(harness.nodes()[0].data.execution.status).toBe("idle");
+    expect(harness.nodes()[0]?.data.execution.status).toBe("idle");
 
     await React.act(async () => {
       await vi.advanceTimersByTimeAsync(500);
     });
-    expect(harness.nodes()[0].data.execution.status).toBe("idle");
+    expect(harness.nodes()[0]?.data.execution.status).toBe("idle");
 
     await React.act(async () => {
       await vi.advanceTimersByTimeAsync(500);
       await runPromise;
     });
 
-    expect(harness.nodes()[0].data.execution.status).toBe("idle");
-    expect(harness.nodes()[0].data.run).toBeNull();
+    const settled = harness.nodes()[0];
+    if (!settled) throw new Error("expected a first node");
+    expect(settled.data.execution.status).toBe("idle");
+    expect(settled.data.run).toBeNull();
     expect(harness.runError()).toContain(
       "The graph changed while it was running",
     );
@@ -1479,7 +1489,7 @@ describe("useRunExecution", () => {
     const { runPromise } = await launchRun(hook.result);
 
     expect(hook.result.current.visibleExecution?.status).toBe("running");
-    expect(harness.nodes()[0].data.execution.status).toBe("running");
+    expect(harness.nodes()[0]?.data.execution.status).toBe("running");
 
     await React.act(async () => {
       await hook.result.current.cancelCurrentExecution();
@@ -1488,7 +1498,7 @@ describe("useRunExecution", () => {
       status: "running",
       statusError: "Cancellation service unavailable. You can try again.",
     });
-    expect(harness.nodes()[0].data.execution.status).toBe("running");
+    expect(harness.nodes()[0]?.data.execution.status).toBe("running");
 
     await React.act(async () => {
       await hook.result.current.cancelCurrentExecution();
@@ -1498,20 +1508,20 @@ describe("useRunExecution", () => {
       statusError:
         "Received cancellation status for another execution. You can try again.",
     });
-    expect(harness.nodes()[0].data.execution.status).toBe("running");
+    expect(harness.nodes()[0]?.data.execution.status).toBe("running");
 
     await React.act(async () => {
       await hook.result.current.cancelCurrentExecution();
     });
     expect(apiMocks.cancelRunExecution).toHaveBeenCalledTimes(3);
     expect(hook.result.current.visibleExecution?.status).toBe("cancelling");
-    expect(harness.nodes()[0].data.execution.status).toBe("cancelling");
+    expect(harness.nodes()[0]?.data.execution.status).toBe("cancelling");
 
     await React.act(async () => {
       await vi.advanceTimersByTimeAsync(500);
       await runPromise;
     });
-    expect(harness.nodes()[0].data.execution.status).toBe("cancelled");
+    expect(harness.nodes()[0]?.data.execution.status).toBe("cancelled");
     expect(hook.result.current.announcement).toBe("Execution cancelled.");
   });
 });

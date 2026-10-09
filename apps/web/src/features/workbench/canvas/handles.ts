@@ -145,8 +145,19 @@ export function decodeHandleId(
   if (!id) return null;
   const p = id.split("::");
   if (p.length < 5 || p.length > 8) return null;
+  const portName = p[0];
+  const typePart = p[1];
+  const versionPart = p[2];
   const shape = p[3];
   const direction = p[4];
+  // `p.length >= 5` makes these reads total; narrow so the compiler sees it.
+  if (
+    portName === undefined ||
+    typePart === undefined ||
+    versionPart === undefined
+  ) {
+    return null;
+  }
   if (shape !== "one" && shape !== "many") return null;
   if (direction !== "input" && direction !== "output") return null;
 
@@ -172,12 +183,12 @@ export function decodeHandleId(
     plugId = segment;
   }
 
-  if (p[2] === "$generic") {
+  if (versionPart === "$generic") {
     try {
-      const artifactTypeVariable = decodeURIComponent(p[1]);
+      const artifactTypeVariable = decodeURIComponent(typePart);
       if (!artifactTypeVariable) return null;
       return {
-        portName: p[0],
+        portName,
         artifactTypeVariable,
         shape,
         direction,
@@ -189,11 +200,11 @@ export function decodeHandleId(
     }
   }
 
-  const schemaVersion = Number(p[2]);
+  const schemaVersion = Number(versionPart);
   if (!Number.isInteger(schemaVersion)) return null;
   return {
-    portName: p[0],
-    artifactTypeId: p[1],
+    portName,
+    artifactTypeId: typePart,
     schemaVersion,
     shape,
     direction,
@@ -375,7 +386,10 @@ function compareConversionPaths(
 ): number {
   const length = Math.min(left.length, right.length);
   for (let index = 0; index < length; index += 1) {
-    const comparison = compareConversions(left[index], right[index]);
+    const step = left[index];
+    const other = right[index];
+    if (!step || !other) break;
+    const comparison = compareConversions(step, other);
     if (comparison !== 0) return comparison;
   }
   return left.length - right.length;

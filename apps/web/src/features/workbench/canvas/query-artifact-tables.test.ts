@@ -61,7 +61,9 @@ describe("Query artifact table relations", () => {
       { id: "c", alias: "charlie" },
       { id: "a", alias: "alpha" },
     ]);
-    expect(removeArtifactQueryRelation([relations[0]], "a")).toEqual([
+    const firstRelation = relations[0];
+    if (!firstRelation) throw new Error("expected a first relation");
+    expect(removeArtifactQueryRelation([firstRelation], "a")).toEqual([
       { id: "a", alias: "alpha" },
     ]);
     expect(relations.map((relation) => relation.id)).toEqual(["a", "b", "c"]);

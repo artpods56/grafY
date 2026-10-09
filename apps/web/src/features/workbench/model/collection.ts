@@ -259,7 +259,10 @@ export function collectCardsCommands({
     (port) => port.name === COLLECTION_PORT,
   );
   const variable = itemsPort?.artifact_type_variable;
-  const artifactType = artifactTypeOfSource(sources[0], nodes);
+  const firstSource = sources[0];
+  const artifactType = firstSource
+    ? artifactTypeOfSource(firstSource, nodes)
+    : null;
   if (!itemsPort || !variable || !artifactType) return null;
 
   // Reading order: cards within half a card label of each other share a row.

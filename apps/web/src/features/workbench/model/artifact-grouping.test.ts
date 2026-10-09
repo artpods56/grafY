@@ -80,9 +80,11 @@ describe("artifact grouping", () => {
       { x: 0, y: 448 },
     ]);
     expect(
-      ungrouped.nodes.map(
-        (node) => cardArtifactRefs(node.data.artifactRef)[0].artifact_id,
-      ),
+      ungrouped.nodes.map((node) => {
+        const first = cardArtifactRefs(node.data.artifactRef)[0];
+        if (!first) throw new Error("expected an artifact ref");
+        return first.artifact_id;
+      }),
     ).toEqual(["table-0", "table-1", "table-2"]);
   });
   it("replaces selected cards, persists the sequence, and ungroups in its current order", () => {
@@ -115,21 +117,29 @@ describe("artifact grouping", () => {
     expect(ungrouped.nodes).toHaveLength(3);
     const restored = ungrouped.nodes.filter((node) => node.selected);
     expect(
-      restored.map(
-        (node) => cardArtifactRefs(node.data.artifactRef)[0].artifact_id,
-      ),
+      restored.map((node) => {
+        const first = cardArtifactRefs(node.data.artifactRef)[0];
+        if (!first) throw new Error("expected an artifact ref");
+        return first.artifact_id;
+      }),
     ).toEqual(["b", "a"]);
-    expect(restored[0].position.x).toBeLessThan(restored[1].position.x);
+    const [leftCard, rightCard] = restored;
+    if (!leftCard || !rightCard) throw new Error("expected two restored cards");
+    expect(leftCard.position.x).toBeLessThan(rightCard.position.x);
+    const otherState = state.nodes[2];
+    if (!otherState) throw new Error("expected the unselected card");
     expect(ungrouped.nodes.find((node) => node.id === "other")).toMatchObject({
       data: reopened.nodes.find((node) => node.id === "other")?.data,
-      position: state.nodes[2].position,
+      position: otherState.position,
     });
     expect(state.nodes).toHaveLength(3);
   });
 
   it("refuses mixed contracts and leaves selection intact", () => {
     const state = canvas();
-    state.nodes[0].data.artifactRef = {
+    const mixed = state.nodes[0];
+    if (!mixed) throw new Error("expected a first card");
+    mixed.data.artifactRef = {
       artifact_id: "b",
       artifact_type: "file.jpeg",
       schema_version: 1,
@@ -139,7 +149,9 @@ describe("artifact grouping", () => {
 
   it("does not collect or ungroup cards carrying an input origin", () => {
     const state = canvas();
-    const value = state.nodes[0].data.artifactRef;
+    const firstCard = state.nodes[0];
+    if (!firstCard) throw new Error("expected a first card");
+    const value = firstCard.data.artifactRef;
     if (!value) throw new Error("Artifact missing");
     const origin: SavedGraphOrigin = {
       id: "origin",
@@ -184,9 +196,13 @@ describe("artifact grouping", () => {
 
   it("tidies only selected cards and keeps values and connections unchanged", () => {
     const state = canvas();
-    state.nodes[0].position = { x: 105, y: 105 };
+    const moved = state.nodes[0];
+    if (!moved) throw new Error("expected a first card");
+    moved.position = { x: 105, y: 105 };
     const next = tidyArtifactCards(state);
-    expect(next.nodes[0].position).not.toEqual(state.nodes[0].position);
+    const nextFirst = next.nodes[0];
+    if (!nextFirst) throw new Error("expected a first tidied card");
+    expect(nextFirst.position).not.toEqual(moved.position);
     expect(next.nodes.map((node) => node.data)).toEqual(
       state.nodes.map((node) => node.data),
     );

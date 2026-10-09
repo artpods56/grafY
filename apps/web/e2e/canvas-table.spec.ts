@@ -37,11 +37,13 @@ const schema: TableSchema = {
   ],
 };
 const fullNotes = "Coordinates and field observations. ".repeat(30);
+const sinkSeed = nodeRegistry.nodes[1];
+if (!sinkSeed) throw new Error("Test registry has no sink node");
 const tableSink = {
-  ...nodeRegistry.nodes[1],
+  ...sinkSeed,
   operator_id: "test.table_sink",
   title: "Table analysis",
-  inputs: nodeRegistry.nodes[1].inputs.map((port) => ({
+  inputs: sinkSeed.inputs.map((port) => ({
     ...port,
     name: "table",
     title: "Table",

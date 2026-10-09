@@ -86,12 +86,17 @@ export function reorderInputPlug(
   if (fromIndex === boundedIndex) return [...inputPlugs];
   const reorderedPortPlugs = [...portPlugs];
   const [movedPlug] = reorderedPortPlugs.splice(fromIndex, 1);
+  if (!movedPlug) return [...inputPlugs];
   reorderedPortPlugs.splice(boundedIndex, 0, movedPlug);
 
   let nextPortIndex = 0;
-  return inputPlugs.map((plug) =>
-    plug.portName === portName ? reorderedPortPlugs[nextPortIndex++] : plug,
-  );
+  return inputPlugs.map((plug) => {
+    if (plug.portName !== portName) return plug;
+    const placed = reorderedPortPlugs[nextPortIndex];
+    nextPortIndex += 1;
+    // Every plug for this port has a slot, so `placed` is always present.
+    return placed ?? plug;
+  });
 }
 
 /**
