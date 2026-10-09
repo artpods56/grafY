@@ -1,7 +1,7 @@
 schema_version = 1
 
-# Allow provider-backed Plugins to contact the public HTTPS origin supplied
-# through their declared base_url configuration field. The current policy
+# Allow provider-backed Plugins to contact public HTTPS origins declared as
+# fixed destinations or supplied through declared config fields. The current policy
 # schema calls globally published Plugins "system" scoped.
 [profiles.plugin-execution.configured-public]
 mode = "configured-public"

@@ -139,3 +139,27 @@ def test_capability_diff_reports_new_nodes_and_removed_nodes() -> None:
     joined = " | ".join(render_plugin_capability_diff(previous, proposed))
     assert "new node llm.chat@1" in joined
     assert "removed node llm.other@1 previously requested: network.egress" in joined
+
+
+def test_capability_diff_reports_fixed_origin_changes() -> None:
+    previous = _catalog(
+        _node(
+            capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,),
+            http_egress=PluginNodeHttpEgressContract(
+                fixed_destinations=("https://old.example",)
+            ),
+        )
+    )
+    proposed = _catalog(
+        _node(
+            capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,),
+            http_egress=PluginNodeHttpEgressContract(
+                fixed_destinations=("https://api.mistral.ai",)
+            ),
+        )
+    )
+    changes = " | ".join(render_plugin_capability_diff(previous, proposed))
+    assert "now declares fixed HTTP origin 'https://api.mistral.ai'" in changes
+    assert "no longer declares fixed HTTP origin 'https://old.example'" in changes
+    first = " | ".join(render_plugin_capability_diff(None, proposed))
+    assert "fixed HTTP origins 'https://api.mistral.ai'" in first

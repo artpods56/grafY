@@ -141,6 +141,14 @@ def _diff_http_egress(
         changes.append(
             f"node {key} no longer declares configured URL field {field_name!r}"
         )
+    for origin in sorted(
+        set(proposed.fixed_destinations) - set(previous.fixed_destinations)
+    ):
+        changes.append(f"node {key} now declares fixed HTTP origin {origin!r}")
+    for origin in sorted(
+        set(previous.fixed_destinations) - set(proposed.fixed_destinations)
+    ):
+        changes.append(f"node {key} no longer declares fixed HTTP origin {origin!r}")
     if previous.dynamic_destinations != proposed.dynamic_destinations:
         direction = "now" if proposed.dynamic_destinations else "no longer"
         changes.append(f"node {key} {direction} requests dynamic destinations")
@@ -156,6 +164,11 @@ def _describe_http_egress(
             f"{field_name!r}" for field_name in http_egress.configured_inputs
         )
         parts.append(f"configured URL fields {rendered_fields}")
+    if http_egress.fixed_destinations:
+        parts.append(
+            "fixed HTTP origins "
+            + ", ".join(repr(origin) for origin in http_egress.fixed_destinations)
+        )
     if http_egress.dynamic_destinations:
         parts.append("dynamic destinations")
     if not parts:
