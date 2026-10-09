@@ -3,6 +3,7 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import ValidationError
 from PIL import Image
 from grafy_core.artifact_contracts import (
     IMAGE_REGIONS,
@@ -234,3 +235,35 @@ async def test_node_wraps_storage_and_decode_errors(stored: bool) -> None:
         )
     assert raised.value.__cause__ is not None
     assert storage.stream.closed == stored
+
+
+def test_kinds_normalize_and_allow_free_form_values() -> None:
+    assert DrawRegionsConfig().kinds is None
+    assert DrawRegionsConfig(kinds="table, custom,table").kinds == "table,custom"
+
+
+@pytest.mark.parametrize("kinds", ["", " ", "table,,title", "table,"])
+def test_kinds_reject_empty_parts(kinds: str) -> None:
+    with pytest.raises(
+        ValidationError, match="kinds must be comma-separated region kinds"
+    ):
+        _ = DrawRegionsConfig(kinds=kinds)
+
+
+def test_kind_filter_draws_only_matching_regions() -> None:
+    regions = ImageRegionSet(
+        width=100,
+        height=50,
+        regions=[
+            ImageRegion(x0=10, y0=10, x1=20, y1=20, kind="custom"),
+            ImageRegion(x0=30, y0=10, x1=40, y1=20, kind="table"),
+        ],
+    )
+    content = render_regions(
+        Image.new("RGB", (100, 50), "white"),
+        regions,
+        DrawRegionsConfig(kinds="custom", label_text="none", fill_opacity=1),
+    )
+    with Image.open(BytesIO(content)) as output:
+        assert output.getpixel((15, 15)) == (20, 184, 166)
+        assert output.getpixel((35, 15)) == (255, 255, 255)

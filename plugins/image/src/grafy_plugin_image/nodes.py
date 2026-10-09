@@ -37,7 +37,7 @@ from grafy_core.nodes import (
 )
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.storage import FileStoragePort
-from pydantic import Field
+from pydantic import Field, StrictStr, field_validator
 
 from grafy_plugin_image.declaration import IMAGES
 
@@ -153,6 +153,30 @@ _FALLBACK = (
 
 
 class DrawRegionsConfig(NodeConfig):
+    kinds: StrictStr | None = Field(
+        default=None,
+        description=(
+            "Comma-separated region kinds to draw, such as table,title. "
+            "Unset draws every kind."
+        ),
+    )
+
+    @field_validator("kinds")
+    @classmethod
+    def validate_kinds(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parts: list[str] = []
+        for part in value.split(","):
+            part = part.strip()
+            if not part:
+                raise ValueError(
+                    "kinds must be comma-separated region kinds, such as table,title"
+                )
+            if part not in parts:
+                parts.append(part)
+        return ",".join(parts)
+
     line_width: int = Field(
         default=3, ge=1, le=50, description="Box outline width in output pixels."
     )
@@ -200,7 +224,10 @@ def render_regions(
     font = ImageFont.load_default(size=max(10, round(min(image.size) / 60)))
     sx = image.width / regions.width
     sy = image.height / regions.height
+    kinds = set(config.kinds.split(",")) if config.kinds is not None else None
     for region in regions.regions:
+        if kinds is not None and region.kind not in kinds:
+            continue
         left = region.x0 * sx
         top = region.y0 * sy
         if left >= image.width or top >= image.height:
