@@ -250,7 +250,8 @@ function projectionFieldType(
   );
   if (variants.length !== 1) return null;
 
-  const variant = variants[0];
+  const [variant] = variants;
+  if (!variant) return null;
   if (
     variant.type === "string" ||
     variant.type === "integer" ||
@@ -266,10 +267,12 @@ function projectionFieldType(
   const itemVariants = schemaCandidates(items, root).filter(
     (candidate) => candidate.type !== "null",
   );
+  const [itemVariant] = itemVariants;
   if (
     itemVariants.length !== 1 ||
+    !itemVariant ||
     !["string", "integer", "number", "boolean"].includes(
-      String(itemVariants[0].type),
+      String(itemVariant.type),
     )
   ) {
     return null;
@@ -460,6 +463,13 @@ export function ArtifactPortPreview({
 
   const focusedIndex = Math.min(index, artifacts.length - 1);
   const active = artifacts[focusedIndex];
+  // Every caller renders this preview only for an output that has artifacts;
+  // an empty one has nothing to focus and no card to paint.
+  if (!active) {
+    throw new Error(
+      `ArtifactPortPreview needs at least one artifact (port ${output.port})`,
+    );
+  }
   const activeContentUrl = artifactContentUrl(workspace.id, active.content_url);
 
   React.useEffect(() => {
@@ -585,10 +595,14 @@ export function ArtifactPortPreview({
     jsonPayloadMissing || jsonPayloadFailed || payloadDeferred
       ? META_ARTIFACT_RENDERER
       : rendererFor(active, activePayload);
+  const [firstMode] = renderer.modes;
+  // Every renderer declares at least one mode; one with none has nothing to
+  // ask its component to paint.
+  if (!firstMode) {
+    throw new Error(`Artifact renderer ${renderer.id} declares no modes`);
+  }
   const mode =
-    modeChoice && renderer.modes.includes(modeChoice)
-      ? modeChoice
-      : renderer.modes[0];
+    modeChoice && renderer.modes.includes(modeChoice) ? modeChoice : firstMode;
   const projectionModes = ["pretty", "raw"] as const;
   const projectionMode =
     modeChoice && projectionModes.includes(modeChoice as "pretty" | "raw")

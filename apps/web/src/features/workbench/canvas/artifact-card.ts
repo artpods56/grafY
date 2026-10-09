@@ -68,6 +68,7 @@ export function artifactCardValue(
 ): ArtifactCardValue | null {
   if (refs.length === 0) return null;
   const first = refs[0];
+  if (!first) return null;
   const mixedType = refs.some(
     (ref) =>
       ref.artifact_type !== first.artifact_type ||
@@ -119,6 +120,7 @@ export function collectArtifactCardRefs(
     });
   if (refs.length < 1) return null;
   const first = refs[0];
+  if (!first) return null;
   return refs.every((ref) => shareOneArtifactType(ref, first)) ? refs : null;
 }
 
@@ -177,6 +179,7 @@ export function moveArtifactCardRef(
   if (index < 0 || index >= refs.length || index === target) return [...refs];
   const next = [...refs];
   const [moved] = next.splice(index, 1);
+  if (!moved) return [...refs];
   next.splice(target, 0, moved);
   return next;
 }

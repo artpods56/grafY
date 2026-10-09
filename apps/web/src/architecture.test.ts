@@ -57,7 +57,9 @@ function allSourceFiles(dir: string): string[] {
 function directImports(file: string): string[] {
   const targets: string[] = [];
   for (const match of readFileSync(file, "utf8").matchAll(IMPORT_SPECIFIER)) {
-    const resolved = resolveSpecifier(file, match[1]);
+    const specifier = match[1];
+    if (!specifier) continue;
+    const resolved = resolveSpecifier(file, specifier);
     if (resolved) targets.push(relative(resolved));
   }
   return targets;
@@ -126,6 +128,7 @@ function findCycle(graph: Map<string, string[]>): string[] | null {
     onPath.add(start);
     while (stack.length > 0) {
       const frame = stack[stack.length - 1];
+      if (!frame) break;
       if (frame.index >= frame.targets.length) {
         stack.pop();
         onPath.delete(frame.from);

@@ -143,6 +143,7 @@ export function moveSchemaBuilderField(
 
   const reordered = [...fields];
   const [movedField] = reordered.splice(fromIndex, 1);
+  if (!movedField) return [...fields];
   reordered.splice(boundedIndex, 0, movedField);
   return reordered;
 }

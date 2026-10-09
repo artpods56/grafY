@@ -552,7 +552,10 @@ function fullType(shape: SpikePort["shape"], type: TypeKey | undefined) {
 function shortType(shape: SpikePort["shape"], type: TypeKey | undefined) {
   let inner = "any";
   if (type) {
-    const [family, kind = family] = type.id.split(".");
+    // split() always yields the leading segment; a dotted id adds the kind.
+    const parts = type.id.split(".");
+    const family = parts[0] ?? type.id;
+    const kind = parts[1] ?? family;
     inner = kind === "data" || kind === "value" ? family : kind;
     if (type.id === "scalar.integer") inner = "int";
     if (type.id === "scalar.text") inner = "text";
@@ -1099,16 +1102,24 @@ export function PortTypesSpike() {
             ): candidate is (typeof APPROACHES)[number] & {
               id: Approach;
             } => candidate.id !== "compare",
-          ).map((candidate) => (
-            <section key={candidate.id} {...stylex.props(s.compareCell)}>
-              <span {...stylex.props(s.compareTitle)}>{candidate.label}</span>
-              <span {...stylex.props(s.compareNote)}>{candidate.note}</span>
-              <div {...stylex.props(s.compareNodes)}>
-                <div {...stage}>{card(NODES[0], candidate.id)}</div>
-                <div {...stage}>{card(NODES[1], candidate.id)}</div>
-              </div>
-            </section>
-          ))}
+          ).map((candidate) => {
+            const [leftNode, rightNode] = NODES;
+            if (!leftNode || !rightNode) {
+              throw new Error(
+                "The port-types compare grid expects two sample nodes",
+              );
+            }
+            return (
+              <section key={candidate.id} {...stylex.props(s.compareCell)}>
+                <span {...stylex.props(s.compareTitle)}>{candidate.label}</span>
+                <span {...stylex.props(s.compareNote)}>{candidate.note}</span>
+                <div {...stylex.props(s.compareNodes)}>
+                  <div {...stage}>{card(leftNode, candidate.id)}</div>
+                  <div {...stage}>{card(rightNode, candidate.id)}</div>
+                </div>
+              </section>
+            );
+          })}
         </div>
       ) : (
         <div {...stylex.props(s.scenes)}>
