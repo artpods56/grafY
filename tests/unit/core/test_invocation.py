@@ -353,12 +353,30 @@ def test_invocation_capabilities_and_effective_shapes() -> None:
     assert effective_output_shape(ScalarNode, invocation, "value") is PortShape.MANY
 
 
+def test_optional_single_value_input_can_drive_map() -> None:
+    invocation = NodeInvocation(mode=InvocationMode.MAP, map_input="item")
+
+    assert map_input_candidates(OptionalDriverNode) == ("item",)
+    assert supported_invocation_modes(OptionalDriverNode) == (
+        InvocationMode.ONCE,
+        InvocationMode.MAP,
+    )
+    validate_invocation(OptionalDriverNode, invocation)
+    assert (
+        effective_input_shape(OptionalDriverNode, invocation, "item")
+        is PortShape.MANY
+    )
+    assert (
+        effective_output_shape(OptionalDriverNode, invocation, "value")
+        is PortShape.MANY
+    )
+
+
 @pytest.mark.parametrize(
     ("node", "map_input", "message"),
     [
         (ScalarNode, "missing", "does not exist"),
         (CollectionNode, "items", "must have shape 'one'"),
-        (OptionalDriverNode, "item", "must be required"),
         (VariadicDriverNode, "items", "cannot be variadic"),
         (ManyOutputNode, "item", "MAP output 'values' must have shape 'one'"),
         (ExtraOutputNode, "item", "non-port fields: diagnostic"),
