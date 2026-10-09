@@ -21,10 +21,12 @@ class FakeWebSocket {
   static readonly CLOSED = 3;
   static instances: FakeWebSocket[] = [];
 
+  readonly url: string;
   readyState = FakeWebSocket.CONNECTING;
   private readonly listeners = new Map<string, Set<(event: unknown) => void>>();
 
-  constructor(readonly url: string) {
+  constructor(url: string) {
+    this.url = url;
     FakeWebSocket.instances.push(this);
   }
 
