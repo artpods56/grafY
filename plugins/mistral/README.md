@@ -29,6 +29,12 @@ The `document` output is `mistral.ocr.document@1`. It contains joined Markdown, 
 
 `pages` uses zero-based indexes and ranges, such as `0,2-4`. Leave it unset to process all pages. `max_retries` defaults to zero; enabling it can repeat a billable request. Retries cover connection failures, timeouts, and HTTP 408, 429, 500, 502, 503, and 504. Redirects are disabled and cancellation propagates to the caller.
 
+## Drawing OCR boxes
+
+Connect the OCR `document` output to `mistral.ocr.regions@1`. Set `page_index` to the OCR page index and optionally filter `kinds` with a comma-separated list such as `table,title`. Connect its `regions` output and the page's raster to the Image plugin's `image.draw_regions@1`.
+
+Boxes use the OCR page's pixel space; the draw node rescales them to the raster it receives. For OCR `image` input, use the same image. No node produces PDF page rasters yet.
+
 ## Development and compatibility
 
 The implementation uses the official `mistralai` 3.1 client and requires `>=3.1.0,<4`. From this directory, run `uv sync --locked --no-sources --find-links wheels` to install against the vendored Grafy SDK. The root workspace uses the editable source for integration checks.

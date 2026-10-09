@@ -13,5 +13,6 @@ def test_manifest_loader_target_preserves_system_identity_and_freezes() -> None:
     assert MISTRAL.slug == "external.mistral"
     assert {registration.key for registration in MISTRAL.nodes} == {
         ("mistral.ocr.process", 1),
+        ("mistral.ocr.regions", 1),
     }
     assert "grafy-core==0.1.0" in (requires("grafy-plugin-mistral") or [])
