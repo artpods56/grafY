@@ -34,6 +34,7 @@ import {
 import { COLLECTION_OPERATOR_ID, COLLECTION_PORT } from "../model/collection";
 import type { WorkflowNode } from "../model/execution-plan";
 import { useArtifactCardCommands } from "./workbench-artifact-cards";
+import { useCanvasSelection } from "./workbench-canvas-selection";
 import {
   useArtifactViewerCommands,
   type ArtifactViewerRoomSync,
@@ -232,6 +233,8 @@ type Harness = {
   refused: string[];
   document: AuthoredGraphDocument;
   published: GraphPresentation[];
+  /** The nodes the canvas still holds, so a selection hand-off is visible. */
+  selectedNodeIds: string[];
   ungroupCollection: (nodeId: string) => void;
   viewers: ArtifactViewerCanvasState;
 };
@@ -268,9 +271,10 @@ async function mount() {
     );
     const artifactViewerActivityRevisionRef = React.useRef(0);
     const [, setRunErrorState] = React.useState<string | null>(null);
-    const [, setSelectedNodeIdSet] = React.useState<ReadonlySet<string>>(
-      new Set(),
-    );
+    // The collection's own node starts out the thing a person holds.
+    const [selectedNodeIdSet, setSelectedNodeIdSet] = React.useState<
+      ReadonlySet<string>
+    >(new Set(["collection"]));
     const [, setSelectedEdgeIdSet] = React.useState<ReadonlySet<string>>(
       new Set(),
     );
@@ -341,6 +345,11 @@ async function mount() {
       commitArtifactViewers,
       groupingDisabledReason: null,
       localAuthoringEnabled: true,
+      selection: useCanvasSelection({
+        setArtifactViewers,
+        setSelectedEdgeIdSet,
+        setSelectedNodeIdSet,
+      }),
       collection: {
         spec: collectSpec,
         disabledReason: null,
@@ -355,6 +364,7 @@ async function mount() {
       refused,
       document: authoring.document,
       published,
+      selectedNodeIds: [...selectedNodeIdSet],
       ungroupCollection,
       viewers: viewersState,
     };
@@ -410,6 +420,24 @@ describe("ungrouping a collection that feeds a card", () => {
     expect(harness.viewers.edges.map((edge) => edge.target)).toEqual(
       harness.viewers.nodes.slice(1).map((node) => node.id),
     );
+    view.unmount();
+  });
+
+  it("hands the selection to the cards and lets go of the collection it removed", async () => {
+    const view = await mount();
+    expect(view.read().selectedNodeIds).toEqual(["collection"]);
+
+    await view.ungroup();
+
+    const harness = view.read();
+    // Only the cards are held: the node that was collected is gone, and a person
+    // who drags one card does not drag the old selection along with it.
+    expect(harness.selectedNodeIds).toEqual([]);
+    expect(harness.viewers.nodes.map((node) => node.selected)).toEqual([
+      false,
+      true,
+      true,
+    ]);
     view.unmount();
   });
 });
