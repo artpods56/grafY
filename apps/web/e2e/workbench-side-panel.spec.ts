@@ -1242,6 +1242,47 @@ test("image resizing and a two-image stack preserve image geometry", async ({
   await expect(cards.filter({ hasText: "ridge.png" })).toBeVisible();
 });
 
+test("a selected image resizes past the thumbnail height without the grid setting", async ({
+  page,
+}) => {
+  test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
+  await page.route("**/api/v1/workspaces/*/artifacts/*/content", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><path fill="#91b9ca" d="M0 0h640v360H0z"/></svg>',
+    }),
+  );
+  await stubResponses(page, { items: [IMAGE_LIBRARY.items[0]] });
+  await openPanel(page);
+  await tree(page)
+    .getByRole("treeitem")
+    .filter({ hasText: "coast.png" })
+    .dragTo(page.locator(".react-flow"), {
+      targetPosition: { x: 240, y: 200 },
+    });
+  const cards = page.locator("[data-artifact-card-id]");
+  const image = cards.locator("[data-artifact-media] img");
+  await expect(image).toBeVisible();
+  const handle = cards.getByRole("button", { name: "Resize artifact" });
+  const resize = await handle.boundingBox();
+  if (!resize) throw new Error("Resize handle missing");
+  const grab = {
+    x: resize.x + resize.width / 2,
+    y: resize.y + resize.height / 2,
+  };
+  await page.mouse.move(grab.x, grab.y);
+  await page.mouse.down();
+  await page.mouse.move(grab.x + 600, grab.y + 200, { steps: 16 });
+  await page.mouse.up();
+  // The old cap held a 16:9 picture to 360px tall, so 640px wide.
+  await expect
+    .poll(async () => (await image.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(700);
+  const zoomed = await image.boundingBox();
+  if (!zoomed) throw new Error("Zoomed image missing");
+  expect(zoomed.width / zoomed.height).toBeCloseTo(640 / 360, 1);
+});
+
 test.describe("collections", () => {
   test.use({
     registry: {

@@ -951,6 +951,33 @@ describe("artifact on the canvas", () => {
     ).toBe("149px");
   });
 
+  it("scales a resized image past the thumbnail height, keeping its aspect", () => {
+    const loaded = (layout: { width?: number }) => {
+      const { container } = mount(single("a1"), { layout }, true);
+      const image = container.querySelector("img");
+      if (!image) throw new Error("Image preview missing");
+      Object.defineProperties(image, {
+        naturalWidth: { value: 600 },
+        naturalHeight: { value: 1200 },
+      });
+      React.act(() => image.dispatchEvent(new Event("load")));
+      return container.querySelector<HTMLElement>("[data-artifact-media]");
+    };
+    // Unsized, a tall picture is held to the default thumbnail height.
+    expect(loaded({})?.style.height).toBe("360px");
+    // A dragged width is the zoom asked for: 900 wide is 1800 tall.
+    expect(loaded({ width: 900 })?.style.height).toBe("1800px");
+  });
+
+  it("offers the resize handle on a selected image without the grid setting", () => {
+    const handle = (selected: boolean) =>
+      mount(single("a1"), {}, selected).container.querySelector(
+        '[aria-label="Resize artifact"]',
+      );
+    expect(handle(true)).not.toBeNull();
+    expect(handle(false)).toBeNull();
+  });
+
   it("preserves the filename and drag action when an image fails to load", () => {
     const { container } = mount(single("a1"), {}, true);
     const image = container.querySelector("img");

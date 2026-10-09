@@ -583,12 +583,16 @@ export function ArtifactCardBody({
           .filter(Boolean)
           .join(" · ");
   const imageAspect = imageSize ? imageSize.width / imageSize.height : 4 / 3;
-  const mediaWidth = imageArtifact
-    ? Math.min(
-        requestedWidth,
-        Math.round((layout?.bodyHeight ?? 360) * imageAspect),
-      )
-    : requestedWidth;
+  // An unsized picture is held to a height so a tall one stays a thumbnail. A
+  // width the operator dragged out is the zoom they asked for, so it is taken
+  // whole and the height follows the aspect.
+  const mediaWidth =
+    imageArtifact && layout?.width === undefined
+      ? Math.min(
+          requestedWidth,
+          Math.round((layout?.bodyHeight ?? 360) * imageAspect),
+        )
+      : requestedWidth;
   const mediaHeight = imageArtifact
     ? Math.round(
         (mediaWidth - (isSequence ? (Math.min(refs.length, 3) - 1) * 12 : 0)) /
@@ -896,7 +900,7 @@ export function ArtifactCardBody({
                 ) : null}
               </>
             )}
-            {allowCornerResize ? (
+            {allowCornerResize || (imageArtifact && selected) ? (
               <LayoutResizeHandle
                 layout={
                   textCard || tableCard
@@ -905,7 +909,7 @@ export function ArtifactCardBody({
                         width: requestedWidth,
                         bodyHeight: tableCard ? tableHeight : textMaxHeight,
                       }
-                    : (layout ?? { width: requestedWidth })
+                    : { ...layout, width: cardWidth }
                 }
                 axes={
                   textCard || tableCard ? ["width", "bodyHeight"] : ["width"]
