@@ -6,10 +6,10 @@ from grafy_core.artifact_contracts import (
 )
 from grafy_core.runtime.persistence import InlineModelOutputWriter
 
-from grafy_plugin_mistral import ocr, persistence
+from grafy_plugin_mistral import ocr
 from grafy_plugin_mistral.declaration import MISTRAL
 
-_NODE_MODULES = (ocr, persistence)
+_NODE_MODULES = (ocr,)
 
 MISTRAL.register_writer(
     lambda context: InlineModelOutputWriter(

@@ -30,7 +30,6 @@ from grafy_plugin_mistral.ocr import (
 MISTRAL_API_BASE_URL: Final = "https://api.mistral.ai"
 MISTRAL_OCR_MODEL: Final = "mistral-ocr-latest"
 MISTRAL_OCR_MAX_SOURCE_BYTES: Final = 50_000_000
-MISTRAL_OCR_MAX_IMAGE_BASE64_CHARS: Final = 50_000_000
 _RETRYABLE_STATUS: Final = frozenset({408, 429, 500, 502, 503, 504})
 _SUPPORTED_IMAGE_CONTENT_TYPES: Final = frozenset(
     {
@@ -115,7 +114,7 @@ class MistralOcrSdkProvider(MistralOcrProvider):
                             response = await client.ocr.process_async(
                                 model=MISTRAL_OCR_MODEL,
                                 document=document,
-                                include_image_base64=True,
+                                include_image_base64=False,
                                 table_format=(
                                     config.table_format
                                     if config.table_format is not None
@@ -148,18 +147,6 @@ class MistralOcrSdkProvider(MistralOcrProvider):
             raise MistralOcrProviderError(
                 f"OCR request to {endpoint!r} produced no response for model "
                 f"{MISTRAL_OCR_MODEL!r}"
-            )
-        encoded_chars = sum(
-            len(image.image_base64)
-            for page in response.pages
-            for image in page.images
-            if isinstance(image.image_base64, str)
-        )
-        if encoded_chars > MISTRAL_OCR_MAX_IMAGE_BASE64_CHARS:
-            raise MistralOcrProviderError(
-                "Extracted image bytes exceed "
-                f"{MISTRAL_OCR_MAX_IMAGE_BASE64_CHARS} base64 characters. "
-                "The OCR response is too large to persist."
             )
         return build_ocr_output(response, config)
 
@@ -308,7 +295,6 @@ def _status_guidance(status_code: int) -> str:
 
 
 __all__ = [
-    "MISTRAL_OCR_MAX_IMAGE_BASE64_CHARS",
     "MISTRAL_OCR_MAX_SOURCE_BYTES",
     "MistralOcrSdkProvider",
 ]

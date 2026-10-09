@@ -110,7 +110,6 @@ class OcrImage(BaseModel):
     top_left_y: int | None = None
     bottom_right_x: int | None = None
     bottom_right_y: int | None = None
-    image_base64: StrictStr | None = None
 
 
 class OcrTable(BaseModel):
