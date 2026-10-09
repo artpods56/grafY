@@ -1,5 +1,7 @@
 import type { SavedGraphOrigin } from "@/lib/api";
 import {
+  ARTIFACT_VIEWER_EDGE_TYPE,
+  ARTIFACT_VIEWER_INPUT_HANDLE,
   ARTIFACT_VIEWER_NODE_TYPE,
   type ArtifactViewerCanvasState,
   type ArtifactViewerNode,
@@ -13,27 +15,53 @@ import {
   DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
   DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
   isTableArtifact,
+  type ArtifactCardValue,
 } from "../canvas/artifact-card";
 import { createUuid } from "./uuid";
 
 /** Replacing these cards must not remove or reinterpret a saved connection. */
+/** A feed from a producer into the card. Collect snapshots that output and drops the feed. */
+function isProducerFeed(
+  edge: ArtifactViewerCanvasState["edges"][number],
+  cardIds: ReadonlySet<string>,
+): boolean {
+  return (
+    edge.type === ARTIFACT_VIEWER_EDGE_TYPE &&
+    edge.targetHandle === ARTIFACT_VIEWER_INPUT_HANDLE &&
+    cardIds.has(edge.target)
+  );
+}
+
 export function artifactGroupingDisabledReason({
   cards,
   state,
   origins,
+  values,
+  allowProducerFeeds = false,
 }: {
   cards: readonly ArtifactViewerNode[];
   state: ArtifactViewerCanvasState;
   origins: readonly SavedGraphOrigin[];
+  /** Live output of a card that follows a producer, when it has no stored ref. */
+  values?: Readonly<Record<string, ArtifactCardValue>>;
+  /** Collect snapshots a producer feed. Ungroup leaves that link alone. */
+  allowProducerFeeds?: boolean;
 }): string | null {
   const ids = new Set(cards.map((card) => card.id));
   const artifactIds = new Set(
     cards.flatMap((card) =>
-      cardArtifactRefs(card.data.artifactRef).map((ref) => ref.artifact_id),
+      cardArtifactRefs(values?.[card.id] ?? card.data.artifactRef).map(
+        (ref) => ref.artifact_id,
+      ),
     ),
   );
+  const linked = state.edges.some((edge) => {
+    if (!ids.has(edge.source) && !ids.has(edge.target)) return false;
+    if (allowProducerFeeds && isProducerFeed(edge, ids)) return false;
+    return true;
+  });
   if (
-    state.edges.some((edge) => ids.has(edge.source) || ids.has(edge.target)) ||
+    linked ||
     state.bindings.some(
       (binding) =>
         ids.has(binding.sourceViewerId) || ids.has(binding.targetViewerId),
@@ -52,22 +80,32 @@ export function artifactGroupingDisabledReason({
 export function collectArtifactCards({
   state,
   origins,
+  values,
 }: {
   state: ArtifactViewerCanvasState;
   origins: readonly SavedGraphOrigin[];
+  /** Live output of a card that follows a producer, when it has no stored ref. */
+  values?: Readonly<Record<string, ArtifactCardValue>>;
 }): ArtifactViewerCanvasState {
   const selected = state.nodes.filter((node) => node.selected);
-  if (artifactGroupingDisabledReason({ cards: selected, state, origins }))
+  if (
+    artifactGroupingDisabledReason({
+      cards: selected,
+      state,
+      origins,
+      values,
+      allowProducerFeeds: true,
+    })
+  )
     return state;
-  const cards = selected.flatMap((node) =>
-    node.data.artifactRef
-      ? [{ position: node.position, value: node.data.artifactRef }]
-      : [],
-  );
-  if (cards.length !== selected.length) return state;
+  const cards = selected.flatMap((node) => {
+    const value = values?.[node.id] ?? node.data.artifactRef;
+    return value ? [{ position: node.position, value }] : [];
+  });
+  if (cards.length !== selected.length || cards.length < 1) return state;
   const refs = collectArtifactCardRefs(cards);
   if (!refs) return state;
-  const value = artifactCardValue(refs);
+  const value = artifactCardValue(refs, null, { asSequence: true });
   if (!value) return state;
   const stack: ArtifactViewerNode = {
     id: `artifact-viewer-${createUuid()}`,
@@ -83,9 +121,13 @@ export function collectArtifactCards({
       artifactRef: value,
     },
   };
+  const removed = new Set(selected.map((node) => node.id));
   return {
     ...state,
     nodes: [...state.nodes.filter((node) => !node.selected), stack],
+    edges: state.edges.filter(
+      (edge) => !removed.has(edge.source) && !removed.has(edge.target),
+    ),
   };
 }
 
@@ -145,9 +187,7 @@ export function ungroupArtifactCard({
 export function tidyArtifactCards(
   state: ArtifactViewerCanvasState,
 ): ArtifactViewerCanvasState {
-  const selected = state.nodes.filter(
-    (node) => node.selected && node.data.artifactRef,
-  );
+  const selected = state.nodes.filter((node) => node.selected);
   if (selected.length < 2) return state;
   const _ = selected.sort(
     (a, b) => a.position.y - b.position.y || a.position.x - b.position.x,

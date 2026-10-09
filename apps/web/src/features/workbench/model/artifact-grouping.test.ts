@@ -3,6 +3,7 @@ import type { SavedGraphOrigin } from "@/lib/api";
 import {
   ARTIFACT_VIEWER_NODE_TYPE,
   ARTIFACT_VIEWER_EDGE_TYPE,
+  ARTIFACT_VIEWER_INPUT_HANDLE,
   presentationFromArtifactViewers,
   artifactViewersFromPresentation,
   type ArtifactViewerCanvasState,
@@ -168,7 +169,7 @@ describe("artifact grouping", () => {
     ).toContain("Disconnect");
   });
 
-  it("refuses replacement of a viewer following a producer", () => {
+  it("snapshots producer-fed cards into a sequence and drops the feeds", () => {
     const state = canvas();
     state.edges = [
       {
@@ -176,10 +177,72 @@ describe("artifact grouping", () => {
         type: ARTIFACT_VIEWER_EDGE_TYPE,
         source: "producer",
         target: "a",
+        targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
         data: { sourcePortName: "file" },
       },
     ];
-    expect(collectArtifactCards({ state, origins: [] })).toBe(state);
+    const grouped = collectArtifactCards({ state, origins: [] });
+    const stack = grouped.nodes.find((node) => node.selected);
+    expect(
+      cardArtifactRefs(stack?.data.artifactRef).map((ref) => ref.artifact_id),
+    ).toEqual(["a", "b"]);
+    expect(grouped.edges).toEqual([]);
+  });
+
+  it("puts one artifact card into a sequence", () => {
+    const state = canvas();
+    state.nodes = [card("only", 0)];
+    const grouped = collectArtifactCards({ state, origins: [] });
+    const stack = grouped.nodes.find((node) => node.selected);
+    expect(stack?.data.artifactRef).toMatchObject({
+      artifact_type: "file.png",
+      item_refs: [{ artifact_id: "only" }],
+    });
+  });
+
+  it("collects TypeSafe question outputs that only exist on producer cards", () => {
+    const question = (id: string, x: number): ArtifactViewerNode => ({
+      id,
+      type: ARTIFACT_VIEWER_NODE_TYPE,
+      selected: true,
+      position: { x, y: 0 },
+      data: { mode: "artifact", layout: null, artifactRef: null },
+    });
+    const state: ArtifactViewerCanvasState = {
+      nodes: [question("q1", 0), question("q2", 240)],
+      edges: ["q1", "q2"].map((id) => ({
+        id: `feed-${id}`,
+        type: ARTIFACT_VIEWER_EDGE_TYPE,
+        source: `question-${id}`,
+        target: id,
+        targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
+        data: { sourcePortName: "question" },
+      })),
+      bindings: [],
+      annotations: [],
+    };
+    const grouped = collectArtifactCards({
+      state,
+      origins: [],
+      values: {
+        q1: {
+          artifact_id: "question-a",
+          artifact_type: "typesafe.question",
+          schema_version: 1,
+        },
+        q2: {
+          artifact_id: "question-b",
+          artifact_type: "typesafe.question",
+          schema_version: 1,
+        },
+      },
+    });
+    const stack = grouped.nodes.find((node) => node.selected);
+    expect(stack?.data.artifactRef).toMatchObject({
+      artifact_type: "typesafe.question",
+      item_refs: [{ artifact_id: "question-a" }, { artifact_id: "question-b" }],
+    });
+    expect(grouped.edges).toEqual([]);
   });
 
   it("tidies only selected cards and keeps values and connections unchanged", () => {

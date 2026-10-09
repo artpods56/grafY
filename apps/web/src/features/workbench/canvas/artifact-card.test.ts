@@ -104,19 +104,35 @@ describe("artifact card value", () => {
     ]);
   });
 
-  it("refuses a selected group with mixed types or one unique artifact", () => {
+  it("refuses a selected group with mixed types", () => {
     expect(
       collectArtifactCardRefs([
         { position: { x: 0, y: 0 }, value: ref("image") },
         { position: { x: 200, y: 0 }, value: ref("table", "table.data") },
       ]),
     ).toBeNull();
+  });
+
+  it("keeps one artifact when the selection names it twice", () => {
     expect(
       collectArtifactCardRefs([
         { position: { x: 0, y: 0 }, value: ref("same") },
         { position: { x: 200, y: 0 }, value: ref("same") },
-      ]),
-    ).toBeNull();
+      ])?.map((item) => item.artifact_id),
+    ).toEqual(["same"]);
+  });
+
+  it("collects a single artifact so it can be a sequence of one", () => {
+    expect(
+      collectArtifactCardRefs([
+        { position: { x: 0, y: 0 }, value: ref("only") },
+      ])?.map((item) => item.artifact_id),
+    ).toEqual(["only"]);
+    expect(
+      artifactCardValue([ref("only")], null, { asSequence: true }),
+    ).toMatchObject({
+      item_refs: [ref("only")],
+    });
   });
 
   it("keeps one sequence identity across a reorder", () => {

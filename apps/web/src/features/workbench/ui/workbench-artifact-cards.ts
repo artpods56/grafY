@@ -70,6 +70,11 @@ export type ArtifactCardCommandDeps = {
   groupingDisabledReason: string | null;
   localAuthoringEnabled: boolean;
   collection: CollectionCommandDeps;
+  /**
+   * The value a card passes on. A card that follows a producer has no stored
+   * ref; this reads the output it is showing so Collect can snapshot it.
+   */
+  resolveCardValue?: (node: ArtifactViewerNode) => ArtifactCardValue | null;
 };
 
 /**
@@ -88,6 +93,7 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
     collection,
     groupingDisabledReason,
     localAuthoringEnabled,
+    resolveCardValue,
   } = deps;
 
   const addArtifactCards = React.useCallback(
@@ -153,19 +159,28 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
       return;
     }
     if (groupingDisabledReason) return;
+    const values: Record<string, ArtifactCardValue> = {};
+    for (const node of artifactViewers.nodes) {
+      if (!node.selected) continue;
+      const value = resolveCardValue?.(node) ?? node.data.artifactRef;
+      if (value) values[node.id] = value;
+    }
     commitArtifactViewers((state) =>
       collectArtifactCards({
         state,
         origins: authoredDocumentRef.current.origins,
+        values,
       }),
     );
   }, [
     applyAuthoringCommands,
+    artifactViewers.nodes,
     authoredDocumentRef,
     collection,
     commitArtifactViewers,
     groupingDisabledReason,
     localAuthoringEnabled,
+    resolveCardValue,
   ]);
 
   /**

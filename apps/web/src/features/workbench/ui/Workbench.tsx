@@ -175,7 +175,9 @@ import {
 import { ARTIFACT_ORIGIN_EDGE_TYPE } from "../canvas/artifact-origin-edge";
 import {
   ARTIFACT_CARD_OUTPUT_HANDLE,
+  artifactCardConnectionValue,
   artifactOriginConnections,
+  outputReleasePlacesArtifactCard,
   resolveArtifactCardConnection,
 } from "../canvas/artifact-connections";
 import {
@@ -186,6 +188,7 @@ import {
   cardArtifactRefs,
   collectArtifactCardRefs,
   originCarriesCardArtifacts,
+  selectionCollectsIntoSequence,
   isTableArtifact,
 } from "../canvas/artifact-card";
 import { formatArtifactTypeLabel } from "../canvas/artifact-type-label";
@@ -1656,13 +1659,15 @@ function WorkbenchBody({
   const selectedArtifactCards = React.useMemo(
     () =>
       artifactViewers.nodes.flatMap((node) => {
-        const value = node.data.artifactRef;
-        if (!node.selected || !value) {
-          return [];
-        }
-        return [{ node, value }];
+        if (!node.selected) return [];
+        const value = artifactCardConnectionValue(
+          node,
+          artifactViewers.edges,
+          nodes,
+        );
+        return value ? [{ node, value }] : [];
       }),
-    [artifactViewers.nodes],
+    [artifactViewers.edges, artifactViewers.nodes, nodes],
   );
   const collectedArtifactRefs = React.useMemo(
     () =>
@@ -1674,14 +1679,28 @@ function WorkbenchBody({
       ),
     [selectedArtifactCards],
   );
+  const selectedViewerCards = artifactViewers.nodes.filter(
+    (node) => node.selected,
+  );
+  const collectCardValues = Object.fromEntries(
+    selectedArtifactCards.map(({ node, value }) => [node.id, value]),
+  );
+  const collectsIntoSequence = selectionCollectsIntoSequence(
+    selectedArtifactCards.map(({ value }) => value),
+  );
   const groupingDisabledReason =
-    selectedNodeCount !== selectedArtifactCards.length
+    selectedNodeCount !== selectedViewerCards.length
       ? "Select only artifacts to collect."
-      : artifactGroupingDisabledReason({
-          cards: selectedArtifactCards.map(({ node }) => node),
-          state: artifactViewers,
-          origins: authoredDocument.origins,
-        });
+      : selectedViewerCards.length > 0 &&
+          selectedArtifactCards.length !== selectedViewerCards.length
+        ? "Run the producing node first, so its artifact is known."
+        : artifactGroupingDisabledReason({
+            cards: selectedArtifactCards.map(({ node }) => node),
+            state: artifactViewers,
+            origins: authoredDocument.origins,
+            values: collectCardValues,
+            allowProducerFeeds: true,
+          });
   // With the collection operator available, "Collect" makes a collection: it
   // can gather Library cards and cards on a node's output alike.
   const collectSpec = React.useMemo(
@@ -2359,6 +2378,8 @@ function WorkbenchBody({
     },
     groupingDisabledReason,
     localAuthoringEnabled,
+    resolveCardValue: (node) =>
+      artifactCardConnectionValue(node, artifactViewers.edges, nodes),
   });
 
   // A collection always keeps one spare plug, the one its next member lands
@@ -3076,7 +3097,14 @@ function WorkbenchBody({
                 output.port === port.name && output.artifacts.length > 0,
             )
           : null;
-      if (materializedOutput && canvasAtPoint(clientPoint.x, clientPoint.y)) {
+      if (
+        !upstream &&
+        outputReleasePlacesArtifactCard({
+          onCanvas: canvasAtPoint(clientPoint.x, clientPoint.y),
+          portShape: effectivePortShape(fromNode.data, port),
+          hasMaterializedArtifacts: Boolean(materializedOutput),
+        })
+      ) {
         const viewerId = `artifact-viewer-${createUuid()}`;
         const link: ArtifactViewerEdge = {
           id: `artifact-viewer-edge-${createUuid()}`,
@@ -4159,13 +4187,19 @@ function WorkbenchBody({
             title: collectionDisabledReason ?? undefined,
           }
         : null
-      : selectedArtifactCards.length > 1
+      : collectsIntoSequence
         ? {
             disabled:
               !collectedArtifactRefs ||
               !localAuthoringEnabled ||
               Boolean(groupingDisabledReason),
-            title: groupingDisabledReason ?? undefined,
+            title:
+              groupingDisabledReason ??
+              (collectedArtifactRefs
+                ? selectedArtifactCards.length === 1
+                  ? "Put this artifact in a sequence"
+                  : `Collect ${selectedArtifactCards.length} selected artifacts into an ordered sequence`
+                : "Select artifacts of the same type to collect"),
           }
         : null,
     canTidy:
@@ -4376,6 +4410,7 @@ function WorkbenchBody({
               localSessionId={graphRoom.localSessionId}
             />
             {selectedWorkflowCount ||
+            collectsIntoSequence ||
             selectedArtifactCards.length > 1 ||
             selectedCollectionSources.length > 1 ? (
               <NodeToolbar
@@ -4408,7 +4443,7 @@ function WorkbenchBody({
                       Collect
                     </button>
                   ) : null
-                ) : selectedArtifactCards.length > 1 ? (
+                ) : collectsIntoSequence ? (
                   <button
                     type="button"
                     disabled={
@@ -4419,7 +4454,9 @@ function WorkbenchBody({
                     title={
                       groupingDisabledReason ??
                       (collectedArtifactRefs
-                        ? `Collect ${selectedArtifactCards.length} selected artifacts into an ordered sequence`
+                        ? selectedArtifactCards.length === 1
+                          ? "Put this artifact in a sequence"
+                          : `Collect ${selectedArtifactCards.length} selected artifacts into an ordered sequence`
                         : "Select artifacts of the same type to collect")
                     }
                     {...stylex.props(s.toolButton, s.primaryButton)}
