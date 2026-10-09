@@ -8,7 +8,10 @@ import {
   ARTIFACT_VIEWER_EDGE_TYPE,
   type ArtifactViewerEdge,
 } from "./artifact-viewer";
-import { resolveArtifactCardSource } from "./artifact-connections";
+import {
+  outputReleasePlacesArtifactCard,
+  resolveArtifactCardSource,
+} from "./artifact-connections";
 
 const saved: ArtifactRef = {
   artifact_id: "saved",
@@ -44,6 +47,38 @@ const run: RunNodeResult = {
     },
   ],
 };
+
+describe("releasing an output on the canvas", () => {
+  it("plants a sequence card even before the output has artifacts", () => {
+    expect(
+      outputReleasePlacesArtifactCard({
+        onCanvas: true,
+        portShape: "many",
+        hasMaterializedArtifacts: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("leaves a sequence release off the canvas to the node menu", () => {
+    expect(
+      outputReleasePlacesArtifactCard({
+        onCanvas: false,
+        portShape: "many",
+        hasMaterializedArtifacts: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("opens the node menu for a single output that has not produced an artifact", () => {
+    expect(
+      outputReleasePlacesArtifactCard({
+        onCanvas: true,
+        portShape: "one",
+        hasMaterializedArtifacts: false,
+      }),
+    ).toBe(false);
+  });
+});
 
 describe("artifact source resolution", () => {
   it("preserves the exact sequence and its identity when only one item was produced", () => {

@@ -64,6 +64,7 @@ export function cardArtifactRefs(
 export function artifactCardValue(
   refs: readonly ArtifactRef[],
   previous?: ArtifactCardValue | null,
+  options?: { readonly asSequence?: boolean },
 ): ArtifactCardValue | null {
   if (refs.length === 0) return null;
   const first = refs[0];
@@ -73,7 +74,15 @@ export function artifactCardValue(
       ref.schema_version !== first.schema_version,
   );
   if (mixedType) return null;
-  if (refs.length === 1 && !(previous && "item_refs" in previous)) return first;
+  // One artifact is a single card, unless it is being put in a sequence or
+  // it is what remains of a sequence.
+  if (
+    refs.length === 1 &&
+    !options?.asSequence &&
+    !(previous && "item_refs" in previous)
+  ) {
+    return first;
+  }
   return {
     artifact_type: first.artifact_type,
     schema_version: first.schema_version,
@@ -94,7 +103,7 @@ export function collectArtifactCardRefs(
     value: ArtifactCardValue;
   }[],
 ): ArtifactRef[] | null {
-  if (cards.length < 2) return null;
+  if (cards.length < 1) return null;
   const seen = new Set<string>();
   const refs = [...cards]
     .sort(
@@ -108,9 +117,22 @@ export function collectArtifactCardRefs(
       seen.add(ref.artifact_id);
       return true;
     });
-  if (refs.length < 2) return null;
+  if (refs.length < 1) return null;
   const first = refs[0];
   return refs.every((ref) => shareOneArtifactType(ref, first)) ? refs : null;
+}
+
+/**
+ * Whether Collect would make a sequence these cards do not already are.
+ * One artifact becomes a sequence of one. Several become one sequence.
+ * A card that is already a sequence, selected alone, stays as it is.
+ */
+export function selectionCollectsIntoSequence(
+  values: readonly ArtifactCardValue[],
+): boolean {
+  if (values.length === 0) return false;
+  if (values.length === 1) return !("item_refs" in values[0]);
+  return true;
 }
 
 /**

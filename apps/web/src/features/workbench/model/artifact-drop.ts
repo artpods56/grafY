@@ -4,6 +4,7 @@ import type {
   Port,
   SavedGraphOrigin,
 } from "@/lib/api";
+import { artifactCardValue } from "../canvas/artifact-card";
 import { artifactTypeKey } from "../canvas/artifact-type-key";
 import {
   decodeHandleId,
@@ -206,7 +207,7 @@ export function resolveArtifactDrop(
   conversions: readonly ArtifactConversionSpec[],
 ): ArtifactDropResolution | null {
   if (port.direction !== "input") return null;
-  if (!acceptedPortShapes(port).includes(payload.shape)) return null;
+  if (!portAcceptsDropShape(port, payload.shape)) return null;
   const source = artifactTypeForValue(payload.value);
   const accepted = [
     resolvedPortArtifactType(port, bindings),
@@ -230,11 +231,32 @@ export function resolveArtifactDrop(
   };
 }
 
+/** A many-only port takes one artifact by holding it as a sequence of one. */
+function portAcceptsDropShape(
+  port: Port,
+  shape: ArtifactDropPayload["shape"],
+): boolean {
+  const accepted = acceptedPortShapes(port);
+  return accepted.includes(shape) || (shape === "one" && accepted.includes("many"));
+}
+
+function portAcceptsOnlySequences(port: Port): boolean {
+  const accepted = acceptedPortShapes(port);
+  return accepted.includes("many") && !accepted.includes("one");
+}
+
+/** One artifact, stored as a sequence, for a port that cannot take a single. */
+function sequenceOfOne(dropped: ArtifactDropValue): ArtifactDropValue {
+  if (!("artifact_id" in dropped)) return dropped;
+  return artifactCardValue([dropped], null, { asSequence: true }) ?? dropped;
+}
+
 /**
- * A `many` input groups same-type drops into one ordered sequence. A dropped
- * sequence, a converted value, and a value of another artifact type each
- * replace the slot instead, because one origin value cannot hold two artifact
- * types and a conversion path describes one source contract.
+ * A `many` input groups same-type drops into one ordered sequence. A port that
+ * accepts only sequences stores even the first artifact as a sequence of one.
+ * A dropped sequence, a converted value, and a value of another artifact type
+ * each replace the slot, because one origin cannot hold two artifact types and
+ * a conversion path describes one source contract.
  */
 function collectedOriginValue(
   payload: ArtifactDropPayload,
@@ -243,12 +265,14 @@ function collectedOriginValue(
   conversionPath: ArtifactDropResolution["conversionPath"],
 ): ArtifactDropValue {
   const dropped = payload.value;
-  if (
-    payload.shape === "many" ||
-    conversionPath.length ||
-    !acceptedPortShapes(port).includes("many")
-  ) {
+  if (payload.shape === "many" || !acceptedPortShapes(port).includes("many")) {
     return dropped;
+  }
+  // A conversion describes one source contract, so it is not appended onto a
+  // sequence that may already hold something else. A many-only port still
+  // needs that one source wrapped, or the input cannot run.
+  if (conversionPath.length) {
+    return portAcceptsOnlySequences(port) ? sequenceOfOne(dropped) : dropped;
   }
   const prior = existing?.value;
   if (
@@ -257,7 +281,7 @@ function collectedOriginValue(
     prior.artifact_type !== dropped.artifact_type ||
     prior.schema_version !== dropped.schema_version
   ) {
-    return dropped;
+    return portAcceptsOnlySequences(port) ? sequenceOfOne(dropped) : dropped;
   }
   if ("item_refs" in prior) {
     return {

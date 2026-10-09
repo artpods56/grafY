@@ -576,6 +576,24 @@ describe("artifact drop collection on a many input", () => {
     expect(command.update.value).toEqual(ref("csv"));
   });
 
+  it("stores one artifact on a many-only port as a sequence of one", () => {
+    const commands = artifactDropCommands(
+      { value: item("artifact-only"), shape: "one" },
+      TARGET,
+      port({ shape: "many", accepted_shapes: ["many"] }),
+      {},
+      state(),
+    );
+
+    const command = commands?.[0];
+    if (command?.kind !== "add_origin") throw new Error("expected add");
+    const value = command.origin.value as ArtifactRefSequence;
+    expect(value.item_refs.map((entry) => entry.artifact_id)).toEqual([
+      "artifact-only",
+    ]);
+    expect(value.ordered).toBe(true);
+  });
+
   it("writes a dropped sequence as the collected value", () => {
     const commands = artifactDropCommands(
       { value: sequence("artifact-a", "artifact-b"), shape: "many" },
