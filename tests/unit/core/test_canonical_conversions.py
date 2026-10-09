@@ -7,13 +7,16 @@ from grafy_core.canonical_conversions import (
     CANONICAL_ARTIFACT_CONVERSIONS,
     CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,
     INTEGER_TO_TEXT,
+    TEXT_FILE_TO_TEXT,
 )
+from grafy_core.file_contracts import TXT_FILE
 
 
 def test_integer_to_text_is_an_exact_deployment_owned_conversion() -> None:
-    assert CANONICAL_ARTIFACT_CONVERSIONS == (INTEGER_TO_TEXT,)
+    assert CANONICAL_ARTIFACT_CONVERSIONS == (INTEGER_TO_TEXT, TEXT_FILE_TO_TEXT)
     assert CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY == {
-        INTEGER_TO_TEXT.key: INTEGER_TO_TEXT
+        INTEGER_TO_TEXT.key: INTEGER_TO_TEXT,
+        TEXT_FILE_TO_TEXT.key: TEXT_FILE_TO_TEXT,
     }
     assert INTEGER_TO_TEXT.key.id == "builtin.scalar.integer_to_text"
     assert INTEGER_TO_TEXT.key.version == 1
@@ -23,6 +26,19 @@ def test_integer_to_text_is_an_exact_deployment_owned_conversion() -> None:
     assert INTEGER_TO_TEXT.target_type is str
     assert INTEGER_TO_TEXT.title == "As text"
     assert INTEGER_TO_TEXT.convert(42) == "42"
+
+
+def test_text_file_to_text_is_an_exact_deployment_owned_conversion() -> None:
+    assert TEXT_FILE_TO_TEXT.key.id == "builtin.file.txt_to_text"
+    assert TEXT_FILE_TO_TEXT.key.version == 1
+    assert TEXT_FILE_TO_TEXT.source == TXT_FILE.key
+    assert TEXT_FILE_TO_TEXT.target == TEXT_VALUE.key
+    assert TEXT_FILE_TO_TEXT.source_type is bytes
+    assert TEXT_FILE_TO_TEXT.target_type is str
+    assert TEXT_FILE_TO_TEXT.convert("héllo".encode()) == "héllo"
+    assert TEXT_FILE_TO_TEXT.convert(b"\xef\xbb\xbfhello") == "hello"
+    with pytest.raises(UnicodeDecodeError):
+        _ = TEXT_FILE_TO_TEXT.convert(b"\xff\xfe")
 
 
 def test_canonical_conversion_registry_is_immutable() -> None:

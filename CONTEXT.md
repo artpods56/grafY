@@ -372,6 +372,12 @@ requires a version bump. A conversion changes the artifact representation;
 unlike a field projection, it does not select a nested value. Configurable,
 lossy, or domain-significant transformations remain visible nodes.
 
+`file.txt@1` to `scalar.text@1` is the one conversion that starts at a File
+format artifact. It reads the stored bytes and decodes them as UTF-8, dropping a
+leading byte-order mark, with no choices to make, so it needs no node; bytes that
+are not UTF-8 fail the conversion step. Other formats still go through a visible
+decode or import node.
+
 ### Artifact conversion path
 
 A bounded, ordered sequence of exact conversion keys stored on one edge. The
