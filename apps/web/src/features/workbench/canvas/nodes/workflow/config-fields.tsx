@@ -528,7 +528,6 @@ function StringListConfigField({
               value={item}
               minLength={field.itemMinLength}
               maxLength={field.itemMaxLength}
-              pattern={field.itemPattern}
               {...nodeInteractionProps(stylex.props(s.input))}
               onChange={(event) => {
                 const nextValues = [...values];
@@ -725,7 +724,6 @@ export function ConfigField({
           max={field.maximum}
           minLength={field.minLength}
           maxLength={field.maxLength}
-          pattern={field.pattern}
           step={field.type === "integer" ? 1 : undefined}
           {...nodeInteractionProps(stylex.props(s.input))}
           onChange={(event) => {
