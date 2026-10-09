@@ -284,7 +284,7 @@ def test_registered_draw_regions_contract_supports_map(map_input: str) -> None:
     )
     validate_invocation(
         registration.node_class,
-        NodeInvocation(mode=InvocationMode.MAP, map_input=map_input),
+        NodeInvocation(mode=InvocationMode.MAP, map_inputs=(map_input,)),
     )
 
 
@@ -298,7 +298,7 @@ def test_registered_crop_regions_contract_rejects_map(map_input: str) -> None:
     ):
         validate_invocation(
             registration.node_class,
-            NodeInvocation(mode=InvocationMode.MAP, map_input=map_input),
+            NodeInvocation(mode=InvocationMode.MAP, map_inputs=(map_input,)),
         )
 
 

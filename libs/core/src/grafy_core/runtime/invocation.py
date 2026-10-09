@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, ClassVar, Protocol, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from grafy_core.nodes import (
     InputContract,
@@ -21,16 +21,20 @@ class NodeInvocation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     mode: InvocationMode = InvocationMode.ONCE
-    map_input: str | None = Field(default=None, min_length=1)
+    map_inputs: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def validate_map_input(self) -> Self:
+    def validate_map_inputs(self) -> Self:
         if self.mode is InvocationMode.MAP:
-            if self.map_input is None or self.map_input.strip() == "":
-                raise ValueError("MAP invocation requires exactly one map_input")
+            if not self.map_inputs:
+                raise ValueError("MAP invocation requires at least one map input")
+            if any(name.strip() == "" for name in self.map_inputs):
+                raise ValueError("MAP input names must not be blank")
+            if len(set(self.map_inputs)) != len(self.map_inputs):
+                raise ValueError("MAP input names must be unique")
             return self
-        if self.map_input is not None:
-            raise ValueError("ONCE invocation does not accept map_input")
+        if self.map_inputs:
+            raise ValueError("ONCE invocation does not accept map inputs")
         return self
 
 
@@ -99,26 +103,21 @@ def validate_invocation(
     if invocation.mode is InvocationMode.ONCE:
         return
 
-    map_input = invocation.map_input
-    if map_input is None:
-        raise InvocationError(
-            f"Node {node.operator_id!r} MAP invocation requires a map_input"
-        )
-
-    input_port = node.input_contract.ports.get(map_input)
-    if input_port is None:
-        raise InvocationError(
-            f"Node {node.operator_id!r} MAP input {map_input!r} does not exist"
-        )
-    if input_port.variadic:
-        raise InvocationError(
-            f"Node {node.operator_id!r} MAP input {map_input!r} cannot be variadic"
-        )
-    if input_port.shape is not PortShape.ONE:
-        raise InvocationError(
-            f"Node {node.operator_id!r} MAP input {map_input!r} must have shape "
-            f"{PortShape.ONE.value!r}, got {input_port.shape.value!r}"
-        )
+    for map_input in invocation.map_inputs:
+        input_port = node.input_contract.ports.get(map_input)
+        if input_port is None:
+            raise InvocationError(
+                f"Node {node.operator_id!r} MAP input {map_input!r} does not exist"
+            )
+        if input_port.variadic:
+            raise InvocationError(
+                f"Node {node.operator_id!r} MAP input {map_input!r} cannot be variadic"
+            )
+        if input_port.shape is not PortShape.ONE:
+            raise InvocationError(
+                f"Node {node.operator_id!r} MAP input {map_input!r} must have shape "
+                f"{PortShape.ONE.value!r}, got {input_port.shape.value!r}"
+            )
 
     output_ports = node.output_contract.ports
     if not output_ports:
@@ -155,7 +154,7 @@ def effective_input_shape(
         raise InvocationError(
             f"Node {node.operator_id!r} has no input port {port_name!r}"
         )
-    if invocation.mode is InvocationMode.MAP and invocation.map_input == port_name:
+    if invocation.mode is InvocationMode.MAP and port_name in invocation.map_inputs:
         return PortShape.MANY
     return port.shape
 

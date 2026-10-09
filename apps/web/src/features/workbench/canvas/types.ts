@@ -225,7 +225,7 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   /** Edge- and result-derived display data; never persisted. */
   inputPlugBindings: Readonly<Record<string, WorkflowInputPlugBinding>>;
   /** Derived from incoming map edges; never persisted as node configuration. */
-  mappedInputPort: string | null;
+  mappedInputPorts: readonly string[];
   /** Server-reported write-only state; never persisted with the graph. */
   secretStatuses: WorkflowNodeSecretStatuses;
   /** Per-input match against its saved operator and declared config dependencies. */
@@ -430,7 +430,7 @@ export function createWorkflowNodeData(
         : null,
     inputPlugs,
     inputPlugBindings: {},
-    mappedInputPort: null,
+    mappedInputPorts: [],
     secretStatuses: {},
     secretInputReadiness: {},
     secretInputScope: "unsaved:none",
@@ -569,9 +569,9 @@ export function effectivePortShape(
   data: WorkflowNodeData,
   port: Port,
 ): Port["shape"] {
-  if (!data.mappedInputPort) return port.shape;
+  if (!data.mappedInputPorts.length) return port.shape;
   if (port.direction === "output") return "many";
-  return data.mappedInputPort === port.name ? "many" : port.shape;
+  return data.mappedInputPorts.includes(port.name) ? "many" : port.shape;
 }
 
 export function portMetaForPort(

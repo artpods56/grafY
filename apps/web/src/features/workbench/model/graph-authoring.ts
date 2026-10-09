@@ -110,18 +110,21 @@ export function workflowEdgeRouteOption(
   };
 }
 
-export function mappedInputPortForNode(
+export function mappedInputPortsForNode(
   nodeId: string,
   edges: readonly WorkflowEdge[],
   includeDisabledEdges = false,
-): string | null {
-  const edge = edges.find(
-    (candidate) =>
-      candidate.target === nodeId &&
-      (includeDisabledEdges || candidate.data?.enabled !== false) &&
-      candidate.data?.collectionMode === "map",
-  );
-  return decodeHandleId(edge?.targetHandle)?.portName ?? null;
+): string[] {
+  return edges.flatMap((edge) => {
+    if (
+      edge.target !== nodeId ||
+      (!includeDisabledEdges && edge.data?.enabled === false) ||
+      edge.data?.collectionMode !== "map"
+    )
+      return [];
+    const portName = decodeHandleId(edge.targetHandle)?.portName;
+    return portName ? [portName] : [];
+  });
 }
 
 function effectiveShapeForPort(
@@ -133,7 +136,7 @@ function effectiveShapeForPort(
   return effectivePortShape(
     {
       ...node.data,
-      mappedInputPort: mappedInputPortForNode(
+      mappedInputPorts: mappedInputPortsForNode(
         node.id,
         edges,
         includeDisabledEdges,
@@ -228,7 +231,9 @@ export function isConnectionAccepted(
     collectionMode === "map" &&
     edges.some(
       (edge) =>
+        edge.id !== existingEdgeId &&
         edge.target === connection.target &&
+        decodeHandleId(edge.targetHandle)?.portName === target.portName &&
         edge.data?.collectionMode === "map",
     )
   ) {

@@ -2,9 +2,10 @@
 
 import asyncio
 import logging
+import json
 from collections.abc import Mapping, Sequence
 from typing import Annotated, ClassVar, cast, override
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
 
@@ -323,7 +324,7 @@ async def test_inline_map_reuses_cache_and_preserves_sequence_envelope() -> None
     compiled_node = _compiled_add(
         node_id="mapped",
         node=node,
-        invocation=NodeInvocation(mode=InvocationMode.MAP, map_input="item"),
+        invocation=NodeInvocation(mode=InvocationMode.MAP, map_inputs=("item",)),
         cache_policy=NodeCachePolicy.EXACT,
     )
     plan = CompiledGraph(nodes=(compiled_node,), edges=(), pinned_outputs={})
@@ -392,6 +393,17 @@ async def test_inline_map_reuses_cache_and_preserves_sequence_envelope() -> None
     assert second_output.item_refs == [first_output.item_refs[0], writer.refs[1]]
     assert second_output.ordered is False
     assert second_output.index_key == "source_position"
+    identity = json.dumps(
+        {
+            "node_id": "mapped",
+            "module_path": (),
+            "output": "value",
+            "source": str(second_source.sequence_id),
+            "items": [str(ref.artifact_id) for ref in second_output.item_refs],
+        },
+        sort_keys=True,
+    )
+    assert second_output.sequence_id == uuid5(NAMESPACE_URL, identity)
     assert second_output.metadata == {
         "invocation_mode": "map",
         "map_input": "item",
@@ -421,7 +433,7 @@ async def test_map_execution_overlaps_items_and_aggregates_in_source_order() -> 
     compiled_node = _compiled_add(
         node_id="mapped",
         node=node,
-        invocation=NodeInvocation(mode=InvocationMode.MAP, map_input="item"),
+        invocation=NodeInvocation(mode=InvocationMode.MAP, map_inputs=("item",)),
     )
     edge_values = StubEdgeValueResolver(
         {
@@ -436,7 +448,7 @@ async def test_map_execution_overlaps_items_and_aggregates_in_source_order() -> 
     )
     coordinator = GraphExecutionCoordinator(
         node_execution=NodeExecutionService(
-            runtime=_runtime(resolver, writer),
+            runtime=_runtime(resolver, writer, MemoryInvocationCache()),
             edge_values=cast(EdgeValueResolver, edge_values),
             node_secrets=UnavailableNodeSecretResolver(),
             max_map_concurrency=2,
@@ -504,7 +516,7 @@ async def test_map_execution_never_exceeds_configured_concurrency() -> None:
     compiled_node = _compiled_add(
         node_id="mapped",
         node=node,
-        invocation=NodeInvocation(mode=InvocationMode.MAP, map_input="item"),
+        invocation=NodeInvocation(mode=InvocationMode.MAP, map_inputs=("item",)),
     )
     edge_values = StubEdgeValueResolver(
         {
@@ -519,7 +531,7 @@ async def test_map_execution_never_exceeds_configured_concurrency() -> None:
     )
     coordinator = GraphExecutionCoordinator(
         node_execution=NodeExecutionService(
-            runtime=_runtime(resolver, writer),
+            runtime=_runtime(resolver, writer, MemoryInvocationCache()),
             edge_values=cast(EdgeValueResolver, edge_values),
             node_secrets=UnavailableNodeSecretResolver(),
             max_map_concurrency=3,
@@ -574,7 +586,7 @@ async def test_map_execution_failure_cancels_items_and_skips_dependents() -> Non
     failed_node = _compiled_add(
         node_id="failed",
         node=node,
-        invocation=NodeInvocation(mode=InvocationMode.MAP, map_input="item"),
+        invocation=NodeInvocation(mode=InvocationMode.MAP, map_inputs=("item",)),
     )
     downstream_node = _compiled_add(
         node_id="downstream",
@@ -608,7 +620,7 @@ async def test_map_execution_failure_cancels_items_and_skips_dependents() -> Non
     )
     coordinator = GraphExecutionCoordinator(
         node_execution=NodeExecutionService(
-            runtime=_runtime(resolver, writer),
+            runtime=_runtime(resolver, writer, MemoryInvocationCache()),
             edge_values=cast(EdgeValueResolver, edge_values),
             node_secrets=UnavailableNodeSecretResolver(),
             max_map_concurrency=3,
@@ -669,7 +681,7 @@ async def test_inline_map_failure_skips_dependents_and_preserves_cause() -> None
     failed_node = _compiled_add(
         node_id="failed",
         node=AddNode(),
-        invocation=NodeInvocation(mode=InvocationMode.MAP, map_input="item"),
+        invocation=NodeInvocation(mode=InvocationMode.MAP, map_inputs=("item",)),
     )
     downstream_node = _compiled_add(
         node_id="downstream",
@@ -708,7 +720,7 @@ async def test_inline_map_failure_skips_dependents_and_preserves_cause() -> None
     )
     coordinator = GraphExecutionCoordinator(
         node_execution=NodeExecutionService(
-            runtime=_runtime(resolver, writer),
+            runtime=_runtime(resolver, writer, MemoryInvocationCache()),
             edge_values=cast(EdgeValueResolver, edge_values),
             node_secrets=UnavailableNodeSecretResolver(),
         )
@@ -794,7 +806,7 @@ async def test_nested_execution_does_not_replace_outer_module_progress() -> None
     )
     coordinator = GraphExecutionCoordinator(
         node_execution=NodeExecutionService(
-            runtime=_runtime(resolver, writer),
+            runtime=_runtime(resolver, writer, MemoryInvocationCache()),
             edge_values=cast(EdgeValueResolver, edge_values),
             node_secrets=UnavailableNodeSecretResolver(),
         )
@@ -906,7 +918,7 @@ async def test_failed_nodes_expose_typed_failure_codes_in_graph_results(
     )
     coordinator = GraphExecutionCoordinator(
         node_execution=NodeExecutionService(
-            runtime=_runtime(resolver, writer),
+            runtime=_runtime(resolver, writer, MemoryInvocationCache()),
             edge_values=cast(EdgeValueResolver, edge_values),
             node_secrets=UnavailableNodeSecretResolver(),
         )
@@ -986,7 +998,7 @@ async def test_raise_mode_keeps_the_typed_failure_in_the_cause_chain() -> None:
     )
     coordinator = GraphExecutionCoordinator(
         node_execution=NodeExecutionService(
-            runtime=_runtime(resolver, writer),
+            runtime=_runtime(resolver, writer, MemoryInvocationCache()),
             edge_values=cast(
                 EdgeValueResolver,
                 StubEdgeValueResolver(
@@ -1026,3 +1038,109 @@ async def test_raise_mode_keeps_the_typed_failure_in_the_cause_chain() -> None:
     assert isinstance(run_error, NodeRunError)
     assert run_error.failure_code is PluginFailureCode.OPERATOR_FAILURE
     assert run_error.__cause__ is native_error
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "case",
+    ["paired", "short", "empty", "unordered", "wrong_value", "wrong_type", "failure"],
+)
+async def test_map_pairs_items_and_validates_every_sequence(case: str) -> None:
+    refs = [ArtifactRef.from_key(artifact_id=uuid4(), key=VALUE.key) for _ in range(4)]
+    left = ArtifactRefSequence.from_key(key=VALUE.key, item_refs=refs[:2])
+    right = ArtifactRefSequence.from_key(key=VALUE.key, item_refs=refs[2:])
+    if case == "short":
+        right.item_refs = right.item_refs[:1]
+    elif case == "empty":
+        right.item_refs = []
+    elif case == "unordered":
+        right.ordered = False
+    elif case == "wrong_type":
+        right = ArtifactRefSequence.from_key(
+            key=ArtifactTypeKey("test.wrong", 1),
+            item_refs=[
+                ArtifactRef.from_key(
+                    artifact_id=uuid4(), key=ArtifactTypeKey("test.wrong", 1)
+                )
+            ],
+        )
+    resolver = IntegerResolver(
+        dict(zip((ref.artifact_id for ref in refs), (1, 2, 10, 20), strict=True))
+    )
+    if case == "failure":
+        resolver = IntegerResolver({})
+    writer = RecordingWriter()
+    node = AddNode()
+    compiled = _compiled_add(
+        node_id="mapped",
+        node=node,
+        invocation=NodeInvocation(
+            mode=InvocationMode.MAP, map_inputs=("item", "broadcast")
+        ),
+    )
+    service = NodeExecutionService(
+        runtime=_runtime(resolver, writer, MemoryInvocationCache()),
+        edge_values=cast(
+            EdgeValueResolver,
+            StubEdgeValueResolver(
+                {
+                    "mapped": {
+                        "item": left,
+                        "broadcast": refs[2] if case == "wrong_value" else right,
+                    }
+                }
+            ),
+        ),
+        node_secrets=UnavailableNodeSecretResolver(),
+        max_map_concurrency=2,
+    )
+    coordinator = GraphExecutionCoordinator(node_execution=service)
+    result = await coordinator.execute(
+        PreparedGraphExecution(
+            workspace_id=WORKSPACE_ID,
+            plan=CompiledGraph(nodes=(compiled,), edges=(), pinned_outputs={}),
+            initial_outputs={},
+            graph_id=None,
+            graph_revision=None,
+            secret_graph_id=None,
+            secret_graph_revision=None,
+            secret_node_ids=frozenset(),
+            module_path=(),
+            raise_node_errors=False,
+        )
+    )
+    if case == "paired":
+        assert result.status == "succeeded"
+        assert node.calls == [(0, 1, 10), (1, 2, 20)]
+        assert writer.values == [11, 22]
+        output = result.node_results[0].outputs["value"]
+        assert isinstance(output, ArtifactRefSequence)
+        assert output.item_refs == writer.refs
+        assert output.metadata == {
+            "invocation_mode": "map",
+            "map_inputs": ["item", "broadcast"],
+            "source_sequence_ids": [str(left.sequence_id), str(right.sequence_id)],
+        }
+        identity = json.dumps(
+            {
+                "node_id": "mapped",
+                "module_path": (),
+                "output": "value",
+                "sources": [str(left.sequence_id), str(right.sequence_id)],
+                "items": [str(ref.artifact_id) for ref in output.item_refs],
+            },
+            sort_keys=True,
+        )
+        assert output.sequence_id == uuid5(NAMESPACE_URL, identity)
+    else:
+        assert result.status == "failed"
+        expected = {
+            "short": "MAP inputs have different lengths: item=2, broadcast=1",
+            "empty": "MAP input 'broadcast' must not be empty",
+            "unordered": "cannot pair unordered sequence 'broadcast'",
+            "wrong_value": "MAP input 'broadcast' expected an ArtifactRefSequence, got ArtifactRef",
+            "wrong_type": "MAP input 'broadcast' expected test.local_execution.value@1, got test.wrong@1",
+            "failure": f"MAP inputs failed at item 0 (item={refs[0].artifact_id}, broadcast={refs[2].artifact_id})",
+        }
+        assert expected[case] in str(result.node_results[0].error)
+        assert node.calls == []

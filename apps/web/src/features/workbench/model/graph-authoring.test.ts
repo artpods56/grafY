@@ -9,7 +9,7 @@ import {
   connectionRouteTitle,
   inputPlugBindingsForNode,
   isConnectionAccepted,
-  mappedInputPortForNode,
+  mappedInputPortsForNode,
   nodeAndDescendantIds,
   workflowEdgeRouteOption,
   type GraphAuthoringNode,
@@ -193,9 +193,9 @@ describe("connection collection policy", () => {
       targetHandle: handle("input", "input", "one"),
     };
 
-    expect(mappedInputPortForNode(source.id, [disabledMapEdge])).toBeNull();
-    expect(mappedInputPortForNode(source.id, [disabledMapEdge], true)).toBe(
-      "mapped",
+    expect(mappedInputPortsForNode(source.id, [disabledMapEdge])).toEqual([]);
+    expect(mappedInputPortsForNode(source.id, [disabledMapEdge], true)).toEqual(
+      ["mapped"],
     );
     expect(
       collectionModeForConnection(
@@ -366,14 +366,11 @@ describe("connection acceptance policy", () => {
     ).toBe(false);
   });
 
-  it("allows only one map driver for a node", () => {
+  it("allows map drivers on different inputs and rejects an occupied input", () => {
     const source = node("source", [], [port("output", "output", "many")]);
     const target = node(
       "target",
-      [
-        port("driver", "input", "one"),
-        port("candidate", "input", "one", { variadic: true }),
-      ],
+      [port("driver", "input", "one"), port("candidate", "input", "one")],
       [],
     );
     const existingMapDriver = edge({
@@ -393,6 +390,23 @@ describe("connection acceptance policy", () => {
           sourceHandle: handle("output", "output", "many"),
           target: target.id,
           targetHandle: handle("candidate", "input", "one"),
+        },
+        [source, target],
+        [existingMapDriver],
+        [],
+        [],
+      ),
+    ).toBe(true);
+    expect(
+      mappedInputPortsForNode(target.id, [existingMapDriver], true),
+    ).toEqual(["driver"]);
+    expect(
+      isConnectionAccepted(
+        {
+          source: source.id,
+          sourceHandle: handle("output", "output", "many"),
+          target: target.id,
+          targetHandle: handle("driver", "input", "one"),
         },
         [source, target],
         [existingMapDriver],

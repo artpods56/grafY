@@ -286,7 +286,7 @@ async def test_compiler_derives_map_invocation_from_the_incoming_edge(
 
     replace = next(node for node in compiled.nodes if node.request.id == "replace")
     assert replace.invocation.mode is InvocationMode.MAP
-    assert replace.invocation.map_input == "text"
+    assert replace.invocation.map_inputs == ("text",)
     assert compiled.edges[1].request.collection_mode == "map"
 
 
@@ -876,8 +876,73 @@ async def test_compiler_broadcasts_an_origin_beside_a_map_edge(
 
     add = next(node for node in compiled.nodes if node.request.id == "add")
     assert add.invocation.mode is InvocationMode.MAP
-    assert add.invocation.map_input == "left"
+    assert add.invocation.map_inputs == ("left",)
     origin_edge = next(
         edge for edge in compiled.edges if isinstance(edge.request, RunOriginRequest)
     )
     assert origin_edge.origin_value == right_ref
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("duplicate", [False, True])
+async def test_compiler_pairs_map_inputs_in_contract_order(
+    tmp_path: Path, duplicate: bool
+) -> None:
+    request = RunRequest(
+        nodes=[
+            RunNodeRequest(
+                kind="builtin",
+                id="source",
+                operator_id="test.arithmetic.integer_sequence",
+                operator_version=1,
+                config={"start": 1, "step": 1, "count": 2},
+            ),
+            RunNodeRequest(
+                kind="builtin",
+                id="other",
+                operator_id="test.arithmetic.integer_sequence",
+                operator_version=1,
+                config={"start": 10, "step": 10, "count": 2},
+            ),
+            RunNodeRequest(
+                kind="builtin",
+                id="add",
+                operator_id="test.arithmetic.add",
+                operator_version=1,
+            ),
+        ],
+        edges=[
+            RunEdgeRequest(
+                from_node="other",
+                from_port="values",
+                to_node="add",
+                to_port="left" if duplicate else "right",
+                collection_mode="map",
+            ),
+            RunEdgeRequest(
+                from_node="source",
+                from_port="values",
+                to_node="add",
+                to_port="left",
+                collection_mode="map",
+            ),
+        ],
+    )
+    if duplicate:
+        with pytest.raises(
+            GraphExecutionError,
+            match="more than one map edge into input 'left'.*'other'.*'source'",
+        ):
+            _ = await _compiler(tmp_path).compile(
+                _pin_system_plugins(request),
+                _UnusedModuleExecutor(),
+                workspace_id=WORKSPACE_ID,
+            )
+    else:
+        compiled = await _compiler(tmp_path).compile(
+            _pin_system_plugins(request),
+            _UnusedModuleExecutor(),
+            workspace_id=WORKSPACE_ID,
+        )
+        add = next(node for node in compiled.nodes if node.request.id == "add")
+        assert add.invocation.map_inputs == ("left", "right")

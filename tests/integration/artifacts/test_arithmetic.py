@@ -1587,7 +1587,7 @@ def test_invalid_map_edge_target_is_rejected_before_execution(
     assert "missing" in response.json()["detail"]
 
 
-def test_node_rejects_more_than_one_map_edge(
+def test_node_pairs_multiple_map_edges(
     builtin_client: TestClient,
 ) -> None:
     response = builtin_client.post(
@@ -1635,9 +1635,15 @@ def test_node_rejects_more_than_one_map_edge(
         ).model_dump(mode="json"),
     )
 
-    assert response.status_code == 422
-    assert "more than one map edge" in response.json()["detail"]
-    assert "exactly one edge may drive mapped execution" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.json()["status"] == "succeeded"
+    result = RunResponse.model_validate(response.json())
+    runs = {run.node_id: run for run in result.node_runs}
+    assert runs["multiply"].outputs[0].kind == "sequence"
+    assert [artifact.text for artifact in runs["multiply"].outputs[0].artifacts] == [
+        "3",
+        "8",
+    ]
 
 
 def test_unknown_operator_version_is_rejected_before_execution(

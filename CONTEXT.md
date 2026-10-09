@@ -635,8 +635,10 @@ broadcasts its other inputs, and aggregates required item outputs into
 source-position-aligned sequences. That input holds one value, is not variadic,
 and may be optional. The edge selects it. An empty source sequence fails the
 run. The runtime derives its internal invocation policy from incoming edges. A
-target has at most one map driver; zip, Cartesian, and implicit flattening
-semantics are not part of the contract.
+target may have several map edges, one per input; their sequences pair items by
+position and must have equal lengths. With several map inputs, every sequence
+must be ordered. Cartesian products and implicit flattening are not part of
+the contract.
 
 Ordered sequence consumers that need cross-item context receive a `direct` MANY
 input and execute once. `map` is reserved for invocations whose items are

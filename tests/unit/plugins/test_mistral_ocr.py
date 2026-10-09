@@ -703,7 +703,7 @@ def test_registered_mistral_ocr_contract_supports_map(map_input: str) -> None:
     )
     validate_invocation(
         registration.node_class,
-        NodeInvocation(mode=InvocationMode.MAP, map_input=map_input),
+        NodeInvocation(mode=InvocationMode.MAP, map_inputs=(map_input,)),
     )
 
 
@@ -723,8 +723,9 @@ class FakeSavedGraphs(SavedGraphService):
         return self.revision
 
 
+@pytest.mark.parametrize("draw_regions", [False, True])
 async def test_decode_images_maps_ocr_through_api_compile_and_execute(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, draw_regions: bool
 ) -> None:
     uow = InMemoryUnitOfWork()
     storage = LocalFileObjectStore(tmp_path / "objects")
@@ -758,7 +759,8 @@ async def test_decode_images_maps_ocr_through_api_compile_and_execute(
     refs: list[ArtifactRef] = []
     for index, color in enumerate(("red", "blue")):
         buffer = BytesIO()
-        Image.new("RGB", (80, 100), color).save(buffer, format="PNG")
+        size = (80 + index * 20, 100 + index * 20) if draw_regions else (80, 100)
+        Image.new("RGB", size, color).save(buffer, format="PNG")
         saved = await storage.save(
             SaveFileCommand(
                 bucket="workbench-artifacts",
@@ -787,48 +789,100 @@ async def test_decode_images_maps_ocr_through_api_compile_and_execute(
     for index, body in enumerate(bodies):
         pages = cast(list[dict[str, object]], body["pages"])
         pages[0]["markdown"] = f"image {index}"
+        if draw_regions:
+            pages[0]["dimensions"] = {
+                "dpi": 200,
+                "width": 80 + index * 20,
+                "height": 100 + index * 20,
+            }
+            images = cast(list[dict[str, object]], pages[0]["images"])
+            images[0].update(
+                {
+                    "top_left_x": 5 + index * 35,
+                    "top_left_y": 5 + index * 40,
+                    "bottom_right_x": 25 + index * 35,
+                    "bottom_right_y": 25 + index * 40,
+                }
+            )
+            page_blocks = cast(list[dict[str, object]], pages[0]["blocks"])
+            page_blocks[1].update(
+                {
+                    key: images[0][key]
+                    for key in (
+                        "top_left_x",
+                        "top_left_y",
+                        "bottom_right_x",
+                        "bottom_right_y",
+                    )
+                }
+            )
+
     recorder = RequestRecorder(httpx.Response(200, json=bodies[1]))
     recorder.next_responses = [httpx.Response(200, json=bodies[0])]
     recorder.install(monkeypatch)
-    result = await components.run_graph.run(
-        WORKSPACE_ID,
-        RunRequest(
-            secret_graph_id=secret_graph.id,
-            secret_graph_revision=secret_graph.revision,
-            nodes=[
-                RunNodeRequest(
-                    kind="builtin",
-                    id="decode",
-                    operator_id="image.decode",
-                    operator_version=1,
+    request = RunRequest(
+        secret_graph_id=secret_graph.id,
+        secret_graph_revision=secret_graph.revision,
+        nodes=[
+            RunNodeRequest(
+                kind="builtin",
+                id="decode",
+                operator_id="image.decode",
+                operator_version=1,
+            ),
+            RunNodeRequest(
+                kind="builtin",
+                id="ocr",
+                operator_id="mistral.ocr.process",
+                operator_version=1,
+            ),
+        ],
+        origins=[
+            RunOriginRequest(
+                to_node="decode",
+                to_port="files",
+                value=ArtifactRefSequence.from_key(key=PNG_FILE.key, item_refs=refs),
+            )
+        ],
+        edges=[
+            RunEdgeRequest(
+                from_node="decode",
+                from_port="images",
+                to_node="ocr",
+                to_port="image",
+                collection_mode="map",
+            )
+        ],
+    )
+    if draw_regions:
+        request.nodes.append(
+            RunNodeRequest(
+                kind="builtin",
+                id="draw",
+                operator_id="image.draw_regions",
+                operator_version=1,
+                config={"kinds": "image", "label_text": "none", "line_width": 1},
+            )
+        )
+        request.edges.extend(
+            [
+                RunEdgeRequest(
+                    from_node="ocr",
+                    from_port="regions",
+                    to_node="draw",
+                    to_port="regions",
+                    collection_mode="map",
                 ),
-                RunNodeRequest(
-                    kind="builtin",
-                    id="ocr",
-                    operator_id="mistral.ocr.process",
-                    operator_version=1,
-                ),
-            ],
-            origins=[
-                RunOriginRequest(
-                    to_node="decode",
-                    to_port="files",
-                    value=ArtifactRefSequence.from_key(
-                        key=PNG_FILE.key, item_refs=refs
-                    ),
-                )
-            ],
-            edges=[
                 RunEdgeRequest(
                     from_node="decode",
                     from_port="images",
-                    to_node="ocr",
+                    to_node="draw",
                     to_port="image",
                     collection_mode="map",
-                )
-            ],
-        ),
-    )
+                ),
+            ]
+        )
+    result = await components.run_graph.run(WORKSPACE_ID, request)
     assert result.status == "succeeded", result.node_results
     assert len(recorder.requests) == len(refs)
     outputs = result.outputs["ocr"]
@@ -856,12 +910,16 @@ async def test_decode_images_maps_ocr_through_api_compile_and_execute(
             artifact = await transaction.artifacts.get(WORKSPACE_ID, ref.artifact_id)
             assert artifact is not None
             assert artifact.inline_payload == {"markdown": f"image {index}"}
-        for ref in regions.item_refs:
+        for index, ref in enumerate(regions.item_refs):
             artifact = await transaction.artifacts.get(WORKSPACE_ID, ref.artifact_id)
             assert artifact is not None
             assert artifact.inline_payload is not None
             assert artifact.inline_payload["pages"] == [
-                {"index": 0, "width": 80, "height": 100}
+                {
+                    "index": 0,
+                    "width": 80 + index * 20 if draw_regions else 80,
+                    "height": 100 + index * 20 if draw_regions else 100,
+                }
             ]
     context = PluginRuntimeContext(
         workspace=tmp_path, storage=storage, uow=uow, bucket="workbench-artifacts"
@@ -875,3 +933,29 @@ async def test_decode_images_maps_ocr_through_api_compile_and_execute(
         table = await table_resolver.resolve(ref, WORKSPACE_ID)
         assert isinstance(table, Table)
         assert table.rows[1]["text"] == "img-0.png"
+
+    if draw_regions:
+        drawn = result.outputs["draw"]["image"]
+        assert isinstance(drawn, ArtifactRefSequence)
+        assert (drawn.artifact_type, drawn.schema_version) == (RASTER_IMAGE.key.id, 1)
+        assert len(drawn.item_refs) == 2
+        assert drawn.metadata["map_inputs"] == ["image", "regions"]
+        async with uow as transaction:
+            for index, ref in enumerate(drawn.item_refs):
+                artifact = await transaction.artifacts.get(
+                    WORKSPACE_ID, ref.artifact_id
+                )
+                assert artifact is not None
+                assert artifact.content_type == "image/png"
+                assert artifact.bucket is not None and artifact.object_key is not None
+                stream = await storage.load(artifact.bucket, artifact.object_key)
+                image = Image.open(BytesIO(stream.read())).convert("RGB")
+                assert image.size == (80 + index * 20, 100 + index * 20)
+                base_color = (255, 0, 0) if index == 0 else (0, 0, 255)
+                assert image.getpixel((image.width - 1, image.height - 1)) == base_color
+                # Different boxes make a regions permutation observable as well as an image permutation.
+                assert image.getpixel((10 + index * 35, 10 + index * 40)) != base_color
+                assert (
+                    image.getpixel((45 if index == 0 else 10, 50 if index == 0 else 10))
+                    == base_color
+                )
