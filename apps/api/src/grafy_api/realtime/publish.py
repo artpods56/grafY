@@ -49,7 +49,7 @@ async def publish_accepted_command(
     actor: ActorContext,
     workspace_id: UUID,
     graph_id: UUID,
-    command: GraphCommand,
+    commands: tuple[GraphCommand, ...],
     receipt: GraphCommandReceipt,
     graph_room_session_id: UUID | None = None,
     uow_factory: Callable[[], SqlAlchemyUnitOfWork],
@@ -64,7 +64,7 @@ async def publish_accepted_command(
             sequence=receipt.accepted_sequence,
             actor=presentation,
             graph_room_session_id=graph_room_session_id,
-            command=command,
+            commands=commands,
         ),
     )
 

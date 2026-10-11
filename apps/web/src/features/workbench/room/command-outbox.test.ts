@@ -47,6 +47,7 @@ function acceptedMessage(
     },
     graph_room_session_id: SESSION_ID,
     command: rename("Renamed"),
+    commands: [rename("Renamed")],
     ...overrides,
   };
 }
@@ -99,9 +100,9 @@ describe("GraphRoomCommandOutbox", () => {
       onHeadRefreshRequired,
     });
 
-    const first = outbox.submit(rename("Committed during disconnect"));
-    const second = outbox.submit(rename("Queued second"));
-    const third = outbox.submit(rename("Queued third"));
+    const first = outbox.submit([rename("Committed during disconnect")]);
+    const second = outbox.submit([rename("Queued second")]);
+    const third = outbox.submit([rename("Queued third")]);
 
     expect(first.sends.map((send) => send.message.command_id)).toEqual([
       "command-a",
@@ -193,7 +194,7 @@ describe("GraphRoomCommandOutbox", () => {
       onHeadRefreshRequired,
     });
 
-    const submitted = outbox.submit(rename("Receipt first"));
+    const submitted = outbox.submit([rename("Receipt first")]);
     expect(submitted.sends).toHaveLength(1);
 
     const held = outbox.applyReceipt(
@@ -238,7 +239,7 @@ describe("GraphRoomCommandOutbox", () => {
       onHeadRefreshRequired,
     });
 
-    const submitted = outbox.submit(rename("Replayed commit"));
+    const submitted = outbox.submit([rename("Replayed commit")]);
     const sends = outbox.applyReceipt(
       receiptMessage("command-a", {
         outcome: "idempotent_replay",
@@ -267,12 +268,13 @@ describe("GraphRoomCommandOutbox", () => {
       createCommandId: nextId(["command-a"]),
     });
 
-    const submitted = outbox.submit(rename("Fanout twice"));
+    const submitted = outbox.submit([rename("Fanout twice")]);
     expect(outbox.recordAccepted(acceptedMessage("command-a", 5))).toBe(true);
     expect(
       outbox.recordAccepted(
         acceptedMessage("command-a", 5, {
           command: rename("Redelivered rename"),
+          commands: [rename("Redelivered rename")],
         }),
       ),
     ).toBe(false);
@@ -299,7 +301,7 @@ describe("GraphRoomCommandOutbox", () => {
       onCommandRejected,
     });
 
-    const rejected = outbox.submit(rename("Conflicting"));
+    const rejected = outbox.submit([rename("Conflicting")]);
     outbox.applyRejected(rejectedMessage("command-a"));
     expect(onCommandRejected).toHaveBeenCalledOnce();
     await expect(rejected.promise).rejects.toMatchObject({
@@ -313,7 +315,7 @@ describe("GraphRoomCommandOutbox", () => {
     expect(outbox.pendingReceiptIsCovered()).toBe(false);
 
     // The rejected command also parked the drain; a queued command resumes it.
-    const queued = outbox.submit(rename("After conflict"));
+    const queued = outbox.submit([rename("After conflict")]);
     expect(queued.sends).toEqual([]);
     head = { room_epoch: EPOCH_ONE, collaboration_sequence: 5 };
     const resumed = outbox.finishHeadRehydration();
@@ -333,7 +335,7 @@ describe("GraphRoomCommandOutbox", () => {
       createCommandId: nextId(["command-a", "command-b"]),
     });
 
-    const first = outbox.submit(rename("Never written"));
+    const first = outbox.submit([rename("Never written")]);
     expect(first.sends).toHaveLength(1);
     outbox.sendFailed(
       first.sends[0]?.commandId ?? "",
@@ -342,7 +344,7 @@ describe("GraphRoomCommandOutbox", () => {
     await expect(first.promise).rejects.toThrow("socket send rejected");
 
     // A non-Error failure still carries the command id and an error code.
-    const second = outbox.submit(rename("Second"));
+    const second = outbox.submit([rename("Second")]);
     expect(second.sends).toHaveLength(1);
     outbox.sendFailed(second.sends[0]?.commandId ?? "", "socket exploded");
     await expect(second.promise).rejects.toBeInstanceOf(GraphRoomCommandError);
@@ -350,5 +352,67 @@ describe("GraphRoomCommandOutbox", () => {
       commandId: "command-b",
       errorCode: "send_failed",
     });
+  });
+
+  it("sends a two-command batch as one frame and one in-flight unit", async () => {
+    let head: GraphRoomHeadPointer | null = {
+      room_epoch: EPOCH_ONE,
+      collaboration_sequence: 4,
+    };
+    const outbox = new GraphRoomCommandOutbox({
+      headPointer: () => head,
+      createCommandId: nextId(["command-a", "command-b"]),
+    });
+
+    const batched = outbox.submit([rename("One"), rename("Two")]);
+    expect(batched.sends).toHaveLength(1);
+    expect(batched.sends[0]?.message).toMatchObject({
+      command_id: "command-a",
+      commands: [rename("One"), rename("Two")],
+    });
+
+    // The batch is one unit: a second submit waits for the batch's receipt.
+    const queued = outbox.submit([rename("Queued")]);
+    expect(queued.sends).toEqual([]);
+
+    head = { room_epoch: EPOCH_ONE, collaboration_sequence: 5 };
+    const resumed = outbox.applyReceipt(
+      receiptMessage("command-a", {
+        accepted_sequence: 5,
+        current_sequence: 5,
+      }),
+    );
+    expect(resumed.map((send) => send.message.command_id)).toEqual([
+      "command-b",
+    ]);
+    await expect(batched.promise).resolves.toMatchObject({
+      receipt: { accepted_sequence: 5 },
+    });
+    queued.promise.catch(() => undefined);
+  });
+
+  it("lists pending commands with the in-flight batch first", () => {
+    const head: GraphRoomHeadPointer | null = {
+      room_epoch: EPOCH_ONE,
+      collaboration_sequence: 4,
+    };
+    const outbox = new GraphRoomCommandOutbox({
+      headPointer: () => head,
+      createCommandId: nextId(["command-a", "command-b", "command-c"]),
+    });
+
+    const inFlight = outbox.submit([rename("Sent first"), rename("Sent last")]);
+    const queued = outbox.submit([rename("Queued alone")]);
+    const alsoQueued = outbox.submit([rename("Queued tail")]);
+
+    expect(outbox.pendingCommands()).toEqual([
+      rename("Sent first"),
+      rename("Sent last"),
+      rename("Queued alone"),
+      rename("Queued tail"),
+    ]);
+    for (const submission of [inFlight, queued, alsoQueued]) {
+      submission.promise.catch(() => undefined);
+    }
   });
 });

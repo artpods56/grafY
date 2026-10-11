@@ -357,7 +357,9 @@ export class GraphRoomSession {
     return effectiveHead;
   }
 
-  submitCommand(command: RoomGraphCommand): Promise<GraphRoomCommandResult> {
+  submitCommand(
+    commands: readonly RoomGraphCommand[],
+  ): Promise<GraphRoomCommandResult> {
     if (!this.canSubmitCommands() || this.head === null) {
       return Promise.reject(
         new GraphRoomCommandError(
@@ -367,9 +369,14 @@ export class GraphRoomSession {
         ),
       );
     }
-    const submission = this.outbox.submit(command);
+    const submission = this.outbox.submit(commands);
     this.writeSends(submission.sends);
     return submission.promise;
+  }
+
+  /** The in-flight batch's commands followed by every queued batch's commands. */
+  pendingCommands(): readonly RoomGraphCommand[] {
+    return this.outbox.pendingCommands();
   }
 
   /** Write the submit frames the outbox produced, in order. */
@@ -663,10 +670,10 @@ export class GraphRoomSession {
     }
 
     try {
-      this.head = applyRoomCommandToHead(
+      this.head = message.commands.reduce(
+        (head, command) =>
+          applyRoomCommandToHead(head, command, message.sequence),
         head,
-        message.command,
-        message.sequence,
       );
     } catch {
       this.outbox.requestHeadRefresh();

@@ -228,6 +228,24 @@ describe("useGraphRoomSession", () => {
             annotations: [],
           },
         },
+        commands: [
+          {
+            kind: "replace_presentation",
+            presentation: {
+              viewers: [
+                {
+                  id: "peer-viewer",
+                  position: { x: 80, y: 120 },
+                  layout: null,
+                  mode: null,
+                },
+              ],
+              links: [],
+              bindings: [],
+              annotations: [],
+            },
+          },
+        ],
       });
     });
 

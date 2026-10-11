@@ -15,7 +15,9 @@ export const CLOSE_PROTOCOL_ERROR = 4008;
 export const CLOSE_SLOW_CONSUMER = 4009;
 export const CLOSE_GRAPH_DELETED = 4010;
 
-export type RoomGraphCommand = SubmitGraphCommandRequest["command"];
+export type RoomGraphCommand = NonNullable<
+  SubmitGraphCommandRequest["command"]
+>;
 
 export type GraphRoomTerminalReason =
   | "access_revoked"
@@ -168,7 +170,7 @@ export interface GraphCommandSubmitMessage {
   readonly command_id: string;
   readonly room_epoch: string;
   readonly observed_sequence: number;
-  readonly command: RoomGraphCommand;
+  readonly commands: readonly RoomGraphCommand[];
 }
 
 export interface GraphCommandAcceptedMessage {
@@ -179,7 +181,9 @@ export interface GraphCommandAcceptedMessage {
   readonly sequence: number;
   readonly actor: ActorPresentation;
   readonly graph_room_session_id: string | null;
-  readonly command: RoomGraphCommand;
+  readonly commands: readonly RoomGraphCommand[];
+  /** Only populated for a batch of exactly one command; null otherwise. */
+  readonly command: RoomGraphCommand | null;
 }
 
 export interface GraphCommandReceiptMessage {
@@ -498,7 +502,9 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       !isString(raw.command_id) ||
       !isString(raw.room_epoch) ||
       !isNonNegativeInt(raw.sequence) ||
-      !isRecord(raw.command)
+      !Array.isArray(raw.commands) ||
+      raw.commands.length === 0 ||
+      !raw.commands.every((item) => isRecord(item))
     ) {
       return null;
     }
@@ -514,7 +520,8 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       sequence: raw.sequence,
       actor,
       graph_room_session_id: isString(sessionId) ? sessionId : null,
-      command: raw.command as RoomGraphCommand,
+      commands: raw.commands as unknown as readonly RoomGraphCommand[],
+      command: isRecord(raw.command) ? (raw.command as RoomGraphCommand) : null,
     };
   }
   if (type === "graph.command.receipt") {

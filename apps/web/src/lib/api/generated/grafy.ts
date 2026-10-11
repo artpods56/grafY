@@ -3214,6 +3214,27 @@ export interface components {
             /** Name */
             readonly name: string;
         };
+        /**
+         * ReplaceNodeConfigurationCommand
+         * @description Replace a node's whole configuration; unlike the per-field update it can drop keys.
+         */
+        readonly ReplaceNodeConfigurationCommand: {
+            /** Config */
+            readonly config: {
+                readonly [key: string]: unknown;
+            };
+            /** Expected Config */
+            readonly expected_config: {
+                readonly [key: string]: unknown;
+            };
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "replace_node_configuration";
+            /** Node Id */
+            readonly node_id: string;
+        };
         /** ReplacePresentationCommand */
         readonly ReplacePresentationCommand: {
             /**
@@ -3875,12 +3896,14 @@ export interface components {
         /** SubmitGraphCommandRequest */
         readonly SubmitGraphCommandRequest: {
             /** Command */
-            readonly command: components["schemas"]["RenameGraphCommand"] | components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["UpdateNodePluginReleaseCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["AddOriginCommand"] | components["schemas"]["UpdateOriginCommand"] | components["schemas"]["RemoveOriginsCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"];
+            readonly command?: (components["schemas"]["RenameGraphCommand"] | components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["ReplaceNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["UpdateNodePluginReleaseCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["AddOriginCommand"] | components["schemas"]["UpdateOriginCommand"] | components["schemas"]["RemoveOriginsCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"]) | null;
             /**
              * Command Id
              * Format: uuid
              */
             readonly command_id: string;
+            /** Commands */
+            readonly commands?: readonly (components["schemas"]["RenameGraphCommand"] | components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["ReplaceNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["UpdateNodePluginReleaseCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["AddOriginCommand"] | components["schemas"]["UpdateOriginCommand"] | components["schemas"]["RemoveOriginsCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"])[] | null;
             /** Observed Sequence */
             readonly observed_sequence: number;
             /**
@@ -4108,7 +4131,9 @@ export interface components {
         };
         /**
          * UpdateNodeConfigurationAndInputPlugsCommand
-         * @description Atomic Schema Builder (and similar) config+plug compound gesture.
+         * @description Deprecated compound of replace_node_configuration and set_node_input_plugs.
+         *
+         *     Kept so older clients still work; it expands into exactly those two commands' steps.
          */
         readonly UpdateNodeConfigurationAndInputPlugsCommand: {
             /** Config */

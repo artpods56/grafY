@@ -297,11 +297,13 @@ describe("GraphRoomSession", () => {
       createCommandId: () => commandIds.shift() ?? crypto.randomUUID(),
     });
 
-    const pending = session.submitCommand({
-      kind: "rename_graph",
-      name: "Renamed",
-      expected_name: "Room graph",
-    });
+    const pending = session.submitCommand([
+      {
+        kind: "rename_graph",
+        name: "Renamed",
+        expected_name: "Room graph",
+      },
+    ]);
 
     expect(socket.sent).toHaveLength(1);
     expect(JSON.parse(socket.sent[0]!)).toEqual({
@@ -310,11 +312,13 @@ describe("GraphRoomSession", () => {
       command_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       room_epoch: ROOM_EPOCH,
       observed_sequence: 4,
-      command: {
-        kind: "rename_graph",
-        name: "Renamed",
-        expected_name: "Room graph",
-      },
+      commands: [
+        {
+          kind: "rename_graph",
+          name: "Renamed",
+          expected_name: "Room graph",
+        },
+      ],
     });
 
     socket.emitMessage({
@@ -334,6 +338,13 @@ describe("GraphRoomSession", () => {
         name: "Renamed",
         expected_name: "Room graph",
       },
+      commands: [
+        {
+          kind: "rename_graph",
+          name: "Renamed",
+          expected_name: "Room graph",
+        },
+      ],
     });
     socket.emitMessage({
       protocol_version: 1,
@@ -354,6 +365,43 @@ describe("GraphRoomSession", () => {
     expect(session.getHead()?.collaboration_sequence).toBe(5);
   });
 
+  it("applies an accepted two-command batch to the head in order", () => {
+    const { session, socket } = connectReadySession({
+      workspaceId: WORKSPACE_ID,
+      graphId: GRAPH_ID,
+    });
+
+    socket.emitMessage({
+      protocol_version: 1,
+      type: "graph.command.accepted",
+      command_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      room_epoch: ROOM_EPOCH,
+      sequence: 5,
+      actor: {
+        actor_id: ACTOR_ID,
+        display_name: "Owner",
+        color: "emerald",
+      },
+      graph_room_session_id: SESSION_ID,
+      command: null,
+      commands: [
+        {
+          kind: "rename_graph",
+          name: "First rename",
+          expected_name: "Room graph",
+        },
+        {
+          kind: "rename_graph",
+          name: "Second rename",
+          expected_name: "First rename",
+        },
+      ],
+    });
+
+    expect(session.getHead()?.name).toBe("Second rename");
+    expect(session.getHead()?.collaboration_sequence).toBe(5);
+  });
+
   it("retries an interrupted command idempotently before draining queued commands", async () => {
     const commandIds = [
       "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -365,16 +413,20 @@ describe("GraphRoomSession", () => {
       createCommandId: () => commandIds.shift() ?? crypto.randomUUID(),
     });
 
-    const interrupted = session.submitCommand({
-      kind: "rename_graph",
-      name: "Renamed before disconnect",
-      expected_name: "Room graph",
-    });
-    const queued = session.submitCommand({
-      kind: "rename_graph",
-      name: "Queued after reconnect",
-      expected_name: "Renamed before disconnect",
-    });
+    const interrupted = session.submitCommand([
+      {
+        kind: "rename_graph",
+        name: "Renamed before disconnect",
+        expected_name: "Room graph",
+      },
+    ]);
+    const queued = session.submitCommand([
+      {
+        kind: "rename_graph",
+        name: "Queued after reconnect",
+        expected_name: "Renamed before disconnect",
+      },
+    ]);
     const originalSubmission = JSON.parse(socket.sent[0]!);
     let interruptedSettled = false;
     void interrupted.then(
@@ -437,9 +489,11 @@ describe("GraphRoomSession", () => {
       command_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       room_epoch: ROOM_EPOCH,
       observed_sequence: 5,
-      command: {
-        name: "Queued after reconnect",
-      },
+      commands: [
+        {
+          name: "Queued after reconnect",
+        },
+      ],
     });
 
     reconnectedSocket.emitMessage({
@@ -459,6 +513,13 @@ describe("GraphRoomSession", () => {
         name: "Queued after reconnect",
         expected_name: "Renamed before disconnect",
       },
+      commands: [
+        {
+          kind: "rename_graph",
+          name: "Queued after reconnect",
+          expected_name: "Renamed before disconnect",
+        },
+      ],
     });
     reconnectedSocket.emitMessage({
       protocol_version: 1,
@@ -492,16 +553,20 @@ describe("GraphRoomSession", () => {
       onCommandAccepted,
     });
 
-    const interrupted = session.submitCommand({
-      kind: "rename_graph",
-      name: "Committed before disconnect",
-      expected_name: "Room graph",
-    });
-    const queued = session.submitCommand({
-      kind: "rename_graph",
-      name: "After authoritative refresh",
-      expected_name: "Peer rename",
-    });
+    const interrupted = session.submitCommand([
+      {
+        kind: "rename_graph",
+        name: "Committed before disconnect",
+        expected_name: "Room graph",
+      },
+    ]);
+    const queued = session.submitCommand([
+      {
+        kind: "rename_graph",
+        name: "After authoritative refresh",
+        expected_name: "Peer rename",
+      },
+    ]);
     socket.emitClose(1006, "connection_lost");
 
     session.connect();
@@ -562,6 +627,13 @@ describe("GraphRoomSession", () => {
         name: "Peer rename",
         expected_name: "Committed before disconnect",
       },
+      commands: [
+        {
+          kind: "rename_graph",
+          name: "Peer rename",
+          expected_name: "Committed before disconnect",
+        },
+      ],
     });
 
     expect(session.getHead()?.collaboration_sequence).toBe(6);
@@ -581,10 +653,12 @@ describe("GraphRoomSession", () => {
     expect(JSON.parse(reconnectedSocket.sent[1]!)).toMatchObject({
       command_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       observed_sequence: 6,
-      command: {
-        name: "After authoritative refresh",
-        expected_name: "Peer rename",
-      },
+      commands: [
+        {
+          name: "After authoritative refresh",
+          expected_name: "Peer rename",
+        },
+      ],
     });
     queued.catch(() => undefined);
     session.disconnect();
@@ -619,6 +693,13 @@ describe("GraphRoomSession", () => {
         name: "Skipped rename",
         expected_name: "Room graph",
       },
+      commands: [
+        {
+          kind: "rename_graph",
+          name: "Skipped rename",
+          expected_name: "Room graph",
+        },
+      ],
     });
 
     expect(session.getHead()).toBe(headBeforeGap);
@@ -627,11 +708,13 @@ describe("GraphRoomSession", () => {
     expect(onCommandAccepted).not.toHaveBeenCalled();
     expect(onHeadRefreshRequired).toHaveBeenCalledOnce();
 
-    const pending = session.submitCommand({
-      kind: "rename_graph",
-      name: "Wait for refresh",
-      expected_name: "Room graph",
-    });
+    const pending = session.submitCommand([
+      {
+        kind: "rename_graph",
+        name: "Wait for refresh",
+        expected_name: "Room graph",
+      },
+    ]);
     expect(socket.sent).toHaveLength(0);
     session.disconnect();
     await expect(pending).rejects.toMatchObject({ errorCode: "disconnected" });
@@ -646,11 +729,13 @@ describe("GraphRoomSession", () => {
       createCommandId: () => commandId,
       onCommandAccepted,
     });
-    const pending = session.submitCommand({
-      kind: "rename_graph",
-      name: "Local rename",
-      expected_name: "Room graph",
-    });
+    const pending = session.submitCommand([
+      {
+        kind: "rename_graph",
+        name: "Local rename",
+        expected_name: "Room graph",
+      },
+    ]);
     const headBeforeStaleAccept = session.getHead();
 
     socket.emitMessage({
@@ -670,6 +755,13 @@ describe("GraphRoomSession", () => {
         name: "Stale rename",
         expected_name: "Older graph name",
       },
+      commands: [
+        {
+          kind: "rename_graph",
+          name: "Stale rename",
+          expected_name: "Older graph name",
+        },
+      ],
     });
 
     expect(session.getHead()).toBe(headBeforeStaleAccept);
@@ -727,6 +819,13 @@ describe("GraphRoomSession", () => {
         name: "Accepted during reconnect",
         expected_name: "Room graph",
       },
+      commands: [
+        {
+          kind: "rename_graph",
+          name: "Accepted during reconnect",
+          expected_name: "Room graph",
+        },
+      ],
     });
     reconnectedSocket.emitMessage(roomReady());
 
@@ -745,11 +844,13 @@ describe("GraphRoomSession", () => {
       createCommandId: () => "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     });
 
-    const pending = session.submitCommand({
-      kind: "rename_graph",
-      name: "Nope",
-      expected_name: "Wrong",
-    });
+    const pending = session.submitCommand([
+      {
+        kind: "rename_graph",
+        name: "Nope",
+        expected_name: "Wrong",
+      },
+    ]);
     socket.emitMessage({
       protocol_version: 1,
       type: "graph.command.rejected",
@@ -800,6 +901,24 @@ describe("GraphRoomSession", () => {
           annotations: [],
         },
       },
+      commands: [
+        {
+          kind: "replace_presentation",
+          presentation: {
+            viewers: [
+              {
+                id: "artifact-viewer-1",
+                position: { x: 10, y: 20 },
+                layout: null,
+                mode: null,
+              },
+            ],
+            links: [],
+            bindings: [],
+            annotations: [],
+          },
+        },
+      ],
     });
     expect(session.getHead()?.collaboration_sequence).toBe(5);
     expect(session.getHead()?.document.presentation?.viewers).toHaveLength(1);
@@ -846,7 +965,7 @@ describe("GraphRoomSession", () => {
         },
       },
     };
-    const submitted = session.submitCommand(command);
+    const submitted = session.submitCommand([command]);
     socket.emitMessage({
       protocol_version: 1,
       type: "graph.command.accepted",
@@ -860,6 +979,7 @@ describe("GraphRoomSession", () => {
       },
       graph_room_session_id: SESSION_ID,
       command,
+      commands: [command],
     });
     socket.emitMessage({
       protocol_version: 1,
@@ -945,17 +1065,21 @@ describe("GraphRoomSession", () => {
       onHeadRefreshRequired,
     });
 
-    const conflicting = session.submitCommand({
-      kind: "replace_presentation",
-      presentation: { viewers: [], links: [], bindings: [], annotations: [] },
-    });
+    const conflicting = session.submitCommand([
+      {
+        kind: "replace_presentation",
+        presentation: { viewers: [], links: [], bindings: [], annotations: [] },
+      },
+    ]);
     expect(socket.sent).toHaveLength(1);
 
-    const queued = session.submitCommand({
-      kind: "rename_graph",
-      name: "After conflict",
-      expected_name: "Room graph",
-    });
+    const queued = session.submitCommand([
+      {
+        kind: "rename_graph",
+        name: "After conflict",
+        expected_name: "Room graph",
+      },
+    ]);
     expect(socket.sent).toHaveLength(1);
 
     socket.emitMessage({
@@ -991,6 +1115,13 @@ describe("GraphRoomSession", () => {
         name: "Peer rename",
         expected_name: "Room graph",
       },
+      commands: [
+        {
+          kind: "rename_graph",
+          name: "Peer rename",
+          expected_name: "Room graph",
+        },
+      ],
     });
     expect(session.getHead()?.collaboration_sequence).toBe(5);
     expect(session.getHead()?.name).toBe("Peer rename");
@@ -1006,10 +1137,12 @@ describe("GraphRoomSession", () => {
     expect(JSON.parse(socket.sent[1]!)).toMatchObject({
       type: "graph.command.submit",
       observed_sequence: 5,
-      command: {
-        kind: "rename_graph",
-        name: "After conflict",
-      },
+      commands: [
+        {
+          kind: "rename_graph",
+          name: "After conflict",
+        },
+      ],
     });
     queued.catch(() => undefined);
     expect(onHeadRefreshRequired).not.toHaveBeenCalled();
@@ -1027,35 +1160,41 @@ describe("GraphRoomSession", () => {
       createCommandId: () => commandIds.shift() ?? crypto.randomUUID(),
     });
 
-    const first = session.submitCommand({
-      kind: "replace_presentation",
-      presentation: {
-        viewers: [{ id: "artifact-viewer-1", position: { x: 1, y: 2 } }],
-        links: [],
-        bindings: [],
-        annotations: [],
+    const first = session.submitCommand([
+      {
+        kind: "replace_presentation",
+        presentation: {
+          viewers: [{ id: "artifact-viewer-1", position: { x: 1, y: 2 } }],
+          links: [],
+          bindings: [],
+          annotations: [],
+        },
       },
-    });
+    ]);
     expect(socket.sent).toHaveLength(1);
 
-    const second = session.submitCommand({
-      kind: "replace_presentation",
-      presentation: {
-        viewers: [{ id: "artifact-viewer-2", position: { x: 3, y: 4 } }],
-        links: [],
-        bindings: [],
-        annotations: [],
+    const second = session.submitCommand([
+      {
+        kind: "replace_presentation",
+        presentation: {
+          viewers: [{ id: "artifact-viewer-2", position: { x: 3, y: 4 } }],
+          links: [],
+          bindings: [],
+          annotations: [],
+        },
       },
-    });
-    const third = session.submitCommand({
-      kind: "replace_presentation",
-      presentation: {
-        viewers: [{ id: "artifact-viewer-3", position: { x: 5, y: 6 } }],
-        links: [],
-        bindings: [],
-        annotations: [],
+    ]);
+    const third = session.submitCommand([
+      {
+        kind: "replace_presentation",
+        presentation: {
+          viewers: [{ id: "artifact-viewer-3", position: { x: 5, y: 6 } }],
+          links: [],
+          bindings: [],
+          annotations: [],
+        },
       },
-    });
+    ]);
     await expect(second).rejects.toMatchObject({ errorCode: "superseded" });
     expect(socket.sent).toHaveLength(1);
 
@@ -1080,6 +1219,17 @@ describe("GraphRoomSession", () => {
           annotations: [],
         },
       },
+      commands: [
+        {
+          kind: "replace_presentation",
+          presentation: {
+            viewers: [{ id: "artifact-viewer-1", position: { x: 1, y: 2 } }],
+            links: [],
+            bindings: [],
+            annotations: [],
+          },
+        },
+      ],
     });
     socket.emitMessage({
       protocol_version: 1,
@@ -1097,12 +1247,14 @@ describe("GraphRoomSession", () => {
     expect(socket.sent).toHaveLength(2);
     expect(JSON.parse(socket.sent[1]!)).toMatchObject({
       observed_sequence: 5,
-      command: {
-        kind: "replace_presentation",
-        presentation: {
-          viewers: [{ id: "artifact-viewer-3", position: { x: 5, y: 6 } }],
+      commands: [
+        {
+          kind: "replace_presentation",
+          presentation: {
+            viewers: [{ id: "artifact-viewer-3", position: { x: 5, y: 6 } }],
+          },
         },
-      },
+      ],
     });
     third.catch(() => undefined);
   });
@@ -1132,6 +1284,13 @@ describe("GraphRoomSession", () => {
         name: "Accepted after snapshot",
         expected_name: "Room graph",
       },
+      commands: [
+        {
+          kind: "rename_graph",
+          name: "Accepted after snapshot",
+          expected_name: "Room graph",
+        },
+      ],
     });
     const acceptedHead = session.getHead();
 
@@ -1202,11 +1361,13 @@ describe("GraphRoomSession", () => {
         createCommandId: () => "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       });
 
-      const pending = session.submitCommand({
-        kind: "rename_graph",
-        name: "Pending",
-        expected_name: "Room graph",
-      });
+      const pending = session.submitCommand([
+        {
+          kind: "rename_graph",
+          name: "Pending",
+          expected_name: "Room graph",
+        },
+      ]);
       const socketsBeforeClose = FakeWebSocket.instances.length;
       socket.emitClose(code, reason);
 
@@ -1219,11 +1380,13 @@ describe("GraphRoomSession", () => {
       await vi.advanceTimersByTimeAsync(20_000);
       expect(FakeWebSocket.instances.length).toBe(socketsBeforeClose);
       await expect(
-        session.submitCommand({
-          kind: "rename_graph",
-          name: "Again",
-          expected_name: "Room graph",
-        }),
+        session.submitCommand([
+          {
+            kind: "rename_graph",
+            name: "Again",
+            expected_name: "Room graph",
+          },
+        ]),
       ).rejects.toMatchObject({ errorCode: "not_ready" });
     },
   );
@@ -1356,28 +1519,34 @@ describe("GraphRoomSession", () => {
       createCommandId: () => crypto.randomUUID(),
     });
 
-    const first = session.submitCommand({
-      kind: "rename_graph",
-      name: "First",
-      expected_name: "Room graph",
-    });
+    const first = session.submitCommand([
+      {
+        kind: "rename_graph",
+        name: "First",
+        expected_name: "Room graph",
+      },
+    ]);
     expect(socket.sent).toHaveLength(1);
 
     const queued = Array.from(
       { length: ROOM_COMMAND_QUEUE_CAP - 1 },
       (_, index) =>
-        session.submitCommand({
-          kind: "rename_graph",
-          name: `Queued ${index}`,
-          expected_name: "Room graph",
-        }),
+        session.submitCommand([
+          {
+            kind: "rename_graph",
+            name: `Queued ${index}`,
+            expected_name: "Room graph",
+          },
+        ]),
     );
     await expect(
-      session.submitCommand({
-        kind: "rename_graph",
-        name: "Overflow",
-        expected_name: "Room graph",
-      }),
+      session.submitCommand([
+        {
+          kind: "rename_graph",
+          name: "Overflow",
+          expected_name: "Room graph",
+        },
+      ]),
     ).rejects.toMatchObject({ errorCode: "queue_full" });
 
     socket.emitMessage({

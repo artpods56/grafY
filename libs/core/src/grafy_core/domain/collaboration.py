@@ -60,12 +60,13 @@ class GraphCommandKind(StrEnum):
     REMOVE_NODES = "remove_nodes"
     MOVE_NODES = "move_nodes"
     UPDATE_NODE_CONFIGURATION = "update_node_configuration"
+    REPLACE_NODE_CONFIGURATION = "replace_node_configuration"
     UPDATE_NODE_LAYOUT = "update_node_layout"
     UPDATE_NODE_PLUGIN_RELEASE = "update_node_plugin_release"
     SET_NODE_INPUT_PLUGS = "set_node_input_plugs"
-    # Schema Builder field edits must use this one accept_command transaction
-    # (config fields + owned input plugs). Do not split into separate primitive
-    # update_node_configuration and set_node_input_plugs commands.
+    # Deprecated: the Workbench sends this gesture as the batch
+    # [replace_node_configuration, set_node_input_plugs]. Retire it once no client
+    # sends it.
     UPDATE_NODE_CONFIGURATION_AND_INPUT_PLUGS = (
         "update_node_configuration_and_input_plugs"
     )
@@ -205,6 +206,33 @@ class UpdateNodeConfigurationCommand(CollaborationValue):
         )
 
 
+class ReplaceNodeConfigurationCommand(CollaborationValue):
+    """Replace a node's whole configuration; unlike the per-field update it can drop keys."""
+
+    kind: Literal[GraphCommandKind.REPLACE_NODE_CONFIGURATION] = (
+        GraphCommandKind.REPLACE_NODE_CONFIGURATION
+    )
+    node_id: str
+    config: dict[str, object]
+    expected_config: dict[str, object]
+
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _expect(_node_or_raise, self.node_id),
+            _expect_unchanged(
+                lambda draft: _node_or_raise(
+                    draft.document, self.node_id
+                ).config_dict(),
+                self.expected_config,
+                f"Configuration on node {self.node_id} changed",
+            ),
+            _edit_node(
+                self.node_id,
+                lambda node: node.model_copy(update={"config": self.config}),
+            ),
+        )
+
+
 class UpdateNodeLayoutCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.UPDATE_NODE_LAYOUT] = (
         GraphCommandKind.UPDATE_NODE_LAYOUT
@@ -307,7 +335,10 @@ class SetNodeInputPlugsCommand(CollaborationValue):
 
 
 class UpdateNodeConfigurationAndInputPlugsCommand(CollaborationValue):
-    """Atomic Schema Builder (and similar) config+plug compound gesture."""
+    """Deprecated compound of replace_node_configuration and set_node_input_plugs.
+
+    Kept so older clients still work; it expands into exactly those two commands' steps.
+    """
 
     kind: Literal[GraphCommandKind.UPDATE_NODE_CONFIGURATION_AND_INPUT_PLUGS] = (
         GraphCommandKind.UPDATE_NODE_CONFIGURATION_AND_INPUT_PLUGS
@@ -320,31 +351,16 @@ class UpdateNodeConfigurationAndInputPlugsCommand(CollaborationValue):
 
     def steps(self) -> tuple[GraphStep, ...]:
         return (
-            _expect(_node_or_raise, self.node_id),
-            _expect_unchanged(
-                lambda draft: _node_or_raise(
-                    draft.document, self.node_id
-                ).config_dict(),
-                self.expected_config,
-                f"Configuration on node {self.node_id} changed",
-            ),
-            _expect_unchanged(
-                lambda draft: tuple(
-                    plug.id
-                    for plug in _node_or_raise(draft.document, self.node_id).input_plugs
-                ),
-                self.expected_plug_ids,
-                f"Input plugs on node {self.node_id} changed",
-            ),
-            _edit_node(
-                self.node_id,
-                lambda node: node.model_copy(
-                    update={
-                        "config": self.config,
-                        "input_plugs": self.input_plugs,
-                    }
-                ),
-            ),
+            *ReplaceNodeConfigurationCommand(
+                node_id=self.node_id,
+                config=self.config,
+                expected_config=self.expected_config,
+            ).steps(),
+            *SetNodeInputPlugsCommand(
+                node_id=self.node_id,
+                input_plugs=self.input_plugs,
+                expected_plug_ids=self.expected_plug_ids,
+            ).steps(),
         )
 
 
@@ -599,6 +615,7 @@ GraphCommand = Annotated[
     | RemoveNodesCommand
     | MoveNodesCommand
     | UpdateNodeConfigurationCommand
+    | ReplaceNodeConfigurationCommand
     | UpdateNodeLayoutCommand
     | UpdateNodePluginReleaseCommand
     | SetNodeInputPlugsCommand
@@ -639,12 +656,18 @@ def command_hmac_digest(
     actor_user_id: UUID | None,
     room_epoch: UUID,
     observed_sequence: int,
-    command: GraphCommand,
+    commands: Sequence[GraphCommand],
 ) -> bytes:
+    """Canonical digest of one accepted batch, used as its idempotency key.
+
+    A batch of one hashes exactly like the single-command submissions that predate batches.
+    """
+
     del key_version
+    batch = [command.model_dump(mode="json") for command in commands]
     envelope = {
         "actor_user_id": None if actor_user_id is None else str(actor_user_id),
-        "command": command.model_dump(mode="json"),
+        **({"command": batch[0]} if len(batch) == 1 else {"commands": batch}),
         "graph_id": str(graph_id),
         "observed_sequence": observed_sequence,
         "room_epoch": str(room_epoch),
@@ -656,8 +679,11 @@ def command_hmac_digest(
     return hmac.new(key, payload, sha256).digest()
 
 
-def command_requires_exact_sequence(command: GraphCommand) -> bool:
-    return isinstance(command, (ReplaceDocumentCommand, ReplacePresentationCommand))
+def command_requires_exact_sequence(commands: Sequence[GraphCommand]) -> bool:
+    return any(
+        isinstance(command, (ReplaceDocumentCommand, ReplacePresentationCommand))
+        for command in commands
+    )
 
 
 def _node_or_raise(document: SavedGraphDocument, node_id: str) -> SavedGraphNode:
@@ -1096,6 +1122,7 @@ __all__ = [
     "RemoveOriginsCommand",
     "RenameGraphCommand",
     "ReplaceDocumentCommand",
+    "ReplaceNodeConfigurationCommand",
     "ReplacePresentationCommand",
     "SetNodeArtifactTypeBindingCommand",
     "SetNodeInputPlugsCommand",

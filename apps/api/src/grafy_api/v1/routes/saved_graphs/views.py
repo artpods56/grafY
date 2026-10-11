@@ -347,7 +347,7 @@ async def submit_graph_command(
             command_id=request.command_id,
             observed_sequence=request.observed_sequence,
             observed_room_epoch=request.room_epoch,
-            command=request.command,
+            commands=request.batch,
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -368,7 +368,7 @@ async def submit_graph_command(
             actor=access.actor,
             workspace_id=access.workspace_id,
             graph_id=graph_id,
-            command=request.command,
+            commands=request.batch,
             receipt=receipt,
             uow_factory=uow_factory,
         )

@@ -377,7 +377,7 @@ async def _handle_command_submit(
             command_id=message.command_id,
             observed_sequence=message.observed_sequence,
             observed_room_epoch=message.room_epoch,
-            command=message.command,
+            commands=message.batch,
         )
     except CapabilityDeniedError as exc:
         await _reject_command(session, hub, message, "forbidden", str(exc))
@@ -429,7 +429,7 @@ async def _handle_command_submit(
         sequence=receipt.accepted_sequence,
         actor=session.actor_presentation,
         graph_room_session_id=session.graph_room_session_id,
-        command=message.command,
+        commands=message.batch,
     )
     await hub.publish_accepted(
         workspace_id=session.workspace_id,

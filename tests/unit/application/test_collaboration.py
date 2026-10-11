@@ -552,7 +552,7 @@ async def test_accept_command_advances_sequence_without_checkpoint() -> None:
         command_id=uuid4(),
         observed_sequence=head.collaboration_sequence,
         observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Renamed", expected_name="Draft"),
+        commands=(RenameGraphCommand(name="Renamed", expected_name="Draft"),),
     )
 
     assert updated_head.collaboration_sequence == 2
@@ -560,6 +560,103 @@ async def test_accept_command_advances_sequence_without_checkpoint() -> None:
     assert updated_head.name == "Renamed"
     assert receipt.accepted_sequence == 2
     assert factory.graphs.graphs[graph_id].revision == 1
+
+
+@pytest.mark.asyncio
+async def test_accept_command_applies_a_batch_as_one_sequence() -> None:
+    factory = FakeFactory()
+    service = _service(factory)
+    graph_id = uuid4()
+    node = SavedGraphNode(
+        kind="builtin",
+        id="n1",
+        operator_id="example.operator",
+        operator_version=1,
+        position=GraphPoint(x=0, y=0),
+    )
+    _, head, _ = await service.bootstrap_graph(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        command_id=uuid4(),
+        command=ReplaceDocumentCommand(
+            name="Draft",
+            document=SavedGraphDocument(nodes=(node,)),
+        ),
+        graph_id=graph_id,
+    )
+    observed_sequence = head.collaboration_sequence
+    receipts_before = len(factory.collaboration.receipts)
+
+    updated_head, receipt = await service.accept_command(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        graph_id=graph_id,
+        command_id=uuid4(),
+        observed_sequence=observed_sequence,
+        observed_room_epoch=head.room_epoch,
+        commands=(
+            RenameGraphCommand(name="Batched", expected_name="Draft"),
+            MoveNodesCommand(positions=(MoveNodePosition(node_id="n1", x=4, y=5),)),
+        ),
+    )
+
+    assert updated_head.collaboration_sequence == observed_sequence + 1
+    assert updated_head.name == "Batched"
+    assert updated_head.document.nodes[0].position == GraphPoint(x=4, y=5)
+    assert receipt.accepted_sequence == observed_sequence + 1
+    assert len(factory.collaboration.receipts) == receipts_before + 1
+    assert factory.collaboration.receipts[(WORKSPACE_ID, graph_id, receipt.command_id)]
+
+
+@pytest.mark.asyncio
+async def test_accept_command_rejects_whole_batch() -> None:
+    factory = FakeFactory()
+    service = _service(factory)
+    graph_id = uuid4()
+    node = SavedGraphNode(
+        kind="builtin",
+        id="n1",
+        operator_id="example.operator",
+        operator_version=1,
+        position=GraphPoint(x=0, y=0),
+    )
+    _, head, _ = await service.bootstrap_graph(
+        actor=ActorContext(user_id=USER_ID),
+        workspace_id=WORKSPACE_ID,
+        command_id=uuid4(),
+        command=ReplaceDocumentCommand(
+            name="Draft",
+            document=SavedGraphDocument(nodes=(node,)),
+        ),
+        graph_id=graph_id,
+    )
+    observed_sequence = head.collaboration_sequence
+    observed_document = head.document
+    receipts_before = len(factory.collaboration.receipts)
+
+    with pytest.raises(CollaborationCommandRejectedError) as rejected:
+        await service.accept_command(
+            actor=ActorContext(user_id=USER_ID),
+            workspace_id=WORKSPACE_ID,
+            graph_id=graph_id,
+            command_id=uuid4(),
+            observed_sequence=observed_sequence,
+            observed_room_epoch=head.room_epoch,
+            commands=(
+                RenameGraphCommand(name="Batched", expected_name="Draft"),
+                MoveNodesCommand(
+                    positions=(MoveNodePosition(node_id="ghost", x=1, y=1),)
+                ),
+            ),
+        )
+
+    assert rejected.value.error_code == "missing_node"
+    stored = factory.collaboration.heads[(WORKSPACE_ID, graph_id)]
+    assert stored.collaboration_sequence == observed_sequence
+    assert stored.name == "Draft"
+    assert stored.document == observed_document
+    assert stored.document.nodes[0].position == GraphPoint(x=0, y=0)
+    assert len(factory.collaboration.receipts) == receipts_before
 
 
 @pytest.mark.asyncio
@@ -585,7 +682,7 @@ async def test_accept_command_idempotent_replay_and_mismatch() -> None:
         command_id=command_id,
         observed_sequence=observed_sequence,
         observed_room_epoch=observed_room_epoch,
-        command=command,
+        commands=(command,),
     )
     replay_head, replay_receipt = await service.accept_command(
         actor=ActorContext(user_id=USER_ID),
@@ -594,7 +691,7 @@ async def test_accept_command_idempotent_replay_and_mismatch() -> None:
         command_id=command_id,
         observed_sequence=observed_sequence,
         observed_room_epoch=observed_room_epoch,
-        command=command,
+        commands=(command,),
     )
 
     assert first_head.collaboration_sequence == replay_head.collaboration_sequence == 2
@@ -609,7 +706,7 @@ async def test_accept_command_idempotent_replay_and_mismatch() -> None:
             command_id=command_id,
             observed_sequence=observed_sequence,
             observed_room_epoch=observed_room_epoch,
-            command=RenameGraphCommand(name="Different", expected_name="Draft"),
+            commands=(RenameGraphCommand(name="Different", expected_name="Draft"),),
         )
 
 
@@ -632,7 +729,7 @@ async def test_checkpoint_advances_saved_revision_and_preserves_secrets() -> Non
         command_id=uuid4(),
         observed_sequence=head.collaboration_sequence,
         observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Checkpoint me", expected_name="Draft"),
+        commands=(RenameGraphCommand(name="Checkpoint me", expected_name="Draft"),),
     )
 
     checkpointed_head, revision = await service.checkpoint(
@@ -662,7 +759,7 @@ async def test_accept_command_requires_existing_head() -> None:
             command_id=uuid4(),
             observed_sequence=0,
             observed_room_epoch=uuid4(),
-            command=RenameGraphCommand(name="Nope", expected_name="Nope"),
+            commands=(RenameGraphCommand(name="Nope", expected_name="Nope"),),
         )
 
 
@@ -716,7 +813,7 @@ async def test_replace_complete_document_resets_epoch_when_checkpointed() -> Non
         command_id=uuid4(),
         observed_sequence=0,
         observed_room_epoch=new_head.room_epoch,
-        command=RenameGraphCommand(name="After replace", expected_name="Replaced"),
+        commands=(RenameGraphCommand(name="After replace", expected_name="Replaced"),),
     )
     assert receipt.outcome is CommandReceiptOutcome.ACCEPTED
     assert after_replace.collaboration_sequence == 1
@@ -742,7 +839,7 @@ async def test_replace_complete_document_rejects_uncheckpointed_head() -> None:
         command_id=uuid4(),
         observed_sequence=head.collaboration_sequence,
         observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Uncheckpointed", expected_name="Draft"),
+        commands=(RenameGraphCommand(name="Uncheckpointed", expected_name="Draft"),),
     )
 
     with pytest.raises(CollaborationUncheckpointedError):
@@ -799,7 +896,7 @@ async def test_delete_graph_rejects_uncheckpointed_legacy_delete() -> None:
         command_id=uuid4(),
         observed_sequence=head.collaboration_sequence,
         observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Pending", expected_name="Draft"),
+        commands=(RenameGraphCommand(name="Pending", expected_name="Draft"),),
     )
 
     with pytest.raises(CollaborationUncheckpointedError):
@@ -892,7 +989,7 @@ async def test_accept_command_rebases_move_against_newer_head() -> None:
         command_id=uuid4(),
         observed_sequence=observed_sequence,
         observed_room_epoch=observed_epoch,
-        command=RenameGraphCommand(name="Moved ahead", expected_name="Draft"),
+        commands=(RenameGraphCommand(name="Moved ahead", expected_name="Draft"),),
     )
 
     updated, receipt = await service.accept_command(
@@ -902,7 +999,9 @@ async def test_accept_command_rebases_move_against_newer_head() -> None:
         command_id=uuid4(),
         observed_sequence=observed_sequence,
         observed_room_epoch=observed_epoch,
-        command=MoveNodesCommand(positions=(MoveNodePosition(node_id="n1", x=9, y=8),)),
+        commands=(
+            MoveNodesCommand(positions=(MoveNodePosition(node_id="n1", x=9, y=8),)),
+        ),
     )
 
     assert updated.collaboration_sequence == 3
@@ -948,7 +1047,7 @@ async def test_accept_command_rebases_plugin_release_cas_against_newer_head() ->
         command_id=uuid4(),
         observed_sequence=observed_sequence,
         observed_room_epoch=observed_epoch,
-        command=RenameGraphCommand(name="Moved ahead", expected_name="Draft"),
+        commands=(RenameGraphCommand(name="Moved ahead", expected_name="Draft"),),
     )
 
     updated, receipt = await service.accept_command(
@@ -958,10 +1057,12 @@ async def test_accept_command_rebases_plugin_release_cas_against_newer_head() ->
         command_id=uuid4(),
         observed_sequence=observed_sequence,
         observed_room_epoch=observed_epoch,
-        command=UpdateNodePluginReleaseCommand(
-            node_id="n1",
-            plugin_release_pin=next_pin,
-            expected_plugin_release_pin=current_pin,
+        commands=(
+            UpdateNodePluginReleaseCommand(
+                node_id="n1",
+                plugin_release_pin=next_pin,
+                expected_plugin_release_pin=current_pin,
+            ),
         ),
     )
 
@@ -992,7 +1093,7 @@ async def test_accept_command_rejects_stale_rename_with_field_conflict() -> None
         command_id=uuid4(),
         observed_sequence=observed_sequence,
         observed_room_epoch=observed_epoch,
-        command=RenameGraphCommand(name="Other", expected_name="Draft"),
+        commands=(RenameGraphCommand(name="Other", expected_name="Draft"),),
     )
 
     with pytest.raises(CollaborationCommandRejectedError) as exc:
@@ -1003,7 +1104,7 @@ async def test_accept_command_rejects_stale_rename_with_field_conflict() -> None
             command_id=uuid4(),
             observed_sequence=observed_sequence,
             observed_room_epoch=observed_epoch,
-            command=RenameGraphCommand(name="Mine", expected_name="Draft"),
+            commands=(RenameGraphCommand(name="Mine", expected_name="Draft"),),
         )
     assert exc.value.error_code == "field_conflict"
 
@@ -1086,7 +1187,7 @@ async def test_copy_exact_head_rejects_moved_source() -> None:
         command_id=uuid4(),
         observed_sequence=expected_sequence,
         observed_room_epoch=expected_room_epoch,
-        command=RenameGraphCommand(name="Moved", expected_name="Source"),
+        commands=(RenameGraphCommand(name="Moved", expected_name="Source"),),
     )
 
     with pytest.raises(CollaborationHeadConflictError):
@@ -1120,7 +1221,7 @@ async def test_delete_graph_collaboration_aware_discards_uncheckpointed() -> Non
         command_id=uuid4(),
         observed_sequence=head.collaboration_sequence,
         observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Discard", expected_name="Draft"),
+        commands=(RenameGraphCommand(name="Discard", expected_name="Draft"),),
     )
 
     await service.delete_graph(
@@ -1171,7 +1272,7 @@ async def test_accept_command_audits_capability_denied_and_idempotency_mismatch(
             observed_room_epoch=viewer_factory.collaboration.heads[
                 (WORKSPACE_ID, graph_id)
             ].room_epoch,
-            command=RenameGraphCommand(name="Nope", expected_name="View only"),
+            commands=(RenameGraphCommand(name="Nope", expected_name="View only"),),
         )
 
     denied = [
@@ -1202,7 +1303,7 @@ async def test_accept_command_audits_capability_denied_and_idempotency_mismatch(
         command_id=command_id,
         observed_sequence=head.collaboration_sequence,
         observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Once", expected_name="Draft"),
+        commands=(RenameGraphCommand(name="Once", expected_name="Draft"),),
     )
     with pytest.raises(CollaborationIdempotencyMismatchError):
         await editor_service.accept_command(
@@ -1212,7 +1313,7 @@ async def test_accept_command_audits_capability_denied_and_idempotency_mismatch(
             command_id=command_id,
             observed_sequence=head.collaboration_sequence,
             observed_room_epoch=head.room_epoch,
-            command=RenameGraphCommand(name="Different", expected_name="Draft"),
+            commands=(RenameGraphCommand(name="Different", expected_name="Draft"),),
         )
     mismatch = [
         event
@@ -1290,7 +1391,7 @@ async def test_checkpoint_commit_failure_rolls_back_partial_state() -> None:
         command_id=uuid4(),
         observed_sequence=head.collaboration_sequence,
         observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Pending", expected_name="Draft"),
+        commands=(RenameGraphCommand(name="Pending", expected_name="Draft"),),
     )
     original_materialization = MaterializedNodeOutputs(
         workspace_id=WORKSPACE_ID,
@@ -1369,7 +1470,7 @@ async def test_checkpoint_versus_replace_serializes_without_partial_state() -> N
         command_id=uuid4(),
         observed_sequence=head.collaboration_sequence,
         observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Uncheckpointed", expected_name="Draft"),
+        commands=(RenameGraphCommand(name="Uncheckpointed", expected_name="Draft"),),
     )
 
     with pytest.raises(CollaborationUncheckpointedError):
@@ -1445,12 +1546,16 @@ async def test_workspace_qualified_mutations_leave_no_cross_workspace_state() ->
         command_id=uuid4(),
         observed_sequence=source_head.collaboration_sequence,
         observed_room_epoch=source_head.room_epoch,
-        command=UpdateNodeConfigurationAndInputPlugsCommand(
-            node_id="n1",
-            config={"fields": []},
-            input_plugs=(),
-            expected_config={"fields": [{"id": "a", "name": "a", "kind": "string"}]},
-            expected_plug_ids=("a",),
+        commands=(
+            UpdateNodeConfigurationAndInputPlugsCommand(
+                node_id="n1",
+                config={"fields": []},
+                input_plugs=(),
+                expected_config={
+                    "fields": [{"id": "a", "name": "a", "kind": "string"}]
+                },
+                expected_plug_ids=("a",),
+            ),
         ),
     )
     await service.checkpoint(
@@ -1549,7 +1654,7 @@ async def test_collaboration_rechecks_identity_before_mutating_and_audits_denial
             command_id=uuid4(),
             observed_sequence=head.collaboration_sequence,
             observed_room_epoch=head.room_epoch,
-            command=RenameGraphCommand(name="Denied", expected_name="Original"),
+            commands=(RenameGraphCommand(name="Denied", expected_name="Original"),),
         )
     stored = factory.collaboration.heads[(WORKSPACE_ID, graph.id)]
     assert stored.name == "Original"

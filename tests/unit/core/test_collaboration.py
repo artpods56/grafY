@@ -1,3 +1,6 @@
+import hmac
+import json
+from hashlib import sha256
 from uuid import UUID, uuid4
 
 import pytest
@@ -11,6 +14,7 @@ from grafy_core.domain.collaboration import (
     ClearNodeArtifactTypeBindingCommand,
     CollaborativeGraphHead,
     DuplicateNodeCommand,
+    GraphCommand,
     MoveAnnotationPosition,
     MoveAnnotationsCommand,
     MoveArtifactViewerPosition,
@@ -22,6 +26,7 @@ from grafy_core.domain.collaboration import (
     RemoveOriginsCommand,
     RenameGraphCommand,
     ReplaceDocumentCommand,
+    ReplaceNodeConfigurationCommand,
     ReplacePresentationCommand,
     SetNodeArtifactTypeBindingCommand,
     SetNodeInputPlugsCommand,
@@ -483,7 +488,7 @@ def test_update_node_plugin_release_serializes_and_is_not_exact_sequence() -> No
         },
     }
     assert GRAPH_COMMAND_ADAPTER.validate_python(payload) == command
-    assert not command_requires_exact_sequence(command)
+    assert not command_requires_exact_sequence((command,))
 
     digest = command_hmac_digest(
         b"key",
@@ -493,7 +498,7 @@ def test_update_node_plugin_release_serializes_and_is_not_exact_sequence() -> No
         actor_user_id=UUID("00000000-0000-0000-0000-000000000003"),
         room_epoch=UUID("00000000-0000-0000-0000-000000000004"),
         observed_sequence=7,
-        command=command,
+        commands=(command,),
     )
     moved_digest = command_hmac_digest(
         b"key",
@@ -503,8 +508,12 @@ def test_update_node_plugin_release_serializes_and_is_not_exact_sequence() -> No
         actor_user_id=UUID("00000000-0000-0000-0000-000000000003"),
         room_epoch=UUID("00000000-0000-0000-0000-000000000004"),
         observed_sequence=7,
-        command=command.model_copy(
-            update={"plugin_release_pin": next_pin.model_copy(update={"revision": 3})}
+        commands=(
+            command.model_copy(
+                update={
+                    "plugin_release_pin": next_pin.model_copy(update={"revision": 3})
+                }
+            ),
         ),
     )
     assert digest != moved_digest
@@ -718,7 +727,7 @@ def test_command_hmac_digest_is_stable_and_keyed() -> None:
         actor_user_id=actor_id,
         room_epoch=room_epoch,
         observed_sequence=0,
-        command=command,
+        commands=(command,),
     )
     second = command_hmac_digest(
         b"key-a",
@@ -728,7 +737,7 @@ def test_command_hmac_digest_is_stable_and_keyed() -> None:
         actor_user_id=actor_id,
         room_epoch=room_epoch,
         observed_sequence=0,
-        command=command,
+        commands=(command,),
     )
     other_key = command_hmac_digest(
         b"key-b",
@@ -738,7 +747,7 @@ def test_command_hmac_digest_is_stable_and_keyed() -> None:
         actor_user_id=actor_id,
         room_epoch=room_epoch,
         observed_sequence=0,
-        command=command,
+        commands=(command,),
     )
     assert first == second
     assert first != other_key
@@ -884,7 +893,7 @@ def test_replace_and_move_artifact_viewers() -> None:
         ),
     )
     replace = ReplacePresentationCommand(presentation=presentation)
-    assert command_requires_exact_sequence(replace)
+    assert command_requires_exact_sequence((replace,))
     _, with_presentation = apply_graph_command(
         name="Graph",
         document=document,
@@ -1322,3 +1331,143 @@ def test_update_edge_rejects_missing_edge() -> None:
             command=UpdateEdgeCommand(edge=edge, expected_edge=edge),
         )
     assert exc.value.error_code == "missing_edge"
+
+
+def test_replace_node_configuration_replaces_whole_config() -> None:
+    document = SavedGraphDocument(nodes=(_node("n1", config={"a": 1, "b": 2}),))
+
+    _, replaced = apply_graph_command(
+        name="Graph",
+        document=document,
+        command=ReplaceNodeConfigurationCommand(
+            node_id="n1",
+            config={"a": 3},
+            expected_config={"a": 1, "b": 2},
+        ),
+    )
+
+    assert replaced.nodes[0].config_dict() == {"a": 3}
+
+
+def test_replace_node_configuration_rejects_stale_config() -> None:
+    document = SavedGraphDocument(nodes=(_node("n1", config={"a": 1, "b": 2}),))
+
+    with pytest.raises(CollaborationCommandRejectedError) as exc:
+        apply_graph_command(
+            name="Graph",
+            document=document,
+            command=ReplaceNodeConfigurationCommand(
+                node_id="n1",
+                config={"a": 3},
+                expected_config={"a": 0},
+            ),
+        )
+
+    assert exc.value.error_code == "field_conflict"
+    assert "Configuration on node n1 changed" in str(exc.value)
+    assert document.nodes[0].config_dict() == {"a": 1, "b": 2}
+
+
+def test_compound_update_expands_into_replace_configuration_and_set_plugs() -> None:
+    plugs = (SavedGraphInputPlug(id="plug-b", port="value"),)
+    compound = UpdateNodeConfigurationAndInputPlugsCommand(
+        node_id="n1",
+        config={"a": 3},
+        input_plugs=plugs,
+        expected_config={"a": 1, "b": 2},
+        expected_plug_ids=("plug-a",),
+    )
+    replace = ReplaceNodeConfigurationCommand(
+        node_id="n1",
+        config={"a": 3},
+        expected_config={"a": 1, "b": 2},
+    )
+    set_plugs = SetNodeInputPlugsCommand(
+        node_id="n1",
+        input_plugs=plugs,
+        expected_plug_ids=("plug-a",),
+    )
+
+    assert len(compound.steps()) == len(replace.steps()) + len(set_plugs.steps())
+
+    def document() -> SavedGraphDocument:
+        return SavedGraphDocument(
+            nodes=(
+                _node("n1", config={"a": 1, "b": 2}).model_copy(
+                    update={
+                        "input_plugs": (SavedGraphInputPlug(id="plug-a", port="value"),)
+                    }
+                ),
+            )
+        )
+
+    _, by_compound = apply_graph_command(
+        name="Graph", document=document(), command=compound
+    )
+    _, by_batch = apply_graph_commands(
+        name="Graph", document=document(), commands=(replace, set_plugs)
+    )
+    assert by_compound == by_batch
+    assert by_batch.nodes[0].config_dict() == {"a": 3}
+    assert tuple(plug.id for plug in by_batch.nodes[0].input_plugs) == ("plug-b",)
+
+
+def test_command_hmac_digest_of_a_single_command_matches_the_pre_batch_envelope() -> (
+    None
+):
+    key = b"command-hmac-key"
+    workspace_id = UUID("00000000-0000-0000-0000-000000000001")
+    graph_id = UUID("00000000-0000-0000-0000-000000000002")
+    actor_user_id = UUID("00000000-0000-0000-0000-000000000003")
+    room_epoch = UUID("00000000-0000-0000-0000-000000000004")
+    command = RenameGraphCommand(name="Renamed", expected_name="Draft")
+    other = AddNodeCommand(node=_node("n1"))
+
+    envelope = {
+        "actor_user_id": str(actor_user_id),
+        "command": command.model_dump(mode="json"),
+        "graph_id": str(graph_id),
+        "observed_sequence": 7,
+        "room_epoch": str(room_epoch),
+        "workspace_id": str(workspace_id),
+    }
+    pre_batch = hmac.new(
+        key,
+        json.dumps(envelope, separators=(",", ":"), sort_keys=True).encode("utf-8"),
+        sha256,
+    ).digest()
+
+    def digest(of: GraphCommand) -> bytes:
+        return command_hmac_digest(
+            key,
+            key_version=1,
+            workspace_id=workspace_id,
+            graph_id=graph_id,
+            actor_user_id=actor_user_id,
+            room_epoch=room_epoch,
+            observed_sequence=7,
+            commands=(of,),
+        )
+
+    assert digest(command) == pre_batch
+    batch = command_hmac_digest(
+        key,
+        key_version=1,
+        workspace_id=workspace_id,
+        graph_id=graph_id,
+        actor_user_id=actor_user_id,
+        room_epoch=room_epoch,
+        observed_sequence=7,
+        commands=(command, other),
+    )
+    assert batch != digest(command)
+    assert batch != digest(other)
+
+
+def test_command_requires_exact_sequence_when_any_command_does() -> None:
+    replace = ReplaceDocumentCommand(name="Graph", document=SavedGraphDocument())
+    rename = RenameGraphCommand(name="Graph", expected_name="Draft")
+
+    assert command_requires_exact_sequence((rename, replace))
+    assert command_requires_exact_sequence((replace, rename))
+    assert not command_requires_exact_sequence((rename,))

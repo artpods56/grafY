@@ -482,6 +482,74 @@ def _submit_room_command(
     )
 
 
+def _single_node_graph() -> SavedGraphDocument:
+    return SavedGraphDocument(
+        nodes=(
+            SavedGraphNode(
+                kind="builtin",
+                id="n1",
+                operator_id="text.literal",
+                operator_version=1,
+                position=GraphPoint(x=0, y=0),
+            ),
+        )
+    )
+
+
+def test_submitting_a_command_batch_advances_the_sequence_once(
+    room_client: RoomClient,
+) -> None:
+    """A batch is accepted as one sequence step and broadcast with `commands`."""
+
+    api, _switcher, population = room_client
+    workspace_api = api.workspace(population.workspace.id)
+    graph = workspace_api.graphs.create_ok(
+        CreateSavedGraphRequest(name="Batch graph", document=_single_node_graph())
+    )
+    command_id = uuid4()
+
+    with _connect_room(api, population.workspace.id, graph.id) as websocket:
+        ready = websocket.receive_json()
+        observed_sequence = ready["head"]["collaboration_sequence"]
+        websocket.send_json(
+            {
+                "protocol_version": 1,
+                "type": "graph.command.submit",
+                "command_id": str(command_id),
+                "room_epoch": ready["head"]["room_epoch"],
+                "observed_sequence": observed_sequence,
+                "commands": [
+                    {
+                        "kind": "rename_graph",
+                        "name": "Batched",
+                        "expected_name": "Batch graph",
+                    },
+                    {
+                        "kind": "move_nodes",
+                        "positions": [{"node_id": "n1", "x": 40, "y": 50}],
+                    },
+                ],
+            }
+        )
+
+        accepted = _receive_next(websocket, "graph.command.accepted")
+        receipt = _receive_next(websocket, "graph.command.receipt")
+
+    assert accepted["command_id"] == str(command_id)
+    assert accepted["command"] is None
+    assert [entry["kind"] for entry in accepted["commands"]] == [
+        "rename_graph",
+        "move_nodes",
+    ]
+    assert accepted["sequence"] == observed_sequence + 1
+    assert receipt["accepted_sequence"] == observed_sequence + 1
+
+    head = workspace_api.graphs.get_head_ok(graph.id)
+    assert head.collaboration_sequence == observed_sequence + 1
+    assert head.name == "Batched"
+    assert head.document.nodes[0].position == GraphPoint(x=40, y=50)
+
+
 def _wired_collect_graph() -> SavedGraphDocument:
     """One wired input plug on a variadic node, as the Workbench builds it."""
 

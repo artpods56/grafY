@@ -123,7 +123,7 @@ import {
   remoteSelectionColor,
   shouldReplaceCollaborativeHead,
   toLocalGraphCommand,
-  toRoomGraphCommand,
+  toRoomGraphCommands,
   toRoomReplaceDocumentCommand,
   useGraphRoomSession,
   useRemoteDragPreviews,
@@ -271,6 +271,7 @@ import {
   workflowEdgeRouteOption,
 } from "../model/graph-authoring";
 import {
+  applyGraphCommand,
   createSavedGraphRequest,
   type AuthoredGraphDocument,
   type GraphCommand,
@@ -1251,73 +1252,81 @@ function WorkbenchBody({
     },
     onCommandAccepted: (message, meta) => {
       if (meta.local) {
-        // Local presentation commands already updated artifactViewers optimistically.
-        if (
-          message.command.kind === "replace_presentation" ||
-          message.command.kind === "move_artifact_viewers" ||
-          message.command.kind === "move_annotations"
-        ) {
-          return;
+        // Local presentation commands already updated artifactViewers
+        // optimistically. Nothing more to mirror locally: applying the
+        // commands already pruned the card links it sourced, and the room
+        // applied the same pruning to its own head.
+        return;
+      }
+      // Returns false when this command could not be mirrored locally and a
+      // full head refresh is required instead.
+      const applyRemoteRoomCommand = (command: RoomGraphCommand): boolean => {
+        if (command.kind === "replace_presentation") {
+          // Cards only belong on a saved graph's canvas; the blank draft has no room.
+          if (!activeGraphIdRef.current) return true;
+          replacePresentation(command.presentation);
+          return true;
         }
-        // Nothing more to mirror locally: applying the command already pruned the card
-        // links it sourced, and the room applied the same pruning to its own head.
-        return;
-      }
-      if (message.command.kind === "replace_presentation") {
-        // Cards only belong on a saved graph's canvas; the blank draft has no room.
-        if (!activeGraphIdRef.current) return;
-        replacePresentation(message.command.presentation);
-        return;
-      }
-      if (message.command.kind === "move_artifact_viewers") {
-        const positions = new Map(
-          message.command.positions.map((position) => [
-            position.viewer_id,
-            { x: position.x, y: position.y },
-          ]),
-        );
-        setArtifactViewers((current) => ({
-          ...current,
-          nodes: current.nodes.map((node) => {
-            const position = positions.get(node.id);
-            return position ? { ...node, position } : node;
-          }),
-        }));
-        return;
-      }
-      if (message.command.kind === "move_annotations") {
-        const positions = new Map(
-          message.command.positions.map((position) => [
-            position.annotation_id,
-            { x: position.x, y: position.y },
-          ]),
-        );
-        setArtifactViewers((current) => ({
-          ...current,
-          annotations: current.annotations.map((node) => {
-            const position = positions.get(node.id);
-            return position ? { ...node, position } : node;
-          }),
-        }));
-        return;
-      }
-      const localCommand = toLocalGraphCommand(
-        message.command,
-        authoredDocumentRef.current,
-      );
-      if (localCommand) {
-        applyAuthoringCommandsRef.current([localCommand], { syncRoom: false });
-        if (
-          message.command.kind === "replace_document" &&
-          message.command.document.presentation
-        ) {
-          if (activeGraphIdRef.current) {
-            replacePresentation(message.command.document.presentation);
+        if (command.kind === "move_artifact_viewers") {
+          const positions = new Map(
+            command.positions.map((position) => [
+              position.viewer_id,
+              { x: position.x, y: position.y },
+            ]),
+          );
+          setArtifactViewers((current) => ({
+            ...current,
+            nodes: current.nodes.map((node) => {
+              const position = positions.get(node.id);
+              return position ? { ...node, position } : node;
+            }),
+          }));
+          return true;
+        }
+        if (command.kind === "move_annotations") {
+          const positions = new Map(
+            command.positions.map((position) => [
+              position.annotation_id,
+              { x: position.x, y: position.y },
+            ]),
+          );
+          setArtifactViewers((current) => ({
+            ...current,
+            annotations: current.annotations.map((node) => {
+              const position = positions.get(node.id);
+              return position ? { ...node, position } : node;
+            }),
+          }));
+          return true;
+        }
+        // Translate against the batch's running document: the authored
+        // document ref only catches up after the next render.
+        const localCommand = toLocalGraphCommand(command, batchDocument);
+        if (localCommand) {
+          localCommands.push(localCommand);
+          batchDocument = applyGraphCommand(batchDocument, localCommand);
+          if (
+            command.kind === "replace_document" &&
+            command.document.presentation
+          ) {
+            if (activeGraphIdRef.current) {
+              replacePresentation(command.document.presentation);
+            }
           }
+          return true;
         }
-        return;
+        return false;
+      };
+      const localCommands: GraphCommand[] = [];
+      let batchDocument = authoredDocumentRef.current;
+      let requiresHeadRefresh = false;
+      for (const command of message.commands) {
+        if (!applyRemoteRoomCommand(command)) requiresHeadRefresh = true;
       }
-      refreshCollaborativeHeadRef.current();
+      if (localCommands.length) {
+        applyAuthoringCommandsRef.current(localCommands, { syncRoom: false });
+      }
+      if (requiresHeadRefresh) refreshCollaborativeHeadRef.current();
     },
     onCommandRejected: (message) => {
       const isHeadConflict = message.error_code === "head_conflict";
@@ -1359,9 +1368,9 @@ function WorkbenchBody({
           return;
         }
         for (const command of commands) {
-          const roomCommand = toRoomGraphCommand(command, before);
-          if (!roomCommand) continue;
-          void submitRoomCommand(roomCommand).catch((error: unknown) => {
+          const batch = toRoomGraphCommands(command, before);
+          if (!batch.length) continue;
+          void submitRoomCommand(batch).catch((error: unknown) => {
             if (
               error instanceof GraphRoomCommandError &&
               (error.errorCode === "superseded" ||
@@ -1392,7 +1401,7 @@ function WorkbenchBody({
           kind: "replace_presentation",
           presentation: presentationFromArtifactViewers(state),
         } as RoomGraphCommand;
-        void submitRoomCommand(command).catch((error: unknown) => {
+        void submitRoomCommand([command]).catch((error: unknown) => {
           if (
             error instanceof GraphRoomCommandError &&
             (error.errorCode === "superseded" ||
@@ -1415,7 +1424,7 @@ function WorkbenchBody({
           kind: "move_artifact_viewers",
           positions: [...positions],
         } as RoomGraphCommand;
-        void submitRoomCommand(command).catch((error: unknown) => {
+        void submitRoomCommand([command]).catch((error: unknown) => {
           if (
             error instanceof GraphRoomCommandError &&
             (error.errorCode === "superseded" ||
@@ -1438,7 +1447,7 @@ function WorkbenchBody({
           kind: "move_annotations",
           positions: [...positions],
         } as RoomGraphCommand;
-        void submitRoomCommand(command).catch((error: unknown) => {
+        void submitRoomCommand([command]).catch((error: unknown) => {
           if (
             error instanceof GraphRoomCommandError &&
             (error.errorCode === "superseded" ||
@@ -1466,7 +1475,7 @@ function WorkbenchBody({
           throw new Error("Graph room requires a saved graph id.");
         }
         const command = toRoomReplaceDocumentCommand(draft);
-        const { head: replacedHead } = await submitRoomCommand(command);
+        const { head: replacedHead } = await submitRoomCommand([command]);
         const checkpointed = await checkpointGraph(workspaceId, graphId, {
           expected_room_epoch: replacedHead.room_epoch,
           expected_sequence: replacedHead.collaboration_sequence,

@@ -50,7 +50,7 @@ export interface GraphRoomCommandSubmission {
 
 interface QueuedCommand {
   readonly commandId: string;
-  readonly command: RoomGraphCommand;
+  readonly commands: readonly RoomGraphCommand[];
   readonly resolve: (result: GraphRoomCommandResult) => void;
   readonly reject: (error: Error) => void;
   sent: boolean;
@@ -75,9 +75,10 @@ export interface GraphRoomCommandOutboxOptions {
 
 /**
  * Correlates outgoing graph commands with the accepted / receipt / rejected
- * messages that come back: the FIFO queue, the single in-flight command, the
- * ids that mark a message as locally originated, and the drain gate that
- * pauses sending until the driver restores a full head snapshot.
+ * messages that come back: the FIFO queue of command batches, the single
+ * in-flight batch, the ids that mark a message as locally originated, and the
+ * drain gate that pauses sending until the driver restores a full head
+ * snapshot.
  *
  * It never touches a transport, a timer, or the head itself. Each call returns
  * the submit frames the driver should write; the driver reports a write that
@@ -106,11 +107,11 @@ export class GraphRoomCommandOutbox {
   }
 
   /**
-   * Queue a command, replacing unsent snapshot commands of the same kind.
-   * The returned promise settles with the command's receipt.
+   * Queue a command batch, replacing unsent snapshot batches of the same kind.
+   * The returned promise settles with the batch's receipt.
    */
-  submit(command: RoomGraphCommand): GraphRoomCommandSubmission {
-    this.supersedeQueuedSnapshotCommand(command);
+  submit(commands: readonly RoomGraphCommand[]): GraphRoomCommandSubmission {
+    this.supersedeQueuedSnapshotBatch(commands);
     if (this.queue.length + (this.inFlight ? 1 : 0) >= ROOM_COMMAND_QUEUE_CAP) {
       return {
         promise: Promise.reject(
@@ -129,7 +130,7 @@ export class GraphRoomCommandOutbox {
     const promise = new Promise<GraphRoomCommandResult>((resolve, reject) => {
       this.queue.push({
         commandId,
-        command,
+        commands,
         resolve,
         reject,
         sent: false,
@@ -288,6 +289,14 @@ export class GraphRoomCommandOutbox {
     this.localCommandIds.clear();
   }
 
+  /** The in-flight batch's commands followed by every queued batch's commands, in order. */
+  pendingCommands(): readonly RoomGraphCommand[] {
+    const commands: RoomGraphCommand[] = [];
+    if (this.inFlight) commands.push(...this.inFlight.commands);
+    for (const item of this.queue) commands.push(...item.commands);
+    return commands;
+  }
+
   private headCoversReceipt(message: GraphCommandReceiptMessage): boolean {
     const head = this.headPointer();
     return (
@@ -307,16 +316,23 @@ export class GraphRoomCommandOutbox {
     });
   }
 
-  private supersedeQueuedSnapshotCommand(command: RoomGraphCommand): void {
+  private supersedeQueuedSnapshotBatch(
+    commands: readonly RoomGraphCommand[],
+  ): void {
+    const only = commands.length === 1 ? commands[0] : undefined;
     if (
-      command.kind !== "replace_presentation" &&
-      command.kind !== "replace_document"
+      !only ||
+      (only.kind !== "replace_presentation" && only.kind !== "replace_document")
     ) {
       return;
     }
     for (let index = this.queue.length - 1; index >= 0; index -= 1) {
       const item = this.queue[index];
-      if (!item || item.sent || item.command.kind !== command.kind) continue;
+      const itemOnly =
+        item && !item.sent && item.commands.length === 1
+          ? item.commands[0]
+          : undefined;
+      if (!item || itemOnly?.kind !== only.kind) continue;
       this.queue.splice(index, 1);
       this.localCommandIds.delete(item.commandId);
       item.reject(
@@ -351,7 +367,7 @@ export class GraphRoomCommandOutbox {
       command_id: next.commandId,
       room_epoch: roomEpoch,
       observed_sequence: observedSequence,
-      command: next.command,
+      commands: next.commands,
     };
     return [{ commandId: next.commandId, message }];
   }

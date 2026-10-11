@@ -493,11 +493,40 @@ class CanonicalCollaborativeHeadResponse(SavedGraphApiModel):
         return cls.model_validate(head, from_attributes=True)
 
 
+GRAPH_COMMAND_BATCH_MAX = 64
+
+
+def graph_command_batch(
+    command: GraphCommand | None, commands: tuple[GraphCommand, ...] | None
+) -> tuple[GraphCommand, ...]:
+    """Return the submitted batch; a submission sets exactly one of `command` and `commands`."""
+
+    if command is not None:
+        if commands is not None:
+            raise ValueError("Set exactly one of command and commands")
+        return (command,)
+    if commands is None:
+        raise ValueError("Set exactly one of command and commands")
+    return commands
+
+
 class SubmitGraphCommandRequest(SavedGraphApiModel):
     command_id: UUID
     room_epoch: UUID
     observed_sequence: int = Field(ge=0)
-    command: GraphCommand
+    command: GraphCommand | None = None
+    commands: tuple[GraphCommand, ...] | None = Field(
+        default=None, min_length=1, max_length=GRAPH_COMMAND_BATCH_MAX
+    )
+
+    @model_validator(mode="after")
+    def validate_batch(self) -> Self:
+        graph_command_batch(self.command, self.commands)
+        return self
+
+    @property
+    def batch(self) -> tuple[GraphCommand, ...]:
+        return graph_command_batch(self.command, self.commands)
 
 
 class GraphCommandReceiptResponse(SavedGraphApiModel):
