@@ -53,10 +53,14 @@ A client submits an ordered, non-empty batch of graph commands for one graph.
 The batch has one command id, is accepted or rejected as a whole, and advances
 the collaboration sequence by exactly one. A single command is a batch of one.
 
-`graph.command.submit` gains `commands`, alongside the existing `command`
-field until every client sends batches. The idempotency HMAC covers the
-canonical batch. MCP authoring uses the same collaboration application and
-therefore the same batches.
+`graph.command.submit` and `POST /graphs/{id}/commands` gain `commands`, an
+ordered batch of at most 64 commands, alongside the existing `command` field
+until every client sends batches; a submission sets exactly one of the two. The
+idempotency HMAC covers the canonical batch, and a batch of one hashes exactly
+like the single-command submissions that predate batches, so receipts stored
+before batches keep matching their retries. A batch requires the exact observed
+sequence when any of its commands does. MCP authoring uses the same
+collaboration application and therefore the same batches.
 
 Batching keeps a multi-edit gesture (paste, delete with cleanup, schema builder
 edits) to one request, one transaction, and one broadcast, instead of a queue
@@ -64,7 +68,9 @@ of separately sequenced commands aimed at the same document.
 
 ### Commands expand into assertion and change steps
 
-The server expands every command into steps:
+The server expands every command into steps through the command's own
+`steps()` method, so the type checker requires every command kind to define
+its expansion and there is no central dispatch:
 
 - an **assertion step** checks the current document and changes nothing. A
   command's `expected_*` fields become assertion steps. Assertions stay on the
@@ -77,8 +83,16 @@ the head still holds the starting document.
 
 ### Validate after every change step
 
-Every change step produces a fully validated `SavedGraphDocument`. A failure
-names the step that caused it rather than surfacing at the end of the batch.
+Every change step produces a validated `SavedGraphDocument`. A failure names
+the step that caused it rather than surfacing at the end of the batch.
+
+Document validation runs on every change step, but pydantic does not
+re-validate a nested model it is handed, so a presentation edited with
+`model_copy` skips `GraphPresentationDocument`'s own validator; the
+document-level checks (for example, links must name existing nodes) still run.
+Today's presentation edits (moving items, dropping links with a removed node)
+cannot break the presentation's rules. A future presentation edit that adds or
+retargets items must validate the new presentation explicitly.
 Document validation is structural (unique ids and references to existing
 nodes, plugs, and ports), so a gesture expressed as several single-purpose
 commands passes through valid intermediate documents.
@@ -90,7 +104,8 @@ its cascades: removing a node drops its edges, origins, and the card links it
 sources; replacing a node's input plugs drops the edges and origins that
 targeted a removed plug. Presentation changes go through `model_copy`, never a
 field-by-field rebuild. Steps call these methods and contain no cascade logic
-of their own.
+of their own. Replacing a node always applies the input-plug cascade (a no-op
+when the plugs are unchanged), so every node edit goes through one method.
 
 ### Uniform semantics
 
@@ -113,8 +128,8 @@ into the same steps, and retires it once no client sends it.
 ### Rejections carry a specific code
 
 `graph.command.rejected` carries the failing step's `error_code` (for example
-`field_conflict`, `missing_node`, `invalid_document`) and the index of the
-failing command in the batch. The client may rebuild and resubmit after a
+`field_conflict`, `missing_node`, `invalid_document`) and `command_index`, the
+index of the failing command in the batch. The client may rebuild and resubmit after a
 compare-and-set conflict instead of always reloading the head.
 
 ### Broadcast an entity diff
@@ -125,8 +140,14 @@ edges, origins, viewers, links, bindings, annotations, plus the graph name),
 the entities whose value changed, keyed by id, each with `before` and
 `after`. `before` is `null` for an insert and `after` is `null` for a removal.
 
-Peers apply the diff to their confirmed head instead of replaying the
-command. Applying a diff needs no graph logic and cannot fail on graph rules;
+All seven collections are always present; entries are keyed by sorted id and
+hold the entity's canonical JSON (`model_dump(mode="json")`), and an entity
+appears only when that JSON changed. Peers apply the diff to their confirmed
+head instead of replaying the command: a changed entity keeps its place, a
+removed one goes, and a new one is appended in key order. A diff does not
+carry collection order, so after a batch inserts several entities a peer's
+order can differ from the server's until it next loads the head; nothing reads
+meaning from that order. Applying a diff needs no graph logic and cannot fail on graph rules;
 it can fail only on a sequence gap, which reloads the head as today. The
 `command` field stays in the message during migration.
 
@@ -137,7 +158,8 @@ only, keyed by entity id rather than by array position.
 ### The author's document follows the confirmed head
 
 The Workbench's authored document is the confirmed head with the pending local
-batches applied on top. When an accepted diff arrives, the authored document
+batches applied on top. A batch counts as pending until its own accepted
+message arrives; from then on the diff already contains it. When an accepted diff arrives, the authored document
 is rebuilt from the new confirmed head and the batches still pending. The
 TypeScript command logic remains for instant local feedback, and any mismatch
 with the server lasts only until the server's diff arrives.
@@ -153,6 +175,10 @@ edited the same entity since. Undo is out of scope for this ADR.
 
 - One function per primitive edit, one place per cascade rule, and one
   compare-and-set comparison replace the 22-way dispatch.
+- Moving logic onto `SavedGraphDocument` grows `saved_graphs.py` while
+  shrinking `collaboration.py`, so `scripts/complexity_ratchet.py` compares the
+  summed total of the changed files rather than each file's own total; the
+  per-function checks are unchanged.
 - New gestures compose existing commands instead of adding command kinds.
 - Peers cannot silently diverge; the author's document converges on every
   accepted diff.
