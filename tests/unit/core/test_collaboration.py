@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -5,6 +7,7 @@ import pytest
 from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.collaboration import (
     GRAPH_COMMAND_ADAPTER,
+    GraphCommand,
     AddEdgeCommand,
     AddNodeCommand,
     AddOriginCommand,
@@ -977,3 +980,269 @@ def test_remove_nodes_prunes_presentation_links() -> None:
     )
     assert pruned.presentation.viewers[0].id == "artifact-viewer-1"
     assert pruned.presentation.links == ()
+
+
+def test_duplicate_node_rejects_existing_target_id() -> None:
+    document = SavedGraphDocument(nodes=(_node("source"), _node("copy")))
+    with pytest.raises(
+        CollaborationCommandRejectedError,
+        match="Graph command adds duplicate node copy",
+    ) as exc:
+        apply_graph_command(
+            name="Graph",
+            document=document,
+            command=DuplicateNodeCommand(
+                source_node_id="source",
+                node=_node("copy", x=40, y=40),
+            ),
+        )
+    assert exc.value.error_code == "duplicate_node"
+
+
+def test_update_node_configuration_rejects_stale_field_value() -> None:
+    document = SavedGraphDocument(nodes=(_node("n1", config={"text": "actual"}),))
+    with pytest.raises(
+        CollaborationCommandRejectedError,
+        match=r"Configuration field 'text' on node n1 changed",
+    ) as exc:
+        apply_graph_command(
+            name="Graph",
+            document=document,
+            command=UpdateNodeConfigurationCommand(
+                node_id="n1",
+                field="text",
+                value="next",
+                expected_value="stale",
+            ),
+        )
+    assert exc.value.error_code == "field_conflict"
+
+
+def test_update_node_layout_rejects_stale_layout() -> None:
+    current = SavedGraphNodeLayout(width=400, body_height=200)
+    stale = SavedGraphNodeLayout(width=300, body_height=200)
+    document = SavedGraphDocument(
+        nodes=(_node("n1").model_copy(update={"layout": current}),)
+    )
+    with pytest.raises(
+        CollaborationCommandRejectedError,
+        match="Layout on node n1 changed",
+    ) as exc:
+        apply_graph_command(
+            name="Graph",
+            document=document,
+            command=UpdateNodeLayoutCommand(
+                node_id="n1",
+                layout=SavedGraphNodeLayout(width=500, body_height=200),
+                expected_layout=stale,
+            ),
+        )
+    assert exc.value.error_code == "field_conflict"
+
+
+def test_update_node_plugin_release_rejects_non_plugin_node() -> None:
+    pin = SavedGraphPluginReleasePin(
+        scope=PluginReleaseScope.SYSTEM,
+        slug="notes",
+        revision=1,
+    )
+    document = SavedGraphDocument(nodes=(_node("n1"),))
+    assert document.nodes[0].kind == "builtin"
+    with pytest.raises(
+        CollaborationCommandRejectedError,
+        match="is only valid for Plugin nodes",
+    ) as exc:
+        apply_graph_command(
+            name="Graph",
+            document=document,
+            command=UpdateNodePluginReleaseCommand(
+                node_id="n1",
+                plugin_release_pin=pin.model_copy(update={"revision": 2}),
+                expected_plugin_release_pin=pin,
+            ),
+        )
+    assert exc.value.error_code == "invalid_plugin_release_update"
+
+
+def test_set_node_input_plugs_rejects_stale_plug_ids() -> None:
+    node = _node("n1").model_copy(
+        update={"input_plugs": (SavedGraphInputPlug(id="plug-a", port="value"),)}
+    )
+    document = SavedGraphDocument(nodes=(node,))
+    with pytest.raises(
+        CollaborationCommandRejectedError,
+        match="Input plugs on node n1 changed",
+    ) as exc:
+        apply_graph_command(
+            name="Graph",
+            document=document,
+            command=SetNodeInputPlugsCommand(
+                node_id="n1",
+                input_plugs=(SavedGraphInputPlug(id="plug-a", port="value"),),
+                expected_plug_ids=("plug-stale",),
+            ),
+        )
+    assert exc.value.error_code == "field_conflict"
+
+
+def test_update_node_configuration_and_input_plugs_rejects_stale_plug_ids() -> None:
+    node = _node("n1", config={"text": "keep"}).model_copy(
+        update={"input_plugs": (SavedGraphInputPlug(id="plug-a", port="value"),)}
+    )
+    document = SavedGraphDocument(nodes=(node,))
+    with pytest.raises(
+        CollaborationCommandRejectedError,
+        match="Input plugs on node n1 changed",
+    ) as exc:
+        apply_graph_command(
+            name="Graph",
+            document=document,
+            command=UpdateNodeConfigurationAndInputPlugsCommand(
+                node_id="n1",
+                config={"text": "next"},
+                input_plugs=(SavedGraphInputPlug(id="plug-a", port="value"),),
+                expected_config={"text": "keep"},
+                expected_plug_ids=("plug-stale",),
+            ),
+        )
+    assert exc.value.error_code == "field_conflict"
+    assert document.nodes[0].config_dict()["text"] == "keep"
+
+
+def test_set_node_artifact_type_binding_rejects_stale_binding() -> None:
+    bound = SavedGraphArtifactTypeBinding(
+        variable="T",
+        artifact_type=ArtifactTypeKey(id="image.raster", schema_version=1),
+    )
+    node = _node("n1").model_copy(update={"artifact_type_bindings": (bound,)})
+    document = SavedGraphDocument(nodes=(node,))
+    with pytest.raises(
+        CollaborationCommandRejectedError,
+        match=r"Artifact type binding 'T' on node n1 changed",
+    ) as exc:
+        apply_graph_command(
+            name="Graph",
+            document=document,
+            command=SetNodeArtifactTypeBindingCommand(
+                node_id="n1",
+                binding=SavedGraphArtifactTypeBinding(
+                    variable="T",
+                    artifact_type=ArtifactTypeKey(id="text.value", schema_version=1),
+                ),
+                expected_binding=SavedGraphArtifactTypeBinding(
+                    variable="T",
+                    artifact_type=ArtifactTypeKey(id="text.value", schema_version=1),
+                ),
+            ),
+        )
+    assert exc.value.error_code == "field_conflict"
+    assert document.nodes[0].artifact_type_bindings == (bound,)
+
+
+def test_clear_node_artifact_type_binding_rejects_stale_binding() -> None:
+    document = SavedGraphDocument(nodes=(_node("n1"),))
+    with pytest.raises(
+        CollaborationCommandRejectedError,
+        match=r"Artifact type binding 'T' on node n1 changed",
+    ) as exc:
+        apply_graph_command(
+            name="Graph",
+            document=document,
+            command=ClearNodeArtifactTypeBindingCommand(
+                node_id="n1",
+                variable="T",
+                expected_binding=SavedGraphArtifactTypeBinding(
+                    variable="T",
+                    artifact_type=ArtifactTypeKey(id="image.raster", schema_version=1),
+                ),
+            ),
+        )
+    assert exc.value.error_code == "field_conflict"
+
+
+def test_add_edge_rejects_duplicate_edge_id() -> None:
+    edge = SavedGraphEdge(
+        id="e1",
+        from_node="source",
+        from_port="result",
+        to_node="target",
+        to_port="value",
+        to_plug="plug-a",
+        enabled=True,
+    )
+    document = SavedGraphDocument(
+        nodes=(
+            _node("source"),
+            _node("target").model_copy(
+                update={
+                    "input_plugs": (SavedGraphInputPlug(id="plug-a", port="value"),)
+                }
+            ),
+        ),
+        edges=(edge,),
+    )
+    with pytest.raises(
+        CollaborationCommandRejectedError,
+        match="Graph command adds duplicate edge e1",
+    ) as exc:
+        apply_graph_command(
+            name="Graph",
+            document=document,
+            command=AddEdgeCommand(edge=edge),
+        )
+    assert exc.value.error_code == "duplicate_edge"
+    assert document.edges == (edge,)
+
+
+def test_update_edge_rejects_stale_edge() -> None:
+    edge = SavedGraphEdge(
+        id="e1",
+        from_node="source",
+        from_port="result",
+        to_node="target",
+        to_port="value",
+        to_plug="plug-a",
+        enabled=True,
+    )
+    document = SavedGraphDocument(
+        nodes=(
+            _node("source"),
+            _node("target").model_copy(
+                update={
+                    "input_plugs": (SavedGraphInputPlug(id="plug-a", port="value"),)
+                }
+            ),
+        ),
+        edges=(edge,),
+    )
+    with pytest.raises(
+        CollaborationCommandRejectedError,
+        match="Edge e1 changed",
+    ) as exc:
+        apply_graph_command(
+            name="Graph",
+            document=document,
+            command=UpdateEdgeCommand(
+                edge=edge,
+                expected_edge=edge.model_copy(update={"enabled": False}),
+            ),
+        )
+    assert exc.value.error_code == "field_conflict"
+    assert document.edges == (edge,)
+
+
+def test_unknown_command_rejects_unsupported_kind() -> None:
+    # A command shape this build does not know about falls through every
+    # `isinstance` branch in `_apply_graph_command`.
+    unknown = cast(GraphCommand, SimpleNamespace(kind="remove_layers"))
+    with pytest.raises(
+        CollaborationCommandRejectedError,
+        match="Unsupported graph command kind",
+    ) as exc:
+        apply_graph_command(
+            name="Graph",
+            document=SavedGraphDocument(),
+            command=unknown,
+        )
+    assert exc.value.error_code == "unsupported_command"
+    assert "remove_layers" in str(exc.value)
