@@ -10,6 +10,8 @@ for every Python file changed since the base ref and rejects the change if:
 - a new function takes too many parameters or a boolean flag parameter;
 - a `--target` function is still above its limit.
 
+`--allow PATH::FUNCTION` waives the growth check for one existing function,
+for growth a change makes on purpose; the run still lists it as ALLOWED.
 Functions are matched by name, so renaming a function counts it as new.
 """
 
@@ -44,6 +46,30 @@ def parse_target(value: str) -> Target:
         raise argparse.ArgumentTypeError(
             f"expected PATH::FUNCTION<=N, got {value!r}"
         ) from error
+
+
+@dataclass(frozen=True)
+class Allowance:
+    path: str
+    function: str
+
+    def waives(self, problem: str) -> bool:
+        return problem.startswith(f"{self.path} {self.function} cognitive grew ")
+
+
+def parse_allowance(value: str) -> Allowance:
+    path, separator, function = value.partition("::")
+    if not separator or not path or not function:
+        raise argparse.ArgumentTypeError(f"expected PATH::FUNCTION, got {value!r}")
+    return Allowance(path=path, function=function)
+
+
+def split_allowed(
+    problems: list[str], allowances: list[Allowance]
+) -> tuple[list[str], list[str]]:
+    """Separate the problems an allowance waives from the ones that still fail."""
+    allowed = [p for p in problems if any(a.waives(p) for a in allowances)]
+    return [p for p in problems if p not in allowed], allowed
 
 
 def git(*args: str) -> str:
@@ -189,6 +215,13 @@ def main() -> int:
         type=parse_target,
         help="require PATH::FUNCTION<=N; may be repeated",
     )
+    parser.add_argument(
+        "--allow",
+        action="append",
+        default=[],
+        type=parse_allowance,
+        help="waive the growth check for PATH::FUNCTION; may be repeated",
+    )
     args = parser.parse_args()
 
     base = git("merge-base", args.base, "HEAD").strip()
@@ -207,6 +240,9 @@ def main() -> int:
         problems.append(
             f"total cognitive of changed files grew {base_sum} -> {head_sum}"
         )
+    problems, allowed = split_allowed(problems, args.allow)
+    for problem in allowed:
+        print(f"ALLOWED {problem}")
     for problem in problems:
         print(f"FAIL {problem}")
     print(f"total cognitive of changed files: {base_sum} -> {head_sum}")
