@@ -66,27 +66,32 @@ Batching keeps a multi-edit gesture (paste, delete with cleanup, schema builder
 edits) to one request, one transaction, and one broadcast, instead of a queue
 of separately sequenced commands aimed at the same document.
 
-### Commands expand into assertion and change steps
+### Each command applies itself to a draft
 
-The server expands every command into steps through the command's own
-`steps()` method, so the type checker requires every command kind to define
-its expansion and there is no central dispatch:
+Every command has an `apply(draft) -> draft` method, so the type checker
+requires every command kind to define it and there is no central dispatch. A
+draft is the graph name and document. `apply` reads straight through: look up
+what the command targets, check it (existence, the `expected_*` compare-and-set
+values, kind-specific rules), and return a new draft built through the
+`SavedGraphDocument` edit methods. Checks stay on the commands; there is no
+standalone assertion command on the wire.
 
-- an **assertion step** checks the current document and changes nothing. A
-  command's `expected_*` fields become assertion steps. Assertions stay on the
-  commands; there is no standalone assertion command on the wire.
-- a **change step** returns a new document.
+The batch's commands apply in order, and the first failing command rejects
+the batch. Rollback discards the draft: intermediate drafts are never
+persisted, and the head still holds the starting document.
 
-The batch's steps run in order. The first failing step rejects the batch.
-Rollback discards the intermediate documents: they were never persisted, and
-the head still holds the starting document.
+The first implementation expanded each command into a list of assertion and
+change steps. Nothing consumed those lists as data: the command is the unit of
+batching, rollback, rejection codes and `command_index`. The step layer only
+added one-callable wrappers and lambda factories, so commands now apply
+themselves directly.
 
-### Validate after every change step
+### Validate every document edit
 
-Every change step produces a validated `SavedGraphDocument`. A failure names
-the step that caused it rather than surfacing at the end of the batch.
+Every document edit produces a validated `SavedGraphDocument`. A failure names
+the command that caused it rather than surfacing at the end of the batch.
 
-Document validation runs on every change step, but pydantic does not
+Document validation runs on every document edit, but pydantic does not
 re-validate a nested model it is handed, so a presentation edited with
 `model_copy` skips `GraphPresentationDocument`'s own validator; the
 document-level checks (for example, links must name existing nodes) still run.
@@ -103,8 +108,10 @@ Each primitive edit is one `SavedGraphDocument` method, and that method owns
 its cascades: removing a node drops its edges, origins, and the card links it
 sources; replacing a node's input plugs drops the edges and origins that
 targeted a removed plug. Presentation changes go through `model_copy`, never a
-field-by-field rebuild. Steps call these methods and contain no cascade logic
-of their own. Replacing a node always applies the input-plug cascade (a no-op
+field-by-field rebuild. Commands call these methods and contain no cascade
+logic of their own. Lookups (`find_node`, `find_edge`, …) return `None`; the
+command turns a missing target into a `missing_*` rejection, so the document
+model never raises collaboration errors. Replacing a node always applies the input-plug cascade (a no-op
 when the plugs are unchanged), so every node edit goes through one method.
 
 ### Uniform semantics
@@ -122,12 +129,12 @@ The Workbench sends `update_node_configuration_and_input_plugs` as the batch
 `[replace_node_configuration, set_node_input_plugs]`. `replace_node_configuration`
 is a new primitive that replaces a node's whole configuration, guarded by
 `expected_config`; the existing per-field `update_node_configuration` cannot
-delete a key. The server keeps accepting the compound kind by expanding it
-into the same steps, and retires it once no client sends it.
+delete a key. The server keeps accepting the compound kind by applying those
+same two commands in turn, and retires it once no client sends it.
 
 ### Rejections carry a specific code
 
-`graph.command.rejected` carries the failing step's `error_code` (for example
+`graph.command.rejected` carries the failing check's `error_code` (for example
 `field_conflict`, `missing_node`, `invalid_document`) and `command_index`, the
 index of the failing command in the batch. The client may rebuild and resubmit after a
 compare-and-set conflict instead of always reloading the head.
@@ -184,7 +191,7 @@ edited the same entity since. Undo is out of scope for this ADR.
   accepted diff.
 - Accepted messages grow by the size of the diff. A diff is bounded by the
   entities the batch touched, not by the document size.
-- Validating after every step costs one document validation per change step.
+- Validating every document edit costs one document validation per edit.
   This is acceptable at current graph sizes and can be revisited by measuring.
 - The protocol change ships behind the existing `protocol_version: 1` as
   additive fields; removing `command` from accepted messages and the compound
@@ -196,9 +203,10 @@ Each item is one pull request; each keeps the existing test suite and the
 complexity ratchet (`scripts/complexity_ratchet.py`) green.
 
 1. `SavedGraphDocument` primitive edit methods with their cascades.
-2. Steps, command expansion, and batch application replacing
-   `_apply_graph_command`; uniform remove, missing-id, and compare-and-set
-   semantics.
+2. Commands that apply themselves to a draft, and batch application
+   replacing `_apply_graph_command`; uniform remove, missing-id, and
+   compare-and-set semantics. (First shipped as assertion and change steps; see
+   "Each command applies itself to a draft".)
 3. Batch submission (`commands`) and `replace_node_configuration`; the
    Workbench sends the schema-builder gesture as a batch.
 4. Specific rejection codes and the failing command index on the wire.

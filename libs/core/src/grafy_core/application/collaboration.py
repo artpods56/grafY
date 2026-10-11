@@ -17,7 +17,6 @@ from grafy_core.domain.collaboration import (
     GraphDiff,
     GraphDraft,
     ReplaceDocumentCommand,
-    apply_graph_command,
     apply_graph_commands,
     command_hmac_digest,
     command_requires_exact_sequence,
@@ -125,10 +124,10 @@ class CollaborationService:
 
             resolved_graph_id = uuid4() if graph_id is None else graph_id
             room_epoch = uuid4()
-            next_name, next_document = apply_graph_command(
+            next_name, next_document = apply_graph_commands(
                 name="Untitled graph",
                 document=empty_collaborative_document(),
-                command=command,
+                commands=(command,),
             )
             digest = command_hmac_digest(
                 self._command_hmac_key,
