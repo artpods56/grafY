@@ -81,6 +81,7 @@ function rejectedMessage(
     command_id: commandId,
     error_code: "head_conflict",
     detail: "Collaborative head moved: expected sequence 4, actual 5.",
+    command_index: null,
     current_room_epoch: EPOCH_ONE,
     current_sequence: 5,
     ...overrides,
@@ -323,6 +324,36 @@ describe("GraphRoomCommandOutbox", () => {
       "command-b",
     ]);
     queued.promise.catch(() => undefined);
+  });
+
+  it("carries the rejection's error code and failing command index to the caller", async () => {
+    const outbox = new GraphRoomCommandOutbox({
+      headPointer: () => ({
+        room_epoch: EPOCH_ONE,
+        collaboration_sequence: 4,
+      }),
+      createCommandId: nextId(["command-a"]),
+    });
+
+    const submitted = outbox.submit([rename("First"), rename("Second")]);
+    expect(submitted.sends.map((send) => send.message.command_id)).toEqual([
+      "command-a",
+    ]);
+    outbox.applyRejected(
+      rejectedMessage("command-a", {
+        error_code: "missing_node",
+        detail: "Graph command targets missing node ghost",
+        command_index: 1,
+      }),
+    );
+
+    await expect(submitted.promise).rejects.toMatchObject({
+      name: "GraphRoomCommandError",
+      errorCode: "missing_node",
+      commandIndex: 1,
+    });
+    // Recovery is unchanged: the drain stays parked until a full head lands.
+    expect(outbox.finishHeadRehydration()).toEqual([]);
   });
 
   it("rejects the caller when the driver cannot write a returned frame", async () => {

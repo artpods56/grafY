@@ -205,6 +205,8 @@ export interface GraphCommandRejectedMessage {
   readonly command_id: string;
   readonly error_code: string;
   readonly detail: string;
+  /** Position in the submitted batch of the command that failed; null if unknown. */
+  readonly command_index: number | null;
   readonly current_room_epoch: string | null;
   readonly current_sequence: number | null;
 }
@@ -559,11 +561,19 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
     }
     const epoch = raw.current_room_epoch;
     const sequence = raw.current_sequence;
+    const commandIndex = raw.command_index;
     if (epoch !== null && epoch !== undefined && !isString(epoch)) return null;
     if (
       sequence !== null &&
       sequence !== undefined &&
       !isNonNegativeInt(sequence)
+    ) {
+      return null;
+    }
+    if (
+      commandIndex !== null &&
+      commandIndex !== undefined &&
+      !isNonNegativeInt(commandIndex)
     ) {
       return null;
     }
@@ -573,6 +583,7 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       command_id: raw.command_id,
       error_code: raw.error_code,
       detail: raw.detail,
+      command_index: isNonNegativeInt(commandIndex) ? commandIndex : null,
       current_room_epoch: isString(epoch) ? epoch : null,
       current_sequence: isNonNegativeInt(sequence) ? sequence : null,
     };

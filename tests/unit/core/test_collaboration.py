@@ -1304,6 +1304,52 @@ def test_apply_graph_commands_reports_invalid_document_for_the_failing_command()
     assert "add_edge" in str(exc.value)
 
 
+def test_apply_graph_commands_records_the_failing_command_index() -> None:
+    with pytest.raises(CollaborationCommandRejectedError) as exc:
+        apply_graph_commands(
+            name="Graph",
+            document=empty_collaborative_document(),
+            commands=(
+                AddNodeCommand(node=_node("n1")),
+                MoveNodesCommand(positions=(MoveNodePosition(node_id="n1", x=5, y=6),)),
+                RenameGraphCommand(name="Next", expected_name="Stale"),
+            ),
+        )
+    assert exc.value.error_code == "field_conflict"
+    assert exc.value.command_index == 2
+
+    document = SavedGraphDocument(
+        nodes=(
+            _node("source"),
+            _node("target").model_copy(
+                update={
+                    "input_plugs": (SavedGraphInputPlug(id="plug-a", port="value"),)
+                }
+            ),
+        )
+    )
+    edge = SavedGraphEdge(
+        id="e1",
+        from_node="source",
+        from_port="result",
+        to_node="target",
+        to_port="value",
+        to_plug="plug-absent",
+        enabled=True,
+    )
+    with pytest.raises(CollaborationCommandRejectedError) as exc:
+        apply_graph_commands(
+            name="Graph",
+            document=document,
+            commands=(
+                RenameGraphCommand(name="Next", expected_name="Graph"),
+                AddEdgeCommand(edge=edge),
+            ),
+        )
+    assert exc.value.error_code == "invalid_document"
+    assert exc.value.command_index == 1
+
+
 def test_remove_nodes_twice_succeeds() -> None:
     # ADR-0014: two people deleting the same node both succeed.
     document = SavedGraphDocument(nodes=(_node("n1"),))

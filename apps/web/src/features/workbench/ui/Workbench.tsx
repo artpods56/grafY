@@ -119,6 +119,7 @@ import {
   GraphRoomCommandError,
   PRESENCE_CLIENT_MIN_INTERVAL_MS,
   PresenceOverlay,
+  describeCommandRejection,
   graphReadiness,
   remoteSelectionColor,
   shouldReplaceCollaborativeHead,
@@ -1331,12 +1332,10 @@ function WorkbenchBody({
     onCommandRejected: (message) => {
       const isHeadConflict = message.error_code === "head_conflict";
       if (!isHeadConflict) {
-        setRunError(message.detail || "A collaborative edit was rejected.");
+        setRunError(describeCommandRejection(message));
       }
       refreshCollaborativeHeadRef.current({
-        errorMessage: isHeadConflict
-          ? null
-          : message.detail || "A collaborative edit was rejected.",
+        errorMessage: isHeadConflict ? null : describeCommandRejection(message),
       });
     },
     onTerminalClose: (reason) => {

@@ -13,12 +13,20 @@ import {
 export class GraphRoomCommandError extends Error {
   readonly errorCode: string;
   readonly commandId: string;
+  /** Position in the submitted batch of the command the server rejected. */
+  readonly commandIndex: number | null;
 
-  constructor(commandId: string, errorCode: string, detail: string) {
+  constructor(
+    commandId: string,
+    errorCode: string,
+    detail: string,
+    commandIndex: number | null = null,
+  ) {
     super(detail);
     this.name = "GraphRoomCommandError";
     this.commandId = commandId;
     this.errorCode = errorCode;
+    this.commandIndex = commandIndex;
   }
 }
 
@@ -226,6 +234,7 @@ export class GraphRoomCommandOutbox {
         message.command_id,
         message.error_code,
         message.detail,
+        message.command_index,
       ),
     );
   }

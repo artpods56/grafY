@@ -80,3 +80,51 @@ describe("parseServerRoomMessage graph.command.accepted", () => {
     ).toBeNull();
   });
 });
+
+function rejectedFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    protocol_version: 1,
+    type: "graph.command.rejected",
+    command_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    error_code: "field_conflict",
+    detail: "Name on graph changed",
+    command_index: 1,
+    current_room_epoch: ROOM_EPOCH,
+    current_sequence: 5,
+    ...overrides,
+  };
+}
+
+describe("parseServerRoomMessage graph.command.rejected command_index", () => {
+  it("parses a rejection that names the failing command", () => {
+    expect(parseServerRoomMessage(rejectedFixture())).toMatchObject({
+      type: "graph.command.rejected",
+      error_code: "field_conflict",
+      command_index: 1,
+    });
+  });
+
+  it("parses a rejection whose command index is null", () => {
+    expect(
+      parseServerRoomMessage(rejectedFixture({ command_index: null })),
+    ).toMatchObject({ command_index: null });
+  });
+
+  it("parses a rejection from a server that does not send a command index", () => {
+    const fixture = rejectedFixture();
+    delete (fixture as { command_index?: unknown }).command_index;
+    expect(parseServerRoomMessage(fixture)).toMatchObject({
+      command_index: null,
+    });
+  });
+
+  it("rejects a command index that is not a non-negative integer", () => {
+    for (const commandIndex of [-1, 1.5, "1", true]) {
+      expect(
+        parseServerRoomMessage(
+          rejectedFixture({ command_index: commandIndex }),
+        ),
+      ).toBeNull();
+    }
+  });
+});

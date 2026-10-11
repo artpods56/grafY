@@ -24,6 +24,7 @@ export {
   toRoomGraphCommands,
   toRoomReplaceDocumentCommand,
 } from "./room-command-bridge";
+export { describeCommandRejection } from "./command-rejection";
 export { PresenceOverlay } from "./PresenceOverlay";
 export { RemoteSelectionRing } from "./RemoteSelectionRing";
 export {

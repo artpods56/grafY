@@ -284,6 +284,7 @@ class GraphCommandRejectedMessage(RoomProtocolModel):
     command_id: UUID
     error_code: str = Field(min_length=1, max_length=64)
     detail: str = Field(min_length=1, max_length=500)
+    command_index: int | None = Field(default=None, ge=0)
     current_room_epoch: UUID | None = None
     current_sequence: int | None = Field(default=None, ge=0)
 

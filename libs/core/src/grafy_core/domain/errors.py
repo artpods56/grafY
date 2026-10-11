@@ -451,8 +451,15 @@ class CollaborationIdempotencyMismatchError(CollaborationError):
 class CollaborationCommandRejectedError(CollaborationError):
     error_code = "command_rejected"
 
-    def __init__(self, *, code: str, message: str) -> None:
+    def __init__(
+        self,
+        *,
+        code: str,
+        message: str,
+        command_index: int | None = None,
+    ) -> None:
         self.error_code = code
+        self.command_index = command_index
         super().__init__(message)
 
 

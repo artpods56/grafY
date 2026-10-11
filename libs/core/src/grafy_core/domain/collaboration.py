@@ -928,13 +928,18 @@ def apply_graph_commands(
 
     Intermediate documents are never persisted, so a rejected batch leaves the
     caller's head as it was.
+
+    A rejection records the index of the failing command in the batch.
     """
 
     draft = GraphDraft(name=name, document=document)
-    for command in commands:
+    for index, command in enumerate(commands):
         try:
             for step in command.steps():
                 draft = step.run(draft)
+        except CollaborationCommandRejectedError as exc:
+            exc.command_index = index
+            raise
         except ValidationError as exc:
             violations = "; ".join(
                 error["msg"].removeprefix("Value error, ") for error in exc.errors()
@@ -945,6 +950,7 @@ def apply_graph_commands(
                     f"Graph command {command.kind} would leave the graph "
                     f"invalid: {violations}"
                 ),
+                command_index=index,
             ) from exc
     return draft.name, draft.document
 
