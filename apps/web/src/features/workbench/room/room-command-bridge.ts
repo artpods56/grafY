@@ -429,7 +429,8 @@ function prunePresentationLinks(
 /**
  * The confirmed head with this client's pending batches applied on top: what
  * the author sees while the server has not confirmed them. A command that no
- * longer applies is skipped; the server's answer to it will correct the view.
+ * longer applies, because a peer's edit removed what it targets, is left out;
+ * the server rejects it too, and its answer corrects the view.
  */
 export function projectPendingCommands(
   head: CollaborativeHead,
@@ -438,16 +439,50 @@ export function projectPendingCommands(
   let projected = head;
   for (const command of pending) {
     try {
-      projected = applyRoomCommandToHead(
+      const next = applyRoomCommandToHead(
         projected,
         command,
         head.collaboration_sequence,
       );
+      if (!hasDanglingReference(next.document)) projected = next;
     } catch {
       // A command the head cannot carry is left out of the projection.
     }
   }
   return projected;
+}
+
+/**
+ * Whether an edge, origin, or card link names a node or input plug the
+ * document does not have: the canvas refuses to open such a document.
+ */
+function hasDanglingReference(
+  document: CollaborativeHead["document"],
+): boolean {
+  const plugsByNode = new Map(
+    document.nodes.map((node) => [
+      node.id,
+      new Set((node.input_plugs ?? []).map((plug) => plug.id)),
+    ]),
+  );
+  return (
+    document.edges.some(
+      (edge) =>
+        !plugsByNode.has(edge.from_node) ||
+        !plugsByNode.has(edge.to_node) ||
+        (edge.to_plug != null &&
+          !plugsByNode.get(edge.to_node)?.has(edge.to_plug)),
+    ) ||
+    document.origins.some(
+      (origin) =>
+        !plugsByNode.has(origin.to_node) ||
+        (origin.to_plug != null &&
+          !plugsByNode.get(origin.to_node)?.has(origin.to_plug)),
+    ) ||
+    (document.presentation?.links ?? []).some(
+      (link) => !plugsByNode.has(link.source_node_id),
+    )
+  );
 }
 
 export function applyRoomCommandToHead(
@@ -522,21 +557,6 @@ export function applyRoomCommandToHead(
             return position ? { ...annotation, position } : annotation;
           }),
         },
-      },
-    };
-  }
-
-  if (command.kind === "set_node_input_plugs") {
-    return {
-      ...head,
-      collaboration_sequence: sequence,
-      document: {
-        ...head.document,
-        nodes: head.document.nodes.map((node) =>
-          node.id === command.node_id
-            ? { ...node, input_plugs: [...command.input_plugs] }
-            : node,
-        ),
       },
     };
   }

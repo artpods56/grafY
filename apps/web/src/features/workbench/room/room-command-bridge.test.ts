@@ -697,4 +697,71 @@ describe("room-command-bridge", () => {
       "a",
     ]);
   });
+
+  describe("when a peer's edit makes a pending command inapplicable", () => {
+    const plugged = (plugIds: readonly string[]) => ({
+      ...document.nodes[0]!,
+      id: "b",
+      input_plugs: plugIds.map((id) => ({ id, port: "text" })),
+    });
+    const edgeTo = (id: string, toNode: string, toPlug: string | null) => ({
+      id,
+      enabled: true,
+      from_node: "a",
+      from_port: "out",
+      to_node: toNode,
+      to_port: "text",
+      to_plug: toPlug,
+      collection_mode: "direct" as const,
+      conversion_path: [],
+    });
+    const headWith = (
+      nodes: CollaborativeHead["document"]["nodes"],
+      edges: CollaborativeHead["document"]["edges"] = [],
+    ): CollaborativeHead => ({
+      ...head,
+      document: { ...head.document, nodes, edges },
+    });
+
+    it("drops the edges on an input plug a pending command removes", () => {
+      // The schema-builder gesture's second half: removing a plug must take
+      // its edge along, or the projected document cannot be opened.
+      const projected = projectPendingCommands(
+        headWith(
+          [document.nodes[0]!, plugged(["p"])],
+          [edgeTo("e1", "b", "p")],
+        ),
+        [
+          {
+            kind: "set_node_input_plugs",
+            node_id: "b",
+            input_plugs: [],
+            expected_plug_ids: ["p"],
+          },
+        ],
+      );
+
+      expect(projected.document.nodes[1]?.input_plugs).toEqual([]);
+      expect(projected.document.edges).toEqual([]);
+    });
+
+    it("leaves out a pending edge to a node the head no longer has", () => {
+      const projected = projectPendingCommands(headWith([document.nodes[0]!]), [
+        { kind: "add_edge", edge: edgeTo("e2", "gone", null) },
+        { kind: "rename_graph", name: "Kept", expected_name: "Demo" },
+      ]);
+
+      expect(projected.document.edges).toEqual([]);
+      expect(projected.name).toBe("Kept");
+    });
+
+    it("leaves out a pending edge to an input plug the head no longer has", () => {
+      const projected = projectPendingCommands(
+        headWith([document.nodes[0]!, plugged([])]),
+        [{ kind: "add_edge", edge: edgeTo("e3", "b", "p") }],
+      );
+
+      expect(projected.document.edges).toEqual([]);
+    });
+  });
 });

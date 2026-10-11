@@ -166,7 +166,9 @@ only, keyed by entity id rather than by array position.
 
 The Workbench's authored document is the confirmed head with the pending local
 batches applied on top. A batch counts as pending until its own accepted
-message arrives; from then on the diff already contains it. When an accepted diff arrives, the authored document
+message arrives; from then on the diff already contains it. A pending command that no
+longer applies, because a peer's edit removed the node or input plug it
+targets, is left out of the authored document; the server rejects it too. When an accepted diff arrives, the authored document
 is rebuilt from the new confirmed head and the batches still pending. The
 TypeScript command logic remains for instant local feedback, and any mismatch
 with the server lasts only until the server's diff arrives.
