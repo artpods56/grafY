@@ -2,7 +2,8 @@
 
 import hmac
 import json
-from dataclasses import dataclass, field
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
@@ -17,6 +18,7 @@ from pydantic import (
     ValidationError,
     field_validator,
 )
+from pydantic_core import to_jsonable_python
 
 from grafy_core.domain.errors import CollaborationCommandRejectedError
 from grafy_core.domain.modules import GRAPH_MODULE_OPERATOR_PREFIX
@@ -108,10 +110,26 @@ class RenameGraphCommand(CollaborationValue):
     def validate_name(cls, value: str) -> str:
         return _validated_graph_name(value)
 
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _expect_unchanged(
+                lambda draft: draft.name,
+                self.expected_name,
+                f"Graph name conflict: expected {self.expected_name!r}",
+            ),
+            ChangeStep(lambda draft: replace(draft, name=self.name)),
+        )
+
 
 class AddNodeCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.ADD_NODE] = GraphCommandKind.ADD_NODE
     node: SavedGraphNode
+
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _expect_new_node(self.node.id),
+            _edit(lambda document: document.with_node_added(self.node)),
+        )
 
 
 class DuplicateNodeCommand(CollaborationValue):
@@ -119,10 +137,20 @@ class DuplicateNodeCommand(CollaborationValue):
     source_node_id: str
     node: SavedGraphNode
 
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _expect(_node_or_raise, self.source_node_id),
+            _expect_new_node(self.node.id),
+            _edit(lambda document: document.with_node_added(self.node)),
+        )
+
 
 class RemoveNodesCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.REMOVE_NODES] = GraphCommandKind.REMOVE_NODES
     node_ids: tuple[str, ...] = Field(min_length=1)
+
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (_edit(lambda document: document.with_nodes_removed(self.node_ids)),)
 
 
 class MoveNodePosition(CollaborationValue):
@@ -135,6 +163,19 @@ class MoveNodesCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.MOVE_NODES] = GraphCommandKind.MOVE_NODES
     positions: tuple[MoveNodePosition, ...] = Field(min_length=1)
 
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            *(_expect(_node_or_raise, position.node_id) for position in self.positions),
+            _edit(
+                lambda document: document.with_nodes_moved(
+                    {
+                        position.node_id: GraphPoint(x=position.x, y=position.y)
+                        for position in self.positions
+                    }
+                )
+            ),
+        )
+
 
 class UpdateNodeConfigurationCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.UPDATE_NODE_CONFIGURATION] = (
@@ -145,6 +186,24 @@ class UpdateNodeConfigurationCommand(CollaborationValue):
     value: object
     expected_value: object | None = None
 
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _expect(_node_or_raise, self.node_id),
+            _expect_unchanged(
+                lambda draft: _node_or_raise(draft.document, self.node_id)
+                .config_dict()
+                .get(self.field),
+                self.expected_value,
+                f"Configuration field {self.field!r} on node {self.node_id} changed",
+            ),
+            _edit_node(
+                self.node_id,
+                lambda node: node.model_copy(
+                    update={"config": {**node.config_dict(), self.field: self.value}}
+                ),
+            ),
+        )
+
 
 class UpdateNodeLayoutCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.UPDATE_NODE_LAYOUT] = (
@@ -153,6 +212,20 @@ class UpdateNodeLayoutCommand(CollaborationValue):
     node_id: str
     layout: SavedGraphNodeLayout | None
     expected_layout: SavedGraphNodeLayout | None = None
+
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _expect(_node_or_raise, self.node_id),
+            _expect_unchanged(
+                lambda draft: _node_or_raise(draft.document, self.node_id).layout,
+                self.expected_layout,
+                f"Layout on node {self.node_id} changed",
+            ),
+            _edit_node(
+                self.node_id,
+                lambda node: node.model_copy(update={"layout": self.layout}),
+            ),
+        )
 
 
 class UpdateNodePluginReleaseCommand(CollaborationValue):
@@ -163,6 +236,49 @@ class UpdateNodePluginReleaseCommand(CollaborationValue):
     plugin_release_pin: SavedGraphPluginReleasePin
     expected_plugin_release_pin: SavedGraphPluginReleasePin
 
+    def steps(self) -> tuple[GraphStep, ...]:
+        expected = self.expected_plugin_release_pin
+        next_pin = self.plugin_release_pin
+        return (
+            _expect(_node_or_raise, self.node_id),
+            _require(
+                lambda draft: _node_or_raise(draft.document, self.node_id).kind
+                == "plugin",
+                code="invalid_plugin_release_update",
+                message=(
+                    f"Plugin release update on node {self.node_id} is only "
+                    "valid for Plugin nodes"
+                ),
+            ),
+            _expect_unchanged(
+                lambda draft: _node_or_raise(
+                    draft.document, self.node_id
+                ).plugin_release_pin,
+                expected,
+                lambda draft: (
+                    f"Plugin release pin on node {self.node_id} changed: "
+                    f"expected {_pin_identity(expected)}, actual "
+                    f"{_pin_identity(_node_or_raise(draft.document, self.node_id).plugin_release_pin)}"
+                ),
+            ),
+            _require(
+                lambda _draft: next_pin.scope is expected.scope
+                and next_pin.slug == expected.slug,
+                code="invalid_plugin_release_update",
+                message=(
+                    f"Plugin release update on node {self.node_id} cannot change "
+                    f"release family from {expected.scope.value}:{expected.slug} "
+                    f"to {next_pin.scope.value}:{next_pin.slug}"
+                ),
+            ),
+            _edit_node(
+                self.node_id,
+                lambda node: node.model_copy(
+                    update={"plugin_release_pin": self.plugin_release_pin}
+                ),
+            ),
+        )
+
 
 class SetNodeInputPlugsCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.SET_NODE_INPUT_PLUGS] = (
@@ -171,6 +287,23 @@ class SetNodeInputPlugsCommand(CollaborationValue):
     node_id: str
     input_plugs: tuple[SavedGraphInputPlug, ...]
     expected_plug_ids: tuple[str, ...]
+
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _expect(_node_or_raise, self.node_id),
+            _expect_unchanged(
+                lambda draft: tuple(
+                    plug.id
+                    for plug in _node_or_raise(draft.document, self.node_id).input_plugs
+                ),
+                self.expected_plug_ids,
+                f"Input plugs on node {self.node_id} changed",
+            ),
+            _edit_node(
+                self.node_id,
+                lambda node: node.model_copy(update={"input_plugs": self.input_plugs}),
+            ),
+        )
 
 
 class UpdateNodeConfigurationAndInputPlugsCommand(CollaborationValue):
@@ -185,6 +318,35 @@ class UpdateNodeConfigurationAndInputPlugsCommand(CollaborationValue):
     expected_config: dict[str, object]
     expected_plug_ids: tuple[str, ...]
 
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _expect(_node_or_raise, self.node_id),
+            _expect_unchanged(
+                lambda draft: _node_or_raise(
+                    draft.document, self.node_id
+                ).config_dict(),
+                self.expected_config,
+                f"Configuration on node {self.node_id} changed",
+            ),
+            _expect_unchanged(
+                lambda draft: tuple(
+                    plug.id
+                    for plug in _node_or_raise(draft.document, self.node_id).input_plugs
+                ),
+                self.expected_plug_ids,
+                f"Input plugs on node {self.node_id} changed",
+            ),
+            _edit_node(
+                self.node_id,
+                lambda node: node.model_copy(
+                    update={
+                        "config": self.config,
+                        "input_plugs": self.input_plugs,
+                    }
+                ),
+            ),
+        )
+
 
 class SetNodeArtifactTypeBindingCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.SET_NODE_ARTIFACT_TYPE_BINDING] = (
@@ -193,6 +355,36 @@ class SetNodeArtifactTypeBindingCommand(CollaborationValue):
     node_id: str
     binding: SavedGraphArtifactTypeBinding
     expected_binding: SavedGraphArtifactTypeBinding | None = None
+
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _expect(_node_or_raise, self.node_id),
+            _expect_unchanged(
+                lambda draft: _binding_for_variable(
+                    _node_or_raise(draft.document, self.node_id), self.binding.variable
+                ),
+                self.expected_binding,
+                (
+                    f"Artifact type binding {self.binding.variable!r} on node "
+                    f"{self.node_id} changed"
+                ),
+            ),
+            _edit_node(
+                self.node_id,
+                lambda node: node.model_copy(
+                    update={
+                        "artifact_type_bindings": (
+                            *(
+                                binding
+                                for binding in node.artifact_type_bindings
+                                if binding.variable != self.binding.variable
+                            ),
+                            self.binding,
+                        )
+                    }
+                ),
+            ),
+        )
 
 
 class ClearNodeArtifactTypeBindingCommand(CollaborationValue):
@@ -203,10 +395,46 @@ class ClearNodeArtifactTypeBindingCommand(CollaborationValue):
     variable: str
     expected_binding: SavedGraphArtifactTypeBinding
 
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _expect(_node_or_raise, self.node_id),
+            _expect_unchanged(
+                lambda draft: _binding_for_variable(
+                    _node_or_raise(draft.document, self.node_id), self.variable
+                ),
+                self.expected_binding,
+                f"Artifact type binding {self.variable!r} on node {self.node_id} changed",
+            ),
+            _edit_node(
+                self.node_id,
+                lambda node: node.model_copy(
+                    update={
+                        "artifact_type_bindings": tuple(
+                            binding
+                            for binding in node.artifact_type_bindings
+                            if binding.variable != self.variable
+                        )
+                    }
+                ),
+            ),
+        )
+
 
 class AddEdgeCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.ADD_EDGE] = GraphCommandKind.ADD_EDGE
     edge: SavedGraphEdge
+
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _require(
+                lambda draft: all(
+                    edge.id != self.edge.id for edge in draft.document.edges
+                ),
+                code="duplicate_edge",
+                message=f"Graph command adds duplicate edge {self.edge.id}",
+            ),
+            _edit(lambda document: document.with_edge_added(self.edge)),
+        )
 
 
 class UpdateEdgeCommand(CollaborationValue):
@@ -214,15 +442,41 @@ class UpdateEdgeCommand(CollaborationValue):
     edge: SavedGraphEdge
     expected_edge: SavedGraphEdge
 
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _expect(_edge_or_raise, self.edge.id),
+            _expect_unchanged(
+                lambda draft: _edge_or_raise(draft.document, self.edge.id),
+                self.expected_edge,
+                f"Edge {self.edge.id} changed",
+            ),
+            _edit(lambda document: document.with_edge_replaced(self.edge)),
+        )
+
 
 class RemoveEdgesCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.REMOVE_EDGES] = GraphCommandKind.REMOVE_EDGES
     edge_ids: tuple[str, ...] = Field(min_length=1)
 
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (_edit(lambda document: document.with_edges_removed(self.edge_ids)),)
+
 
 class AddOriginCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.ADD_ORIGIN] = GraphCommandKind.ADD_ORIGIN
     origin: SavedGraphOrigin
+
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _require(
+                lambda draft: all(
+                    origin.id != self.origin.id for origin in draft.document.origins
+                ),
+                code="duplicate_origin",
+                message=f"Graph command adds duplicate origin {self.origin.id}",
+            ),
+            _edit(lambda document: document.with_origin_added(self.origin)),
+        )
 
 
 class UpdateOriginCommand(CollaborationValue):
@@ -230,10 +484,24 @@ class UpdateOriginCommand(CollaborationValue):
     origin: SavedGraphOrigin
     expected_origin: SavedGraphOrigin
 
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _expect(_origin_or_raise, self.origin.id),
+            _expect_unchanged(
+                lambda draft: _origin_or_raise(draft.document, self.origin.id),
+                self.expected_origin,
+                f"Origin {self.origin.id} changed",
+            ),
+            _edit(lambda document: document.with_origin_replaced(self.origin)),
+        )
+
 
 class RemoveOriginsCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.REMOVE_ORIGINS] = GraphCommandKind.REMOVE_ORIGINS
     origin_ids: tuple[str, ...] = Field(min_length=1)
+
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (_edit(lambda document: document.with_origins_removed(self.origin_ids)),)
 
 
 class ReplaceDocumentCommand(CollaborationValue):
@@ -246,12 +514,26 @@ class ReplaceDocumentCommand(CollaborationValue):
     def validate_name(cls, value: str) -> str:
         return _validated_graph_name(value)
 
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            ChangeStep(
+                lambda _draft: GraphDraft(name=self.name, document=self.document)
+            ),
+        )
+
 
 class ReplacePresentationCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.REPLACE_PRESENTATION] = (
         GraphCommandKind.REPLACE_PRESENTATION
     )
     presentation: GraphPresentationDocument
+
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            _edit(
+                lambda document: document.with_topology(presentation=self.presentation)
+            ),
+        )
 
 
 class MoveArtifactViewerPosition(CollaborationValue):
@@ -266,6 +548,22 @@ class MoveArtifactViewersCommand(CollaborationValue):
     )
     positions: tuple[MoveArtifactViewerPosition, ...] = Field(min_length=1)
 
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            *(
+                _expect(_viewer_or_raise, position.viewer_id)
+                for position in self.positions
+            ),
+            _edit(
+                lambda document: document.with_viewers_moved(
+                    {
+                        position.viewer_id: GraphPoint(x=position.x, y=position.y)
+                        for position in self.positions
+                    }
+                )
+            ),
+        )
+
 
 class MoveAnnotationPosition(CollaborationValue):
     annotation_id: str
@@ -276,6 +574,22 @@ class MoveAnnotationPosition(CollaborationValue):
 class MoveAnnotationsCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.MOVE_ANNOTATIONS] = GraphCommandKind.MOVE_ANNOTATIONS
     positions: tuple[MoveAnnotationPosition, ...] = Field(min_length=1)
+
+    def steps(self) -> tuple[GraphStep, ...]:
+        return (
+            *(
+                _expect(_annotation_or_raise, position.annotation_id)
+                for position in self.positions
+            ),
+            _edit(
+                lambda document: document.with_annotations_moved(
+                    {
+                        position.annotation_id: GraphPoint(x=position.x, y=position.y)
+                        for position in self.positions
+                    }
+                )
+            ),
+        )
 
 
 GraphCommand = Annotated[
@@ -344,24 +658,6 @@ def command_hmac_digest(
 
 def command_requires_exact_sequence(command: GraphCommand) -> bool:
     return isinstance(command, (ReplaceDocumentCommand, ReplacePresentationCommand))
-
-
-def _json_equal(left: object, right: object) -> bool:
-    return json.dumps(left, sort_keys=True, separators=(",", ":")) == json.dumps(
-        right,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def _model_json(value: BaseModel | None) -> object:
-    if value is None:
-        return None
-    return value.model_dump(mode="json")
-
-
-def _field_conflict(message: str) -> CollaborationCommandRejectedError:
-    return CollaborationCommandRejectedError(code="field_conflict", message=message)
 
 
 def _node_or_raise(document: SavedGraphDocument, node_id: str) -> SavedGraphNode:
@@ -495,290 +791,147 @@ def _annotation_or_raise(
     )
 
 
+@dataclass(frozen=True)
+class GraphDraft:
+    """The graph name and document that a batch's steps read and replace."""
+
+    name: str
+    document: SavedGraphDocument
+
+
+@dataclass(frozen=True)
+class AssertionStep:
+    """Checks the draft and changes nothing; `check` raises the rejection."""
+
+    check: Callable[[GraphDraft], object]
+
+    def run(self, draft: GraphDraft) -> GraphDraft:
+        self.check(draft)
+        return draft
+
+
+@dataclass(frozen=True)
+class ChangeStep:
+    """Returns a new draft; every document it builds is validated on creation."""
+
+    change: Callable[[GraphDraft], GraphDraft]
+
+    def run(self, draft: GraphDraft) -> GraphDraft:
+        return self.change(draft)
+
+
+type GraphStep = AssertionStep | ChangeStep
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(to_jsonable_python(value), sort_keys=True, separators=(",", ":"))
+
+
+def _require(
+    holds: Callable[[GraphDraft], bool], *, code: str, message: str
+) -> AssertionStep:
+    def check(draft: GraphDraft) -> None:
+        if not holds(draft):
+            raise CollaborationCommandRejectedError(code=code, message=message)
+
+    return AssertionStep(check)
+
+
+def _expect_unchanged(
+    read: Callable[[GraphDraft], object],
+    expected: object,
+    message: str | Callable[[GraphDraft], str],
+) -> AssertionStep:
+    """Compare-and-set guard: the current value must equal `expected` as canonical JSON.
+
+    `message` is either a fixed rejection or one built from the draft that failed,
+    so it can name the value the command actually met.
+    """
+
+    def check(draft: GraphDraft) -> None:
+        if _canonical_json(read(draft)) == _canonical_json(expected):
+            return
+        detail = message(draft) if callable(message) else message
+        raise CollaborationCommandRejectedError(code="field_conflict", message=detail)
+
+    return AssertionStep(check)
+
+
+def _pin_identity(pin: SavedGraphPluginReleasePin | None) -> str:
+    if pin is None:
+        return "none"
+    return f"{pin.scope.value}:{pin.slug}@{pin.revision}"
+
+
+def _expect[T](
+    lookup: Callable[[SavedGraphDocument, str], T], entity_id: str
+) -> AssertionStep:
+    """Require an entity to exist; `lookup` raises its specific missing-id code."""
+    return AssertionStep(lambda draft: lookup(draft.document, entity_id))
+
+
+def _expect_new_node(node_id: str) -> AssertionStep:
+    return _require(
+        lambda draft: all(node.id != node_id for node in draft.document.nodes),
+        code="duplicate_node",
+        message=f"Graph command adds duplicate node {node_id}",
+    )
+
+
+def _edit(edit: Callable[[SavedGraphDocument], SavedGraphDocument]) -> ChangeStep:
+    return ChangeStep(lambda draft: replace(draft, document=edit(draft.document)))
+
+
+def _edit_node(
+    node_id: str, update: Callable[[SavedGraphNode], SavedGraphNode]
+) -> ChangeStep:
+    return _edit(
+        lambda document: document.with_node_replaced(
+            update(_node_or_raise(document, node_id))
+        )
+    )
+
+
+def apply_graph_commands(
+    *,
+    name: str,
+    document: SavedGraphDocument,
+    commands: Sequence[GraphCommand],
+) -> tuple[str, SavedGraphDocument]:
+    """Apply a batch of commands as one change, or reject it at the first failing step.
+
+    Intermediate documents are never persisted, so a rejected batch leaves the
+    caller's head as it was.
+    """
+
+    draft = GraphDraft(name=name, document=document)
+    for command in commands:
+        try:
+            for step in command.steps():
+                draft = step.run(draft)
+        except ValidationError as exc:
+            violations = "; ".join(
+                error["msg"].removeprefix("Value error, ") for error in exc.errors()
+            )
+            raise CollaborationCommandRejectedError(
+                code="invalid_document",
+                message=(
+                    f"Graph command {command.kind} would leave the graph "
+                    f"invalid: {violations}"
+                ),
+            ) from exc
+    return draft.name, draft.document
+
+
 def apply_graph_command(
     *,
     name: str,
     document: SavedGraphDocument,
     command: GraphCommand,
 ) -> tuple[str, SavedGraphDocument]:
-    """Apply one authoring command, or reject it with the rule it would break.
+    """Apply one command as a batch of one; see apply_graph_commands."""
 
-    Every command leaves the document self-consistent. A command that would
-    strand an edge or an origin on a removed input must surface as a rejection:
-    an exception escaping here tears down the caller's graph-room session.
-    """
-
-    try:
-        return _apply_graph_command(name=name, document=document, command=command)
-    except ValidationError as exc:
-        violations = "; ".join(
-            error["msg"].removeprefix("Value error, ") for error in exc.errors()
-        )
-        raise CollaborationCommandRejectedError(
-            code="invalid_document",
-            message=(
-                f"Graph command {command.kind} would leave the graph "
-                f"invalid: {violations}"
-            ),
-        ) from exc
-
-
-def _apply_graph_command(
-    *,
-    name: str,
-    document: SavedGraphDocument,
-    command: GraphCommand,
-) -> tuple[str, SavedGraphDocument]:
-    if isinstance(command, RenameGraphCommand):
-        if name != command.expected_name:
-            raise _field_conflict(
-                f"Graph name conflict: expected {command.expected_name!r}, "
-                f"actual {name!r}"
-            )
-        return command.name, document
-
-    if isinstance(command, AddNodeCommand):
-        if any(node.id == command.node.id for node in document.nodes):
-            raise CollaborationCommandRejectedError(
-                code="duplicate_node",
-                message=f"Graph command adds duplicate node {command.node.id}",
-            )
-        return name, document.with_node_added(command.node)
-
-    if isinstance(command, DuplicateNodeCommand):
-        _node_or_raise(document, command.source_node_id)
-        if any(node.id == command.node.id for node in document.nodes):
-            raise CollaborationCommandRejectedError(
-                code="duplicate_node",
-                message=f"Graph command adds duplicate node {command.node.id}",
-            )
-        return name, document.with_node_added(command.node)
-
-    if isinstance(command, RemoveNodesCommand):
-        return name, document.with_nodes_removed(command.node_ids)
-
-    if isinstance(command, MoveNodesCommand):
-        for position in command.positions:
-            _node_or_raise(document, position.node_id)
-        positions = {
-            position.node_id: GraphPoint(x=position.x, y=position.y)
-            for position in command.positions
-        }
-        return name, document.with_nodes_moved(positions)
-
-    if isinstance(command, UpdateNodeConfigurationCommand):
-        node = _node_or_raise(document, command.node_id)
-        current_value = node.config_dict().get(command.field)
-        if not _json_equal(current_value, command.expected_value):
-            raise _field_conflict(
-                f"Configuration field {command.field!r} on node "
-                f"{command.node_id} changed"
-            )
-        config = dict(node.config_dict())
-        config[command.field] = command.value
-        return name, document.with_node_replaced(
-            node.model_copy(update={"config": config})
-        )
-
-    if isinstance(command, UpdateNodeLayoutCommand):
-        node = _node_or_raise(document, command.node_id)
-        if not _json_equal(
-            _model_json(node.layout),
-            _model_json(command.expected_layout),
-        ):
-            raise _field_conflict(f"Layout on node {command.node_id} changed")
-        return name, document.with_node_replaced(
-            node.model_copy(update={"layout": command.layout})
-        )
-
-    if isinstance(command, UpdateNodePluginReleaseCommand):
-        node = _node_or_raise(document, command.node_id)
-        if node.kind != "plugin":
-            raise CollaborationCommandRejectedError(
-                code="invalid_plugin_release_update",
-                message=(
-                    f"Plugin release update on node {command.node_id} is only "
-                    "valid for Plugin nodes"
-                ),
-            )
-        current_pin = node.plugin_release_pin
-        expected_pin = command.expected_plugin_release_pin
-        if current_pin != expected_pin:
-            current_identity = (
-                "none"
-                if current_pin is None
-                else (
-                    f"{current_pin.scope.value}:{current_pin.slug}"
-                    f"@{current_pin.revision}"
-                )
-            )
-            expected_identity = (
-                f"{expected_pin.scope.value}:{expected_pin.slug}"
-                f"@{expected_pin.revision}"
-            )
-            raise _field_conflict(
-                f"Plugin release pin on node {command.node_id} changed: "
-                f"expected {expected_identity}, actual {current_identity}"
-            )
-        next_pin = command.plugin_release_pin
-        if (
-            next_pin.scope is not expected_pin.scope
-            or next_pin.slug != expected_pin.slug
-        ):
-            raise CollaborationCommandRejectedError(
-                code="invalid_plugin_release_update",
-                message=(
-                    f"Plugin release update on node {command.node_id} cannot change "
-                    f"release family from {expected_pin.scope.value}:"
-                    f"{expected_pin.slug} to {next_pin.scope.value}:{next_pin.slug}"
-                ),
-            )
-        return name, document.with_node_replaced(
-            node.model_copy(update={"plugin_release_pin": next_pin})
-        )
-
-    if isinstance(command, SetNodeInputPlugsCommand):
-        node = _node_or_raise(document, command.node_id)
-        current_ids = tuple(plug.id for plug in node.input_plugs)
-        if current_ids != command.expected_plug_ids:
-            raise _field_conflict(f"Input plugs on node {command.node_id} changed")
-        return name, document.with_node_replaced(
-            node.model_copy(update={"input_plugs": command.input_plugs})
-        )
-
-    if isinstance(command, UpdateNodeConfigurationAndInputPlugsCommand):
-        node = _node_or_raise(document, command.node_id)
-        if not _json_equal(node.config_dict(), command.expected_config):
-            raise _field_conflict(f"Configuration on node {command.node_id} changed")
-        current_ids = tuple(plug.id for plug in node.input_plugs)
-        if current_ids != command.expected_plug_ids:
-            raise _field_conflict(f"Input plugs on node {command.node_id} changed")
-        return name, document.with_node_replaced(
-            node.model_copy(
-                update={
-                    "config": command.config,
-                    "input_plugs": command.input_plugs,
-                }
-            )
-        )
-
-    if isinstance(command, SetNodeArtifactTypeBindingCommand):
-        node = _node_or_raise(document, command.node_id)
-        current = _binding_for_variable(node, command.binding.variable)
-        if not _json_equal(_model_json(current), _model_json(command.expected_binding)):
-            raise _field_conflict(
-                f"Artifact type binding {command.binding.variable!r} on node "
-                f"{command.node_id} changed"
-            )
-        remaining = tuple(
-            binding
-            for binding in node.artifact_type_bindings
-            if binding.variable != command.binding.variable
-        )
-        return name, document.with_node_replaced(
-            node.model_copy(
-                update={"artifact_type_bindings": (*remaining, command.binding)}
-            )
-        )
-
-    if isinstance(command, ClearNodeArtifactTypeBindingCommand):
-        node = _node_or_raise(document, command.node_id)
-        current = _binding_for_variable(node, command.variable)
-        if not _json_equal(_model_json(current), _model_json(command.expected_binding)):
-            raise _field_conflict(
-                f"Artifact type binding {command.variable!r} on node "
-                f"{command.node_id} changed"
-            )
-        return name, document.with_node_replaced(
-            node.model_copy(
-                update={
-                    "artifact_type_bindings": tuple(
-                        binding
-                        for binding in node.artifact_type_bindings
-                        if binding.variable != command.variable
-                    )
-                }
-            )
-        )
-
-    if isinstance(command, AddEdgeCommand):
-        if any(edge.id == command.edge.id for edge in document.edges):
-            raise CollaborationCommandRejectedError(
-                code="duplicate_edge",
-                message=f"Graph command adds duplicate edge {command.edge.id}",
-            )
-        return name, document.with_edge_added(command.edge)
-
-    if isinstance(command, UpdateEdgeCommand):
-        current = _edge_or_raise(document, command.edge.id)
-        if not _json_equal(
-            _model_json(current),
-            _model_json(command.expected_edge),
-        ):
-            raise _field_conflict(f"Edge {command.edge.id} changed")
-        if command.edge.id != command.expected_edge.id:
-            raise CollaborationCommandRejectedError(
-                code="invalid_edge_update",
-                message="Update edge command cannot change edge id",
-            )
-        return name, document.with_edge_replaced(command.edge)
-
-    if isinstance(command, RemoveEdgesCommand):
-        return name, document.with_edges_removed(command.edge_ids)
-
-    if isinstance(command, AddOriginCommand):
-        if any(origin.id == command.origin.id for origin in document.origins):
-            raise CollaborationCommandRejectedError(
-                code="duplicate_origin",
-                message=f"Graph command adds duplicate origin {command.origin.id}",
-            )
-        return name, document.with_origin_added(command.origin)
-
-    if isinstance(command, UpdateOriginCommand):
-        current = _origin_or_raise(document, command.origin.id)
-        if not _json_equal(
-            _model_json(current),
-            _model_json(command.expected_origin),
-        ):
-            raise _field_conflict(f"Origin {command.origin.id} changed")
-        if command.origin.id != command.expected_origin.id:
-            raise CollaborationCommandRejectedError(
-                code="invalid_origin_update",
-                message="Update origin command cannot change origin id",
-            )
-        return name, document.with_origin_replaced(command.origin)
-
-    if isinstance(command, RemoveOriginsCommand):
-        return name, document.with_origins_removed(command.origin_ids)
-
-    if isinstance(command, ReplaceDocumentCommand):
-        return command.name, command.document
-
-    if isinstance(command, ReplacePresentationCommand):
-        return name, document.with_topology(presentation=command.presentation)
-
-    if isinstance(command, MoveArtifactViewersCommand):
-        for position in command.positions:
-            _viewer_or_raise(document, position.viewer_id)
-        positions = {
-            position.viewer_id: GraphPoint(x=position.x, y=position.y)
-            for position in command.positions
-        }
-        return name, document.with_viewers_moved(positions)
-
-    if isinstance(command, MoveAnnotationsCommand):
-        for position in command.positions:
-            _annotation_or_raise(document, position.annotation_id)
-        positions = {
-            position.annotation_id: GraphPoint(x=position.x, y=position.y)
-            for position in command.positions
-        }
-        return name, document.with_annotations_moved(positions)
-
-    raise CollaborationCommandRejectedError(
-        code="unsupported_command",
-        message=f"Unsupported graph command kind {command.kind!r}",
-    )
+    return apply_graph_commands(name=name, document=document, commands=(command,))
 
 
 @dataclass
@@ -953,6 +1106,7 @@ __all__ = [
     "UpdateNodePluginReleaseCommand",
     "UpdateOriginCommand",
     "apply_graph_command",
+    "apply_graph_commands",
     "canonical_command_payload",
     "command_hmac_digest",
     "command_requires_exact_sequence",

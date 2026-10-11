@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -7,7 +5,6 @@ import pytest
 from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.collaboration import (
     GRAPH_COMMAND_ADAPTER,
-    GraphCommand,
     AddEdgeCommand,
     AddNodeCommand,
     AddOriginCommand,
@@ -35,6 +32,7 @@ from grafy_core.domain.collaboration import (
     UpdateNodePluginReleaseCommand,
     UpdateOriginCommand,
     apply_graph_command,
+    apply_graph_commands,
     command_hmac_digest,
     command_requires_exact_sequence,
     empty_collaborative_document,
@@ -1231,18 +1229,96 @@ def test_update_edge_rejects_stale_edge() -> None:
     assert document.edges == (edge,)
 
 
-def test_unknown_command_rejects_unsupported_kind() -> None:
-    # A command shape this build does not know about falls through every
-    # `isinstance` branch in `_apply_graph_command`.
-    unknown = cast(GraphCommand, SimpleNamespace(kind="remove_layers"))
-    with pytest.raises(
-        CollaborationCommandRejectedError,
-        match="Unsupported graph command kind",
-    ) as exc:
+def test_apply_graph_commands_applies_commands_in_order() -> None:
+    name, document = apply_graph_commands(
+        name="Graph",
+        document=empty_collaborative_document(),
+        commands=(
+            AddNodeCommand(node=_node("n1")),
+            MoveNodesCommand(positions=(MoveNodePosition(node_id="n1", x=5, y=6),)),
+            RenameGraphCommand(name="Next", expected_name="Graph"),
+        ),
+    )
+    assert name == "Next"
+    assert document.nodes[0].position == GraphPoint(x=5, y=6)
+
+
+def test_apply_graph_commands_rejects_the_whole_batch_at_the_first_failing_step() -> (
+    None
+):
+    document = empty_collaborative_document()
+    with pytest.raises(CollaborationCommandRejectedError) as exc:
+        apply_graph_commands(
+            name="Graph",
+            document=document,
+            commands=(
+                AddNodeCommand(node=_node("n1")),
+                AddNodeCommand(node=_node("n1")),
+            ),
+        )
+    assert exc.value.error_code == "duplicate_node"
+    assert document.nodes == ()
+
+
+def test_apply_graph_commands_reports_invalid_document_for_the_failing_command() -> (
+    None
+):
+    document = SavedGraphDocument(
+        nodes=(
+            _node("source"),
+            _node("target").model_copy(
+                update={
+                    "input_plugs": (SavedGraphInputPlug(id="plug-a", port="value"),)
+                }
+            ),
+        )
+    )
+    edge = SavedGraphEdge(
+        id="e1",
+        from_node="source",
+        from_port="result",
+        to_node="ghost",
+        to_port="value",
+        to_plug="plug-a",
+        enabled=True,
+    )
+    with pytest.raises(CollaborationCommandRejectedError) as exc:
+        apply_graph_commands(
+            name="Graph",
+            document=document,
+            commands=(
+                RemoveNodesCommand(node_ids=("missing",)),
+                AddEdgeCommand(edge=edge),
+            ),
+        )
+    assert exc.value.error_code == "invalid_document"
+    assert "add_edge" in str(exc.value)
+
+
+def test_remove_nodes_twice_succeeds() -> None:
+    # ADR-0014: two people deleting the same node both succeed.
+    document = SavedGraphDocument(nodes=(_node("n1"),))
+    command = RemoveNodesCommand(node_ids=("n1",))
+    _, once = apply_graph_command(name="Graph", document=document, command=command)
+    assert once.nodes == ()
+    _, twice = apply_graph_command(name="Graph", document=once, command=command)
+    assert twice.nodes == ()
+
+
+def test_update_edge_rejects_missing_edge() -> None:
+    edge = SavedGraphEdge(
+        id="e1",
+        from_node="source",
+        from_port="result",
+        to_node="target",
+        to_port="value",
+        to_plug="plug-a",
+        enabled=True,
+    )
+    with pytest.raises(CollaborationCommandRejectedError) as exc:
         apply_graph_command(
             name="Graph",
-            document=SavedGraphDocument(),
-            command=unknown,
+            document=SavedGraphDocument(nodes=(_node("source"), _node("target"))),
+            command=UpdateEdgeCommand(edge=edge, expected_edge=edge),
         )
-    assert exc.value.error_code == "unsupported_command"
-    assert "remove_layers" in str(exc.value)
+    assert exc.value.error_code == "missing_edge"
