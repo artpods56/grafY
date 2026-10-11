@@ -69,9 +69,7 @@ export function toRoomGraphCommands(
         }),
       ];
     case "add_node":
-      return [
-        { kind: "add_node", node: projectSavedGraphNode(command.node) },
-      ];
+      return [{ kind: "add_node", node: projectSavedGraphNode(command.node) }];
     case "remove_nodes":
       return [
         asRoom({
@@ -248,9 +246,7 @@ export function toRoomGraphCommands(
     }
     case "replace_document": {
       return [
-        toRoomReplaceDocumentCommand(
-          createSavedGraphRequest(command.document),
-        ),
+        toRoomReplaceDocumentCommand(createSavedGraphRequest(command.document)),
       ];
     }
     case "add_input_plug":
