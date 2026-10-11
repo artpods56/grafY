@@ -495,37 +495,6 @@ def _annotation_or_raise(
     )
 
 
-def _surviving_edges_and_origins(
-    document: SavedGraphDocument,
-    *,
-    node_id: str,
-    retained_plug_ids: set[str],
-) -> tuple[tuple[SavedGraphEdge, ...], tuple[SavedGraphOrigin, ...]]:
-    """Return the edges and origins left after a node's input plugs are replaced.
-
-    Replacing a node's input plugs is a topology change: edges and origins that
-    targeted a removed plug have to fall away in the same mutation, or the
-    resulting document cannot validate. Both plug-replacing commands share this
-    rule.
-    """
-
-    surviving_edges = tuple(
-        edge
-        for edge in document.edges
-        if edge.to_node != node_id
-        or edge.to_plug is None
-        or edge.to_plug in retained_plug_ids
-    )
-    surviving_origins = tuple(
-        origin
-        for origin in document.origins
-        if origin.to_node != node_id
-        or origin.to_plug is None
-        or origin.to_plug in retained_plug_ids
-    )
-    return surviving_edges, surviving_origins
-
-
 def apply_graph_command(
     *,
     name: str,
@@ -574,9 +543,7 @@ def _apply_graph_command(
                 code="duplicate_node",
                 message=f"Graph command adds duplicate node {command.node.id}",
             )
-        return name, document.with_topology(
-            nodes=(*document.nodes, command.node),
-        )
+        return name, document.with_node_added(command.node)
 
     if isinstance(command, DuplicateNodeCommand):
         _node_or_raise(document, command.source_node_id)
@@ -585,26 +552,10 @@ def _apply_graph_command(
                 code="duplicate_node",
                 message=f"Graph command adds duplicate node {command.node.id}",
             )
-        return name, document.with_topology(
-            nodes=(*document.nodes, command.node),
-        )
+        return name, document.with_node_added(command.node)
 
     if isinstance(command, RemoveNodesCommand):
-        removed = set(command.node_ids)
-        return name, document.with_topology(
-            nodes=tuple(node for node in document.nodes if node.id not in removed),
-            edges=tuple(
-                edge
-                for edge in document.edges
-                if edge.from_node not in removed and edge.to_node not in removed
-            ),
-            origins=tuple(
-                origin
-                for origin in document.origins
-                if origin.to_node not in removed
-            ),
-            presentation=document.presentation.prune_for_removed_nodes(removed),
-        )
+        return name, document.with_nodes_removed(command.node_ids)
 
     if isinstance(command, MoveNodesCommand):
         for position in command.positions:
@@ -613,14 +564,7 @@ def _apply_graph_command(
             position.node_id: GraphPoint(x=position.x, y=position.y)
             for position in command.positions
         }
-        return name, document.with_topology(
-            nodes=tuple(
-                node.model_copy(update={"position": positions[node.id]})
-                if node.id in positions
-                else node
-                for node in document.nodes
-            ),
-        )
+        return name, document.with_nodes_moved(positions)
 
     if isinstance(command, UpdateNodeConfigurationCommand):
         node = _node_or_raise(document, command.node_id)
@@ -630,15 +574,11 @@ def _apply_graph_command(
                 f"Configuration field {command.field!r} on node "
                 f"{command.node_id} changed"
             )
-        updated_nodes: list[SavedGraphNode] = []
-        for candidate in document.nodes:
-            if candidate.id != command.node_id:
-                updated_nodes.append(candidate)
-                continue
-            config = dict(candidate.config_dict())
-            config[command.field] = command.value
-            updated_nodes.append(candidate.model_copy(update={"config": config}))
-        return name, document.with_topology(nodes=tuple(updated_nodes))
+        config = dict(node.config_dict())
+        config[command.field] = command.value
+        return name, document.with_node_replaced(
+            node.model_copy(update={"config": config})
+        )
 
     if isinstance(command, UpdateNodeLayoutCommand):
         node = _node_or_raise(document, command.node_id)
@@ -647,13 +587,8 @@ def _apply_graph_command(
             _model_json(command.expected_layout),
         ):
             raise _field_conflict(f"Layout on node {command.node_id} changed")
-        return name, document.with_topology(
-            nodes=tuple(
-                node.model_copy(update={"layout": command.layout})
-                if node.id == command.node_id
-                else node
-                for node in document.nodes
-            ),
+        return name, document.with_node_replaced(
+            node.model_copy(update={"layout": command.layout})
         )
 
     if isinstance(command, UpdateNodePluginReleaseCommand):
@@ -698,13 +633,8 @@ def _apply_graph_command(
                     f"{expected_pin.slug} to {next_pin.scope.value}:{next_pin.slug}"
                 ),
             )
-        return name, document.with_topology(
-            nodes=tuple(
-                candidate.model_copy(update={"plugin_release_pin": next_pin})
-                if candidate.id == command.node_id
-                else candidate
-                for candidate in document.nodes
-            ),
+        return name, document.with_node_replaced(
+            node.model_copy(update={"plugin_release_pin": next_pin})
         )
 
     if isinstance(command, SetNodeInputPlugsCommand):
@@ -712,21 +642,8 @@ def _apply_graph_command(
         current_ids = tuple(plug.id for plug in node.input_plugs)
         if current_ids != command.expected_plug_ids:
             raise _field_conflict(f"Input plugs on node {command.node_id} changed")
-        retained_plug_ids = {plug.id for plug in command.input_plugs}
-        surviving_edges, surviving_origins = _surviving_edges_and_origins(
-            document,
-            node_id=command.node_id,
-            retained_plug_ids=retained_plug_ids,
-        )
-        return name, document.with_topology(
-            nodes=tuple(
-                candidate.model_copy(update={"input_plugs": command.input_plugs})
-                if candidate.id == command.node_id
-                else candidate
-                for candidate in document.nodes
-            ),
-            edges=surviving_edges,
-            origins=surviving_origins,
+        return name, document.with_node_replaced(
+            node.model_copy(update={"input_plugs": command.input_plugs})
         )
 
     if isinstance(command, UpdateNodeConfigurationAndInputPlugsCommand):
@@ -736,26 +653,13 @@ def _apply_graph_command(
         current_ids = tuple(plug.id for plug in node.input_plugs)
         if current_ids != command.expected_plug_ids:
             raise _field_conflict(f"Input plugs on node {command.node_id} changed")
-        retained_plug_ids = {plug.id for plug in command.input_plugs}
-        surviving_edges, surviving_origins = _surviving_edges_and_origins(
-            document,
-            node_id=command.node_id,
-            retained_plug_ids=retained_plug_ids,
-        )
-        return name, document.with_topology(
-            nodes=tuple(
-                candidate.model_copy(
-                    update={
-                        "config": command.config,
-                        "input_plugs": command.input_plugs,
-                    }
-                )
-                if candidate.id == command.node_id
-                else candidate
-                for candidate in document.nodes
-            ),
-            edges=surviving_edges,
-            origins=surviving_origins,
+        return name, document.with_node_replaced(
+            node.model_copy(
+                update={
+                    "config": command.config,
+                    "input_plugs": command.input_plugs,
+                }
+            )
         )
 
     if isinstance(command, SetNodeArtifactTypeBindingCommand):
@@ -771,17 +675,10 @@ def _apply_graph_command(
             for binding in node.artifact_type_bindings
             if binding.variable != command.binding.variable
         )
-        return name, document.with_topology(
-            nodes=tuple(
-                candidate.model_copy(
-                    update={
-                        "artifact_type_bindings": (*remaining, command.binding),
-                    }
-                )
-                if candidate.id == command.node_id
-                else candidate
-                for candidate in document.nodes
-            ),
+        return name, document.with_node_replaced(
+            node.model_copy(
+                update={"artifact_type_bindings": (*remaining, command.binding)}
+            )
         )
 
     if isinstance(command, ClearNodeArtifactTypeBindingCommand):
@@ -792,21 +689,16 @@ def _apply_graph_command(
                 f"Artifact type binding {command.variable!r} on node "
                 f"{command.node_id} changed"
             )
-        return name, document.with_topology(
-            nodes=tuple(
-                candidate.model_copy(
-                    update={
-                        "artifact_type_bindings": tuple(
-                            binding
-                            for binding in candidate.artifact_type_bindings
-                            if binding.variable != command.variable
-                        )
-                    }
-                )
-                if candidate.id == command.node_id
-                else candidate
-                for candidate in document.nodes
-            ),
+        return name, document.with_node_replaced(
+            node.model_copy(
+                update={
+                    "artifact_type_bindings": tuple(
+                        binding
+                        for binding in node.artifact_type_bindings
+                        if binding.variable != command.variable
+                    )
+                }
+            )
         )
 
     if isinstance(command, AddEdgeCommand):
@@ -815,9 +707,7 @@ def _apply_graph_command(
                 code="duplicate_edge",
                 message=f"Graph command adds duplicate edge {command.edge.id}",
             )
-        return name, document.with_topology(
-            edges=(*document.edges, command.edge),
-        )
+        return name, document.with_edge_added(command.edge)
 
     if isinstance(command, UpdateEdgeCommand):
         current = _edge_or_raise(document, command.edge.id)
@@ -831,20 +721,10 @@ def _apply_graph_command(
                 code="invalid_edge_update",
                 message="Update edge command cannot change edge id",
             )
-        return name, document.with_topology(
-            edges=tuple(
-                command.edge if edge.id == command.edge.id else edge
-                for edge in document.edges
-            ),
-        )
+        return name, document.with_edge_replaced(command.edge)
 
     if isinstance(command, RemoveEdgesCommand):
-        removed_edges = set(command.edge_ids)
-        return name, document.with_topology(
-            edges=tuple(
-                edge for edge in document.edges if edge.id not in removed_edges
-            ),
-        )
+        return name, document.with_edges_removed(command.edge_ids)
 
     if isinstance(command, AddOriginCommand):
         if any(origin.id == command.origin.id for origin in document.origins):
@@ -852,9 +732,7 @@ def _apply_graph_command(
                 code="duplicate_origin",
                 message=f"Graph command adds duplicate origin {command.origin.id}",
             )
-        return name, document.with_topology(
-            origins=(*document.origins, command.origin),
-        )
+        return name, document.with_origin_added(command.origin)
 
     if isinstance(command, UpdateOriginCommand):
         current = _origin_or_raise(document, command.origin.id)
@@ -868,22 +746,10 @@ def _apply_graph_command(
                 code="invalid_origin_update",
                 message="Update origin command cannot change origin id",
             )
-        return name, document.with_topology(
-            origins=tuple(
-                command.origin if origin.id == command.origin.id else origin
-                for origin in document.origins
-            ),
-        )
+        return name, document.with_origin_replaced(command.origin)
 
     if isinstance(command, RemoveOriginsCommand):
-        removed_origins = set(command.origin_ids)
-        return name, document.with_topology(
-            origins=tuple(
-                origin
-                for origin in document.origins
-                if origin.id not in removed_origins
-            ),
-        )
+        return name, document.with_origins_removed(command.origin_ids)
 
     if isinstance(command, ReplaceDocumentCommand):
         return command.name, command.document
@@ -898,19 +764,7 @@ def _apply_graph_command(
             position.viewer_id: GraphPoint(x=position.x, y=position.y)
             for position in command.positions
         }
-        return name, document.with_topology(
-            presentation=GraphPresentationDocument(
-                viewers=tuple(
-                    viewer.model_copy(update={"position": positions[viewer.id]})
-                    if viewer.id in positions
-                    else viewer
-                    for viewer in document.presentation.viewers
-                ),
-                links=document.presentation.links,
-                bindings=document.presentation.bindings,
-                annotations=document.presentation.annotations,
-            ),
-        )
+        return name, document.with_viewers_moved(positions)
 
     if isinstance(command, MoveAnnotationsCommand):
         for position in command.positions:
@@ -919,19 +773,7 @@ def _apply_graph_command(
             position.annotation_id: GraphPoint(x=position.x, y=position.y)
             for position in command.positions
         }
-        return name, document.with_topology(
-            presentation=GraphPresentationDocument(
-                viewers=document.presentation.viewers,
-                links=document.presentation.links,
-                bindings=document.presentation.bindings,
-                annotations=tuple(
-                    annotation.model_copy(update={"position": positions[annotation.id]})
-                    if annotation.id in positions
-                    else annotation
-                    for annotation in document.presentation.annotations
-                ),
-            ),
-        )
+        return name, document.with_annotations_moved(positions)
 
     raise CollaborationCommandRejectedError(
         code="unsupported_command",

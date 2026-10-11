@@ -11,6 +11,8 @@ from grafy_core.domain.plugin_releases import PluginReleaseScope
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     GraphPresentationAnnotation,
+    GraphPresentationBinding,
+    GraphPresentationBindingMapping,
     GraphPresentationDocument,
     GraphPresentationLink,
     GraphPresentationViewer,
@@ -910,3 +912,197 @@ def test_saved_graph_plugin_release_pin_rejects_extra_or_missing_fields() -> Non
 def test_saved_graph_plugin_release_pin_rejects_legacy_workspace_shape() -> None:
     with pytest.raises(ValidationError, match="scope"):
         SavedGraphPluginReleasePin.model_validate({"slug": "notes", "revision": 4})
+
+
+def test_with_nodes_removed_drops_edges_origins_and_sourced_links() -> None:
+    document = SavedGraphDocument(
+        nodes=(
+            _node("a"),
+            _node("b", input_plugs=(SavedGraphInputPlug(id="plug-b", port="value"),)),
+            _node("c"),
+        ),
+        edges=(
+            _edge("e-ab", from_node="a", to_node="b"),
+            _edge("e-bc", from_node="b", to_node="c"),
+        ),
+        origins=(_origin("o-c", to_node="c", to_port="other"),),
+        presentation=GraphPresentationDocument(
+            viewers=(
+                GraphPresentationViewer(
+                    id="artifact-viewer-b", position=GraphPoint(x=0.0, y=0.0)
+                ),
+                GraphPresentationViewer(
+                    id="artifact-viewer-a", position=GraphPoint(x=0.0, y=0.0)
+                ),
+            ),
+            links=(
+                GraphPresentationLink(
+                    id="artifact-viewer-edge-b",
+                    source_node_id="b",
+                    source_port_name="result",
+                    target_viewer_id="artifact-viewer-b",
+                ),
+                GraphPresentationLink(
+                    id="artifact-viewer-edge-a",
+                    source_node_id="a",
+                    source_port_name="result",
+                    target_viewer_id="artifact-viewer-a",
+                ),
+            ),
+        ),
+    )
+
+    removed = document.with_nodes_removed(("b", "missing"))
+
+    assert [node.id for node in removed.nodes] == ["a", "c"]
+    assert removed.edges == ()
+    assert [origin.id for origin in removed.origins] == ["o-c"]
+    assert [viewer.id for viewer in removed.presentation.viewers] == [
+        "artifact-viewer-b",
+        "artifact-viewer-a",
+    ]
+    assert [link.source_node_id for link in removed.presentation.links] == ["a"]
+    assert document.nodes[1].id == "b"
+
+
+def test_with_node_replaced_drops_targets_on_removed_plugs() -> None:
+    plug_a = SavedGraphInputPlug(id="plug-a", port="value")
+    plug_b = SavedGraphInputPlug(id="plug-b", port="value")
+    document = SavedGraphDocument(
+        nodes=(
+            _node("source"),
+            _node("target", input_plugs=(plug_a, plug_b)),
+        ),
+        edges=(
+            SavedGraphEdge(
+                id="e-plug-a",
+                from_node="source",
+                from_port="result",
+                to_node="target",
+                to_port="value",
+                to_plug="plug-a",
+            ),
+            SavedGraphEdge(
+                id="e-unplugged",
+                from_node="source",
+                from_port="result",
+                to_node="target",
+                to_port="other",
+            ),
+        ),
+        origins=(
+            _origin("o-plug-b", to_node="target", to_port="value", to_plug="plug-b"),
+        ),
+    )
+
+    narrowed = document.with_node_replaced(_node("target", input_plugs=(plug_a,)))
+
+    assert [edge.id for edge in narrowed.edges] == ["e-plug-a", "e-unplugged"]
+    assert narrowed.origins == ()
+
+    reconfigured = _node("target", input_plugs=(plug_a,)).model_copy(
+        update={"config": {"changed": True}}
+    )
+    replaced_again = narrowed.with_node_replaced(reconfigured)
+
+    assert replaced_again.edges == narrowed.edges
+    assert replaced_again.origins == narrowed.origins
+    assert replaced_again.nodes[1].config_dict() == {"changed": True}
+
+
+def test_with_viewers_and_annotations_moved_keep_other_presentation_fields() -> None:
+    moved_viewer_position = GraphPoint(x=640.0, y=120.0)
+    moved_annotation_position = GraphPoint(x=-80.0, y=40.0)
+    first_viewer = GraphPresentationViewer(
+        id="artifact-viewer-1", position=GraphPoint(x=0.0, y=0.0)
+    )
+    second_viewer = GraphPresentationViewer(
+        id="artifact-viewer-2", position=GraphPoint(x=1.0, y=2.0)
+    )
+    first_annotation = GraphPresentationAnnotation(
+        id="annotation-1",
+        kind="text",
+        position=GraphPoint(x=3.0, y=4.0),
+        layout=SavedGraphAnnotationLayout(width=120.0, height=60.0),
+        text="first",
+    )
+    second_annotation = GraphPresentationAnnotation(
+        id="annotation-2",
+        kind="rectangle",
+        position=GraphPoint(x=5.0, y=6.0),
+        layout=SavedGraphAnnotationLayout(width=200.0, height=90.0),
+    )
+    presentation = GraphPresentationDocument(
+        viewers=(first_viewer, second_viewer),
+        links=(
+            GraphPresentationLink(
+                id="artifact-viewer-edge-1",
+                source_node_id="a",
+                source_port_name="result",
+                target_viewer_id="artifact-viewer-1",
+            ),
+        ),
+        bindings=(
+            GraphPresentationBinding(
+                id="artifact-viewer-binding-1",
+                source_viewer_id="artifact-viewer-1",
+                target_viewer_id="artifact-viewer-2",
+                mappings=(
+                    GraphPresentationBindingMapping(
+                        source_field="label", target_field="label"
+                    ),
+                ),
+                effects=("filter",),
+            ),
+        ),
+        annotations=(first_annotation, second_annotation),
+    )
+    document = SavedGraphDocument(nodes=(_node("a"),), presentation=presentation)
+
+    moved = document.with_viewers_moved({"artifact-viewer-1": moved_viewer_position})
+    moved = moved.with_annotations_moved({"annotation-2": moved_annotation_position})
+
+    assert moved.presentation.viewers == (
+        first_viewer.model_copy(update={"position": moved_viewer_position}),
+        second_viewer,
+    )
+    assert moved.presentation.annotations == (
+        first_annotation,
+        second_annotation.model_copy(update={"position": moved_annotation_position}),
+    )
+    assert moved.presentation.links == presentation.links
+    assert moved.presentation.bindings == presentation.bindings
+
+
+def test_with_edges_and_origins_removed_skip_missing_ids() -> None:
+    document = SavedGraphDocument(
+        nodes=(_node("a"), _node("b"), _node("c")),
+        edges=(
+            _edge("e1", from_node="a", to_node="b"),
+            _edge("e2", from_node="a", to_node="c"),
+        ),
+        origins=(
+            _origin("o1", to_node="b", to_port="other"),
+            _origin("o2", to_node="c", to_port="other"),
+        ),
+    )
+
+    without_e1 = document.with_edges_removed(("e1", "missing"))
+    without_o1 = document.with_origins_removed(("o1", "missing"))
+
+    assert [edge.id for edge in without_e1.edges] == ["e2"]
+    assert [origin.id for origin in without_e1.origins] == ["o1", "o2"]
+    assert [origin.id for origin in without_o1.origins] == ["o2"]
+    assert [edge.id for edge in without_o1.edges] == ["e1", "e2"]
+
+
+def test_with_edge_replaced_validates_the_document() -> None:
+    document = SavedGraphDocument(
+        nodes=(_node("a"), _node("b")),
+        edges=(_edge("e1", from_node="a", to_node="b"),),
+    )
+
+    with pytest.raises(ValidationError, match="references missing target node ghost"):
+        document.with_edge_replaced(_edge("e1", from_node="a", to_node="ghost"))
+
+    assert document.edges[0].to_node == "b"
