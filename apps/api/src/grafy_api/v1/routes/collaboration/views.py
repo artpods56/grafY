@@ -370,7 +370,7 @@ async def _handle_command_submit(
     message: GraphCommandSubmitMessage,
 ) -> None:
     try:
-        head, receipt = await collaboration.accept_command(
+        head, receipt, diff = await collaboration.accept_command(
             actor=actor,
             workspace_id=session.workspace_id,
             graph_id=session.graph_id,
@@ -430,6 +430,8 @@ async def _handle_command_submit(
         await hub.deliver_private(session, receipt_message)
         return
 
+    # Only an idempotent replay has no diff, and replays returned above.
+    assert diff is not None
     accepted = GraphCommandAcceptedMessage(
         command_id=message.command_id,
         room_epoch=receipt.room_epoch,
@@ -437,6 +439,7 @@ async def _handle_command_submit(
         actor=session.actor_presentation,
         graph_room_session_id=session.graph_room_session_id,
         commands=message.batch,
+        diff=diff,
     )
     await hub.publish_accepted(
         workspace_id=session.workspace_id,

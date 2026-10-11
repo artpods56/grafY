@@ -26,7 +26,9 @@ from grafy_core.domain.plugin_identity import PluginReleaseScope
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     GraphPresentationAnnotation,
+    GraphPresentationBinding,
     GraphPresentationDocument,
+    GraphPresentationLink,
     GraphPresentationViewer,
     SavedGraphArtifactTypeBinding,
     SavedGraphDocument,
@@ -955,6 +957,76 @@ def apply_graph_commands(
     return draft.name, draft.document
 
 
+type _GraphEntity = (
+    SavedGraphNode
+    | SavedGraphEdge
+    | SavedGraphOrigin
+    | GraphPresentationViewer
+    | GraphPresentationLink
+    | GraphPresentationBinding
+    | GraphPresentationAnnotation
+)
+
+
+class GraphEntityChange(CollaborationValue):
+    before: dict[str, object] | None
+    after: dict[str, object] | None
+
+
+class GraphNameChange(CollaborationValue):
+    before: str
+    after: str
+
+
+class GraphDiff(CollaborationValue):
+    """Entities a batch changed, keyed by id, with their canonical JSON before and after."""
+
+    name: GraphNameChange | None = None
+    nodes: dict[str, GraphEntityChange] = Field(default_factory=dict)
+    edges: dict[str, GraphEntityChange] = Field(default_factory=dict)
+    origins: dict[str, GraphEntityChange] = Field(default_factory=dict)
+    viewers: dict[str, GraphEntityChange] = Field(default_factory=dict)
+    links: dict[str, GraphEntityChange] = Field(default_factory=dict)
+    bindings: dict[str, GraphEntityChange] = Field(default_factory=dict)
+    annotations: dict[str, GraphEntityChange] = Field(default_factory=dict)
+
+
+def graph_diff(*, before: GraphDraft, after: GraphDraft) -> GraphDiff:
+    """Compare two drafts entity by entity, using the same canonical JSON as compare-and-set."""
+
+    old, new = before.document, after.document
+    return GraphDiff(
+        name=(
+            None
+            if before.name == after.name
+            else GraphNameChange(before=before.name, after=after.name)
+        ),
+        nodes=_entity_changes(old.nodes, new.nodes),
+        edges=_entity_changes(old.edges, new.edges),
+        origins=_entity_changes(old.origins, new.origins),
+        viewers=_entity_changes(old.presentation.viewers, new.presentation.viewers),
+        links=_entity_changes(old.presentation.links, new.presentation.links),
+        bindings=_entity_changes(old.presentation.bindings, new.presentation.bindings),
+        annotations=_entity_changes(
+            old.presentation.annotations, new.presentation.annotations
+        ),
+    )
+
+
+def _entity_changes(
+    before: Sequence[_GraphEntity], after: Sequence[_GraphEntity]
+) -> dict[str, GraphEntityChange]:
+    old = {entity.id: entity.model_dump(mode="json") for entity in before}
+    new = {entity.id: entity.model_dump(mode="json") for entity in after}
+    return {
+        entity_id: GraphEntityChange(
+            before=old.get(entity_id), after=new.get(entity_id)
+        )
+        for entity_id in sorted(old.keys() | new.keys())
+        if _canonical_json(old.get(entity_id)) != _canonical_json(new.get(entity_id))
+    }
+
+
 def apply_graph_command(
     *,
     name: str,
@@ -1117,6 +1189,10 @@ __all__ = [
     "GraphCommand",
     "GraphCommandKind",
     "GraphCommandReceipt",
+    "GraphDiff",
+    "GraphDraft",
+    "GraphEntityChange",
+    "GraphNameChange",
     "MoveAnnotationPosition",
     "MoveAnnotationsCommand",
     "MoveArtifactViewerPosition",
@@ -1144,5 +1220,6 @@ __all__ = [
     "command_hmac_digest",
     "command_requires_exact_sequence",
     "empty_collaborative_document",
+    "graph_diff",
     "sanitize_document_for_cross_workspace_copy",
 ]

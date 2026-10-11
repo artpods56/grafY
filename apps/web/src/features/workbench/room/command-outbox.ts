@@ -298,10 +298,16 @@ export class GraphRoomCommandOutbox {
     this.localCommandIds.clear();
   }
 
-  /** The in-flight batch's commands followed by every queued batch's commands, in order. */
+  /**
+   * Commands this client submitted that the confirmed head does not include
+   * yet: the in-flight batch until its accepted message arrives, then every
+   * queued batch, in order.
+   */
   pendingCommands(): readonly RoomGraphCommand[] {
     const commands: RoomGraphCommand[] = [];
-    if (this.inFlight) commands.push(...this.inFlight.commands);
+    if (this.inFlight && this.inFlight.accepted === null) {
+      commands.push(...this.inFlight.commands);
+    }
     for (const item of this.queue) commands.push(...item.commands);
     return commands;
   }

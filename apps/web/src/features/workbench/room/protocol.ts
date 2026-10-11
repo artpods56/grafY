@@ -173,6 +173,33 @@ export interface GraphCommandSubmitMessage {
   readonly commands: readonly RoomGraphCommand[];
 }
 
+type HeadDocument = CollaborativeHead["document"];
+type HeadPresentation = NonNullable<HeadDocument["presentation"]>;
+
+/** One entity as the server saw it before and after an accepted batch. */
+export interface GraphEntityChange<T> {
+  readonly before: T | null;
+  readonly after: T | null;
+}
+
+type Changes<T> = Readonly<Record<string, GraphEntityChange<T>>>;
+
+/**
+ * The entity diff the server broadcasts with an accepted batch: every changed
+ * entity per collection, keyed by id, with `before` null for an insert and
+ * `after` null for a removal.
+ */
+export interface GraphDiff {
+  readonly name: { readonly before: string; readonly after: string } | null;
+  readonly nodes: Changes<HeadDocument["nodes"][number]>;
+  readonly edges: Changes<HeadDocument["edges"][number]>;
+  readonly origins: Changes<HeadDocument["origins"][number]>;
+  readonly viewers: Changes<HeadPresentation["viewers"][number]>;
+  readonly links: Changes<HeadPresentation["links"][number]>;
+  readonly bindings: Changes<HeadPresentation["bindings"][number]>;
+  readonly annotations: Changes<HeadPresentation["annotations"][number]>;
+}
+
 export interface GraphCommandAcceptedMessage {
   readonly protocol_version: 1;
   readonly type: "graph.command.accepted";
@@ -184,6 +211,7 @@ export interface GraphCommandAcceptedMessage {
   readonly commands: readonly RoomGraphCommand[];
   /** Only populated for a batch of exactly one command; null otherwise. */
   readonly command: RoomGraphCommand | null;
+  readonly diff: GraphDiff;
 }
 
 export interface GraphCommandReceiptMessage {
@@ -359,6 +387,93 @@ function parseParticipant(value: unknown): PresenceParticipant | null {
   };
 }
 
+function isDiffRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isEntitySnapshot(
+  value: unknown,
+): value is null | Record<string, unknown> {
+  return value === null || isDiffRecord(value);
+}
+
+/**
+ * Validate one collection of the diff. Every entry must carry `before` and
+ * `after`, each null or an entity whose `id` matches its key. Entities are
+ * canonical server output, so a validated record is cast to its entity type
+ * exactly as commands are.
+ */
+function parseChanges<T>(raw: unknown): Changes<T> | null {
+  if (!isDiffRecord(raw)) return null;
+  // Collected as entries: `Object.fromEntries` defines own properties, so an
+  // entity id such as "__proto__" cannot replace the object's prototype.
+  const changes: [string, GraphEntityChange<T>][] = [];
+  for (const [key, entry] of Object.entries(raw)) {
+    if (!isDiffRecord(entry)) return null;
+    if (!isEntitySnapshot(entry.before) || !isEntitySnapshot(entry.after)) {
+      return null;
+    }
+    const before = entry.before;
+    const after = entry.after;
+    if (before !== null && before.id !== key) return null;
+    if (after !== null && after.id !== key) return null;
+    changes.push([
+      key,
+      { before: before as T | null, after: after as T | null },
+    ]);
+  }
+  return Object.fromEntries(changes);
+}
+
+function parseGraphDiff(raw: unknown): GraphDiff | null {
+  if (!isDiffRecord(raw)) return null;
+  let name: GraphDiff["name"] = null;
+  if (raw.name !== null && raw.name !== undefined) {
+    if (
+      !isDiffRecord(raw.name) ||
+      !isString(raw.name.before) ||
+      !isString(raw.name.after)
+    ) {
+      return null;
+    }
+    name = { before: raw.name.before, after: raw.name.after };
+  }
+  const nodes = parseChanges<HeadDocument["nodes"][number]>(raw.nodes);
+  const edges = parseChanges<HeadDocument["edges"][number]>(raw.edges);
+  const origins = parseChanges<HeadDocument["origins"][number]>(raw.origins);
+  const viewers = parseChanges<HeadPresentation["viewers"][number]>(
+    raw.viewers,
+  );
+  const links = parseChanges<HeadPresentation["links"][number]>(raw.links);
+  const bindings = parseChanges<HeadPresentation["bindings"][number]>(
+    raw.bindings,
+  );
+  const annotations = parseChanges<HeadPresentation["annotations"][number]>(
+    raw.annotations,
+  );
+  if (
+    nodes === null ||
+    edges === null ||
+    origins === null ||
+    viewers === null ||
+    links === null ||
+    bindings === null ||
+    annotations === null
+  ) {
+    return null;
+  }
+  return {
+    name,
+    nodes,
+    edges,
+    origins,
+    viewers,
+    links,
+    bindings,
+    annotations,
+  };
+}
+
 function parseCapabilities(value: unknown): CapabilitySnapshot | null {
   if (!isRecord(value)) return null;
   if (
@@ -514,6 +629,8 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
     if (sessionId !== null && sessionId !== undefined && !isString(sessionId)) {
       return null;
     }
+    const diff = parseGraphDiff(raw.diff);
+    if (diff === null) return null;
     return {
       protocol_version: 1,
       type: "graph.command.accepted",
@@ -524,6 +641,7 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       graph_room_session_id: isString(sessionId) ? sessionId : null,
       commands: raw.commands as unknown as readonly RoomGraphCommand[],
       command: isRecord(raw.command) ? (raw.command as RoomGraphCommand) : null,
+      diff,
     };
   }
   if (type === "graph.command.receipt") {

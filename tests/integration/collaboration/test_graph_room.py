@@ -543,6 +543,11 @@ def test_submitting_a_command_batch_advances_the_sequence_once(
     ]
     assert accepted["sequence"] == observed_sequence + 1
     assert receipt["accepted_sequence"] == observed_sequence + 1
+    assert accepted["diff"]["name"] == {"before": "Batch graph", "after": "Batched"}
+    node_diff = accepted["diff"]["nodes"]["n1"]
+    assert node_diff["before"]["position"] == {"x": 0.0, "y": 0.0}
+    assert node_diff["after"]["position"] == {"x": 40.0, "y": 50.0}
+    assert accepted["diff"]["edges"] == {}
 
     head = workspace_api.graphs.get_head_ok(graph.id)
     assert head.collaboration_sequence == observed_sequence + 1

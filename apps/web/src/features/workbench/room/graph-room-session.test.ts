@@ -24,6 +24,18 @@ const SESSION_ID = "22222222-2222-4222-8222-222222222222";
 const ACTOR_ID = "00000000-0000-4000-8000-000000000001";
 const ROOM_EPOCH = "33333333-3333-4333-8333-333333333333";
 
+/** The diff of a batch that changed no entity; most tests only need a sequence. */
+const EMPTY_DIFF = {
+  name: null,
+  nodes: {},
+  edges: {},
+  origins: {},
+  viewers: {},
+  links: {},
+  bindings: {},
+  annotations: {},
+};
+
 class FakeWebSocket {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
@@ -324,6 +336,7 @@ describe("GraphRoomSession", () => {
     socket.emitMessage({
       protocol_version: 1,
       type: "graph.command.accepted",
+      diff: EMPTY_DIFF,
       command_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       room_epoch: ROOM_EPOCH,
       sequence: 5,
@@ -371,9 +384,15 @@ describe("GraphRoomSession", () => {
       graphId: GRAPH_ID,
     });
 
+    // The diff, not a replay of the batch, is what moves the head: the two
+    // renames arrive as the one name change the batch produced.
     socket.emitMessage({
       protocol_version: 1,
       type: "graph.command.accepted",
+      diff: {
+        ...EMPTY_DIFF,
+        name: { before: "First rename", after: "Second rename" },
+      },
       command_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       room_epoch: ROOM_EPOCH,
       sequence: 5,
@@ -400,6 +419,87 @@ describe("GraphRoomSession", () => {
 
     expect(session.getHead()?.name).toBe("Second rename");
     expect(session.getHead()?.collaboration_sequence).toBe(5);
+  });
+
+  it("hands the accepted listener the applied head and the pending batches", () => {
+    const commandIds = [
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    ];
+    const onCommandAccepted = vi.fn();
+    const { session, socket } = connectReadySession({
+      workspaceId: WORKSPACE_ID,
+      graphId: GRAPH_ID,
+      createCommandId: () => commandIds.shift() ?? crypto.randomUUID(),
+      onCommandAccepted,
+    });
+
+    const inFlight = session.submitCommand([
+      {
+        kind: "rename_graph",
+        name: "Local rename",
+        expected_name: "Room graph",
+      },
+    ]);
+    const queued = session.submitCommand([
+      {
+        kind: "rename_graph",
+        name: "Queued rename",
+        expected_name: "Local rename",
+      },
+    ]);
+    inFlight.catch(() => undefined);
+    queued.catch(() => undefined);
+
+    socket.emitMessage({
+      protocol_version: 1,
+      type: "graph.command.accepted",
+      diff: {
+        ...EMPTY_DIFF,
+        name: { before: "Room graph", after: "Local rename" },
+      },
+      command_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      room_epoch: ROOM_EPOCH,
+      sequence: 5,
+      actor: {
+        actor_id: ACTOR_ID,
+        display_name: "Owner",
+        color: "emerald",
+      },
+      graph_room_session_id: SESSION_ID,
+      command: {
+        kind: "rename_graph",
+        name: "Local rename",
+        expected_name: "Room graph",
+      },
+      commands: [
+        {
+          kind: "rename_graph",
+          name: "Local rename",
+          expected_name: "Room graph",
+        },
+      ],
+    });
+
+    const [message, meta] = onCommandAccepted.mock.calls.at(-1)!;
+    expect(message).toMatchObject({ sequence: 5 });
+    expect(meta).toEqual({
+      local: true,
+      head: expect.objectContaining({
+        collaboration_sequence: 5,
+        name: "Local rename",
+      }),
+      // The batch this message confirmed is in the head, so only the queued
+      // batch is still pending on top of it.
+      pendingCommands: [
+        {
+          kind: "rename_graph",
+          name: "Queued rename",
+          expected_name: "Local rename",
+        },
+      ],
+    });
+    expect(meta?.head).toBe(session.getHead());
   });
 
   it("retries an interrupted command idempotently before draining queued commands", async () => {
@@ -499,6 +599,7 @@ describe("GraphRoomSession", () => {
     reconnectedSocket.emitMessage({
       protocol_version: 1,
       type: "graph.command.accepted",
+      diff: EMPTY_DIFF,
       command_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       room_epoch: ROOM_EPOCH,
       sequence: 6,
@@ -613,6 +714,10 @@ describe("GraphRoomSession", () => {
     reconnectedSocket.emitMessage({
       protocol_version: 1,
       type: "graph.command.accepted",
+      diff: {
+        ...EMPTY_DIFF,
+        name: { before: "Committed before disconnect", after: "Peer rename" },
+      },
       command_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       room_epoch: ROOM_EPOCH,
       sequence: 6,
@@ -640,7 +745,27 @@ describe("GraphRoomSession", () => {
     expect(session.getHead()?.name).toBe("Peer rename");
     expect(onCommandAccepted).toHaveBeenLastCalledWith(
       expect.objectContaining({ sequence: 6 }),
-      { local: false },
+      {
+        local: false,
+        head: expect.objectContaining({
+          collaboration_sequence: 6,
+          name: "Peer rename",
+        }),
+        // Both local batches are still unconfirmed: the peer's sequence 6
+        // proves nothing about what this client submitted.
+        pendingCommands: [
+          {
+            kind: "rename_graph",
+            name: "Committed before disconnect",
+            expected_name: "Room graph",
+          },
+          {
+            kind: "rename_graph",
+            name: "After authoritative refresh",
+            expected_name: "Peer rename",
+          },
+        ],
+      },
     );
     await expect(interrupted).resolves.toMatchObject({
       receipt: {
@@ -679,6 +804,7 @@ describe("GraphRoomSession", () => {
     socket.emitMessage({
       protocol_version: 1,
       type: "graph.command.accepted",
+      diff: EMPTY_DIFF,
       command_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       room_epoch: ROOM_EPOCH,
       sequence: 6,
@@ -741,6 +867,7 @@ describe("GraphRoomSession", () => {
     socket.emitMessage({
       protocol_version: 1,
       type: "graph.command.accepted",
+      diff: EMPTY_DIFF,
       command_id: commandId,
       room_epoch: ROOM_EPOCH,
       sequence: 3,
@@ -805,6 +932,10 @@ describe("GraphRoomSession", () => {
     reconnectedSocket.emitMessage({
       protocol_version: 1,
       type: "graph.command.accepted",
+      diff: {
+        ...EMPTY_DIFF,
+        name: { before: "Room graph", after: "Accepted during reconnect" },
+      },
       command_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       room_epoch: ROOM_EPOCH,
       sequence: 5,
@@ -876,6 +1007,20 @@ describe("GraphRoomSession", () => {
     socket.emitMessage({
       protocol_version: 1,
       type: "graph.command.accepted",
+      diff: {
+        ...EMPTY_DIFF,
+        viewers: {
+          "artifact-viewer-1": {
+            before: null,
+            after: {
+              id: "artifact-viewer-1",
+              position: { x: 10, y: 20 },
+              layout: null,
+              mode: null,
+            },
+          },
+        },
+      },
       command_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       room_epoch: ROOM_EPOCH,
       sequence: 5,
@@ -969,6 +1114,7 @@ describe("GraphRoomSession", () => {
     socket.emitMessage({
       protocol_version: 1,
       type: "graph.command.accepted",
+      diff: EMPTY_DIFF,
       command_id: commandId,
       room_epoch: ROOM_EPOCH,
       sequence: 5,
@@ -1101,6 +1247,10 @@ describe("GraphRoomSession", () => {
     socket.emitMessage({
       protocol_version: 1,
       type: "graph.command.accepted",
+      diff: {
+        ...EMPTY_DIFF,
+        name: { before: "Room graph", after: "Peer rename" },
+      },
       command_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
       room_epoch: ROOM_EPOCH,
       sequence: 5,
@@ -1201,6 +1351,7 @@ describe("GraphRoomSession", () => {
     socket.emitMessage({
       protocol_version: 1,
       type: "graph.command.accepted",
+      diff: EMPTY_DIFF,
       command_id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
       room_epoch: ROOM_EPOCH,
       sequence: 5,
@@ -1270,6 +1421,10 @@ describe("GraphRoomSession", () => {
     socket.emitMessage({
       protocol_version: 1,
       type: "graph.command.accepted",
+      diff: {
+        ...EMPTY_DIFF,
+        name: { before: "Room graph", after: "Accepted after snapshot" },
+      },
       command_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       room_epoch: ROOM_EPOCH,
       sequence: 5,

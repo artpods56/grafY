@@ -20,10 +20,12 @@ export {
 } from "./graph-room-session";
 export {
   applyRoomCommandToHead,
+  projectPendingCommands,
   toLocalGraphCommand,
   toRoomGraphCommands,
   toRoomReplaceDocumentCommand,
 } from "./room-command-bridge";
+export { applyGraphDiffToHead, sameCanonicalJson } from "./graph-diff";
 export { describeCommandRejection } from "./command-rejection";
 export { PresenceOverlay } from "./PresenceOverlay";
 export { RemoteSelectionRing } from "./RemoteSelectionRing";
@@ -47,6 +49,7 @@ export type {
   GraphCommandAcceptedMessage,
   GraphCommandReceiptMessage,
   GraphCommandRejectedMessage,
+  GraphDiff,
   PresenceActivityKind,
   PresencePoint,
   TransientNodePosition,

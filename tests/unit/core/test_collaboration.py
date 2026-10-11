@@ -15,6 +15,8 @@ from grafy_core.domain.collaboration import (
     CollaborativeGraphHead,
     DuplicateNodeCommand,
     GraphCommand,
+    GraphDraft,
+    GraphNameChange,
     MoveAnnotationPosition,
     MoveAnnotationsCommand,
     MoveArtifactViewerPosition,
@@ -41,6 +43,7 @@ from grafy_core.domain.collaboration import (
     command_hmac_digest,
     command_requires_exact_sequence,
     empty_collaborative_document,
+    graph_diff,
     sanitize_document_for_cross_workspace_copy,
 )
 from grafy_core.domain.errors import CollaborationCommandRejectedError
@@ -1348,6 +1351,149 @@ def test_apply_graph_commands_records_the_failing_command_index() -> None:
         )
     assert exc.value.error_code == "invalid_document"
     assert exc.value.command_index == 1
+
+
+def test_graph_diff_lists_inserted_updated_and_removed_entities() -> None:
+    before = GraphDraft(
+        name="Graph",
+        document=SavedGraphDocument(nodes=(_node("a"), _node("b"))),
+    )
+    next_name, next_document = apply_graph_commands(
+        name=before.name,
+        document=before.document,
+        commands=(
+            RemoveNodesCommand(node_ids=("b",)),
+            AddNodeCommand(node=_node("c", x=7, y=8)),
+            MoveNodesCommand(positions=(MoveNodePosition(node_id="a", x=1, y=2),)),
+        ),
+    )
+
+    diff = graph_diff(
+        before=before,
+        after=GraphDraft(name=next_name, document=next_document),
+    )
+
+    assert list(diff.nodes) == ["a", "b", "c"]
+    moved = diff.nodes["a"]
+    assert moved.before is not None
+    assert moved.after is not None
+    assert moved.before["position"] == {"x": 0.0, "y": 0.0}
+    assert moved.after["position"] == {"x": 1.0, "y": 2.0}
+    assert diff.nodes["b"].before is not None
+    assert diff.nodes["b"].after is None
+    assert diff.nodes["c"].before is None
+    assert diff.nodes["c"].after is not None
+    assert diff.name is None
+    assert diff.edges == {}
+    assert diff.origins == {}
+    assert diff.viewers == {}
+    assert diff.links == {}
+    assert diff.bindings == {}
+    assert diff.annotations == {}
+
+
+def test_graph_diff_cascades_show_up_as_removals() -> None:
+    target = _node("n2").model_copy(
+        update={"input_plugs": (SavedGraphInputPlug(id="plug-a", port="value"),)}
+    )
+    before = GraphDraft(
+        name="Graph",
+        document=SavedGraphDocument(
+            nodes=(_node("n1"), target),
+            edges=(
+                SavedGraphEdge(
+                    id="e1",
+                    from_node="n1",
+                    from_port="result",
+                    to_node="n2",
+                    to_port="value",
+                    to_plug="plug-a",
+                    enabled=True,
+                ),
+            ),
+            origins=(_origin("o1", to_node="n1"),),
+            presentation=GraphPresentationDocument(
+                viewers=(
+                    GraphPresentationViewer(
+                        id="artifact-viewer-1",
+                        position=GraphPoint(x=0, y=0),
+                    ),
+                ),
+                links=(
+                    GraphPresentationLink(
+                        id="artifact-viewer-edge-1",
+                        source_node_id="n1",
+                        source_port_name="result",
+                        target_viewer_id="artifact-viewer-1",
+                    ),
+                ),
+            ),
+        ),
+    )
+    next_name, next_document = apply_graph_command(
+        name=before.name,
+        document=before.document,
+        command=RemoveNodesCommand(node_ids=("n1",)),
+    )
+
+    diff = graph_diff(
+        before=before,
+        after=GraphDraft(name=next_name, document=next_document),
+    )
+
+    assert list(diff.nodes) == ["n1"]
+    assert list(diff.edges) == ["e1"]
+    assert list(diff.origins) == ["o1"]
+    assert list(diff.links) == ["artifact-viewer-edge-1"]
+    assert diff.nodes["n1"].after is None
+    assert diff.edges["e1"].after is None
+    assert diff.origins["o1"].after is None
+    assert diff.links["artifact-viewer-edge-1"].after is None
+    assert diff.edges["e1"].before is not None
+    assert diff.viewers == {}
+    assert diff.bindings == {}
+    assert diff.annotations == {}
+
+
+def test_graph_diff_reports_name_change() -> None:
+    before = GraphDraft(name="Before", document=empty_collaborative_document())
+    next_name, next_document = apply_graph_command(
+        name=before.name,
+        document=before.document,
+        command=RenameGraphCommand(name="After", expected_name="Before"),
+    )
+
+    diff = graph_diff(
+        before=before,
+        after=GraphDraft(name=next_name, document=next_document),
+    )
+
+    assert diff.name == GraphNameChange(before="Before", after="After")
+    assert diff.nodes == {}
+
+
+def test_graph_diff_is_empty_when_nothing_changed() -> None:
+    before = GraphDraft(name="Graph", document=SavedGraphDocument(nodes=(_node("n1"),)))
+    next_name, next_document = apply_graph_command(
+        name=before.name,
+        document=before.document,
+        # Uniform remove skips ids that no longer exist, so the document is unchanged.
+        command=RemoveNodesCommand(node_ids=("missing",)),
+    )
+
+    diff = graph_diff(
+        before=before,
+        after=GraphDraft(name=next_name, document=next_document),
+    )
+
+    assert diff.name is None
+    assert diff.nodes == {}
+    assert diff.edges == {}
+    assert diff.origins == {}
+    assert diff.viewers == {}
+    assert diff.links == {}
+    assert diff.bindings == {}
+    assert diff.annotations == {}
 
 
 def test_remove_nodes_twice_succeeds() -> None:

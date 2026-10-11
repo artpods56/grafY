@@ -426,6 +426,30 @@ function prunePresentationLinks(
   };
 }
 
+/**
+ * The confirmed head with this client's pending batches applied on top: what
+ * the author sees while the server has not confirmed them. A command that no
+ * longer applies is skipped; the server's answer to it will correct the view.
+ */
+export function projectPendingCommands(
+  head: CollaborativeHead,
+  pending: readonly RoomGraphCommand[],
+): CollaborativeHead {
+  let projected = head;
+  for (const command of pending) {
+    try {
+      projected = applyRoomCommandToHead(
+        projected,
+        command,
+        head.collaboration_sequence,
+      );
+    } catch {
+      // A command the head cannot carry is left out of the projection.
+    }
+  }
+  return projected;
+}
+
 export function applyRoomCommandToHead(
   head: CollaborativeHead,
   command: RoomGraphCommand,

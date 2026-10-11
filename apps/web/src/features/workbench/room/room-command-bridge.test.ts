@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyRoomCommandToHead,
+  projectPendingCommands,
   toLocalGraphCommand,
   toRoomGraphCommands,
   toRoomReplaceDocumentCommand,
 } from "./room-command-bridge";
 import type { AuthoredGraphDocument } from "../model/graph-document";
+import type { RoomGraphCommand } from "./protocol";
 import type { CollaborativeHead } from "@/lib/api";
 
 const document: AuthoredGraphDocument = {
@@ -656,5 +658,43 @@ describe("room-command-bridge", () => {
       x: 8,
       y: 9,
     });
+  });
+
+  it("projects pending commands onto the confirmed head in submission order", () => {
+    const projected = projectPendingCommands(head, [
+      { kind: "rename_graph", name: "First", expected_name: "Demo" },
+      {
+        kind: "move_nodes",
+        positions: [{ node_id: "a", x: 40, y: 50 }],
+      },
+      { kind: "rename_graph", name: "Second", expected_name: "First" },
+    ]);
+
+    expect(projected.name).toBe("Second");
+    expect(projected.document.nodes[0]?.position).toEqual({ x: 40, y: 50 });
+    // The projection is a view of the confirmed head, not a new head.
+    expect(projected.collaboration_sequence).toBe(head.collaboration_sequence);
+    expect(head.name).toBe("Demo");
+  });
+
+  it("skips a pending command the confirmed head cannot carry", () => {
+    // Adding a node the head already holds is the case the local command
+    // logic rejects outright, so the projection leaves it out and keeps going.
+    const duplicate: RoomGraphCommand = {
+      kind: "add_node",
+      node: document.nodes[0]!,
+    };
+    expect(() => applyRoomCommandToHead(head, duplicate, 4)).toThrow();
+
+    const projected = projectPendingCommands(head, [
+      { kind: "rename_graph", name: "First", expected_name: "Demo" },
+      duplicate,
+      { kind: "rename_graph", name: "Third", expected_name: "First" },
+    ]);
+
+    expect(projected.name).toBe("Third");
+    expect(projected.document.nodes.map((candidate) => candidate.id)).toEqual([
+      "a",
+    ]);
   });
 });

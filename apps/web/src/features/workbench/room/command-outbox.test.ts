@@ -9,6 +9,7 @@ import type {
   GraphCommandAcceptedMessage,
   GraphCommandReceiptMessage,
   GraphCommandRejectedMessage,
+  GraphDiff,
   RoomGraphCommand,
 } from "./protocol";
 
@@ -19,6 +20,18 @@ const SESSION_ID = "22222222-2222-4222-8222-222222222222";
 function rename(name: string): RoomGraphCommand {
   return { kind: "rename_graph", name, expected_name: "Room graph" };
 }
+
+/** The diff of a batch that changed no entity. */
+const EMPTY_DIFF: GraphDiff = {
+  name: null,
+  nodes: {},
+  edges: {},
+  origins: {},
+  viewers: {},
+  links: {},
+  bindings: {},
+  annotations: {},
+};
 
 function nextId(ids: string[]): () => string {
   let index = 0;
@@ -48,6 +61,7 @@ function acceptedMessage(
     graph_room_session_id: SESSION_ID,
     command: rename("Renamed"),
     commands: [rename("Renamed")],
+    diff: EMPTY_DIFF,
     ...overrides,
   };
 }
@@ -442,6 +456,14 @@ describe("GraphRoomCommandOutbox", () => {
       rename("Queued alone"),
       rename("Queued tail"),
     ]);
+
+    // The accepted batch is already in the confirmed head, so it drops out.
+    outbox.recordAccepted(acceptedMessage("command-a", 5));
+    expect(outbox.pendingCommands()).toEqual([
+      rename("Queued alone"),
+      rename("Queued tail"),
+    ]);
+
     for (const submission of [inFlight, queued, alsoQueued]) {
       submission.promise.catch(() => undefined);
     }

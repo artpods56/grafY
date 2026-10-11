@@ -12,7 +12,7 @@ from pydantic import (
     model_validator,
 )
 
-from grafy_core.domain.collaboration import GraphCommand
+from grafy_core.domain.collaboration import GraphCommand, GraphDiff
 from grafy_core.domain.execution_history import GraphExecutionScope
 from grafy_core.domain.identity import WorkspaceCapability
 
@@ -257,6 +257,7 @@ class GraphCommandAcceptedMessage(RoomProtocolModel):
     actor: ActorPresentation
     graph_room_session_id: UUID | None = None
     commands: tuple[GraphCommand, ...]
+    diff: GraphDiff
 
     @computed_field
     @property

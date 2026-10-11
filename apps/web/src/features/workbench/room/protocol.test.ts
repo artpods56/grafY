@@ -21,6 +21,18 @@ const renameTwo = {
   expected_name: "One",
 };
 
+/** The diff of a batch that changed no entity. */
+const EMPTY_DIFF = {
+  name: null,
+  nodes: {},
+  edges: {},
+  origins: {},
+  viewers: {},
+  links: {},
+  bindings: {},
+  annotations: {},
+};
+
 function acceptedFixture(overrides: Record<string, unknown> = {}) {
   return {
     protocol_version: 1,
@@ -32,6 +44,7 @@ function acceptedFixture(overrides: Record<string, unknown> = {}) {
     graph_room_session_id: SESSION_ID,
     command: null,
     commands: [renameOne],
+    diff: EMPTY_DIFF,
     ...overrides,
   };
 }
@@ -78,6 +91,119 @@ describe("parseServerRoomMessage graph.command.accepted", () => {
         acceptedFixture({ commands: [renameOne, "nope"] }),
       ),
     ).toBeNull();
+  });
+
+  it("parses the entity diff carried by an accepted message", () => {
+    const message = parseServerRoomMessage(
+      acceptedFixture({
+        diff: {
+          ...EMPTY_DIFF,
+          name: { before: "One", after: "Two" },
+          nodes: {
+            n1: {
+              before: null,
+              after: { id: "n1", kind: "builtin", position: { x: 1, y: 2 } },
+            },
+          },
+        },
+      }),
+    );
+    expect(message).toMatchObject({
+      type: "graph.command.accepted",
+      diff: {
+        name: { before: "One", after: "Two" },
+        nodes: { n1: { before: null } },
+      },
+    });
+  });
+
+  it("keeps an entity whose id is __proto__ as an own diff entry", () => {
+    // JSON.parse makes "__proto__" an own key; the parser must not turn it
+    // into a prototype assignment that drops the entity.
+    const raw: unknown = JSON.parse(
+      JSON.stringify(acceptedFixture()).replace(
+        '"nodes":{}',
+        '"nodes":{"__proto__":{"before":null,"after":{"id":"__proto__"}}}',
+      ),
+    );
+    const message = parseServerRoomMessage(raw);
+    expect(message?.type).toBe("graph.command.accepted");
+    if (message?.type !== "graph.command.accepted") return;
+    expect(Object.hasOwn(message.diff.nodes, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(message.diff.nodes)).toBe(Object.prototype);
+  });
+
+  it("rejects an accepted message without a diff", () => {
+    const fixture = acceptedFixture();
+    delete (fixture as { diff?: unknown }).diff;
+    expect(parseServerRoomMessage(fixture)).toBeNull();
+  });
+
+  it("rejects a diff whose entity id does not match its key", () => {
+    expect(
+      parseServerRoomMessage(
+        acceptedFixture({
+          diff: {
+            ...EMPTY_DIFF,
+            nodes: { n1: { before: null, after: { id: "other" } } },
+          },
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseServerRoomMessage(
+        acceptedFixture({
+          diff: {
+            ...EMPTY_DIFF,
+            edges: { e1: { before: { id: "e1" }, after: { id: "nope" } } },
+          },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects a diff whose name change is not a before/after pair", () => {
+    for (const name of [
+      { before: "One" },
+      { before: "One", after: 2 },
+      { before: 1, after: "Two" },
+      "Two",
+      [],
+    ]) {
+      expect(
+        parseServerRoomMessage(
+          acceptedFixture({ diff: { ...EMPTY_DIFF, name } }),
+        ),
+      ).toBeNull();
+    }
+  });
+
+  it("rejects a diff whose collection is missing or holds a malformed change", () => {
+    const missingCollection = { ...EMPTY_DIFF };
+    delete (missingCollection as { bindings?: unknown }).bindings;
+    expect(
+      parseServerRoomMessage(acceptedFixture({ diff: missingCollection })),
+    ).toBeNull();
+    expect(
+      parseServerRoomMessage(
+        acceptedFixture({
+          diff: { ...EMPTY_DIFF, links: { l1: { before: null } } },
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseServerRoomMessage(
+        acceptedFixture({ diff: { ...EMPTY_DIFF, nodes: [] } }),
+      ),
+    ).toBeNull();
+  });
+
+  it("parses a null name change and an absent one the same way", () => {
+    expect(
+      parseServerRoomMessage(
+        acceptedFixture({ diff: { ...EMPTY_DIFF, name: null } }),
+      ),
+    ).toMatchObject({ diff: { name: null } });
   });
 });
 

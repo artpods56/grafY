@@ -11,6 +11,7 @@ from grafy_core.domain.collaboration import (
     CommandReceiptOutcome,
     GraphCheckpointMapping,
     GraphCommandReceipt,
+    GraphNameChange,
     MoveNodePosition,
     MoveNodesCommand,
     RenameGraphCommand,
@@ -545,7 +546,7 @@ async def test_accept_command_advances_sequence_without_checkpoint() -> None:
         graph_id=graph_id,
     )
 
-    updated_head, receipt = await service.accept_command(
+    updated_head, receipt, _ = await service.accept_command(
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         graph_id=graph_id,
@@ -587,7 +588,7 @@ async def test_accept_command_applies_a_batch_as_one_sequence() -> None:
     observed_sequence = head.collaboration_sequence
     receipts_before = len(factory.collaboration.receipts)
 
-    updated_head, receipt = await service.accept_command(
+    updated_head, receipt, diff = await service.accept_command(
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         graph_id=graph_id,
@@ -606,6 +607,20 @@ async def test_accept_command_applies_a_batch_as_one_sequence() -> None:
     assert receipt.accepted_sequence == observed_sequence + 1
     assert len(factory.collaboration.receipts) == receipts_before + 1
     assert factory.collaboration.receipts[(WORKSPACE_ID, graph_id, receipt.command_id)]
+    assert diff is not None
+    assert diff.name == GraphNameChange(before="Draft", after="Batched")
+    assert list(diff.nodes) == ["n1"]
+    moved = diff.nodes["n1"]
+    assert moved.before is not None
+    assert moved.before["position"] == {"x": 0.0, "y": 0.0}
+    assert moved.after is not None
+    assert moved.after["position"] == {"x": 4.0, "y": 5.0}
+    assert diff.edges == {}
+    assert diff.origins == {}
+    assert diff.viewers == {}
+    assert diff.links == {}
+    assert diff.bindings == {}
+    assert diff.annotations == {}
 
 
 @pytest.mark.asyncio
@@ -675,7 +690,7 @@ async def test_accept_command_idempotent_replay_and_mismatch() -> None:
     command = RenameGraphCommand(name="Once", expected_name="Draft")
     observed_sequence = head.collaboration_sequence
     observed_room_epoch = head.room_epoch
-    first_head, first_receipt = await service.accept_command(
+    first_head, first_receipt, _ = await service.accept_command(
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         graph_id=graph_id,
@@ -684,7 +699,7 @@ async def test_accept_command_idempotent_replay_and_mismatch() -> None:
         observed_room_epoch=observed_room_epoch,
         commands=(command,),
     )
-    replay_head, replay_receipt = await service.accept_command(
+    replay_head, replay_receipt, replay_diff = await service.accept_command(
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         graph_id=graph_id,
@@ -697,6 +712,8 @@ async def test_accept_command_idempotent_replay_and_mismatch() -> None:
     assert first_head.collaboration_sequence == replay_head.collaboration_sequence == 2
     assert replay_receipt.outcome is CommandReceiptOutcome.IDEMPOTENT_REPLAY
     assert first_receipt.outcome is CommandReceiptOutcome.ACCEPTED
+    # A replay is never rebroadcast, so there is no diff to send with it.
+    assert replay_diff is None
 
     with pytest.raises(CollaborationIdempotencyMismatchError):
         await service.accept_command(
@@ -722,7 +739,7 @@ async def test_checkpoint_advances_saved_revision_and_preserves_secrets() -> Non
         command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
         graph_id=graph_id,
     )
-    head, _ = await service.accept_command(
+    head, _, _ = await service.accept_command(
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         graph_id=graph_id,
@@ -806,7 +823,7 @@ async def test_replace_complete_document_resets_epoch_when_checkpointed() -> Non
         factory.collaboration.mappings
     )
 
-    after_replace, receipt = await service.accept_command(
+    after_replace, receipt, _ = await service.accept_command(
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         graph_id=graph_id,
@@ -992,7 +1009,7 @@ async def test_accept_command_rebases_move_against_newer_head() -> None:
         commands=(RenameGraphCommand(name="Moved ahead", expected_name="Draft"),),
     )
 
-    updated, receipt = await service.accept_command(
+    updated, receipt, _ = await service.accept_command(
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         graph_id=graph_id,
@@ -1050,7 +1067,7 @@ async def test_accept_command_rebases_plugin_release_cas_against_newer_head() ->
         commands=(RenameGraphCommand(name="Moved ahead", expected_name="Draft"),),
     )
 
-    updated, receipt = await service.accept_command(
+    updated, receipt, _ = await service.accept_command(
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         graph_id=graph_id,
@@ -1214,7 +1231,7 @@ async def test_delete_graph_collaboration_aware_discards_uncheckpointed() -> Non
         command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
         graph_id=graph_id,
     )
-    head, _ = await service.accept_command(
+    head, _, _ = await service.accept_command(
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         graph_id=graph_id,
@@ -1384,7 +1401,7 @@ async def test_checkpoint_commit_failure_rolls_back_partial_state() -> None:
         ),
         graph_id=graph_id,
     )
-    head, _ = await service.accept_command(
+    head, _, _ = await service.accept_command(
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         graph_id=graph_id,
@@ -1463,7 +1480,7 @@ async def test_checkpoint_versus_replace_serializes_without_partial_state() -> N
         command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
         graph_id=graph_id,
     )
-    head, _ = await service.accept_command(
+    head, _, _ = await service.accept_command(
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         graph_id=graph_id,
@@ -1539,7 +1556,7 @@ async def test_workspace_qualified_mutations_leave_no_cross_workspace_state() ->
         ),
         graph_id=source_id,
     )
-    source_head, _ = await service.accept_command(
+    source_head, _, _ = await service.accept_command(
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         graph_id=source_id,

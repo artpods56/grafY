@@ -1,5 +1,3 @@
-import type { GraphCommandRejectedMessage } from "./protocol";
-
 const MISSING_ENTITY_CODES = new Set([
   "missing_node",
   "missing_edge",
@@ -21,9 +19,10 @@ const DUPLICATE_ENTITY_CODES = new Set([
  * graph is back. Codes this client does not name fall through to the server's
  * own detail.
  */
-export function describeCommandRejection(
-  message: GraphCommandRejectedMessage,
-): string {
+export function describeCommandRejection(message: {
+  readonly error_code: string;
+  readonly detail: string;
+}): string {
   if (message.error_code === "field_conflict") {
     return "Someone else changed this at the same time. The latest graph has been reloaded.";
   }

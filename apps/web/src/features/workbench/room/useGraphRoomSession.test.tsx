@@ -246,6 +246,26 @@ describe("useGraphRoomSession", () => {
             },
           },
         ],
+        diff: {
+          name: null,
+          nodes: {},
+          edges: {},
+          origins: {},
+          viewers: {
+            "peer-viewer": {
+              before: null,
+              after: {
+                id: "peer-viewer",
+                position: { x: 80, y: 120 },
+                layout: null,
+                mode: null,
+              },
+            },
+          },
+          links: {},
+          bindings: {},
+          annotations: {},
+        },
       });
     });
 
