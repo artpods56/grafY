@@ -3,7 +3,8 @@
 Measures Cognitive Complexity with `cccc` (https://github.com/moznion/cccc)
 for every Python file changed since the base ref and rejects the change if:
 
-- a file's total cognitive complexity grows;
+- the summed total cognitive complexity of the changed files grows (moving code
+  between files is neutral);
 - an existing function gets more complex;
 - a new function exceeds the new-function limit;
 - a new function takes too many parameters or a boolean flag parameter;
@@ -140,23 +141,26 @@ def signature_problems(path: str, new_names: set[str]) -> Iterator[str]:
                 )
 
 
-def file_problems(base: str, path: str) -> Iterator[str]:
+def file_problems(base: str, path: str) -> tuple[int, int, list[str]]:
+    """Return the file's base total, head total, and per-function problems."""
     total, scores = measure(Path(path))
     source = base_source(base, path)
     base_total, base_scores = measure_source(source) if source else (0, {})
 
-    if source is not None and total > base_total:
-        yield f"{path} total cognitive grew {base_total} -> {total}"
+    problems: list[str] = []
     for name, score in sorted(scores.items()):
         if name in base_scores:
             if score > base_scores[name]:
-                yield (f"{path} {name} cognitive grew {base_scores[name]} -> {score}")
+                problems.append(
+                    f"{path} {name} cognitive grew {base_scores[name]} -> {score}"
+                )
         elif score > NEW_FUNCTION_LIMIT:
-            yield (
+            problems.append(
                 f"{path} new function {name} has cognitive {score} "
                 f"(max {NEW_FUNCTION_LIMIT})"
             )
-    yield from signature_problems(path, set(scores) - set(base_scores))
+    problems.extend(signature_problems(path, set(scores) - set(base_scores)))
+    return base_total, total, problems
 
 
 def target_problems(target: Target) -> Iterator[str]:
@@ -189,12 +193,23 @@ def main() -> int:
 
     base = git("merge-base", args.base, "HEAD").strip()
     paths = changed_python_files(base)
-    problems = [
-        *(problem for path in paths for problem in file_problems(base, path)),
-        *(problem for target in args.target for problem in target_problems(target)),
-    ]
+    problems: list[str] = []
+    base_sum = 0
+    head_sum = 0
+    for path in paths:
+        base_total, head_total, file_problem = file_problems(base, path)
+        base_sum += base_total
+        head_sum += head_total
+        problems.extend(file_problem)
+    for target in args.target:
+        problems.extend(target_problems(target))
+    if head_sum > base_sum:
+        problems.append(
+            f"total cognitive of changed files grew {base_sum} -> {head_sum}"
+        )
     for problem in problems:
         print(f"FAIL {problem}")
+    print(f"total cognitive of changed files: {base_sum} -> {head_sum}")
     print(f"checked {len(paths)} changed file(s); {len(problems)} problem(s)")
     return 1 if problems else 0
 
