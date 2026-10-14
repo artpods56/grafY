@@ -1,7 +1,7 @@
 import { ApiError } from "@/lib/api/client";
 
 export class MemberListRefreshError extends Error {
-  readonly cause: unknown;
+  override readonly cause: unknown;
 
   constructor(cause: unknown) {
     super(

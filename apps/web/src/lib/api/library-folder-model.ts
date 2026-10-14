@@ -85,7 +85,7 @@ export class LibraryFolderCycleError extends Error {
 
 /** Another folder in the same parent already goes by that name. */
 export class LibraryFolderNameTakenError extends Error {
-  readonly name: string;
+  override readonly name: string;
   readonly folderName: string;
 
   constructor(folderName: string) {
