@@ -46,130 +46,160 @@ export function toRoomReplaceDocumentCommand(
   };
 }
 
-/** Map a local authoring command to a room submit payload when the shapes align. */
-export function toRoomGraphCommand(
+/**
+ * Map a local authoring command to a room submit batch when the shapes align.
+ * An empty batch means the command has no room representation.
+ */
+export function toRoomGraphCommands(
   command: GraphCommand,
   document: AuthoredGraphDocument,
-): RoomGraphCommand | null {
+): readonly RoomGraphCommand[] {
   const asRoom = (value: unknown): RoomGraphCommand =>
     value as RoomGraphCommand;
   switch (command.kind) {
     case "move_nodes":
-      return asRoom({
-        kind: "move_nodes",
-        positions: command.positions.map((position) => ({
-          node_id: position.node_id,
-          x: position.x,
-          y: position.y,
-        })),
-      });
+      return [
+        asRoom({
+          kind: "move_nodes",
+          positions: command.positions.map((position) => ({
+            node_id: position.node_id,
+            x: position.x,
+            y: position.y,
+          })),
+        }),
+      ];
     case "add_node":
-      return { kind: "add_node", node: projectSavedGraphNode(command.node) };
+      return [{ kind: "add_node", node: projectSavedGraphNode(command.node) }];
     case "remove_nodes":
-      return asRoom({
-        kind: "remove_nodes",
-        node_ids: [...command.node_ids],
-      });
+      return [
+        asRoom({
+          kind: "remove_nodes",
+          node_ids: [...command.node_ids],
+        }),
+      ];
     case "add_edge":
-      return { kind: "add_edge", edge: projectSavedGraphEdge(command.edge) };
+      return [{ kind: "add_edge", edge: projectSavedGraphEdge(command.edge) }];
     case "remove_edges":
-      return asRoom({
-        kind: "remove_edges",
-        edge_ids: [...command.edge_ids],
-      });
+      return [
+        asRoom({
+          kind: "remove_edges",
+          edge_ids: [...command.edge_ids],
+        }),
+      ];
     case "add_origin":
-      return {
-        kind: "add_origin",
-        origin: projectSavedGraphOrigin(command.origin),
-      };
+      return [
+        {
+          kind: "add_origin",
+          origin: projectSavedGraphOrigin(command.origin),
+        },
+      ];
     case "remove_origins":
-      return asRoom({
-        kind: "remove_origins",
-        origin_ids: [...command.origin_ids],
-      });
+      return [
+        asRoom({
+          kind: "remove_origins",
+          origin_ids: [...command.origin_ids],
+        }),
+      ];
     case "rename_graph":
-      return asRoom({
-        kind: "rename_graph",
-        name: command.name,
-        expected_name: document.name,
-      });
+      return [
+        asRoom({
+          kind: "rename_graph",
+          name: command.name,
+          expected_name: document.name,
+        }),
+      ];
     case "update_node_configuration": {
       const node = document.nodes.find(
         (candidate) => candidate.id === command.node_id,
       );
-      if (!node) return null;
-      return asRoom({
-        kind: "update_node_configuration",
-        node_id: command.node_id,
-        field: command.field,
-        value: command.value,
-        expected_value: node.config?.[command.field] ?? null,
-      });
+      if (!node) return [];
+      return [
+        asRoom({
+          kind: "update_node_configuration",
+          node_id: command.node_id,
+          field: command.field,
+          value: command.value,
+          expected_value: node.config?.[command.field] ?? null,
+        }),
+      ];
     }
     case "update_node_layout": {
       const node = document.nodes.find(
         (candidate) => candidate.id === command.node_id,
       );
-      if (!node) return null;
-      return asRoom({
-        kind: "update_node_layout",
-        node_id: command.node_id,
-        layout: command.layout ?? null,
-        expected_layout: node.layout ?? null,
-      });
+      if (!node) return [];
+      return [
+        asRoom({
+          kind: "update_node_layout",
+          node_id: command.node_id,
+          layout: command.layout ?? null,
+          expected_layout: node.layout ?? null,
+        }),
+      ];
     }
     case "update_node_plugin_release": {
       const node = document.nodes.find(
         (candidate) => candidate.id === command.node_id,
       );
       const expectedPin = node?.plugin_release_pin;
-      if (!expectedPin) return null;
-      return {
-        kind: "update_node_plugin_release",
-        node_id: command.node_id,
-        plugin_release_pin: {
-          scope: command.plugin_release.scope,
-          slug: command.plugin_release.slug,
-          revision: command.plugin_release.revision,
+      if (!expectedPin) return [];
+      return [
+        {
+          kind: "update_node_plugin_release",
+          node_id: command.node_id,
+          plugin_release_pin: {
+            scope: command.plugin_release.scope,
+            slug: command.plugin_release.slug,
+            revision: command.plugin_release.revision,
+          },
+          expected_plugin_release_pin: {
+            scope: expectedPin.scope,
+            slug: expectedPin.slug,
+            revision: expectedPin.revision,
+          },
         },
-        expected_plugin_release_pin: {
-          scope: expectedPin.scope,
-          slug: expectedPin.slug,
-          revision: expectedPin.revision,
-        },
-      };
+      ];
     }
     case "update_node_configuration_and_input_plugs": {
       const node = document.nodes.find(
         (candidate) => candidate.id === command.node_id,
       );
-      if (!node) return null;
-      return asRoom({
-        kind: "update_node_configuration_and_input_plugs",
-        node_id: command.node_id,
-        config: { ...command.config },
-        input_plugs: [...command.input_plugs],
-        expected_config: { ...(node.config ?? {}) },
-        expected_plug_ids: (node.input_plugs ?? []).map((plug) => plug.id),
-      });
+      if (!node) return [];
+      // The deprecated compound kind is sent as its two-primitive batch.
+      return [
+        {
+          kind: "replace_node_configuration",
+          node_id: command.node_id,
+          config: { ...command.config },
+          expected_config: { ...(node.config ?? {}) },
+        },
+        {
+          kind: "set_node_input_plugs",
+          node_id: command.node_id,
+          input_plugs: [...command.input_plugs],
+          expected_plug_ids: (node.input_plugs ?? []).map((plug) => plug.id),
+        },
+      ];
     }
     case "bind_artifact_type": {
       const node = document.nodes.find(
         (candidate) => candidate.id === command.node_id,
       );
-      if (!node) return null;
+      if (!node) return [];
       const current = (node.artifact_type_bindings ?? []).find(
         (binding) => binding.variable === command.variable,
       );
-      return asRoom({
-        kind: "set_node_artifact_type_binding",
-        node_id: command.node_id,
-        binding: {
-          variable: command.variable,
-          artifact_type: command.artifact_type,
-        },
-        expected_binding: current ?? null,
-      });
+      return [
+        asRoom({
+          kind: "set_node_artifact_type_binding",
+          node_id: command.node_id,
+          binding: {
+            variable: command.variable,
+            artifact_type: command.artifact_type,
+          },
+          expected_binding: current ?? null,
+        }),
+      ];
     }
     case "reset_artifact_type_binding": {
       const node = document.nodes.find(
@@ -178,40 +208,46 @@ export function toRoomGraphCommand(
       const current = (node?.artifact_type_bindings ?? []).find(
         (binding) => binding.variable === command.variable,
       );
-      if (!current) return null;
-      return asRoom({
-        kind: "clear_node_artifact_type_binding",
-        node_id: command.node_id,
-        variable: command.variable,
-        expected_binding: current,
-      });
+      if (!current) return [];
+      return [
+        asRoom({
+          kind: "clear_node_artifact_type_binding",
+          node_id: command.node_id,
+          variable: command.variable,
+          expected_binding: current,
+        }),
+      ];
     }
     case "update_edge": {
       const edge = document.edges.find(
         (candidate) => candidate.id === command.edge_id,
       );
-      if (!edge) return null;
-      return {
-        kind: "update_edge",
-        expected_edge: projectSavedGraphEdge(edge),
-        edge: projectSavedGraphEdge({ ...edge, ...command.update }),
-      };
+      if (!edge) return [];
+      return [
+        {
+          kind: "update_edge",
+          expected_edge: projectSavedGraphEdge(edge),
+          edge: projectSavedGraphEdge({ ...edge, ...command.update }),
+        },
+      ];
     }
     case "update_origin": {
       const origin = document.origins.find(
         (candidate) => candidate.id === command.origin_id,
       );
-      if (!origin) return null;
-      return {
-        kind: "update_origin",
-        expected_origin: projectSavedGraphOrigin(origin),
-        origin: projectSavedGraphOrigin({ ...origin, ...command.update }),
-      };
+      if (!origin) return [];
+      return [
+        {
+          kind: "update_origin",
+          expected_origin: projectSavedGraphOrigin(origin),
+          origin: projectSavedGraphOrigin({ ...origin, ...command.update }),
+        },
+      ];
     }
     case "replace_document": {
-      return toRoomReplaceDocumentCommand(
-        createSavedGraphRequest(command.document),
-      );
+      return [
+        toRoomReplaceDocumentCommand(createSavedGraphRequest(command.document)),
+      ];
     }
     case "add_input_plug":
     case "remove_input_plug":
@@ -219,18 +255,20 @@ export function toRoomGraphCommand(
       const node = document.nodes.find(
         (candidate) => candidate.id === command.node_id,
       );
-      if (!node) return null;
+      if (!node) return [];
       const nextDocument = applyGraphCommand(document, command);
       const nextNode = nextDocument.nodes.find(
         (candidate) => candidate.id === command.node_id,
       );
-      if (!nextNode) return null;
-      return asRoom({
-        kind: "set_node_input_plugs",
-        node_id: command.node_id,
-        input_plugs: [...(nextNode.input_plugs ?? [])],
-        expected_plug_ids: (node.input_plugs ?? []).map((plug) => plug.id),
-      });
+      if (!nextNode) return [];
+      return [
+        asRoom({
+          kind: "set_node_input_plugs",
+          node_id: command.node_id,
+          input_plugs: [...(nextNode.input_plugs ?? [])],
+          expected_plug_ids: (node.input_plugs ?? []).map((plug) => plug.id),
+        }),
+      ];
     }
   }
 }
@@ -315,6 +353,18 @@ export function toLocalGraphCommand(
         input_plugs: command.input_plugs,
       };
     }
+    case "replace_node_configuration": {
+      const node = document?.nodes.find(
+        (candidate) => candidate.id === command.node_id,
+      );
+      if (!node) return null;
+      return {
+        kind: "update_node_configuration_and_input_plugs",
+        node_id: command.node_id,
+        config: command.config,
+        input_plugs: node.input_plugs ?? [],
+      };
+    }
     case "update_edge":
       return {
         kind: "update_edge",
@@ -374,6 +424,65 @@ function prunePresentationLinks(
       (link) => !removedNodeIds.has(link.source_node_id),
     ),
   };
+}
+
+/**
+ * The confirmed head with this client's pending batches applied on top: what
+ * the author sees while the server has not confirmed them. A command that no
+ * longer applies, because a peer's edit removed what it targets, is left out;
+ * the server rejects it too, and its answer corrects the view.
+ */
+export function projectPendingCommands(
+  head: CollaborativeHead,
+  pending: readonly RoomGraphCommand[],
+): CollaborativeHead {
+  let projected = head;
+  for (const command of pending) {
+    try {
+      const next = applyRoomCommandToHead(
+        projected,
+        command,
+        head.collaboration_sequence,
+      );
+      if (!hasDanglingReference(next.document)) projected = next;
+    } catch {
+      // A command the head cannot carry is left out of the projection.
+    }
+  }
+  return projected;
+}
+
+/**
+ * Whether an edge, origin, or card link names a node or input plug the
+ * document does not have: the canvas refuses to open such a document.
+ */
+function hasDanglingReference(
+  document: CollaborativeHead["document"],
+): boolean {
+  const plugsByNode = new Map(
+    document.nodes.map((node) => [
+      node.id,
+      new Set((node.input_plugs ?? []).map((plug) => plug.id)),
+    ]),
+  );
+  return (
+    document.edges.some(
+      (edge) =>
+        !plugsByNode.has(edge.from_node) ||
+        !plugsByNode.has(edge.to_node) ||
+        (edge.to_plug != null &&
+          !plugsByNode.get(edge.to_node)?.has(edge.to_plug)),
+    ) ||
+    document.origins.some(
+      (origin) =>
+        !plugsByNode.has(origin.to_node) ||
+        (origin.to_plug != null &&
+          !plugsByNode.get(origin.to_node)?.has(origin.to_plug)),
+    ) ||
+    (document.presentation?.links ?? []).some(
+      (link) => !plugsByNode.has(link.source_node_id),
+    )
+  );
 }
 
 export function applyRoomCommandToHead(
@@ -448,21 +557,6 @@ export function applyRoomCommandToHead(
             return position ? { ...annotation, position } : annotation;
           }),
         },
-      },
-    };
-  }
-
-  if (command.kind === "set_node_input_plugs") {
-    return {
-      ...head,
-      collaboration_sequence: sequence,
-      document: {
-        ...head.document,
-        nodes: head.document.nodes.map((node) =>
-          node.id === command.node_id
-            ? { ...node, input_plugs: [...command.input_plugs] }
-            : node,
-        ),
       },
     };
   }

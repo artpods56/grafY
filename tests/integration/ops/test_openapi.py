@@ -379,13 +379,30 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
     command_schema = schema["components"]["schemas"]["SubmitGraphCommandRequest"][
         "properties"
     ]["command"]
+    # `command` is optional while submissions may send a `commands` batch instead.
+    command_union = next(
+        entry for entry in command_schema["anyOf"] if "discriminator" in entry
+    )
     assert (
-        command_schema["discriminator"]["mapping"]["update_node_plugin_release"]
+        command_union["discriminator"]["mapping"]["update_node_plugin_release"]
         == "#/components/schemas/UpdateNodePluginReleaseCommand"
     )
     assert {
         "$ref": "#/components/schemas/UpdateNodePluginReleaseCommand"
-    } in command_schema["oneOf"]
+    } in command_union["oneOf"]
+    commands_schema = schema["components"]["schemas"]["SubmitGraphCommandRequest"][
+        "properties"
+    ]["commands"]
+    assert {"type": "null"} in commands_schema["anyOf"]
+    commands_array = next(
+        entry for entry in commands_schema["anyOf"] if "items" in entry
+    )
+    assert (
+        commands_array["items"]["discriminator"]["mapping"][
+            "update_node_plugin_release"
+        ]
+        == "#/components/schemas/UpdateNodePluginReleaseCommand"
+    )
     # TODO: Revisit this exact schema assertion; it duplicates the response model by hand.
     assert schema["components"]["schemas"]["ImageUploadItemResponse"] == {
         "properties": {

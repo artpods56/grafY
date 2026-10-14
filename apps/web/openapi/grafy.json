@@ -5347,6 +5347,39 @@
         "title": "ReplaceDocumentCommand",
         "type": "object"
       },
+      "ReplaceNodeConfigurationCommand": {
+        "additionalProperties": false,
+        "description": "Replace a node's whole configuration; unlike the per-field update it can drop keys.",
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "expected_config": {
+            "additionalProperties": true,
+            "title": "Expected Config",
+            "type": "object"
+          },
+          "kind": {
+            "const": "replace_node_configuration",
+            "default": "replace_node_configuration",
+            "title": "Kind",
+            "type": "string"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "config",
+          "expected_config"
+        ],
+        "title": "ReplaceNodeConfigurationCommand",
+        "type": "object"
+      },
       "ReplacePresentationCommand": {
         "additionalProperties": false,
         "properties": {
@@ -7181,99 +7214,110 @@
         "additionalProperties": false,
         "properties": {
           "command": {
-            "discriminator": {
-              "mapping": {
-                "add_edge": "#/components/schemas/AddEdgeCommand",
-                "add_node": "#/components/schemas/AddNodeCommand",
-                "add_origin": "#/components/schemas/AddOriginCommand",
-                "clear_node_artifact_type_binding": "#/components/schemas/ClearNodeArtifactTypeBindingCommand",
-                "duplicate_node": "#/components/schemas/DuplicateNodeCommand",
-                "move_annotations": "#/components/schemas/MoveAnnotationsCommand",
-                "move_artifact_viewers": "#/components/schemas/MoveArtifactViewersCommand",
-                "move_nodes": "#/components/schemas/MoveNodesCommand",
-                "remove_edges": "#/components/schemas/RemoveEdgesCommand",
-                "remove_nodes": "#/components/schemas/RemoveNodesCommand",
-                "remove_origins": "#/components/schemas/RemoveOriginsCommand",
-                "rename_graph": "#/components/schemas/RenameGraphCommand",
-                "replace_document": "#/components/schemas/ReplaceDocumentCommand",
-                "replace_presentation": "#/components/schemas/ReplacePresentationCommand",
-                "set_node_artifact_type_binding": "#/components/schemas/SetNodeArtifactTypeBindingCommand",
-                "set_node_input_plugs": "#/components/schemas/SetNodeInputPlugsCommand",
-                "update_edge": "#/components/schemas/UpdateEdgeCommand",
-                "update_node_configuration": "#/components/schemas/UpdateNodeConfigurationCommand",
-                "update_node_configuration_and_input_plugs": "#/components/schemas/UpdateNodeConfigurationAndInputPlugsCommand",
-                "update_node_layout": "#/components/schemas/UpdateNodeLayoutCommand",
-                "update_node_plugin_release": "#/components/schemas/UpdateNodePluginReleaseCommand",
-                "update_origin": "#/components/schemas/UpdateOriginCommand"
-              },
-              "propertyName": "kind"
-            },
-            "oneOf": [
+            "anyOf": [
               {
-                "$ref": "#/components/schemas/RenameGraphCommand"
+                "discriminator": {
+                  "mapping": {
+                    "add_edge": "#/components/schemas/AddEdgeCommand",
+                    "add_node": "#/components/schemas/AddNodeCommand",
+                    "add_origin": "#/components/schemas/AddOriginCommand",
+                    "clear_node_artifact_type_binding": "#/components/schemas/ClearNodeArtifactTypeBindingCommand",
+                    "duplicate_node": "#/components/schemas/DuplicateNodeCommand",
+                    "move_annotations": "#/components/schemas/MoveAnnotationsCommand",
+                    "move_artifact_viewers": "#/components/schemas/MoveArtifactViewersCommand",
+                    "move_nodes": "#/components/schemas/MoveNodesCommand",
+                    "remove_edges": "#/components/schemas/RemoveEdgesCommand",
+                    "remove_nodes": "#/components/schemas/RemoveNodesCommand",
+                    "remove_origins": "#/components/schemas/RemoveOriginsCommand",
+                    "rename_graph": "#/components/schemas/RenameGraphCommand",
+                    "replace_document": "#/components/schemas/ReplaceDocumentCommand",
+                    "replace_node_configuration": "#/components/schemas/ReplaceNodeConfigurationCommand",
+                    "replace_presentation": "#/components/schemas/ReplacePresentationCommand",
+                    "set_node_artifact_type_binding": "#/components/schemas/SetNodeArtifactTypeBindingCommand",
+                    "set_node_input_plugs": "#/components/schemas/SetNodeInputPlugsCommand",
+                    "update_edge": "#/components/schemas/UpdateEdgeCommand",
+                    "update_node_configuration": "#/components/schemas/UpdateNodeConfigurationCommand",
+                    "update_node_configuration_and_input_plugs": "#/components/schemas/UpdateNodeConfigurationAndInputPlugsCommand",
+                    "update_node_layout": "#/components/schemas/UpdateNodeLayoutCommand",
+                    "update_node_plugin_release": "#/components/schemas/UpdateNodePluginReleaseCommand",
+                    "update_origin": "#/components/schemas/UpdateOriginCommand"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/RenameGraphCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AddNodeCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DuplicateNodeCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RemoveNodesCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MoveNodesCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UpdateNodeConfigurationCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReplaceNodeConfigurationCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UpdateNodeLayoutCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UpdateNodePluginReleaseCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SetNodeInputPlugsCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UpdateNodeConfigurationAndInputPlugsCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SetNodeArtifactTypeBindingCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ClearNodeArtifactTypeBindingCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AddEdgeCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UpdateEdgeCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RemoveEdgesCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AddOriginCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UpdateOriginCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RemoveOriginsCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReplaceDocumentCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReplacePresentationCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MoveArtifactViewersCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MoveAnnotationsCommand"
+                  }
+                ]
               },
               {
-                "$ref": "#/components/schemas/AddNodeCommand"
-              },
-              {
-                "$ref": "#/components/schemas/DuplicateNodeCommand"
-              },
-              {
-                "$ref": "#/components/schemas/RemoveNodesCommand"
-              },
-              {
-                "$ref": "#/components/schemas/MoveNodesCommand"
-              },
-              {
-                "$ref": "#/components/schemas/UpdateNodeConfigurationCommand"
-              },
-              {
-                "$ref": "#/components/schemas/UpdateNodeLayoutCommand"
-              },
-              {
-                "$ref": "#/components/schemas/UpdateNodePluginReleaseCommand"
-              },
-              {
-                "$ref": "#/components/schemas/SetNodeInputPlugsCommand"
-              },
-              {
-                "$ref": "#/components/schemas/UpdateNodeConfigurationAndInputPlugsCommand"
-              },
-              {
-                "$ref": "#/components/schemas/SetNodeArtifactTypeBindingCommand"
-              },
-              {
-                "$ref": "#/components/schemas/ClearNodeArtifactTypeBindingCommand"
-              },
-              {
-                "$ref": "#/components/schemas/AddEdgeCommand"
-              },
-              {
-                "$ref": "#/components/schemas/UpdateEdgeCommand"
-              },
-              {
-                "$ref": "#/components/schemas/RemoveEdgesCommand"
-              },
-              {
-                "$ref": "#/components/schemas/AddOriginCommand"
-              },
-              {
-                "$ref": "#/components/schemas/UpdateOriginCommand"
-              },
-              {
-                "$ref": "#/components/schemas/RemoveOriginsCommand"
-              },
-              {
-                "$ref": "#/components/schemas/ReplaceDocumentCommand"
-              },
-              {
-                "$ref": "#/components/schemas/ReplacePresentationCommand"
-              },
-              {
-                "$ref": "#/components/schemas/MoveArtifactViewersCommand"
-              },
-              {
-                "$ref": "#/components/schemas/MoveAnnotationsCommand"
+                "type": "null"
               }
             ],
             "title": "Command"
@@ -7282,6 +7326,120 @@
             "format": "uuid",
             "title": "Command Id",
             "type": "string"
+          },
+          "commands": {
+            "anyOf": [
+              {
+                "items": {
+                  "discriminator": {
+                    "mapping": {
+                      "add_edge": "#/components/schemas/AddEdgeCommand",
+                      "add_node": "#/components/schemas/AddNodeCommand",
+                      "add_origin": "#/components/schemas/AddOriginCommand",
+                      "clear_node_artifact_type_binding": "#/components/schemas/ClearNodeArtifactTypeBindingCommand",
+                      "duplicate_node": "#/components/schemas/DuplicateNodeCommand",
+                      "move_annotations": "#/components/schemas/MoveAnnotationsCommand",
+                      "move_artifact_viewers": "#/components/schemas/MoveArtifactViewersCommand",
+                      "move_nodes": "#/components/schemas/MoveNodesCommand",
+                      "remove_edges": "#/components/schemas/RemoveEdgesCommand",
+                      "remove_nodes": "#/components/schemas/RemoveNodesCommand",
+                      "remove_origins": "#/components/schemas/RemoveOriginsCommand",
+                      "rename_graph": "#/components/schemas/RenameGraphCommand",
+                      "replace_document": "#/components/schemas/ReplaceDocumentCommand",
+                      "replace_node_configuration": "#/components/schemas/ReplaceNodeConfigurationCommand",
+                      "replace_presentation": "#/components/schemas/ReplacePresentationCommand",
+                      "set_node_artifact_type_binding": "#/components/schemas/SetNodeArtifactTypeBindingCommand",
+                      "set_node_input_plugs": "#/components/schemas/SetNodeInputPlugsCommand",
+                      "update_edge": "#/components/schemas/UpdateEdgeCommand",
+                      "update_node_configuration": "#/components/schemas/UpdateNodeConfigurationCommand",
+                      "update_node_configuration_and_input_plugs": "#/components/schemas/UpdateNodeConfigurationAndInputPlugsCommand",
+                      "update_node_layout": "#/components/schemas/UpdateNodeLayoutCommand",
+                      "update_node_plugin_release": "#/components/schemas/UpdateNodePluginReleaseCommand",
+                      "update_origin": "#/components/schemas/UpdateOriginCommand"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/RenameGraphCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AddNodeCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DuplicateNodeCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RemoveNodesCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MoveNodesCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UpdateNodeConfigurationCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ReplaceNodeConfigurationCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UpdateNodeLayoutCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UpdateNodePluginReleaseCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SetNodeInputPlugsCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UpdateNodeConfigurationAndInputPlugsCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SetNodeArtifactTypeBindingCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ClearNodeArtifactTypeBindingCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AddEdgeCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UpdateEdgeCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RemoveEdgesCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AddOriginCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UpdateOriginCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RemoveOriginsCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ReplaceDocumentCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ReplacePresentationCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MoveArtifactViewersCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MoveAnnotationsCommand"
+                    }
+                  ]
+                },
+                "maxItems": 64,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commands"
           },
           "observed_sequence": {
             "minimum": 0.0,
@@ -7297,8 +7455,7 @@
         "required": [
           "command_id",
           "room_epoch",
-          "observed_sequence",
-          "command"
+          "observed_sequence"
         ],
         "title": "SubmitGraphCommandRequest",
         "type": "object"
@@ -7862,7 +8019,7 @@
       },
       "UpdateNodeConfigurationAndInputPlugsCommand": {
         "additionalProperties": false,
-        "description": "Atomic Schema Builder (and similar) config+plug compound gesture.",
+        "description": "Deprecated compound of replace_node_configuration and set_node_input_plugs.\n\nKept so older clients still work; it expands into exactly those two commands' steps.",
         "properties": {
           "config": {
             "additionalProperties": true,

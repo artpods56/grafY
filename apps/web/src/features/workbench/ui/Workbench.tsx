@@ -119,11 +119,11 @@ import {
   GraphRoomCommandError,
   PRESENCE_CLIENT_MIN_INTERVAL_MS,
   PresenceOverlay,
+  describeCommandRejection,
   graphReadiness,
   remoteSelectionColor,
   shouldReplaceCollaborativeHead,
-  toLocalGraphCommand,
-  toRoomGraphCommand,
+  toRoomGraphCommands,
   toRoomReplaceDocumentCommand,
   useGraphRoomSession,
   useRemoteDragPreviews,
@@ -147,6 +147,7 @@ import {
   graphCommandsFromNodeChanges,
   nodeOverlaysFromNodes,
   reduceWorkbenchAuthoringState,
+  type NodeOverlays,
 } from "../canvas/graph-document-adapter";
 import {
   ANNOTATION_NODE_TYPE,
@@ -294,6 +295,10 @@ import {
   canvasAtPoint,
 } from "./artifact-drop-hit-test";
 import { useWorkbenchFitViewOptions } from "./useWorkbenchFitViewOptions";
+import {
+  mergeArtifactViewerState,
+  reconcileWithConfirmedHead,
+} from "./workbench-room-reconcile";
 import { useArtifactViewerCommands } from "./workbench-artifact-viewers";
 import {
   useCanvasSelection,
@@ -506,6 +511,10 @@ function WorkbenchBody({
       bindings: [],
       annotations: [],
     });
+  const artifactViewersRef = React.useRef(artifactViewers);
+  React.useLayoutEffect(() => {
+    artifactViewersRef.current = artifactViewers;
+  }, [artifactViewers]);
   // The canvas draws nodes, cards, and annotations out of three stores, and one
   // gesture can hold any mix of them. Anything that moves what is held goes
   // through here so no layer is left holding what the person already let go.
@@ -1176,11 +1185,67 @@ function WorkbenchBody({
     syncFromCollaborativeHeadRef.current(head);
     setUnsyncedRoomEdits(false);
   }, []);
-  const applyAuthoringCommandsRef = React.useRef(applyAuthoringCommands);
+  /**
+   * The authored canvas is the confirmed head with this client's still-pending
+   * batches on top, so every accepted batch — ours or a peer's — is answered
+   * by rebuilding from the head instead of replaying the batch's commands.
+   */
+  const reconcileWithRoom = React.useCallback(
+    (head: CollaborativeHead, pendingCommands: readonly RoomGraphCommand[]) => {
+      // A selection narrowed to what the head still holds, or the same set
+      // when nothing went.
+      const retained = (
+        current: ReadonlySet<string>,
+        held: ReadonlySet<string>,
+      ) => {
+        const kept = new Set([...current].filter((id) => held.has(id)));
+        return kept.size === current.size ? current : kept;
+      };
+      const reconciliation = reconcileWithConfirmedHead({
+        head,
+        pendingCommands,
+        document: authoredDocumentRef.current,
+        presentation: presentationFromArtifactViewers(
+          artifactViewersRef.current,
+        ),
+      });
+      const nextDocument = reconciliation.document;
+      if (nextDocument) {
+        const heldNodeIds = new Set(nextDocument.nodes.map((node) => node.id));
+        const heldEdgeIds = new Set(nextDocument.edges.map((edge) => edge.id));
+        const keptOverlays: NodeOverlays = {};
+        for (const [nodeId, overlay] of Object.entries(
+          nodeOverlaysRef.current,
+        )) {
+          if (heldNodeIds.has(nodeId)) keptOverlays[nodeId] = overlay;
+        }
+        // Only the document changes: selection, position overrides, and
+        // measured sizes belong to the local canvas and survive the rebuild.
+        authoredDocumentRef.current = nextDocument;
+        dispatchAuthoringState({
+          kind: "replace_document",
+          document: nextDocument,
+          nodeOverlays: keptOverlays,
+        });
+        setSelectedNodeIdSet((current) => retained(current, heldNodeIds));
+        setSelectedEdgeIdSet((current) => retained(current, heldEdgeIds));
+      }
+      const nextPresentation = reconciliation.presentation;
+      // Cards only belong on a saved graph's canvas; the blank draft has no room.
+      if (nextPresentation && activeGraphIdRef.current) {
+        const nextViewers = artifactViewersFromPresentation(nextPresentation);
+        setArtifactViewers((current) =>
+          mergeArtifactViewerState(current, nextViewers),
+        );
+      }
+    },
+    [dispatchAuthoringState],
+  );
+  const reconcileWithRoomRef = React.useRef(reconcileWithRoom);
   React.useLayoutEffect(() => {
     syncFromCollaborativeHeadRef.current = syncFromCollaborativeHead;
-    applyAuthoringCommandsRef.current = applyAuthoringCommands;
-  }, [applyAuthoringCommands, syncFromCollaborativeHead]);
+    reconcileWithRoomRef.current = reconcileWithRoom;
+  }, [reconcileWithRoom, syncFromCollaborativeHead]);
   const replaceHeadRef = React.useRef<
     (head: CollaborativeHead) => CollaborativeHead
   >((head) => head);
@@ -1249,85 +1314,16 @@ function WorkbenchBody({
     onHeadRefreshRequired: () => {
       refreshCollaborativeHeadRef.current({ errorMessage: null });
     },
-    onCommandAccepted: (message, meta) => {
-      if (meta.local) {
-        // Local presentation commands already updated artifactViewers optimistically.
-        if (
-          message.command.kind === "replace_presentation" ||
-          message.command.kind === "move_artifact_viewers" ||
-          message.command.kind === "move_annotations"
-        ) {
-          return;
-        }
-        // Nothing more to mirror locally: applying the command already pruned the card
-        // links it sourced, and the room applied the same pruning to its own head.
-        return;
-      }
-      if (message.command.kind === "replace_presentation") {
-        // Cards only belong on a saved graph's canvas; the blank draft has no room.
-        if (!activeGraphIdRef.current) return;
-        replacePresentation(message.command.presentation);
-        return;
-      }
-      if (message.command.kind === "move_artifact_viewers") {
-        const positions = new Map(
-          message.command.positions.map((position) => [
-            position.viewer_id,
-            { x: position.x, y: position.y },
-          ]),
-        );
-        setArtifactViewers((current) => ({
-          ...current,
-          nodes: current.nodes.map((node) => {
-            const position = positions.get(node.id);
-            return position ? { ...node, position } : node;
-          }),
-        }));
-        return;
-      }
-      if (message.command.kind === "move_annotations") {
-        const positions = new Map(
-          message.command.positions.map((position) => [
-            position.annotation_id,
-            { x: position.x, y: position.y },
-          ]),
-        );
-        setArtifactViewers((current) => ({
-          ...current,
-          annotations: current.annotations.map((node) => {
-            const position = positions.get(node.id);
-            return position ? { ...node, position } : node;
-          }),
-        }));
-        return;
-      }
-      const localCommand = toLocalGraphCommand(
-        message.command,
-        authoredDocumentRef.current,
-      );
-      if (localCommand) {
-        applyAuthoringCommandsRef.current([localCommand], { syncRoom: false });
-        if (
-          message.command.kind === "replace_document" &&
-          message.command.document.presentation
-        ) {
-          if (activeGraphIdRef.current) {
-            replacePresentation(message.command.document.presentation);
-          }
-        }
-        return;
-      }
-      refreshCollaborativeHeadRef.current();
+    onCommandAccepted: (_message, meta) => {
+      reconcileWithRoomRef.current(meta.head, meta.pendingCommands);
     },
     onCommandRejected: (message) => {
       const isHeadConflict = message.error_code === "head_conflict";
       if (!isHeadConflict) {
-        setRunError(message.detail || "A collaborative edit was rejected.");
+        setRunError(describeCommandRejection(message));
       }
       refreshCollaborativeHeadRef.current({
-        errorMessage: isHeadConflict
-          ? null
-          : message.detail || "A collaborative edit was rejected.",
+        errorMessage: isHeadConflict ? null : describeCommandRejection(message),
       });
     },
     onTerminalClose: (reason) => {
@@ -1359,9 +1355,9 @@ function WorkbenchBody({
           return;
         }
         for (const command of commands) {
-          const roomCommand = toRoomGraphCommand(command, before);
-          if (!roomCommand) continue;
-          void submitRoomCommand(roomCommand).catch((error: unknown) => {
+          const batch = toRoomGraphCommands(command, before);
+          if (!batch.length) continue;
+          void submitRoomCommand(batch).catch((error: unknown) => {
             if (
               error instanceof GraphRoomCommandError &&
               (error.errorCode === "superseded" ||
@@ -1371,7 +1367,10 @@ function WorkbenchBody({
             }
             const detail =
               error instanceof GraphRoomCommandError
-                ? error.message
+                ? describeCommandRejection({
+                    error_code: error.errorCode,
+                    detail: error.message,
+                  })
                 : error instanceof Error
                   ? error.message
                   : "Collaborative sync failed.";
@@ -1392,7 +1391,7 @@ function WorkbenchBody({
           kind: "replace_presentation",
           presentation: presentationFromArtifactViewers(state),
         } as RoomGraphCommand;
-        void submitRoomCommand(command).catch((error: unknown) => {
+        void submitRoomCommand([command]).catch((error: unknown) => {
           if (
             error instanceof GraphRoomCommandError &&
             (error.errorCode === "superseded" ||
@@ -1402,7 +1401,10 @@ function WorkbenchBody({
           }
           const detail =
             error instanceof GraphRoomCommandError
-              ? error.message
+              ? describeCommandRejection({
+                  error_code: error.errorCode,
+                  detail: error.message,
+                })
               : error instanceof Error
                 ? error.message
                 : "Presentation sync failed.";
@@ -1415,7 +1417,7 @@ function WorkbenchBody({
           kind: "move_artifact_viewers",
           positions: [...positions],
         } as RoomGraphCommand;
-        void submitRoomCommand(command).catch((error: unknown) => {
+        void submitRoomCommand([command]).catch((error: unknown) => {
           if (
             error instanceof GraphRoomCommandError &&
             (error.errorCode === "superseded" ||
@@ -1425,7 +1427,10 @@ function WorkbenchBody({
           }
           const detail =
             error instanceof GraphRoomCommandError
-              ? error.message
+              ? describeCommandRejection({
+                  error_code: error.errorCode,
+                  detail: error.message,
+                })
               : error instanceof Error
                 ? error.message
                 : "Presentation sync failed.";
@@ -1438,7 +1443,7 @@ function WorkbenchBody({
           kind: "move_annotations",
           positions: [...positions],
         } as RoomGraphCommand;
-        void submitRoomCommand(command).catch((error: unknown) => {
+        void submitRoomCommand([command]).catch((error: unknown) => {
           if (
             error instanceof GraphRoomCommandError &&
             (error.errorCode === "superseded" ||
@@ -1448,7 +1453,10 @@ function WorkbenchBody({
           }
           const detail =
             error instanceof GraphRoomCommandError
-              ? error.message
+              ? describeCommandRejection({
+                  error_code: error.errorCode,
+                  detail: error.message,
+                })
               : error instanceof Error
                 ? error.message
                 : "Presentation sync failed.";
@@ -1466,7 +1474,7 @@ function WorkbenchBody({
           throw new Error("Graph room requires a saved graph id.");
         }
         const command = toRoomReplaceDocumentCommand(draft);
-        const { head: replacedHead } = await submitRoomCommand(command);
+        const { head: replacedHead } = await submitRoomCommand([command]);
         const checkpointed = await checkpointGraph(workspaceId, graphId, {
           expected_room_epoch: replacedHead.room_epoch,
           expected_sequence: replacedHead.collaboration_sequence,

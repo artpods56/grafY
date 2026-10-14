@@ -340,14 +340,14 @@ async def submit_graph_command(
     access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
 ) -> SubmitGraphCommandResponse:
     try:
-        head, receipt = await collaboration.accept_command(
+        head, receipt, diff = await collaboration.accept_command(
             actor=access.actor,
             workspace_id=access.workspace_id,
             graph_id=graph_id,
             command_id=request.command_id,
             observed_sequence=request.observed_sequence,
             observed_room_epoch=request.room_epoch,
-            command=request.command,
+            commands=request.batch,
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -363,12 +363,15 @@ async def submit_graph_command(
     # Idempotent retries return the original receipt over HTTP and must not
     # rebroadcast an accepted command that peers already applied.
     if receipt.outcome is not CommandReceiptOutcome.IDEMPOTENT_REPLAY:
+        # Only an idempotent replay has no diff, and that is the branch above.
+        assert diff is not None
         await publish_accepted_command(
             get_resources(http_request.app).graph_room_hub,
             actor=access.actor,
             workspace_id=access.workspace_id,
             graph_id=graph_id,
-            command=request.command,
+            commands=request.batch,
+            diff=diff,
             receipt=receipt,
             uow_factory=uow_factory,
         )

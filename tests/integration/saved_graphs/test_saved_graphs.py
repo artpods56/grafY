@@ -675,8 +675,8 @@ def test_http_replace_rejects_uncheckpointed_head(
             command_id=uuid4(),
             observed_sequence=head.collaboration_sequence,
             observed_room_epoch=head.room_epoch,
-            command=RenameGraphCommand(
-                name="Uncheckpointed", expected_name="Live draft"
+            commands=(
+                RenameGraphCommand(name="Uncheckpointed", expected_name="Live draft"),
             ),
         )
     )

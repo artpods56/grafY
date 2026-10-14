@@ -7,6 +7,7 @@ from grafy_core.domain.collaboration import (
     CollaborativeGraphHead,
     GraphCommand,
     GraphCommandReceipt,
+    GraphDiff,
 )
 from grafy_core.domain.identity import ActorContext
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
@@ -49,7 +50,8 @@ async def publish_accepted_command(
     actor: ActorContext,
     workspace_id: UUID,
     graph_id: UUID,
-    command: GraphCommand,
+    commands: tuple[GraphCommand, ...],
+    diff: GraphDiff,
     receipt: GraphCommandReceipt,
     graph_room_session_id: UUID | None = None,
     uow_factory: Callable[[], SqlAlchemyUnitOfWork],
@@ -64,7 +66,8 @@ async def publish_accepted_command(
             sequence=receipt.accepted_sequence,
             actor=presentation,
             graph_room_session_id=graph_room_session_id,
-            command=command,
+            commands=commands,
+            diff=diff,
         ),
     )
 

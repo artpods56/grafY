@@ -586,6 +586,10 @@ class _Identified(Protocol):
     def id(self) -> str: ...
 
 
+def _find[T: _Identified](items: tuple[T, ...], item_id: str) -> T | None:
+    return next((item for item in items if item.id == item_id), None)
+
+
 def _without_ids[T: _Identified](
     items: tuple[T, ...], ids: Collection[str]
 ) -> tuple[T, ...]:
@@ -756,6 +760,21 @@ class SavedGraphDocument(SavedGraphValue):
             origins=self.origins if origins is None else origins,
             presentation=(self.presentation if presentation is None else presentation),
         )
+
+    def find_node(self, node_id: str) -> SavedGraphNode | None:
+        return _find(self.nodes, node_id)
+
+    def find_edge(self, edge_id: str) -> SavedGraphEdge | None:
+        return _find(self.edges, edge_id)
+
+    def find_origin(self, origin_id: str) -> SavedGraphOrigin | None:
+        return _find(self.origins, origin_id)
+
+    def find_viewer(self, viewer_id: str) -> GraphPresentationViewer | None:
+        return _find(self.presentation.viewers, viewer_id)
+
+    def find_annotation(self, annotation_id: str) -> GraphPresentationAnnotation | None:
+        return _find(self.presentation.annotations, annotation_id)
 
     def with_node_added(self, node: SavedGraphNode) -> "SavedGraphDocument":
         return self.with_topology(nodes=(*self.nodes, node))

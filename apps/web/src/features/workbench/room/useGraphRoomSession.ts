@@ -45,7 +45,7 @@ export interface UseGraphRoomSessionResult {
   readonly participants: readonly PresenceParticipant[];
   readonly activeExecution: ActiveExecutionSummary | null;
   readonly submitCommand: (
-    command: RoomGraphCommand,
+    commands: readonly RoomGraphCommand[],
   ) => Promise<GraphRoomSubmitResult>;
   /** Reconcile a full snapshot and return the effective room head. */
   readonly replaceHead: (head: CollaborativeHead) => CollaborativeHead;
@@ -242,7 +242,9 @@ export function useGraphRoomSession({
   const currentActiveExecution = stateIsCurrent ? activeExecution : null;
 
   const submitCommand = React.useCallback(
-    async (command: RoomGraphCommand): Promise<GraphRoomSubmitResult> => {
+    async (
+      commands: readonly RoomGraphCommand[],
+    ): Promise<GraphRoomSubmitResult> => {
       if (!graphId) {
         throw new Error("Graph room is not connected.");
       }
@@ -250,7 +252,7 @@ export function useGraphRoomSession({
       if (!session) {
         throw new Error("Graph room is not connected.");
       }
-      const result = await session.submitCommand(command);
+      const result = await session.submitCommand(commands);
       const nextHead = session.getHead();
       if (!nextHead) {
         throw new Error("Graph room head is unavailable after command submit.");

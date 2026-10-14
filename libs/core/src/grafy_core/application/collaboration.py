@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -14,11 +14,14 @@ from grafy_core.domain.collaboration import (
     GraphCheckpointMapping,
     GraphCommand,
     GraphCommandReceipt,
+    GraphDiff,
+    GraphDraft,
     ReplaceDocumentCommand,
-    apply_graph_command,
+    apply_graph_commands,
     command_hmac_digest,
     command_requires_exact_sequence,
     empty_collaborative_document,
+    graph_diff,
     sanitize_document_for_cross_workspace_copy,
 )
 from grafy_core.domain.errors import (
@@ -121,10 +124,10 @@ class CollaborationService:
 
             resolved_graph_id = uuid4() if graph_id is None else graph_id
             room_epoch = uuid4()
-            next_name, next_document = apply_graph_command(
+            next_name, next_document = apply_graph_commands(
                 name="Untitled graph",
                 document=empty_collaborative_document(),
-                command=command,
+                commands=(command,),
             )
             digest = command_hmac_digest(
                 self._command_hmac_key,
@@ -134,7 +137,7 @@ class CollaborationService:
                 actor_user_id=actor.user_id,
                 room_epoch=room_epoch,
                 observed_sequence=0,
-                command=command,
+                commands=(command,),
             )
             existing_receipt = await unit_of_work.collaboration.get_receipt(
                 workspace_id,
@@ -244,8 +247,8 @@ class CollaborationService:
         command_id: UUID,
         observed_sequence: int,
         observed_room_epoch: UUID,
-        command: GraphCommand,
-    ) -> tuple[CollaborativeGraphHead, GraphCommandReceipt]:
+        commands: Sequence[GraphCommand],
+    ) -> tuple[CollaborativeGraphHead, GraphCommandReceipt, GraphDiff | None]:
         async with self._unit_of_work_factory() as unit_of_work:
             await self._authorize(
                 unit_of_work,
@@ -263,7 +266,7 @@ class CollaborationService:
                 actor_user_id=actor.user_id,
                 room_epoch=observed_room_epoch,
                 observed_sequence=observed_sequence,
-                command=command,
+                commands=commands,
             )
             existing_receipt = await unit_of_work.collaboration.get_receipt(
                 workspace_id,
@@ -297,7 +300,8 @@ class CollaborationService:
                 replay = existing_receipt.model_copy(
                     update={"outcome": CommandReceiptOutcome.IDEMPOTENT_REPLAY}
                 )
-                return head, replay
+                # A replay is never rebroadcast, so it has no diff to send.
+                return head, replay, None
 
             head = await unit_of_work.collaboration.lock_head(workspace_id, graph_id)
             if head is None:
@@ -322,7 +326,7 @@ class CollaborationService:
                     room_epoch=head.room_epoch,
                 )
             if head.collaboration_sequence > observed_sequence and (
-                command_requires_exact_sequence(command)
+                command_requires_exact_sequence(commands)
             ):
                 raise CollaborationHeadConflictError(
                     workspace_id=workspace_id,
@@ -331,10 +335,15 @@ class CollaborationService:
                     actual_sequence=head.collaboration_sequence,
                     room_epoch=head.room_epoch,
                 )
-            next_name, next_document = apply_graph_command(
+            before = GraphDraft(name=head.name, document=head.document)
+            next_name, next_document = apply_graph_commands(
                 name=head.name,
                 document=head.document,
-                command=command,
+                commands=commands,
+            )
+            diff = graph_diff(
+                before=before,
+                after=GraphDraft(name=next_name, document=next_document),
             )
             SavedGraphDocument.model_validate(next_document.model_dump(mode="json"))
             head.apply_accepted_command(name=next_name, document=next_document)
@@ -365,7 +374,7 @@ class CollaborationService:
                 )
             )
             await unit_of_work.commit()
-        return head, receipt
+        return head, receipt, diff
 
     async def checkpoint(
         self,
@@ -644,7 +653,7 @@ class CollaborationService:
                 actor_user_id=actor.user_id,
                 room_epoch=room_epoch,
                 observed_sequence=0,
-                command=command,
+                commands=(command,),
             )
             existing_receipt = await unit_of_work.collaboration.get_receipt(
                 target_workspace_id,

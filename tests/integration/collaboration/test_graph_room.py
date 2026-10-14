@@ -482,6 +482,125 @@ def _submit_room_command(
     )
 
 
+def _single_node_graph() -> SavedGraphDocument:
+    return SavedGraphDocument(
+        nodes=(
+            SavedGraphNode(
+                kind="builtin",
+                id="n1",
+                operator_id="text.literal",
+                operator_version=1,
+                position=GraphPoint(x=0, y=0),
+            ),
+        )
+    )
+
+
+def test_submitting_a_command_batch_advances_the_sequence_once(
+    room_client: RoomClient,
+) -> None:
+    """A batch is accepted as one sequence step and broadcast with `commands`."""
+
+    api, _switcher, population = room_client
+    workspace_api = api.workspace(population.workspace.id)
+    graph = workspace_api.graphs.create_ok(
+        CreateSavedGraphRequest(name="Batch graph", document=_single_node_graph())
+    )
+    command_id = uuid4()
+
+    with _connect_room(api, population.workspace.id, graph.id) as websocket:
+        ready = websocket.receive_json()
+        observed_sequence = ready["head"]["collaboration_sequence"]
+        websocket.send_json(
+            {
+                "protocol_version": 1,
+                "type": "graph.command.submit",
+                "command_id": str(command_id),
+                "room_epoch": ready["head"]["room_epoch"],
+                "observed_sequence": observed_sequence,
+                "commands": [
+                    {
+                        "kind": "rename_graph",
+                        "name": "Batched",
+                        "expected_name": "Batch graph",
+                    },
+                    {
+                        "kind": "move_nodes",
+                        "positions": [{"node_id": "n1", "x": 40, "y": 50}],
+                    },
+                ],
+            }
+        )
+
+        accepted = _receive_next(websocket, "graph.command.accepted")
+        receipt = _receive_next(websocket, "graph.command.receipt")
+
+    assert accepted["command_id"] == str(command_id)
+    assert accepted["command"] is None
+    assert [entry["kind"] for entry in accepted["commands"]] == [
+        "rename_graph",
+        "move_nodes",
+    ]
+    assert accepted["sequence"] == observed_sequence + 1
+    assert receipt["accepted_sequence"] == observed_sequence + 1
+    assert accepted["diff"]["name"] == {"before": "Batch graph", "after": "Batched"}
+    node_diff = accepted["diff"]["nodes"]["n1"]
+    assert node_diff["before"]["position"] == {"x": 0.0, "y": 0.0}
+    assert node_diff["after"]["position"] == {"x": 40.0, "y": 50.0}
+    assert accepted["diff"]["edges"] == {}
+
+    head = workspace_api.graphs.get_head_ok(graph.id)
+    assert head.collaboration_sequence == observed_sequence + 1
+    assert head.name == "Batched"
+    assert head.document.nodes[0].position == GraphPoint(x=40, y=50)
+
+
+def test_rejected_batch_reports_the_failing_command_index(
+    room_client: RoomClient,
+) -> None:
+    """A rejection carries the failing step's code and the command's batch index."""
+
+    api, _switcher, population = room_client
+    workspace_api = api.workspace(population.workspace.id)
+    graph = workspace_api.graphs.create_ok(
+        CreateSavedGraphRequest(name="Batch graph", document=_single_node_graph())
+    )
+    command_id = uuid4()
+
+    with _connect_room(api, population.workspace.id, graph.id) as websocket:
+        ready = websocket.receive_json()
+        observed_sequence = ready["head"]["collaboration_sequence"]
+        websocket.send_json(
+            {
+                "protocol_version": 1,
+                "type": "graph.command.submit",
+                "command_id": str(command_id),
+                "room_epoch": ready["head"]["room_epoch"],
+                "observed_sequence": observed_sequence,
+                "commands": [
+                    {
+                        "kind": "rename_graph",
+                        "name": "Batched",
+                        "expected_name": "Batch graph",
+                    },
+                    {
+                        "kind": "move_nodes",
+                        "positions": [{"node_id": "ghost", "x": 40, "y": 50}],
+                    },
+                ],
+            }
+        )
+        rejected = _receive_next(websocket, "graph.command.rejected")
+
+    assert rejected["command_id"] == str(command_id)
+    assert rejected["error_code"] == "missing_node"
+    assert rejected["command_index"] == 1
+
+    head = workspace_api.graphs.get_head_ok(graph.id)
+    assert head.collaboration_sequence == observed_sequence
+    assert head.name == "Batch graph"
+
+
 def _wired_collect_graph() -> SavedGraphDocument:
     """One wired input plug on a variadic node, as the Workbench builds it."""
 
@@ -596,7 +715,8 @@ def test_command_that_invalidates_the_graph_is_rejected_without_closing_room(
         )
         rejected = _receive_next(websocket, "graph.command.rejected")
         assert rejected["command_id"] == str(rejected_command_id)
-        assert rejected["error_code"] == "command_rejected"
+        assert rejected["error_code"] == "invalid_document"
+        assert rejected["command_index"] == 0
         assert "plug-absent" in rejected["detail"]
 
         # The room must survive the rejection and keep serving commands.

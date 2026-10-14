@@ -1,14 +1,26 @@
 from enum import StrEnum
-from typing import Annotated, ClassVar, Literal
+from typing import Annotated, ClassVar, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
-from grafy_core.domain.collaboration import GraphCommand
+from grafy_core.domain.collaboration import GraphCommand, GraphDiff
 from grafy_core.domain.execution_history import GraphExecutionScope
 from grafy_core.domain.identity import WorkspaceCapability
 
-from grafy_api.graph_contracts import CollaborativeHeadResponse
+from grafy_api.graph_contracts import (
+    GRAPH_COMMAND_BATCH_MAX,
+    CollaborativeHeadResponse,
+    graph_command_batch,
+)
 
 
 PROTOCOL_VERSION = 1
@@ -221,7 +233,19 @@ class GraphCommandSubmitMessage(RoomProtocolModel):
     command_id: UUID
     room_epoch: UUID
     observed_sequence: int = Field(ge=0)
-    command: GraphCommand
+    command: GraphCommand | None = None
+    commands: tuple[GraphCommand, ...] | None = Field(
+        default=None, min_length=1, max_length=GRAPH_COMMAND_BATCH_MAX
+    )
+
+    @model_validator(mode="after")
+    def validate_batch(self) -> Self:
+        graph_command_batch(self.command, self.commands)
+        return self
+
+    @property
+    def batch(self) -> tuple[GraphCommand, ...]:
+        return graph_command_batch(self.command, self.commands)
 
 
 class GraphCommandAcceptedMessage(RoomProtocolModel):
@@ -232,7 +256,14 @@ class GraphCommandAcceptedMessage(RoomProtocolModel):
     sequence: int = Field(ge=0)
     actor: ActorPresentation
     graph_room_session_id: UUID | None = None
-    command: GraphCommand
+    commands: tuple[GraphCommand, ...]
+    diff: GraphDiff
+
+    @computed_field
+    @property
+    def command(self) -> GraphCommand | None:
+        """The lone command of a batch of one, for clients that predate batches."""
+        return self.commands[0] if len(self.commands) == 1 else None
 
 
 class GraphCommandReceiptMessage(RoomProtocolModel):
@@ -254,6 +285,7 @@ class GraphCommandRejectedMessage(RoomProtocolModel):
     command_id: UUID
     error_code: str = Field(min_length=1, max_length=64)
     detail: str = Field(min_length=1, max_length=500)
+    command_index: int | None = Field(default=None, ge=0)
     current_room_epoch: UUID | None = None
     current_sequence: int | None = Field(default=None, ge=0)
 

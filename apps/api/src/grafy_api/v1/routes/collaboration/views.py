@@ -370,14 +370,14 @@ async def _handle_command_submit(
     message: GraphCommandSubmitMessage,
 ) -> None:
     try:
-        head, receipt = await collaboration.accept_command(
+        head, receipt, diff = await collaboration.accept_command(
             actor=actor,
             workspace_id=session.workspace_id,
             graph_id=session.graph_id,
             command_id=message.command_id,
             observed_sequence=message.observed_sequence,
             observed_room_epoch=message.room_epoch,
-            command=message.command,
+            commands=message.batch,
         )
     except CapabilityDeniedError as exc:
         await _reject_command(session, hub, message, "forbidden", str(exc))
@@ -389,7 +389,14 @@ async def _handle_command_submit(
         await _reject_command(session, hub, message, "missing_head", str(exc))
         return
     except CollaborationCommandRejectedError as exc:
-        await _reject_command(session, hub, message, "command_rejected", str(exc))
+        await _reject_command(
+            session,
+            hub,
+            message,
+            exc.error_code,
+            str(exc),
+            command_index=exc.command_index,
+        )
         return
     except CollaborationHeadConflictError as exc:
         await hub.deliver_private(
@@ -423,13 +430,16 @@ async def _handle_command_submit(
         await hub.deliver_private(session, receipt_message)
         return
 
+    # Only an idempotent replay has no diff, and replays returned above.
+    assert diff is not None
     accepted = GraphCommandAcceptedMessage(
         command_id=message.command_id,
         room_epoch=receipt.room_epoch,
         sequence=receipt.accepted_sequence,
         actor=session.actor_presentation,
         graph_room_session_id=session.graph_room_session_id,
-        command=message.command,
+        commands=message.batch,
+        diff=diff,
     )
     await hub.publish_accepted(
         workspace_id=session.workspace_id,
@@ -446,6 +456,8 @@ async def _reject_command(
     message: GraphCommandSubmitMessage,
     error_code: str,
     detail: str,
+    *,
+    command_index: int | None = None,
 ) -> None:
     """Route a command rejection through the hub's single outbound sender.
 
@@ -461,5 +473,6 @@ async def _reject_command(
             command_id=message.command_id,
             error_code=error_code,
             detail=detail,
+            command_index=command_index,
         ),
     )

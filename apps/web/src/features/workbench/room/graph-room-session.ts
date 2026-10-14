@@ -6,6 +6,7 @@ import {
   type GraphRoomCommandResult,
   type OutgoingGraphCommand,
 } from "./command-outbox";
+import { applyGraphDiffToHead } from "./graph-diff";
 import { graphRoomWebSocketUrl } from "./graph-room-url";
 import {
   ROOM_COMMAND_QUEUE_CAP,
@@ -26,7 +27,6 @@ import {
   type RoomGraphCommand,
   type RoomReadyMessage,
 } from "./protocol";
-import { applyRoomCommandToHead } from "./room-command-bridge";
 
 export type { GraphRoomStatus, GraphRoomTerminalReason, RoomGraphCommand };
 export type { GraphRoomFailure, GraphRoomRecoveryReason };
@@ -66,6 +66,10 @@ export function shouldReplaceCollaborativeHead(
 
 export interface GraphRoomAcceptedMeta {
   readonly local: boolean;
+  /** The confirmed head produced by this accepted message's diff. */
+  readonly head: CollaborativeHead;
+  /** Local batches the new head does not include yet, in submission order. */
+  readonly pendingCommands: readonly RoomGraphCommand[];
 }
 
 export interface GraphRoomSessionListeners {
@@ -357,7 +361,9 @@ export class GraphRoomSession {
     return effectiveHead;
   }
 
-  submitCommand(command: RoomGraphCommand): Promise<GraphRoomCommandResult> {
+  submitCommand(
+    commands: readonly RoomGraphCommand[],
+  ): Promise<GraphRoomCommandResult> {
     if (!this.canSubmitCommands() || this.head === null) {
       return Promise.reject(
         new GraphRoomCommandError(
@@ -367,9 +373,14 @@ export class GraphRoomSession {
         ),
       );
     }
-    const submission = this.outbox.submit(command);
+    const submission = this.outbox.submit(commands);
     this.writeSends(submission.sends);
     return submission.promise;
+  }
+
+  /** The in-flight batch's commands followed by every queued batch's commands. */
+  pendingCommands(): readonly RoomGraphCommand[] {
+    return this.outbox.pendingCommands();
   }
 
   /** Write the submit frames the outbox produced, in order. */
@@ -662,17 +673,19 @@ export class GraphRoomSession {
       return;
     }
 
+    let applied: CollaborativeHead;
     try {
-      this.head = applyRoomCommandToHead(
-        head,
-        message.command,
-        message.sequence,
-      );
+      applied = applyGraphDiffToHead(head, message.diff, message.sequence);
     } catch {
       this.outbox.requestHeadRefresh();
       return;
     }
-    this.listeners.onCommandAccepted?.(message, { local });
+    this.head = applied;
+    this.listeners.onCommandAccepted?.(message, {
+      local,
+      head: applied,
+      pendingCommands: this.outbox.pendingCommands(),
+    });
     this.writeSends(this.outbox.afterHeadApplied());
   }
 

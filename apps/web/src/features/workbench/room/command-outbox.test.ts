@@ -9,6 +9,7 @@ import type {
   GraphCommandAcceptedMessage,
   GraphCommandReceiptMessage,
   GraphCommandRejectedMessage,
+  GraphDiff,
   RoomGraphCommand,
 } from "./protocol";
 
@@ -19,6 +20,18 @@ const SESSION_ID = "22222222-2222-4222-8222-222222222222";
 function rename(name: string): RoomGraphCommand {
   return { kind: "rename_graph", name, expected_name: "Room graph" };
 }
+
+/** The diff of a batch that changed no entity. */
+const EMPTY_DIFF: GraphDiff = {
+  name: null,
+  nodes: {},
+  edges: {},
+  origins: {},
+  viewers: {},
+  links: {},
+  bindings: {},
+  annotations: {},
+};
 
 function nextId(ids: string[]): () => string {
   let index = 0;
@@ -47,6 +60,8 @@ function acceptedMessage(
     },
     graph_room_session_id: SESSION_ID,
     command: rename("Renamed"),
+    commands: [rename("Renamed")],
+    diff: EMPTY_DIFF,
     ...overrides,
   };
 }
@@ -80,6 +95,7 @@ function rejectedMessage(
     command_id: commandId,
     error_code: "head_conflict",
     detail: "Collaborative head moved: expected sequence 4, actual 5.",
+    command_index: null,
     current_room_epoch: EPOCH_ONE,
     current_sequence: 5,
     ...overrides,
@@ -99,9 +115,9 @@ describe("GraphRoomCommandOutbox", () => {
       onHeadRefreshRequired,
     });
 
-    const first = outbox.submit(rename("Committed during disconnect"));
-    const second = outbox.submit(rename("Queued second"));
-    const third = outbox.submit(rename("Queued third"));
+    const first = outbox.submit([rename("Committed during disconnect")]);
+    const second = outbox.submit([rename("Queued second")]);
+    const third = outbox.submit([rename("Queued third")]);
 
     expect(first.sends.map((send) => send.message.command_id)).toEqual([
       "command-a",
@@ -193,7 +209,7 @@ describe("GraphRoomCommandOutbox", () => {
       onHeadRefreshRequired,
     });
 
-    const submitted = outbox.submit(rename("Receipt first"));
+    const submitted = outbox.submit([rename("Receipt first")]);
     expect(submitted.sends).toHaveLength(1);
 
     const held = outbox.applyReceipt(
@@ -238,7 +254,7 @@ describe("GraphRoomCommandOutbox", () => {
       onHeadRefreshRequired,
     });
 
-    const submitted = outbox.submit(rename("Replayed commit"));
+    const submitted = outbox.submit([rename("Replayed commit")]);
     const sends = outbox.applyReceipt(
       receiptMessage("command-a", {
         outcome: "idempotent_replay",
@@ -267,12 +283,13 @@ describe("GraphRoomCommandOutbox", () => {
       createCommandId: nextId(["command-a"]),
     });
 
-    const submitted = outbox.submit(rename("Fanout twice"));
+    const submitted = outbox.submit([rename("Fanout twice")]);
     expect(outbox.recordAccepted(acceptedMessage("command-a", 5))).toBe(true);
     expect(
       outbox.recordAccepted(
         acceptedMessage("command-a", 5, {
           command: rename("Redelivered rename"),
+          commands: [rename("Redelivered rename")],
         }),
       ),
     ).toBe(false);
@@ -299,7 +316,7 @@ describe("GraphRoomCommandOutbox", () => {
       onCommandRejected,
     });
 
-    const rejected = outbox.submit(rename("Conflicting"));
+    const rejected = outbox.submit([rename("Conflicting")]);
     outbox.applyRejected(rejectedMessage("command-a"));
     expect(onCommandRejected).toHaveBeenCalledOnce();
     await expect(rejected.promise).rejects.toMatchObject({
@@ -313,7 +330,7 @@ describe("GraphRoomCommandOutbox", () => {
     expect(outbox.pendingReceiptIsCovered()).toBe(false);
 
     // The rejected command also parked the drain; a queued command resumes it.
-    const queued = outbox.submit(rename("After conflict"));
+    const queued = outbox.submit([rename("After conflict")]);
     expect(queued.sends).toEqual([]);
     head = { room_epoch: EPOCH_ONE, collaboration_sequence: 5 };
     const resumed = outbox.finishHeadRehydration();
@@ -321,6 +338,36 @@ describe("GraphRoomCommandOutbox", () => {
       "command-b",
     ]);
     queued.promise.catch(() => undefined);
+  });
+
+  it("carries the rejection's error code and failing command index to the caller", async () => {
+    const outbox = new GraphRoomCommandOutbox({
+      headPointer: () => ({
+        room_epoch: EPOCH_ONE,
+        collaboration_sequence: 4,
+      }),
+      createCommandId: nextId(["command-a"]),
+    });
+
+    const submitted = outbox.submit([rename("First"), rename("Second")]);
+    expect(submitted.sends.map((send) => send.message.command_id)).toEqual([
+      "command-a",
+    ]);
+    outbox.applyRejected(
+      rejectedMessage("command-a", {
+        error_code: "missing_node",
+        detail: "Graph command targets missing node ghost",
+        command_index: 1,
+      }),
+    );
+
+    await expect(submitted.promise).rejects.toMatchObject({
+      name: "GraphRoomCommandError",
+      errorCode: "missing_node",
+      commandIndex: 1,
+    });
+    // Recovery is unchanged: the drain stays parked until a full head lands.
+    expect(outbox.finishHeadRehydration()).toEqual([]);
   });
 
   it("rejects the caller when the driver cannot write a returned frame", async () => {
@@ -333,7 +380,7 @@ describe("GraphRoomCommandOutbox", () => {
       createCommandId: nextId(["command-a", "command-b"]),
     });
 
-    const first = outbox.submit(rename("Never written"));
+    const first = outbox.submit([rename("Never written")]);
     expect(first.sends).toHaveLength(1);
     outbox.sendFailed(
       first.sends[0]?.commandId ?? "",
@@ -342,7 +389,7 @@ describe("GraphRoomCommandOutbox", () => {
     await expect(first.promise).rejects.toThrow("socket send rejected");
 
     // A non-Error failure still carries the command id and an error code.
-    const second = outbox.submit(rename("Second"));
+    const second = outbox.submit([rename("Second")]);
     expect(second.sends).toHaveLength(1);
     outbox.sendFailed(second.sends[0]?.commandId ?? "", "socket exploded");
     await expect(second.promise).rejects.toBeInstanceOf(GraphRoomCommandError);
@@ -350,5 +397,75 @@ describe("GraphRoomCommandOutbox", () => {
       commandId: "command-b",
       errorCode: "send_failed",
     });
+  });
+
+  it("sends a two-command batch as one frame and one in-flight unit", async () => {
+    let head: GraphRoomHeadPointer | null = {
+      room_epoch: EPOCH_ONE,
+      collaboration_sequence: 4,
+    };
+    const outbox = new GraphRoomCommandOutbox({
+      headPointer: () => head,
+      createCommandId: nextId(["command-a", "command-b"]),
+    });
+
+    const batched = outbox.submit([rename("One"), rename("Two")]);
+    expect(batched.sends).toHaveLength(1);
+    expect(batched.sends[0]?.message).toMatchObject({
+      command_id: "command-a",
+      commands: [rename("One"), rename("Two")],
+    });
+
+    // The batch is one unit: a second submit waits for the batch's receipt.
+    const queued = outbox.submit([rename("Queued")]);
+    expect(queued.sends).toEqual([]);
+
+    head = { room_epoch: EPOCH_ONE, collaboration_sequence: 5 };
+    const resumed = outbox.applyReceipt(
+      receiptMessage("command-a", {
+        accepted_sequence: 5,
+        current_sequence: 5,
+      }),
+    );
+    expect(resumed.map((send) => send.message.command_id)).toEqual([
+      "command-b",
+    ]);
+    await expect(batched.promise).resolves.toMatchObject({
+      receipt: { accepted_sequence: 5 },
+    });
+    queued.promise.catch(() => undefined);
+  });
+
+  it("lists pending commands with the in-flight batch first", () => {
+    const head: GraphRoomHeadPointer | null = {
+      room_epoch: EPOCH_ONE,
+      collaboration_sequence: 4,
+    };
+    const outbox = new GraphRoomCommandOutbox({
+      headPointer: () => head,
+      createCommandId: nextId(["command-a", "command-b", "command-c"]),
+    });
+
+    const inFlight = outbox.submit([rename("Sent first"), rename("Sent last")]);
+    const queued = outbox.submit([rename("Queued alone")]);
+    const alsoQueued = outbox.submit([rename("Queued tail")]);
+
+    expect(outbox.pendingCommands()).toEqual([
+      rename("Sent first"),
+      rename("Sent last"),
+      rename("Queued alone"),
+      rename("Queued tail"),
+    ]);
+
+    // The accepted batch is already in the confirmed head, so it drops out.
+    outbox.recordAccepted(acceptedMessage("command-a", 5));
+    expect(outbox.pendingCommands()).toEqual([
+      rename("Queued alone"),
+      rename("Queued tail"),
+    ]);
+
+    for (const submission of [inFlight, queued, alsoQueued]) {
+      submission.promise.catch(() => undefined);
+    }
   });
 });
