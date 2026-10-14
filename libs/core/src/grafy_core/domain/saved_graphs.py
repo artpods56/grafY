@@ -1,9 +1,9 @@
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from math import isfinite
 from types import MappingProxyType
-from typing import Annotated, ClassVar, Literal, Self, cast
+from typing import Annotated, ClassVar, Literal, Protocol, Self, cast
 from uuid import UUID, uuid4
 
 from pydantic import (
@@ -569,23 +569,6 @@ class GraphPresentationDocument(SavedGraphValue):
             raise ValueError("Presentation annotation ids must be unique")
         return self
 
-    def prune_for_removed_nodes(
-        self,
-        removed_node_ids: set[str],
-    ) -> "GraphPresentationDocument":
-        if not removed_node_ids:
-            return self
-        return GraphPresentationDocument(
-            viewers=self.viewers,
-            links=tuple(
-                link
-                for link in self.links
-                if link.source_node_id not in removed_node_ids
-            ),
-            bindings=self.bindings,
-            annotations=self.annotations,
-        )
-
 
 def empty_presentation() -> GraphPresentationDocument:
     return GraphPresentationDocument()
@@ -596,6 +579,32 @@ SAVED_GRAPH_SCHEMA_VERSION = 7
 # Version 6 documents stay readable; moving to 7 only added the optional
 # `origins` collection, which an absent field reads as empty.
 ACCEPTED_SAVED_GRAPH_SCHEMA_VERSIONS = (6, SAVED_GRAPH_SCHEMA_VERSION)
+
+
+class _Identified(Protocol):
+    @property
+    def id(self) -> str: ...
+
+
+def _without_ids[T: _Identified](
+    items: tuple[T, ...], ids: Collection[str]
+) -> tuple[T, ...]:
+    return tuple(item for item in items if item.id not in ids)
+
+
+def _replacing[T: _Identified](items: tuple[T, ...], replacement: T) -> tuple[T, ...]:
+    return tuple(replacement if item.id == replacement.id else item for item in items)
+
+
+def _moved[T: (SavedGraphNode, GraphPresentationViewer, GraphPresentationAnnotation)](
+    items: tuple[T, ...], positions: Mapping[str, GraphPoint]
+) -> tuple[T, ...]:
+    return tuple(
+        item.model_copy(update={"position": positions[item.id]})
+        if item.id in positions
+        else item
+        for item in items
+    )
 
 
 class SavedGraphDocument(SavedGraphValue):
@@ -746,6 +755,94 @@ class SavedGraphDocument(SavedGraphValue):
             edges=self.edges if edges is None else edges,
             origins=self.origins if origins is None else origins,
             presentation=(self.presentation if presentation is None else presentation),
+        )
+
+    def with_node_added(self, node: SavedGraphNode) -> "SavedGraphDocument":
+        return self.with_topology(nodes=(*self.nodes, node))
+
+    def with_node_replaced(self, node: SavedGraphNode) -> "SavedGraphDocument":
+        """Replace the node with the same id.
+
+        Edges and origins that target an input plug the node no longer has fall away.
+        """
+        plug_ids = {plug.id for plug in node.input_plugs}
+
+        def keeps(target: SavedGraphEdge | SavedGraphOrigin) -> bool:
+            return (
+                target.to_node != node.id
+                or target.to_plug is None
+                or target.to_plug in plug_ids
+            )
+
+        return self.with_topology(
+            nodes=_replacing(self.nodes, node),
+            edges=tuple(filter(keeps, self.edges)),
+            origins=tuple(filter(keeps, self.origins)),
+        )
+
+    def with_nodes_moved(
+        self, positions: Mapping[str, GraphPoint]
+    ) -> "SavedGraphDocument":
+        return self.with_topology(nodes=_moved(self.nodes, positions))
+
+    def with_nodes_removed(self, node_ids: Collection[str]) -> "SavedGraphDocument":
+        """Remove nodes with their edges, origins, and the card links they source."""
+        removed = set(node_ids)
+        return self.with_topology(
+            nodes=_without_ids(self.nodes, removed),
+            edges=tuple(
+                edge
+                for edge in self.edges
+                if edge.from_node not in removed and edge.to_node not in removed
+            ),
+            origins=tuple(
+                origin for origin in self.origins if origin.to_node not in removed
+            ),
+            presentation=self.presentation.model_copy(
+                update={
+                    "links": tuple(
+                        link
+                        for link in self.presentation.links
+                        if link.source_node_id not in removed
+                    )
+                }
+            ),
+        )
+
+    def with_edge_added(self, edge: SavedGraphEdge) -> "SavedGraphDocument":
+        return self.with_topology(edges=(*self.edges, edge))
+
+    def with_edge_replaced(self, edge: SavedGraphEdge) -> "SavedGraphDocument":
+        return self.with_topology(edges=_replacing(self.edges, edge))
+
+    def with_edges_removed(self, edge_ids: Collection[str]) -> "SavedGraphDocument":
+        return self.with_topology(edges=_without_ids(self.edges, edge_ids))
+
+    def with_origin_added(self, origin: SavedGraphOrigin) -> "SavedGraphDocument":
+        return self.with_topology(origins=(*self.origins, origin))
+
+    def with_origin_replaced(self, origin: SavedGraphOrigin) -> "SavedGraphDocument":
+        return self.with_topology(origins=_replacing(self.origins, origin))
+
+    def with_origins_removed(self, origin_ids: Collection[str]) -> "SavedGraphDocument":
+        return self.with_topology(origins=_without_ids(self.origins, origin_ids))
+
+    def with_viewers_moved(
+        self, positions: Mapping[str, GraphPoint]
+    ) -> "SavedGraphDocument":
+        viewers = _moved(self.presentation.viewers, positions)
+        return self.with_topology(
+            presentation=self.presentation.model_copy(update={"viewers": viewers})
+        )
+
+    def with_annotations_moved(
+        self, positions: Mapping[str, GraphPoint]
+    ) -> "SavedGraphDocument":
+        annotations = _moved(self.presentation.annotations, positions)
+        return self.with_topology(
+            presentation=self.presentation.model_copy(
+                update={"annotations": annotations}
+            )
         )
 
 
