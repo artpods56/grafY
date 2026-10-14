@@ -132,8 +132,9 @@ export function collectArtifactCardRefs(
 export function selectionCollectsIntoSequence(
   values: readonly ArtifactCardValue[],
 ): boolean {
-  if (values.length === 0) return false;
-  if (values.length === 1) return !("item_refs" in values[0]);
+  const [first] = values;
+  if (first === undefined) return false;
+  if (values.length === 1) return !("item_refs" in first);
   return true;
 }
 

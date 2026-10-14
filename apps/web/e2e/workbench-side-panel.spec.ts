@@ -1256,7 +1256,7 @@ test("a selected image resizes past the thumbnail height without the grid settin
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><path fill="#91b9ca" d="M0 0h640v360H0z"/></svg>',
     }),
   );
-  await stubResponses(page, { items: [IMAGE_LIBRARY.items[0]] });
+  await stubResponses(page, { items: IMAGE_LIBRARY.items.slice(0, 1) });
   await openPanel(page);
   await tree(page)
     .getByRole("treeitem")
