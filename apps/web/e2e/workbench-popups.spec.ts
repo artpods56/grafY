@@ -3,12 +3,15 @@ import type { Locator } from "@playwright/test";
 import type { NodeRegistry } from "../src/lib/api/contract";
 import { expect, nodeRegistry, test } from "./workbench.fixture";
 
+const catalogSeed = nodeRegistry.nodes[0];
+if (!catalogSeed) throw new Error("Test registry has no node to clone");
+
 const catalog = {
   ...nodeRegistry,
   nodes: [
     ...nodeRegistry.nodes,
     ...Array.from({ length: 22 }, (_, index) => ({
-      ...nodeRegistry.nodes[0],
+      ...catalogSeed,
       operator_id: `test.catalog_${index}`,
       title: `Catalog node ${String(index + 1).padStart(2, "0")}`,
       description:

@@ -646,7 +646,13 @@ function TableArtifactRendererState({
                         {rowIndex + 1}
                       </th>
                       {page.columns.map((column) => {
-                        const cell = row[column.id];
+                        // A page row may omit a column it was asked for; an
+                        // absent cell reads as an empty one so the columns
+                        // stay aligned instead of dropping a table cell.
+                        const cell = row[column.id] ?? {
+                          display: null,
+                          truncated: false,
+                        };
                         const text = tableCellText(cell.display);
                         const numeric =
                           column.value_type === "integer" ||

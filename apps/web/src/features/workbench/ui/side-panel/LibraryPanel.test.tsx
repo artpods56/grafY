@@ -1316,11 +1316,11 @@ describe("LibraryPanel multi-selection", () => {
     const written = await dragFrom("art-a");
 
     expect(moveIds(written)).toEqual(["art-a", "art-b"]);
+    const drop = written[ARTIFACT_DROP_TYPE];
+    if (!drop) throw new Error("expected a drop payload");
     // Two images, one sequence card, so there is nothing to group.
     expect(written[ARTIFACT_GROUPS_DATA_TYPE]).toBeUndefined();
-    expect(
-      JSON.parse(written[ARTIFACT_DROP_TYPE]).value.item_refs,
-    ).toHaveLength(2);
+    expect(JSON.parse(drop).value.item_refs).toHaveLength(2);
   });
 
   it("splits a selection of mixed kinds into one card each", async () => {
@@ -1331,7 +1331,9 @@ describe("LibraryPanel multi-selection", () => {
     const written = await dragFrom("art-a");
 
     expect(moveIds(written)).toEqual(["art-a", "art-d"]);
-    const groups = JSON.parse(written[ARTIFACT_GROUPS_DATA_TYPE]);
+    const groupsPayload = written[ARTIFACT_GROUPS_DATA_TYPE];
+    if (!groupsPayload) throw new Error("expected drop groups");
+    const groups = JSON.parse(groupsPayload);
     expect(
       groups.map((group: { value: Record<string, unknown>; shape: string }) => [
         group.value.artifact_type,
@@ -1342,9 +1344,9 @@ describe("LibraryPanel multi-selection", () => {
       ["file.csv", "one"],
     ]);
     // A canvas that predates grouped drops still lands the first card.
-    expect(JSON.parse(written[ARTIFACT_DROP_TYPE]).value.artifact_type).toBe(
-      "file.png",
-    );
+    const drop = written[ARTIFACT_DROP_TYPE];
+    if (!drop) throw new Error("expected a drop payload");
+    expect(JSON.parse(drop).value.artifact_type).toBe("file.png");
   });
 
   it("carries one row when the dragged row is outside the selection", async () => {

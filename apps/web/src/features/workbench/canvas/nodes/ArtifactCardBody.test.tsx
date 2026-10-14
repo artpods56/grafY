@@ -693,8 +693,8 @@ describe("artifact on the canvas", () => {
     expect(container.textContent).toContain("3 items");
     expect(container.textContent).toContain("Sequence<file.jpeg@1>");
     expect(thumbs).toHaveLength(3);
-    expect(thumbs?.[0].parentElement?.style.left).toBe("0px");
-    expect(thumbs?.[2].parentElement?.style.left).toBe("24px");
+    expect(thumbs![0]?.parentElement?.style.left).toBe("0px");
+    expect(thumbs![2]?.parentElement?.style.left).toBe("24px");
     expect(stack?.closest("[data-artifact-content]")).not.toBeNull();
   });
 
@@ -726,6 +726,7 @@ describe("artifact on the canvas", () => {
       ) ?? []),
     ];
     expect(layers).toHaveLength(2);
+    if (!layers[0] || !layers[1]) throw new Error("expected two stack layers");
     expect(layers[0].style.left).toBe("0px");
     expect(layers[0].style.top).toBe("0px");
     expect(layers[0].style.zIndex).toBe("2");
@@ -803,7 +804,7 @@ describe("artifact on the canvas", () => {
     });
 
     expect(onRefsChange).toHaveBeenCalledTimes(1);
-    const committed = onRefsChange.mock.calls[0][1];
+    const committed = onRefsChange.mock.calls[0]![1];
     expect(
       "item_refs" in committed
         ? committed.item_refs.map(

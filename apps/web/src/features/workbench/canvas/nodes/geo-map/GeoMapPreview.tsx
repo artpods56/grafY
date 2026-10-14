@@ -375,7 +375,11 @@ export function GeoMapPreview({
       const nextIndex = index + direction;
       if (nextIndex < 0 || nextIndex >= current.length) return current;
       const next = [...current];
-      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      const moved = next[index];
+      const neighbour = next[nextIndex];
+      if (!moved || !neighbour) return current;
+      next[index] = neighbour;
+      next[nextIndex] = moved;
       return next;
     });
   };

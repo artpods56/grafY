@@ -405,7 +405,14 @@ function GuidesCard() {
 
 export function PortInspectorSpike() {
   const [card, setCard] = React.useState<CardId>("drill");
-  const selected = CARDS.find((item) => item.id === card) ?? CARDS[3];
+  const selected =
+    CARDS.find((item) => item.id === card) ??
+    CARDS.find((item) => item.id === "drill");
+  if (!selected) {
+    throw new Error(
+      "Port inspector spike expects a drill card to fall back on",
+    );
+  }
 
   return (
     <SandboxShell

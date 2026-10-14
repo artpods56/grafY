@@ -341,8 +341,10 @@ function editableSchema(
   ) {
     return { schema: resolved, nullable: false };
   }
+  const [valueBranch] = valueBranches;
+  if (!valueBranch) return { schema: resolved, nullable: false };
   return {
-    schema: resolveSchema(valueBranches[0], root),
+    schema: resolveSchema(valueBranch, root),
     nullable: true,
   };
 }
