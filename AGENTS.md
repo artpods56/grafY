@@ -116,8 +116,8 @@ elsewhere. Walk this list and say which entries applied:
 - `docs/how-to-*.md` are operating procedures (deploy, plugin publication).
   Keep them true to the Justfile and Compose files.
 - Do not commit implementation plans, research notes, or agent scratch files.
-  Keep working material outside the worktree. Existing `docs/plans/` and
-  `docs/research/` entries are a known cleanup target, not a pattern to copy.
+  Keep working material outside the worktree. The existing `docs/plans/`
+  entries are a known cleanup target, not a pattern to copy.
 - Track active work in the GitHub issue that owns it on `artpods56/grafY` via
   `gh` (`docs/agents/issue-tracker.md`). A merged PR is the implementation
   record; do not leave a second checklist behind in the repository.
