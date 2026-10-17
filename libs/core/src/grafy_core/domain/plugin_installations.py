@@ -41,10 +41,6 @@ class PluginInstallation:
             )
         except ValueError as exc:
             raise PluginReleaseError(str(exc)) from exc
-        if self.scope is not PluginReleaseScope.SYSTEM:
-            raise PluginReleaseError(
-                "Plugin installations are reserved for System Plugins"
-            )
         if self.installed_by_user_id is not None:
             raise PluginReleaseError(
                 "System Plugin installations cannot use a Workspace user actor"
