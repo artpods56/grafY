@@ -83,6 +83,11 @@ System Plugin: add the project under `plugins/`, list it in
   republishing.
 - Two revocation lookup paths collapse into `get_system_revocation`, and Python
   node and Docker runtime admission read that one path.
+- The guest invocation envelope keeps its serialized `scope` and `workspace_id`
+  fields, because the protocol versions independently of the deployment, but only
+  a System release validates. Network profile assignments select a slug and
+  revision: a manifest that still names `scope` or `workspace_id` fails to load
+  with the reason, rather than configuring a rule that can never match.
 - The web UI loses the "Plugin publishing" personal-access-token purpose. The
   remaining purposes are graph automation and module publishing; Modules are
   unchanged and still Workspace-owned.
