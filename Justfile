@@ -60,7 +60,9 @@ sdk-wheel:
         printf 'expected one grafy-core wheel, found %d\n' "${#wheels[@]}" >&2
         exit 1
     fi
-    for directory in plugins/*/wheels; do
+    # The freeze fixture publishes like any other Plugin project, so its vendored
+    # wheel moves with the rest or tests/unit/architecture rejects the digest.
+    for directory in plugins/*/wheels tests/fixtures/plugin-notes/wheels; do
         cp "${wheels[0]}" "$directory/"
         printf 'vendored %s\n' "$directory/$(basename "${wheels[0]}")"
     done
@@ -116,29 +118,6 @@ contract:
 # Build the production web bundle.
 build:
     npm --prefix apps/web run build
-
-# Rebuild the SDK wheel vendored by guest plugin projects and refresh its pins.
-rebuild-plugin-sdk:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    wheel_dir="$(mktemp -d)"
-    trap 'rm -rf "$wheel_dir"' EXIT
-    export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct -- libs/core)"
-    uv build libs/core --wheel --out-dir "$wheel_dir" --clear
-    wheel="$wheel_dir/grafy_core-0.1.0-py3-none-any.whl"
-    cp "$wheel" plugins/image/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp "$wheel" plugins/table/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp "$wheel" plugins/gis/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp "$wheel" plugins/llm/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp "$wheel" plugins/mistral/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp "$wheel" plugins/ocr/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp "$wheel" plugins/python/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp "$wheel" plugins/sql/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp "$wheel" plugins/typesafe/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp "$wheel" plugins/notarius/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp "$wheel" examples/plugin-notes/wheels/grafy_core-0.1.0-py3-none-any.whl
-    uv lock --directory examples/plugin-notes --refresh-package grafy-core
-    uv run python -c 'from hashlib import sha256; from pathlib import Path; import re, sys; p=Path(sys.argv[1]); t=Path("tests/unit/architecture/test_import_boundaries.py"); digest=sha256(p.read_bytes()).hexdigest(); s=t.read_text(); s, count=re.subn(r"(sha256\(core_wheel\.read_bytes\(\)\)\.hexdigest\(\) == \(\n\s*\")[0-9a-f]+", rf"\g<1>{digest}", s, count=1); assert count == 1, "architecture wheel pin not found"; t.write_text(s)' "$wheel"
 
 # Run the complete retained contract.
 check: test lint typecheck contract build

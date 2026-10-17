@@ -40,7 +40,7 @@ members = [
     "apps/plugin-egress-broker",
 ]
 exclude = [
-    "examples/plugin-notes",
+    "tests/fixtures/plugin-notes",
     "plugins/image",
     "plugins/table",
     "plugins/gis",
