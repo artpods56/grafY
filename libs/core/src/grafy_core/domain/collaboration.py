@@ -437,14 +437,15 @@ def sanitize_document_for_cross_workspace_copy(
         release_pin = node.plugin_release_pin
         if (
             release_pin is not None
-            and release_pin.scope is PluginReleaseScope.WORKSPACE
+            and release_pin.scope is not PluginReleaseScope.SYSTEM
         ):
             raise CollaborationCommandRejectedError(
-                code="foreign_workspace_plugin_release",
+                code="unsupported_plugin_release_scope",
                 message=(
-                    "Cross-workspace copy cannot include Workspace Plugin "
-                    f"release {release_pin.slug!r} revision "
-                    f"{release_pin.revision}"
+                    "Cross-workspace copy cannot include "
+                    f"{release_pin.scope.value} Plugin release "
+                    f"{release_pin.slug!r} revision {release_pin.revision}; "
+                    "Workspace Plugins are no longer supported"
                 ),
             )
     sanitized_nodes = tuple(

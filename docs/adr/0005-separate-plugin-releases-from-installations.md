@@ -1,8 +1,9 @@
 # ADR 0005: Separate Plugin releases from installations
 
-- **Status:** Accepted
+- **Status:** Accepted, narrowed by ADR 0015
 - **Amended by:** ADR 0007 (installations no longer carry System distribution
-  metadata)
+  metadata), ADR 0015 (only the System namespace survives; a release installs
+  into one namespace, not "either System or one Workspace")
 
 A Plugin release is one immutable, scope-neutral package and OCI artifact. An
 append-only Plugin installation assigns that release to System scope or one

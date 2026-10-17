@@ -3,7 +3,6 @@ from uuid import UUID
 from sqlalchemy import (
     and_,
     func,
-    or_,
     select,
     text,
     update,
@@ -13,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.schema import Table
 from grafy_core.domain.plugin_catalog import PluginCatalogRelease
-from grafy_core.domain.plugin_releases import PluginReleaseScope
 from grafy_core.domain.errors import (
     ConcurrentWriteError,
 )
@@ -230,62 +228,6 @@ class SqlPluginReleaseRepository(PluginReleaseRepositoryPort):
         return release_id is not None
 
     @override
-    async def workspace_family_exists(self, slug: str) -> bool:
-        release_id = await self._session.scalar(
-            select(schema.plugin_installations.c.id)
-            .where(
-                schema.plugin_installations.c.scope == "workspace",
-                schema.plugin_installations.c.slug == slug,
-            )
-            .limit(1)
-        )
-        return release_id is not None
-
-    @override
-    async def list_workspace_catalogs(self) -> list[PluginCatalogManifest]:
-        result = await self._session.scalars(
-            select(schema.plugin_releases.c.catalog)
-            .join(
-                schema.plugin_installations,
-                schema.plugin_installations.c.release_id == schema.plugin_releases.c.id,
-            )
-            .where(schema.plugin_installations.c.scope == "workspace")
-            .order_by(
-                schema.plugin_installations.c.workspace_id.asc(),
-                schema.plugin_releases.c.slug.asc(),
-                schema.plugin_releases.c.revision.asc(),
-            )
-        )
-        return list(result)
-
-    @override
-    async def list_selected_workspace_catalogs(self) -> list[PluginCatalogManifest]:
-        releases = schema.plugin_releases
-        selections = schema.plugin_release_selections
-        installations = schema.plugin_installations
-        result = await self._session.scalars(
-            select(releases.c.catalog)
-            .select_from(selections)
-            .join(releases, selections.c.selected_release_id == releases.c.id)
-            .join(
-                installations,
-                and_(
-                    installations.c.release_id == releases.c.id,
-                    installations.c.scope == selections.c.scope,
-                    installations.c.workspace_id.is_not_distinct_from(
-                        selections.c.workspace_id
-                    ),
-                ),
-            )
-            .where(selections.c.scope == PluginReleaseScope.WORKSPACE)
-            .order_by(
-                selections.c.workspace_id.asc(),
-                releases.c.slug.asc(),
-            )
-        )
-        return list(result)
-
-    @override
     async def list_catalogs(
         self,
         namespace: PluginReleaseNamespace,
@@ -305,7 +247,7 @@ class SqlPluginReleaseRepository(PluginReleaseRepositoryPort):
         return list(result)
 
     @override
-    async def list_catalog(self, workspace_id: UUID) -> list[PluginCatalogRelease]:
+    async def list_catalog(self) -> list[PluginCatalogRelease]:
         releases = schema.plugin_releases
         selections = schema.plugin_release_selections
         installations = schema.plugin_installations
@@ -333,19 +275,8 @@ class SqlPluginReleaseRepository(PluginReleaseRepositoryPort):
                 schema.plugin_release_revocations.c.installation_id
                 == installations.c.id,
             )
-            .where(
-                or_(
-                    and_(
-                        selections.c.scope == PluginReleaseScope.SYSTEM,
-                        selections.c.workspace_id.is_(None),
-                    ),
-                    and_(
-                        selections.c.scope == PluginReleaseScope.WORKSPACE,
-                        selections.c.workspace_id == workspace_id,
-                    ),
-                )
-            )
-            .order_by(selections.c.scope.asc(), releases.c.slug.asc())
+            .where(*self._namespace_conditions(selections, PluginReleaseNamespace()))
+            .order_by(releases.c.slug.asc())
         )
         return [
             PluginCatalogRelease(

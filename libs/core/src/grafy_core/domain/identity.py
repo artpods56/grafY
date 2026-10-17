@@ -44,7 +44,6 @@ class WorkspaceCapability(StrEnum):
     CHECKPOINT_GRAPH = "checkpoint_graph"
     EXECUTE_GRAPH = "execute_graph"
     CANCEL_EXECUTION = "cancel_execution"
-    PUBLISH_PLUGIN = "publish_plugin"
     PUBLISH_MODULE = "publish_module"
     MANAGE_MODULE_LIBRARY = "manage_module_library"
     CREATE_TEMPLATE = "create_template"
@@ -106,7 +105,6 @@ PAT_ALLOWED_CAPABILITIES = frozenset(
         WorkspaceCapability.CHECKPOINT_GRAPH,
         WorkspaceCapability.EXECUTE_GRAPH,
         WorkspaceCapability.CANCEL_EXECUTION,
-        WorkspaceCapability.PUBLISH_PLUGIN,
         WorkspaceCapability.PUBLISH_MODULE,
         WorkspaceCapability.CREATE_TEMPLATE,
         WorkspaceCapability.MANAGE_SECRETS,

@@ -995,7 +995,6 @@ def _egress_policy(
             NetworkProfileAssignment(
                 plane=profile.plane,
                 profile=profile.name,
-                scope=PluginReleaseScope.SYSTEM,
                 slug=slug,
             ),
         ),

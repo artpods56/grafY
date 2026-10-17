@@ -17,7 +17,7 @@ from grafy_core.domain.plugin_releases import (
 )
 from grafy_core.plugins import Plugin
 from grafy_core.runtime.plugin_loader import (
-    WORKSPACE_PLUGIN_LOADER_TARGET,
+    DEFAULT_PLUGIN_LOADER_TARGET,
     split_plugin_loader_target,
 )
 
@@ -30,7 +30,7 @@ class InspectionResult(BaseModel):
 
 
 def inspect_plugin(
-    loader_target: str = WORKSPACE_PLUGIN_LOADER_TARGET,
+    loader_target: str = DEFAULT_PLUGIN_LOADER_TARGET,
 ) -> InspectionResult:
     module_name, attribute_name = split_plugin_loader_target(loader_target)
     module = import_module(module_name)
@@ -52,7 +52,7 @@ def main() -> None:
             "usage: python -m grafy_core.plugin_inspector [LOADER_TARGET]"
         )
     loader_target = (
-        WORKSPACE_PLUGIN_LOADER_TARGET if len(sys.argv) == 1 else sys.argv[1]
+        DEFAULT_PLUGIN_LOADER_TARGET if len(sys.argv) == 1 else sys.argv[1]
     )
     print(inspect_plugin(loader_target).model_dump_json())
 

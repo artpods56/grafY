@@ -41,7 +41,7 @@ from grafy_core.domain.plugin_releases import (
 from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_storage import LocalFileObjectStore
-from tests.support.identity import TEST_USER_ID, WORKSPACE_ID, create_schema
+from tests.support.identity import create_schema
 
 
 class RecordingSystemImageBuilder(PluginOciImageBuilder):
@@ -182,7 +182,7 @@ async def test_system_publication_stages_then_explicitly_promotes_and_rolls_back
     )
     assert [
         item.release
-        for item in await releases.list_catalog(WORKSPACE_ID)
+        for item in await releases.list_catalog()
         if item.release.installation.scope is PluginReleaseScope.SYSTEM
     ] == []
     assert image_builder.build_count == 2
@@ -202,7 +202,7 @@ async def test_system_publication_stages_then_explicitly_promotes_and_rolls_back
     assert selected.generation == 1
     assert [
         item.release
-        for item in await releases.list_catalog(WORKSPACE_ID)
+        for item in await releases.list_catalog()
         if item.release.installation.scope is PluginReleaseScope.SYSTEM
     ] == [second]
 
@@ -221,11 +221,7 @@ async def test_system_publication_stages_then_explicitly_promotes_and_rolls_back
             platform_actor=actor,
             expected_generation=selected_again.generation + 1,
         )
-    unchanged = await releases.get_selection(
-        WORKSPACE_ID,
-        second.release.slug,
-        scope=PluginReleaseScope.SYSTEM,
-    )
+    unchanged = await releases.get_selection(second.release.slug)
     assert unchanged is not None
     assert unchanged.selected_release_id == second.release.id
     assert unchanged.generation == 1
@@ -241,7 +237,7 @@ async def test_system_publication_stages_then_explicitly_promotes_and_rolls_back
     assert rolled_back.generation == 2
     assert [
         item.release
-        for item in await releases.list_catalog(WORKSPACE_ID)
+        for item in await releases.list_catalog()
         if item.release.installation.scope is PluginReleaseScope.SYSTEM
     ] == [first]
 
@@ -340,7 +336,7 @@ async def test_system_promotion_requires_isolated_execution_policy(
                 )
             assert [
                 item.release
-                for item in await releases.list_catalog(WORKSPACE_ID)
+                for item in await releases.list_catalog()
                 if item.release.installation.scope is PluginReleaseScope.SYSTEM
             ] == []
         else:
@@ -357,7 +353,7 @@ async def test_system_promotion_requires_isolated_execution_policy(
 
 
 @pytest.mark.asyncio
-async def test_system_install_reuses_workspace_release_and_runtime_artifact(
+async def test_system_publication_reuses_a_retained_release_and_its_image(
     tmp_path: Path,
 ) -> None:
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'shared-release.sqlite3'}"
@@ -381,50 +377,26 @@ async def test_system_install_reuses_workspace_release_and_runtime_artifact(
         capabilities=PluginCapabilityManifest(capabilities=entry.capabilities),
         loader_target=entry.loader_target,
     )
-    runtime_artifact = PluginRuntimeArtifact(
-        object_key=(
-            f"plugin-releases/{candidate.catalog.slug}/runtime/"
-            f"{candidate.source_digest}.oci.tar"
-        ),
-        archive_digest=candidate.source_digest,
-        manifest_digest=plugin_contract_digest(candidate.catalog),
-        config_digest="a" * 64,
-    )
-    workspace_release = await releases.publish(
-        workspace_id=WORKSPACE_ID,
-        catalog=candidate.catalog,
-        capabilities=candidate.capabilities,
-        source_archive=candidate.source_archive,
-        lock_digest=candidate.lock_digest,
-        runtime_profile=candidate.runtime_profile,
-        runtime_artifact=runtime_artifact,
-        loader_target=candidate.loader_target,
-        published_by_user_id=TEST_USER_ID,
-    )
 
-    system_release = await _workflow(
-        image_builder,
-        releases,
-        inventory,
-    ).publish_verified(
+    first = await _workflow(image_builder, releases, inventory).publish_verified(
+        candidate,
+        platform_actor=PlatformPluginActor("ci:system-release"),
+    )
+    repeat = await _workflow(image_builder, releases, inventory).publish_verified(
         candidate,
         platform_actor=PlatformPluginActor("ci:system-release"),
     )
 
-    assert system_release.release.id == workspace_release.release.id
-    assert system_release.installation.id != workspace_release.installation.id
-    assert (
-        system_release.release.runtime_artifact
-        == workspace_release.release.runtime_artifact
-    )
-    assert system_release.installation.scope is PluginReleaseScope.SYSTEM
-    assert workspace_release.installation.scope is PluginReleaseScope.WORKSPACE
-    assert image_builder.build_count == 0
+    assert repeat.release.id == first.release.id
+    assert repeat.installation.id == first.installation.id
+    assert repeat.release.runtime_artifact == first.release.runtime_artifact
+    assert repeat.installation.scope is PluginReleaseScope.SYSTEM
+    assert image_builder.build_count == 1
     await database.dispose()
 
 
 @pytest.mark.asyncio
-async def test_direct_workspace_publish_cannot_reuse_historical_system_identity(
+async def test_system_publication_cannot_claim_another_plugins_identity(
     tmp_path: Path,
 ) -> None:
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'collision.sqlite3'}"
@@ -439,33 +411,43 @@ async def test_direct_workspace_publish_cannot_reuse_historical_system_identity(
     inventory = load_system_plugin_inventory(CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH)
     workflow = _workflow(image_builder, releases, inventory)
     gis_entry = inventory.entry_for("external.gis")
-    system_catalog = _catalog(
-        slug="external.gis",
-        operator_id="gis.node",
-        required_capabilities=gis_entry.capabilities,
-    )
     await workflow.publish_verified(
         _verified(
             b"retained-system",
-            catalog=system_catalog,
+            catalog=_catalog(
+                slug="external.gis",
+                operator_id="gis.node",
+                required_capabilities=gis_entry.capabilities,
+            ),
             capabilities=PluginCapabilityManifest(capabilities=gis_entry.capabilities),
             loader_target=gis_entry.loader_target,
         ),
         platform_actor=PlatformPluginActor("ci:system-release"),
     )
+    builds_after_gis = image_builder.build_count
 
-    workspace_catalog = _catalog(slug="gis", operator_id="gis.node")
-    with pytest.raises(PluginReleaseError, match="retained System Plugin identity"):
-        await releases.publish(
-            workspace_id=WORKSPACE_ID,
-            catalog=workspace_catalog,
-            capabilities=PluginCapabilityManifest(),
-            source_archive=b"workspace",
-            lock_digest=sha256(b"workspace-lock").hexdigest(),
-            runtime_profile="python-uv",
-            runtime_artifact=None,
-            loader_target="grafy_plugin:PLUGIN",
-            published_by_user_id=TEST_USER_ID,
+    python_entry = inventory.entry_for("external.python")
+    with pytest.raises(PluginPublishingError, match="allowlisted prefixes"):
+        await workflow.publish_verified(
+            _verified(
+                b"impersonating",
+                catalog=_catalog(
+                    slug="external.python",
+                    operator_id="gis.node",
+                    required_capabilities=python_entry.capabilities,
+                ),
+                capabilities=PluginCapabilityManifest(
+                    capabilities=python_entry.capabilities
+                ),
+                loader_target=python_entry.loader_target,
+            ),
+            platform_actor=PlatformPluginActor("ci:system-release"),
         )
+
+    assert image_builder.build_count == builds_after_gis
+    assert await releases.get_by_revision("external.python", 1) is None
+    retained = await releases.get_by_revision("external.gis", 1)
+    assert retained is not None
+    assert [item.release.release.slug for item in await releases.list_catalog()] == []
 
     await database.dispose()

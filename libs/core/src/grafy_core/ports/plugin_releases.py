@@ -13,6 +13,7 @@ from grafy_core.domain.plugin_releases import (
     PluginReleaseNamespace,
     PluginRuntimeArtifact,
 )
+
 from grafy_core.domain.plugin_revocations import PluginReleaseRevocation
 from grafy_core.domain.plugin_selection import PluginReleaseSelection
 from grafy_core.ports.identity import IdentityRepositoryPort
@@ -72,21 +73,13 @@ class PluginReleaseRepositoryPort(Protocol):
         slug: str,
     ) -> bool: ...
 
-    async def workspace_family_exists(self, slug: str) -> bool: ...
-
-    async def list_workspace_catalogs(self) -> list[PluginCatalogManifest]: ...
-
     async def list_catalogs(
         self,
         namespace: PluginReleaseNamespace,
     ) -> list[PluginCatalogManifest]: ...
 
-    async def list_catalog(self, workspace_id: UUID) -> list[PluginCatalogRelease]:
-        """Read System and Workspace selections with exact admission state."""
-        ...
-
-    async def list_selected_workspace_catalogs(self) -> list[PluginCatalogManifest]:
-        """Read the selected Workspace release catalog of every Workspace."""
+    async def list_catalog(self) -> list[PluginCatalogRelease]:
+        """Read the selected System releases with exact admission state."""
         ...
 
     async def list_current(

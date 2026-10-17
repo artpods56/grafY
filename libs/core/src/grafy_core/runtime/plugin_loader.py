@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 PLUGIN_GUEST_LOADER_MANIFEST = "grafy-plugin-guest-loader@2"
-WORKSPACE_PLUGIN_LOADER_TARGET = "grafy_plugin:PLUGIN"
+DEFAULT_PLUGIN_LOADER_TARGET = "grafy_plugin:PLUGIN"
 PLUGIN_LOADER_TARGET_PATTERN = (
     r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*"
     r":[A-Za-z_][A-Za-z0-9_]*$"
@@ -71,6 +71,6 @@ __all__ = [
     "PLUGIN_GUEST_LOADER_MANIFEST",
     "PLUGIN_LOADER_TARGET_PATTERN",
     "PluginGuestLoaderManifest",
-    "WORKSPACE_PLUGIN_LOADER_TARGET",
+    "DEFAULT_PLUGIN_LOADER_TARGET",
     "split_plugin_loader_target",
 ]

@@ -83,10 +83,7 @@ mounts on the host. Use the deployed release's Compose files, environment file,
 and site override, including its storage network and network-policy mount.
 
 Read `plugins/system-plugins.toml` from the archive to choose global publication
-inputs and loader targets. Do not treat every directory under `plugins/` as a
-System Plugin. A directory outside the inventory needs its own publication scope.
-For `ai-ihpan`, leave Notarius unpublished unless the owner requests publication
-in an appropriate scope.
+inputs and loader targets.
 
 To update the application and Plugins together, deploy the application first.
 Publish the changed Plugins against its SDK and inventory, then promote their

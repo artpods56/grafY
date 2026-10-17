@@ -1,4 +1,4 @@
-"""Compiler contracts for exact Workspace Plugin release pins."""
+"""Compiler contracts for exact System Plugin release pins."""
 
 from collections.abc import Mapping
 from pathlib import Path
@@ -94,7 +94,6 @@ from pydantic import ValidationError
 from tests.support.system_plugins import build_explicit_plugin_registry
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000871")
-OTHER_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000872")
 TEXT = PluginArtifactTypeKey(id="scalar.text", schema_version=1)
 HOST_LOADER_TARGET = "grafy_workbench.text.plugin:TEXT"
 HOST_BUILD_DIGEST = "f" * 64
@@ -136,8 +135,6 @@ def _release(
     revision: int,
     nodes: tuple[PluginNodeContract, ...] = (_echo_contract(),),
     *,
-    workspace_id: UUID = WORKSPACE_ID,
-    scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
     executable: bool = True,
     declared_capabilities: tuple[PluginRuntimeCapability, ...] = (),
     execution_policy: PluginExecutionPolicy = PluginExecutionPolicy.ISOLATED_ONLY,
@@ -186,28 +183,13 @@ def _release(
             runtime_artifact.manifest_digest if runtime_artifact is not None else None
         ),
         runtime_artifact=runtime_artifact,
-        published_by_user_id=(
-            workspace_id if scope is PluginReleaseScope.WORKSPACE else None
-        ),
-        published_by_platform_actor=(
-            "test:system" if scope is PluginReleaseScope.SYSTEM else None
-        ),
+        published_by_platform_actor="test:system",
     )
     installation = PluginInstallation.from_release(
         release,
-        namespace=PluginReleaseNamespace(
-            scope=scope,
-            workspace_id=(
-                workspace_id if scope is PluginReleaseScope.WORKSPACE else None
-            ),
-        ),
+        namespace=PluginReleaseNamespace(),
         execution_policy=execution_policy,
-        installed_by_user_id=(
-            workspace_id if scope is PluginReleaseScope.WORKSPACE else None
-        ),
-        installed_by_platform_actor=(
-            "test:system" if scope is PluginReleaseScope.SYSTEM else None
-        ),
+        installed_by_platform_actor="test:system",
     )
     return InstalledPluginRelease(release=release, installation=installation)
 
@@ -243,12 +225,8 @@ def _host_text_release(revision: int) -> InstalledPluginRelease:
         release=release,
         installation=PluginInstallation.from_release(
             release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.SYSTEM,
-                workspace_id=None,
-            ),
+            namespace=PluginReleaseNamespace(),
             execution_policy=PluginExecutionPolicy.HOST_ELIGIBLE,
-            installed_by_user_id=None,
             installed_by_platform_actor="test:system",
         ),
     )
@@ -270,59 +248,24 @@ class RecordingReleaseLookup:
 
     async def get_by_revision(
         self,
-        workspace_id: UUID,
         slug: str,
         revision: int,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
     ) -> InstalledPluginRelease | None:
         self.release_reads += 1
-        expected_owner = workspace_id if scope is PluginReleaseScope.WORKSPACE else None
         for release in self._releases:
             if (
-                release.installation.scope is scope
-                and release.installation.workspace_id == expected_owner
-                and release.release.slug == slug
+                release.release.slug == slug
                 and release.release.revision == revision
             ):
                 return release
         return None
 
-    async def get_selection(
-        self,
-        workspace_id: UUID,
-        slug: str,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
-    ) -> PluginReleaseSelection | None:
+    async def get_selection(self, slug: str) -> PluginReleaseSelection | None:
         self.selection_reads += 1
-        del workspace_id
         selection = self._selection
-        if selection is None:
+        if selection is None or selection.slug != slug:
             return None
-        if selection.scope is scope and selection.slug == slug:
-            return selection
-        return None
-
-    async def get_revocation(
-        self,
-        *,
-        workspace_id: UUID,
-        slug: str,
-        revision: int,
-    ) -> PluginReleaseRevocation | None:
-        self.revocation_reads += 1
-        revocation = self._revocation
-        if revocation is None:
-            return None
-        if (
-            revocation.scope is PluginReleaseScope.WORKSPACE
-            and revocation.workspace_id == workspace_id
-            and revocation.slug == slug
-            and revocation.revision == revision
-        ):
-            return revocation
-        return None
+        return selection
 
     async def get_system_revocation(
         self,
@@ -428,7 +371,7 @@ def _echo_run_request(
             _pinned_node(
                 "echo",
                 PluginReleasePinModel(
-                    scope=PluginReleaseScope.WORKSPACE,
+                    scope=PluginReleaseScope.SYSTEM,
                     slug="notes",
                     revision=pin_revision,
                 ),
@@ -541,47 +484,32 @@ async def test_same_operator_in_two_releases_compiles_to_distinct_identities() -
 
 
 @pytest.mark.asyncio
-async def test_same_slug_and_revision_resolve_independently_by_release_scope() -> None:
-    workspace_release = _release(1)
-    system_release = _release(1, scope=PluginReleaseScope.SYSTEM)
-    compiler = _compiler(
-        RecordingReleaseLookup(workspace_release, system_release),
-        NoopInvoker(),
+async def test_a_stored_workspace_scope_pin_is_refused_with_a_usable_reason() -> None:
+    request = _echo_run_request(pin_revision=1)
+    workspace_pinned = request.model_copy(
+        update={
+            "nodes": [
+                request.nodes[0].model_copy(
+                    update={
+                        "plugin_release": PluginReleasePinModel(
+                            scope=PluginReleaseScope.WORKSPACE,
+                            slug="notes",
+                            revision=1,
+                        )
+                    }
+                )
+            ]
+        }
     )
 
-    workspace_graph = await compiler.compile(
-        _echo_run_request(pin_revision=1),
-        _UnusedModuleExecutor(),
-        workspace_id=WORKSPACE_ID,
-    )
-    system_request = _echo_run_request(pin_revision=1)
-    system_graph = await compiler.compile(
-        system_request.model_copy(
-            update={
-                "nodes": [
-                    system_request.nodes[0].model_copy(
-                        update={
-                            "plugin_release": PluginReleasePinModel(
-                                scope=PluginReleaseScope.SYSTEM,
-                                slug="notes",
-                                revision=1,
-                            )
-                        }
-                    )
-                ]
-            }
-        ),
-        _UnusedModuleExecutor(),
-        workspace_id=WORKSPACE_ID,
-    )
-
-    workspace_identity = workspace_graph.nodes[0].plugin_release
-    system_identity = system_graph.nodes[0].plugin_release
-    assert workspace_identity is not None
-    assert workspace_identity.scope is PluginReleaseScope.WORKSPACE
-    assert system_identity is not None
-    assert system_identity.scope is PluginReleaseScope.SYSTEM
-    assert system_identity.workspace_id is None
+    with pytest.raises(
+        GraphExecutionError, match="Workspace Plugins are no longer supported"
+    ):
+        await _compiler(RecordingReleaseLookup(_release(1))).compile(
+            workspace_pinned,
+            _UnusedModuleExecutor(),
+            workspace_id=WORKSPACE_ID,
+        )
 
 
 @pytest.mark.asyncio
@@ -724,7 +652,6 @@ async def test_isolated_exact_release_supplies_its_own_projectable_artifact_cont
     release = _release(
         1,
         nodes=(producer, _echo_contract()),
-        scope=PluginReleaseScope.SYSTEM,
         artifact_types=(unique_artifact,),
         artifact_type_dependencies=(
             PluginArtifactTypeContract.from_spec(
@@ -776,20 +703,19 @@ async def test_isolated_exact_release_supplies_its_own_projectable_artifact_cont
     )
 
 
-def test_isolated_only_and_workspace_releases_never_select_host_route() -> None:
+def test_an_unselected_release_never_selects_host_route() -> None:
     admission = ReleaseExecutionAdmission(
         isolated_adapter_available=True,
         runtime_profile="python-uv",
     )
-    isolated_system = _release(1, scope=PluginReleaseScope.SYSTEM)
+    isolated_system = _release(1)
     isolated_selection = PluginReleaseSelection.from_release(isolated_system)
-    workspace = _release(1)
 
     assert (
         admission.decide(isolated_system, selection=isolated_selection)
         is ReleaseExecutionRoute.ISOLATED
     )
-    assert admission.decide(workspace) is ReleaseExecutionRoute.ISOLATED
+    assert admission.decide(isolated_system) is ReleaseExecutionRoute.ISOLATED
 
 
 def test_non_published_system_selection_never_selects_host_route() -> None:
@@ -807,23 +733,21 @@ def test_non_published_system_selection_never_selects_host_route() -> None:
 
 
 @pytest.mark.parametrize(
-    ("scope", "execution_policy", "revoked"),
+    ("execution_policy", "revoked"),
     [
-        (PluginReleaseScope.WORKSPACE, PluginExecutionPolicy.ISOLATED_ONLY, False),
-        (PluginReleaseScope.SYSTEM, PluginExecutionPolicy.ISOLATED_ONLY, False),
-        (PluginReleaseScope.SYSTEM, PluginExecutionPolicy.HOST_ELIGIBLE, False),
-        (PluginReleaseScope.SYSTEM, PluginExecutionPolicy.ISOLATED_ONLY, True),
-        (PluginReleaseScope.SYSTEM, PluginExecutionPolicy.HOST_ELIGIBLE, True),
+        (PluginExecutionPolicy.ISOLATED_ONLY, False),
+        (PluginExecutionPolicy.HOST_ELIGIBLE, False),
+        (PluginExecutionPolicy.ISOLATED_ONLY, True),
+        (PluginExecutionPolicy.HOST_ELIGIBLE, True),
     ],
 )
 @pytest.mark.parametrize("runtime_available", [False, True])
-def test_release_scope_and_historical_policy_cannot_bypass_isolation(
-    scope: PluginReleaseScope,
+def test_historical_policy_and_revocation_cannot_bypass_isolation(
     execution_policy: PluginExecutionPolicy,
     runtime_available: bool,
     revoked: bool,
 ) -> None:
-    release = _release(1, scope=scope, execution_policy=execution_policy)
+    release = _release(1, execution_policy=execution_policy)
     revocation = (
         PluginReleaseRevocation.from_release(
             release,
@@ -928,7 +852,7 @@ def test_admission_rejects_an_exact_revocation_with_the_stable_reason() -> None:
     revocation = PluginReleaseRevocation.from_release(
         release,
         reason=PluginReleaseRevocationReason.SECURITY,
-        revoked_by_user_id=uuid4(),
+        revoked_by_platform_actor="test:system",
     )
 
     decision = _RELEASE_ADMISSION.decide(release, revocation=revocation)
@@ -939,23 +863,25 @@ def test_admission_rejects_an_exact_revocation_with_the_stable_reason() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pin_to_another_workspace_fails_without_disclosing_the_release() -> None:
-    foreign = _release(4, workspace_id=OTHER_WORKSPACE_ID)
+async def test_a_pin_to_an_unretained_revision_is_not_resolved() -> None:
+    retained = _release(4)
     request = RunRequest(
         nodes=[
             _pinned_node(
                 "echo",
                 PluginReleasePinModel(
-                    scope=PluginReleaseScope.WORKSPACE,
+                    scope=PluginReleaseScope.SYSTEM,
                     slug="notes",
-                    revision=4,
+                    revision=9,
                 ),
             )
         ]
     )
 
-    with pytest.raises(GraphExecutionError, match="does not exist in this workspace"):
-        await _compiler(RecordingReleaseLookup(foreign)).compile(
+    with pytest.raises(
+        GraphExecutionError, match="does not exist in the System Plugin catalog"
+    ):
+        await _compiler(RecordingReleaseLookup(retained)).compile(
             request,
             _UnusedModuleExecutor(),
             workspace_id=WORKSPACE_ID,
@@ -970,7 +896,7 @@ def test_builtin_node_cannot_carry_a_plugin_release_pin() -> None:
             operator_id="text.input",
             operator_version=1,
             plugin_release=PluginReleasePinModel(
-                scope=PluginReleaseScope.WORKSPACE,
+                scope=PluginReleaseScope.SYSTEM,
                 slug="notes",
                 revision=1,
             ),
@@ -985,7 +911,7 @@ def test_graph_module_cannot_carry_a_plugin_release_pin() -> None:
             operator_id=f"graph.module.{uuid4()}",
             operator_version=1,
             plugin_release=PluginReleasePinModel(
-                scope=PluginReleaseScope.WORKSPACE,
+                scope=PluginReleaseScope.SYSTEM,
                 slug="notes",
                 revision=1,
             ),
@@ -1013,7 +939,7 @@ def test_module_boundary_cannot_carry_a_plugin_release_pin(
         )
 
 
-def test_workspace_plugin_node_without_a_pin_fails_closed() -> None:
+def test_plugin_node_without_a_pin_fails_closed() -> None:
     with pytest.raises(ValidationError, match="must pin an exact Plugin release"):
         RunNodeRequest(
             kind="plugin",
@@ -1032,7 +958,7 @@ async def test_missing_pinned_release_blocks_compilation_with_a_clear_error() ->
             _pinned_node(
                 "echo",
                 PluginReleasePinModel(
-                    scope=PluginReleaseScope.WORKSPACE,
+                    scope=PluginReleaseScope.SYSTEM,
                     slug="notes",
                     revision=7,
                 ),
@@ -1089,7 +1015,7 @@ async def test_revoked_exact_release_pin_is_not_runnable() -> None:
     revocation = PluginReleaseRevocation.from_release(
         release,
         reason=PluginReleaseRevocationReason.SECURITY,
-        revoked_by_user_id=uuid4(),
+        revoked_by_platform_actor="test:system",
     )
 
     with pytest.raises(GraphExecutionError, match=r"not runnable \(revoked\)"):
@@ -1109,7 +1035,7 @@ async def test_compile_snapshots_exact_release_admission_facts_once() -> None:
         _pinned_node(
             "echo-again",
             PluginReleasePinModel(
-                scope=PluginReleaseScope.WORKSPACE,
+                scope=PluginReleaseScope.SYSTEM,
                 slug="notes",
                 revision=1,
             ),
@@ -1163,7 +1089,7 @@ async def test_release_that_does_not_declare_the_operator_is_rejected() -> None:
             _pinned_node(
                 "echo",
                 PluginReleasePinModel(
-                    scope=PluginReleaseScope.WORKSPACE,
+                    scope=PluginReleaseScope.SYSTEM,
                     slug="notes",
                     revision=3,
                 ),
@@ -1208,7 +1134,7 @@ async def test_pinned_plugin_participates_in_ordinary_map_semantics() -> None:
     echo = _pinned_node(
         "echo",
         PluginReleasePinModel(
-            scope=PluginReleaseScope.WORKSPACE,
+            scope=PluginReleaseScope.SYSTEM,
             slug="notes",
             revision=1,
         ),
@@ -1474,7 +1400,7 @@ async def test_host_node_output_feeds_pinned_workspace_plugin_in_same_graph(
             _pinned_node(
                 "plugin-echo",
                 PluginReleasePinModel(
-                    scope=PluginReleaseScope.WORKSPACE,
+                    scope=PluginReleaseScope.SYSTEM,
                     slug="notes",
                     revision=1,
                 ),
@@ -1554,7 +1480,7 @@ async def test_release_revoked_after_preflight_is_rejected_by_compilation() -> N
     lookup._revocation = PluginReleaseRevocation.from_release(
         release,
         reason=PluginReleaseRevocationReason.SECURITY,
-        revoked_by_user_id=uuid4(),
+        revoked_by_platform_actor="test:system",
     )
 
     with pytest.raises(GraphExecutionError, match=r"not runnable \(revoked\)"):
@@ -1568,29 +1494,6 @@ async def test_release_revoked_after_preflight_is_rejected_by_compilation() -> N
     assert lookup.release_reads == 1
     assert lookup.revocation_reads == 1
     assert lookup.selection_reads == 1
-
-
-@pytest.mark.asyncio
-async def test_prepared_release_cannot_cross_workspace_boundary() -> None:
-    lookup = RecordingReleaseLookup(_release(1))
-    preflight = GraphRunPreflight(
-        plugin_registry=build_explicit_plugin_registry(),
-        saved_graphs=None,
-        plugin_release_lookup=lookup,
-    )
-    request = _echo_run_request(pin_revision=1)
-    context = await preflight.validate(WORKSPACE_ID, request)
-
-    with pytest.raises(GraphExecutionError, match="does not exist in this workspace"):
-        await _compiler(lookup).compile(
-            request,
-            _UnusedModuleExecutor(),
-            workspace_id=uuid4(),
-            resolved_releases=context.resolved_releases,
-        )
-
-    assert lookup.release_reads == 2
-    assert lookup.revocation_reads == 0
 
 
 @pytest.mark.asyncio

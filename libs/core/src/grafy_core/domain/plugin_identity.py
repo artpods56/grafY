@@ -6,6 +6,8 @@ from uuid import UUID
 
 
 class PluginReleaseScope(StrEnum):
+    """Durable release family scope carried by a Plugin release pin."""
+
     SYSTEM = "system"
     WORKSPACE = "workspace"
 
@@ -32,30 +34,20 @@ class PlatformPluginActor:
 
 @dataclass(frozen=True, slots=True)
 class PluginReleaseNamespace:
-    """Visibility and ownership boundary for one Plugin release family."""
+    """The deployment-owned visibility boundary for every Plugin release."""
 
-    scope: PluginReleaseScope
-    workspace_id: UUID | None
+    scope: PluginReleaseScope = PluginReleaseScope.SYSTEM
+    workspace_id: UUID | None = None
 
     def __post_init__(self) -> None:
-        if self.scope is PluginReleaseScope.SYSTEM and self.workspace_id is not None:
+        if self.scope is not PluginReleaseScope.SYSTEM:
+            raise ValueError(
+                "Plugin releases are visible only in the System namespace"
+            )
+        if self.workspace_id is not None:
             raise ValueError(
                 "System Plugin release namespaces cannot have a Workspace owner"
             )
-        if self.scope is PluginReleaseScope.WORKSPACE and self.workspace_id is None:
-            raise ValueError(
-                "Workspace Plugin release namespaces require a Workspace owner"
-            )
-
-    @property
-    def storage_path(self) -> str:
-        if self.scope is PluginReleaseScope.SYSTEM:
-            return "system"
-        if self.workspace_id is None:
-            raise ValueError(
-                "Workspace Plugin release namespace has no Workspace owner"
-            )
-        return f"workspaces/{self.workspace_id}"
 
 
 __all__ = [

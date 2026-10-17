@@ -311,12 +311,8 @@ def _isolated_secret_release() -> InstalledPluginRelease:
         release=release,
         installation=PluginInstallation.from_release(
             release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.SYSTEM,
-                workspace_id=None,
-            ),
+            namespace=PluginReleaseNamespace(),
             execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_user_id=None,
             installed_by_platform_actor="test:secrets",
         ),
     )

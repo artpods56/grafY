@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 from grafy_core.artifacts import ArtifactRef
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.domain.plugin_releases import PluginNodeContract, PluginReleaseScope
+from grafy_core.domain.saved_graphs import SavedGraphPluginReleasePin
 from grafy_core.domain.plugin_revocations import PluginReleaseRevocation
 from grafy_core.nodes import NodeExecutionContext, PortShape
 from grafy_core.ports.storage import FileStoragePort
@@ -57,20 +58,9 @@ class PythonApplyUnavailableError(RuntimeError):
 class PythonReleaseLookup(Protocol):
     async def get_by_revision(
         self,
-        workspace_id: UUID,
         slug: str,
         revision: int,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
     ) -> InstalledPluginRelease | None: ...
-
-    async def get_revocation(
-        self,
-        *,
-        workspace_id: UUID,
-        slug: str,
-        revision: int,
-    ) -> PluginReleaseRevocation | None: ...
 
     async def get_system_revocation(
         self,
@@ -192,15 +182,13 @@ class PythonApplyService:
         *,
         workspace_id: UUID,
         code: str,
-        scope: PluginReleaseScope,
-        slug: str,
-        revision: int,
+        plugin_release: SavedGraphPluginReleasePin,
     ) -> PythonApplyResult:
         code_sha256 = sha256(code.encode("utf-8")).hexdigest()
         diagnostics = host_diagnostics(code)
         if diagnostics:
             return PythonApplyResult(code_sha256, None, diagnostics)
-        release = await self._runnable_release(workspace_id, scope, slug, revision)
+        release = await self._runnable_release(plugin_release)
         report = await self._inspect(workspace_id, release, code)
         if report.contract is not None:
             declared = {
@@ -224,36 +212,29 @@ class PythonApplyService:
 
     async def _runnable_release(
         self,
-        workspace_id: UUID,
-        scope: PluginReleaseScope,
-        slug: str,
-        revision: int,
+        pin: SavedGraphPluginReleasePin,
     ) -> InstalledPluginRelease:
+        if pin.scope is not PluginReleaseScope.SYSTEM:
+            raise PythonApplyUnavailableError(
+                f"Plugin release {pin.slug!r} revision {pin.revision} is a "
+                f"{pin.scope.value} Plugin release; Workspace Plugins are no "
+                "longer supported"
+            )
+        slug = pin.slug
+        revision = pin.revision
         if slug != PYTHON_PLUGIN_SLUG:
             raise PythonApplyUnavailableError(
                 f"Plugin {slug!r} is not the Python runner {PYTHON_PLUGIN_SLUG!r}"
             )
-        release = await self._releases.get_by_revision(
-            workspace_id,
-            slug,
-            revision,
-            scope=scope,
-        )
+        release = await self._releases.get_by_revision(slug, revision)
         if release is None:
             raise PythonApplyUnavailableError(
                 f"Python runner release {slug} revision {revision} is unavailable"
             )
-        if scope is PluginReleaseScope.SYSTEM:
-            revocation = await self._releases.get_system_revocation(
-                slug=slug,
-                revision=revision,
-            )
-        else:
-            revocation = await self._releases.get_revocation(
-                workspace_id=workspace_id,
-                slug=slug,
-                revision=revision,
-            )
+        revocation = await self._releases.get_system_revocation(
+            slug=slug,
+            revision=revision,
+        )
         decision = self._admission.decide(
             release,
             node_contract=self._inspect_contract(release),

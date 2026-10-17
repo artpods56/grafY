@@ -12,7 +12,6 @@ from grafy_core.domain.plugin_releases import (
     PluginRelease,
     PluginReleaseIdentity,
     PluginReleaseNamespace,
-    PluginReleaseScope,
     PluginExecutionPolicy,
     PluginRuntimeArtifact,
     plugin_contract_digest,
@@ -60,37 +59,15 @@ class _ReleaseLookup:
 
     async def get_by_revision(
         self,
-        workspace_id: UUID,
         slug: str,
         revision: int,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
     ) -> InstalledPluginRelease | None:
         release = self._release
         if (
-            workspace_id == WORKSPACE_ID
-            and scope is release.installation.scope
-            and slug == release.release.slug
+            slug == release.release.slug
             and revision == release.release.revision
         ):
             return release
-        return None
-
-    async def get_revocation(
-        self,
-        *,
-        workspace_id: UUID,
-        slug: str,
-        revision: int,
-    ) -> PluginReleaseRevocation | None:
-        revocation = self._revocation
-        if (
-            revocation is not None
-            and revocation.workspace_id == workspace_id
-            and revocation.slug == slug
-            and revocation.revision == revision
-        ):
-            return revocation
         return None
 
     async def get_system_revocation(
@@ -99,7 +76,13 @@ class _ReleaseLookup:
         slug: str,
         revision: int,
     ) -> PluginReleaseRevocation | None:
-        del slug, revision
+        revocation = self._revocation
+        if (
+            revocation is not None
+            and revocation.slug == slug
+            and revocation.revision == revision
+        ):
+            return revocation
         return None
 
     async def list_runtime_artifacts(self) -> list[PluginRuntimeArtifact]:
@@ -190,13 +173,9 @@ def _unsupported_release() -> InstalledPluginRelease:
         release=release,
         installation=PluginInstallation.from_release(
             release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.WORKSPACE,
-                workspace_id=WORKSPACE_ID,
-            ),
+            namespace=PluginReleaseNamespace(),
             execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_user_id=WORKSPACE_ID,
-            installed_by_platform_actor=None,
+            installed_by_platform_actor="test:platform",
         ),
     )
 
@@ -216,7 +195,7 @@ async def test_docker_runtime_rechecks_release_admission_before_starting_guest(
         PluginReleaseRevocation.from_release(
             release,
             reason=PluginReleaseRevocationReason.SECURITY,
-            revoked_by_user_id=uuid4(),
+            revoked_by_platform_actor="test:platform",
         )
         if revoked
         else None

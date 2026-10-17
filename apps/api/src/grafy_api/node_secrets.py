@@ -18,7 +18,6 @@ from pydantic import SecretStr, ValidationError
 from grafy_core.domain.errors import NotFoundError
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.domain.plugin_releases import (
-    PluginReleaseScope,
     PluginSecretInputContract,
 )
 from grafy_core.domain.node_secrets import (
@@ -67,11 +66,8 @@ class NodeSecretResolutionReason(StrEnum):
 class NodeSecretPluginReleaseLookup(Protocol):
     async def get_by_revision(
         self,
-        workspace_id: UUID,
         slug: str,
         revision: int,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
     ) -> InstalledPluginRelease | None: ...
 
 
@@ -148,10 +144,7 @@ class NodeSecretService(NodeSecretResolverPort):
         unresolved_nodes: list[NodeSecretResolutionState] = []
         for node in graph.document.nodes:
             try:
-                contract = await self._resolved_node_secret_contract(
-                    graph.workspace_id,
-                    node,
-                )
+                contract = await self._resolved_node_secret_contract(node)
             except ValidationError:
                 reason = NodeSecretResolutionReason.INVALID_CONFIGURATION
                 logger.warning(
@@ -436,17 +429,13 @@ class NodeSecretService(NodeSecretResolverPort):
             raise NodeSecretDeclarationError(
                 f"Node {node_id!r} does not exist in graph {graph.id}"
             )
-        contract = await self._resolved_node_secret_contract(
-            graph.workspace_id,
-            node,
-        )
+        contract = await self._resolved_node_secret_contract(node)
         if contract is None:
             pin = node.plugin_release_pin
             if pin is not None and self._plugin_release_lookup is not None:
                 raise NodeSecretDeclarationError(
                     f"Node {node_id!r} uses an unavailable operator in pinned "
-                    f"{pin.scope.value} Plugin release {pin.slug!r} revision "
-                    f"{pin.revision}"
+                    f"Plugin release {pin.slug!r} revision {pin.revision}"
                 )
             raise NodeSecretDeclarationError(
                 f"Node {node_id!r} uses an unavailable operator"
@@ -478,16 +467,13 @@ class NodeSecretService(NodeSecretResolverPort):
 
     async def _resolved_node_secret_contract(
         self,
-        workspace_id: UUID,
         node: SavedGraphNode,
     ) -> _ResolvedNodeSecretContract | None:
         pin = node.plugin_release_pin
         if pin is not None and self._plugin_release_lookup is not None:
             release = await self._plugin_release_lookup.get_by_revision(
-                workspace_id,
                 pin.slug,
                 pin.revision,
-                scope=pin.scope,
             )
             if release is None:
                 return None

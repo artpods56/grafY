@@ -116,12 +116,11 @@ class GraphRunPreflight:
                 )
             if self._plugin_release_lookup is None:
                 raise GraphExecutionError(
-                    f"Node {node.id!r} pins {pin.scope.value.title()} Plugin "
-                    f"release {pin.slug!r} revision {pin.revision}, but exact "
-                    "Plugin release preflight is not configured for this workbench"
+                    f"Node {node.id!r} pins Plugin release {pin.slug!r} revision "
+                    f"{pin.revision}, but exact Plugin release preflight is not "
+                    "configured for this workbench"
                 )
             resolved = await resolve_plugin_release(
-                workspace_id,
                 node,
                 self._plugin_release_lookup,
                 resolved_releases,
@@ -196,8 +195,6 @@ class GraphRunPreflight:
             return
         resolution = resolve_http_egress_authority(
             self._network_policy,
-            scope=release.installation.scope,
-            workspace_id=release.installation.workspace_id,
             slug=release.release.slug,
             revision=release.release.revision,
             contract=contract,

@@ -1,12 +1,13 @@
 # Publish Plugins from the CLI
 
-Use a Workspace PAT for Workspace publication and a platform access token for
-global publication. Run database migrations before issuing platform tokens.
+Plugin publication is a platform operation: it takes a platform access token, and
+the slug must appear in `plugins/system-plugins.toml` (see
+[ADR 0015](adr/0015-plugins-are-system-only.md)). Run database migrations before
+issuing platform tokens.
 
 ## Configure an interactive credential
 
-Create a Workspace PAT in Grafy with the `publish_plugin` scope, or ask a
-deployment operator for a platform token. Then store and verify it:
+Ask the deployment operator for a platform token, then store and verify it:
 
 ```console
 grafy auth login
@@ -23,17 +24,18 @@ export GRAFY_TOKEN_FILE=/run/secrets/grafy-token
 The file must contain one token and may end with one newline. Do not put the
 token itself in an environment variable or command argument.
 
-## Publish to the token's Workspace
+## Check a Plugin project
 
-Check the directory before publication:
+Verification is read-only and never opens the database. It builds the locked
+project, inspects the declared catalog, and prints the digests publication would
+record:
 
 ```console
-grafy plugin check examples/plugin-notes
-grafy plugin publish examples/plugin-notes --slug notes
+grafy plugin check plugins/llm
 ```
 
-Grafy derives the Workspace and User from the PAT. There is no Workspace or
-actor argument.
+The slug and loader target are not arguments here; the project declares them, and
+publication refuses a project whose declaration does not match the inventory.
 
 ## Issue a platform token
 
@@ -56,15 +58,14 @@ grafy admin platform-token list
 grafy admin platform-token revoke TOKEN_ID
 ```
 
-## Publish and promote globally
+## Publish and promote
 
-Global publication verifies the candidate in the configured publisher image
-and appends an inactive release:
+Publication verifies the candidate in the configured publisher image and appends
+an inactive release. It never activates one:
 
 ```console
 grafy plugin publish plugins/llm \
   --slug external.llm \
-  --global \
   --sandbox-image grafy-publisher:local
 ```
 

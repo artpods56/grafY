@@ -108,14 +108,15 @@ refs; stale or inaccessible refs are evicted lazily.
 ## Register a plugin
 
 Each Plugin project exports one `grafy_core.plugins.Plugin` declaration from a
-stable loader target. Workspace projects are published as immutable,
-workspace-scoped releases and execute through the retained isolated runtime;
-the API never imports their working copies.
+stable loader target. Every Plugin is System-owned: it is published as an
+immutable release and executes through the isolated runtime, and the API never
+imports its working copy (see [ADR 0015](docs/adr/0015-plugins-are-system-only.md)).
 
-System projects are enumerated by the platform-owned inventory. Publish an
-immutable release, then explicitly promote it to make it available globally.
-System and Workspace Plugins execute in isolated workers using their retained
-OCI artifacts. Startup registers the workbench's builtin families and Module
+The platform-owned inventory under `plugins/system-plugins.toml` enumerates the
+projects, their slugs, loader targets, capabilities, and the identity prefixes
+each may claim. Publish an immutable release, then explicitly promote it to make
+it available. Plugins execute in isolated workers using their retained OCI
+artifacts. Startup registers the workbench's builtin families and Module
 boundaries. Installing a Plugin package alone does not activate it. See
 [Plugin development](docs/design/plugin-development.md) for project shape and
 publication workflows.

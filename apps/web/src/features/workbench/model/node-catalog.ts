@@ -445,7 +445,6 @@ export function catalogNodeProviderLabel(
     return `Module · release ${spec.module_graph_revision} · ${state}`;
   }
   if (plugin.origin === "builtin") return plugin.title || "Built-in";
-  if (plugin.scope === "workspace") return `${plugin.title} · Workspace`;
   return plugin.title || "Plugin";
 }
 

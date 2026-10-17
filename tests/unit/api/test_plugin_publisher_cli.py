@@ -17,12 +17,7 @@ from grafy_core.domain.system_plugin_inventory import (
     SystemPluginInventoryError,
 )
 from grafy_core.domain.plugin_revocations import PluginReleaseRevocationError
-from grafy_core.domain.identity import (
-    ActorContext,
-    PlatformTokenPrincipal,
-    WorkspaceCapability,
-    WorkspacePatPrincipal,
-)
+from grafy_core.domain.identity import PlatformTokenPrincipal
 from grafy_core.domain.plugin_releases import PlatformPluginActor
 
 
@@ -43,24 +38,9 @@ class FakePluginOciImageBuilder:
         del args, kwargs
 
 
-WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000001")
-ACTOR_ID = UUID("00000000-0000-0000-0000-000000000002")
-
-
 class FakeIdentityService:
     def __init__(self, *args: object, **kwargs: object) -> None:
         del args, kwargs
-
-    async def authenticate_personal_access_token(
-        self, **kwargs: object
-    ) -> WorkspacePatPrincipal:
-        del kwargs
-        return WorkspacePatPrincipal(
-            actor=ActorContext(ACTOR_ID, "pat:test"),
-            workspace_id=WORKSPACE_ID,
-            capabilities=frozenset({WorkspaceCapability.PUBLISH_PLUGIN}),
-            token_id=UUID("00000000-0000-0000-0000-000000000003"),
-        )
 
     async def authenticate_platform_access_token(
         self, **kwargs: object
@@ -74,10 +54,6 @@ class FakeIdentityService:
         )
 
 
-def personal_credential(_database_url: str) -> CredentialDigest:
-    return CredentialDigest("personal", "nrt_test", b"digest")
-
-
 def platform_credential(_database_url: str) -> CredentialDigest:
     return CredentialDigest("platform", "gpat_test", b"digest")
 
@@ -89,13 +65,8 @@ class RecordingPluginChecker:
     def verify(
         self,
         directory: Path,
-        *,
-        expected_slug: str | None = None,
-        loader_target: str,
     ) -> SimpleNamespace:
-        assert directory == Path("examples/plugin-notes")
-        assert expected_slug is None
-        assert loader_target == "grafy_plugin:PLUGIN"
+        assert directory == Path("tests/fixtures/plugin-notes")
         return SimpleNamespace(
             loader_target="verified_plugin:PLUGIN",
             catalog=SimpleNamespace(
@@ -136,7 +107,7 @@ def test_check_valid_plugin_is_read_only_and_reports_the_verified_contract(
         plugins=PluginsConfig(
             _env_file=None,  # pyright: ignore[reportCallIssue]
             plugin_runtime_profile="python-uv",
-            plugin_roots=(Path("examples"),),
+            plugin_roots=(Path("tests/fixtures"),),
         )
     )
 
@@ -149,7 +120,7 @@ def test_check_valid_plugin_is_read_only_and_reports_the_verified_contract(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["grafy", "plugin", "check", "examples/plugin-notes"],
+        ["grafy", "plugin", "check", "tests/fixtures/plugin-notes"],
     )
 
     cli.main()
@@ -293,7 +264,8 @@ class RecordingSystemPublisher:
         expected_slug: str | None = None,
         loader_target: str,
     ) -> object:
-        del directory, expected_slug
+        del directory
+        assert expected_slug == "external.llm"
         type(self).observed_loader_target = loader_target
         return object()
 
@@ -312,48 +284,14 @@ class FakeSystemPublicationWorkflow:
         return SimpleNamespace(release=SimpleNamespace(slug="external.llm", revision=1))
 
 
-class RecordingWorkspacePublicationWorkflow:
-    observed: tuple[UUID, Path, str, UUID] | None = None
-
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        del args, kwargs
-
-    async def publish(
-        self,
-        *,
-        workspace_id: UUID,
-        directory: Path,
-        expected_slug: str,
-        published_by_user_id: UUID,
-    ) -> SimpleNamespace:
-        type(self).observed = (
-            workspace_id,
-            directory,
-            expected_slug,
-            published_by_user_id,
-        )
-        return SimpleNamespace(
-            release=SimpleNamespace(slug=expected_slug, revision=1),
-            installation=SimpleNamespace(workspace_id=workspace_id),
-        )
-
-
-def test_global_publish_requires_the_sandbox_image_at_parse_time(
+def test_publish_requires_the_sandbox_image_at_parse_time(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(
         sys,
         "argv",
-        [
-            "grafy",
-            "plugin",
-            "publish",
-            "/plugins/notes",
-            "--global",
-            "--slug",
-            "notes",
-        ],
+        ["grafy", "plugin", "publish", "/plugins/notes", "--slug", "external.llm"],
     )
 
     with pytest.raises(SystemExit) as excinfo:
@@ -363,7 +301,7 @@ def test_global_publish_requires_the_sandbox_image_at_parse_time(
     assert "--sandbox-image" in capsys.readouterr().err
 
 
-def test_publish_derives_workspace_target_and_exposes_optional_global_target(
+def test_publish_help_offers_no_workspace_or_target_selection(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -378,7 +316,9 @@ def test_publish_derives_workspace_target_and_exposes_optional_global_target(
 
     assert excinfo.value.code == 0
     output = capsys.readouterr().out
-    assert "--global" in output
+    assert "--slug" in output
+    assert "--sandbox-image" in output
+    assert "--global" not in output
     assert "--workspace" not in output
     assert "--actor" not in output
 
@@ -435,7 +375,6 @@ def test_global_publish_inspects_with_checked_in_loader_target(
             "plugin",
             "publish",
             "plugins/llm",
-            "--global",
             "--slug",
             "external.llm",
             "--sandbox-image",
@@ -450,62 +389,8 @@ def test_global_publish_inspects_with_checked_in_loader_target(
     )
     assert RecordingSystemPublisher.observed_scratch_root == publisher_scratch_root
     assert (
-        "Published global Plugin external.llm release 1; promote it explicitly "
+        "Published System Plugin external.llm release 1; promote it explicitly "
         "to activate it" in capsys.readouterr().out
-    )
-
-
-def test_workspace_publish_derives_workspace_and_actor_from_the_pat(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    settings = Settings(
-        app=AppConfig(_env_file=None, database_url=SecretStr("sqlite+aiosqlite://")),  # pyright: ignore[reportCallIssue]
-        storage=StorageConfig(_env_file=None, storage_bucket="plugins"),  # pyright: ignore[reportCallIssue]
-        plugins=PluginsConfig(
-            _env_file=None,  # pyright: ignore[reportCallIssue]
-            plugin_runtime_profile="python-uv",
-            plugin_roots=(),  # pyright: ignore[reportCallIssue]
-        ),
-    )
-    RecordingWorkspacePublicationWorkflow.observed = None
-    monkeypatch.setattr(cli, "get_settings", lambda: settings)
-    monkeypatch.setattr(cli, "create_database", create_fake_database)
-    monkeypatch.setattr(cli, "configured_file_storage", configured_fake_storage)
-    monkeypatch.setattr(cli, "PluginReleaseService", FakePluginReleaseService)
-    monkeypatch.setattr(cli, "PluginOciImageBuilder", FakePluginOciImageBuilder)
-    monkeypatch.setattr(cli, "IdentityService", FakeIdentityService)
-    monkeypatch.setattr(cli, "_load_credential_digest", personal_credential)
-    monkeypatch.setattr(cli, "PluginDirectoryPublisher", RecordingPluginChecker)
-    monkeypatch.setattr(
-        cli,
-        "PluginPublicationWorkflow",
-        RecordingWorkspacePublicationWorkflow,
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "grafy",
-            "plugin",
-            "publish",
-            "plugins/notes",
-            "--slug",
-            "notes",
-        ],
-    )
-
-    cli.main()
-
-    assert RecordingWorkspacePublicationWorkflow.observed == (
-        WORKSPACE_ID,
-        Path("plugins/notes"),
-        "notes",
-        ACTOR_ID,
-    )
-    assert (
-        f"Published Plugin notes release 1 for Workspace {WORKSPACE_ID}"
-        in capsys.readouterr().out
     )
 
 
@@ -530,7 +415,7 @@ def test_global_promotion_is_a_distinct_command(
     assert "--actor" not in output
 
 
-def test_publish_rejects_legacy_workspace_and_actor_options(
+def test_publish_rejects_legacy_scope_and_actor_options(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -548,6 +433,8 @@ def test_publish_rejects_legacy_workspace_and_actor_options(
             "external.llm",
             "--actor",
             "ci:test",
+            "--sandbox-image",
+            "grafy-publisher:test",
         ],
     )
 

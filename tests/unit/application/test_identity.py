@@ -854,7 +854,7 @@ async def test_personal_and_platform_credentials_resolve_typed_principals(
         public_prefix="nrt_publication",
         secret_digest=b"personal-digest",
         label="publication",
-        scopes=(WorkspaceCapability.PUBLISH_PLUGIN,),
+        scopes=(WorkspaceCapability.PUBLISH_MODULE,),
         expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
     platform = PlatformAccessToken(
@@ -874,7 +874,7 @@ async def test_personal_and_platform_credentials_resolve_typed_principals(
     workspace_principal = await service.authenticate_personal_access_token(
         public_prefix=personal.public_prefix,
         secret_digest=personal.secret_digest,
-        required_capability=WorkspaceCapability.PUBLISH_PLUGIN,
+        required_capability=WorkspaceCapability.PUBLISH_MODULE,
     )
     platform_principal = await service.authenticate_platform_access_token(
         public_prefix=platform.public_prefix,

@@ -9,7 +9,6 @@ import pytest
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.domain.plugin_releases import (
     PluginRelease,
-    PluginReleaseScope,
     PluginRuntimeArtifact,
 )
 from grafy_core.ports.storage import FileStoragePort
@@ -35,8 +34,6 @@ def _key(
     return _SandboxKey(
         scope_id=scope_id,
         workspace_id=workspace_id,
-        release_scope=PluginReleaseScope.WORKSPACE,
-        release_workspace_id=workspace_id,
         release_slug="notes",
         release_revision=revision,
         source_digest=f"{revision:064x}",

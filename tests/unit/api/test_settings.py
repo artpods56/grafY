@@ -218,17 +218,11 @@ def test_plugin_roots_resolve_from_the_deployment_allowlist(tmp_path: Path) -> N
 # pyright: ignore[reportCallIssue]
 
 
-def test_agent_authoring_paths_are_deployment_owned(tmp_path: Path) -> None:
-    config = PluginsConfig(
-        _env_file=None,  # pyright: ignore[reportCallIssue]
-        plugin_authoring_root=tmp_path / "team-plugins",
-        plugin_sdk_project=tmp_path / "sdk",
-    )
+def test_plugin_authoring_paths_are_not_configured() -> None:
+    fields = PluginsConfig.model_fields
 
-    assert (
-        config.resolved_plugin_authoring_root == (tmp_path / "team-plugins").resolve()
-    )
-    assert config.resolved_plugin_sdk_project == (tmp_path / "sdk").resolve()
+    assert "plugin_authoring_root" not in fields
+    assert "plugin_sdk_project" not in fields
 
 
 def test_plugin_publisher_scratch_root_resolves_from_configuration(
@@ -241,7 +235,7 @@ def test_plugin_publisher_scratch_root_resolves_from_configuration(
     assert config.resolved_plugin_publisher_scratch_root == scratch_root.resolve()
 
 
-def test_default_authoring_root_does_not_overlap_system_plugin_packages(
+def test_default_publisher_roots_hold_the_system_plugin_packages(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,  # pyright: ignore[reportCallIssue]
 ) -> None:
@@ -249,9 +243,7 @@ def test_default_authoring_root_does_not_overlap_system_plugin_packages(
 
     config = PluginsConfig(_env_file=None)  # pyright: ignore[reportCallIssue]
 
-    assert config.plugin_authoring_root == Path(".grafy-artifacts/workspace-plugins")
-    assert config.plugin_authoring_root in config.plugin_roots
-    assert config.plugin_authoring_root != Path("plugins")
+    assert config.plugin_roots == (Path("plugins"),)
 
 
 def test_database_url_does_not_reuse_legacy_database(tmp_path: Path) -> None:  # pyright: ignore[reportCallIssue]
@@ -329,19 +321,19 @@ def test_plugin_invocation_wall_times_can_be_selected_by_exact_slug(
 ) -> None:
     monkeypatch.setenv(
         "GRAFY_PLUGIN_INVOCATION_WALL_TIME_SECONDS_BY_SLUG",
-        '{"external.notarius":900}',  # pyright: ignore[reportCallIssue]
+        '{"external.llm":900}',  # pyright: ignore[reportCallIssue]
     )
 
     assert PluginsConfig(
         _env_file=None  # pyright: ignore[reportCallIssue]
     ).plugin_invocation_wall_time_seconds_by_slug == {
-        "external.notarius": 900,
+        "external.llm": 900,
     }
 
 
 @pytest.mark.parametrize(
     ("slug", "seconds"),
-    [("Invalid slug", 60), ("external.notarius", 0), ("external.notarius", 3_601)],
+    [("Invalid slug", 60), ("external.llm", 0), ("external.llm", 3_601)],
 )
 def test_plugin_invocation_wall_time_overrides_are_bounded(
     slug: str,

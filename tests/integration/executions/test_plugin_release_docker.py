@@ -23,7 +23,6 @@ from grafy_core.domain.plugin_releases import (
     PluginExecutionPolicy,
     PluginRelease,
     PluginReleaseNamespace,
-    PluginReleaseScope,
     PluginRuntimeArtifact,
     plugin_contract_digest,
     plugin_profile_digest,
@@ -72,30 +71,12 @@ class ReleaseLookup:
 
     async def get_by_revision(
         self,
-        workspace_id: UUID,
         slug: str,
         revision: int,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
     ) -> InstalledPluginRelease | None:
         for release in self.releases:
-            if (
-                scope is release.installation.scope
-                and workspace_id == release.installation.workspace_id
-                and slug == release.release.slug
-                and revision == release.release.revision
-            ):
+            if slug == release.release.slug and revision == release.release.revision:
                 return release
-        return None
-
-    async def get_revocation(
-        self,
-        *,
-        workspace_id: UUID,
-        slug: str,
-        revision: int,
-    ) -> PluginReleaseRevocation | None:
-        del workspace_id, slug, revision
         return None
 
     async def get_system_revocation(
@@ -138,7 +119,7 @@ def _canonical(payload: JsonObject) -> bytes:
 
 
 def _instrumented_plugin_project(repository: Path, destination: Path) -> Path:
-    source = repository / "examples" / "plugin-notes"
+    source = repository / "tests" / "fixtures" / "plugin-notes"
     destination.mkdir()
     for entry in ("pyproject.toml", "uv.lock", "wheels", "src", "tests"):
         source_entry = source / entry
@@ -301,13 +282,9 @@ async def test_docker_runtime_restores_reuses_hardens_and_cleans_sandbox(
     )
     installation = PluginInstallation.from_release(
         release_record,
-        namespace=PluginReleaseNamespace(
-            scope=PluginReleaseScope.WORKSPACE,
-            workspace_id=WORKSPACE_ID,
-        ),
+        namespace=PluginReleaseNamespace(),
         execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-        installed_by_user_id=WORKSPACE_ID,
-        installed_by_platform_actor=None,
+        installed_by_platform_actor="test:platform",
     )
     release = InstalledPluginRelease(
         release=release_record,

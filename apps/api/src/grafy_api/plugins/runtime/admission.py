@@ -314,8 +314,6 @@ class ReleaseExecutionAdmission:
                 return None
         profile = self.network_policy.resolve(
             NetworkAccessPlane.PLUGIN_EXECUTION,
-            scope=release.installation.scope,
-            workspace_id=release.installation.workspace_id,
             slug=release.release.slug,
             revision=release.release.revision,
         )
