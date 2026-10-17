@@ -352,14 +352,6 @@ function NodeBrowser({
 
   function insertNode(spec: NodeSpec): void {
     if (!canInsert || spec.runnable === false) return;
-    if (
-      spec.publication_state === "deprecated" &&
-      !window.confirm(
-        `Insert deprecated Module “${spec.title}”? New inserts are discouraged. Existing pinned calls keep working.`,
-      )
-    ) {
-      return;
-    }
     onAddNode(spec);
   }
 

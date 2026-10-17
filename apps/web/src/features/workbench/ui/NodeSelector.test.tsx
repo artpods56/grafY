@@ -90,7 +90,6 @@ function registry(): NodeRegistry {
       module_graph_id: "graph-1",
       module_graph_revision: 1,
       is_current_library_release: false,
-      publication_state: "deprecated",
     },
   );
   const currentModuleRelease = {
@@ -99,7 +98,6 @@ function registry(): NodeRegistry {
     catalog_visible: true,
     module_graph_revision: 2,
     is_current_library_release: true,
-    publication_state: "published" as const,
   };
 
   return {
@@ -630,7 +628,7 @@ describe("NodeSelector", () => {
     );
   });
 
-  it("shows Module release state and inserts the chosen immutable release", async () => {
+  it("shows the chosen Module release and inserts exactly that revision", async () => {
     const onAddNode = vi.fn();
     const onOpenGraph = vi.fn();
     vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -643,7 +641,6 @@ describe("NodeSelector", () => {
     expect(dialog().querySelector("aside")?.textContent).toContain(
       "Module contract · release 2",
     );
-    expect(dialog().querySelector("aside")?.textContent).toContain("published");
     await React.act(async () => buttonNamed("Open source graph").click());
     expect(onOpenGraph).toHaveBeenCalledWith("graph-1");
 
@@ -658,7 +655,7 @@ describe("NodeSelector", () => {
     });
     await React.act(async () => buttonNamed("Insert module call").click());
 
-    expect(window.confirm).toHaveBeenCalledOnce();
+    expect(window.confirm).not.toHaveBeenCalled();
     expect(onAddNode.mock.calls[0]?.[0].operator_version).toBe(1);
     expect(onAddNode.mock.calls[0]?.[0].module_graph_revision).toBe(1);
   });

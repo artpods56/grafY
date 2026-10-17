@@ -69,7 +69,6 @@ function workspace(overrides: Partial<Workspace> = {}): Workspace {
       "manage_secrets",
       "publish_plugin",
       "manage_members",
-      "manage_module_library",
     ],
     ...overrides,
   };

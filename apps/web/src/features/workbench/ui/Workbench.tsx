@@ -4866,7 +4866,6 @@ function WorkbenchBody({
         showTrigger={false}
         focusedModuleId={workspaceLibraryFocusId}
         onOpenSourceGraph={openGraphInNewTab}
-        onLibraryChanged={() => refreshNodeRegistry()}
       />
 
       <PublishModuleDialog

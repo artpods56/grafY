@@ -144,9 +144,6 @@ export function NodeInspector({
                 <span {...stylex.props(s.eyebrow)}>
                   Module · release {spec.module_graph_revision}
                 </span>
-                <span {...stylex.props(s.badge)}>
-                  {spec.publication_state ?? "published"}
-                </span>
               </div>
             ) : null}
             <h3 id={INSPECTOR_TITLE_ID} {...stylex.props(s.title)}>
@@ -329,12 +326,6 @@ function ModuleFacts({
             ))}
           </select>
         </label>
-      ) : null}
-      {spec.publication_state === "deprecated" ? (
-        <p {...stylex.props(s.note)}>
-          This Module is deprecated. New inserts are discouraged; existing pins
-          keep working.
-        </p>
       ) : null}
       {graphId && onOpenGraph ? (
         <button
