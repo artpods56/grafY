@@ -13,8 +13,11 @@ from grafy_api.diagnostics import (
     diagnostic_scope,
     record_failure,
 )
-from grafy_core.domain.errors import FailureKind, NotFoundError
-from grafy_core.domain.templates import TemplateCopyRejectedError
+from grafy_core.domain.errors import (
+    FailureKind,
+    LibraryArtifactInUseError,
+    NotFoundError,
+)
 
 
 class _CapturingHandler(logging.Handler):
@@ -91,16 +94,20 @@ def test_expected_failure_keeps_only_declared_diagnostic_context(
 ) -> None:
     _remove_diagnostics_handler()
     configure_diagnostics(level="INFO", renderer="json")
-    exception = TemplateCopyRejectedError(
-        reason_code="secret_binding",
-        diagnostic_message="Node private-node-id contains a secret binding",
+    exception = LibraryArtifactInUseError(
+        artifact_id=uuid4(),
+        graph_ids=[uuid4()],
+        graph_titles=["private-graph-title"],
     )
 
-    record_failure(exception, operation="template.copy")
+    record_failure(exception, operation="library.artifact.delete")
 
     event = json.loads(capsys.readouterr().err)
-    assert event["failure_context"] == {"reason_code": "secret_binding"}
-    assert "private-node-id" not in repr(event)
+    assert event["failure_context"] == {
+        "artifact_id": str(exception.artifact_id),
+        "graph_ids": [str(graph_id) for graph_id in exception.graph_ids],
+    }
+    assert "private-graph-title" not in repr(event)
     _remove_diagnostics_handler()
 
 

@@ -25,7 +25,6 @@ from grafy_core.domain.module_library import ModulePublicationState
 from grafy_core.domain.plugin_releases import PluginReleaseScope, PluginExecutionPolicy
 from grafy_core.domain.plugin_revocations import PluginReleaseRevocationReason
 from grafy_core.domain.plugin_selection import PluginFamilyLifecycle
-from grafy_core.domain.templates import TemplateState
 from grafy_core.domain.security_audit import (
     SecurityAuditActorKind,
     SecurityAuditOutcome,
@@ -79,7 +78,6 @@ ENUM_CASES = [
     (schema.WorkspaceRoleType, WorkspaceRole, 16),
     (schema.WorkspaceInvitationStatusType, WorkspaceInvitationStatus, 16),
     (schema.ModulePublicationStateType, ModulePublicationState, 32),
-    (schema.TemplateStateType, TemplateState, 16),
     (schema.SecurityAuditActorKindType, SecurityAuditActorKind, 24),
     (schema.SecurityAuditOutcomeType, SecurityAuditOutcome, 16),
 ]
