@@ -498,7 +498,9 @@ export function WorkspaceLibraryDialog({
             <DialogTitle>{libraryLabel(workspace)}</DialogTitle>
             <DialogDescription>
               Search the published contracts
-              {workspace.kind === "personal" ? " you keep" : " this Team offers"}{" "}
+              {workspace.kind === "personal"
+                ? " you keep"
+                : " this Team offers"}{" "}
               and open the graph behind any of them.
             </DialogDescription>
           </DialogHeader>
