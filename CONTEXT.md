@@ -319,8 +319,9 @@ Containers are reused within a run scope, including mapped invocations.
 A versioned, ready-filled single node copied into a graph. A Python preset carries
 code, port types and shapes, params schema and defaults. The node stores the preset
 id and version, but later preset changes never update the copied node. Split text,
-Replace text, Join text and As Markdown are presets of the Python node. The old
-operators stay registered for saved graphs and are hidden from the node browser.
+Replace text, Join text and As Markdown are presets of the Python node. The
+operators they replaced are gone: a Saved Graph that still contains one fails to
+compile and must be rebuilt on the preset.
 
 A Preset fills one node. A Template copies a whole graph.
 

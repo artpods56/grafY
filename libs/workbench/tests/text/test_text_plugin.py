@@ -15,8 +15,4 @@ def test_text_plugin_preserves_catalog_identity_and_freezes() -> None:
     assert TEXT_VALUE.key in {artifact.key for artifact in TEXT.artifact_types}
     assert {(node.operator_id, node.operator_version) for node in manifest.nodes} == {
         ("text.input", 1),
-        ("text.as_markdown", 1),
-        ("text.split", 1),
-        ("text.replace", 1),
-        ("text.join", 1),
     }

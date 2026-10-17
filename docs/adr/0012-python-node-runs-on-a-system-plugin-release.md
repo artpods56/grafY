@@ -10,7 +10,8 @@
 A Python node holds user code in its configuration: an optional `Params` class and
 one `transform` function with one data input and one output. Presets are ready
 filled Python nodes listed under familiar titles. Four one-line text operators
-leave the node library in their favour. Three questions had to be settled before
+leave the node library in their favour; decision 1 closes with what eventually
+became of them. Three questions had to be settled before
 any of that could be built.
 
 ## 1. User code reaches the existing Plugin sandbox as a System Plugin release
@@ -69,8 +70,11 @@ carry the same contract.
 
 **Deployment consequence.** Presets appear only where an operator has published
 and promoted `external.python`, see `docs/how-to-publish-plugins.md`. The four
-text operators are hidden regardless and stay registered, so saved graphs that use
-them keep opening and running.
+text operators were initially kept registered but hidden so saved graphs kept
+opening. They have since been removed from the builtin catalog: a saved graph
+that still contains one fails to compile with an unknown-builtin error and must
+be rebuilt on the matching preset. Its stored document and historical revisions
+are retained, not rewritten.
 
 ## 2. A node chooses a port's shape through a configuration field
 
