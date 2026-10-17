@@ -27,7 +27,6 @@ PUBLISHED_PLUGIN_FAMILIES = (
     "gis",
     "llm",
     "mistral",
-    "ocr",
     "python",
     "sql",
     "typesafe",
@@ -114,9 +113,6 @@ def test_optional_plugin_dependencies_are_not_owned_by_host_projects() -> None:
     core_dependencies = cast(list[str], core_project["dependencies"])
 
     assert not any(
-        requirement.startswith("grafy-plugin-ocr") for requirement in root_dependencies
-    )
-    assert not any(
         requirement.startswith("grafy-plugin-llm") for requirement in root_dependencies
     )
     assert not any(
@@ -130,7 +126,6 @@ def test_optional_plugin_dependencies_are_not_owned_by_host_projects() -> None:
         requirement.startswith("grafy-plugin-typesafe")
         for requirement in root_dependencies
     )
-    assert root_extras["ocr"] == ["grafy-plugin-ocr"]
     assert root_extras["llm"] == ["grafy-plugin-llm"]
     assert root_extras["mistral"] == ["grafy-plugin-mistral"]
     assert root_extras["sql"] == ["grafy-plugin-sql"]
@@ -142,7 +137,6 @@ def test_optional_plugin_dependencies_are_not_owned_by_host_projects() -> None:
                 (
                     "grafy-plugin-llm",
                     "grafy-plugin-mistral",
-                    "grafy-plugin-ocr",
                     "grafy-plugin-sql",
                     "grafy-plugin-typesafe",
                 )
