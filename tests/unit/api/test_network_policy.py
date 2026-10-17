@@ -133,7 +133,7 @@ def _policy(
     )
 
 
-def test_development_manifest_allows_notarius_configured_public_egress() -> None:
+def test_development_manifest_allows_llm_configured_public_egress() -> None:
     policy = load_network_policy_manifest(
         Path(__file__).resolve().parents[3] / "network-policy.toml"
     )
@@ -142,7 +142,7 @@ def test_development_manifest_allows_notarius_configured_public_egress() -> None
 
     resolution = resolve_http_egress_authority(
         policy,
-        slug="external.notarius",
+        slug="external.llm",
         revision=1,
         contract=contract,
         config=config,

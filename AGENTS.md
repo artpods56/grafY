@@ -55,7 +55,7 @@ elsewhere. Walk this list and say which entries applied:
   committed file lags the schema.
 - **Builtin families vs Plugins.** A node or artifact behavior may live in
   app-owned builtin families under `apps/api` and in one of `plugins/*` (gis,
-  llm, mistral, notarius, python, sql, typesafe). Provider-shaped features
+  image, llm, mistral, python, sql, table, typesafe). Provider-shaped features
   need a decision per host, even if the decision is "not here".
 - **SDK wheel.** If the change touched a `libs/core` module a Plugin imports,
   the vendored wheels and their pinned digest move with it.

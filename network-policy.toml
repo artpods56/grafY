@@ -9,13 +9,6 @@ public_address_only = true
 https_only = true
 max_origins_per_execution = 1
 
-[profiles.plugin-execution.notarius-configured-public]
-mode = "configured-public"
-public_address_only = true
-https_only = true
-max_origins_per_execution = 1
-idle_timeout_seconds = 300
-
 [[assignments]]
 plane = "plugin-execution"
 slug = "external.llm"
@@ -30,10 +23,3 @@ profile = "configured-public"
 plane = "plugin-execution"
 slug = "external.typesafe"
 profile = "configured-public"
-
-# Notarius is not in plugins/system-plugins.toml yet, so this assignment stays
-# unused until someone lists it and publishes it as a System Plugin.
-[[assignments]]
-plane = "plugin-execution"
-slug = "external.notarius"
-profile = "notarius-configured-public"
