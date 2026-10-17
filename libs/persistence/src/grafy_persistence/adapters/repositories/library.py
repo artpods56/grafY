@@ -262,9 +262,7 @@ class SqlLibraryFolderRepository(LibraryFolderRepositoryPort):
             select(
                 schema.library_artifact_placements.c.artifact_id,
                 schema.library_artifact_placements.c.folder_id,
-            ).where(
-                schema.library_artifact_placements.c.workspace_id == workspace_id
-            )
+            ).where(schema.library_artifact_placements.c.workspace_id == workspace_id)
         )
         return {row.artifact_id: row.folder_id for row in result}
 
