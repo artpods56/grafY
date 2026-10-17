@@ -28,6 +28,14 @@ import {
 import type { GraphTemplate, Session, Workspace } from "@/lib/api";
 import { ApiError } from "@/lib/api/client";
 
+import {
+  canRequestCopy,
+  initialTemplateLibraryState,
+  openUseForm,
+  templateLibraryReducer,
+  type TemplateIdentityKey,
+} from "./template-library-state";
+
 export interface LocatedTemplate {
   template: GraphTemplate;
   location: Workspace;
@@ -140,23 +148,11 @@ export function TemplateLibrary() {
     isLoading,
     mutate,
   } = useLocatedTemplates(session.user_id, workspaces);
-  const [query, setQuery] = React.useState("");
-  const [selectedKey, setSelectedKey] = React.useState<string | null>(null);
-  const [useOpen, setUseOpen] = React.useState(false);
-  const [destinationId, setDestinationId] = React.useState("");
-  const [graphName, setGraphName] = React.useState("");
-  const [folderId, setFolderId] = React.useState("");
-  const [useBusy, setUseBusy] = React.useState(false);
-  const [useError, setUseError] = React.useState<string | null>(null);
-  const [archiveError, setArchiveError] = React.useState<string | null>(null);
-  const {
-    data: folderList,
-    error: folderError,
-    isLoading: foldersLoading,
-  } = useWorkspaceFolders(destinationId, useOpen);
-  const useTriggerRef = React.useRef<HTMLButtonElement>(null);
-  const restoreUseFocusRef = React.useRef(false);
-  const searchRef = React.useRef<HTMLInputElement>(null);
+  const [state, dispatch] = React.useReducer(
+    templateLibraryReducer,
+    initialTemplateLibraryState,
+  );
+  const { query, selectedKey } = state;
 
   const filtered = React.useMemo(
     () => filterLocatedTemplates(templates ?? [], query),
@@ -166,6 +162,40 @@ export function TemplateLibrary() {
     filtered.find((item) => templateKey(item) === selectedKey) ??
     filtered[0] ??
     null;
+  const previewKey = selected === null ? null : templateKey(selected);
+
+  // The dialog holds one template's form, plus the error from its last attempt.
+  const heldForm = openUseForm(state.use);
+  // The form names the template it was opened for. When the results change under
+  // it, the preview no longer describes what the form would copy, so the form
+  // goes away instead of offering one template beside another.
+  const useOpen = heldForm !== null && heldForm.templateKey === previewKey;
+  // Busy follows the template, not the dialog: leaving a copy form does not cancel
+  // its request, so the form reopened for that template shows the copy still
+  // running instead of offering one that would be refused.
+  const useBusy =
+    heldForm !== null && state.pendingCopy.includes(heldForm.templateKey);
+  const useError =
+    useOpen && state.use.phase === "failed" ? state.use.error : null;
+  const destinationId = heldForm?.destinationId ?? "";
+  const graphName = heldForm?.graphName ?? "";
+  const folderId = heldForm?.folderId ?? "";
+  const {
+    data: folderList,
+    error: folderError,
+    isLoading: foldersLoading,
+  } = useWorkspaceFolders(destinationId, useOpen);
+  const useTriggerRef = React.useRef<HTMLButtonElement>(null);
+  const restoreUseFocusRef = React.useRef(false);
+  // A dialog's phase reaches "creating" or "archiving" only once React commits
+  // the dispatch, so the requests actually running are tracked here: one copy per
+  // template — a copy the person left keeps its template claimed until it answers,
+  // which is what lets another template be copied beside it — and one archive at a
+  // time.
+  const copyInFlightRef = React.useRef<Set<TemplateIdentityKey>>(new Set());
+  const archiveInFlightRef = React.useRef(false);
+  const searchRef = React.useRef<HTMLInputElement>(null);
+
   const createLocations = React.useMemo(
     () =>
       (workspaces ?? []).filter((workspace) =>
@@ -173,17 +203,33 @@ export function TemplateLibrary() {
       ),
     [workspaces],
   );
+  const archivingKey =
+    state.archive.phase === "archiving" ? state.archive.templateKey : null;
+  const archiveBusy = archivingKey !== null;
+  const archivingPreview = archivingKey !== null && archivingKey === previewKey;
+  // An archive failure belongs to the template it happened to, so it cannot
+  // follow the preview onto another one.
+  const archiveError =
+    state.archive.phase === "failed" && state.archive.templateKey === previewKey
+      ? state.archive.error
+      : null;
 
   const openUse = () => {
     if (!selected) return;
-    setGraphName(selected.template.name);
     const preferred = createLocations.find(
       (location) => location.id === selected.location.id,
     );
-    setDestinationId((preferred ?? createLocations[0])?.id ?? "");
-    setFolderId("");
-    setUseError(null);
-    setUseOpen(true);
+    dispatch({
+      type: "useOpened",
+      form: {
+        templateKey: templateKey(selected),
+        sourceLocationId: selected.location.id,
+        templateId: selected.template.id,
+        graphName: selected.template.name,
+        destinationId: (preferred ?? createLocations[0])?.id ?? "",
+        folderId: "",
+      },
+    });
   };
 
   React.useEffect(() => {
@@ -195,56 +241,84 @@ export function TemplateLibrary() {
 
   const closeUse = () => {
     restoreUseFocusRef.current = true;
-    setUseOpen(false);
-    setUseError(null);
+    dispatch({ type: "useDismissed" });
   };
 
   const submitUse = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selected || !destinationId || !graphName.trim()) return;
-    setUseBusy(true);
-    setUseError(null);
+    // The request is addressed from the form the person edited, never from the
+    // template the preview happens to show by the time the promise resolves.
+    const form = canRequestCopy(state);
+    if (form === null) return;
+    // The reducer's pending list only becomes visible on the next paint, so the
+    // same template is also claimed here for submits that land in one tick.
+    if (copyInFlightRef.current.has(form.templateKey)) return;
+    copyInFlightRef.current.add(form.templateKey);
+    dispatch({ type: "createRequested", templateKey: form.templateKey });
     try {
       const created = await instantiateWorkspaceTemplate(
-        selected.location.id,
-        selected.template.id,
+        form.sourceLocationId,
+        form.templateId,
         {
-          destination_workspace_id: destinationId,
-          name: graphName.trim(),
-          folder_id: folderId || null,
+          destination_workspace_id: form.destinationId,
+          name: form.graphName.trim(),
+          folder_id: form.folderId || null,
         },
       );
       const destination = createLocations.find(
         (location) => location.id === created.destination_workspace_id,
       );
       if (!destination) {
-        setUseError(
-          "The graph was created, but its save location is no longer listed.",
-        );
+        dispatch({
+          type: "createFailed",
+          templateKey: form.templateKey,
+          error:
+            "The graph was created, but its save location is no longer listed.",
+        });
         return;
       }
+      dispatch({ type: "createSucceeded", templateKey: form.templateKey });
       router.push(workbenchGraphPath(destination.slug, created.graph_id));
     } catch (caught) {
-      setUseError(templateUseErrorMessage(caught));
+      dispatch({
+        type: "createFailed",
+        templateKey: form.templateKey,
+        error: templateUseErrorMessage(caught),
+      });
     } finally {
-      setUseBusy(false);
+      // Only this request's own template is released; another copy that is still
+      // running keeps its claim.
+      copyInFlightRef.current.delete(form.templateKey);
     }
   };
 
   const archiveSelected = async () => {
     if (!selected) return;
+    if (archiveInFlightRef.current) return;
     if (!window.confirm(`Archive “${selected.template.name}”?`)) return;
-    setArchiveError(null);
+    const key = templateKey(selected);
+    const archived = selected;
+    archiveInFlightRef.current = true;
+    dispatch({ type: "archiveRequested", templateKey: key });
     try {
       await archiveWorkspaceTemplate(
-        selected.location.id,
-        selected.template.id,
+        archived.location.id,
+        archived.template.id,
       );
-      setUseOpen(false);
+      dispatch({ type: "archiveSucceeded", templateKey: key });
+      // A refresh that fails after the archive landed is not an archive failure:
+      // the template is archived, and the library's own load error says the list
+      // is unreliable. Reporting it here would claim an unchanged template.
       await mutate();
       window.requestAnimationFrame(() => searchRef.current?.focus());
     } catch (caught) {
-      setArchiveError(templateUseErrorMessage(caught));
+      dispatch({
+        type: "archiveFailed",
+        templateKey: key,
+        error: templateUseErrorMessage(caught),
+      });
+    } finally {
+      archiveInFlightRef.current = false;
     }
   };
 
@@ -287,23 +361,24 @@ export function TemplateLibrary() {
               selected ? `template-option-${selected.template.id}` : undefined
             }
             onChange={(event) => {
-              setQuery(event.target.value);
-              setUseOpen(false);
+              dispatch({ type: "queryChanged", query: event.target.value });
             }}
             onKeyDown={(event) => {
               if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
               event.preventDefault();
-              setSelectedKey(
-                nextTemplateKey(
-                  filtered,
-                  selected ? templateKey(selected) : null,
-                  event.key === "ArrowDown" ? 1 : -1,
-                ),
+              const next = nextTemplateKey(
+                filtered,
+                selected ? templateKey(selected) : null,
+                event.key === "ArrowDown" ? 1 : -1,
               );
+              if (next) dispatch({ type: "selectionMoved", templateKey: next });
             }}
           />
           {query ? (
-            <button type="button" onClick={() => setQuery("")}>
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "queryChanged", query: "" })}
+            >
               Clear
             </button>
           ) : null}
@@ -342,7 +417,7 @@ export function TemplateLibrary() {
             <button
               className="grafy-workspace-button"
               type="button"
-              onClick={() => setQuery("")}
+              onClick={() => dispatch({ type: "queryChanged", query: "" })}
             >
               Clear search
             </button>
@@ -374,10 +449,12 @@ export function TemplateLibrary() {
                         role="option"
                         aria-selected={active}
                         className={active ? "is-selected" : undefined}
-                        onClick={() => {
-                          setSelectedKey(key);
-                          setUseOpen(false);
-                        }}
+                        onClick={() =>
+                          dispatch({
+                            type: "resultChosen",
+                            templateKey: key,
+                          })
+                        }
                       >
                         <span className="grafy-template-results__icon">
                           <FileStack size={16} aria-hidden="true" />
@@ -437,7 +514,12 @@ export function TemplateLibrary() {
                       Graph name
                       <input
                         value={graphName}
-                        onChange={(event) => setGraphName(event.target.value)}
+                        onChange={(event) =>
+                          dispatch({
+                            type: "graphNameChanged",
+                            value: event.target.value,
+                          })
+                        }
                         maxLength={160}
                         autoFocus
                         required
@@ -447,10 +529,12 @@ export function TemplateLibrary() {
                       Save location
                       <select
                         value={destinationId}
-                        onChange={(event) => {
-                          setDestinationId(event.target.value);
-                          setFolderId("");
-                        }}
+                        onChange={(event) =>
+                          dispatch({
+                            type: "destinationChanged",
+                            destinationId: event.target.value,
+                          })
+                        }
                         required
                       >
                         {createLocations.map((location) => (
@@ -464,7 +548,12 @@ export function TemplateLibrary() {
                       Folder <span>optional</span>
                       <select
                         value={folderId}
-                        onChange={(event) => setFolderId(event.target.value)}
+                        onChange={(event) =>
+                          dispatch({
+                            type: "folderChanged",
+                            folderId: event.target.value,
+                          })
+                        }
                         disabled={foldersLoading || Boolean(folderError)}
                       >
                         <option value="">
@@ -542,9 +631,16 @@ export function TemplateLibrary() {
                       <button
                         type="button"
                         className="grafy-workspace-button"
+                        disabled={archiveBusy}
+                        title={
+                          archiveBusy && !archivingPreview
+                            ? "An archive is already running."
+                            : undefined
+                        }
                         onClick={() => void archiveSelected()}
                       >
-                        <Archive size={14} aria-hidden="true" /> Archive
+                        <Archive size={14} aria-hidden="true" />
+                        {archivingPreview ? "Archiving…" : "Archive"}
                       </button>
                     ) : null}
                   </div>

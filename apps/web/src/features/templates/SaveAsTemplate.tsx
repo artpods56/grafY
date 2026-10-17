@@ -59,6 +59,9 @@ function SaveAsTemplateFlow({
   const [message, setMessage] = React.useState<string | null>(null);
   const nameInputRef = React.useRef<HTMLInputElement>(null);
   const autoFocusAttemptedRef = React.useRef(false);
+  // `busy` only reaches the DOM after React repaints, so a second submit in the
+  // same tick would otherwise capture the same revision twice.
+  const snapshotRequestedRef = React.useRef(false);
 
   const name = nameOverride ?? graph?.name ?? "";
 
@@ -84,6 +87,8 @@ function SaveAsTemplateFlow({
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!source || !graph || !location || !name.trim()) return;
+    if (snapshotRequestedRef.current) return;
+    snapshotRequestedRef.current = true;
     setBusy(true);
     setMessage(null);
     try {
@@ -97,6 +102,7 @@ function SaveAsTemplateFlow({
     } catch (caught) {
       setMessage(templateUseErrorMessage(caught));
     } finally {
+      snapshotRequestedRef.current = false;
       setBusy(false);
     }
   };

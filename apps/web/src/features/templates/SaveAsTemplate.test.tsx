@@ -159,6 +159,47 @@ describe("save as template flow", () => {
     );
   });
 
+  it("sends one snapshot request when the form submits twice before React repaints", async () => {
+    testState.create.mockResolvedValue({ id: "created-template" });
+    const { container } = await renderSaveFlow();
+    const form = container.querySelector("form");
+
+    await act(async () => {
+      form?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
+      form?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(testState.create).toHaveBeenCalledTimes(1);
+    expect(testState.push).toHaveBeenCalledWith(
+      "/templates?created=created-template",
+    );
+  });
+
+  it("sends a second snapshot when the first one failed", async () => {
+    testState.create
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce({ id: "created-template" });
+    const { container } = await renderSaveFlow();
+    const form = container.querySelector("form");
+
+    await act(async () => {
+      form?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
+    });
+    await act(async () => {
+      form?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(testState.create).toHaveBeenCalledTimes(2);
+  });
+
   it("resets draft state when the exact source revision changes", async () => {
     const { container, root } = await renderSaveFlow();
     const nameInput = container.querySelector<HTMLInputElement>("input");

@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GraphFolder, GraphTemplate, Workspace } from "@/lib/api";
+import { ApiError } from "@/lib/api/client";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -393,6 +394,625 @@ describe("template use flow", () => {
       );
     });
     expect(document.activeElement).toBe(button(container, "Use template"));
+    await act(async () => root.unmount());
+  });
+
+  it("sends one copy request when submit fires twice before React repaints", async () => {
+    testState.instantiate.mockResolvedValue({
+      destination_workspace_id: "personal-location",
+      graph_id: "created-graph",
+    });
+    const { container, root } = await renderLibrary();
+    await act(async () => {
+      button(container, "Use template").dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    const form = container.querySelector(".grafy-template-use");
+    await act(async () => {
+      form?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
+      form?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(testState.instantiate).toHaveBeenCalledTimes(1);
+    expect(testState.push).toHaveBeenCalledWith(
+      "/workspaces/personal-user/graphs/created-graph",
+    );
+    await act(async () => root.unmount());
+  });
+});
+
+describe("copy form follows the inspected template", () => {
+  it("closes the form instead of copying a different template under the typed name", async () => {
+    testState.instantiate.mockResolvedValue({
+      destination_workspace_id: "personal-location",
+      graph_id: "created-graph",
+    });
+    const { container, root } = await renderLibrary();
+    await act(async () => {
+      button(container, "Use template").dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    expect(
+      (container.querySelector(".grafy-template-use input") as HTMLInputElement)
+        .value,
+    ).toBe("Analysis starter");
+
+    const search = container.querySelector("#template-search");
+    await act(async () => {
+      search?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      );
+    });
+
+    expect(container.querySelector(".grafy-template-use")).toBeNull();
+    expect(
+      container.querySelector(".grafy-template-preview h2")?.textContent,
+    ).toBe("Map review");
+    expect(testState.instantiate).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
+  it("keeps the form open when arrow inspection lands on the same template", async () => {
+    testState.locatedTemplates = [
+      { template: templates[0]!, location: locations[0]! },
+    ];
+    const { container, root } = await renderLibrary();
+    await act(async () => {
+      button(container, "Use template").dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    const search = container.querySelector("#template-search");
+    await act(async () => {
+      search?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      );
+    });
+
+    expect(container.querySelector(".grafy-template-use")).not.toBeNull();
+    await act(async () => root.unmount());
+  });
+});
+
+describe("template archive flow", () => {
+  it("archives the inspected template and refreshes the library", async () => {
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+    testState.archive.mockResolvedValue(undefined);
+    const { container, root } = await renderLibrary();
+
+    await act(async () => {
+      button(container, "Archive").dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+
+    expect(testState.archive).toHaveBeenCalledWith(
+      "personal-location",
+      "template-analysis",
+    );
+    expect(testState.mutate).toHaveBeenCalledOnce();
+    expect(container.textContent).not.toContain("could not be created");
+    await act(async () => root.unmount());
+  });
+
+  it("keeps an archive failure with the template it happened to", async () => {
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+    testState.archive.mockRejectedValueOnce(new Error("offline"));
+    const { container, root } = await renderLibrary();
+
+    await act(async () => {
+      button(container, "Archive").dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    expect(container.textContent).toContain(
+      "Your template is unchanged; try again.",
+    );
+
+    const search = container.querySelector("#template-search");
+    await act(async () => {
+      search?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      );
+    });
+    expect(container.textContent).toContain("Map review");
+    expect(container.textContent).not.toContain(
+      "Your template is unchanged; try again.",
+    );
+    await act(async () => root.unmount());
+  });
+});
+
+function clickButton(container: HTMLElement, label: string): void {
+  button(container, label).dispatchEvent(
+    new MouseEvent("click", { bubbles: true }),
+  );
+}
+
+function archiveButton(container: HTMLElement): HTMLButtonElement | undefined {
+  return [...container.querySelectorAll("button")].find((candidate) =>
+    candidate.textContent?.includes("Archi"),
+  ) as HTMLButtonElement | undefined;
+}
+
+async function typeSearch(
+  container: HTMLElement,
+  value: string,
+): Promise<void> {
+  const search = container.querySelector("#template-search");
+  await act(async () => {
+    if (search instanceof HTMLInputElement) {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(search, value);
+    }
+    search?.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function submitCopyForm(container: HTMLElement): Promise<void> {
+  const form = container.querySelector(".grafy-template-use");
+  await act(async () => {
+    form?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+  });
+}
+
+/**
+ * The copy form's primary action. Tests reach for it directly because a disabled
+ * button still answers a `submit` dispatched on the form, which is what proves the
+ * request stays locked when the visible state has not caught up.
+ */
+function copySubmitButton(container: HTMLElement): HTMLButtonElement {
+  const submit = container.querySelector(
+    ".grafy-template-use button[type='submit']",
+  );
+  if (!(submit instanceof HTMLButtonElement)) {
+    throw new Error("Copy form action not found");
+  }
+  return submit;
+}
+
+type Deferred = {
+  promise: Promise<unknown>;
+  settle: (value: unknown) => void;
+  reject: (error: unknown) => void;
+};
+
+function deferred(): Deferred {
+  let settle!: (value: unknown) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise((resolve, rejectNow) => {
+    settle = resolve;
+    reject = rejectNow;
+  });
+  return { promise, settle, reject };
+}
+
+/** Copy requests that stay pending until the test answers them, in call order. */
+function deferredQueue(): { items: Deferred[]; next: () => Promise<unknown> } {
+  const items: Deferred[] = [];
+  return {
+    items,
+    next() {
+      const item = deferred();
+      items.push(item);
+      return item.promise;
+    },
+  };
+}
+
+const createdGraph = (id: string) => ({
+  destination_workspace_id: "personal-location",
+  graph_id: id,
+});
+
+async function openCopyFormForInspectedTemplate(
+  container: HTMLElement,
+): Promise<void> {
+  await act(async () => {
+    clickButton(container, "Use template");
+  });
+}
+
+describe("copy requests answer only their own form", () => {
+  it("copies another template while a request the person abandoned is still running", async () => {
+    const abandoned = deferred();
+    testState.instantiate
+      .mockImplementationOnce(() => abandoned.promise)
+      .mockResolvedValue({
+        destination_workspace_id: "personal-location",
+        graph_id: "copy-of-map",
+      });
+    const { container, root } = await renderLibrary();
+
+    await openCopyFormForInspectedTemplate(container);
+    await submitCopyForm(container);
+    expect(testState.instantiate).toHaveBeenCalledTimes(1);
+
+    // The search box is still reachable, so the request is abandoned in flight
+    // and the copy that replaces it belongs to another template.
+    await typeSearch(container, "map");
+    await openCopyFormForInspectedTemplate(container);
+    await submitCopyForm(container);
+
+    expect(testState.instantiate).toHaveBeenNthCalledWith(
+      1,
+      "personal-location",
+      "template-analysis",
+      expect.objectContaining({ name: "Analysis starter" }),
+    );
+    expect(testState.instantiate).toHaveBeenNthCalledWith(
+      2,
+      "team-location",
+      "template-map",
+      {
+        destination_workspace_id: "personal-location",
+        name: "Map review",
+        folder_id: null,
+      },
+    );
+
+    await act(async () => {
+      abandoned.settle({
+        destination_workspace_id: "personal-location",
+        graph_id: "late-copy",
+      });
+    });
+    // Both copies open their own graph when they land. What must not happen is
+    // the abandoned request answering for the copy that replaced it.
+    expect(testState.push).toHaveBeenCalledWith(
+      "/workspaces/personal-user/graphs/copy-of-map",
+    );
+    await act(async () => root.unmount());
+  });
+
+  it("keeps an abandoned copy's failure off the copy that replaced it", async () => {
+    const abandoned = deferred();
+    const running = deferred();
+    testState.instantiate
+      .mockImplementationOnce(() => abandoned.promise)
+      .mockImplementationOnce(() => running.promise);
+    const { container, root } = await renderLibrary();
+
+    await openCopyFormForInspectedTemplate(container);
+    await submitCopyForm(container);
+    await typeSearch(container, "map");
+    await openCopyFormForInspectedTemplate(container);
+    await submitCopyForm(container);
+
+    await act(async () => {
+      abandoned.reject(new ApiError(422, "A copy named that already exists"));
+    });
+    expect(container.querySelector(".grafy-template-use__error")).toBeNull();
+    expect(button(container, "Creating…").disabled).toBe(true);
+
+    await act(async () => {
+      running.reject(new Error("offline"));
+    });
+    expect(
+      container.querySelector(".grafy-template-use__error")?.textContent,
+    ).toContain("Your template is unchanged; try again.");
+    expect(container.textContent).not.toContain(
+      "A copy named that already exists",
+    );
+    await act(async () => root.unmount());
+  });
+});
+
+describe("one copy request runs per template", () => {
+  it("refuses to copy a template the person returned to while its request runs", async () => {
+    const queue = deferredQueue();
+    testState.instantiate.mockImplementation(() => queue.next());
+    const { container, root } = await renderLibrary();
+
+    // A copy of "Analysis starter" starts and is abandoned mid-flight.
+    await openCopyFormForInspectedTemplate(container);
+    await submitCopyForm(container);
+
+    // A copy of another template starts and is left running as well.
+    await typeSearch(container, "map");
+    await openCopyFormForInspectedTemplate(container);
+    await submitCopyForm(container);
+    expect(testState.instantiate).toHaveBeenCalledTimes(2);
+
+    // Coming back to the first template reopens its form. That form still may
+    // not copy: the request started for this same template has not answered.
+    await typeSearch(container, "analysis");
+    await openCopyFormForInspectedTemplate(container);
+    await submitCopyForm(container);
+    expect(testState.instantiate).toHaveBeenCalledTimes(2);
+
+    // The abandoned answer belongs to the request that started it, not to the
+    // form that reopened afterwards.
+    await act(async () => {
+      queue.items[0]!.reject(new ApiError(422, "The first request gave up"));
+    });
+    expect(container.querySelector(".grafy-template-use__error")).toBeNull();
+
+    // Now that the template's own request has answered, this form may start one.
+    await submitCopyForm(container);
+    expect(testState.instantiate).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      queue.items[2]!.reject(new ApiError(422, "A copy named that exists"));
+    });
+    expect(
+      container.querySelector(".grafy-template-use__error")?.textContent,
+    ).toContain("A copy named that exists");
+
+    await act(async () => {
+      queue.items[1]!.settle(createdGraph("copy-of-map"));
+    });
+    await act(async () => root.unmount());
+  });
+
+  it("does not unlock a running copy when another template's copy finishes", async () => {
+    const queue = deferredQueue();
+    testState.instantiate.mockImplementation(() => queue.next());
+    const { container, root } = await renderLibrary();
+
+    await openCopyFormForInspectedTemplate(container);
+    await submitCopyForm(container);
+    await typeSearch(container, "map");
+    await openCopyFormForInspectedTemplate(container);
+    await submitCopyForm(container);
+
+    // The second copy lands while the first is still running.
+    await act(async () => {
+      queue.items[1]!.settle(createdGraph("copy-of-map"));
+    });
+    expect(testState.push).toHaveBeenCalledWith(
+      "/workspaces/personal-user/graphs/copy-of-map",
+    );
+
+    await typeSearch(container, "analysis");
+    await openCopyFormForInspectedTemplate(container);
+    await submitCopyForm(container);
+    expect(testState.instantiate).toHaveBeenCalledTimes(2);
+
+    // The first request answering is what releases that template's copy.
+    await act(async () => {
+      queue.items[0]!.settle(createdGraph("copy-of-analysis"));
+    });
+    await submitCopyForm(container);
+    expect(testState.instantiate).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      queue.items[2]!.settle(createdGraph("copy-of-analysis-again"));
+    });
+    await act(async () => root.unmount());
+  });
+});
+
+describe("a reopened copy form shows the copy still running", () => {
+  it("says the copy is running, then lets the form start one when it answers", async () => {
+    const running = deferred();
+    testState.instantiate.mockImplementationOnce(() => running.promise);
+    const { container, root } = await renderLibrary();
+
+    // A copy of "Analysis starter" starts and the person leaves its form.
+    await openCopyFormForInspectedTemplate(container);
+    await submitCopyForm(container);
+    expect(testState.instantiate).toHaveBeenCalledTimes(1);
+
+    // They inspect another template, return to the first, and open the form again.
+    await typeSearch(container, "map");
+    await typeSearch(container, "analysis");
+    await openCopyFormForInspectedTemplate(container);
+
+    // The reopened form names the same request that is still running, so it shows
+    // that request instead of an action that would be refused.
+    const action = copySubmitButton(container);
+    expect(action.disabled).toBe(true);
+    expect(action.textContent).toContain("Creating…");
+    expect(container.querySelector(".grafy-template-spin")).not.toBeNull();
+    expect(button(container, "Cancel").disabled).toBe(true);
+
+    // Submitting the form anyway still cannot send a second request for the
+    // template whose copy has not answered.
+    await submitCopyForm(container);
+    expect(testState.instantiate).toHaveBeenCalledTimes(1);
+
+    // The original request fails. Its answer belongs to the request that started
+    // it, so this form becomes usable without taking on that failure.
+    await act(async () => {
+      running.reject(new ApiError(422, "A copy named that already exists"));
+    });
+    expect(container.querySelector(".grafy-template-use__error")).toBeNull();
+    const retry = copySubmitButton(container);
+    expect(retry.disabled).toBe(false);
+    expect(retry.textContent).toContain("Create and open");
+    expect(button(container, "Cancel").disabled).toBe(false);
+
+    testState.instantiate.mockResolvedValueOnce(createdGraph("copy-on-retry"));
+    await submitCopyForm(container);
+    expect(testState.instantiate).toHaveBeenCalledTimes(2);
+    expect(testState.push).toHaveBeenCalledWith(
+      "/workspaces/personal-user/graphs/copy-on-retry",
+    );
+    await act(async () => root.unmount());
+  });
+
+  it("shows the running copy again when a retry from the reopened form fails", async () => {
+    const first = deferred();
+    const retry = deferred();
+    testState.instantiate
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => retry.promise);
+    const { container, root } = await renderLibrary();
+
+    await openCopyFormForInspectedTemplate(container);
+    await submitCopyForm(container);
+    await typeSearch(container, "map");
+    await typeSearch(container, "analysis");
+    await openCopyFormForInspectedTemplate(container);
+
+    await act(async () => {
+      first.settle(createdGraph("copy-of-analysis"));
+    });
+    expect(copySubmitButton(container).disabled).toBe(false);
+
+    // The form is usable again, and the request it starts shows as running.
+    await submitCopyForm(container);
+    expect(testState.instantiate).toHaveBeenCalledTimes(2);
+    expect(copySubmitButton(container).disabled).toBe(true);
+
+    await act(async () => {
+      retry.reject(new ApiError(422, "A copy named that already exists"));
+    });
+    expect(
+      container.querySelector(".grafy-template-use__error")?.textContent,
+    ).toContain("A copy named that already exists");
+    expect(copySubmitButton(container).textContent).toContain("Try again");
+    await act(async () => root.unmount());
+  });
+});
+
+describe("template archive is one operation at a time", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+  });
+
+  it("sends one archive request when the button fires twice before React repaints", async () => {
+    const running = deferred();
+    testState.archive.mockImplementation(() => running.promise);
+    const { container, root } = await renderLibrary();
+
+    await act(async () => {
+      const archive = archiveButton(container);
+      archive?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      archive?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(testState.archive).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      running.settle(undefined);
+    });
+    await act(async () => root.unmount());
+  });
+
+  it("keeps the archive button out of reach until the running archive lands", async () => {
+    const running = deferred();
+    testState.archive.mockImplementation(() => running.promise);
+    // Both locations can manage their library, so either result offers Archive.
+    testState.locatedTemplates = [
+      {
+        template: templates[0]!,
+        location: {
+          ...locations[0]!,
+          capabilities: [
+            ...locations[0]!.capabilities,
+            "manage_template_library",
+          ],
+        },
+      },
+      {
+        template: templates[1]!,
+        location: {
+          ...locations[1]!,
+          capabilities: [
+            ...locations[1]!.capabilities,
+            "manage_template_library",
+          ],
+        },
+      },
+    ];
+    const { container, root } = await renderLibrary();
+
+    await act(async () => {
+      archiveButton(container)?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    expect(archiveButton(container)?.textContent).toContain("Archiving");
+
+    const search = container.querySelector("#template-search");
+    await act(async () => {
+      search?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      );
+    });
+    const other = archiveButton(container);
+    expect(other?.disabled).toBe(true);
+    expect(other?.textContent).toContain("Archive");
+    expect(other?.title).toContain("An archive is already running.");
+
+    await act(async () => {
+      other?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(testState.archive).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      running.settle(undefined);
+    });
+    await act(async () => root.unmount());
+  });
+
+  it("does not report an archive failure when only the library refresh failed", async () => {
+    testState.archive.mockResolvedValue(undefined);
+    testState.mutate.mockRejectedValueOnce(new Error("offline"));
+    const { container, root } = await renderLibrary();
+
+    await act(async () => {
+      archiveButton(container)?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+
+    expect(testState.archive).toHaveBeenCalledTimes(1);
+    expect(testState.mutate).toHaveBeenCalledOnce();
+    expect(container.querySelector("[role='alert']")).toBeNull();
+    expect(container.textContent).not.toContain("Your template is unchanged");
+    await act(async () => root.unmount());
+  });
+});
+
+describe("the copy form follows the result set", () => {
+  it("drops the form when its template leaves the results", async () => {
+    const { container, root } = await renderLibrary();
+    await openCopyFormForInspectedTemplate(container);
+    expect(container.querySelector(".grafy-template-use")).not.toBeNull();
+
+    // A teammate archives the inspected template; the list changes underneath
+    // the open form without the person touching it.
+    testState.locatedTemplates = [
+      { template: templates[1]!, location: locations[1]! },
+    ];
+    const nameInput = container.querySelector<HTMLInputElement>(
+      ".grafy-template-use input",
+    );
+    await act(async () => {
+      if (nameInput) {
+        const valueSetter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )?.set;
+        valueSetter?.call(nameInput, "Typed while the list changed");
+        nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    });
+
+    expect(container.querySelector(".grafy-template-use")).toBeNull();
+    expect(
+      container.querySelector(".grafy-template-preview h2")?.textContent,
+    ).toBe("Map review");
+    expect(testState.instantiate).not.toHaveBeenCalled();
     await act(async () => root.unmount());
   });
 });
