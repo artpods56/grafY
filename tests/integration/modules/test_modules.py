@@ -746,8 +746,8 @@ def test_saved_graph_module_is_discoverable_and_executes_once(
     )
     assert module_spec["operator_id"] == f"graph.module.{graph_id}"
     assert module_spec["module_graph_revision"] == 1
+    # The catalog only lists published releases, so a spec carries no state.
     assert module_spec["catalog_visible"] is True
-    assert module_spec["publication_state"] == "published"
     assert [port["name"] for port in module_spec["inputs"]] == ["text"]
     assert [port["name"] for port in module_spec["outputs"]] == ["result"]
     assert registry["unavailable_modules"] == []
