@@ -59,7 +59,7 @@ single API owner; multiple workers are not an interchangeable deployment mode.
 
 `v1/routes/<feature>/views.py` owns request handling and HTTP error translation.
 Route-local models describe transport. Route files need not contain application
-services merely to satisfy a directory template.
+services merely to satisfy a directory pattern.
 
 Authentication's cookie, OIDC, PAT, and abuse-handling code remains under
 `v1/routes/auth`. Workspace transport models belong to `v1/routes/workspaces`;
@@ -70,8 +70,8 @@ for cross-workspace copies.
 
 Core `CollaborationService` owns head commands and checkpoints. Shared
 `application/graph_creation.py` stages the saved graph, revision, head, and initial
-checkpoint for creation workflows. Saved graphs, Modules, and Templates retain
-their own workflows and identities.
+checkpoint for creation workflows. Saved graphs and Modules retain their own
+workflows and identities.
 
 `grafy_api.realtime` owns the room hub and post-commit publishing. The publisher
 receives its dependencies instead of finding request resources. HTTP/WebSocket

@@ -1,6 +1,5 @@
 from grafy_core.domain.library import MAX_FOLDER_NAME_KEY_LENGTH
 from grafy_core.domain.module_library import ModulePublicationState
-from grafy_core.domain.templates import TemplateState
 from sqlalchemy import (
     CheckConstraint,
     Column,
@@ -27,12 +26,6 @@ from .base import metadata
 class ModulePublicationStateType(StringEnumType[ModulePublicationState]):
     impl = String(32)
     enum_type = ModulePublicationState
-    cache_ok = True
-
-
-class TemplateStateType(StringEnumType[TemplateState]):
-    impl = String(16)
-    enum_type = TemplateState
     cache_ok = True
 
 
@@ -131,7 +124,10 @@ templates = Table(
     Column("snapshot_document", SavedGraphDocumentType(), nullable=False),
     Column("name", String(160), nullable=False),
     Column("description", String(1000), nullable=True),
-    Column("state", TemplateStateType(), nullable=False),
+    # The template library is retired: the table, its column widths and its state
+    # check constraint remain so an existing database still compares clean, and
+    # nothing reads or writes them.
+    Column("state", String(16), nullable=False),
     Column(
         "created_by_user_id",
         SaUuid(as_uuid=True),

@@ -35,8 +35,8 @@ compatibility, Add. Modules appear as plugin origin `module` with badges like
 `Module · r{n}`. Invalid tips show under **Unavailable as modules**. Self-graph
 is hidden with an explanatory note. Inspector offers **Open source graph**.
 
-No Publish release, Workspace library, Deprecate, Withdraw, Import, or Upgrade
-module call surfaces exist yet.
+No Publish release, Workspace library, or Upgrade module call surfaces exist
+yet.
 
 ### Vocabulary and language
 
@@ -52,8 +52,7 @@ module call surfaces exist yet.
 | Works with / ports | Module contract | Partial — contract inspect exists; not named as such for Modules |
 
 **Tone:** Diagnostic and engineer-facing (“catalog-visible”, “unavailable as
-modules”). For publish/withdraw, tone should stay precise but less like a
-compiler log — especially withdraw confirmations that reassure about pins.
+modules”). For publish, tone should stay precise but less like a compiler log.
 
 ### Object consistency
 
@@ -79,8 +78,6 @@ contract summary) reused in both places.
 | insert module call | Present as add node |
 | open Workspace library | **Missing** |
 | Publish release | **Missing** |
-| Deprecate / Withdraw | **Missing** |
-| Import into workspace | **Missing** |
 | Upgrade module call | **Missing** |
 | Open source graph | Present in inspector |
 | Empty library education | **Missing** (only search-empty / unavailable diagnostics) |
@@ -95,7 +92,6 @@ readiness, not the insert surface.
 | --- | --- |
 | Confidence in contract | Inspector helps; silent tip publish undermines trust (“why is my WIP here?”) |
 | Control over what others depend on | No publish gate — social risk |
-| Retire without recklessness | No withdraw copy path |
 
 ---
 
@@ -106,10 +102,8 @@ readiness, not the insert surface.
 | Action / state | Success | In progress | Failure (diagnose · explain · recover) |
 | --- | --- | --- | --- |
 | Insert module call | Return to canvas; new Module call selected; optional brief confirmation | Disable Insert; spinner on button | “Couldn’t insert {name}.” · server/network reason · Retry / Back to Add node |
-| Upgrade module call | Pin updates on selected node; release number refreshes | Disable Upgrade | “Couldn’t upgrade pin.” · withdrawn/conflict · Retry or stay on current release |
+| Upgrade module call | Pin updates on selected node; release number refreshes | Disable Upgrade | “Couldn’t upgrade pin.” · conflict · Retry or stay on current release |
 | Publish release | Success on source graph (“Published release {n} to workspace library”); library/Add reflect it | Confirm disabled + progress | Validation: list contract errors + fix on canvas; revision conflict: refresh tip and retry; permission: who can publish |
-| Withdraw | Module disappears from library list; confirm closed | Confirm in progress | Stay on confirm with error + retry |
-| Import into workspace | Land on destination (library or source graph — open interaction decision) | Confirm in progress | Permission / create failure · change destination or retry |
 | Empty library | — | — | Educational empty, not an error |
 | Self-call blocked | — | — | “Can’t insert a Module into its own source graph.” · Open library / pick another |
 
@@ -122,19 +116,18 @@ wrong” alone.
 | --- | --- | --- |
 | Add node | Search + choosing what to insert | Stewardship diagnostics, unavailable tips |
 | Module contract (insert) | Port contract + Insert | Long operator ids; plugin chrome |
-| Module contract (manage) | State + stewardship actions | Accidental Insert when no graph active |
-| Workspace library | Module list with state | Looking like a second full node catalog |
+| Module contract (manage) | Release list + Open source graph | Accidental Insert when no graph active |
+| Workspace library | Module list with releases | Looking like a second full node catalog |
 | Publish release | Contract preview + Confirm publish | Scary internals; unrelated graph settings |
-| Import into workspace | Destination + copy-by-value warning | Lineage promises (undecided) |
 | Module call on canvas | Pinned release + Upgrade when newer exists | Crowding ordinary node config |
 
 ### Accessibility decisions (screen UI)
 
-1. Add node, Workspace library, Publish release, Import: focus trap and restore
+1. Add node, Workspace library, Publish release: focus trap and restore
    focus to the opener (canvas or module call) on dismiss.
-2. Module rows and state badges: not colour-only — text for
-   published / deprecated; `aria-pressed` / selected state on lists.
-3. Insert / Publish / Withdraw: announce success and errors via assertive live
+2. Module rows and release badges: text, not colour-only; `aria-pressed` /
+   selected state on lists.
+3. Insert / Publish: announce success and errors via assertive live
    region or focus move to the message.
 4. Keyboard: full list navigation + Enter to open Module contract; primary
    action reachable without pointer.
@@ -150,10 +143,10 @@ wrong” alone.
 - **Same:** Module row treatment in Add node and Workspace library; Module
   contract layout for insert, upgrade, and manage (action set changes by
   intent).
-- **Different:** Insert (primary, constructive) vs Withdraw (destructive
-  confirm) vs Deprecate (secondary, reversible-looking).
+- **Different:** Insert (primary, constructive) vs Publish (destructive-adjacent
+  confirm: it freezes a revision).
 - **Platform:** Keep dialog/sheet patterns already used by Workbench
-  (`Dialog`); don’t invent a second modal system for Publish/Import.
+  (`Dialog`); don’t invent a second modal system for Publish.
 - **Internal fix:** Stop presenting Modules as a `Package` plugin twin to
   External without state — Modules section label should read as **Workspace
   library** (or under that heading), not only “Modules” plugin slug chrome.
@@ -167,22 +160,19 @@ Use these unless lower layers change:
 - Primary insert CTA: **Insert module call**
 - Inspect eyebrow when Module selected: **Module · release {n}** + state chip
 - Author CTA: **Publish release**
-- Steward: **Deprecate**, **Withdraw from library**, **Import into workspace**
 - Canvas: **Upgrade to release {n}**, **Open source graph**
-- Withdraw confirm body must say pins keep working
-- Import helper: copy into the destination workspace; not a live link
 
 ---
 
 ## Cross-layer issues (resolved for v1)
 
-1. **Capabilities:** Publish release = Editor + Owner; Deprecate + Withdraw =
-   Owner only. Surface hides/disables accordingly.
-2. **No hard delete:** Surface offers Deprecate / Withdraw only — never Destroy.
-3. **Import lineage** — don’t show “imported from” until decided (still open).
-4. **Library entry points:** Workbench and workspace graphs overview.
-5. **Older-release insert:** Module contract includes a release picker.
-6. Auto-catalog of valid tips must be removed — surface copy alone cannot fix
+1. **Capabilities:** Publish release = Editor + Owner. Surface hides/disables
+   accordingly. There is no library-management capability to gate.
+2. **No delete:** the surface offers no way to remove a Module or a release, and
+   no retirement affordance to explain.
+3. **Library entry points:** Workbench and workspace graphs overview.
+4. **Older-release insert:** Module contract includes a release picker.
+5. Auto-catalog of valid tips must be removed — surface copy alone cannot fix
    silent publish.
 
 ## Remaining cross-layer / polish
@@ -197,14 +187,12 @@ Use these unless lower layers change:
 ## Surface decisions for implementation
 
 1. **Add node naming** — rename dialog from “Node catalog” to **Add node**.
-2. **Module visual token** — distinct from External badge; include state chip
-   (published/deprecated) + release number in one consistent cluster.
+2. **Module visual token** — distinct from External badge; release number in one
+   consistent cluster.
 3. **Unavailable tips** — remove from Add node; show as publish readiness on
    source graph only.
-4. **Withdraw confirm pattern** — Dialog with pin-safe copy (not hard delete).
-5. **Success feedback** — toast/inline success for Publish (align with
+4. **Success feedback** — toast/inline success for Publish (align with
    Workbench global issue/toast patterns).
-6. **Deprecated in Add node** — muted row + confirm on Insert.
 
 ### Deferred
 

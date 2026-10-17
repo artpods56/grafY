@@ -1,9 +1,10 @@
-# Templates and Modules conceptual model
+# Modules conceptual model
 
 - **Status:** Draft hypothesis; belief-based (domain map without user research)
-- **Date:** 2026-08-11
-- **Audience:** Designers and engineers changing template copy, module publish,
-  library scope, catalog browse, or nested module execution
+- **Date:** 2026-08-11, amended when Templates and the Module lifecycle were
+  withdrawn ([ADR 0016](../adr/0016-graph-reuse-is-copies-and-modules.md))
+- **Audience:** Designers and engineers changing module publish, library scope,
+  catalog browse, or nested module execution
 - **Document type:** Explanation — Layers of Product Design conceptual model
 - **Related:** [modules domain map](modules-domain.md),
   [modules interaction structure](modules-interaction-flow.md),
@@ -13,21 +14,29 @@
 
 ## Summary
 
-This note decides how Grafy models two deliberately different forms of
-**graph reuse**: Templates create independent graph copies, while Modules are
-callable pinned releases. It resolves the domain harvest into objects,
-relationships, states, and ubiquitous language. It is not a database schema,
-wireframe, or browse-UI spec.
+This note decides how Grafy models **callable graph reuse**: a Module is a
+validated workflow building block that other graphs call through an immutable
+pinned release. It resolves the domain harvest into objects, relationships,
+states, and ubiquitous language. It is not a database schema, wireframe, or
+browse-UI spec.
+
+Copying a whole graph is the other form of graph reuse and is not this model's
+subject: that is **Duplicate** on a saved graph, described in
+[graph browser organization](graph-browser-organization.md). An earlier draft
+of this note also modelled **Templates** as a second reuse aggregate beside
+Modules; that aggregate is withdrawn (see
+[ADR 0016](../adr/0016-graph-reuse-is-copies-and-modules.md)) because copying a
+graph already covered it and its library entry point competed with Modules for
+the same word.
 
 **Hypothesis flag:** Built from the belief-based [domain map](modules-domain.md).
 Revisit once observed behaviour or research challenges these decisions.
 
 ### Core job
 
-Save an exact graph revision as a reusable copy source, or publish a validated
-workflow building block that other graphs can call through an immutable pinned
-release. Both forms of reuse preserve the Workspace tenancy boundary without
-creating live cross-tenant references.
+Publish a validated workflow building block that other graphs can call through
+an immutable pinned release, while preserving the Workspace tenancy boundary and
+never creating live cross-tenant references.
 
 ### Material
 
@@ -80,56 +89,14 @@ module boundaries.
 
 - belongs to one Workspace
 - may be the source graph of zero or one Module
-- may be the source graph of zero or many Templates
 - contains zero or many Module calls
 
 **Actions:** Edit, Checkpoint, Declare module boundaries (add Module Input /
-Module Output), Open, Copy into workspace (existing share-by-copy).
+Module Output), Open, Duplicate (copy into a chosen Workspace, existing
+share-by-copy).
 
 **Decision:** A Saved graph with boundaries is only a *candidate* until a Module
 is published from it. Boundaries alone do not list it in the library.
-
----
-
-### Template
-
-**What it is:** An immutable, sanitized snapshot of one exact Saved graph
-revision that can create new independent Saved graphs.
-
-**Attributes users care about:** name, description, source graph and revision,
-creator, source location, node/connection summary, and lifecycle state
-(`active` or `archived`). Name and description may be edited; the captured
-graph document and source revision may not.
-
-**Relationships:**
-
-- belongs to one Workspace (its source/save location)
-- derives from exactly one Saved graph revision
-- creates zero or many independent Saved graphs
-
-**Actions:**
-
-- **Save as template** — capture a chosen exact revision after removing runtime
-  and security state
-- **Use template** — choose a destination save location, graph name, and
-  optional one-level Folder, then create and open a new independent graph
-- **Edit template details** — change only descriptive metadata
-- **Archive template** — withdraw it from new use without changing graphs that
-  were already created from it
-
-**Decision:** Template is a copy source, not a callable unit and not a synonym
-for Module. Using it copies graph structure and safe configuration by value. It
-does not copy secrets, execution history, materialized artifacts, uploads,
-caches, or invalid runtime capabilities. Source edits, Template metadata or
-lifecycle changes, and later copies never mutate graphs already created from
-the Template. There is no Template release/version series, inheritance,
-marketplace, category, or tag model.
-
-**Authorization decision:** Template reads and use are authorized through the
-source Workspace; graph creation is authorized independently at the chosen
-destination Workspace. A user who can read the source and create in the
-destination may use a Template across those locations through this explicit
-copy operation. The resulting graph belongs only to the destination Workspace.
 
 ---
 
@@ -138,8 +105,9 @@ copy operation. The resulting graph belongs only to the destination Workspace.
 **What it is:** A reusable workflow building block belonging to one workspace
 library, authored from one source graph.
 
-**Attributes users care about:** name, description, publication state
-(`published`, `deprecated`, `withdrawn`).
+**Attributes users care about:** name, description, and its releases. A Module
+has no lifecycle state to manage: publishing a release is the only transition,
+and a published Module stays in the library.
 
 **Relationships:**
 
@@ -152,18 +120,19 @@ library, authored from one source graph.
 
 - **Publish release** — create a Module release from a chosen source-graph
   revision (usually the tip) after the contract validates; first publish
-  creates the Module
-- **Deprecate** — keep callable pinned releases; discourage new inserts
-- **Withdraw** — remove from the library browse/insert surface; existing
-  Module calls keep resolving their pinned releases
+  creates the Module, and every later publish adds another release
 - **Open source graph** — open the authoring Saved graph
-- **Import into workspace** — copy a chosen Module release into another
-  workspace (see action vocabulary)
 
 **Decision:** Module is a first-class object, not “a graph that happens to
 validate.” Name and description are module-facing; they may start from the
 source graph name but are not required to track tip renames automatically
 (implementation may; UX must not surprise callers mid-compose).
+
+There is no **Deprecate**, **Withdraw**, un-publish, or hard delete. Removing a
+release from under a pin would break pinned calls; hiding it buys a signal that
+nobody was reading, because nothing in the system moves a pin on its own. The
+way to retire a Module is to stop publishing from it and let its pins age out,
+or delete its source graph's Workspace.
 
 ---
 
@@ -241,7 +210,8 @@ the Module’s home workspace is the active workspace), Remove.
 | subgraph | Authoring structure inside a Saved graph, not a durable object |
 | building block | Synonym → Module |
 | draft | State of source work / unpublished candidate, not an object |
-| fork | Outcome of Import or Use template, not a persistent type |
+| fork | Outcome of Duplicate, not a persistent type |
+| template | Withdrawn aggregate → Saved graph + Duplicate ([ADR 0016](../adr/0016-graph-reuse-is-copies-and-modules.md)) |
 | dependency | Relationship via Module call → Module release |
 | practitioner | User (existing) |
 
@@ -250,10 +220,7 @@ the Module’s home workspace is the active workspace), Remove.
 ```mermaid
 erDiagram
   Workspace ||--o{ SavedGraph : owns
-  Workspace ||--o{ Template : owns
   Workspace ||--o{ Module : "hosts as home library"
-  SavedGraph ||--o{ Template : "supplies exact revision"
-  Template ||--o{ SavedGraph : "creates independent copy"
   SavedGraph ||--o| Module : "authors as source graph"
   Module ||--|{ ModuleRelease : has
   Module ||--o| ModuleRelease : "offers as current library release"
@@ -274,38 +241,21 @@ or many. Labels read left entity → right entity as declared.
 stateDiagram-v2
   [*] --> Published: Publish release
   Published --> Published: Publish release
-  Published --> Deprecated: Deprecate
-  Deprecated --> Published: Publish release
-  Deprecated --> Withdrawn: Withdraw
-  Published --> Withdrawn: Withdraw
-  Withdrawn --> Published: Publish release
 ```
 
 | State | Library browse / Insert | Existing Module calls |
 | --- | --- | --- |
 | Published | Listed; current library release offered | Resolve pinned releases |
-| Deprecated | Listed as deprecated; new inserts discouraged | Resolve pinned releases |
-| Withdrawn | Hidden from library | Resolve pinned releases |
 
 A Module does not exist until the first successful **Publish release**. A Saved
 graph may declare boundaries and still have no Module.
 
-### Template availability state
-
-```mermaid
-stateDiagram-v2
-  [*] --> Active: Save as template
-  Active --> Archived: Archive template
-```
-
-| State | New graph / Library | Existing graph copies |
-| --- | --- | --- |
-| Active | Listed and usable | Independent and unchanged |
-| Archived | Hidden and unavailable for new use | Independent and unchanged |
-
-Archiving is withdrawal, not deletion. The immutable snapshot remains so its
-provenance and audit history are not rewritten; restoring archived Templates is
-outside the current contract.
+Two further states, `deprecated` and `withdrawn`, remain readable from storage
+and are unreachable: they are the states of Modules published before this
+decision. They keep those rows loadable and keep their pinned calls resolving.
+They are absent from library browse and Add node, and no surface can move a
+Module into or out of them
+([ADR 0016](../adr/0016-graph-reuse-is-copies-and-modules.md)).
 
 ### Source graph readiness (authoring, not Module state)
 
@@ -329,11 +279,10 @@ callable.
 | Topic | Decision |
 | --- | --- |
 | History | Module releases are immutable; callers keep pins |
-| Template history | One Template captures one exact revision; saving another snapshot creates another Template, not a version |
 | Relationship temporality | “Current library release” means the release offered for new inserts *now*; existing calls do not move |
-| Deletion | No hard delete in v1: Withdraw (and Deprecate) only. Existing Module calls keep resolving pinned releases; do not destroy releases out from under pins |
-| Cross-workspace | **Import** copies a release into the destination workspace as a new source graph + Module; no live cross-workspace Module reference |
-| Read model lag | UX requirement: after Publish/Withdraw, the active workspace library reflects the change before the user inserts again — how fresh is an open engineering question |
+| Deletion | No delete of a Module or a release. Existing Module calls keep resolving pinned releases; do not destroy releases out from under pins |
+| Cross-workspace | Duplicate the source graph into the destination Workspace; it becomes a Module there when someone publishes it. No live cross-workspace Module reference and no copy that keeps Module identity |
+| Read model lag | UX requirement: after Publish, the active workspace library reflects the change before the user inserts again — how fresh is an open engineering question |
 
 ## Ubiquitous language
 
@@ -341,8 +290,7 @@ callable.
 
 | Term | Rejected alternatives | Decision |
 | --- | --- | --- |
-| Template | starter, blueprint, reusable graph | Immutable exact-revision copy source; Use template creates an independent graph |
-| Module | building block, component, package | Product name for the reusable callable unit; never use Template as its synonym |
+| Module | building block, component, package, template | Product name for the reusable callable unit |
 | Module release | tip-as-catalog-entry, version (alone), checkpoint | Immutable callable pin; number aligns with source graph revision |
 | Module contract | API, signature, interface | Callable ports of one release |
 | Module port / port name | public name, public port | Avoid “public” = visibility |
@@ -353,22 +301,16 @@ callable.
 | Workspace | project (as tenant) | Keep existing tenancy term |
 | Folder | nested folder, directory tree | Optional one-level organization inside a Workspace; not a tenancy boundary |
 
-**Visibility language:** Prefer **published / deprecated / withdrawn** and
-**personal vs shared workspace**. Do not use **public/private module** for
-library scope — “private” already collides with personal workspace and
-“public” collides with port names and internet sharing.
+**Visibility language:** Prefer **published** and **personal vs shared
+workspace**. Do not use **public/private module** for library scope — “private”
+already collides with personal workspace and “public” collides with port names
+and internet sharing.
 
 ### Verbs
 
 | Verb | Applies to | Rejected alternatives | Decision |
 | --- | --- | --- | --- |
-| Save as template | Saved graph revision | Publish template, make module | Capture a sanitized immutable copy source from that exact revision |
-| Use template | Template → destination Workspace | Insert template, call template, track template | Create a new independent Saved graph with an explicit name and optional Folder |
-| Archive template | Template | Delete template | Withdraw from new use; existing copies are unaffected |
 | Publish release | Module (creates Module on first success) | Share, expose, make public, sync tip | Deliberate offer of a validated revision to the workspace library |
-| Deprecate | Module | Soft-delete, hide | Still visible as legacy; discourage new inserts |
-| Withdraw | Module | Unpublish, remove, delete | Hide from library; keep pins resolving |
-| Import into workspace | Module release → destination Workspace | Install, link, share across, reference | Copy-by-value into a new source graph + Module; no live link |
 | Insert module call | Saved graph + Module release | Add node (when meaning module), nest, embed | Places a Module call pinned to a release |
 | Upgrade module call | Module call | Update, sync, track latest | Repin to a newer Module release |
 | Declare module boundaries | Saved graph | Make module (premature), expose ports | Authoring step; does not publish |
@@ -380,38 +322,38 @@ copy-graph-into-workspace). It must not mean “publish module.”
 **Edit** on a Module is rejected as a CTA — users **Open source graph**, edit
 the Saved graph, then **Publish release**.
 
+**Deprecate**, **Withdraw**, and **Import into workspace** are withdrawn verbs.
+A Module that should not be used anymore is simply not published from anymore; a
+Module wanted in another Workspace is **Duplicated** there.
+
 ## Resolved decisions (binding)
 
-1. **No hard delete (v1):** Retirement is **Deprecate** and **Withdraw from
-   library**. Owners do not destroy Modules or releases out from under pins.
-   Deprecated/withdrawn Modules’ existing Module calls remain executable as long
-   as the underlying node/operator code can execute the pinned release.
-2. **Who may Publish / Deprecate / Withdraw:**
-   - **Publish release** — Editor + Owner (`publish_module`)
-   - **Deprecate** and **Withdraw** — Owner only (`manage_module_library`);
-     soft stewardship matches Owner-only withdraw, not Editor
+1. **No delete:** Owners do not destroy Modules or releases out from under pins,
+   and there is no softer retirement to reach for instead. Existing Module calls
+   remain executable as long as the underlying node/operator code can execute the
+   pinned release.
+2. **Who may Publish:** Editor + Owner (`publish_module`). There is no separate
+   library-management capability; the library is the set of published Modules.
 3. **Insert release choice:** Composers may pick an older Module release at
    insert time (not only the current library release). Upgrade still repins to a
    chosen release (typically a newer one).
-4. **Library entry points:** Templates appear in **New graph / Library**;
-   Modules appear in **Add node / Library**. Template use creates and directly
-   opens a graph; Module insertion creates a pinned call node.
-5. **v1 scope:** Full breadboard (C) — Publish + Add node library listing +
-   Workspace library manage (deprecate/withdraw) + Import into workspace. No
-   instance-public modules.
-6. **Template v1 scope:** Exact-revision Save as template + browse/search/read +
-   descriptive metadata update + archive + explicit destination copy. No
-   version tracking, marketplace behavior, tags/categories, or inheritance.
+4. **Library entry points:** Modules appear in **Add node / Library** and in the
+   Workspace **Modules** library dialog. Inserting creates a pinned call node;
+   copying a graph is **Duplicate** on the graph, not a library action.
+5. **Cross-workspace:** Reuse a Module in another Workspace by Duplicating its
+   source graph there. Nothing links the two afterwards.
+6. **Retired states are read-only:** a stored `deprecated` or `withdrawn` Module
+   loads, stays hidden, and keeps its pins resolving. No surface edits it.
 
 ## Remaining open questions
 
 1. **Rename propagation:** When the source graph is renamed, does the Module
    name follow, stay independent, or prompt on next publish?
-2. **Imported Module lineage:** Does the destination Module record that it was
-   imported from another workspace’s release, or is lineage discarded like
-   graph copy today? (v1 UI does not promise lineage.)
-3. **Nested optional-input rules** and execution semantics stay as today’s
+2. **Nested optional-input rules** and execution semantics stay as today’s
    runtime contracts; this model does not reopen them.
+3. **Discovering a stale pin:** with no deprecate signal, the library cannot tell
+   a composer that release 1 is a poor choice. Whether the surface should show
+   "3 newer releases" is open.
 
 ## Next step
 

@@ -12,7 +12,6 @@ from tests.support.clients.saved_graphs import (
     GraphFoldersApi,
     SavedGraphsApi,
 )
-from tests.support.clients.templates import TemplatesApi
 from tests.support.clients.uploads import UploadsApi
 from tests.support.clients.workspaces import WorkspaceApi, WorkspacesApi
 
@@ -27,7 +26,6 @@ __all__ = [
     "ModulesApi",
     "NodeSecretsApi",
     "SavedGraphsApi",
-    "TemplatesApi",
     "UploadsApi",
     "WorkspaceApi",
     "WorkspacesApi",

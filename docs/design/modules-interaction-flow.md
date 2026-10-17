@@ -35,11 +35,6 @@ Three journeys share places; each is a complete job.
    When my source graph’s contract is valid, I want to publish a Module release
    into this workspace library, so teammates (or my future self) can insert it.
 
-3. **Steward — import or withdraw**  
-   When a Module should move across workspaces or leave the insert surface, I
-   want to import a release into another workspace or withdraw/deprecate in the
-   home library, without breaking existing pinned calls.
-
 Success criteria:
 
 1. Containing graph has a Module call pinned to a release; canvas focus returns.
@@ -56,9 +51,8 @@ Success criteria:
 | Workbench canvas | Editing one Saved graph in one Workspace |
 | Add node | Fast search/insert for operators **and** published Modules |
 | Module contract | Inspect one Module release before insert or upgrade |
-| Workspace library | Manage published / deprecated Modules in this Workspace |
+| Workspace library | Browse this Workspace’s published Modules and their releases |
 | Publish release | Confirm publishing a validated revision from the source graph |
-| Import into workspace | Choose destination Workspace and confirm copy-by-value |
 | Source graph workbench | Same Workbench canvas on the Module’s source graph |
 | Module call on canvas | Selected Module call node (inline affordances) |
 
@@ -88,11 +82,10 @@ Add node
 - search / filter → stays Add node (filtered)
 - choose built-in or external operator → insert on Workbench canvas
 - choose published Module → Module contract (intent: insert)
-- choose deprecated Module → Module contract (intent: insert; warn)
 - open Workspace library → Workspace library
 - cancel / dismiss → Workbench canvas
 [ search field; groups: Built-in, External, Workspace library modules;
-  module rows show name, current release number, published|deprecated;
+  module rows show name and current release number;
   empty: "No published modules in this workspace" + affordance
   "Open workspace library"; loading; error retry ]
 
@@ -102,8 +95,8 @@ Module contract (insert)
 - open source graph → Source graph workbench
 - back → Add node
 - cancel → Workbench canvas
-[ module name, description, state; release picker across published releases;
-  module ports in/out with types and requiredness; deprecated warning if any;
+[ module name, description; release picker across published releases;
+  module ports in/out with types and requiredness;
   disabled Insert when module is source of active graph (self-call) ]
 
 Module call on canvas
@@ -143,13 +136,11 @@ graph LR
 | Empty library | Add node Modules group empty; CTA to Workspace library explaining Publish release |
 | Loading library | Inline loading in Add node module group; Insert disabled until loaded |
 | Self-call | Module whose source is the active graph omitted or Insert disabled with reason |
-| Deprecated | Visible with badge; Insert allowed after explicit confirm on Module contract |
-| Withdrawn | Not listed in Add node or library; existing calls remain on canvas |
+| Retired Module (stored deprecated/withdrawn) | Not listed in Add node or library; existing calls remain on canvas and keep resolving |
 | Insert failure | Stay on Module contract; error + retry; no partial node |
 | Post-insert | Return to canvas with new Module call selected; pin = chosen Module release at confirm time (defaults to current library release) |
 | Newer release exists | Module call shows upgrade affordance → Module contract (upgrade) |
 | Upgrade cancel | Stay on Module call; pin unchanged |
-| Concurrent withdraw during inspect | Insert fails with “no longer in library”; return to Add node refreshed |
 
 **Optimistic vs pessimistic:** Pessimistic insert/upgrade — wait for server
 accept before placing or repinning. Open engineering question if collaboration
@@ -202,12 +193,12 @@ graph LR
 | First publish | Creates Module; requires name (default from graph name); enters Published |
 | Later publish | New Module release; becomes current library release; old releases remain for pins |
 | Concurrent edit / revision mismatch | Failure on Publish release; stay with refresh tip + retry |
-| Permission denied | Affordance hidden or error on confirm; Publish requires Editor/Owner; Deprecate/Withdraw require Owner |
+| Permission denied | Affordance hidden or error on confirm; Publish requires Editor/Owner |
 | Post-publish | Toast/inline success on source graph; library and Add node reflect new release before next insert (freshness requirement from conceptual model) |
 
 ---
 
-## Journey C — Steward: library, deprecate, withdraw, import
+## Journey C — Steward: library browse
 
 ### Breadboard
 
@@ -215,40 +206,26 @@ graph LR
 Workspace library
 - filter / search → stays
 - select Module → Module contract (intent: manage)
-- deprecate → stays (state deprecated) or confirm sheet → stays
-- withdraw → confirm withdraw → stays (module removed from list)
-- import into workspace → Import into workspace
 - open source graph → Source graph workbench
 - back → Workbench canvas (or workspace graphs entry — see open decisions)
-[ modules: published and deprecated; name, current release, state;
+[ modules: name, current release, release count;
   empty state: how to Declare boundaries + Publish release;
   loading; error ]
 
 Module contract (manage)
 - insert module call → Workbench canvas
   (only if a graph is active in this workspace; else disabled)
-- deprecate / withdraw → Workspace library
 - publish release → Publish release
   (if user can open source and contract valid — or deep-link source)
-- import into workspace → Import into workspace
 - open source graph → Source graph workbench
 - back → Workspace library
-[ full contract; release history list for inspect; state ]
-
-Import into workspace
-- choose destination workspace → stays
-- confirm import → destination Workspace library
-  (or destination source graph workbench)
-- cancel → Module contract or Workspace library
-[ source module name + release; destination workspace picker
-  (workspaces where user can create graphs); copy-by-value explanation;
-  no live link warning ]
-
-Confirm withdraw (nested in library or contract)
-- confirm → Workspace library (module gone from browse)
-- cancel → previous place
-[ pins keep working; not a hard delete ]
+[ full contract; release history list for inspect ]
 ```
+
+Publishing is the only transition a steward can take. There is no place in this
+journey to retire a Module: a release is a freeze, and stopping its use means
+publishing a better one and letting each owner repoint their pin
+([ADR 0016](../adr/0016-graph-reuse-is-copies-and-modules.md)).
 
 ### Flow diagram (steward)
 
@@ -256,9 +233,6 @@ Confirm withdraw (nested in library or contract)
 graph LR
   Library[Workspace_library] --> Contract[Module_contract]
   Contract --> Library
-  Contract --> Import[Import_into_workspace]
-  Library --> Import
-  Import --> DestLibrary[Destination_workspace_library]
   Contract --> Source[Source_graph_workbench]
   Library --> Source
   Contract --> Publish[Publish_release]
@@ -268,12 +242,8 @@ graph LR
 
 | Case | Behaviour |
 | --- | --- |
-| Withdraw with active pins | Allowed; confirm copy states pins keep resolving |
-| Deprecate then insert | Allowed with warning on Module contract |
-| Import permission | Destinations limited to workspaces with create_graph |
-| Import failure | Stay on Import; error + retry; no partial Module |
-| Post-import | New Saved graph + Published Module in destination; user lands on destination library or new source graph |
-| Lineage | Unresolved in conceptual model — UI does not promise lineage until decided |
+| Module with active pins | Nothing to warn about; no release is removed |
+| Retired Module in storage | Hidden from the list; its pins still resolve |
 
 ---
 
@@ -283,11 +253,11 @@ graph LR
   is for stewardship and empty-state education. Both list the same published
   Modules — not two divergent catalogs.
 - **Vocabulary check:** Uses Publish release, Insert module call, Upgrade
-  module call, Import into workspace, Withdraw, Deprecate, Open source graph.
-  Avoids Share/Public/Private for these actions.
-- **Broken objects:** Module attributes (state, current release, contract) and
-  actions (publish, deprecate, withdraw, import, open source) meet on Module
-  contract and Workspace library with cross-links.
+  module call, and Open source graph. Avoids Share/Public/Private for these
+  actions.
+- **Broken objects:** Module attributes (current release, contract) and actions
+  (publish, open source) meet on Module contract and Workspace library with
+  cross-links.
 - **Isolated relationships:** Module → source graph and Module call → release
   are navigable via Open source graph and Upgrade.
 - **Simpler alternative rejected:** Publishing automatically on every valid tip
@@ -299,22 +269,19 @@ graph LR
    overview.
 2. **Release picker on insert** — allow picking an older Module release at
    insert time (not only the current library release).
-3. **Capabilities:** Publish release = Editor + Owner; Deprecate + Withdraw =
-   Owner only.
-4. **No hard delete:** Withdraw/Deprecate only; pins keep resolving.
-5. **v1 scope:** Full breadboard (C) — Publish, Add node library listing,
-   Workspace library manage, Import into workspace.
+3. **Capabilities:** Publish release = Editor + Owner. Nothing else to gate.
+4. **No delete and no retirement:** pins keep resolving and stay that way.
+5. **v1 scope:** Publish, Add node library listing, Workspace library browse.
 
 ## Remaining open decisions
 
 1. **Upgrade UX** — one-click to current library release vs always through
    Module contract?
-2. **Import landing** — destination library vs new source graph workbench?
 3. **Empty library education** — link to a specific graph, graphs list, or
    short inline steps only?
 4. **Viewer role** — can Viewers open Module contract read-only from Add node
    without Insert?
-5. Rename propagation and import lineage remain open in the conceptual model.
+5. Rename propagation remains open in the conceptual model.
 
 ## Risks
 
@@ -323,7 +290,7 @@ graph LR
 - Collaboration freshness after Publish (multiplayer Add node open during
   publish) needs an engineering rule so Insert does not offer a stale release.
 - Surface work must not collapse Module back into “another plugin row” without
-  state (published/deprecated) and Open source graph.
+  release number and Open source graph.
 
 ## Next step
 

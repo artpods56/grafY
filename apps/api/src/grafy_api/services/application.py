@@ -19,7 +19,6 @@ from grafy_core.application.identity import IdentityService
 from grafy_core.application.modules import ModuleLibraryService
 from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
-from grafy_core.application.templates import TemplateService
 from grafy_core.domain.identity import parse_oidc_domain_workspace_grants
 from grafy_core.ports.storage import FileStoragePort
 from grafy_persistence.database import Database
@@ -196,7 +195,6 @@ async def build_app_resources(
         network_policy=network_policy,
         owner_lease=owner_lease,
     )
-    templates = TemplateService(new_unit_of_work)
     collaboration = CollaborationService(
         new_unit_of_work,
         registry,
@@ -232,7 +230,6 @@ async def build_app_resources(
             network_policy=network_policy,
             build_digest=app.resolved_build_digest,
         ),
-        templates=templates,
         saved_graphs=saved_graphs,
         collaboration=collaboration,
         node_secrets=node_secrets,

@@ -64,7 +64,6 @@ class CatalogNode(ClientModel):
     module_graph_id: UUID | None = None
     module_graph_revision: int | None = None
     module_id: UUID | None = None
-    publication_state: str | None = None
     is_current_library_release: bool | None = None
     catalog_visible: bool = True
     plugin_revision: int | None = None

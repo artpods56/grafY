@@ -9,7 +9,6 @@ from grafy_core.artifacts import (
 from grafy_core.conversions import ArtifactConversionKey
 from grafy_core.domain.module_library import (
     Module,
-    ModulePublicationState,
     ModuleRelease,
 )
 from grafy_core.domain.modules import GraphModuleDefinition
@@ -446,7 +445,6 @@ class NodeSpecResponse(ApiResponse):
     module_graph_id: UUID | None = None
     module_graph_revision: int | None = Field(default=None, ge=1)
     module_id: UUID | None = None
-    publication_state: ModulePublicationState | None = None
     is_current_library_release: bool | None = None
     catalog_visible: bool = True
     plugin_revision: int | None = Field(default=None, ge=1)
@@ -540,7 +538,6 @@ class NodeSpecResponse(ApiResponse):
             module_graph_id=definition.reference.graph_id,
             module_graph_revision=definition.reference.revision,
             module_id=module.id,
-            publication_state=module.publication_state,
             is_current_library_release=module.current_library_release
             == release.revision,
             catalog_visible=module.current_library_release == release.revision,

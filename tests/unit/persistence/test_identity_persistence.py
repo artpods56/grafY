@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
+import json
 import pytest
 from sqlalchemy import text
 
@@ -232,3 +233,65 @@ async def test_identity_records_round_trip_without_plain_credential_material(
             )
             is None
         )
+
+
+@pytest.mark.asyncio
+async def test_stored_token_drops_scopes_that_are_no_longer_capabilities(
+    database: Database,
+) -> None:
+    """A token issued before a capability was removed still loads.
+
+    Retired scopes granted only the retired feature, so they resolve to nothing
+    rather than failing the row. Minting a token still rejects every scope outside
+    `PAT_ALLOWED_CAPABILITIES`.
+    """
+
+    now = datetime(2026, 8, 7, 8, 0, tzinfo=UTC)
+    user = User(id=UUID(int=201), created_at=now, updated_at=now)
+    workspace = Workspace(
+        id=UUID(int=202),
+        slug="retired-scopes",
+        name="Retired scopes",
+        kind=WorkspaceKind.SHARED,
+        created_at=now,
+        updated_at=now,
+    )
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+        await unit_of_work.identity.add_user(user)
+        await unit_of_work.identity.add_workspace(workspace)
+        await unit_of_work.commit()
+
+    token_id = UUID(int=203)
+    async with database.engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO personal_access_tokens "
+                "(id, user_id, workspace_id, public_prefix, secret_digest, label, "
+                "scopes, expires_at, created_at) VALUES "
+                "(:id, :user_id, :workspace_id, 'nrt_retired', :digest, "
+                "'legacy automation', :scopes, :expires_at, :created_at)"
+            ),
+            {
+                "id": token_id.hex,
+                "user_id": user.id.hex,
+                "workspace_id": workspace.id.hex,
+                "digest": b"retired-scope-digest",
+                "scopes": json.dumps(
+                    [
+                        "create_template",
+                        "manage_module_library",
+                        "view_graph",
+                    ]
+                ),
+                "expires_at": now + timedelta(days=1),
+                "created_at": now,
+            },
+        )
+
+    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+        loaded = await unit_of_work.identity.get_personal_access_token_by_prefix(
+            "nrt_retired"
+        )
+
+    assert loaded is not None
+    assert loaded.scopes == (WorkspaceCapability.VIEW_GRAPH,)

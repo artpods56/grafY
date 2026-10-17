@@ -998,57 +998,6 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/v1/workspaces/{workspace_id}/modules/{module_id}/deprecate": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Deprecate Module */
-        readonly post: operations["deprecate_module_v1_workspaces__workspace_id__modules__module_id__deprecate_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/modules/{module_id}/withdraw": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Withdraw Module */
-        readonly post: operations["withdraw_module_v1_workspaces__workspace_id__modules__module_id__withdraw_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/modules/import": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Import Module Release */
-        readonly post: operations["import_module_release_v1_workspaces__workspace_id__modules_import_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
     readonly "/v1/workspaces/{workspace_id}/modules/publish": {
         readonly parameters: {
             readonly query?: never;
@@ -1149,76 +1098,6 @@ export interface paths {
         readonly put?: never;
         /** Run Graph */
         readonly post: operations["run_graph_v1_workspaces__workspace_id__runs_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/templates": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** List Templates */
-        readonly get: operations["list_templates_v1_workspaces__workspace_id__templates_get"];
-        readonly put?: never;
-        /** Create Template */
-        readonly post: operations["create_template_v1_workspaces__workspace_id__templates_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/templates/{template_id}": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** Get Template */
-        readonly get: operations["get_template_v1_workspaces__workspace_id__templates__template_id__get"];
-        /** Update Template Metadata */
-        readonly put: operations["update_template_metadata_v1_workspaces__workspace_id__templates__template_id__put"];
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/templates/{template_id}/archive": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Archive Template */
-        readonly post: operations["archive_template_v1_workspaces__workspace_id__templates__template_id__archive_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/templates/{template_id}/instantiate": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Instantiate Template */
-        readonly post: operations["instantiate_template_v1_workspaces__workspace_id__templates__template_id__instantiate_post"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1673,20 +1552,6 @@ export interface components {
             readonly document: components["schemas"]["SavedGraphDocument"];
             /** Name */
             readonly name: string;
-        };
-        /** CreateTemplateRequest */
-        readonly CreateTemplateRequest: {
-            /** Description */
-            readonly description?: string | null;
-            /** Name */
-            readonly name: string;
-            /**
-             * Source Graph Id
-             * Format: uuid
-             */
-            readonly source_graph_id: string;
-            /** Source Revision */
-            readonly source_revision: number;
         };
         /**
          * CreateUploadRequest
@@ -2475,44 +2340,6 @@ export interface components {
             /** Upload Key */
             readonly upload_key: string;
         };
-        /** ImportModuleReleaseRequest */
-        readonly ImportModuleReleaseRequest: {
-            /** Name */
-            readonly name?: string | null;
-            /** Revision */
-            readonly revision?: number | null;
-            /**
-             * Source Module Id
-             * Format: uuid
-             */
-            readonly source_module_id: string;
-            /**
-             * Source Workspace Id
-             * Format: uuid
-             */
-            readonly source_workspace_id: string;
-        };
-        /** ImportModuleReleaseResponse */
-        readonly ImportModuleReleaseResponse: {
-            /**
-             * Graph Id
-             * Format: uuid
-             */
-            readonly graph_id: string;
-            readonly module: components["schemas"]["ModuleResponse"];
-        };
-        /** InstantiateTemplateRequest */
-        readonly InstantiateTemplateRequest: {
-            /**
-             * Destination Workspace Id
-             * Format: uuid
-             */
-            readonly destination_workspace_id: string;
-            /** Folder Id */
-            readonly folder_id?: string | null;
-            /** Name */
-            readonly name: string;
-        };
         readonly JsonValue: unknown;
         /** LibraryFolderListResponse */
         readonly LibraryFolderListResponse: {
@@ -2643,6 +2470,10 @@ export interface components {
         };
         /**
          * ModulePublicationState
+         * @description Publication state of a stored Module.
+         *
+         *     Only `published` is reachable now. `deprecated` and `withdrawn` remain so rows
+         *     written before the lifecycle was cut still load, and stay hidden from browse.
          * @enum {string}
          */
         readonly ModulePublicationState: "published" | "deprecated" | "withdrawn";
@@ -2903,7 +2734,6 @@ export interface components {
             readonly plugin_revision?: number | null;
             /** Plugin Slug */
             readonly plugin_slug: string;
-            readonly publication_state?: components["schemas"]["ModulePublicationState"] | null;
             /**
              * Runnable
              * @default true
@@ -4003,86 +3833,6 @@ export interface components {
          * @enum {string}
          */
         readonly TableValueType: "text" | "integer" | "number" | "decimal" | "boolean" | "date" | "datetime" | "json" | "binary" | "unknown" | "mixed";
-        /** TemplateInstantiationResponse */
-        readonly TemplateInstantiationResponse: {
-            /**
-             * Destination Workspace Id
-             * Format: uuid
-             */
-            readonly destination_workspace_id: string;
-            /** Folder Id */
-            readonly folder_id?: string | null;
-            /**
-             * Graph Id
-             * Format: uuid
-             */
-            readonly graph_id: string;
-            /** Graph Name */
-            readonly graph_name: string;
-            /**
-             * Source Workspace Id
-             * Format: uuid
-             */
-            readonly source_workspace_id: string;
-            /**
-             * Template Id
-             * Format: uuid
-             */
-            readonly template_id: string;
-        };
-        /** TemplateListResponse */
-        readonly TemplateListResponse: {
-            /** Templates */
-            readonly templates: readonly components["schemas"]["TemplateResponse"][];
-        };
-        /** TemplateResponse */
-        readonly TemplateResponse: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            readonly created_at: string;
-            /** Created By User Id */
-            readonly created_by_user_id?: string | null;
-            /** Description */
-            readonly description?: string | null;
-            /** Edge Count */
-            readonly edge_count: number;
-            /**
-             * Id
-             * Format: uuid
-             */
-            readonly id: string;
-            /** Name */
-            readonly name: string;
-            /** Node Count */
-            readonly node_count: number;
-            /**
-             * Source Graph Id
-             * Format: uuid
-             */
-            readonly source_graph_id: string;
-            /** Source Graph Name */
-            readonly source_graph_name: string;
-            /** Source Revision */
-            readonly source_revision: number;
-            readonly state: components["schemas"]["TemplateState"];
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            readonly updated_at: string;
-            /**
-             * Workspace Id
-             * Format: uuid
-             */
-            readonly workspace_id: string;
-        };
-        /**
-         * TemplateState
-         * @enum {string}
-         */
-        readonly TemplateState: "active" | "archived";
         /** UnavailableGraphModuleResponse */
         readonly UnavailableGraphModuleResponse: {
             /**
@@ -4190,13 +3940,6 @@ export interface components {
             /** Name */
             readonly name: string;
         };
-        /** UpdateTemplateMetadataRequest */
-        readonly UpdateTemplateMetadataRequest: {
-            /** Description */
-            readonly description?: string | null;
-            /** Name */
-            readonly name: string;
-        };
         /**
          * UploadTargetResponse
          * @description Discriminated upload target returned by reserve.
@@ -4245,7 +3988,7 @@ export interface components {
          * WorkspaceCapability
          * @enum {string}
          */
-        readonly WorkspaceCapability: "view_graph" | "view_artifacts" | "view_materializations" | "view_history" | "view_execution" | "join_graph_room" | "publish_presence" | "create_graph" | "edit_graph" | "checkpoint_graph" | "execute_graph" | "cancel_execution" | "publish_module" | "manage_module_library" | "create_template" | "manage_template_library" | "manage_secrets" | "delete_graph" | "manage_members" | "rename_workspace";
+        readonly WorkspaceCapability: "view_graph" | "view_artifacts" | "view_materializations" | "view_history" | "view_execution" | "join_graph_room" | "publish_presence" | "create_graph" | "edit_graph" | "checkpoint_graph" | "execute_graph" | "cancel_execution" | "publish_module" | "manage_secrets" | "delete_graph" | "manage_members" | "rename_workspace";
         /** WorkspaceCreateRequest */
         readonly WorkspaceCreateRequest: {
             /** Name */
@@ -7108,105 +6851,6 @@ export interface operations {
             };
         };
     };
-    readonly deprecate_module_v1_workspaces__workspace_id__modules__module_id__deprecate_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly module_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["ModuleResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly withdraw_module_v1_workspaces__workspace_id__modules__module_id__withdraw_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly module_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["ModuleResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly import_module_release_v1_workspaces__workspace_id__modules_import_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["ImportModuleReleaseRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 201: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["ImportModuleReleaseResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     readonly publish_module_release_v1_workspaces__workspace_id__modules_publish_post: {
         readonly parameters: {
             readonly query?: never;
@@ -7446,211 +7090,6 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["RunExecutionCapacityErrorResponse"];
-                };
-            };
-        };
-    };
-    readonly list_templates_v1_workspaces__workspace_id__templates_get: {
-        readonly parameters: {
-            readonly query?: {
-                readonly include_archived?: boolean;
-                readonly q?: string | null;
-            };
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["TemplateListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly create_template_v1_workspaces__workspace_id__templates_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["CreateTemplateRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 201: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["TemplateResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly get_template_v1_workspaces__workspace_id__templates__template_id__get: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly template_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["TemplateResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly update_template_metadata_v1_workspaces__workspace_id__templates__template_id__put: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly template_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["UpdateTemplateMetadataRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["TemplateResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly archive_template_v1_workspaces__workspace_id__templates__template_id__archive_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly template_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["TemplateResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly instantiate_template_v1_workspaces__workspace_id__templates__template_id__instantiate_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly template_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["InstantiateTemplateRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 201: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["TemplateInstantiationResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

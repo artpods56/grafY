@@ -144,9 +144,6 @@ export function NodeInspector({
                 <span {...stylex.props(s.eyebrow)}>
                   Module · release {spec.module_graph_revision}
                 </span>
-                <span {...stylex.props(s.badge)}>
-                  {spec.publication_state ?? "published"}
-                </span>
               </div>
             ) : null}
             <h3 id={INSPECTOR_TITLE_ID} {...stylex.props(s.title)}>
@@ -329,12 +326,6 @@ function ModuleFacts({
             ))}
           </select>
         </label>
-      ) : null}
-      {spec.publication_state === "deprecated" ? (
-        <p {...stylex.props(s.note)}>
-          This Module is deprecated. New inserts are discouraged; existing pins
-          keep working.
-        </p>
       ) : null}
       {graphId && onOpenGraph ? (
         <button
@@ -706,24 +697,6 @@ const s = stylex.create({
     fontWeight: 820,
     letterSpacing: "0.11em",
     textTransform: "uppercase",
-  },
-  badge: {
-    minHeight: "17px",
-    display: "inline-flex",
-    alignItems: "center",
-    paddingInline: "6px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorderStrong,
-    borderRadius: "99px",
-    backgroundColor: tokens.colorSurfaceSunken,
-    color: tokens.colorMuted,
-    fontSize: "9px",
-    fontWeight: 760,
-    letterSpacing: "0.06em",
-    lineHeight: 1,
-    textTransform: "uppercase",
-    whiteSpace: "nowrap",
   },
   title: {
     margin: 0,

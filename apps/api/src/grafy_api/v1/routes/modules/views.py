@@ -14,8 +14,6 @@ from grafy_core.application.modules import ModuleLibraryService
 from grafy_core.domain.modules import GraphModuleDefinitionError
 from grafy_api.v1.routes.modules.dependencies import ModuleLibraryDependency
 from grafy_api.v1.routes.modules.models import (
-    ImportModuleReleaseRequest,
-    ImportModuleReleaseResponse,
     ModuleListResponse,
     ModuleResponse,
     PublishModuleReleaseRequest,
@@ -119,94 +117,5 @@ async def publish_module_release(
     return ModuleResponse.from_module(
         module,
         releases=releases,
-        definition=definition,
-    )
-
-
-@router.post("/{module_id}/deprecate", response_model=ModuleResponse)
-async def deprecate_module(
-    module_id: UUID,
-    service: ModuleLibraryDependency,
-    access: require_workspace_capability(WorkspaceCapability.MANAGE_MODULE_LIBRARY),
-) -> ModuleResponse:
-    try:
-        module = await service.deprecate(
-            actor=access.actor,
-            workspace_id=access.workspace_id,
-            module_id=module_id,
-        )
-        releases = await service.list_releases(access.workspace_id, module_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ModuleLibraryError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    definition = await _definition_for_module(
-        service,
-        workspace_id=access.workspace_id,
-        source_graph_id=module.source_graph_id,
-        revision=module.current_library_release,
-    )
-    return ModuleResponse.from_module(
-        module,
-        releases=releases,
-        definition=definition,
-    )
-
-
-@router.post("/{module_id}/withdraw", response_model=ModuleResponse)
-async def withdraw_module(
-    module_id: UUID,
-    service: ModuleLibraryDependency,
-    access: require_workspace_capability(WorkspaceCapability.MANAGE_MODULE_LIBRARY),
-) -> ModuleResponse:
-    try:
-        module = await service.withdraw(
-            actor=access.actor,
-            workspace_id=access.workspace_id,
-            module_id=module_id,
-        )
-        releases = await service.list_releases(access.workspace_id, module_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ModuleLibraryError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return ModuleResponse.from_module(module, releases=releases)
-
-
-@router.post(
-    "/import",
-    response_model=ImportModuleReleaseResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-async def import_module_release(
-    body: ImportModuleReleaseRequest,
-    service: ModuleLibraryDependency,
-    access: require_workspace_capability(WorkspaceCapability.CREATE_GRAPH),
-) -> ImportModuleReleaseResponse:
-    if body.source_workspace_id == access.workspace_id:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "Import into the same workspace is not supported; "
-                "publish locally instead"
-            ),
-        )
-    try:
-        graph, module, release, definition = await service.import_release(
-            actor=access.actor,
-            source_workspace_id=body.source_workspace_id,
-            source_module_id=body.source_module_id,
-            source_revision=body.revision,
-            destination_workspace_id=access.workspace_id,
-            name=body.name,
-        )
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ModuleLibraryError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return ImportModuleReleaseResponse.from_import(
-        graph,
-        module,
-        releases=[release],
         definition=definition,
     )

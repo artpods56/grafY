@@ -49,7 +49,6 @@ const pythonNode = {
   module_graph_id: null,
   module_graph_revision: null,
   module_id: null,
-  publication_state: null,
   is_current_library_release: null,
   catalog_visible: false,
   plugin_revision: 1,
