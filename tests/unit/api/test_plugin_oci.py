@@ -8,7 +8,7 @@ from grafy_core.domain.plugin_releases import (
     PluginCatalogManifest,
     PluginNodeContract,
 )
-from grafy_core.runtime.plugin_loader import WORKSPACE_PLUGIN_LOADER_TARGET
+from grafy_core.runtime.plugin_loader import DEFAULT_PLUGIN_LOADER_TARGET
 
 from grafy_api.plugins.profiles import PYTHON_UV_BASE_IMAGE_DIGEST, runtime_profile
 from grafy_api.plugins.publication.oci import _dockerfile
@@ -106,7 +106,7 @@ def test_verified_candidate_is_the_immutable_oci_build_identity() -> None:
     candidate = VerifiedPluginCandidate(
         catalog=catalog,
         capabilities=PluginCapabilityManifest(),
-        loader_target=WORKSPACE_PLUGIN_LOADER_TARGET,
+        loader_target=DEFAULT_PLUGIN_LOADER_TARGET,
         source_archive=b"frozen source",
         lock_digest="1" * 64,
         runtime_profile="python-uv",

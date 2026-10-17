@@ -30,7 +30,7 @@ import { WorkspaceLibraryDialog } from "./WorkspaceLibraryDialog";
 import { WorkspaceMembersDialog } from "./WorkspaceMembersDialog";
 
 type ExpiryDays = "1" | "7" | "30";
-type TokenPurpose = "graph-automation";
+type TokenPurpose = "graph-automation" | "module-publishing";
 
 type TokenPurposeOption = {
   id: TokenPurpose;
@@ -57,6 +57,12 @@ const tokenPurposeOptions = [
       "cancel_execution",
       "manage_secrets",
     ],
+  },
+  {
+    id: "module-publishing",
+    label: "Module publishing",
+    defaultTokenLabel: "Module publishing",
+    scopes: ["publish_module"],
   },
 ] satisfies readonly TokenPurposeOption[];
 

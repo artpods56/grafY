@@ -4792,7 +4792,7 @@
         "type": "object"
       },
       "PluginReleaseScope": {
-        "description": "Release family scope carried by a durable Plugin release pin.\n\nLive releases live in the single deployment-owned System namespace. The\nWorkspace value stays in the vocabulary because graph documents, revisions,\nand collaboration heads store pins as ``{scope, slug, revision}``.",
+        "description": "Durable release family scope carried by a Plugin release pin.",
         "enum": [
           "system",
           "workspace"

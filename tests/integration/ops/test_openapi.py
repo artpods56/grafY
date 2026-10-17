@@ -187,7 +187,6 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "checkpoint_graph",
         "execute_graph",
         "cancel_execution",
-        "publish_plugin",
         "publish_module",
         "manage_secrets",
     }

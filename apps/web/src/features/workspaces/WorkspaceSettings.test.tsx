@@ -67,7 +67,7 @@ function workspace(overrides: Partial<Workspace> = {}): Workspace {
       "execute_graph",
       "cancel_execution",
       "manage_secrets",
-      "publish_plugin",
+      "publish_module",
       "manage_members",
       "manage_module_library",
     ],
@@ -83,7 +83,7 @@ function token(
     workspace_id: "workspace-1",
     public_prefix: "nrt_existing",
     label: "Existing publisher",
-    scopes: ["publish_plugin"],
+    scopes: ["publish_module"],
     created_at: "2026-09-01T09:00:00Z",
     last_used_at: null,
     expires_at: "2026-09-20T09:00:00Z",
@@ -216,10 +216,10 @@ describe("WorkspaceSettings", () => {
     expect(mocks.revokeToken).toHaveBeenCalledWith("workspace-1", "token-1");
   });
 
-  it("can issue a publishing-only PAT when graph automation is unavailable", async () => {
+  it("can issue a module-publishing PAT when graph automation is unavailable", async () => {
     mocks.workspace = workspace({
       role: "owner",
-      capabilities: ["publish_plugin"],
+      capabilities: ["publish_module"],
     });
     mocks.createToken.mockResolvedValue({
       ...token(),
@@ -227,7 +227,7 @@ describe("WorkspaceSettings", () => {
     });
 
     const container = await renderSettings();
-    expect(container.textContent).toContain("Plugin publishing");
+    expect(container.textContent).toContain("Module publishing");
 
     const form = container.querySelector<HTMLFormElement>(
       ".grafy-workspace-settings__token-form",
@@ -240,8 +240,8 @@ describe("WorkspaceSettings", () => {
     });
 
     expect(mocks.createToken).toHaveBeenCalledWith("workspace-1", {
-      label: "Plugin publishing",
-      scopes: ["publish_plugin"],
+      label: "Module publishing",
+      scopes: ["publish_module"],
       expires_at: expect.any(String),
     });
   });

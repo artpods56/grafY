@@ -3022,11 +3022,7 @@ export interface components {
         };
         /**
          * PluginReleaseScope
-         * @description Release family scope carried by a durable Plugin release pin.
-         *
-         *     Live releases live in the single deployment-owned System namespace. The
-         *     Workspace value stays in the vocabulary because graph documents, revisions,
-         *     and collaboration heads store pins as ``{scope, slug, revision}``.
+         * @description Durable release family scope carried by a Plugin release pin.
          * @enum {string}
          */
         readonly PluginReleaseScope: "system" | "workspace";
