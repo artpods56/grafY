@@ -138,7 +138,7 @@ def _canonical(payload: JsonObject) -> bytes:
 
 
 def _instrumented_plugin_project(repository: Path, destination: Path) -> Path:
-    source = repository / "examples" / "plugin-notes"
+    source = repository / "tests" / "fixtures" / "plugin-notes"
     destination.mkdir()
     for entry in ("pyproject.toml", "uv.lock", "wheels", "src", "tests"):
         source_entry = source / entry
