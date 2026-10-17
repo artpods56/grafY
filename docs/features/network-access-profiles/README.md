@@ -84,8 +84,8 @@ the publisher's initial `uv sync` would leave image construction able to fetch
 dependencies through its own build network, so both paths must resolve the
 same publication policy.
 
-Grafy also has a working-copy workflow intended for coding agents, but Grafy
-does not yet own or sandbox the agent process. If Grafy later hosts coding
+Grafy does not own or sandbox the agent process that edits a Plugin working
+copy. If Grafy later hosts coding
 agents, their setup and task network access must be explicit environment
 policy rather than ambient host access.
 
@@ -383,9 +383,9 @@ path-dependency checks.
 
 ### 8.3 Hosted coding-agent authoring
 
-Grafy does not currently launch the coding agent that edits a reserved Plugin
-working copy. This plane becomes enforceable only when Grafy owns the agent
-container or virtual machine.
+Grafy does not currently launch the coding agent that edits a Plugin working
+copy; publication reads a checked-in project. This plane becomes enforceable only
+when Grafy owns the agent container or virtual machine.
 
 The future host must support independent setup and task profiles:
 

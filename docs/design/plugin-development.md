@@ -3,21 +3,21 @@
 > How to structure a Grafy plugin when adding new functionality. Read this
 > before creating a new `plugins/*` package or adding operators to an existing
 > one. It describes the *current* committed structure as built — the contracts
-> and conventions the codebase already enforces. The implemented replacement
-> for Workspace-authored code (publish a verified freeze into a Workspace
-> catalog) is [plugin unification](plugin-unification.md).
+> and conventions the codebase already enforces. The release model behind it is
+> [plugin unification](plugin-unification.md).
 >
-> This guide describes the shared declaration surface for System and Workspace
-> Plugin projects. The accepted architecture is the immutable release model in
-> [ADR 0004](../adr/0004-unify-system-and-workspace-plugin-releases.md).
-> System host packages load only through an exact deployment manifest. Package
-> installation alone never makes a Plugin executable in the API process.
+> This guide describes the declaration surface every Plugin project shares. The
+> accepted architecture is the immutable release model in
+> [ADR 0005](../adr/0005-separate-plugin-releases-from-installations.md), and
+> [ADR 0015](../adr/0015-plugins-are-system-only.md) makes every Plugin
+> System-owned. System host packages load only through an exact deployment
+> manifest. Package installation alone never makes a Plugin executable in the
+> API process.
 
 - **Audience:** contributors adding nodes, artifact types, conversions,
   resolvers, or writers to Grafy.
 - **Scope:** `libs/core` Plugin contracts, System projects under `plugins/*`,
-  Workspace projects under configured authoring roots, and their publication
-  boundaries. Frontend work is out of scope.
+  and their publication boundaries. Frontend work is out of scope.
 
 ---
 
@@ -62,12 +62,10 @@ capabilities to an effective Workspace catalog:
 - **Resolvers** — read-side adapters that materialize an artifact from storage.
 - **Writers** — write-side adapters that persist an artifact to storage.
 
-Workspace owners and reviewed coding agents publish isolated-only Workspace
-releases. A separate one-shot platform/CI publisher stages System releases,
-including retained OCI artifacts and isolated-only execution policy;
-stage and promotion are distinct operations. `/v1/nodes` combines selected
-System releases, selected releases owned by the requested Workspace, and
-published Modules (`entry_kind=module`).
+A one-shot platform/CI publisher stages System releases, including retained OCI
+artifacts and an execution policy; staging and promotion are distinct
+operations. `/v1/nodes` combines the selected System releases and published
+Modules (`entry_kind=module`).
 
 The checked-in inventory provides the System project path and loader target to
 the isolated publisher. After staging a release, explicitly promote its exact
@@ -608,8 +606,8 @@ publisher/API  ──►  serialized release + core ports
   import from `apps/api`, `apps/mcp`, `libs/persistence`, or `libs/storage` —
   those are host concerns.
 - Serialized contracts, not imports or registry membership, determine catalog
-  visibility. Published System and Workspace Plugins execute through their
-  retained OCI artifacts in isolated workers.
+  visibility. Published Plugins execute through their retained OCI artifacts in
+  isolated workers.
 - Reuse producer-neutral artifact types from core contract modules such as
   `grafy_core.artifact_contracts`, `grafy_core.image_contracts`,
   `grafy_core.prompt_contracts`, `grafy_core.schema_contracts`, and
@@ -647,8 +645,8 @@ Every Plugin must pass declaration and freeze tests that verify:
 
 ## 12. Checklist for adding a plugin
 
-- [ ] New System `plugins/<name>/` project or Workspace authoring-root project
-      with the shared layout in §2.
+- [ ] New System `plugins/<name>/` project with the shared layout in §2, listed
+      in `plugins/system-plugins.toml`.
 - [ ] `pyproject.toml` declares `grafy-core`; `uv.lock` and the exact SDK-wheel
       supply rule are committed.
 - [ ] One `Plugin` singleton with a stable family slug.
@@ -662,9 +660,8 @@ Every Plugin must pass declaration and freeze tests that verify:
 - [ ] Secrets use `NodeSecretInput` + `NodeSecretResolverPort`; cache policy
       is explicit (`NEVER` unless provably `EXACT`).
 - [ ] Plugin imports only `grafy-core`; host has no hard dependency on it.
-- [ ] Repository System projects remain excluded from the root uv workspace and
-      construct from their own exact lock and vendored SDK wheel; Workspace
-      projects remain self-contained under their configured authoring root.
+- [ ] The project stays excluded from the root uv workspace and builds from its
+      own exact lock and vendored SDK wheel.
 - [ ] Declaration, frozen inspection, and owning runtime tests pass.
 - [ ] Serialized inspection is clean: no slug/operator/artifact collisions,
       non-canonical conversion references, or incomplete dependency contracts.

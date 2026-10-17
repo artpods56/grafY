@@ -1,6 +1,8 @@
 # ADR 0006: Authenticate Plugin publication with scoped tokens
 
-- **Status:** Accepted
+- **Status:** Accepted, narrowed by ADR 0015
+- **Amended by:** ADR 0015 (publication is platform-only; the Workspace-User
+  authority and its `publish_plugin` capability are removed)
 
 ## Context
 
@@ -10,21 +12,19 @@ not authenticate the caller. Global operations also reused an untyped platform
 actor string, while Workspace operations depended on a User UUID supplied next
 to it.
 
-Publication needs two authorities. A Workspace User may publish only within the
-Workspace bound to a personal access token. A deployment operator or CI job may
-publish, promote, or revoke global Plugins without being a Workspace User.
+Publication needed authorities that described the caller rather than
+authenticated it: a Workspace User publishing into their own Workspace, and a
+deployment operator or CI job publishing, promoting, or revoking global Plugins
+without being a Workspace User.
 
 ## Decision
 
-The CLI authenticates Workspace publication with a `PersonalAccessToken` whose
-effective capabilities are the intersection of its scopes and the User's
-current membership. The token must include `publish_plugin`. The authenticated
-principal supplies both `workspace_id` and `user_id`.
-
-Global operations authenticate with a separate `PlatformAccessToken`. Its
-principal reference is the operation actor, and its scopes are limited to
+Plugin publication authenticates with a `PlatformAccessToken` and nothing else.
+Its principal reference is the operation actor, and its scopes are limited to
 `plugin.publish_global`, `plugin.promote_global`, and
-`plugin.revoke_global`.
+`plugin.revoke_global`. The Workspace-User authority described below was part of
+this decision until ADR 0015 removed Workspace Plugins: a personal access token
+no longer grants any Plugin publication capability.
 
 Interactive credentials are stored in the operating-system keychain after
 `grafy auth login`. Non-interactive callers provide a protected file path in
@@ -38,10 +38,8 @@ All operator commands use the `grafy admin` command group. There is no separate
 
 ## Consequences
 
-- Changing or revoking Workspace membership immediately narrows or removes PAT
-  publication authority.
-- A global automation token cannot act as a Workspace User, and a PAT cannot
-  perform global operations.
+- A personal access token cannot publish, promote, or revoke a Plugin; the
+  platform credential that owns those scopes must reach the publisher.
 - Platform operators can rotate and independently scope publishing, promotion,
   and revocation credentials.
 - The CLI no longer accepts `--actor` or `--workspace`; callers must
