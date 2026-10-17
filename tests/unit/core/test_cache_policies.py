@@ -31,9 +31,5 @@ def test_builtin_node_cache_policy_inventory_is_fail_closed() -> None:
         ("test.arithmetic.multiply", 1): NodeCachePolicy.EXACT,
         ("test.arithmetic.sum", 1): NodeCachePolicy.EXACT,
         ("text.input", 1): NodeCachePolicy.EXACT,
-        ("text.as_markdown", 1): NodeCachePolicy.EXACT,
-        ("text.split", 1): NodeCachePolicy.EXACT,
-        ("text.replace", 1): NodeCachePolicy.EXACT,
-        ("text.join", 1): NodeCachePolicy.EXACT,
         ("schema.builder", 1): NodeCachePolicy.EXACT,
     }

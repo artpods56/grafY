@@ -1201,7 +1201,7 @@ async def test_pinned_plugin_participates_in_ordinary_map_semantics() -> None:
     source = RunNodeRequest(
         kind="builtin",
         id="source",
-        operator_id="text.split",
+        operator_id="test.text.split",
         operator_version=1,
         config={"separator": "|"},
     )

@@ -299,7 +299,7 @@ def _collect_graph_payload() -> dict[str, object]:
         SavedGraphNodeModel(
             kind="builtin",
             id="split",
-            operator_id="text.split",
+            operator_id="test.text.split",
             operator_version=1,
             config={"separator": "|"},
             position=GraphPointModel(x=400.0, y=0.0),

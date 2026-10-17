@@ -30,7 +30,7 @@ def _collect_run_payload() -> dict[str, object]:
             RunNodeRequest(
                 kind="builtin",
                 id="split",
-                operator_id="text.split",
+                operator_id="test.text.split",
                 operator_version=1,
                 config={"separator": "|"},
             ),
@@ -123,24 +123,6 @@ def test_registry_declares_text_artifact_and_operator_contracts(
     assert nodes["text.input"].outputs[0].name == "text"
     assert nodes["text.input"].outputs[0].shape == "one"
 
-    assert nodes["text.as_markdown"].plugin_slug == "text"
-    assert nodes["text.as_markdown"].inputs[0].name == "text"
-    assert nodes["text.as_markdown"].inputs[0].artifact_type is not None
-    assert nodes["text.as_markdown"].inputs[0].artifact_type.id == "scalar.text"
-    assert nodes["text.as_markdown"].outputs[0].name == "markdown"
-    assert nodes["text.as_markdown"].outputs[0].artifact_type is not None
-    assert nodes["text.as_markdown"].outputs[0].artifact_type.id == "text.markdown"
-
-    assert nodes["text.split"].plugin_slug == "text"
-    assert nodes["text.split"].inputs[0].name == "text"
-    assert nodes["text.split"].inputs[0].shape == "one"
-    assert nodes["text.split"].outputs[0].name == "parts"
-    assert nodes["text.split"].outputs[0].shape == "many"
-
-    assert nodes["text.join"].plugin_slug == "text"
-    assert nodes["text.join"].inputs[0].name == "parts"
-    assert nodes["text.join"].inputs[0].shape == "many"
-
     collect_input = nodes["test.sequence.collect"].inputs[0]
     assert collect_input.name == "items"
     assert collect_input.shape == "one"
@@ -150,7 +132,7 @@ def test_registry_declares_text_artifact_and_operator_contracts(
     assert collect_input.artifact_type_variable == "T"
 
 
-def test_as_markdown_graph_persists_exact_source(
+def test_markdown_artifact_persists_exact_source_and_downloads(
     builtin_client: TestClient,
 ) -> None:
     source = "# Café\r\n\r\n- first\n- **second**\n\n"
@@ -168,7 +150,7 @@ def test_as_markdown_graph_persists_exact_source(
                 RunNodeRequest(
                     kind="builtin",
                     id="markdown",
-                    operator_id="text.as_markdown",
+                    operator_id="test.text.as_markdown",
                     operator_version=1,
                     config={},
                 ),
@@ -217,86 +199,6 @@ def test_as_markdown_graph_persists_exact_source(
     # An unsupported format is rejected with 400.
     bad = artifacts.download(markdown_ref.artifact_id, format="csv")
     assert bad.status_code == 400
-
-
-def test_text_graph_splits_maps_replacement_and_joins(
-    builtin_client: TestClient,
-) -> None:
-    api = GrafyApi(builtin_client)
-    response = api.workspace(WORKSPACE_ID).executions.run(
-        RunRequest(
-            nodes=[
-                RunNodeRequest(
-                    kind="builtin",
-                    id="input",
-                    operator_id="text.input",
-                    operator_version=1,
-                    config={"text": "alpha||beta||||gamma||"},
-                ),
-                RunNodeRequest(
-                    kind="builtin",
-                    id="split",
-                    operator_id="text.split",
-                    operator_version=1,
-                    config={"separator": "||"},
-                ),
-                RunNodeRequest(
-                    kind="builtin",
-                    id="replace",
-                    operator_id="text.replace",
-                    operator_version=1,
-                    config={"search": "a", "replacement": "A"},
-                ),
-                RunNodeRequest(
-                    kind="builtin",
-                    id="join",
-                    operator_id="text.join",
-                    operator_version=1,
-                    config={"separator": "|"},
-                ),
-            ],
-            edges=[
-                RunEdgeRequest(
-                    from_node="input",
-                    from_port="text",
-                    to_node="split",
-                    to_port="text",
-                ),
-                RunEdgeRequest(
-                    from_node="split",
-                    from_port="parts",
-                    to_node="replace",
-                    to_port="text",
-                    collection_mode="map",
-                ),
-                RunEdgeRequest(
-                    from_node="replace",
-                    from_port="text",
-                    to_node="join",
-                    to_port="parts",
-                ),
-            ],
-        )
-    )
-
-    assert response.status_code == 200
-    result = RunResponse.model_validate(response.json())
-    assert result.status == "succeeded"
-    runs = {run.node_id: run for run in result.node_runs}
-    artifacts = api.workspace(WORKSPACE_ID).artifacts
-    assert [
-        artifacts.content(artifact.artifact_id).json()["value"]
-        for artifact in runs["split"].outputs[0].artifacts
-    ] == ["alpha", "beta", "", "gamma", ""]
-    assert [
-        artifacts.content(artifact.artifact_id).json()["value"]
-        for artifact in runs["replace"].outputs[0].artifacts
-    ] == ["AlphA", "betA", "", "gAmmA", ""]
-
-    joined = runs["join"].outputs[0].artifacts[0]
-    assert artifacts.content(joined.artifact_id).json() == {
-        "value": "AlphA|betA||gAmmA|"
-    }
 
 
 def test_sequence_collect_accepts_text_shapes_in_declared_plug_order(

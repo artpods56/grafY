@@ -274,7 +274,7 @@ def test_integer_output_converts_to_text_before_text_node_execution(
                 RunNodeRequest(
                     kind="builtin",
                     id="replace",
-                    operator_id="text.replace",
+                    operator_id="test.text.replace",
                     operator_version=1,
                     config={"search": "9", "replacement": "nine"},
                 ),
@@ -354,7 +354,7 @@ def test_projection_runs_before_declared_integer_to_text_conversion(
                 RunNodeRequest(
                     kind="builtin",
                     id="replace",
-                    operator_id="text.replace",
+                    operator_id="test.text.replace",
                     operator_version=1,
                     config={"search": "13", "replacement": "thirteen"},
                 ),
@@ -416,14 +416,14 @@ def test_integer_sequence_conversion_preserves_order_through_mapped_text_node(
                 RunNodeRequest(
                     kind="builtin",
                     id="replace",
-                    operator_id="text.replace",
+                    operator_id="test.text.replace",
                     operator_version=1,
                     config={"search": "2", "replacement": "two"},
                 ),
                 RunNodeRequest(
                     kind="builtin",
                     id="join",
-                    operator_id="text.join",
+                    operator_id="test.text.join",
                     operator_version=1,
                     config={"separator": ","},
                 ),
@@ -827,7 +827,7 @@ def test_conversion_path_errors_identify_the_exact_failing_step(
                     {
                         "kind": "builtin",
                         "id": "target",
-                        "operator_id": "text.replace",
+                        "operator_id": "test.text.replace",
                         "operator_version": 1,
                         "config": {"search": "x", "replacement": "y"},
                     },
@@ -856,7 +856,7 @@ def test_conversion_path_errors_identify_the_exact_failing_step(
                     {
                         "kind": "builtin",
                         "id": "target",
-                        "operator_id": "text.replace",
+                        "operator_id": "test.text.replace",
                         "operator_version": 1,
                         "config": {"search": "x", "replacement": "y"},
                     },

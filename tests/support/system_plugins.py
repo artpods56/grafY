@@ -33,6 +33,7 @@ from grafy_workbench import BUILTIN_FAMILIES
 from grafy_plugin_image import IMAGES as IMAGE_OPERATORS
 from grafy_plugin_table import TABLES as TABLE_OPERATORS
 from tests.support.scenarios.sequences import SEQUENCES
+from tests.support.scenarios.text_fixtures import TEXT_FIXTURES
 
 from grafy_api.v1.models import ArtifactTypeBindingModel
 from grafy_api.execution.requests import (
@@ -49,6 +50,7 @@ from tests.support.scenarios.arithmetic import ARITHMETIC_TEST_PLUGIN
 TEST_FIXTURE_PLUGINS: tuple[Plugin, ...] = (
     ARITHMETIC_TEST_PLUGIN,
     SEQUENCES,
+    TEXT_FIXTURES,
     IMAGE_OPERATORS,
     TABLE_OPERATORS,
 )
