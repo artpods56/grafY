@@ -1,4 +1,4 @@
-"""Workspace module library aggregate (publish / deprecate / withdraw)."""
+"""Workspace module library aggregate (publish a release)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,12 @@ from uuid import UUID, uuid4
 
 
 class ModulePublicationState(StrEnum):
+    """Publication state of a stored Module.
+
+    Only `published` is reachable now. `deprecated` and `withdrawn` remain so rows
+    written before the lifecycle was cut still load, and stay hidden from browse.
+    """
+
     PUBLISHED = "published"
     DEPRECATED = "deprecated"
     WITHDRAWN = "withdrawn"
@@ -111,27 +117,6 @@ class Module:
         self.publication_state = ModulePublicationState.PUBLISHED
         self.current_library_release = revision
         self.touch(when=when)
-
-    def deprecate(self, *, when: datetime | None = None) -> None:
-        if self.publication_state == ModulePublicationState.WITHDRAWN:
-            raise ModuleLibraryError("Withdrawn modules cannot be deprecated")
-        if self.current_library_release is None:
-            raise ModuleLibraryError("Module has no library release to deprecate")
-        self.publication_state = ModulePublicationState.DEPRECATED
-        self.touch(when=when)
-
-    def withdraw(self, *, when: datetime | None = None) -> None:
-        if self.current_library_release is None:
-            raise ModuleLibraryError("Module has no library release to withdraw")
-        self.publication_state = ModulePublicationState.WITHDRAWN
-        self.touch(when=when)
-
-    @property
-    def is_listed_in_library(self) -> bool:
-        return self.publication_state in {
-            ModulePublicationState.PUBLISHED,
-            ModulePublicationState.DEPRECATED,
-        }
 
 
 __all__ = [

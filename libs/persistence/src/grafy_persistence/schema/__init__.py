@@ -110,9 +110,6 @@ from .library import (
     ModulePublicationStateType as ModulePublicationStateType,
 )
 from .library import (
-    TemplateStateType as TemplateStateType,
-)
-from .library import (
     library_artifact_placements as library_artifact_placements,
 )
 from .library import (

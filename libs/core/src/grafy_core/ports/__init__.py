@@ -39,7 +39,6 @@ from grafy_core.ports.uploads import (
     UploadRepositoryPort,
     UploadUnitOfWorkPort,
 )
-from grafy_core.ports.templates import TemplateRepositoryPort, TemplateUnitOfWorkPort
 
 __all__ = [
     "CollaborationRepositoryPort",
@@ -67,6 +66,4 @@ __all__ = [
     "UnavailableNodeSecretResolver",
     "UploadRepositoryPort",
     "UploadUnitOfWorkPort",
-    "TemplateRepositoryPort",
-    "TemplateUnitOfWorkPort",
 ]

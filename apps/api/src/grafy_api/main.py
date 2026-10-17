@@ -38,7 +38,6 @@ from grafy_api.v1.routes.saved_graphs.views import (
 from grafy_api.v1.routes.saved_graphs.views import (
     router as saved_graphs_router,
 )
-from grafy_api.v1.routes.templates.views import router as templates_router
 from grafy_api.v1.routes.uploads.views import router as uploads_router
 from grafy_api.v1.routes.workspaces.views import me_router
 from grafy_api.v1.routes.workspaces.views import router as workspaces_router
@@ -166,7 +165,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(catalog_router, prefix="/v1")
     application.include_router(python_nodes_router, prefix="/v1")
     application.include_router(modules_router, prefix="/v1")
-    application.include_router(templates_router, prefix="/v1")
     application.include_router(uploads_router, prefix="/v1")
     application.include_router(executions_router, prefix="/v1")
     application.include_router(artifacts_router, prefix="/v1")

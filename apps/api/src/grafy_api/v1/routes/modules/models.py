@@ -10,7 +10,6 @@ from grafy_core.domain.module_library import (
     ModuleRelease,
 )
 from grafy_core.domain.modules import GraphModuleDefinition, GraphModulePort
-from grafy_core.domain.saved_graphs import SavedGraph
 
 from grafy_api.v1.models import ApiResponse, ArtifactTypeKeyResponse
 
@@ -116,39 +115,7 @@ class PublishModuleReleaseRequest(ApiResponse):
     description: str | None = Field(default=None, max_length=1000)
 
 
-class ImportModuleReleaseRequest(ApiResponse):
-    source_workspace_id: UUID
-    source_module_id: UUID
-    revision: int | None = Field(default=None, ge=1, strict=True)
-    name: str | None = Field(default=None, min_length=1, max_length=160)
-
-
-class ImportModuleReleaseResponse(ApiResponse):
-    graph_id: UUID
-    module: ModuleResponse
-
-    @classmethod
-    def from_import(
-        cls,
-        graph: SavedGraph,
-        module: Module,
-        *,
-        releases: list[ModuleRelease],
-        definition: GraphModuleDefinition,
-    ) -> Self:
-        return cls(
-            graph_id=graph.id,
-            module=ModuleResponse.from_module(
-                module,
-                releases=releases,
-                definition=definition,
-            ),
-        )
-
-
 __all__ = [
-    "ImportModuleReleaseRequest",
-    "ImportModuleReleaseResponse",
     "ModuleListResponse",
     "ModuleReleaseResponse",
     "ModuleResponse",

@@ -40,7 +40,6 @@ from grafy_core.domain.saved_graphs import (
 )
 from grafy_core.domain.security_audit import SecurityAuditEvent
 from grafy_core.domain.uploads import Upload
-from grafy_core.domain.templates import Template
 
 from grafy_persistence import schema
 
@@ -184,4 +183,3 @@ def start_mappers() -> None:
         PluginReleaseSelection,
         schema.plugin_release_selections,
     )
-    mapper_registry.map_imperatively(Template, schema.templates)
