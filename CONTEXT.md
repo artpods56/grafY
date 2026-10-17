@@ -598,7 +598,7 @@ text-specific collectors are not separate builtin nodes. Schema provides one
 recursive JSON Schema Builder, and the LLM Plugin provides deterministic
 prompt-message construction; provider-backed execution remains an optional
 System Plugin.
-OCR table fragments remain OCR-owned because deciding how Markdown rows become
+OCR table fragments remain Mistral-owned because deciding how Markdown rows become
 headers, columns, and inferred values is a source-specific normalization rather
 than a shape-preserving artifact conversion. Optional System families provide
 remote or domain-specific nodes through the same release schema. SQL remains

@@ -30,8 +30,6 @@ from grafy_core.runtime.persistence import (
     OutputPersister,
 )
 from grafy_core.runtime.resolvers import ResolverRegistry
-from grafy_plugin_ocr import OCR
-from grafy_plugin_ocr.artifacts import OCR_PAGE_RESULT
 from grafy_storage import LocalFileObjectStore
 
 
@@ -50,7 +48,6 @@ async def main() -> None:
     plugin_registry = PluginRegistry()
     plugin_registry.install(IMAGES)
     plugin_registry.install(IMAGE_OPERATORS)
-    plugin_registry.install(OCR)
     plugin_registry.freeze()
     plugin_context = PluginRuntimeContext(
         workspace=WORKSPACE,
@@ -94,38 +91,25 @@ async def main() -> None:
     )
     decoded_images = output_sequence(decode_output, "images")
 
-    ocr_output = await runtime.run_node(
-        plugin_registry.build_node("ocr.tesseract.pages", 2, plugin_context),
-        NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="ocr_1"),
-        {"pages": decoded_images},
-    )
-    ocr_pages = output_sequence(ocr_output, "results")
-
     async with uow as entered:
         image_artifacts = await entered.artifacts.list_by_type(
             WORKSPACE_ID,
             RASTER_IMAGE.key,
         )
-        ocr_artifacts = await entered.artifacts.list_by_type(
-            WORKSPACE_ID,
-            OCR_PAGE_RESULT.key,
-        )
 
-    if len(ocr_artifacts) == 0:
-        raise RuntimeError("OCR writer did not persist an artifact")
-    ocr_payload = ocr_artifacts[0].inline_payload
-    if ocr_payload is None:
-        raise RuntimeError("OCR writer did not persist an inline payload")
+    if len(image_artifacts) == 0:
+        raise RuntimeError("Raster image writer did not persist an artifact")
+    first_image = image_artifacts[0]
+    if first_image.object_key is None:
+        raise RuntimeError("Raster image writer did not persist a storage object")
 
     result: dict[str, object] = {
         "workspace": str(WORKSPACE),
         "decoded_sequence_id": decoded_images.sequence_id,
-        "ocr_sequence_id": ocr_pages.sequence_id,
         "raster_image_count": len(image_artifacts),
         "sequence_item_count": len(decoded_images.item_refs),
-        "ocr_artifact_count": len(ocr_artifacts),
-        "first_ocr_ref": ocr_pages.item_refs[0].model_dump(mode="json"),
-        "first_ocr_text": ocr_payload["text"],
+        "first_decoded_ref": decoded_images.item_refs[0].model_dump(mode="json"),
+        "first_raster_object_key": first_image.object_key,
     }
     print(json.dumps(result, indent=2, default=str))
 

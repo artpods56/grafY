@@ -47,13 +47,7 @@ def runtime_profile(
         return PluginRuntimeProfile()
     native_profiles = {
         "python-uv-gdal": frozenset({PluginRuntimeCapability.NATIVE_GDAL}),
-        "python-uv-tesseract": frozenset({PluginRuntimeCapability.NATIVE_TESSERACT}),
-        "python-uv-gdal-tesseract": frozenset(
-            {
-                PluginRuntimeCapability.NATIVE_GDAL,
-                PluginRuntimeCapability.NATIVE_TESSERACT,
-            }
-        ),
+        "python-uv-gdal-tesseract": frozenset({PluginRuntimeCapability.NATIVE_GDAL}),
     }
     capabilities = native_profiles.get(name)
     if capabilities is None:
