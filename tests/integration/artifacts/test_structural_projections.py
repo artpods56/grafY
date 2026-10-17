@@ -72,14 +72,14 @@ def test_nested_json_string_projects_directly_and_integer_converts_to_text(
                 RunNodeRequest(
                     kind="builtin",
                     id="name",
-                    operator_id="text.replace",
+                    operator_id="test.text.replace",
                     operator_version=1,
                     config={"search": "b", "replacement": "B"},
                 ),
                 RunNodeRequest(
                     kind="builtin",
                     id="retries",
-                    operator_id="text.replace",
+                    operator_id="test.text.replace",
                     operator_version=1,
                     config={"search": "4", "replacement": "four-"},
                 ),

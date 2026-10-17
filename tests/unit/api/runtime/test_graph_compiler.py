@@ -137,7 +137,7 @@ async def test_compiler_orders_nodes_and_resolves_declared_conversions(
             RunNodeRequest(
                 kind="builtin",
                 id="replace",
-                operator_id="text.replace",
+                operator_id="test.text.replace",
                 operator_version=1,
                 config={"search": "1", "replacement": "one"},
             ),
@@ -204,7 +204,7 @@ async def test_compiler_does_not_resolve_mutable_plugin_registry_conversions(
             RunNodeRequest(
                 kind="builtin",
                 id="replace",
-                operator_id="text.replace",
+                operator_id="test.text.replace",
                 operator_version=1,
                 config={"search": "1", "replacement": "one"},
             ),
@@ -242,14 +242,14 @@ async def test_compiler_derives_map_invocation_from_the_incoming_edge(
             RunNodeRequest(
                 kind="builtin",
                 id="replace",
-                operator_id="text.replace",
+                operator_id="test.text.replace",
                 operator_version=1,
                 config={"search": "a", "replacement": "A"},
             ),
             RunNodeRequest(
                 kind="builtin",
                 id="split",
-                operator_id="text.split",
+                operator_id="test.text.split",
                 operator_version=1,
                 config={"separator": "|"},
             ),
@@ -434,7 +434,7 @@ async def test_compiler_accepts_an_external_edge_only_with_its_exact_pin(
             RunNodeRequest(
                 kind="builtin",
                 id="replace",
-                operator_id="text.replace",
+                operator_id="test.text.replace",
                 operator_version=1,
                 config={"search": "a", "replacement": "A"},
             )
@@ -564,7 +564,7 @@ def _replace_node(node_id: str = "replace") -> RunNodeRequest:
     return RunNodeRequest(
         kind="builtin",
         id=node_id,
-        operator_id="text.replace",
+        operator_id="test.text.replace",
         operator_version=1,
         config={"search": "a", "replacement": "A"},
     )
