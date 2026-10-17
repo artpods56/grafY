@@ -29,8 +29,8 @@ Network policy applies independently to three planes:
    graph node runs.
 
 Each plane selects a named `NetworkAccessProfile`. Network profiles are
-orthogonal to Plugin runtime profiles such as `python-uv` or native GDAL and
-Tesseract images. An administrator assigns profiles; Plugin source, graph
+orthogonal to Plugin runtime profiles such as `python-uv` or native GDAL
+images. An administrator assigns profiles; Plugin source, graph
 configuration, and coding-agent output cannot select or modify them.
 
 The first execution profile that must be implemented is

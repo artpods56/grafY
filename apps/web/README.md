@@ -8,7 +8,7 @@ The root route renders the canonical cross-location graph browser after
 authentication. New and saved workflows open at their workspace-scoped graph
 URLs. The built-in catalog is limited to generic Image, Sequence,
 Arithmetic, Text, and Prompt families. OCR and table extraction appear as
-external nodes only when the OCR entry-point plugin is installed.
+external nodes only when the Mistral OCR System Plugin is selected.
 
 Node configuration is rendered directly inside each node from the live
 `config_schema`. Primitive JSON Schema fields use a compact preset: text,
@@ -87,8 +87,8 @@ Requirements:
 2. Python 3.12.9 with the repository uv workspace synced.
 3. The Grafy API running on `http://127.0.0.1:8000` (the Next.js dev
    server proxies browser `/api` requests to it).
-4. `just install-ocr` and `just api-ocr` used from the repository root when OCR
-   operators should be available.
+4. `just api-dev external.mistral` used from the repository root when the
+   Mistral OCR operators should be available.
 
 ```bash
 cd apps/web
