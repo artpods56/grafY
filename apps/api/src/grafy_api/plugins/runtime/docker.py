@@ -20,7 +20,6 @@ from pydantic import StrictStr, TypeAdapter, ValidationError
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.domain.plugin_releases import (
     PluginReleaseIdentity,
-    PluginReleaseScope,
     PluginRuntimeArtifact,
 )
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
@@ -121,8 +120,6 @@ class PluginRuntimeReleaseLookup(Protocol):
 class _SandboxKey:
     scope_id: PluginSandboxScopeId
     workspace_id: UUID
-    release_scope: PluginReleaseScope
-    release_workspace_id: UUID | None
     release_slug: str
     release_revision: int
     source_digest: str
@@ -139,8 +136,6 @@ class _SandboxKey:
 
     def release_identity(self) -> tuple[object, ...]:
         return (
-            self.release_scope,
-            self.release_workspace_id,
             self.release_slug,
             self.release_revision,
             self.source_digest,
@@ -527,8 +522,6 @@ class DockerPluginRuntime(
         if requires_http_egress:
             egress_resolution = resolve_http_egress_authority(
                 self._network_policy,
-                scope=release.installation.scope,
-                workspace_id=release.installation.workspace_id,
                 slug=release.release.slug,
                 revision=release.release.revision,
                 contract=request.contract,
@@ -551,8 +544,6 @@ class DockerPluginRuntime(
         key = _SandboxKey(
             scope_id=scope,
             workspace_id=envelope.workspace_id,
-            release_scope=release.installation.scope,
-            release_workspace_id=release.installation.workspace_id,
             release_slug=release.release.slug,
             release_revision=release.release.revision,
             source_digest=release.release.source_digest,
@@ -910,7 +901,6 @@ class DockerPluginRuntime(
     ) -> _Sandbox:
         name = (
             f"grafy-plugin-{str(key.scope_id.value)[:8]}-"
-            f"{key.release_scope.value[:3]}-"
             f"{key.release_slug[:24]}-r{key.release_revision}-"
             f"{_sandbox_key_sha256(key)[:16]}"
         )
@@ -1269,8 +1259,6 @@ class DockerPluginRuntime(
                 "--label",
                 f"io.grafy.plugin.release={key.release_slug}@{key.release_revision}",
                 "--label",
-                f"io.grafy.plugin.release_scope={key.release_scope.value}",
-                "--label",
                 f"io.grafy.plugin.capability_profile={capability_profile_digest}",
                 "--label",
                 f"io.grafy.plugin.created_at={created_at}",
@@ -1528,10 +1516,6 @@ def _sandbox_key_sha256(key: _SandboxKey) -> str:
     identity = {
         "scope_id": str(key.scope_id.value),
         "workspace_id": str(key.workspace_id),
-        "release_scope": key.release_scope.value,
-        "release_workspace_id": (
-            None if key.release_workspace_id is None else str(key.release_workspace_id)
-        ),
         "release_slug": key.release_slug,
         "release_revision": key.release_revision,
         "source_digest": key.source_digest,

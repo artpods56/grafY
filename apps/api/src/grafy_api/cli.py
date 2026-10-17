@@ -234,10 +234,6 @@ async def _run_network_policy(args: argparse.Namespace) -> None:
         )
     for assignment in policy.assignments:
         target = "plane-default"
-        if assignment.scope is not None:
-            target = f"scope={assignment.scope.value}"
-            if assignment.workspace_id is not None:
-                target += f" workspace={assignment.workspace_id}"
         if assignment.slug is not None:
             target += f" slug={assignment.slug}"
         if assignment.revision is not None:

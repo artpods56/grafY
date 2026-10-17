@@ -231,10 +231,12 @@ the digest.
 
 The deployment resolves one profile using this precedence:
 
-1. Exact release assignment: scope, optional Workspace, slug, and revision.
-2. Plugin-family assignment: scope, optional Workspace, and slug.
-3. Scope default: System or Workspace.
-4. Plane default.
+1. Exact release assignment: slug and revision.
+2. Plugin-family assignment: slug.
+3. Plane default.
+
+Plugin releases are System-owned (ADR 0015), so an assignment names a slug, not
+a scope or a Workspace.
 
 An assignment that names an unknown profile is a startup error. Ambiguous
 assignments at the same precedence are startup errors. Absence of an
@@ -298,13 +300,12 @@ domain_sets = ["python-packages"]
 
 [[assignments]]
 plane = "plugin-execution"
-scope = "system"
 slug = "external.llm"
 profile = "configured-public"
 
 [[assignments]]
 plane = "plugin-execution"
-scope = "workspace"
+slug = "external.sql"
 profile = "offline"
 ```
 
@@ -554,7 +555,7 @@ SandboxKey
 
 The canonical sandbox hash includes normalized origins in sorted order.
 
-- Same release, scope, profile, and origins may reuse a sandbox.
+- Same release, profile, and origins may reuse a sandbox.
 - A different origin or profile digest selects a different sandbox.
 - A profile change cannot reuse a sandbox created under the old authority.
 

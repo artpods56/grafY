@@ -53,7 +53,6 @@ label = "LLM providers"
 
 [[assignments]]
 plane = "plugin-execution"
-scope = "system"
 slug = "external.llm"
 profile = "llm-public"
 """,
