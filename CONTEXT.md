@@ -168,9 +168,9 @@ names an artifact by identity rather than searching for one. An origin and an
 enabled edge never satisfy the same input, though a disabled edge may wait beside
 one. An origin whose artifact can no longer be read stays in the saved document
 exactly as written and leaves its input unsatisfied. An origin therefore belongs
-to the Workspace that owns its artifact: copying a graph or a template into
-another Workspace drops the origin and leaves that input unsatisfied, rather than
-moving bytes across the tenancy boundary.
+to the Workspace that owns its artifact: copying a graph into another Workspace
+drops the origin and leaves that input unsatisfied, rather than moving bytes
+across the tenancy boundary.
 _Avoid_: source node, source operator, input node
 
 ### Materialized output binding
@@ -321,8 +321,6 @@ code, port types and shapes, params schema and defaults. The node stores the pre
 id and version, but later preset changes never update the copied node. Split text,
 Replace text, Join text and As Markdown are presets of the Python node. The old
 operators stay registered for saved graphs and are hidden from the node browser.
-
-A Preset fills one node. A Template copies a whole graph.
 
 ### Invocation cache entry
 
@@ -549,24 +547,15 @@ denies execution.
 
 A reusable workflow building block hosted by a workspace library. A Saved graph
 with Module Input/Output boundaries is only a candidate until someone
-**publishes a release**. Call sites pin an immutable Module release
-(`graph.module.{source_graph_id}@{revision}`). Publication states are
-published, deprecated, and withdrawn. Withdraw hides a Module from Add node /
-library browse; existing pins keep resolving. There is no hard delete of
-releases in v1. Cross-workspace reuse is **Import into workspace** (copy-by-value).
-Publish release requires Editor or Owner; Deprecate and Withdraw require Owner.
-
-### Template (New graph library)
-
-An immutable, sanitized copy source captured from one exact Saved graph
-revision. **Use template** creates a new independent Saved graph in an explicit
-My graphs or Team save location, with a chosen name and optional one-level
-Folder. It copies graph structure and safe configuration by value, but never
-secrets, execution history, materialized artifacts, uploads, caches, or invalid
-runtime capabilities. Later source or Template changes never mutate an existing
-copy. Templates appear in New graph / Library; unlike Modules, they are not
-callable, do not have contracts or pinned releases, and are not inserted as
-nodes.
+**publishes a release**. Publishing takes a checkpoint of the source graph, so a
+release's contract and its source revision move together, and freezes a copy of
+the graph document: the source graph stays editable and editing it never changes
+an existing release. Call sites pin an immutable Module release
+(`graph.module.{source_graph_id}@{revision}`) and keep resolving that exact
+release. A published release is the only Module state; publishing again adds
+another release. There is no deprecate, withdraw, un-publish, or hard delete of
+releases, and no cross-workspace Module import: reuse a Module from another
+Workspace by duplicating the graph.
 
 ### Node catalog / Add node
 
@@ -739,7 +728,7 @@ the origin stays the executable truth: the card owns the order, so reordering a
 bound card rewrites the origin that carries it, and removing the card removes
 what it passed in. The reference is durable document state and is never dropped
 when the artifact is deleted, becomes inaccessible, or cannot cross a Workspace
-or Template boundary; the card stays and reports the reference as missing until
+or Workspace boundary; the card stays and reports the reference as missing until
 the user removes the card deliberately.
 
 Collect replaces selected, unconnected artifact cards with one sequence card.

@@ -257,7 +257,6 @@ interpretation. The server remains authoritative.
 | Start or cancel graph execution | no | yes | yes |
 | Publish a Plugin release into the workspace | no | no | yes |
 | Publish a Module release into the workspace library | no | yes | yes |
-| Deprecate or withdraw a Module from the workspace library | no | no | yes |
 | Configure or remove node secrets | no | no | yes |
 | Delete a graph | no | no | yes |
 | Manage workspace members | no | no | yes |

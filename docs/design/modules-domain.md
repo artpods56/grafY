@@ -103,10 +103,10 @@ Communities that share vocabulary internally but diverge across groups:
 1. **Authoring** — editing the subgraph, boundaries, drafts, broken tips.
 2. **Composition** — finding a block, matching ports and types, inserting a
    call site, pinning a release.
-3. **Library stewardship** — what is published, naming, deprecation, what the
-   team may depend on.
+3. **Library stewardship** — what is published and named, and what the team
+   may depend on.
 4. **Tenancy / trust** — who may see or call a piece; personal lab vs team
-   library vs cross-project import.
+   library vs a copy taken into another project.
 5. **Execution / ops** — nested runs, caching, provenance of which release
    actually ran.
 
@@ -125,7 +125,6 @@ Significant things that happen, named in the past tense:
 - Project imported or referenced a library block
 - Call site was added to a workflow
 - Release was upgraded at a call site
-- Block was deprecated or unpublished
 - Draft was kept out of the library
 - Copy was taken into another project (fork) vs live dependency retained
 - Dependency broke because the contract changed or the source became unavailable
@@ -141,7 +140,7 @@ draft, import, fork, dependency
 ### Potential attributes
 
 visibility, scope, name, description, requiredness (of a port), pinned
-revision, tip, broken/valid, deprecated
+revision, tip, broken/valid
 
 ### Unclear
 
@@ -159,9 +158,12 @@ resolved in the conceptual model and interaction/surface docs.
 ## Binding product decisions (see conceptual model)
 
 v1 uses an explicit Module + Publish release into a workspace library (not tip
-auto-catalog), Owner-only Deprecate/Withdraw with no hard delete, insert-time
-older-release pick, and library entry from Workbench and workspace overview.
-Import is copy-by-value. See [modules-conceptual-model.md](modules-conceptual-model.md).
+auto-catalog), insert-time older-release pick, and library entry from Workbench
+and workspace overview. Publishing is the only lifecycle transition: there is no
+deprecate, withdraw, or import, and reuse in another Workspace means taking a
+copy of the graph. See
+[modules-conceptual-model.md](modules-conceptual-model.md) and
+[ADR 0016](../adr/0016-graph-reuse-is-copies-and-modules.md).
 
 ## Next step
 
