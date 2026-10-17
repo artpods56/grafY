@@ -23,7 +23,6 @@ from grafy_core.domain.plugin_releases import (
     PluginExecutionPolicy,
     PluginRelease,
     PluginReleaseNamespace,
-    PluginReleaseScope,
     PluginRuntimeArtifact,
     plugin_contract_digest,
     plugin_profile_digest,
@@ -72,30 +71,12 @@ class ReleaseLookup:
 
     async def get_by_revision(
         self,
-        workspace_id: UUID,
         slug: str,
         revision: int,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
     ) -> InstalledPluginRelease | None:
         for release in self.releases:
-            if (
-                scope is release.installation.scope
-                and workspace_id == release.installation.workspace_id
-                and slug == release.release.slug
-                and revision == release.release.revision
-            ):
+            if slug == release.release.slug and revision == release.release.revision:
                 return release
-        return None
-
-    async def get_revocation(
-        self,
-        *,
-        workspace_id: UUID,
-        slug: str,
-        revision: int,
-    ) -> PluginReleaseRevocation | None:
-        del workspace_id, slug, revision
         return None
 
     async def get_system_revocation(

@@ -14,6 +14,7 @@ from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.domain.plugin_releases import PluginReleaseScope, plugin_contract_digest
+from grafy_core.domain.saved_graphs import SavedGraphPluginReleasePin
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.plugin_invocation import PluginInvocationRequest
 from grafy_core.runtime.plugin_protocol import PluginInvocationLimits
@@ -229,20 +230,19 @@ async def test_python_presets_run_exact_cached_and_clean_sandbox(
         assert set(_containers()) == before
 
         assert components.python_apply is not None
+        python_release = SavedGraphPluginReleasePin(
+            scope=PluginReleaseScope.SYSTEM, slug=PYTHON.slug, revision=1
+        )
         inspected = await components.python_apply.apply(
             workspace_id=WORKSPACE_ID,
             code=presets["replace-text"].code,
-            scope=PluginReleaseScope.SYSTEM,
-            slug=PYTHON.slug,
-            revision=1,
+            plugin_release=python_release,
         )
         assert inspected.contract is not None and not inspected.diagnostics
         network = await components.python_apply.apply(
             workspace_id=WORKSPACE_ID,
             code="import socket\nsocket.create_connection(('1.1.1.1', 53), timeout=0.2)\ndef transform(text: str) -> str:\n    return text\n",
-            scope=PluginReleaseScope.SYSTEM,
-            slug=PYTHON.slug,
-            revision=1,
+            plugin_release=python_release,
         )
         assert network.contract is None
         assert network.diagnostics and network.diagnostics[0].line == 2
