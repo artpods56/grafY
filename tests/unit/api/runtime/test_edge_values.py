@@ -20,9 +20,9 @@ from grafy_workbench.value.nodes import (
     IntegerValueResolver,
 )
 from tests.support.scenarios.sequences import CollectNode
+from tests.support.scenarios.text_fixtures import ReplaceTextNode
 from grafy_workbench.text.nodes import (
     TEXT_VALUE,
-    ReplaceTextNode,
     TextValueOutputWriter,
     TextValueResolver,
 )

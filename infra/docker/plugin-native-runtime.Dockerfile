@@ -10,6 +10,4 @@ RUN apt-get update \
         python3-gdal \
         python3-numpy \
         python3-pil \
-        tesseract-ocr \
-        tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*

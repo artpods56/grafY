@@ -64,7 +64,6 @@ from grafy_core.domain.node_secrets import node_secret_dependency_sha256
 from grafy_core.domain.plugin_releases import (
     PluginArtifactTypeKey,
     PluginCatalogManifest,
-    PluginReleaseScope,
     plugin_contract_digest,
     plugin_protocol_digest,
 )
@@ -615,8 +614,6 @@ async def test_isolated_guest_persists_all_three_dependency_outputs(
         workspace_id=WORKSPACE_ID,
         node_id="ocr",
         release=PluginInvocationRelease(
-            scope=PluginReleaseScope.SYSTEM,
-            workspace_id=None,
             slug=MISTRAL.slug,
             revision=1,
             source_digest="a" * 64,

@@ -40,7 +40,10 @@ class PluginReleaseSelection:
     def __post_init__(self) -> None:
         self.scope = PluginReleaseScope(self.scope)
         self.lifecycle = PluginFamilyLifecycle(self.lifecycle)
-        PluginReleaseNamespace(scope=self.scope, workspace_id=self.workspace_id)
+        try:
+            PluginReleaseNamespace(scope=self.scope, workspace_id=self.workspace_id)
+        except ValueError as exc:
+            raise PluginReleaseSelectionError(str(exc)) from exc
         self.slug = self.slug.strip()
         if self.slug == "" or len(self.slug) > 100:
             raise PluginReleaseSelectionError(
@@ -102,7 +105,7 @@ class PluginReleaseSelection:
             or release.release.slug != self.slug
         ):
             raise PluginReleaseSelectionError(
-                "Selected Plugin release must belong to the same scoped family"
+                "Selected Plugin release must belong to the same Plugin family"
             )
         next_lifecycle = PluginFamilyLifecycle.PUBLISHED if publish else self.lifecycle
         if (

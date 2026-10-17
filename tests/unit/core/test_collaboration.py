@@ -679,9 +679,7 @@ def test_cross_workspace_copy_keeps_an_unsatisfied_artifact_card_reference() -> 
     assert copied.presentation.viewers[0].artifact_ref == reference
 
 
-def test_cross_workspace_copy_preserves_system_pins_and_rejects_workspace_pins() -> (
-    None
-):
+def test_cross_workspace_copy_preserves_system_pins_and_refuses_legacy_pins() -> None:
     system_pin = SavedGraphPluginReleasePin(
         scope=PluginReleaseScope.SYSTEM,
         slug="value",
@@ -693,17 +691,17 @@ def test_cross_workspace_copy_preserves_system_pins_and_rejects_workspace_pins()
 
     assert copied.nodes[0].plugin_release_pin == system_pin
 
-    workspace_pin = SavedGraphPluginReleasePin(
+    stored_workspace_pin = SavedGraphPluginReleasePin(
         scope=PluginReleaseScope.WORKSPACE,
-        slug="agent-authored",
+        slug="legacy-notes",
         revision=1,
     )
-    workspace_document = SavedGraphDocument(
-        nodes=(_node(plugin_release_pin=workspace_pin),)
+    legacy_document = SavedGraphDocument(
+        nodes=(_node(plugin_release_pin=stored_workspace_pin),)
     )
     with pytest.raises(CollaborationCommandRejectedError) as exc:
-        sanitize_document_for_cross_workspace_copy(workspace_document)
-    assert exc.value.error_code == "foreign_workspace_plugin_release"
+        sanitize_document_for_cross_workspace_copy(legacy_document)
+    assert exc.value.error_code == "unsupported_plugin_release_scope"
 
 
 def test_command_hmac_digest_is_stable_and_keyed() -> None:

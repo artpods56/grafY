@@ -11,10 +11,6 @@ EXPECTED_BUILTIN_OPERATORS = {
     ("module.output", 1),
     ("value.integer", 1),
     ("text.input", 1),
-    ("text.as_markdown", 1),
-    ("text.split", 1),
-    ("text.replace", 1),
-    ("text.join", 1),
     ("schema.builder", 1),
     ("file.interpret", 1),
 }

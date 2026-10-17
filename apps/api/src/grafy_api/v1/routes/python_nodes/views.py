@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 
+from grafy_core.domain.saved_graphs import SavedGraphPluginReleasePin
+
 from grafy_api.python_nodes import PythonApplyUnavailableError
 from grafy_api.v1.routes.python_nodes.dependencies import (
     PythonApplyDependency,
@@ -31,9 +33,11 @@ async def apply_python_code(
         result = await service.apply(
             workspace_id=access.workspace_id,
             code=request.code,
-            scope=request.plugin_release.scope,
-            slug=request.plugin_release.slug,
-            revision=request.plugin_release.revision,
+            plugin_release=SavedGraphPluginReleasePin(
+                scope=request.plugin_release.scope,
+                slug=request.plugin_release.slug,
+                revision=request.plugin_release.revision,
+            ),
         )
     except PythonApplyUnavailableError as exc:
         raise HTTPException(

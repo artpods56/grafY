@@ -1,4 +1,4 @@
-"""Plugin discovery, authoring, and isolated sandbox runtime configuration."""
+"""Plugin discovery and isolated sandbox runtime configuration."""
 
 import re
 from pathlib import Path
@@ -15,22 +15,13 @@ class PluginsConfig(BaseSettings):
 
     model_config: ClassVar[SettingsConfigDict] = SECTION_SETTINGS
 
-    plugin_roots: tuple[Path, ...] = (
-        Path("examples"),
-        Path("plugins"),
-        Path(".grafy-artifacts/workspace-plugins"),
-    )
-    # Coding-agent authoring is assigned deterministically beneath this
-    # deployment-owned Plugin root. It never chooses an arbitrary host path.
-    plugin_authoring_root: Path = Path(".grafy-artifacts/workspace-plugins")
-    # Source used to build the versioned SDK wheel vendored into a generated
-    # working copy. The resulting Plugin has no monorepo-relative dependency.
-    plugin_sdk_project: Path = Path("libs/core")
+    # Directories a verified Plugin working copy may be read from. System
+    # Plugins live in plugins/ and are listed in plugins/system-plugins.toml.
+    plugin_roots: tuple[Path, ...] = (Path("plugins"),)
     # Deployment-owned default runtime profile for published Plugin releases.
     plugin_runtime_profile: Literal[
         "python-uv",
         "python-uv-gdal",
-        "python-uv-tesseract",
         "python-uv-gdal-tesseract",
     ] = "python-uv"
     plugin_runtime_native_base_image: str | None = None
@@ -38,8 +29,8 @@ class PluginsConfig(BaseSettings):
         default=None,
         pattern=r"^[0-9a-f]{64}$",
     )
-    # Workspace Plugin execution is fail-closed unless the local Docker
-    # sandbox owner is explicitly enabled for this single API process.
+    # Plugin execution is fail-closed unless the local Docker sandbox owner is
+    # explicitly enabled for this single API process.
     plugin_runtime_enabled: bool = False
     # Development only. System Plugin slugs from plugins/system-plugins.toml, or
     # exact "module:attribute" loader targets, installed in-process beside the
@@ -108,16 +99,8 @@ class PluginsConfig(BaseSettings):
         return self.plugin_wheelhouse.expanduser().resolve()
 
     @property
-    def resolved_plugin_authoring_root(self) -> Path:
-        return self.plugin_authoring_root.expanduser().resolve()
-
-    @property
     def resolved_plugin_publisher_scratch_root(self) -> Path:
         return self.plugin_publisher_scratch_root.expanduser().resolve()
-
-    @property
-    def resolved_plugin_sdk_project(self) -> Path:
-        return self.plugin_sdk_project.expanduser().resolve()
 
     @property
     def resolved_seccomp_profile(self) -> Path | None:

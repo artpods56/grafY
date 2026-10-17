@@ -55,9 +55,6 @@ flowchart LR
 - `libs/workbench` owns the app-built-in node families: Image, Sequence, Value,
   Text, Schema, Table, and File. These run in-process with the API and are
   not Plugin packages.
-- `plugins/ocr` is an independently packaged System Plugin. It owns the OCR
-  page node, its artifacts and persistence/resolution, and the Tesseract OCR
-  adapter.
 - `plugins/gis` owns exact WGS84 vector sources, georeferenced raster scans,
   OGC WFS/WMS integration, lightweight map-layer recipes, and ordered map
   composition. MapLibre renders derived PMTiles and XYZ projections without
@@ -103,7 +100,7 @@ validated configuration (including defaults), stable node/module identity,
 invocation mode and mapped item index, resolved artifact-type bindings, exact
 ordered input refs and SHA-256 values, and opaque secret revisions. Mapped nodes
 cache each item independently, so a failed or newly added item does not force
-already completed items to execute again. Provider, OCR, upload, and graph-module
+already completed items to execute again. Provider, upload, and graph-module
 wrapper nodes remain uncached unless their own declaration can supply every
 required stable identity. Cache entries store only the final digest and artifact
 refs; stale or inaccessible refs are evicted lazily.
@@ -111,14 +108,15 @@ refs; stale or inaccessible refs are evicted lazily.
 ## Register a plugin
 
 Each Plugin project exports one `grafy_core.plugins.Plugin` declaration from a
-stable loader target. Workspace projects are published as immutable,
-workspace-scoped releases and execute through the retained isolated runtime;
-the API never imports their working copies.
+stable loader target. Every Plugin is System-owned: it is published as an
+immutable release and executes through the isolated runtime, and the API never
+imports its working copy (see [ADR 0015](docs/adr/0015-plugins-are-system-only.md)).
 
-System projects are enumerated by the platform-owned inventory. Publish an
-immutable release, then explicitly promote it to make it available globally.
-System and Workspace Plugins execute in isolated workers using their retained
-OCI artifacts. Startup registers the workbench's builtin families and Module
+The platform-owned inventory under `plugins/system-plugins.toml` enumerates the
+projects, their slugs, loader targets, capabilities, and the identity prefixes
+each may claim. Publish an immutable release, then explicitly promote it to make
+it available. Plugins execute in isolated workers using their retained OCI
+artifacts. Startup registers the workbench's builtin families and Module
 boundaries. Installing a Plugin package alone does not activate it. See
 [Plugin development](docs/design/plugin-development.md) for project shape and
 publication workflows.
@@ -248,7 +246,7 @@ migration commands are `just db-current`, `just db-history`, and
 `just api` never discovers installed Plugin packages ambiently. Configure an
 exact System deployment manifest and selected release when exercising a System
 host binding; use the retained OCI runtime for isolated-only families such as
-GIS, LLM, OCR, and SQL.
+GIS, LLM, Mistral, and SQL.
 
 ### Develop Plugins in-process
 
@@ -448,7 +446,7 @@ just e2e-live
 
 The API Dockerfile's `api-plugins` target adds the Docker CLI used by the
 opt-in retained OCI runtime and System publisher, but installs only
-`grafy-api` and its bundled dependencies. GIS, LLM, OCR, SQL, and their native
+`grafy-api` and its bundled dependencies. GIS, LLM, Mistral, SQL, and their native
 tools belong in retained Plugin images, not the online API image. A one-shot
 migration service must complete before the API starts. SQLite, uploads, and
 artifact objects share the durable `grafy-data` volume.

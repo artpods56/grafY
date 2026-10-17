@@ -15,7 +15,6 @@ import pytest
 
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.domain.plugin_releases import (
-    PluginReleaseScope,
     PluginRuntimeArtifact,
 )
 from grafy_core.ports.storage import FileStoragePort
@@ -57,8 +56,6 @@ def _key(
     return _SandboxKey(
         scope_id=scope_id or PluginSandboxScopeId.new(),
         workspace_id=_WORKSPACE_ID,
-        release_scope=PluginReleaseScope.WORKSPACE,
-        release_workspace_id=_WORKSPACE_ID,
         release_slug="egress-test",
         release_revision=1,
         source_digest="b" * 64,

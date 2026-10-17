@@ -15,7 +15,6 @@ from grafy_core.domain.plugin_releases import (
     PluginArtifactConversionContract,
     PluginArtifactTypeContract,
     PluginNodeContract,
-    PluginReleaseScope,
 )
 from grafy_core.domain.plugin_revocations import PluginReleaseRevocation
 from grafy_core.domain.plugin_selection import (
@@ -124,51 +123,14 @@ class CatalogSnapshot:
         module_listing: list[tuple[Module, ModuleRelease, GraphModuleDefinition]],
         plugin_releases: list[InstalledPluginRelease],
         *,
-        workspace_id: UUID,
         release_admission: ReleaseExecutionAdmission | None = None,
         plugin_release_states: Mapping[UUID, PluginCatalogReleaseState] | None = None,
     ) -> "CatalogSnapshot":
         release_states = plugin_release_states or {}
-        system_releases = [
-            release
-            for release in plugin_releases
-            if release.installation.scope is PluginReleaseScope.SYSTEM
-        ]
-        workspace_releases = [
-            release
-            for release in plugin_releases
-            if release.installation.scope is PluginReleaseScope.WORKSPACE
-        ]
-        foreign_workspace_releases = [
-            release
-            for release in workspace_releases
-            if release.installation.workspace_id != workspace_id
-        ]
-        if foreign_workspace_releases:
-            rendered = ", ".join(
-                sorted(
-                    f"{release.release.slug}@{release.release.revision} owned by {release.installation.workspace_id}"
-                    for release in foreign_workspace_releases
-                )
-            )
-            raise ValueError(
-                f"Workspace Plugin catalog received foreign releases: {rendered}"
-            )
-        system_slugs = {release.release.slug for release in system_releases}
-        workspace_slugs = {release.release.slug for release in workspace_releases}
-        if len(system_slugs) != len(system_releases):
+        slugs = {release.release.slug for release in plugin_releases}
+        if len(slugs) != len(plugin_releases):
             raise ValueError("System Plugin catalog contains duplicate current slugs")
-        if len(workspace_slugs) != len(workspace_releases):
-            raise ValueError(
-                "Workspace Plugin catalog contains duplicate current slugs"
-            )
-        cross_scope_slugs = system_slugs & workspace_slugs
-        if cross_scope_slugs:
-            rendered = ", ".join(sorted(cross_scope_slugs))
-            raise ValueError(
-                f"Workspace Plugin releases conflict with System Plugins: {rendered}"
-            )
-        reserved_slugs = {GRAPH_MODULE_PLUGIN_SLUG} & (system_slugs | workspace_slugs)
+        reserved_slugs = {GRAPH_MODULE_PLUGIN_SLUG} & slugs
         if reserved_slugs:
             raise ValueError(
                 f"Plugin releases conflict with reserved Module provider: "
@@ -180,9 +142,7 @@ class CatalogSnapshot:
             for plugin in registry.plugins
             if plugin.slug != GRAPH_MODULE_PLUGIN_SLUG
         }
-        plugin_slug_collisions = installed_plugin_slugs & (
-            system_slugs | workspace_slugs
-        )
+        plugin_slug_collisions = installed_plugin_slugs & slugs
         if plugin_slug_collisions:
             rendered = ", ".join(sorted(plugin_slug_collisions))
             raise ValueError(
@@ -203,16 +163,15 @@ class CatalogSnapshot:
                 other_release = release_node_owners.get(key)
                 if other_release is not None:
                     raise ValueError(
-                        f"{release.installation.scope.value.title()} Plugin {release.release.slug!r} "
-                        f"operator {key[0]}@{key[1]} conflicts with "
-                        f"{other_release.installation.scope.value} Plugin "
+                        f"System Plugin {release.release.slug!r} operator "
+                        f"{key[0]}@{key[1]} conflicts with System Plugin "
                         f"{other_release.release.slug!r}"
                     )
                 if key in reserved_builtin_keys:
                     host_registration = host_nodes[key]
                     raise ValueError(
-                        f"{release.installation.scope.value.title()} Plugin {release.release.slug!r} "
-                        f"operator {key[0]}@{key[1]} conflicts with builtin "
+                        f"System Plugin {release.release.slug!r} operator "
+                        f"{key[0]}@{key[1]} conflicts with builtin "
                         f"{host_registration.plugin_slug!r}"
                     )
                 release_node_owners[key] = release
@@ -283,23 +242,22 @@ class CatalogSnapshot:
                 other_release = seen_artifact_owners.get(key)
                 if other_release is not None:
                     raise ValueError(
-                        f"{release.installation.scope.value.title()} Plugin {release.release.slug!r} artifact "
-                        f"type {key[0]}@{key[1]} conflicts with "
-                        f"{other_release.installation.scope.value} Plugin {other_release.release.slug!r}"
+                        f"System Plugin {release.release.slug!r} artifact type "
+                        f"{key[0]}@{key[1]} conflicts with "
+                        f"System Plugin {other_release.release.slug!r}"
                     )
                 installed = declared_host_artifacts.get(key)
                 if installed is not None:
                     overlays_matching_host = (
-                        release.installation.scope is PluginReleaseScope.SYSTEM
-                        and registry.artifact_type_owner(installed.key)
+                        registry.artifact_type_owner(installed.key)
                         == release.release.slug
                         and release_contract
                         == PluginArtifactTypeContract.from_spec(installed)
                     )
                     if not overlays_matching_host:
                         raise ValueError(
-                            f"{release.installation.scope.value.title()} Plugin {release.release.slug!r} "
-                            f"artifact type {key[0]}@{key[1]} conflicts with the "
+                            f"System Plugin {release.release.slug!r} artifact type "
+                            f"{key[0]}@{key[1]} conflicts with the "
                             "host catalog contract"
                         )
                 seen_artifact_owners[key] = release
@@ -316,14 +274,14 @@ class CatalogSnapshot:
                 canonical_contract = canonical_conversion_contracts.get(key)
                 if canonical_contract is None:
                     raise ValueError(
-                        f"{release.installation.scope.value.title()} Plugin {release.release.slug!r} "
-                        f"declares non-canonical artifact conversion "
+                        f"System Plugin {release.release.slug!r} declares "
+                        f"non-canonical artifact conversion "
                         f"{key[0]}@{key[1]}"
                     )
                 if contract != canonical_contract:
                     raise ValueError(
-                        f"{release.installation.scope.value.title()} Plugin {release.release.slug!r} "
-                        f"artifact conversion {key[0]}@{key[1]} conflicts with "
+                        f"System Plugin {release.release.slug!r} artifact "
+                        f"conversion {key[0]}@{key[1]} conflicts with "
                         "the deployment-owned canonical contract"
                     )
 

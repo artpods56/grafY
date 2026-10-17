@@ -138,7 +138,7 @@ def _canonical(payload: JsonObject) -> bytes:
 
 
 def _instrumented_plugin_project(repository: Path, destination: Path) -> Path:
-    source = repository / "examples" / "plugin-notes"
+    source = repository / "tests" / "fixtures" / "plugin-notes"
     destination.mkdir()
     for entry in ("pyproject.toml", "uv.lock", "wheels", "src", "tests"):
         source_entry = source / entry
@@ -301,13 +301,9 @@ async def test_docker_runtime_restores_reuses_hardens_and_cleans_sandbox(
     )
     installation = PluginInstallation.from_release(
         release_record,
-        namespace=PluginReleaseNamespace(
-            scope=PluginReleaseScope.WORKSPACE,
-            workspace_id=WORKSPACE_ID,
-        ),
+        namespace=PluginReleaseNamespace(),
         execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-        installed_by_user_id=WORKSPACE_ID,
-        installed_by_platform_actor=None,
+        installed_by_platform_actor="test:platform",
     )
     release = InstalledPluginRelease(
         release=release_record,

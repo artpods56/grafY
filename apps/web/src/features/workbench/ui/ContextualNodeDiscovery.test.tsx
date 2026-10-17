@@ -112,7 +112,7 @@ function registry(): NodeRegistry {
     ],
     artifact_conversions: [],
     nodes: [
-      node("text.replace", "Replace text", [textIn], [textOut]),
+      node("text.transform", "Transform text", [textIn], [textOut]),
       node("text.annotate", "Annotate text", [textIn, altIn], [textOut]),
     ],
   };
@@ -360,13 +360,15 @@ describe("ContextualNodeDiscovery", () => {
     await renderDiscovery({ onConfirm });
 
     const replace = [...document.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Replace text"),
+      button.textContent?.includes("Transform text"),
     );
     expect(replace).toBeTruthy();
     await React.act(async () => replace?.click());
 
     expect(onConfirm).toHaveBeenCalledOnce();
-    expect(onConfirm.mock.calls[0]?.[0].spec.operator_id).toBe("text.replace");
+    expect(onConfirm.mock.calls[0]?.[0].spec.operator_id).toBe(
+      "text.transform",
+    );
   });
 
   it("requires a second step when multiple routes exist", async () => {
@@ -391,7 +393,7 @@ describe("ContextualNodeDiscovery", () => {
   it("lists purpose copy and previews the first node on the canvas", async () => {
     await renderDiscovery();
 
-    expect(document.body.textContent).toContain("Replace text description");
+    expect(document.body.textContent).toContain("Transform text description");
     expect(document.body.textContent).toContain("Annotate text description");
     expect(document.body.textContent).not.toContain("Built-in ·");
     const preview = document.querySelector(
@@ -433,16 +435,18 @@ describe("ContextualNodeDiscovery", () => {
     });
 
     expect(document.body.textContent).toContain("Continue from Text");
-    expect(document.body.textContent).toContain("Replace text");
+    expect(document.body.textContent).toContain("Transform text");
     expect(document.body.textContent).toContain("Annotate text");
 
     const replace = [...document.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Replace text"),
+      button.textContent?.includes("Transform text"),
     );
     await React.act(async () => replace?.click());
 
     expect(onConfirm).toHaveBeenCalledOnce();
-    expect(onConfirm.mock.calls[0]?.[0].spec.operator_id).toBe("text.replace");
+    expect(onConfirm.mock.calls[0]?.[0].spec.operator_id).toBe(
+      "text.transform",
+    );
     expect(onConfirm.mock.calls[0]?.[1].candidatePort.direction).toBe("output");
   });
 });

@@ -33,7 +33,6 @@ from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.domain.plugin_releases import (
     PluginArtifactTypeContract,
     PluginReleaseIdentity,
-    PluginReleaseScope,
 )
 from grafy_core.domain.plugin_selection import PluginReleaseSelection
 from grafy_core.domain.plugin_revocations import PluginReleaseRevocation
@@ -108,21 +107,7 @@ from grafy_api.execution.models import (
 class PluginReleaseLookup(ExactPluginReleaseLookup, Protocol):
     """Exact release contracts and current execution-admission state."""
 
-    async def get_selection(
-        self,
-        workspace_id: UUID,
-        slug: str,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
-    ) -> PluginReleaseSelection | None: ...
-
-    async def get_revocation(
-        self,
-        *,
-        workspace_id: UUID,
-        slug: str,
-        revision: int,
-    ) -> PluginReleaseRevocation | None: ...
+    async def get_selection(self, slug: str) -> PluginReleaseSelection | None: ...
 
     async def get_system_revocation(
         self,
@@ -213,10 +198,7 @@ class GraphCompiler:
         registrations_by_id: dict[str, NodeRegistration | None] = {}
         releases_by_id: dict[str, PluginReleaseIdentity | None] = {}
         implementations_by_id: dict[str, ImplementationIdentity | None] = {}
-        release_snapshots: dict[
-            tuple[PluginReleaseScope, str, int],
-            _ReleaseExecutionSnapshot,
-        ] = {}
+        release_snapshots: dict[ReleaseContractKey, _ReleaseExecutionSnapshot] = {}
         for node_request in ordered_requests:
             (
                 node,
@@ -248,7 +230,7 @@ class GraphCompiler:
                 existing = artifact_contracts.get(key)
                 if existing is not None and existing != contract:
                     raise GraphExecutionError(
-                        f"Exact {release.installation.scope.value.title()} Plugin release "
+                        f"Exact Plugin release "
                         f"{release.release.slug!r} revision {release.release.revision} artifact "
                         f"contract {key.id}@{key.schema_version} conflicts with "
                         "another available exact artifact contract"
@@ -363,10 +345,7 @@ class GraphCompiler:
         module_executor: GraphModuleExecutorPort,
         *,
         workspace_id: UUID,
-        release_snapshots: dict[
-            tuple[PluginReleaseScope, str, int],
-            _ReleaseExecutionSnapshot,
-        ],
+        release_snapshots: dict[ReleaseContractKey, _ReleaseExecutionSnapshot],
         release_contracts: dict[ReleaseContractKey, ResolvedPluginRelease],
     ) -> tuple[
         Node[Any, Any, Any],
@@ -402,7 +381,6 @@ class GraphCompiler:
             )
         return await self._build_plugin_node(
             request,
-            workspace_id=workspace_id,
             release_snapshots=release_snapshots,
             release_contracts=release_contracts,
         )
@@ -526,11 +504,7 @@ class GraphCompiler:
         self,
         request: RunNodeRequest,
         *,
-        workspace_id: UUID,
-        release_snapshots: dict[
-            tuple[PluginReleaseScope, str, int],
-            _ReleaseExecutionSnapshot,
-        ],
+        release_snapshots: dict[ReleaseContractKey, _ReleaseExecutionSnapshot],
         release_contracts: dict[ReleaseContractKey, ResolvedPluginRelease],
     ) -> tuple[
         Node[Any, Any, Any],
@@ -551,19 +525,16 @@ class GraphCompiler:
             )
         if self._plugin_release_lookup is None or self._release_admission is None:
             raise GraphExecutionError(
-                f"Node {request.id!r} pins "
-                f"{request.plugin_release.scope.value.title()} Plugin release "
+                f"Node {request.id!r} pins Plugin release "
                 f"{request.plugin_release.slug!r} revision "
                 f"{request.plugin_release.revision}, but exact Plugin release "
                 "execution is not configured for this workbench"
             )
-        snapshot_key = (
-            request.plugin_release.scope,
+        snapshot_key: ReleaseContractKey = (
             request.plugin_release.slug,
             request.plugin_release.revision,
         )
         resolved = await resolve_plugin_release(
-            workspace_id,
             request,
             self._plugin_release_lookup,
             release_contracts,
@@ -572,21 +543,12 @@ class GraphCompiler:
         if snapshot is None:
             release = resolved.release
             selection = await self._plugin_release_lookup.get_selection(
-                workspace_id,
                 release.release.slug,
-                scope=release.installation.scope,
             )
-            if release.installation.scope is PluginReleaseScope.WORKSPACE:
-                revocation = await self._plugin_release_lookup.get_revocation(
-                    workspace_id=workspace_id,
-                    slug=release.release.slug,
-                    revision=release.release.revision,
-                )
-            else:
-                revocation = await self._plugin_release_lookup.get_system_revocation(
-                    slug=release.release.slug,
-                    revision=release.release.revision,
-                )
+            revocation = await self._plugin_release_lookup.get_system_revocation(
+                slug=release.release.slug,
+                revision=release.release.revision,
+            )
             snapshot = _ReleaseExecutionSnapshot(
                 release=release,
                 selection=selection,

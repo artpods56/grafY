@@ -30,7 +30,7 @@ import { WorkspaceLibraryDialog } from "./WorkspaceLibraryDialog";
 import { WorkspaceMembersDialog } from "./WorkspaceMembersDialog";
 
 type ExpiryDays = "1" | "7" | "30";
-type TokenPurpose = "graph-automation" | "plugin-publishing";
+type TokenPurpose = "graph-automation" | "module-publishing";
 
 type TokenPurposeOption = {
   id: TokenPurpose;
@@ -59,10 +59,10 @@ const tokenPurposeOptions = [
     ],
   },
   {
-    id: "plugin-publishing",
-    label: "Plugin publishing",
-    defaultTokenLabel: "Plugin publishing",
-    scopes: ["publish_plugin"],
+    id: "module-publishing",
+    label: "Module publishing",
+    defaultTokenLabel: "Module publishing",
+    scopes: ["publish_module"],
   },
 ] satisfies readonly TokenPurposeOption[];
 

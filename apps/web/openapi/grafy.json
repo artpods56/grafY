@@ -4399,7 +4399,7 @@
             "items": {
               "$ref": "#/components/schemas/PersonalAccessTokenScope"
             },
-            "maxItems": 13,
+            "maxItems": 12,
             "minItems": 1,
             "title": "Scopes",
             "type": "array"
@@ -4585,7 +4585,6 @@
           "checkpoint_graph",
           "execute_graph",
           "cancel_execution",
-          "publish_plugin",
           "publish_module",
           "manage_secrets"
         ],
@@ -4649,6 +4648,7 @@
         "type": "object"
       },
       "PluginReleaseScope": {
+        "description": "Durable release family scope carried by a Plugin release pin.",
         "enum": [
           "system",
           "workspace"
@@ -7911,7 +7911,6 @@
           "checkpoint_graph",
           "execute_graph",
           "cancel_execution",
-          "publish_plugin",
           "publish_module",
           "manage_secrets",
           "delete_graph",

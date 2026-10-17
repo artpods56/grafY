@@ -10,7 +10,6 @@ from grafy_core.domain.plugin_releases import (
     PluginArtifactTypeKey,
     plugin_protocol_digest,
 )
-from grafy_core.domain.plugin_identity import PluginReleaseScope
 from grafy_core.runtime.plugin_protocol import (
     MAX_PLUGIN_PROGRESS_BYTES,
     MAX_PLUGIN_PROGRESS_EVENTS,
@@ -47,8 +46,6 @@ def _invocation() -> PluginInvocationEnvelope:
         execution_scope_id=INVOCATION_ID,
         workspace_id=WORKSPACE_ID,
         release=PluginInvocationRelease(
-            scope=PluginReleaseScope.WORKSPACE,
-            workspace_id=WORKSPACE_ID,
             slug="notes",
             revision=4,
             source_digest="a" * 64,

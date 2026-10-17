@@ -53,8 +53,8 @@ describe("workspace API client", () => {
     await removeWorkspaceMember(workspaceId, userId);
     await listPersonalAccessTokens(workspaceId);
     await createPersonalAccessToken(workspaceId, {
-      label: "Plugin publishing",
-      scopes: ["publish_plugin"],
+      label: "Module publishing",
+      scopes: ["publish_module"],
       expires_at: "2026-09-09T12:00:00Z",
     });
     await revokePersonalAccessToken(workspaceId, "token-uuid");
@@ -91,8 +91,8 @@ describe("workspace API client", () => {
       role: "editor",
     });
     expect(JSON.parse(fetchMock.mock.calls[13]?.[1].body as string)).toEqual({
-      label: "Plugin publishing",
-      scopes: ["publish_plugin"],
+      label: "Module publishing",
+      scopes: ["publish_module"],
       expires_at: "2026-09-09T12:00:00Z",
     });
   });

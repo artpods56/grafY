@@ -149,41 +149,19 @@ class ReleaseLookup:
 
     async def get_by_revision(
         self,
-        workspace_id: UUID,
         slug: str,
         revision: int,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
     ) -> InstalledPluginRelease | None:
-        expected_owner = workspace_id if scope is PluginReleaseScope.WORKSPACE else None
         for release in self._releases:
             if (
-                release.installation.scope is scope
-                and release.installation.workspace_id == expected_owner
-                and release.release.slug == slug
+                release.release.slug == slug
                 and release.release.revision == revision
             ):
                 return release
         return None
 
-    async def get_selection(
-        self,
-        workspace_id: UUID,
-        slug: str,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
-    ) -> None:
-        del workspace_id, slug, scope
-        return None
-
-    async def get_revocation(
-        self,
-        *,
-        workspace_id: UUID,
-        slug: str,
-        revision: int,
-    ) -> None:
-        del workspace_id, slug, revision
+    async def get_selection(self, slug: str) -> None:
+        del slug
         return None
 
     async def get_system_revocation(
@@ -296,13 +274,9 @@ def _chat_release(messages_accepts: ArtifactTypeSpec) -> InstalledPluginRelease:
         release=release,
         installation=PluginInstallation.from_release(
             release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.WORKSPACE,
-                workspace_id=WORKSPACE_ID,
-            ),
+            namespace=PluginReleaseNamespace(),
             execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_user_id=WORKSPACE_ID,
-            installed_by_platform_actor=None,
+            installed_by_platform_actor="test:platform",
         ),
     )
 
@@ -433,7 +407,7 @@ def _sequence_to_chat(origin: ArtifactRef) -> RunRequest:
                 operator_version=1,
                 config={},
                 plugin_release=PluginReleasePinModel(
-                    scope=PluginReleaseScope.WORKSPACE,
+                    scope=PluginReleaseScope.SYSTEM,
                     slug=LLM_SLUG,
                     revision=1,
                 ),

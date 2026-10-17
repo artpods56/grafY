@@ -1,4 +1,4 @@
-"""Scoped Plugin installations and their resolved releases."""
+"""System Plugin installations and their resolved releases."""
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -18,7 +18,7 @@ from grafy_core.domain.plugin_releases import (
 
 @dataclass
 class PluginInstallation:
-    """Append-only assignment of one release to one visibility namespace."""
+    """Append-only assignment of one release to the System namespace."""
 
     release_id: UUID
     scope: PluginReleaseScope
@@ -41,33 +41,19 @@ class PluginInstallation:
             )
         except ValueError as exc:
             raise PluginReleaseError(str(exc)) from exc
-        if self.scope is PluginReleaseScope.SYSTEM:
-            if self.installed_by_user_id is not None:
-                raise PluginReleaseError(
-                    "System Plugin installations cannot use a Workspace user actor"
-                )
-            if self.installed_by_platform_actor is None:
-                raise PluginReleaseError(
-                    "System Plugin installations require a platform actor"
-                )
-            try:
-                actor = PlatformPluginActor(self.installed_by_platform_actor)
-            except ValueError as exc:
-                raise PluginReleaseError(str(exc)) from exc
-            self.installed_by_platform_actor = actor.reference
-        else:
-            if self.installed_by_user_id is None:
-                raise PluginReleaseError(
-                    "Workspace Plugin installations require a Workspace user actor"
-                )
-            if self.installed_by_platform_actor is not None:
-                raise PluginReleaseError(
-                    "Workspace Plugin installations cannot use a platform actor"
-                )
-            if self.execution_policy is not PluginExecutionPolicy.ISOLATED_ONLY:
-                raise PluginReleaseError(
-                    "Workspace Plugin installations must use isolated-only execution"
-                )
+        if self.installed_by_user_id is not None:
+            raise PluginReleaseError(
+                "System Plugin installations cannot use a Workspace user actor"
+            )
+        if self.installed_by_platform_actor is None:
+            raise PluginReleaseError(
+                "System Plugin installations require a platform actor"
+            )
+        try:
+            actor = PlatformPluginActor(self.installed_by_platform_actor)
+        except ValueError as exc:
+            raise PluginReleaseError(str(exc)) from exc
+        self.installed_by_platform_actor = actor.reference
         if self.slug.strip() == "" or len(self.slug) > 100:
             raise PluginReleaseError(
                 "Plugin installation slug must contain 1 to 100 characters"
@@ -86,8 +72,7 @@ class PluginInstallation:
         *,
         namespace: PluginReleaseNamespace,
         execution_policy: PluginExecutionPolicy,
-        installed_by_user_id: UUID | None,
-        installed_by_platform_actor: str | None,
+        installed_by_platform_actor: str,
     ) -> "PluginInstallation":
         return cls(
             release_id=release.id,
@@ -96,7 +81,6 @@ class PluginInstallation:
             slug=release.slug,
             release_revision=release.revision,
             execution_policy=execution_policy,
-            installed_by_user_id=installed_by_user_id,
             installed_by_platform_actor=installed_by_platform_actor,
         )
 
@@ -110,7 +94,7 @@ class PluginInstallation:
 
 @dataclass(frozen=True, slots=True)
 class InstalledPluginRelease:
-    """One immutable release resolved through an exact scoped installation."""
+    """One immutable release resolved through its exact System installation."""
 
     release: PluginRelease
     installation: PluginInstallation

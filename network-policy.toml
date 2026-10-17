@@ -1,8 +1,8 @@
 schema_version = 1
 
 # Allow provider-backed Plugins to contact public HTTPS origins declared as
-# fixed destinations or supplied through declared config fields. The current policy
-# schema calls globally published Plugins "system" scoped.
+# fixed destinations or supplied through declared config fields. An assignment
+# selects a Plugin slug and revision; every release is System-owned (ADR 0015).
 [profiles.plugin-execution.configured-public]
 mode = "configured-public"
 public_address_only = true
@@ -18,25 +18,22 @@ idle_timeout_seconds = 300
 
 [[assignments]]
 plane = "plugin-execution"
-scope = "system"
 slug = "external.llm"
 profile = "configured-public"
 
 [[assignments]]
 plane = "plugin-execution"
-scope = "system"
 slug = "external.mistral"
 profile = "configured-public"
 
 [[assignments]]
 plane = "plugin-execution"
-scope = "system"
 slug = "external.typesafe"
 profile = "configured-public"
 
+# Notarius is not in plugins/system-plugins.toml yet, so this assignment stays
+# unused until someone lists it and publishes it as a System Plugin.
 [[assignments]]
 plane = "plugin-execution"
-scope = "workspace"
-workspace_id = "5ff0b54e-a3fd-4904-8d58-ee157e419b3a"
 slug = "external.notarius"
 profile = "notarius-configured-public"

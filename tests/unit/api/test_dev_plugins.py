@@ -20,7 +20,6 @@ from grafy_core.domain.plugin_releases import (
     PluginNodeContract,
     PluginRelease,
     PluginReleaseNamespace,
-    PluginReleaseScope,
     PluginExecutionPolicy,
     plugin_contract_digest,
     plugin_protocol_digest,
@@ -30,7 +29,6 @@ from grafy_plugin_image import IMAGES
 from grafy_plugin_mistral import MISTRAL
 from grafy_shared.config import PluginsConfig
 from grafy_workbench.catalog import BUILTIN_FAMILIES, build_builtin_registry
-from tests.support.identity import TEST_USER_ID, WORKSPACE_ID
 
 
 def test_load_slug_and_explicit_target() -> None:
@@ -131,12 +129,9 @@ def test_without_shadowed_releases() -> None:
         )
         installation = PluginInstallation.from_release(
             release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.WORKSPACE, workspace_id=WORKSPACE_ID
-            ),
+            namespace=PluginReleaseNamespace(),
             execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_user_id=TEST_USER_ID,
-            installed_by_platform_actor=None,
+            installed_by_platform_actor="test:platform",
         )
         installed = InstalledPluginRelease(release=release, installation=installation)
         entries.append(

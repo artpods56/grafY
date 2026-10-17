@@ -155,9 +155,9 @@ def build_workbench_components(
     extension_claims = build_extension_table(
         (spec.key, spec.extensions) for spec in artifact_types.values()
     )
-    # ponytail: this is the static deployment set. Workspace Plugin release
-    # artifact types live in per-workspace DB state, so an extension only a
-    # release claims resolves to a blob until ingest reads the CatalogSnapshot.
+    # The builtins and System Plugin registry cover every claimable extension:
+    # a Plugin release cannot add a family outside the checked-in inventory, so
+    # upload typing needs no per-Workspace catalog read.
     resolved_upload_config = upload_config or UploadServiceConfig()
     uploads = UploadService.from_config(
         resolved_upload_config,

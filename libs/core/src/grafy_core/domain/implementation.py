@@ -1,7 +1,6 @@
 """Exact runtime identity of one executable node implementation."""
 
 from typing import Annotated, ClassVar, Literal
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -83,9 +82,7 @@ def plugin_identity(
     revision: int,
     manifest_digest: str,
     image_digest: str,
-    workspace_id: UUID | None = None,
 ) -> PluginImplementationIdentity:
-    del workspace_id
     return PluginImplementationIdentity(
         plugin_release_pin=SavedGraphPluginReleasePin(
             scope=scope,
