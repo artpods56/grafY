@@ -346,7 +346,7 @@ def _text_module_payload(
                 kind="builtin",
                 id="replace",
                 operator_id=(
-                    "test.module_progress" if emit_progress else "text.replace"
+                    "test.module_progress" if emit_progress else "test.text.replace"
                 ),
                 operator_version=1,
                 config=(
@@ -402,7 +402,7 @@ def _nested_map_progress_module_payload() -> dict[str, object]:
             SavedGraphNodeModel(
                 kind="builtin",
                 id="split",
-                operator_id="text.split",
+                operator_id="test.text.split",
                 operator_version=1,
                 config={"separator": ","},
                 position=GraphPointModel(x=240, y=120),
@@ -902,7 +902,7 @@ def test_mapped_module_events_keep_the_outer_invocation_identity(
                 RunNodeRequest(
                     kind="builtin",
                     id="split",
-                    operator_id="text.split",
+                    operator_id="test.text.split",
                     operator_version=1,
                     config={"separator": "|"},
                 ),
@@ -977,7 +977,7 @@ def test_nested_map_events_append_each_local_invocation_index(
                 RunNodeRequest(
                     kind="builtin",
                     id="split",
-                    operator_id="text.split",
+                    operator_id="test.text.split",
                     operator_version=1,
                     config={"separator": "|"},
                 ),
@@ -1064,7 +1064,7 @@ def test_module_uses_existing_map_semantics_and_keeps_revision_pinned(
                 RunNodeRequest(
                     kind="builtin",
                     id="split",
-                    operator_id="text.split",
+                    operator_id="test.text.split",
                     operator_version=1,
                     config={"separator": "|"},
                 ),
@@ -1315,7 +1315,7 @@ def test_module_catalog_rejects_optional_input_targeting_required_input(
     reason = (
         f"Graph module {graph_id} revision 1 optional public input 'text' edge "
         "'input-to-replace' targets required input 'replace'.'text' "
-        "(text.replace@1)"
+        "(test.text.replace@1)"
     )
 
     api = GrafyApi(module_client)

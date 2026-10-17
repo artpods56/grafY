@@ -120,15 +120,15 @@ function registry(): NodeRegistry {
         runnable: true,
       },
       {
-        slug: "external.ocr",
-        title: "OCR",
+        slug: "external.mistral",
+        title: "Mistral OCR",
         origin: "plugin",
         entry_kind: "plugin",
         scope: "system",
         revision: 1,
         plugin_release: {
           scope: "system",
-          slug: "external.ocr",
+          slug: "external.mistral",
           revision: 1,
         },
         runnable: true,
@@ -162,8 +162,8 @@ function registry(): NodeRegistry {
         },
       }),
       node(
-        "text.replace",
-        "Replace text",
+        "text.transform",
+        "Transform text",
         "builtin",
         [textInput],
         [textOutput],
@@ -197,9 +197,9 @@ function registry(): NodeRegistry {
       firstModuleRelease,
       currentModuleRelease,
       node(
-        "ocr.pages",
+        "mistral.ocr.process",
         "Read image with OCR",
-        "external.ocr",
+        "external.mistral",
         [imageInput],
         [textOutput],
       ),
@@ -339,7 +339,7 @@ describe("NodeSelector", () => {
     expect(filters.map((filter) => filter.getAttribute("aria-label"))).toEqual([
       "All, 6 nodes",
       "Built-in, 4 nodes",
-      "OCR, 1 node",
+      "Mistral OCR, 1 node",
       "Workspace library, 1 node",
     ]);
 
@@ -352,7 +352,7 @@ describe("NodeSelector", () => {
       expect.stringContaining("Compose map"),
       expect.stringContaining("Enter text"),
       expect.stringContaining("Fuzzy match tables"),
-      expect.stringContaining("Replace text"),
+      expect.stringContaining("Transform text"),
     ]);
 
     // The artifact type refines within the active source.
@@ -362,7 +362,7 @@ describe("NodeSelector", () => {
     );
     expect(options().map((option) => option.textContent)).toEqual([
       expect.stringContaining("Enter text"),
-      expect.stringContaining("Replace text"),
+      expect.stringContaining("Transform text"),
     ]);
 
     expect(
@@ -472,20 +472,20 @@ describe("NodeSelector", () => {
     expect(fuzzyPreview?.textContent).toContain("Table");
     expect(fuzzyPreview?.textContent).not.toContain("string");
 
-    await enterSearch("Replace text");
-    const replacePreview = dialog().querySelector(
-      '[aria-label="Replace text: 1 input, 1 output"]',
+    await enterSearch("Transform text");
+    const transformPreview = dialog().querySelector(
+      '[aria-label="Transform text: 1 input, 1 output"]',
     );
-    expect(replacePreview).not.toBeNull();
-    expect(replacePreview?.textContent).toContain("Replacement");
-    expect(replacePreview?.textContent).toContain("string");
+    expect(transformPreview).not.toBeNull();
+    expect(transformPreview?.textContent).toContain("Replacement");
+    expect(transformPreview?.textContent).toContain("string");
   });
 
   it("inserts only through the explicit action", async () => {
     const onAddNode = vi.fn();
     await renderSelector({ onAddNode });
 
-    await enterSearch("Replace text");
+    await enterSearch("Transform text");
     await React.act(async () => options()[0]?.click());
     expect(onAddNode).not.toHaveBeenCalled();
     expect(
@@ -496,13 +496,13 @@ describe("NodeSelector", () => {
     await React.act(async () => buttonNamed("Add to canvas").click());
 
     expect(onAddNode).toHaveBeenCalledOnce();
-    expect(onAddNode.mock.calls[0]?.[0].operator_id).toBe("text.replace");
+    expect(onAddNode.mock.calls[0]?.[0].operator_id).toBe("text.transform");
   });
 
   it("scopes Works with to one port and inspects a suggested node", async () => {
     await renderSelector();
 
-    await enterSearch("Replace text");
+    await enterSearch("Transform text");
     await React.act(async () => options()[0]?.click());
     // What a node works with is a detail, folded away until asked for.
     expect(dialog().querySelector("aside")?.textContent).not.toContain(
@@ -586,7 +586,7 @@ describe("NodeSelector", () => {
     const onAddNode = vi.fn();
     await renderSelector({ onAddNode });
 
-    await enterSearch("Replace text");
+    await enterSearch("Transform text");
     await React.act(async () => {
       options()[0]?.dispatchEvent(
         new MouseEvent("dblclick", { bubbles: true }),
@@ -594,7 +594,7 @@ describe("NodeSelector", () => {
     });
 
     expect(onAddNode).toHaveBeenCalledOnce();
-    expect(onAddNode.mock.calls[0]?.[0].operator_id).toBe("text.replace");
+    expect(onAddNode.mock.calls[0]?.[0].operator_id).toBe("text.transform");
   });
 
   it("groups everything by source until a search asks for relevance", async () => {
@@ -606,7 +606,7 @@ describe("NodeSelector", () => {
       );
     expect(headings()).toEqual([
       "node-selector-group-source:builtin",
-      "node-selector-group-source:external.ocr",
+      "node-selector-group-source:external.mistral",
       "node-selector-group-workspace-library",
     ]);
 
@@ -622,7 +622,7 @@ describe("NodeSelector", () => {
 
     // Grouped by source: the built-in node, then the Module.
     expect(options().map((option) => option.textContent)).toEqual([
-      expect.stringContaining("Replace text"),
+      expect.stringContaining("Transform text"),
       expect.stringContaining("Normalize invoices"),
     ]);
     expect(dialog().textContent).toContain(

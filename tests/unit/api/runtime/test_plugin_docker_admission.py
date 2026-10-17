@@ -100,18 +100,10 @@ def test_native_capability_cannot_be_enabled_without_exact_pinned_profile(
         bucket="test",
         profile=runtime_profile("python-uv"),
         scratch_root=tmp_path / "scratch",
-        supported_capabilities=frozenset(
-            {
-                PluginRuntimeCapability.NATIVE_GDAL,
-                PluginRuntimeCapability.NATIVE_TESSERACT,
-            }
-        ),
+        supported_capabilities=frozenset({PluginRuntimeCapability.NATIVE_GDAL}),
     )
 
     assert PluginRuntimeCapability.NATIVE_GDAL not in (
-        runtime.release_admission.supported_capabilities
-    )
-    assert PluginRuntimeCapability.NATIVE_TESSERACT not in (
         runtime.release_admission.supported_capabilities
     )
 

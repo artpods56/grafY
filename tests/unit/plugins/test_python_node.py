@@ -21,7 +21,6 @@ from grafy_plugin_python.declaration import PORT_ARTIFACT_TYPES
 from grafy_plugin_python.nodes import PORT_TYPES, PythonTransformNode
 from grafy_plugin_python.plugin import PYTHON
 from grafy_workbench.presets import PYTHON_PRESETS, NodePreset
-from grafy_workbench.text.plugin import TEXT
 
 
 @pytest.mark.parametrize("preset", PYTHON_PRESETS, ids=lambda preset: preset.id)
@@ -133,16 +132,7 @@ def test_instance_shapes_resolve_and_invalid_shapes_fail() -> None:
         )
 
 
-def test_python_is_exact_and_old_text_operators_remain_registered_but_hidden() -> None:
-    transform = next(
-        node for node in PYTHON.nodes if node.key == ("python.transform", 1)
-    )
-    assert transform.cache_policy is NodeCachePolicy.EXACT
-    old = {
-        node.node_class.operator_id: node
-        for node in TEXT.nodes
-        if node.node_class.operator_id
-        in {"text.split", "text.replace", "text.join", "text.as_markdown"}
-    }
-    assert len(old) == 4
-    assert all(not node.listed for node in old.values())
+def test_python_transform_is_exact_and_its_inspector_stays_unlisted() -> None:
+    registrations = {node.key: node for node in PYTHON.nodes}
+    assert registrations[("python.transform", 1)].cache_policy is NodeCachePolicy.EXACT
+    assert not registrations[("python.inspect", 1)].listed

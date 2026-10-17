@@ -55,9 +55,6 @@ flowchart LR
 - `libs/workbench` owns the app-built-in node families: Image, Sequence, Value,
   Text, Schema, Table, and File. These run in-process with the API and are
   not Plugin packages.
-- `plugins/ocr` is an independently packaged System Plugin. It owns the OCR
-  page node, its artifacts and persistence/resolution, and the Tesseract OCR
-  adapter.
 - `plugins/gis` owns exact WGS84 vector sources, georeferenced raster scans,
   OGC WFS/WMS integration, lightweight map-layer recipes, and ordered map
   composition. MapLibre renders derived PMTiles and XYZ projections without
@@ -103,7 +100,7 @@ validated configuration (including defaults), stable node/module identity,
 invocation mode and mapped item index, resolved artifact-type bindings, exact
 ordered input refs and SHA-256 values, and opaque secret revisions. Mapped nodes
 cache each item independently, so a failed or newly added item does not force
-already completed items to execute again. Provider, OCR, upload, and graph-module
+already completed items to execute again. Provider, upload, and graph-module
 wrapper nodes remain uncached unless their own declaration can supply every
 required stable identity. Cache entries store only the final digest and artifact
 refs; stale or inaccessible refs are evicted lazily.
@@ -249,7 +246,7 @@ migration commands are `just db-current`, `just db-history`, and
 `just api` never discovers installed Plugin packages ambiently. Configure an
 exact System deployment manifest and selected release when exercising a System
 host binding; use the retained OCI runtime for isolated-only families such as
-GIS, LLM, OCR, and SQL.
+GIS, LLM, Mistral, and SQL.
 
 ### Develop Plugins in-process
 
@@ -449,7 +446,7 @@ just e2e-live
 
 The API Dockerfile's `api-plugins` target adds the Docker CLI used by the
 opt-in retained OCI runtime and System publisher, but installs only
-`grafy-api` and its bundled dependencies. GIS, LLM, OCR, SQL, and their native
+`grafy-api` and its bundled dependencies. GIS, LLM, Mistral, SQL, and their native
 tools belong in retained Plugin images, not the online API image. A one-shot
 migration service must complete before the API starts. SQLite, uploads, and
 artifact objects share the durable `grafy-data` volume.

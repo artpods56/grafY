@@ -7,7 +7,7 @@ The implementation follows [ADR 0012](../adr/0012-python-node-runs-on-a-system-p
 - Real Docker graph: text.input → Split preset → map Replace preset → Join preset produces `changed,second,changed`, identical to the old operators on the same input.
 - The second run reuses every Python result without another guest invocation. All five first-run guest invocations share one container. Network access fails, cancellation removes the container, and closing a scope leaves no orphan.
 - Browser: insert Replace text, edit params without opening Code, drag an actual wire, edit code without network requests, cancel then confirm a port retype, and show an Apply error on its editor line. Passed on this worktree's port 3138.
-- Library and both contextual discovery directions exclude the four hidden text operators. They remain registered; `tests/integration/artifacts/test_text.py` is unchanged.
+- Library and both contextual discovery directions exclude the four hidden text operators. They stayed registered at the time and `tests/integration/artifacts/test_text.py` was unchanged; ADR 0012 now records their removal.
 - All five preset contracts are derived from their copied code. Unsupported Params and port types produce line diagnostics. Table payload classes have real annotations. Host output schema failure prevents artifact persistence. Remote schema references are rejected without retrieval; the final host artifact suite passed all 33 tests.
 
 ## Falsification

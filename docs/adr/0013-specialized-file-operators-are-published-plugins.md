@@ -19,9 +19,11 @@ Existing graphs with removed operators must be rebuilt; their documents and
 historical revisions are retained rather than silently rewritten.
 
 Text input, Integer, Schema Builder, Interpret file, and Module boundaries stay.
-The four hidden text operators retained by ADR 0012 also stay. Image and Table
-artifact contracts remain in the application so uploads, Library artifacts,
-viewers, and Plugin dependencies continue to share the same types. The image
+The four hidden text operators that ADR 0012 kept registered do not stay: they
+were removed later, on the same terms, so a graph that still carries one is
+rebuilt rather than rewritten. Image and Table artifact contracts remain in the
+application so uploads, Library artifacts, viewers, and Plugin dependencies
+continue to share the same types. The image
 output writer moves with its only production producer into the image Plugin.
 Table persistence remains in the application for table bundle import and paging.
 Generic sequence fixtures live only under `tests/support` and use `test.sequence`

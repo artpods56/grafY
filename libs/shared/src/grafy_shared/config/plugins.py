@@ -22,7 +22,6 @@ class PluginsConfig(BaseSettings):
     plugin_runtime_profile: Literal[
         "python-uv",
         "python-uv-gdal",
-        "python-uv-tesseract",
         "python-uv-gdal-tesseract",
     ] = "python-uv"
     plugin_runtime_native_base_image: str | None = None

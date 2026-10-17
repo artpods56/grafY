@@ -16,7 +16,7 @@ supersedes the historical host-eligible Plugin execution model.
 | `libs/persistence/src/grafy_persistence` | SQL repositories, transaction adapters, table metadata, database setup, System cutover and baseline persistence operations. |
 | `libs/storage/src/grafy_storage` | Local and S3 object-store adapters. |
 | `libs/workbench/src/grafy_workbench` | Application-owned builtin families: image, sequence, value, text, schema, table, and file. |
-| `plugins/{gis,llm,ocr,sql}` | Independently published Plugin implementations and their provider-specific dependencies. |
+| `plugins/{gis,llm,mistral,sql}` | Independently published Plugin implementations and their provider-specific dependencies. |
 | `libs/client/src/grafy_client` | Python HTTP client contracts and operations. |
 
 Core defines ports; persistence and storage implement them. Core does not import

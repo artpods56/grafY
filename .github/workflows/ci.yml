@@ -128,9 +128,6 @@ jobs:
             gdalinfo /tmp/cog.tif | grep "LAYOUT=COG"
             /usr/bin/python3 /usr/bin/gdal2tiles.py --xyz --zoom=0 --processes=1 /tmp/cog.tif /tmp/tiles
             test -s /tmp/tiles/0/0/0.png
-            /usr/bin/python3 -c "from PIL import Image; Image.new(\"RGB\", (256, 64), \"white\").save(\"/tmp/ocr.png\")"
-            tesseract /tmp/ocr.png /tmp/ocr -l eng
-            test -f /tmp/ocr.txt
           '
 
   quality-contracts:

@@ -12,7 +12,12 @@ class BuiltinCleanupFinding(BaseModel):
     document: Path
     node_id: str
     operator_id: str
-    action: Literal["replace_with_plugin", "remove", "rebuild_with_artifact_cards"]
+    action: Literal[
+        "replace_with_plugin",
+        "remove",
+        "rebuild_with_artifact_cards",
+        "rebuild_with_python_preset",
+    ]
     incoming_edges: int
     outgoing_edges: int
 
@@ -35,6 +40,13 @@ if __name__ == "__main__":
                 action = "replace_with_plugin"
             elif node.operator_id == "sequence.collect":
                 action = "rebuild_with_artifact_cards"
+            elif node.operator_id in {
+                "text.as_markdown",
+                "text.split",
+                "text.replace",
+                "text.join",
+            }:
+                action = "rebuild_with_python_preset"
             elif node.operator_id in {
                 "sequence.count",
                 "sequence.slice",

@@ -124,7 +124,7 @@ check: test lint typecheck contract build
 
 # Exercise the workbench runtime without the browser.
 smoke:
-    uv run --extra image --extra ocr python scripts/smoke_workbench.py
+    uv run --extra image python scripts/smoke_workbench.py
 
 # Upgrade the database to the latest migration.
 db-upgrade:
