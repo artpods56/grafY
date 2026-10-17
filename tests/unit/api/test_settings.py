@@ -321,19 +321,19 @@ def test_plugin_invocation_wall_times_can_be_selected_by_exact_slug(
 ) -> None:
     monkeypatch.setenv(
         "GRAFY_PLUGIN_INVOCATION_WALL_TIME_SECONDS_BY_SLUG",
-        '{"external.notarius":900}',  # pyright: ignore[reportCallIssue]
+        '{"external.llm":900}',  # pyright: ignore[reportCallIssue]
     )
 
     assert PluginsConfig(
         _env_file=None  # pyright: ignore[reportCallIssue]
     ).plugin_invocation_wall_time_seconds_by_slug == {
-        "external.notarius": 900,
+        "external.llm": 900,
     }
 
 
 @pytest.mark.parametrize(
     ("slug", "seconds"),
-    [("Invalid slug", 60), ("external.notarius", 0), ("external.notarius", 3_601)],
+    [("Invalid slug", 60), ("external.llm", 0), ("external.llm", 3_601)],
 )
 def test_plugin_invocation_wall_time_overrides_are_bounded(
     slug: str,
