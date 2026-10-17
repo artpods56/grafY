@@ -555,7 +555,9 @@ an existing release. Call sites pin an immutable Module release
 release. A published release is the only Module state; publishing again adds
 another release. There is no deprecate, withdraw, un-publish, or hard delete of
 releases, and no cross-workspace Module import: reuse a Module from another
-Workspace by duplicating the graph.
+Workspace by duplicating the graph. A Module stored in the retired `deprecated`
+or `withdrawn` state stays out of library browse and Add node while its pinned
+calls keep resolving.
 
 ### Node catalog / Add node
 
