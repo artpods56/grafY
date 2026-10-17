@@ -17,12 +17,7 @@ from grafy_core.domain.system_plugin_inventory import (
     SystemPluginInventoryError,
 )
 from grafy_core.domain.plugin_revocations import PluginReleaseRevocationError
-from grafy_core.domain.identity import (
-    ActorContext,
-    PlatformTokenPrincipal,
-    WorkspaceCapability,
-    WorkspacePatPrincipal,
-)
+from grafy_core.domain.identity import PlatformTokenPrincipal
 from grafy_core.domain.plugin_releases import PlatformPluginActor
 
 
@@ -43,24 +38,9 @@ class FakePluginOciImageBuilder:
         del args, kwargs
 
 
-WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000001")
-ACTOR_ID = UUID("00000000-0000-0000-0000-000000000002")
-
-
 class FakeIdentityService:
     def __init__(self, *args: object, **kwargs: object) -> None:
         del args, kwargs
-
-    async def authenticate_personal_access_token(
-        self, **kwargs: object
-    ) -> WorkspacePatPrincipal:
-        del kwargs
-        return WorkspacePatPrincipal(
-            actor=ActorContext(ACTOR_ID, "pat:test"),
-            workspace_id=WORKSPACE_ID,
-            capabilities=frozenset({WorkspaceCapability.PUBLISH_PLUGIN}),
-            token_id=UUID("00000000-0000-0000-0000-000000000003"),
-        )
 
     async def authenticate_platform_access_token(
         self, **kwargs: object
@@ -72,10 +52,6 @@ class FakeIdentityService:
             scopes=frozenset(),
             token_id=UUID("00000000-0000-0000-0000-000000000004"),
         )
-
-
-def personal_credential(_database_url: str) -> CredentialDigest:
-    return CredentialDigest("personal", "nrt_test", b"digest")
 
 
 def platform_credential(_database_url: str) -> CredentialDigest:
