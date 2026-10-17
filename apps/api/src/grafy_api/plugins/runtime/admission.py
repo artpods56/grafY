@@ -373,8 +373,12 @@ def isolated_release_admission(
 
     effective_capabilities = set(supported_capabilities)
     effective_capabilities.update(profile.native_capabilities)
-    if PluginRuntimeCapability.NATIVE_GDAL not in profile.native_capabilities:
-        effective_capabilities.discard(PluginRuntimeCapability.NATIVE_GDAL)
+    for native_capability in (
+        PluginRuntimeCapability.NATIVE_GDAL,
+        PluginRuntimeCapability.NATIVE_TESSERACT,
+    ):
+        if native_capability not in profile.native_capabilities:
+            effective_capabilities.discard(native_capability)
     network_egress = PluginNetworkEgressPolicy(
         proxy_adapter_available=egress_policy.broker_image is not None,
         broker=egress_policy,

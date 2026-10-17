@@ -9,6 +9,7 @@ class PluginRuntimeCapability(StrEnum):
     NODE_SECRETS = "node.secrets"
     NETWORK_EGRESS = "network.egress"
     NATIVE_GDAL = "native.gdal"
+    NATIVE_TESSERACT = "native.tesseract"
     UNTRUSTED_SQL = "sql.untrusted"
     POSTGRESQL_EGRESS = "postgresql.egress"
 
