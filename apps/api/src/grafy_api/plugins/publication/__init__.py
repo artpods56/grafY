@@ -1,1 +1,1 @@
-"""Author, verify, build, and publish immutable Plugin releases."""
+"""Verify, build, and publish immutable System Plugin releases."""
