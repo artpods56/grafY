@@ -5,7 +5,7 @@ This Compose project runs four processes:
 1. `migrate` applies Alembic migrations and exits.
 2. `api` runs one FastAPI process. It imports no System Plugin package unless
    an exact deployment manifest binds the installed bytes to a selected
-   release. Isolated-only GIS, LLM, OCR, and SQL implementations live in their
+   release. Isolated-only GIS, LLM, Mistral, and SQL implementations live in their
    retained Plugin images rather than the online API image.
 3. `web` runs the minimal Next.js standalone server.
 4. `gateway` is the only Grafy application listener (`127.0.0.1:8080` by

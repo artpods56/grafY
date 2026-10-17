@@ -131,7 +131,6 @@ rebuild-plugin-sdk:
     cp "$wheel" plugins/gis/wheels/grafy_core-0.1.0-py3-none-any.whl
     cp "$wheel" plugins/llm/wheels/grafy_core-0.1.0-py3-none-any.whl
     cp "$wheel" plugins/mistral/wheels/grafy_core-0.1.0-py3-none-any.whl
-    cp "$wheel" plugins/ocr/wheels/grafy_core-0.1.0-py3-none-any.whl
     cp "$wheel" plugins/python/wheels/grafy_core-0.1.0-py3-none-any.whl
     cp "$wheel" plugins/sql/wheels/grafy_core-0.1.0-py3-none-any.whl
     cp "$wheel" plugins/typesafe/wheels/grafy_core-0.1.0-py3-none-any.whl
@@ -145,7 +144,7 @@ check: test lint typecheck contract build
 
 # Exercise the workbench runtime without the browser.
 smoke:
-    uv run --extra image --extra ocr python scripts/smoke_workbench.py
+    uv run --extra image python scripts/smoke_workbench.py
 
 # Upgrade the database to the latest migration.
 db-upgrade:

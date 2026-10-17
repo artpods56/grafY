@@ -23,7 +23,6 @@ from grafy_core.plugins import Plugin
 from grafy_plugin_gis import GIS
 from grafy_plugin_llm import LLM
 from grafy_plugin_mistral import MISTRAL
-from grafy_plugin_ocr import OCR
 from grafy_plugin_sql import SQL
 from grafy_plugin_typesafe import TYPESAFE
 
@@ -36,7 +35,7 @@ def test_checked_in_system_inventory_is_complete_finite_and_excludes_modules() -
 
     assert {plugin.slug for plugin in inventory.plugins} == SYSTEM_PLUGIN_SLUGS
     assert "builtin.module" not in SYSTEM_PLUGIN_SLUGS
-    assert len(inventory.plugins) == 9
+    assert len(inventory.plugins) == 8
     assert next(
         plugin for plugin in inventory.plugins if plugin.slug == "external.sql"
     ).capabilities == (
@@ -56,7 +55,6 @@ def test_checked_in_system_inventory_is_complete_finite_and_excludes_modules() -
         "external.gis": (("gis",), ("geo",)),
         "external.llm": (("llm", "prompt"), ("llm", "prompt.message")),
         "external.mistral": (("mistral",), ()),
-        "external.ocr": (("ocr",), ("ocr",)),
         "external.sql": (("sql",), ("sql",)),
         "external.python": (("python",), ()),
         "external.typesafe": (("typesafe",), ("typesafe",)),
@@ -79,28 +77,30 @@ def _node_contract(operator_id: str, title: str) -> PluginNodeContract:
 
 def test_inventory_enforces_explicit_system_identity_authority() -> None:
     inventory = load_system_plugin_inventory(INVENTORY_PATH)
-    ocr_catalog = PluginCatalogManifest(
-        slug="external.ocr",
-        title="OCR",
+    gis_catalog = PluginCatalogManifest(
+        slug="external.gis",
+        title="GIS",
         artifact_types=(
             PluginArtifactTypeContract(
-                key=PluginArtifactTypeKey(id="ocr.page_result", schema_version=1),
-                title="OCR page",
+                key=PluginArtifactTypeKey(
+                    id="geo.feature_collection", schema_version=1
+                ),
+                title="GeoJSON features",
             ),
         ),
-        nodes=(_node_contract("ocr.tesseract.pages", "OCR pages"),),
+        nodes=(_node_contract("gis.map.compose", "Compose map"),),
     )
 
-    inventory.require_catalog_authority(ocr_catalog)
+    inventory.require_catalog_authority(gis_catalog)
 
     entries = list(inventory.plugins)
-    ocr_position = next(
+    gis_position = next(
         position
         for position, entry in enumerate(entries)
-        if entry.slug == "external.ocr"
+        if entry.slug == "external.gis"
     )
-    entries[ocr_position] = entries[ocr_position].model_copy(
-        update={"operator_prefixes": ("ocr", "sql.query")}
+    entries[gis_position] = entries[gis_position].model_copy(
+        update={"operator_prefixes": ("gis", "sql.query")}
     )
     delegating_inventory = inventory.model_copy(update={"plugins": tuple(entries)})
 
@@ -109,7 +109,7 @@ def test_inventory_enforces_explicit_system_identity_authority() -> None:
         title="SQL",
         nodes=(_node_contract("sql.query", "Query"),),
     )
-    with pytest.raises(SystemPluginInventoryError, match="delegated.*external.ocr"):
+    with pytest.raises(SystemPluginInventoryError, match="delegated.*external.gis"):
         delegating_inventory.require_catalog_authority(delegated)
 
     unauthorized = PluginCatalogManifest(
@@ -121,7 +121,7 @@ def test_inventory_enforces_explicit_system_identity_authority() -> None:
         inventory.require_catalog_authority(unauthorized)
 
 
-@pytest.mark.parametrize("plugin", (GIS, LLM, MISTRAL, OCR, SQL, TYPESAFE))
+@pytest.mark.parametrize("plugin", (GIS, LLM, MISTRAL, SQL, TYPESAFE))
 def test_inventory_accepts_each_preserved_external_catalog(plugin: Plugin) -> None:
     inventory = load_system_plugin_inventory(INVENTORY_PATH)
 
