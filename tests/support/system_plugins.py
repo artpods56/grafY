@@ -2,7 +2,6 @@
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from uuid import UUID
 
 from grafy_core.domain.plugin_catalog import PluginCatalogRelease
 from grafy_core.domain.plugin_installations import (
@@ -15,7 +14,6 @@ from grafy_core.domain.plugin_releases import (
     PluginCatalogManifest,
     PluginRelease,
     PluginReleaseNamespace,
-    PluginReleaseScope,
     PluginRuntimeArtifact,
     plugin_contract_digest,
     plugin_profile_digest,
@@ -83,74 +81,33 @@ class SelectedSystemReleaseLookup:
         selections: tuple[PluginReleaseSelection, ...],
     ) -> None:
         self._releases = {
-            (
-                release.installation.scope,
-                release.release.slug,
-                release.release.revision,
-            ): release
+            (release.release.slug, release.release.revision): release
             for release in releases
         }
         self._selections = {
-            (selection.scope, selection.slug): selection for selection in selections
+            selection.slug: selection for selection in selections
         }
         self.release_reads = 0
 
     async def get_by_revision(
         self,
-        workspace_id: UUID,
         slug: str,
         revision: int,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
     ) -> InstalledPluginRelease | None:
         self.release_reads += 1
-        release = self._releases.get((scope, slug, revision))
-        if release is None:
-            return None
-        expected_workspace_id = (
-            workspace_id if scope is PluginReleaseScope.WORKSPACE else None
-        )
-        if release.installation.workspace_id != expected_workspace_id:
-            return None
-        return release
+        return self._releases.get((slug, revision))
 
-    async def get_selection(
-        self,
-        workspace_id: UUID,
-        slug: str,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
-    ) -> PluginReleaseSelection | None:
-        del workspace_id
-        return self._selections.get((scope, slug))
+    async def get_selection(self, slug: str) -> PluginReleaseSelection | None:
+        return self._selections.get(slug)
 
-    async def list_catalog(self, workspace_id: UUID) -> list[PluginCatalogRelease]:
-        releases = [
-            release
-            for release in self._releases.values()
-            if release.installation.scope is PluginReleaseScope.SYSTEM
-        ]
-        releases.extend(await self.list_current(workspace_id))
+    async def list_catalog(self) -> list[PluginCatalogRelease]:
         return [
             PluginCatalogRelease(
                 release=release,
-                selection=self._selections[
-                    (release.installation.scope, release.release.slug)
-                ],
+                selection=self._selections[release.release.slug],
                 revocation=None,
             )
-            for release in releases
-        ]
-
-    async def list_current(
-        self,
-        workspace_id: UUID,
-    ) -> list[InstalledPluginRelease]:
-        return [
-            release
             for release in self._releases.values()
-            if release.installation.scope is PluginReleaseScope.WORKSPACE
-            and release.installation.workspace_id == workspace_id
         ]
 
     async def list_runtime_artifacts(self) -> list[PluginRuntimeArtifact]:
@@ -159,16 +116,6 @@ class SelectedSystemReleaseLookup:
             for release in self._releases.values()
             if release.release.runtime_artifact is not None
         ]
-
-    async def get_revocation(
-        self,
-        *,
-        workspace_id: UUID,
-        slug: str,
-        revision: int,
-    ) -> PluginReleaseRevocation | None:
-        del workspace_id, slug, revision
-        return None
 
     async def get_system_revocation(
         self,
@@ -257,12 +204,8 @@ def synthetic_system_release(
         release=release,
         installation=PluginInstallation.from_release(
             release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.SYSTEM,
-                workspace_id=None,
-            ),
+            namespace=PluginReleaseNamespace(),
             execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_user_id=None,
             installed_by_platform_actor="test:system",
         ),
     )

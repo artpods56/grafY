@@ -3002,7 +3002,7 @@ export interface components {
          * PersonalAccessTokenScope
          * @enum {string}
          */
-        readonly PersonalAccessTokenScope: "view_graph" | "view_artifacts" | "view_materializations" | "view_history" | "view_execution" | "create_graph" | "edit_graph" | "checkpoint_graph" | "execute_graph" | "cancel_execution" | "publish_plugin" | "publish_module" | "manage_secrets";
+        readonly PersonalAccessTokenScope: "view_graph" | "view_artifacts" | "view_materializations" | "view_history" | "view_execution" | "create_graph" | "edit_graph" | "checkpoint_graph" | "execute_graph" | "cancel_execution" | "publish_module" | "manage_secrets";
         /** PinnedOutputRequest */
         readonly PinnedOutputRequest: {
             /** From Node */
@@ -3022,6 +3022,11 @@ export interface components {
         };
         /**
          * PluginReleaseScope
+         * @description Release family scope carried by a durable Plugin release pin.
+         *
+         *     Live releases live in the single deployment-owned System namespace. The
+         *     Workspace value stays in the vocabulary because graph documents, revisions,
+         *     and collaboration heads store pins as ``{scope, slug, revision}``.
          * @enum {string}
          */
         readonly PluginReleaseScope: "system" | "workspace";
@@ -4244,7 +4249,7 @@ export interface components {
          * WorkspaceCapability
          * @enum {string}
          */
-        readonly WorkspaceCapability: "view_graph" | "view_artifacts" | "view_materializations" | "view_history" | "view_execution" | "join_graph_room" | "publish_presence" | "create_graph" | "edit_graph" | "checkpoint_graph" | "execute_graph" | "cancel_execution" | "publish_plugin" | "publish_module" | "manage_module_library" | "create_template" | "manage_template_library" | "manage_secrets" | "delete_graph" | "manage_members" | "rename_workspace";
+        readonly WorkspaceCapability: "view_graph" | "view_artifacts" | "view_materializations" | "view_history" | "view_execution" | "join_graph_room" | "publish_presence" | "create_graph" | "edit_graph" | "checkpoint_graph" | "execute_graph" | "cancel_execution" | "publish_module" | "manage_module_library" | "create_template" | "manage_template_library" | "manage_secrets" | "delete_graph" | "manage_members" | "rename_workspace";
         /** WorkspaceCreateRequest */
         readonly WorkspaceCreateRequest: {
             /** Name */

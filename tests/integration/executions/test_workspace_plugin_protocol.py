@@ -22,7 +22,6 @@ from grafy_core.domain.plugin_releases import (
     PluginExecutionPolicy,
     PluginRelease,
     PluginReleaseNamespace,
-    PluginReleaseScope,
     plugin_contract_digest,
     plugin_profile_digest,
     plugin_protocol_digest,
@@ -115,13 +114,9 @@ def _release(
         release=release,
         installation=PluginInstallation.from_release(
             release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.WORKSPACE,
-                workspace_id=WORKSPACE_ID,
-            ),
+            namespace=PluginReleaseNamespace(),
             execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_user_id=WORKSPACE_ID,
-            installed_by_platform_actor=None,
+            installed_by_platform_actor="test:platform",
         ),
     )
 

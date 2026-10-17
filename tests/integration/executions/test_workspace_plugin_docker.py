@@ -301,13 +301,9 @@ async def test_docker_runtime_restores_reuses_hardens_and_cleans_sandbox(
     )
     installation = PluginInstallation.from_release(
         release_record,
-        namespace=PluginReleaseNamespace(
-            scope=PluginReleaseScope.WORKSPACE,
-            workspace_id=WORKSPACE_ID,
-        ),
+        namespace=PluginReleaseNamespace(),
         execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-        installed_by_user_id=WORKSPACE_ID,
-        installed_by_platform_actor=None,
+        installed_by_platform_actor="test:platform",
     )
     release = InstalledPluginRelease(
         release=release_record,

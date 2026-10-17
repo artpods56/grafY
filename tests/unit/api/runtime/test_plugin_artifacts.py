@@ -45,7 +45,6 @@ from grafy_core.domain.plugin_releases import (
     PluginRelease,
     PluginReleaseIdentity,
     PluginReleaseNamespace,
-    PluginReleaseScope,
     PluginSecretInputContract,
     plugin_contract_digest,
     plugin_profile_digest,
@@ -182,13 +181,9 @@ def _installed_workspace_release(release: PluginRelease) -> InstalledPluginRelea
         release=release,
         installation=PluginInstallation.from_release(
             release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.WORKSPACE,
-                workspace_id=WORKSPACE_ID,
-            ),
+            namespace=PluginReleaseNamespace(),
             execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_user_id=WORKSPACE_ID,
-            installed_by_platform_actor=None,
+            installed_by_platform_actor="test:platform",
         ),
     )
 
@@ -1277,8 +1272,8 @@ async def test_table_input_and_output_cross_the_bundle_boundary(
     assert output.metadata["row_count"] == 102
     assert output.metadata["chunk_count"] == 2
     assert output.metadata["plugin_release"] == {
-        "scope": "workspace",
-        "workspace_id": str(WORKSPACE_ID),
+        "scope": "system",
+        "workspace_id": None,
         "slug": "tables",
         "revision": 1,
         "source_digest": "c" * 64,
@@ -1842,8 +1837,8 @@ async def test_host_authorizes_stages_and_atomically_mints_output_refs(
     assert output.inline_payload == {"value": "rendered-0"}
     assert output.object_key is None
     assert output.metadata["plugin_release"] == {
-        "scope": "workspace",
-        "workspace_id": str(WORKSPACE_ID),
+        "scope": "system",
+        "workspace_id": None,
         "slug": "notes",
         "revision": 4,
         "source_digest": "a" * 64,

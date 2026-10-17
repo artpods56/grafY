@@ -148,39 +148,16 @@ def test_inventory_requires_exact_canonical_conversion_contracts() -> None:
         inventory.require_catalog_authority(changed)
 
 
-def test_inventory_reserves_system_prefixes_from_workspace_catalogs() -> None:
+def test_inventory_rejects_a_catalog_outside_its_own_slug() -> None:
     inventory = load_system_plugin_inventory(INVENTORY_PATH)
-    reserved = PluginCatalogManifest(
-        slug="sql",
-        title="Workspace SQL",
-        nodes=(
-            PluginNodeContract(
-                operator_id="sql.query",
-                operator_version=1,
-                title="Query",
-                description="Query.",
-                config_schema={"type": "object"},
-                input_schema={"type": "object"},
-                output_schema={"type": "object"},
-                inputs=(),
-                outputs=(),
-            ),
-        ),
-    )
-    unreserved = reserved.model_copy(
-        update={
-            "slug": "sqlalchemy",
-            "nodes": (
-                reserved.nodes[0].model_copy(
-                    update={"operator_id": "sqlalchemy.query"}
-                ),
-            ),
-        }
+    foreign = PluginCatalogManifest(
+        slug="sqlalchemy",
+        title="Lookalike SQL",
+        nodes=(_node_contract("sqlalchemy.query", "Query"),),
     )
 
-    with pytest.raises(SystemPluginInventoryError, match="platform-reserved"):
-        inventory.require_workspace_catalog_authority(reserved)
-    inventory.require_workspace_catalog_authority(unreserved)
+    with pytest.raises(SystemPluginInventoryError, match="not present"):
+        inventory.require_catalog_authority(foreign)
 
 
 def test_inventory_and_exact_binding_collisions_are_rejected() -> None:

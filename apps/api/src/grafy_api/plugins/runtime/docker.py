@@ -103,20 +103,9 @@ class _DockerOutputLimitError(RuntimeError):
 class PluginRuntimeReleaseLookup(Protocol):
     async def get_by_revision(
         self,
-        workspace_id: UUID,
         slug: str,
         revision: int,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
     ) -> InstalledPluginRelease | None: ...
-
-    async def get_revocation(
-        self,
-        *,
-        workspace_id: UUID,
-        slug: str,
-        revision: int,
-    ) -> PluginReleaseRevocation | None: ...
 
     async def get_system_revocation(
         self,
@@ -460,10 +449,8 @@ class DockerPluginRuntime(
                 "Plugin guest has no top-level sandbox scope",
             )
         release = await self._releases.get_by_revision(
-            envelope.workspace_id,
             request.release.slug,
             request.release.revision,
-            scope=request.release.scope,
         )
         if release is None or not _release_matches_identity(
             release,
@@ -473,17 +460,10 @@ class DockerPluginRuntime(
                 PluginFailureCode.CONTRACT_FAILURE,
                 "Exact Plugin runtime release is unavailable",
             )
-        if release.installation.scope is PluginReleaseScope.WORKSPACE:
-            revocation = await self._releases.get_revocation(
-                workspace_id=envelope.workspace_id,
-                slug=release.release.slug,
-                revision=release.release.revision,
-            )
-        else:
-            revocation = await self._releases.get_system_revocation(
-                slug=release.release.slug,
-                revision=release.release.revision,
-            )
+        revocation = await self._releases.get_system_revocation(
+            slug=release.release.slug,
+            revision=release.release.revision,
+        )
         decision = self._release_admission.decide(
             release,
             node_contract=request.contract,

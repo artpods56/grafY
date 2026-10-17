@@ -89,28 +89,19 @@ class PluginReleaseRevocation:
             raise PluginReleaseRevocationError(
                 "Plugin release revocation timestamp must be timezone-aware"
             )
-        if self.scope is PluginReleaseScope.SYSTEM:
-            if self.revoked_by_user_id is not None:
-                raise PluginReleaseRevocationError(
-                    "System Plugin releases cannot be revoked by a Workspace user"
-                )
-            if self.revoked_by_platform_actor is None:
-                raise PluginReleaseRevocationError(
-                    "System Plugin release revocation requires a platform actor"
-                )
-            try:
-                actor = PlatformPluginActor(self.revoked_by_platform_actor)
-            except ValueError as exc:
-                raise PluginReleaseRevocationError(str(exc)) from exc
-            self.revoked_by_platform_actor = actor.reference
-        elif self.revoked_by_user_id is None:
+        if self.revoked_by_user_id is not None:
             raise PluginReleaseRevocationError(
-                "Workspace Plugin release revocation requires a Workspace user"
+                "System Plugin releases cannot be revoked by a Workspace user"
             )
-        elif self.revoked_by_platform_actor is not None:
+        if self.revoked_by_platform_actor is None:
             raise PluginReleaseRevocationError(
-                "Workspace Plugin releases cannot be revoked by a platform actor"
+                "System Plugin release revocation requires a platform actor"
             )
+        try:
+            actor = PlatformPluginActor(self.revoked_by_platform_actor)
+        except ValueError as exc:
+            raise PluginReleaseRevocationError(str(exc)) from exc
+        self.revoked_by_platform_actor = actor.reference
 
     @classmethod
     def from_release(
@@ -118,8 +109,7 @@ class PluginReleaseRevocation:
         release: InstalledPluginRelease,
         *,
         reason: PluginReleaseRevocationReason,
-        revoked_by_user_id: UUID | None = None,
-        revoked_by_platform_actor: str | None = None,
+        revoked_by_platform_actor: str,
         revoked_at: datetime | None = None,
     ) -> Self:
         return cls(
@@ -129,7 +119,6 @@ class PluginReleaseRevocation:
             slug=release.release.slug,
             revision=release.release.revision,
             reason=reason,
-            revoked_by_user_id=revoked_by_user_id,
             revoked_by_platform_actor=revoked_by_platform_actor,
             revoked_at=revoked_at or datetime.now(UTC),
         )

@@ -62,10 +62,15 @@ class WorkspaceCapabilityTupleType(TypeDecorator[tuple[WorkspaceCapability, ...]
             if not isinstance(item, str):
                 raise ValueError("Stored string tuple is not a JSON string list")
             items.append(item)
-        try:
-            return tuple(WorkspaceCapability(item) for item in items)
-        except ValueError as exc:
-            raise ValueError("Stored workspace capability is unknown") from exc
+        # A stored scope this build does not know grants nothing, so it is
+        # dropped instead of failing the read of an older token.
+        capabilities: list[WorkspaceCapability] = []
+        for item in items:
+            try:
+                capabilities.append(WorkspaceCapability(item))
+            except ValueError:
+                continue
+        return tuple(capabilities)
 
 
 class PlatformTokenScopeTupleType(TypeDecorator[tuple[PlatformTokenScope, ...]]):

@@ -20,7 +20,6 @@ from grafy_core.domain.identity import (
     PlatformAccessToken,
     PlatformTokenPrincipal,
     PlatformTokenScope,
-    WorkspaceCapability,
     WorkspacePatPrincipal,
 )
 from grafy_core.domain.plugin_releases import PlatformPluginActor
@@ -40,11 +39,7 @@ from grafy_api.cli_credentials import (
     parse_sensitive_bearer_token,
     store_sensitive_cli_token,
 )
-from grafy_api.plugins.publication.authoring import PluginAuthoringService
-from grafy_api.plugins.publication.workflow import (
-    PluginPublicationWorkflow,
-    SystemPluginPublicationWorkflow,
-)
+from grafy_api.plugins.publication.workflow import SystemPluginPublicationWorkflow
 from grafy_api.plugins.publication.sandbox import DockerPluginDirectoryPublisher
 from grafy_api.plugins.publication.source import (
     PluginDirectoryPublisher,
@@ -66,7 +61,6 @@ from grafy_api.system_plugin_inventory import (
 from grafy_core.domain.system_plugin_inventory import (
     SystemPluginInventoryError,
 )
-from grafy_core.runtime.plugin_loader import WORKSPACE_PLUGIN_LOADER_TARGET
 
 
 class PluginCheckReport(BaseModel):
@@ -270,30 +264,13 @@ async def _run(args: argparse.Namespace) -> None:
     settings = get_settings()
     if args.command == "check":
         directory = Path(args.directory)
-        loader_target = WORKSPACE_PLUGIN_LOADER_TARGET
-        expected_slug: str | None = None
-        system_inventory = load_system_plugin_inventory(
-            CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH
-        )
-        repository_root = CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH.parents[1]
-        resolved_directory = directory.expanduser().resolve()
-        for entry in system_inventory.plugins:
-            if resolved_directory == (repository_root / entry.project).resolve():
-                loader_target = entry.loader_target
-                expected_slug = entry.slug
-                break
         publisher = PluginDirectoryPublisher(
             settings.plugins.resolved_plugin_roots,
             runtime_profile=settings.plugins.plugin_runtime_profile,
             wheelhouse=settings.plugins.resolved_plugin_wheelhouse,
         )
         try:
-            verified = await asyncio.to_thread(
-                publisher.verify,
-                directory,
-                expected_slug=expected_slug,
-                loader_target=loader_target,
-            )
+            verified = await asyncio.to_thread(publisher.verify, directory)
         except PluginPublishingError as exc:
             print(f"Plugin check failed: {exc}", file=sys.stderr)
             raise SystemExit(1) from exc
@@ -356,191 +333,74 @@ async def _run(args: argparse.Namespace) -> None:
         system_inventory = load_system_plugin_inventory(
             CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH
         )
-        if args.command == "promote" or (
-            args.command == "publish" and args.global_scope
-        ):
-            credential = _load_credential_digest(settings.app.resolved_database_url)
-            if credential.kind != "platform":
-                raise SystemExit("Global Plugin operations require a platform token")
-            required_scope = (
-                PlatformTokenScope.PUBLISH_GLOBAL
-                if args.command == "publish"
-                else PlatformTokenScope.PROMOTE_GLOBAL
-            )
-            principal = await identity.authenticate_platform_access_token(
-                public_prefix=credential.public_prefix,
-                secret_digest=credential.secret_digest,
-                required_scope=required_scope,
-            )
-            system_publication = SystemPluginPublicationWorkflow(
-                image_builder,
-                releases,
-                isolated_release_admission(
-                    profile=profile,
-                    egress_policy=PluginEgressBrokerPolicy.from_config(settings.egress),
-                    network_policy=NetworkPolicy.from_config(settings.egress),
-                ),
-                system_inventory,
-            )
-            platform_actor = PlatformPluginActor(principal.principal_reference)
-            if args.command == "publish":
-                if args.sandbox_image is None:
-                    raise SystemExit(
-                        "--sandbox-image is required for global Plugin publication"
-                    )
-                inventory_entry = system_inventory.entry_for(args.slug)
-                if settings.plugins.resolved_plugin_wheelhouse is not None:
-                    raise SystemExit(
-                        "System sandbox publication requires dependencies to be "
-                        "present in the frozen source or fetched from configured "
-                        "package indexes; host wheelhouse mounts are not supported"
-                    )
-                publisher = DockerPluginDirectoryPublisher(
-                    settings.plugins.resolved_plugin_roots,
-                    runtime_profile=settings.plugins.plugin_runtime_profile,
-                    image=args.sandbox_image,
-                    docker_binary=settings.plugins.plugin_docker_binary,
-                    scratch_root=(
-                        settings.plugins.resolved_plugin_publisher_scratch_root
-                    ),
-                )
-                verified = await asyncio.to_thread(
-                    publisher.verify,
-                    Path(args.directory),
-                    expected_slug=args.slug,
-                    loader_target=inventory_entry.loader_target,
-                )
-                release = await system_publication.publish_verified(
-                    verified,
-                    platform_actor=platform_actor,
-                )
-                print(
-                    f"Published global Plugin {release.release.slug} release "
-                    f"{release.release.revision}; promote it explicitly to activate it"
-                )
-                return
-            slug, revision = args.release
-            selection = await system_publication.promote(
-                slug=slug,
-                revision=revision,
-                platform_actor=platform_actor,
-                expected_generation=args.if_generation,
-            )
-            print(
-                f"Promoted System Plugin {selection.slug} release "
-                f"{selection.selected_revision} at generation {selection.generation}"
-            )
-            return
-        publisher = PluginDirectoryPublisher(
-            settings.plugins.resolved_plugin_roots,
-            runtime_profile=settings.plugins.plugin_runtime_profile,
-            wheelhouse=settings.plugins.resolved_plugin_wheelhouse,
-        )
-        publication = PluginPublicationWorkflow(
-            publisher,
-            image_builder,
-            releases,
-            system_inventory,
-        )
-        if args.command == "publish":
-            credential = _load_credential_digest(settings.app.resolved_database_url)
-            if credential.kind != "personal":
-                raise SystemExit(
-                    "Workspace Plugin publication requires a personal token"
-                )
-            principal = await identity.authenticate_personal_access_token(
-                public_prefix=credential.public_prefix,
-                secret_digest=credential.secret_digest,
-                required_capability=WorkspaceCapability.PUBLISH_PLUGIN,
-            )
-            release = await publication.publish(
-                workspace_id=principal.workspace_id,
-                directory=Path(args.directory),
-                expected_slug=args.slug,
-                published_by_user_id=principal.actor.user_id,
-            )
-            print(
-                f"Published Plugin {release.release.slug} release {release.release.revision} "
-                f"for Workspace {release.installation.workspace_id}"
-            )
-            return
         credential = _load_credential_digest(settings.app.resolved_database_url)
-        if credential.kind != "personal":
-            raise SystemExit("Plugin authoring requires a personal token")
-        principal = await identity.authenticate_personal_access_token(
+        if credential.kind != "platform":
+            raise SystemExit("System Plugin operations require a platform token")
+        required_scope = (
+            PlatformTokenScope.PUBLISH_GLOBAL
+            if args.command == "publish"
+            else PlatformTokenScope.PROMOTE_GLOBAL
+        )
+        principal = await identity.authenticate_platform_access_token(
             public_prefix=credential.public_prefix,
             secret_digest=credential.secret_digest,
-            required_capability=WorkspaceCapability.PUBLISH_PLUGIN,
+            required_scope=required_scope,
         )
-        workspace_id = principal.workspace_id
-        authoring = PluginAuthoringService(
-            authoring_root=settings.plugins.resolved_plugin_authoring_root,
-            allowed_roots=settings.plugins.resolved_plugin_roots,
-            sdk_project=settings.plugins.resolved_plugin_sdk_project,
-            publication=publication,
-            releases=releases,
-            storage=storage,
-            bucket=settings.storage.storage_bucket,
+        system_publication = SystemPluginPublicationWorkflow(
+            image_builder,
+            releases,
+            isolated_release_admission(
+                profile=profile,
+                egress_policy=PluginEgressBrokerPolicy.from_config(settings.egress),
+                network_policy=NetworkPolicy.from_config(settings.egress),
+            ),
+            system_inventory,
         )
-        actor_user_id = principal.actor.user_id
-        if args.command == "scaffold":
-            reservation = await asyncio.to_thread(
-                authoring.scaffold,
-                workspace_id=workspace_id,
-                slug=args.slug,
-                operator_slug=args.operator,
-                title=args.title,
-                actor_user_id=actor_user_id,
+        platform_actor = PlatformPluginActor(principal.principal_reference)
+        if args.command == "publish":
+            inventory_entry = system_inventory.entry_for(args.slug)
+            if settings.plugins.resolved_plugin_wheelhouse is not None:
+                raise SystemExit(
+                    "System sandbox publication requires dependencies to be "
+                    "present in the frozen source or fetched from configured "
+                    "package indexes; host wheelhouse mounts are not supported"
+                )
+            publisher = DockerPluginDirectoryPublisher(
+                settings.plugins.resolved_plugin_roots,
+                runtime_profile=settings.plugins.plugin_runtime_profile,
+                image=args.sandbox_image,
+                docker_binary=settings.plugins.plugin_docker_binary,
+                scratch_root=(
+                    settings.plugins.resolved_plugin_publisher_scratch_root
+                ),
+            )
+            verified = await asyncio.to_thread(
+                publisher.verify,
+                Path(args.directory),
+                expected_slug=args.slug,
+                loader_target=inventory_entry.loader_target,
+            )
+            release = await system_publication.publish_verified(
+                verified,
+                platform_actor=platform_actor,
             )
             print(
-                f"Scaffolded {reservation.project_directory} with authoring "
-                f"session {reservation.session_id} at "
-                f"sha256:{reservation.source_digest}"
+                f"Published System Plugin {release.release.slug} release "
+                f"{release.release.revision}; promote it explicitly to activate it"
             )
             return
-        if args.command == "reserve":
-            reservation = authoring.reserve(
-                workspace_id=workspace_id,
-                slug=args.slug,
-                actor_user_id=actor_user_id,
-            )
-            print(
-                f"Reserved {reservation.project_directory} with authoring "
-                f"session {reservation.session_id} at "
-                f"sha256:{reservation.source_digest}"
-            )
-            return
-        session_id = UUID(args.session)
-        if args.command == "review":
-            review = await authoring.review(
-                workspace_id=workspace_id,
-                slug=args.slug,
-                actor_user_id=actor_user_id,
-                session_id=session_id,
-            )
-            print(review.model_dump_json(indent=2))
-            return
-        if args.command == "publish-reviewed":
-            release = await authoring.publish(
-                workspace_id=workspace_id,
-                slug=args.slug,
-                actor_user_id=actor_user_id,
-                session_id=session_id,
-            )
-            print(
-                f"Published reviewed Plugin {release.release.slug} release "
-                f"{release.release.revision} for Workspace {release.installation.workspace_id}"
-            )
-            return
-        if args.command == "release-reservation":
-            authoring.release(
-                workspace_id=workspace_id,
-                slug=args.slug,
-                actor_user_id=actor_user_id,
-                session_id=session_id,
-            )
-            print(f"Released Plugin {args.slug!r} authoring session {session_id}")
-            return
+        slug, revision = args.release
+        selection = await system_publication.promote(
+            slug=slug,
+            revision=revision,
+            platform_actor=platform_actor,
+            expected_generation=args.if_generation,
+        )
+        print(
+            f"Promoted System Plugin {selection.slug} release "
+            f"{selection.selected_revision} at generation {selection.generation}"
+        )
+        return
         raise ValueError("Unsupported Grafy Plugin command")
     finally:
         await database.dispose()
@@ -604,17 +464,11 @@ def main() -> None:
     check.add_argument("directory")
     publish = commands.add_parser(
         "publish",
-        help="verify and publish a Plugin to a Workspace or globally",
+        help="verify and publish a System Plugin release without activating it",
     )
     publish.add_argument(
         "directory",
         help="Plugin project to verify and freeze",
-    )
-    publish.add_argument(
-        "--global",
-        dest="global_scope",
-        action="store_true",
-        help="publish a global Plugin without activating it",
     )
     publish.add_argument(
         "--slug",
@@ -623,7 +477,8 @@ def main() -> None:
     )
     publish.add_argument(
         "--sandbox-image",
-        help="publisher image used to verify a global candidate in isolation",
+        required=True,
+        help="publisher image used to verify the candidate in isolation",
     )
 
     promote = commands.add_parser(
@@ -651,21 +506,6 @@ def main() -> None:
         required=True,
         choices=tuple(reason.value for reason in PluginReleaseRevocationReason),
     )
-    for name in (
-        "scaffold",
-        "reserve",
-        "review",
-        "publish-reviewed",
-        "release-reservation",
-    ):
-        command = commands.add_parser(name)
-        command.add_argument("--slug", required=True)
-        if name not in {"scaffold", "reserve"}:
-            command.add_argument("--session", required=True)
-        if name == "scaffold":
-            command.add_argument("--operator", required=True)
-            command.add_argument("--title", required=True)
-
     network_policy_group = groups.add_parser("network-policy")
     network_policy_commands = network_policy_group.add_subparsers(
         dest="command",
@@ -682,13 +522,6 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    if (
-        args.group == "plugin"
-        and args.command == "publish"
-        and args.global_scope
-        and args.sandbox_image is None
-    ):
-        parser.error("--sandbox-image is required with plugin publish --global")
     try:
         asyncio.run(_run(args))
     except (

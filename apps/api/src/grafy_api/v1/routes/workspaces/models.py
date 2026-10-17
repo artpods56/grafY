@@ -156,7 +156,6 @@ class PersonalAccessTokenScope(StrEnum):
     CHECKPOINT_GRAPH = "checkpoint_graph"
     EXECUTE_GRAPH = "execute_graph"
     CANCEL_EXECUTION = "cancel_execution"
-    PUBLISH_PLUGIN = "publish_plugin"
     PUBLISH_MODULE = "publish_module"
     MANAGE_SECRETS = "manage_secrets"
 

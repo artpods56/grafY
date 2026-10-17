@@ -4543,7 +4543,7 @@
             "items": {
               "$ref": "#/components/schemas/PersonalAccessTokenScope"
             },
-            "maxItems": 13,
+            "maxItems": 12,
             "minItems": 1,
             "title": "Scopes",
             "type": "array"
@@ -4729,7 +4729,6 @@
           "checkpoint_graph",
           "execute_graph",
           "cancel_execution",
-          "publish_plugin",
           "publish_module",
           "manage_secrets"
         ],
@@ -4793,6 +4792,7 @@
         "type": "object"
       },
       "PluginReleaseScope": {
+        "description": "Release family scope carried by a durable Plugin release pin.\n\nLive releases live in the single deployment-owned System namespace. The\nWorkspace value stays in the vocabulary because graph documents, revisions,\nand collaboration heads store pins as ``{scope, slug, revision}``.",
         "enum": [
           "system",
           "workspace"
@@ -8248,7 +8248,6 @@
           "checkpoint_graph",
           "execute_graph",
           "cancel_execution",
-          "publish_plugin",
           "publish_module",
           "manage_module_library",
           "create_template",

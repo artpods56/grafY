@@ -28,13 +28,12 @@ from grafy_core.domain.plugin_selection import (
 )
 
 
-WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000941")
+PLATFORM_ACTOR = "test:system"
 
 
 def _release(
     revision: int,
     *,
-    scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
     slug: str = "notes",
 ) -> InstalledPluginRelease:
     catalog = PluginCatalogManifest(
@@ -72,19 +71,9 @@ def _release(
     )
     installation = PluginInstallation.from_release(
         release,
-        namespace=PluginReleaseNamespace(
-            scope=scope,
-            workspace_id=(
-                WORKSPACE_ID if scope is PluginReleaseScope.WORKSPACE else None
-            ),
-        ),
+        namespace=PluginReleaseNamespace(),
         execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-        installed_by_user_id=(
-            WORKSPACE_ID if scope is PluginReleaseScope.WORKSPACE else None
-        ),
-        installed_by_platform_actor=(
-            "test:system" if scope is PluginReleaseScope.SYSTEM else None
-        ),
+        installed_by_platform_actor=PLATFORM_ACTOR,
     )
     return InstalledPluginRelease(release=release, installation=installation)
 
@@ -107,7 +96,7 @@ def test_selection_moves_exact_pointer_without_mutating_release_facts() -> None:
     assert second.release.revision == 2
 
 
-def test_workspace_publication_can_reselect_and_restore_family_visibility() -> None:
+def test_a_newer_release_can_restore_family_visibility() -> None:
     first = _release(1)
     second = _release(2)
     selection = PluginReleaseSelection.from_release(first)
@@ -119,13 +108,24 @@ def test_workspace_publication_can_reselect_and_restore_family_visibility() -> N
     assert selection.lifecycle is PluginFamilyLifecycle.PUBLISHED
 
 
-def test_selection_rejects_a_release_from_another_scoped_family() -> None:
+def test_selection_rejects_a_release_from_another_family() -> None:
     selection = PluginReleaseSelection.from_release(_release(1))
 
-    with pytest.raises(PluginReleaseSelectionError, match="same scoped family"):
-        selection.select(_release(1, scope=PluginReleaseScope.SYSTEM))
-    with pytest.raises(PluginReleaseSelectionError, match="same scoped family"):
+    with pytest.raises(PluginReleaseSelectionError, match="same Plugin family"):
         selection.select(_release(1, slug="tables"))
+
+
+def test_selection_is_reserved_for_the_system_namespace() -> None:
+    release = _release(1)
+
+    with pytest.raises(PluginReleaseSelectionError, match="System namespace"):
+        PluginReleaseSelection(
+            scope=PluginReleaseScope.WORKSPACE,
+            workspace_id=UUID(int=4),
+            slug=release.release.slug,
+            selected_release_id=release.release.id,
+            selected_revision=release.release.revision,
+        )
 
 
 def test_withdrawn_selection_cannot_transition_to_deprecated() -> None:

@@ -24,7 +24,6 @@ from grafy_core.domain.plugin_releases import (
     PluginRelease,
     PluginReleaseIdentity,
     PluginReleaseNamespace,
-    PluginReleaseScope,
     PluginExecutionPolicy,
     plugin_contract_digest,
     plugin_profile_digest,
@@ -128,13 +127,9 @@ def _release_from_serialized_contract(
         release=release,
         installation=PluginInstallation.from_release(
             release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.WORKSPACE,
-                workspace_id=workspace_id,
-            ),
+            namespace=PluginReleaseNamespace(),
             execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_user_id=workspace_id,
-            installed_by_platform_actor=None,
+            installed_by_platform_actor="test:platform",
         ),
     )
 

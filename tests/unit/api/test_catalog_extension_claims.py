@@ -1,4 +1,4 @@
-"""The extension table refuses a colliding installation, not a catalog read."""
+"""The extension table refuses a colliding selection, not a catalog read."""
 
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -17,7 +17,6 @@ from grafy_core.domain.plugin_releases import (
     PluginCatalogManifest,
     PluginExecutionPolicy,
     PluginNodeContract,
-    PluginReleaseScope,
     PluginRuntimeArtifact,
 )
 from grafy_core.file_contracts import ExtensionClaimCollisionError
@@ -26,14 +25,14 @@ from grafy_persistence import schema
 from grafy_persistence.database import Database, create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_storage import LocalFileObjectStore
-from tests.support.identity import TEST_USER_ID, WORKSPACE_ID, create_schema
+from tests.support.identity import create_schema
 
 
 PLATFORM_ACTOR = PlatformPluginActor("test:extension-claims")
 
 
 def _snapshot(registry: PluginRegistry) -> CatalogSnapshot:
-    return CatalogSnapshot.from_registry(registry, [], [], workspace_id=WORKSPACE_ID)
+    return CatalogSnapshot.from_registry(registry, [], [])
 
 
 def _contract(snapshot: CatalogSnapshot, artifact_type_id: str):
@@ -87,26 +86,6 @@ async def _release_count(database: Database, slug: str) -> int:
     return count
 
 
-async def _publish_workspace(
-    service: PluginReleaseService,
-    *,
-    catalog: PluginCatalogManifest,
-    source: bytes,
-    lock_digest: str,
-):
-    return await service.publish(
-        workspace_id=WORKSPACE_ID,
-        catalog=catalog,
-        capabilities=PluginCapabilityManifest(),
-        source_archive=source,
-        lock_digest=lock_digest,
-        runtime_profile="python-uv",
-        runtime_artifact=None,
-        published_by_user_id=TEST_USER_ID,
-        loader_target="grafy_plugin:PLUGIN",
-    )
-
-
 async def _publish_system(
     service: PluginReleaseService,
     *,
@@ -152,81 +131,91 @@ async def deployment(
         await database.dispose()
 
 
-async def test_colliding_extension_claim_refuses_the_installation(
+async def test_a_colliding_extension_claim_refuses_promotion(
     deployment: tuple[PluginReleaseService, Database],
 ) -> None:
     service, database = deployment
+
+    published = await _publish_system(
+        service,
+        catalog=_catalog("file", artifact_id="file.plain", extensions=("txt",)),
+        source=b"colliding-source",
+        lock_digest="1" * 64,
+    )
 
     with pytest.raises(
         ExtensionClaimCollisionError,
         match=r"file\.txt@1 and file\.plain@1 both claim extension 'txt'",
     ):
-        await _publish_workspace(
-            service,
-            catalog=_catalog("file", artifact_id="file.plain", extensions=("txt",)),
-            source=b"colliding-source",
-            lock_digest="1" * 64,
+        await service.promote_system(
+            slug=published.release.slug,
+            revision=published.release.revision,
+            platform_actor=PLATFORM_ACTOR,
+            expected_generation=0,
         )
 
-    assert await service.list_current(WORKSPACE_ID) == []
-    assert await service.get_selection(WORKSPACE_ID, "file") is None
+    assert await service.list_catalog() == []
+    assert await service.get_selection("file") is None
     assert await _release_count(database, "file") == 1
 
-    installed = await _publish_workspace(
+    clean = await _publish_system(
         service,
         catalog=_catalog("file", artifact_id="file.plain", extensions=()),
         source=b"clean-source",
         lock_digest="2" * 64,
     )
+    await service.promote_system(
+        slug=clean.release.slug,
+        revision=clean.release.revision,
+        platform_actor=PLATFORM_ACTOR,
+        expected_generation=0,
+    )
 
-    assert installed.release.revision == 2
-    assert [
-        entry.release.revision for entry in await service.list_current(WORKSPACE_ID)
-    ] == [2]
+    assert clean.release.revision == 2
+    assert [entry.release.release.revision for entry in await service.list_catalog()] == [2]
 
 
-async def test_a_collision_with_an_installed_plugin_leaves_the_selection_unchanged(
+async def test_a_collision_with_an_installed_format_leaves_the_selection_unchanged(
     deployment: tuple[PluginReleaseService, Database],
 ) -> None:
     service, database = deployment
 
-    await _publish_system(
+    first = await _publish_system(
         service,
-        catalog=_catalog("system.las", artifact_id="file.las", extensions=("las",)),
-        source=b"system-las-source",
+        catalog=_catalog("file", artifact_id="file.laz", extensions=()),
+        source=b"clean-laz-source",
         lock_digest="1" * 64,
     )
     await service.promote_system(
-        slug="system.las",
-        revision=1,
+        slug=first.release.slug,
+        revision=first.release.revision,
         platform_actor=PLATFORM_ACTOR,
         expected_generation=0,
     )
-    first = await _publish_workspace(
+    assert first.release.revision == 1
+
+    colliding = await _publish_system(
         service,
-        catalog=_catalog("file", artifact_id="file.laz", extensions=()),
-        source=b"workspace-laz-source",
+        catalog=_catalog("file", artifact_id="file.laz", extensions=("csv",)),
+        source=b"colliding-laz-source",
         lock_digest="2" * 64,
     )
-    assert first.release.revision == 1
 
     with pytest.raises(
         ExtensionClaimCollisionError,
-        match=r"file\.las@1 and file\.laz@1 both claim extension 'las'",
+        match=r"file\.csv@1 and file\.laz@1 both claim extension 'csv'",
     ):
-        await _publish_workspace(
-            service,
-            catalog=_catalog("file", artifact_id="file.laz", extensions=("las",)),
-            source=b"colliding-laz-source",
-            lock_digest="3" * 64,
+        await service.promote_system(
+            slug=colliding.release.slug,
+            revision=colliding.release.revision,
+            platform_actor=PLATFORM_ACTOR,
+            expected_generation=1,
         )
 
-    selection = await service.get_selection(WORKSPACE_ID, "file")
+    selection = await service.get_selection("file")
     assert selection is not None
     assert selection.selected_revision == 1
-    assert [
-        entry.release.revision for entry in await service.list_current(WORKSPACE_ID)
-    ] == [1]
+    assert [entry.release.release.revision for entry in await service.list_catalog()] == [1]
     assert await _release_count(database, "file") == 2
 
 
@@ -258,44 +247,38 @@ async def test_a_system_promotion_colliding_with_a_builtin_is_refused(
             expected_generation=0,
         )
 
-    assert (
-        await service.get_selection(
-            WORKSPACE_ID,
-            "system.plain",
-            scope=PluginReleaseScope.SYSTEM,
-        )
-        is None
-    )
-    assert [
-        item.release
-        for item in await service.list_catalog(WORKSPACE_ID)
-        if item.release.installation.scope is PluginReleaseScope.SYSTEM
-    ] == []
+    assert await service.get_selection("system.plain") is None
+    assert await service.list_catalog() == []
 
 
-async def test_a_system_promotion_colliding_with_a_workspace_plugin_is_refused(
+async def test_a_system_promotion_colliding_with_a_selected_family_is_refused(
     deployment: tuple[PluginReleaseService, Database],
 ) -> None:
     service, _database = deployment
 
-    installed = await _publish_workspace(
+    installed = await _publish_system(
         service,
-        catalog=_catalog("file", artifact_id="file.laz", extensions=("las",)),
-        source=b"workspace-laz-source",
+        catalog=_catalog("file", artifact_id="file.laz", extensions=("laz",)),
+        source=b"laz-source",
         lock_digest="1" * 64,
     )
-    assert installed.release.revision == 1
+    await service.promote_system(
+        slug=installed.release.slug,
+        revision=installed.release.revision,
+        platform_actor=PLATFORM_ACTOR,
+        expected_generation=0,
+    )
 
     await _publish_system(
         service,
-        catalog=_catalog("system.las", artifact_id="file.las", extensions=("las",)),
+        catalog=_catalog("system.las", artifact_id="file.las", extensions=("laz",)),
         source=b"system-las-source",
         lock_digest="2" * 64,
     )
 
     with pytest.raises(
         ExtensionClaimCollisionError,
-        match=r"file\.laz@1 and file\.las@1 both claim extension 'las'",
+        match=r"file\.laz@1 and file\.las@1 both claim extension 'laz'",
     ):
         await service.promote_system(
             slug="system.las",
@@ -304,11 +287,7 @@ async def test_a_system_promotion_colliding_with_a_workspace_plugin_is_refused(
             expected_generation=0,
         )
 
-    assert [
-        item.release
-        for item in await service.list_catalog(WORKSPACE_ID)
-        if item.release.installation.scope is PluginReleaseScope.SYSTEM
-    ] == []
+    assert [item.release.release.slug for item in await service.list_catalog()] == ["file"]
 
 
 def test_deployment_table_resolves_json_and_declares_document_confirmation() -> None:
