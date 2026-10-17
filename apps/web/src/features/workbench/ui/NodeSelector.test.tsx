@@ -120,15 +120,15 @@ function registry(): NodeRegistry {
         runnable: true,
       },
       {
-        slug: "external.ocr",
-        title: "OCR",
+        slug: "external.mistral",
+        title: "Mistral OCR",
         origin: "plugin",
         entry_kind: "plugin",
         scope: "system",
         revision: 1,
         plugin_release: {
           scope: "system",
-          slug: "external.ocr",
+          slug: "external.mistral",
           revision: 1,
         },
         runnable: true,
@@ -197,9 +197,9 @@ function registry(): NodeRegistry {
       firstModuleRelease,
       currentModuleRelease,
       node(
-        "ocr.pages",
+        "mistral.ocr.process",
         "Read image with OCR",
-        "external.ocr",
+        "external.mistral",
         [imageInput],
         [textOutput],
       ),
@@ -339,7 +339,7 @@ describe("NodeSelector", () => {
     expect(filters.map((filter) => filter.getAttribute("aria-label"))).toEqual([
       "All, 6 nodes",
       "Built-in, 4 nodes",
-      "OCR, 1 node",
+      "Mistral OCR, 1 node",
       "Workspace library, 1 node",
     ]);
 
@@ -606,7 +606,7 @@ describe("NodeSelector", () => {
       );
     expect(headings()).toEqual([
       "node-selector-group-source:builtin",
-      "node-selector-group-source:external.ocr",
+      "node-selector-group-source:external.mistral",
       "node-selector-group-workspace-library",
     ]);
 
