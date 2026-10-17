@@ -66,10 +66,8 @@ class WorkspaceCapabilityTupleType(TypeDecorator[tuple[WorkspaceCapability, ...]
         # no longer capabilities belonged to retired features, so they grant nothing
         # and are dropped rather than failing the token load. Minting a new token
         # still validates every scope in `PersonalAccessToken`.
-        capabilities = set(WorkspaceCapability)
-        return tuple(
-            WorkspaceCapability(item) for item in items if item in capabilities
-        )
+        known = {capability.value for capability in WorkspaceCapability}
+        return tuple(WorkspaceCapability(item) for item in items if item in known)
 
 
 class PlatformTokenScopeTupleType(TypeDecorator[tuple[PlatformTokenScope, ...]]):
