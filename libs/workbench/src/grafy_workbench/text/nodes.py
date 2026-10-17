@@ -10,13 +10,12 @@ from grafy_core.artifact_contracts import (
 )
 from grafy_core.artifacts import (
     Artifact,
-    NoConfig,
     NodeConfig,
     NodeInput,
     NodeOutput,
 )
 from grafy_core.ports.artifacts import UnitOfWorkPort
-from grafy_core.nodes import InPort, OutPort
+from grafy_core.nodes import OutPort
 from grafy_core.plugins import NodeCachePolicy
 from grafy_core.runtime.persistence import InlineModelOutputWriter
 from grafy_core.runtime.resolvers import InlineModelResolver
@@ -58,169 +57,6 @@ async def text_input(
 
 
 TextInputNode = TEXT.nodes[-1].node_class
-
-
-class AsMarkdownInput(NodeInput):
-    text: Annotated[
-        StrictStr,
-        InPort(TEXT_VALUE),
-        Field(description="Markdown source text to preserve."),
-    ]
-
-
-class AsMarkdownOutput(NodeOutput):
-    markdown: Annotated[
-        MarkdownValue,
-        OutPort(MARKDOWN),
-        Field(description="The same source text marked as Markdown."),
-    ]
-
-
-@TEXT.function_node(
-    operator_id="text.as_markdown",
-    version=1,
-    title="As Markdown",
-    cache_policy=NodeCachePolicy.EXACT,
-    # Replaced in the node library by Python presets (ADR 0012).
-    listed=False,
-)
-async def as_markdown(
-    _config: NoConfig,
-    inputs: AsMarkdownInput,
-) -> AsMarkdownOutput:
-    """Marks text as Markdown without transforming its source."""
-    return AsMarkdownOutput(markdown=MarkdownValue(markdown=inputs.text))
-
-
-AsMarkdownNode = TEXT.nodes[-1].node_class
-
-
-class SplitTextConfig(NodeConfig):
-    separator: StrictStr = Field(
-        min_length=1,
-        description="Exact text used to separate the input into parts.",
-    )
-
-
-class SplitTextInput(NodeInput):
-    text: Annotated[
-        StrictStr,
-        InPort(TEXT_VALUE),
-        Field(description="Text value to split."),
-    ]
-
-
-class SplitTextOutput(NodeOutput):
-    parts: Annotated[
-        list[StrictStr],
-        OutPort(TEXT_VALUE),
-        Field(description="Ordered text parts, including empty parts."),
-    ]
-
-
-@TEXT.function_node(
-    operator_id="text.split",
-    version=1,
-    title="Split text",
-    cache_policy=NodeCachePolicy.EXACT,
-    # Replaced in the node library by Python presets (ADR 0012).
-    listed=False,
-)
-async def split_text(
-    config: SplitTextConfig, inputs: SplitTextInput
-) -> SplitTextOutput:
-    """Splits text on an exact separator while preserving empty parts."""
-    return SplitTextOutput(parts=inputs.text.split(config.separator))
-
-
-SplitTextNode = TEXT.nodes[-1].node_class
-
-
-class ReplaceTextConfig(NodeConfig):
-    search: StrictStr = Field(
-        min_length=1,
-        description="Exact text to find.",
-    )
-    replacement: StrictStr = Field(
-        default="",
-        description="Text substituted for every match.",
-    )
-
-
-class ReplaceTextInput(NodeInput):
-    text: Annotated[
-        StrictStr,
-        InPort(TEXT_VALUE),
-        Field(description="Text value in which replacements are made."),
-    ]
-
-
-class ReplaceTextOutput(NodeOutput):
-    text: Annotated[
-        StrictStr,
-        OutPort(TEXT_VALUE),
-        Field(description="Text after all exact replacements."),
-    ]
-
-
-@TEXT.function_node(
-    operator_id="text.replace",
-    version=1,
-    title="Replace text",
-    cache_policy=NodeCachePolicy.EXACT,
-    # Replaced in the node library by Python presets (ADR 0012).
-    listed=False,
-)
-async def replace_text(
-    config: ReplaceTextConfig,
-    inputs: ReplaceTextInput,
-) -> ReplaceTextOutput:
-    """Replaces every exact occurrence of configured search text."""
-    return ReplaceTextOutput(
-        text=inputs.text.replace(config.search, config.replacement)
-    )
-
-
-ReplaceTextNode = TEXT.nodes[-1].node_class
-
-
-class JoinTextConfig(NodeConfig):
-    separator: StrictStr = Field(
-        default="",
-        description="Text inserted between adjacent parts.",
-    )
-
-
-class JoinTextInput(NodeInput):
-    parts: Annotated[
-        list[StrictStr],
-        InPort(TEXT_VALUE),
-        Field(description="Ordered text values to join."),
-    ]
-
-
-class JoinTextOutput(NodeOutput):
-    text: Annotated[
-        StrictStr,
-        OutPort(TEXT_VALUE),
-        Field(description="The joined text value."),
-    ]
-
-
-@TEXT.function_node(
-    operator_id="text.join",
-    version=1,
-    title="Join text",
-    cache_policy=NodeCachePolicy.EXACT,
-    # Replaced in the node library by Python presets (ADR 0012).
-    listed=False,
-)
-async def join_text(config: JoinTextConfig, inputs: JoinTextInput) -> JoinTextOutput:
-    """Joins an ordered text sequence with a configured separator."""
-    return JoinTextOutput(text=config.separator.join(inputs.parts))
-
-
-JoinTextNode = TEXT.nodes[-1].node_class
 
 
 @final

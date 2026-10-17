@@ -7,6 +7,7 @@ from typing import Annotated, cast, final, override
 from uuid import UUID
 
 import pytest
+from sqlalchemy import update as sqlalchemy_update
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import Field, SecretStr, StrictStr
@@ -24,6 +25,7 @@ from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
 from grafy_core.artifact_contracts import TEXT_VALUE
 from grafy_core.plugins import NodeSecretInput, Plugin
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
+from grafy_persistence import schema
 from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
@@ -39,7 +41,6 @@ from tests.support.system_plugins import (
     build_explicit_plugin_registry,
     pin_selected_system_nodes,
 )
-from grafy_api.v1.routes.workspaces.models import WorkspaceCreateRequest
 from grafy_api.settings import Settings
 from grafy_api.v1.models import (
     ArtifactTypeBindingModel,
@@ -51,14 +52,10 @@ from grafy_api.execution.requests import (
     RunRequest,
 )
 from grafy_api.v1.routes.modules.dependencies import module_library_service
-from grafy_api.v1.routes.modules.models import (
-    ImportModuleReleaseRequest,
-    PublishModuleReleaseRequest,
-)
+from grafy_api.v1.routes.modules.models import PublishModuleReleaseRequest
 from grafy_api.v1.routes.node_secrets.dependencies import node_secret_service
 from grafy_api.v1.routes.saved_graphs.dependencies import saved_graph_service
 from grafy_api.graph_contracts import (
-    CheckpointGraphRequest,
     CreateSavedGraphRequest,
     GraphPointModel,
     SavedGraphEdgeModel,
@@ -346,7 +343,7 @@ def _text_module_payload(
                 kind="builtin",
                 id="replace",
                 operator_id=(
-                    "test.module_progress" if emit_progress else "text.replace"
+                    "test.module_progress" if emit_progress else "test.text.replace"
                 ),
                 operator_version=1,
                 config=(
@@ -402,7 +399,7 @@ def _nested_map_progress_module_payload() -> dict[str, object]:
             SavedGraphNodeModel(
                 kind="builtin",
                 id="split",
-                operator_id="text.split",
+                operator_id="test.text.split",
                 operator_version=1,
                 config={"separator": ","},
                 position=GraphPointModel(x=240, y=120),
@@ -749,8 +746,8 @@ def test_saved_graph_module_is_discoverable_and_executes_once(
     )
     assert module_spec["operator_id"] == f"graph.module.{graph_id}"
     assert module_spec["module_graph_revision"] == 1
+    # The catalog only lists published releases, so a spec carries no state.
     assert module_spec["catalog_visible"] is True
-    assert module_spec["publication_state"] == "published"
     assert [port["name"] for port in module_spec["inputs"]] == ["text"]
     assert [port["name"] for port in module_spec["outputs"]] == ["result"]
     assert registry["unavailable_modules"] == []
@@ -902,7 +899,7 @@ def test_mapped_module_events_keep_the_outer_invocation_identity(
                 RunNodeRequest(
                     kind="builtin",
                     id="split",
-                    operator_id="text.split",
+                    operator_id="test.text.split",
                     operator_version=1,
                     config={"separator": "|"},
                 ),
@@ -977,7 +974,7 @@ def test_nested_map_events_append_each_local_invocation_index(
                 RunNodeRequest(
                     kind="builtin",
                     id="split",
-                    operator_id="text.split",
+                    operator_id="test.text.split",
                     operator_version=1,
                     config={"separator": "|"},
                 ),
@@ -1064,7 +1061,7 @@ def test_module_uses_existing_map_semantics_and_keeps_revision_pinned(
                 RunNodeRequest(
                     kind="builtin",
                     id="split",
-                    operator_id="text.split",
+                    operator_id="test.text.split",
                     operator_version=1,
                     config={"separator": "|"},
                 ),
@@ -1315,7 +1312,7 @@ def test_module_catalog_rejects_optional_input_targeting_required_input(
     reason = (
         f"Graph module {graph_id} revision 1 optional public input 'text' edge "
         "'input-to-replace' targets required input 'replace'.'text' "
-        "(text.replace@1)"
+        "(test.text.replace@1)"
     )
 
     api = GrafyApi(module_client)
@@ -1613,7 +1610,27 @@ def test_exact_module_revision_cycle_reports_the_nested_path(
     assert f"graph.module.{second['id']}@2" in error
 
 
-def test_withdrawn_module_stays_executable_for_pinned_calls(
+def _mark_module_state(client: TestClient, module_id: UUID, state: str) -> None:
+    """Write a stored publication state no route can set any more.
+
+    Deprecate and withdraw are retired, but rows they left behind remain in real
+    databases, so this is how a test produces one.
+    """
+
+    database = get_resources(cast(FastAPI, client.app)).database
+
+    async def write() -> None:
+        async with database.engine.begin() as connection:
+            await connection.execute(
+                sqlalchemy_update(schema.modules)
+                .where(schema.modules.c.id == module_id)
+                .values(publication_state=state)
+            )
+
+    asyncio.run(write())
+
+
+def test_retired_module_states_stay_hidden_and_pinned_calls_resolve(
     module_client: TestClient,
 ) -> None:
     created = module_client.post(
@@ -1628,12 +1645,12 @@ def test_withdrawn_module_stays_executable_for_pinned_calls(
     )
     module_id = published.id
 
-    withdraw = modules.withdraw_ok(module_id)
-    assert withdraw.publication_state == "withdrawn"
+    _mark_module_state(module_client, module_id, "withdrawn")
 
     catalog = api.workspace(UUID(WORKSPACE)).catalog
     registry = catalog.list_nodes().json()
     assert all(node.get("module_graph_id") != graph_id for node in registry["nodes"])
+    assert modules.list_ok().modules == []
 
     response = module_client.post(
         f"/v1/workspaces/{WORKSPACE}/runs",
@@ -1710,36 +1727,3 @@ def test_module_library_resolve_definition_is_the_core_contract(
                 workspace_id=UUID(WORKSPACE),
             )
         )
-
-
-def test_imported_module_is_already_checkpointed(module_client: TestClient) -> None:
-    workspace = GrafyApi(module_client).workspace(UUID(WORKSPACE))
-    source = workspace.graphs.create_ok(
-        CreateSavedGraphRequest.model_validate(_text_module_payload())
-    )
-    module = workspace.modules.publish_ok(
-        PublishModuleReleaseRequest(source_graph_id=source.id)
-    )
-    api = GrafyApi(module_client)
-    destination = api.workspaces.create_ok(
-        WorkspaceCreateRequest(slug="module-import-target", name="Import target")
-    )
-    target = api.workspace(destination.id)
-    imported = target.modules.import_release_ok(
-        ImportModuleReleaseRequest(
-            source_workspace_id=UUID(WORKSPACE),
-            source_module_id=module.id,
-            name="Imported module",
-        )
-    )
-    head = target.graphs.get_head_ok(imported.graph_id)
-    result = target.graphs.checkpoint_ok(
-        imported.graph_id,
-        CheckpointGraphRequest(
-            expected_room_epoch=head.room_epoch,
-            expected_sequence=head.collaboration_sequence,
-        ),
-    )
-    assert result.saved_revision == 1
-    assert target.graphs.get_ok(imported.graph_id).revision == 1
-    assert result.head.collaboration_sequence == head.collaboration_sequence

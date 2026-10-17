@@ -147,8 +147,8 @@ function registry(): NodeRegistry {
         title: "Enter text",
         outputs: [port("text", "output")],
       }),
-      nodeSpec("text.replace", "builtin", 1, null, true, {
-        title: "Replace text",
+      nodeSpec("text.transform", "builtin", 1, null, true, {
+        title: "Transform text",
         inputs: [port("text", "input")],
         outputs: [port("text", "output")],
       }),
@@ -248,7 +248,7 @@ describe("node catalog modules", () => {
       available.map((spec) => [spec.operator_id, spec.operator_version]),
     ).toEqual([
       ["text.input", 1],
-      ["text.replace", 1],
+      ["text.transform", 1],
       ["table.batch", 1],
       ["generic.pass", 1],
       [`module.graph.${SECOND_GRAPH_ID}`, 1],
@@ -382,7 +382,7 @@ describe("artifact catalog filters", () => {
       ).map((spec) => spec.operator_id),
     ).toEqual([
       "text.input",
-      "text.replace",
+      "text.transform",
       `module.graph.${FIRST_GRAPH_ID}`,
       `module.graph.${SECOND_GRAPH_ID}`,
     ]);
@@ -422,14 +422,14 @@ describe("artifact catalog filters", () => {
       "OCR",
       "Other module",
       "Pass any",
-      "Replace text",
+      "Transform text",
     ]);
 
     expect(
-      filterAndSearchCatalogNodes(nodes, [filter], "replace", registry()).map(
+      filterAndSearchCatalogNodes(nodes, [filter], "transform", registry()).map(
         (spec) => spec.operator_id,
       ),
-    ).toEqual(["text.replace"]);
+    ).toEqual(["text.transform"]);
 
     expect(
       filterAndSearchCatalogNodes(
@@ -467,7 +467,7 @@ describe("artifact catalog filters", () => {
       catalogNodesForFilter(nodes, byId[sourceFilterId("builtin")]!).map(
         (spec) => spec.operator_id,
       ),
-    ).toEqual(["text.input", "text.replace", "table.batch", "generic.pass"]);
+    ).toEqual(["text.input", "text.transform", "table.batch", "generic.pass"]);
 
     // Nodes that take no inputs because they are inputs themselves.
     expect(
@@ -494,7 +494,7 @@ describe("artifact catalog filters", () => {
         "",
         registry(),
       ).map((spec) => spec.operator_id),
-    ).toEqual(["text.input", "text.replace"]);
+    ).toEqual(["text.input", "text.transform"]);
 
     expect(
       filterAndSearchCatalogNodes(
@@ -507,10 +507,10 @@ describe("artifact catalog filters", () => {
   });
 
   it("summarizes ports with artifact titles", () => {
-    const replace = catalogNodeSpecs(registry(), null).find(
-      (spec) => spec.operator_id === "text.replace",
+    const transform = catalogNodeSpecs(registry(), null).find(
+      (spec) => spec.operator_id === "text.transform",
     )!;
-    expect(catalogNodePortSummary(replace, registry())).toBe("Text → Text");
+    expect(catalogNodePortSummary(transform, registry())).toBe("Text → Text");
   });
 });
 
@@ -519,8 +519,8 @@ describe("downstream candidates", () => {
     const source = port("text", "output");
     const sourceHandle = encodeHandleId(portMetaForPort(source));
     const nodes = [
-      nodeSpec("text.replace", "builtin", 1, null, true, {
-        title: "Replace text",
+      nodeSpec("text.transform", "builtin", 1, null, true, {
+        title: "Transform text",
         inputs: [port("text", "input")],
         outputs: [port("text", "output")],
       }),
@@ -554,8 +554,8 @@ describe("downstream candidates", () => {
     });
 
     expect(candidates.map((candidate) => candidate.spec.operator_id)).toEqual([
-      "text.replace",
       "collect.required",
+      "text.transform",
     ]);
     expect(candidates[0]?.choices).toHaveLength(1);
   });
@@ -566,8 +566,8 @@ describe("upstream candidates", () => {
     const target = port("text", "input");
     const targetHandle = encodeHandleId(portMetaForPort(target));
     const nodes = [
-      nodeSpec("text.replace", "builtin", 1, null, true, {
-        title: "Replace text",
+      nodeSpec("text.transform", "builtin", 1, null, true, {
+        title: "Transform text",
         inputs: [port("text", "input")],
         outputs: [port("text", "output")],
       }),
@@ -601,7 +601,7 @@ describe("upstream candidates", () => {
 
     expect(candidates.map((candidate) => candidate.spec.operator_id)).toEqual([
       "collect.optional",
-      "text.replace",
+      "text.transform",
     ]);
     expect(candidates[0]?.choices[0]?.candidatePort.direction).toBe("output");
   });
@@ -640,15 +640,15 @@ describe("catalogSearchRank", () => {
   });
 });
 
-it("keeps hidden text operators out of the library and both discovery directions", () => {
+it("keeps unlisted nodes out of the library and both discovery directions", () => {
   const catalog = registry();
   const input = { ...port("text", "input"), direction: "input" as const };
   const output = { ...port("text", "output"), direction: "output" as const };
   const hidden = [
-    "text.split",
-    "text.replace",
-    "text.join",
-    "text.as_markdown",
+    "notes.draft",
+    "table.staging",
+    "image.internal",
+    "value.internal",
   ].map((id) =>
     nodeSpec(id, "builtin", 1, null, false, {
       inputs: [input],

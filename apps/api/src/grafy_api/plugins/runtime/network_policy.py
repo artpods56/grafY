@@ -15,13 +15,11 @@ import re
 from pathlib import Path
 from typing import Mapping
 import warnings
-from uuid import UUID
 
 import tomllib
 
 from cryptography import x509
 from grafy_core.domain.plugin_releases import PluginNodeContract
-from grafy_core.domain.plugin_identity import PluginReleaseScope
 
 from grafy_api.plugins.runtime.egress import (
     PLUGIN_EGRESS_CONNECT_TIMEOUT_SECONDS,
@@ -341,8 +339,6 @@ class NetworkProfileAssignment:
 
     plane: NetworkAccessPlane
     profile: str
-    scope: PluginReleaseScope | None = None
-    workspace_id: UUID | None = None
     slug: str | None = None
     revision: int | None = None
 
@@ -350,13 +346,6 @@ class NetworkProfileAssignment:
         if not _PROFILE_NAME.fullmatch(self.profile):
             raise NetworkPolicyError(
                 "Assignment profile names must match ^[a-z][a-z0-9-]*$"
-            )
-        if (
-            self.workspace_id is not None
-            and self.scope is not PluginReleaseScope.WORKSPACE
-        ):
-            raise NetworkPolicyError(
-                "Only workspace-scope assignments may name a Workspace"
             )
         if self.revision is not None and (
             isinstance(self.revision, bool) or self.revision < 1
@@ -370,27 +359,10 @@ class NetworkProfileAssignment:
         if self.revision is not None:
             return 3
         if self.slug is not None:
-            return 2
-        if self.scope is not None:
             return 1
         return 0
 
-    def matches(
-        self,
-        *,
-        scope: PluginReleaseScope,
-        workspace_id: UUID | None,
-        slug: str,
-        revision: int,
-    ) -> bool:
-        if self.scope is not None and self.scope is not scope:
-            return False
-        if (
-            self.workspace_id is not None
-            and workspace_id is not None
-            and self.workspace_id != workspace_id
-        ):
-            return False
+    def matches(self, *, slug: str, revision: int) -> bool:
         if self.slug is not None and self.slug != slug:
             return False
         if self.revision is not None and self.revision != revision:
@@ -398,13 +370,7 @@ class NetworkProfileAssignment:
         return True
 
     def specificity_key(self) -> tuple[object, ...]:
-        return (
-            self.plane,
-            self.scope,
-            None if self.workspace_id is None else self.workspace_id,
-            self.slug,
-            self.revision,
-        )
+        return (self.plane, self.slug, self.revision)
 
 
 class NetworkPolicy:
@@ -521,8 +487,6 @@ class NetworkPolicy:
         self,
         plane: NetworkAccessPlane,
         *,
-        scope: PluginReleaseScope,
-        workspace_id: UUID | None,
         slug: str,
         revision: int,
     ) -> NetworkAccessProfile | None:
@@ -532,12 +496,7 @@ class NetworkPolicy:
         for assignment in self._assignments:
             if assignment.plane is not plane:
                 continue
-            if assignment.matches(
-                scope=scope,
-                workspace_id=workspace_id,
-                slug=slug,
-                revision=revision,
-            ):
+            if assignment.matches(slug=slug, revision=revision):
                 matching.append(assignment)
         if matching:
             top_specificity = max(assignment.specificity for assignment in matching)
@@ -573,8 +532,6 @@ class HttpEgressResolution:
 def resolve_http_egress_authority(
     policy: NetworkPolicy,
     *,
-    scope: PluginReleaseScope,
-    workspace_id: UUID | None,
     slug: str,
     revision: int,
     contract: PluginNodeContract,
@@ -589,8 +546,6 @@ def resolve_http_egress_authority(
 
     profile = policy.resolve(
         NetworkAccessPlane.PLUGIN_EXECUTION,
-        scope=scope,
-        workspace_id=workspace_id,
         slug=slug,
         revision=revision,
     )
@@ -743,7 +698,6 @@ def _with_profile(
 def render_effective_network_policy(
     resolution: HttpEgressResolution,
     *,
-    plugin_scope: PluginReleaseScope,
     slug: str,
     revision: int,
     node_operator: str,
@@ -753,7 +707,7 @@ def render_effective_network_policy(
 
     profile = resolution.profile
     lines = [
-        f"Plugin: {plugin_scope.value}/{slug}@{revision}",
+        f"Plugin: {slug}@{revision}",
         f"Node: {node_operator}",
     ]
     if configured_fields:
@@ -1044,21 +998,12 @@ def _assignment_from_manifest(raw: Mapping[str, object]) -> NetworkProfileAssign
     raw_profile = raw.get("profile")
     if not isinstance(raw_profile, str):
         raise NetworkPolicyError("Assignment requires a profile name")
-    scope: PluginReleaseScope | None = None
-    raw_scope = raw.get("scope")
-    if raw_scope is not None:
-        if raw_scope not in {scope.value for scope in PluginReleaseScope}:
+    for retired in ("scope", "workspace_id"):
+        if retired in raw:
             raise NetworkPolicyError(
-                f"Assignment scope {raw_scope!r} must be system or workspace"
+                f"Assignment {retired!r} is not supported: Plugin releases are "
+                "System-only, so an assignment selects a slug and revision"
             )
-        scope = PluginReleaseScope(raw_scope)
-    workspace_id: UUID | None = None
-    raw_workspace = raw.get("workspace_id")
-    if raw_workspace is not None:
-        try:
-            workspace_id = UUID(str(raw_workspace))
-        except ValueError as exc:
-            raise NetworkPolicyError("Assignment workspace_id must be a UUID") from exc
     raw_slug = raw.get("slug")
     slug: str | None = None
     if raw_slug is not None:
@@ -1078,8 +1023,6 @@ def _assignment_from_manifest(raw: Mapping[str, object]) -> NetworkProfileAssign
     return NetworkProfileAssignment(
         plane=plane,
         profile=raw_profile,
-        scope=scope,
-        workspace_id=workspace_id,
         slug=slug,
         revision=revision,
     )

@@ -5,7 +5,7 @@ This Compose project runs four processes:
 1. `migrate` applies Alembic migrations and exits.
 2. `api` runs one FastAPI process. It imports no System Plugin package unless
    an exact deployment manifest binds the installed bytes to a selected
-   release. Isolated-only GIS, LLM, OCR, and SQL implementations live in their
+   release. Isolated-only GIS, LLM, Mistral, and SQL implementations live in their
    retained Plugin images rather than the online API image.
 3. `web` runs the minimal Next.js standalone server.
 4. `gateway` is the only Grafy application listener (`127.0.0.1:8080` by
@@ -140,19 +140,10 @@ Tune `GRAFY_MAX_ACTIVE_EXECUTIONS`, `GRAFY_MAX_PENDING_GRAPHS`,
 CPU, memory, disk, and artifact workloads. The distinct-release limit must not
 exceed the live-sandbox limit.
 
-`GRAFY_PLUGIN_ROOTS` and `GRAFY_PLUGIN_AUTHORING_ROOT` default to
-`/data/plugins` in the production example so coding-agent working copies live
-on the durable `grafy-data` volume. Run `grafy plugin scaffold`, `review`, and
-`publish-reviewed` inside the API container with an authorized Workspace owner
-UUID. The scaffold builds the SDK wheel from the deployment-owned
-`GRAFY_PLUGIN_SDK_PROJECT`; it never writes build output into that SDK source.
-
-The existing Workspace commands use sanitized host subprocesses by default for
-local compatibility. That mode is not a filesystem or network isolation
-boundary. Operators may add `--publisher-sandbox --sandbox-image <image>` to a
-direct `grafy plugin publish` invocation, but reviewed publication from the
-online API remains a trusted-workspace feature rather than a hostile-code
-boundary.
+`GRAFY_PLUGIN_ROOTS` defaults to `/data/plugins` in the production example so
+Plugin working copies live on the durable `grafy-data` volume. Run
+`grafy plugin check` and `grafy plugin publish` inside the API container with a
+platform token that holds the `plugin.publish_global` scope.
 
 ## One-shot System Plugin publisher
 

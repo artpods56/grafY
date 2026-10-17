@@ -4,7 +4,7 @@ Use this guide to rebuild the native runtime inputs and publish or promote a glo
 
 ## Build the native runtime image
 
-The image starts from the digest-pinned Astral uv Python 3.14 Trixie image. It copies the uv binary from the pinned Bookworm image used by Grafy's API. That keeps `uv sync --locked` aligned with the committed Plugin lockfiles. The image installs GDAL and its Python bindings, NumPy, Pillow, Tesseract, and the English OCR data. `python3-pil` is explicit because the minimal install does not guarantee Pillow, and GDAL 3.10's `gdal2tiles.py` imports PIL.
+The image starts from the digest-pinned Astral uv Python 3.14 Trixie image. It copies the uv binary from the pinned Bookworm image used by Grafy's API. That keeps `uv sync --locked` aligned with the committed Plugin lockfiles. The image installs GDAL and its Python bindings, NumPy, and Pillow. `python3-pil` is explicit because the minimal install does not guarantee Pillow, and GDAL 3.10's `gdal2tiles.py` imports PIL.
 
 Debian Trixie's `python3-gdal` package targets system Python 3.13 and does not support Python 3.14. `gdal2tiles.py` uses those system bindings. Plugin code uses the Python 3.14 interpreter from uv and its own locked dependencies. See Debian's [`python3-gdal` package](https://packages.debian.org/trixie/python3-gdal) and the [GDAL 3.10 `gdal2tiles` reference](https://gdal.org/_/downloads/en/release-3.10/pdf/).
 
@@ -83,10 +83,7 @@ mounts on the host. Use the deployed release's Compose files, environment file,
 and site override, including its storage network and network-policy mount.
 
 Read `plugins/system-plugins.toml` from the archive to choose global publication
-inputs and loader targets. Do not treat every directory under `plugins/` as a
-System Plugin. A directory outside the inventory needs its own publication scope.
-For `ai-ihpan`, leave Notarius unpublished unless the owner requests publication
-in an appropriate scope.
+inputs and loader targets.
 
 To update the application and Plugins together, deploy the application first.
 Publish the changed Plugins against its SDK and inventory, then promote their

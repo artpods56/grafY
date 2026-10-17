@@ -17,6 +17,7 @@ from grafy_core.domain.plugin_releases import (
     PluginNodeContract,
 )
 from grafy_core.domain.identity import (
+    WorkspaceCapability,
     WorkspaceKind,
     WorkspaceRole,
     WorkspaceInvitationStatus,
@@ -25,7 +26,6 @@ from grafy_core.domain.module_library import ModulePublicationState
 from grafy_core.domain.plugin_releases import PluginReleaseScope, PluginExecutionPolicy
 from grafy_core.domain.plugin_revocations import PluginReleaseRevocationReason
 from grafy_core.domain.plugin_selection import PluginFamilyLifecycle
-from grafy_core.domain.templates import TemplateState
 from grafy_core.domain.security_audit import (
     SecurityAuditActorKind,
     SecurityAuditOutcome,
@@ -79,7 +79,6 @@ ENUM_CASES = [
     (schema.WorkspaceRoleType, WorkspaceRole, 16),
     (schema.WorkspaceInvitationStatusType, WorkspaceInvitationStatus, 16),
     (schema.ModulePublicationStateType, ModulePublicationState, 32),
-    (schema.TemplateStateType, TemplateState, 16),
     (schema.SecurityAuditActorKindType, SecurityAuditActorKind, 24),
     (schema.SecurityAuditOutcomeType, SecurityAuditOutcome, 16),
 ]
@@ -119,6 +118,27 @@ def test_enum_storage_processors_preserve_values_lengths_and_errors[E: StrEnum](
     assert column.process_result_value(None, dialect) is None
     with pytest.raises(ValueError):
         column.process_result_value("not-a-domain-value", dialect)
+
+
+@pytest.mark.parametrize("dialect", [sqlite.dialect(), postgresql.dialect()])
+def test_stored_token_scopes_ignore_names_this_build_does_not_grant(
+    dialect: Dialect,
+) -> None:
+    """An old token keeps parsing and grants nothing it cannot name."""
+
+    column = schema.WorkspaceCapabilityTupleType()
+    assert column.process_bind_param(
+        (WorkspaceCapability.EDIT_GRAPH,), dialect
+    ) == ["edit_graph"]
+    assert column.process_result_value(
+        ["edit_graph", "publish_plugin"], dialect
+    ) == (WorkspaceCapability.EDIT_GRAPH,)
+    assert column.process_result_value([], dialect) == ()
+    assert column.process_result_value(None, dialect) is None
+    with pytest.raises(ValueError, match="not a JSON string list"):
+        column.process_result_value("edit_graph", dialect)
+    with pytest.raises(ValueError, match="not a JSON string list"):
+        column.process_result_value([None], dialect)
 
 
 @pytest.mark.filterwarnings("error:.*cache key.*")

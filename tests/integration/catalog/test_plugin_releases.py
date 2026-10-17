@@ -10,13 +10,15 @@ from grafy_api.plugins.publication.source import PluginDirectoryPublisher
 from grafy_api.settings import Settings
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 from grafy_core.application.plugin_releases import PluginReleaseService
-from grafy_core.domain.plugin_releases import PluginRuntimeArtifact
+from grafy_core.domain.plugin_releases import (
+    PlatformPluginActor,
+    PluginExecutionPolicy,
+    PluginRuntimeArtifact,
+)
 from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_storage import LocalFileObjectStore
 from tests.support.identity import (
-    TEST_USER_ID,
-    WORKSPACE_ID,
     browser_actor_override,
     create_schema,
     workspace_api_path,
@@ -25,121 +27,71 @@ from tests.testkit import client_with_overrides
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+PLATFORM_ACTOR = PlatformPluginActor("test:platform")
 
 
-def test_workspace_plugin_release_is_overlaid_in_node_catalog(tmp_path: Path) -> None:
+def _runtime_artifact(name: str, digest: str) -> PluginRuntimeArtifact:
+    return PluginRuntimeArtifact(
+        object_key=f"plugin-releases/notes/runtime/{name}.oci.tar",
+        archive_digest=digest * 64,
+        manifest_digest=digest * 64,
+        config_digest=digest * 64,
+    )
+
+
+def test_published_system_release_is_overlaid_in_the_node_catalog(
+    tmp_path: Path,
+) -> None:
+    """A frozen Plugin project reaches the catalog only through publish and promote."""
+
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'catalog.sqlite3'}"
     asyncio.run(create_schema(database_url))
     database = create_database(database_url)
     verified = PluginDirectoryPublisher(
-        (REPOSITORY_ROOT / "examples",), runtime_profile="python-uv"
-    ).verify(REPOSITORY_ROOT / "examples" / "plugin-notes")
+        (REPOSITORY_ROOT / "tests" / "fixtures",), runtime_profile="python-uv"
+    ).verify(REPOSITORY_ROOT / "tests" / "fixtures" / "plugin-notes")
     service = PluginReleaseService(
         lambda: SqlAlchemyUnitOfWork(database.sessions),
         LocalFileObjectStore(tmp_path / "workbench" / "objects"),
         bucket="workbench-artifacts",
     )
-    release = asyncio.run(
-        service.publish(
-            workspace_id=WORKSPACE_ID,
-            catalog=verified.catalog,
+
+    async def publish(
+        artifact: PluginRuntimeArtifact,
+        *,
+        catalog=verified.catalog,
+        archive: bytes = verified.source_archive,
+        runtime_profile: str = "python-uv",
+    ):
+        return await service.publish_system(
+            catalog=catalog,
             capabilities=verified.capabilities,
-            source_archive=verified.source_archive,
+            source_archive=archive,
             lock_digest=verified.lock_digest,
-            runtime_profile=verified.runtime_profile,
-            runtime_artifact=None,
+            runtime_profile=runtime_profile,
+            runtime_artifact=artifact,
+            execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
+            platform_actor=PLATFORM_ACTOR,
             loader_target=verified.loader_target,
-            published_by_user_id=TEST_USER_ID,
         )
+
+    first = asyncio.run(publish(_runtime_artifact("first", "1")))
+    repeat = asyncio.run(publish(_runtime_artifact("first", "1")))
+    assert repeat == first
+    assert first.release.executable is True
+
+    changed_image = asyncio.run(publish(_runtime_artifact("changed", "4")))
+    assert changed_image.release.revision == 2
+
+    changed_profile = asyncio.run(
+        publish(_runtime_artifact("first", "1"), runtime_profile="python-uv-gdal")
     )
-    same_release = asyncio.run(
-        service.publish(
-            workspace_id=WORKSPACE_ID,
-            catalog=verified.catalog,
-            capabilities=verified.capabilities,
-            source_archive=verified.source_archive,
-            lock_digest=verified.lock_digest,
-            runtime_profile=verified.runtime_profile,
-            runtime_artifact=None,
-            loader_target=verified.loader_target,
-            published_by_user_id=TEST_USER_ID,
-        )
-    )
-    assert same_release == release
-    first_runtime_artifact = PluginRuntimeArtifact(
-        object_key="plugin-releases/notes/runtime/first.oci.tar",
-        archive_digest="1" * 64,
-        manifest_digest="2" * 64,
-        config_digest="3" * 64,
-    )
-    image_backed_release = asyncio.run(
-        service.publish(
-            workspace_id=WORKSPACE_ID,
-            catalog=verified.catalog,
-            capabilities=verified.capabilities,
-            source_archive=verified.source_archive,
-            lock_digest=verified.lock_digest,
-            runtime_profile=verified.runtime_profile,
-            runtime_artifact=first_runtime_artifact,
-            loader_target=verified.loader_target,
-            published_by_user_id=TEST_USER_ID,
-        )
-    )
-    assert image_backed_release.release.revision == 2
-    assert image_backed_release.release.executable is True
-    assert release.release.executable is False
-    same_image_backed_release = asyncio.run(
-        service.publish(
-            workspace_id=WORKSPACE_ID,
-            catalog=verified.catalog,
-            capabilities=verified.capabilities,
-            source_archive=verified.source_archive,
-            lock_digest=verified.lock_digest,
-            runtime_profile=verified.runtime_profile,
-            runtime_artifact=first_runtime_artifact,
-            loader_target=verified.loader_target,
-            published_by_user_id=TEST_USER_ID,
-        )
-    )
-    assert same_image_backed_release == image_backed_release
-    changed_image_release = asyncio.run(
-        service.publish(
-            workspace_id=WORKSPACE_ID,
-            catalog=verified.catalog,
-            capabilities=verified.capabilities,
-            source_archive=verified.source_archive,
-            lock_digest=verified.lock_digest,
-            runtime_profile=verified.runtime_profile,
-            runtime_artifact=PluginRuntimeArtifact(
-                object_key="plugin-releases/notes/runtime/changed.oci.tar",
-                archive_digest="4" * 64,
-                manifest_digest="5" * 64,
-                config_digest="6" * 64,
-            ),
-            loader_target=verified.loader_target,
-            published_by_user_id=TEST_USER_ID,
-        )
-    )
-    assert changed_image_release.release.revision == 3
-    changed_profile_release = asyncio.run(
-        service.publish(
-            workspace_id=WORKSPACE_ID,
-            catalog=verified.catalog,
-            capabilities=verified.capabilities,
-            source_archive=verified.source_archive,
-            lock_digest=verified.lock_digest,
-            runtime_profile="python-uv-gdal",
-            runtime_artifact=None,
-            loader_target=verified.loader_target,
-            published_by_user_id=TEST_USER_ID,
-        )
-    )
-    assert changed_profile_release.release.revision == 4
+    assert changed_profile.release.revision == 3
 
     changed_copy = tmp_path / "changed-plugin"
     changed_copy.mkdir()
     for entry in ("pyproject.toml", "uv.lock", "wheels", "src", "tests"):
-        source = REPOSITORY_ROOT / "examples" / "plugin-notes" / entry
+        source = REPOSITORY_ROOT / "tests" / "fixtures" / "plugin-notes" / entry
         target = changed_copy / entry
         if source.is_dir():
             shutil.copytree(source, target)
@@ -154,21 +106,16 @@ def test_workspace_plugin_release_is_overlaid_in_node_catalog(tmp_path: Path) ->
         (tmp_path,), runtime_profile="python-uv"
     ).verify(changed_copy)
     assert changed_verified.source_archive != verified.source_archive
-    changed_release = asyncio.run(
-        service.publish(
-            workspace_id=WORKSPACE_ID,
+    changed_source = asyncio.run(
+        publish(
+            _runtime_artifact("first", "1"),
             catalog=changed_verified.catalog,
-            capabilities=changed_verified.capabilities,
-            source_archive=changed_verified.source_archive,
-            lock_digest=changed_verified.lock_digest,
-            runtime_profile=changed_verified.runtime_profile,
-            runtime_artifact=None,
-            loader_target=changed_verified.loader_target,
-            published_by_user_id=TEST_USER_ID,
+            archive=changed_verified.source_archive,
         )
     )
-    assert changed_release.release.revision == 5
+    assert changed_source.release.revision == 4
 
+    # Publication alone changes nothing: the catalog follows the selection.
     settings = Settings(
         app=AppConfig(
             workspace=tmp_path / "workbench", database_url=SecretStr(database_url)
@@ -182,6 +129,21 @@ def test_workspace_plugin_release_is_overlaid_in_node_catalog(tmp_path: Path) ->
                 workspace_actor: browser_actor_override,
             },
         ) as client:
+            staged_slugs = {
+                plugin["slug"]
+                for plugin in client.get(workspace_api_path("/nodes")).json()["plugins"]
+            }
+            assert "notes" not in staged_slugs
+
+            asyncio.run(
+                service.promote_system(
+                    slug=changed_source.release.slug,
+                    revision=changed_source.release.revision,
+                    platform_actor=PLATFORM_ACTOR,
+                    expected_generation=0,
+                )
+            )
+
             response = client.get(workspace_api_path("/nodes"))
             assert response.status_code == 200
             payload = response.json()
@@ -191,24 +153,15 @@ def test_workspace_plugin_release_is_overlaid_in_node_catalog(tmp_path: Path) ->
     notes_plugin = next(
         plugin for plugin in payload["plugins"] if plugin["slug"] == "notes"
     )
-    assert notes_plugin == {
+    assert notes_plugin["publisher"] == "test:platform"
+    assert notes_plugin["scope"] == "system"
+    assert notes_plugin["installation_scope"] == "system"
+    assert notes_plugin["plugin_release"] == {
+        "scope": "system",
         "slug": "notes",
-        "title": "Notes",
-        "origin": "plugin",
-        "entry_kind": "plugin",
-        "scope": "workspace",
-        "plugin_release": {
-            "scope": "workspace",
-            "slug": "notes",
-            "revision": 5,
-        },
-        "revision": 5,
-        "publisher": str(TEST_USER_ID),
-        "installation_scope": "workspace",
-        "runnable": False,
-        "non_runnable_reason": "missing_runtime_artifact",
-        "non_runnable_detail": "This release has no immutable runtime image.",
+        "revision": 4,
     }
+    assert notes_plugin["revision"] == 4
     notes_nodes = {
         node["operator_id"]: node
         for node in payload["nodes"]
@@ -218,10 +171,12 @@ def test_workspace_plugin_release_is_overlaid_in_node_catalog(tmp_path: Path) ->
         "notes.table.summarize",
         "notes.summary.render",
     }
-    assert all(node["plugin_revision"] == 5 for node in notes_nodes.values())
+    assert all(node["plugin_revision"] == 4 for node in notes_nodes.values())
+    # This deployment runs no adapter for the release's runtime profile, so the
+    # catalog reports the same reason the compiler would refuse it.
     assert all(node["runnable"] is False for node in notes_nodes.values())
     assert all(
-        node["non_runnable_reason"] == "missing_runtime_artifact"
+        node["non_runnable_reason"] == "unsupported_runtime_profile"
         for node in notes_nodes.values()
     )
     assert any(

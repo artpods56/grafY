@@ -8,7 +8,6 @@ from uuid import UUID
 import grafy_core.runtime.plugin_guest as plugin_guest_module
 import pytest
 from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactTypeKey, NodeInput
-from grafy_core.domain.plugin_identity import PluginReleaseScope
 from grafy_core.domain.plugin_releases import (
     PluginArtifactBundleContract,
     PluginArtifactTypeKey,
@@ -56,14 +55,10 @@ class _GuestObjectInput(NodeInput):
 
 def _loader_release(
     *,
-    scope: PluginReleaseScope = PluginReleaseScope.SYSTEM,
-    workspace_id: UUID | None = None,
     slug: str = "text",
     contract_digest: str | None = None,
 ) -> PluginInvocationRelease:
     return PluginInvocationRelease(
-        scope=scope,
-        workspace_id=workspace_id,
         slug=slug,
         revision=1,
         source_digest="a" * 64,
@@ -122,7 +117,7 @@ def test_system_guest_rejects_manifest_and_contract_identity_drift(
         )
 
 
-def test_workspace_guest_uses_the_same_image_owned_loader_manifest(
+def test_guest_reads_the_loader_target_its_image_owns_not_the_protocol_default(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -137,18 +132,17 @@ def test_workspace_guest_uses_the_same_image_owned_loader_manifest(
     module.CUSTOM_PLUGIN = TEXT  # type: ignore[attr-defined]
     importer = Mock(return_value=module)
     monkeypatch.setattr(plugin_guest_module, "import_module", importer)
-    workspace_id = UUID("00000000-0000-4000-8000-000000000503")
 
     plugin, _ = load_guest_plugin(
-        _loader_release(
-            scope=PluginReleaseScope.WORKSPACE,
-            workspace_id=workspace_id,
-        ),
+        _loader_release(),
         system_loader_manifest_path=manifest_path,
     )
 
     assert plugin is TEXT
     importer.assert_called_once_with("workspace_plugin")
+
+
+WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000503")
 
 
 @pytest.mark.asyncio
@@ -165,8 +159,6 @@ async def test_guest_binary_bundle_storage_loads_only_declared_content(
         execution_scope_id=UUID("00000000-0000-4000-8000-000000000502"),
         workspace_id=UUID("00000000-0000-4000-8000-000000000503"),
         release=PluginInvocationRelease(
-            scope=PluginReleaseScope.WORKSPACE,
-            workspace_id=UUID("00000000-0000-4000-8000-000000000503"),
             slug="binary",
             revision=1,
             source_digest="a" * 64,
@@ -229,14 +221,11 @@ async def test_guest_binary_dependency_bundle_storage_loads_declared_content(
     path = tmp_path / relative_path
     path.parent.mkdir(parents=True)
     path.write_bytes(content)
-    workspace_id = UUID("00000000-0000-4000-8000-000000000503")
     request = PluginInvocationEnvelope(
         invocation_id=UUID("00000000-0000-4000-8000-000000000501"),
         execution_scope_id=UUID("00000000-0000-4000-8000-000000000502"),
-        workspace_id=workspace_id,
+        workspace_id=WORKSPACE_ID,
         release=PluginInvocationRelease(
-            scope=PluginReleaseScope.WORKSPACE,
-            workspace_id=workspace_id,
             slug="binary",
             revision=1,
             source_digest="a" * 64,
@@ -281,14 +270,11 @@ async def test_guest_binary_dependency_bundle_storage_loads_declared_content(
 async def test_guest_bundle_storage_writes_bounded_invocation_local_outputs(
     tmp_path: Path,
 ) -> None:
-    workspace_id = UUID("00000000-0000-4000-8000-000000000503")
     request = PluginInvocationEnvelope(
         invocation_id=UUID("00000000-0000-4000-8000-000000000501"),
         execution_scope_id=UUID("00000000-0000-4000-8000-000000000502"),
-        workspace_id=workspace_id,
+        workspace_id=WORKSPACE_ID,
         release=PluginInvocationRelease(
-            scope=PluginReleaseScope.WORKSPACE,
-            workspace_id=workspace_id,
             slug="outputs",
             revision=1,
             source_digest="a" * 64,
@@ -335,10 +321,9 @@ async def test_guest_bundle_storage_writes_bounded_invocation_local_outputs(
 async def test_guest_object_set_codec_restores_and_rewrites_exact_file_set(
     tmp_path: Path,
 ) -> None:
-    workspace_id = UUID("00000000-0000-4000-8000-000000000503")
     artifact_id = UUID("00000000-0000-4000-8000-000000000504")
     key = ArtifactTypeKey("geo.raster_scan", 1)
-    source_root = f"workspaces/{workspace_id}/{key.id}/v1"
+    source_root = f"workspaces/{WORKSPACE_ID}/{key.id}/v1"
     source_contents = {
         f"{source_root}/source.tif": b"exact cog",
         f"{source_root}/tiles/0/0/0.png": b"exact tile",
@@ -401,10 +386,8 @@ async def test_guest_object_set_codec_restores_and_rewrites_exact_file_set(
     request = PluginInvocationEnvelope(
         invocation_id=UUID("00000000-0000-4000-8000-000000000501"),
         execution_scope_id=UUID("00000000-0000-4000-8000-000000000502"),
-        workspace_id=workspace_id,
+        workspace_id=WORKSPACE_ID,
         release=PluginInvocationRelease(
-            scope=PluginReleaseScope.WORKSPACE,
-            workspace_id=workspace_id,
             slug="gis",
             revision=1,
             source_digest="a" * 64,
@@ -469,14 +452,14 @@ async def test_guest_object_set_codec_restores_and_rewrites_exact_file_set(
     staged_ref = staged_inputs["source"]
     assert isinstance(staged_ref, ArtifactRef)
     async with unit_of_work as entered:
-        staged_artifact = await entered.artifacts.get(workspace_id, artifact_id)
+        staged_artifact = await entered.artifacts.get(WORKSPACE_ID, artifact_id)
     assert staged_artifact is not None
     projection = staged_artifact.metadata["raster_projection"]
     assert isinstance(projection, dict)
     assert projection["bucket"] == "guest-inputs"
     assert str(projection["prefix"]).startswith(f"object-sets/{artifact_id}/files/")
 
-    output_root = f"workspaces/{workspace_id}/{key.id}/v1"
+    output_root = f"workspaces/{WORKSPACE_ID}/{key.id}/v1"
     output_files: list[PortableArtifactFile] = []
     for suffix, content_type in (
         ("source.tif", "image/tiff"),
@@ -501,7 +484,7 @@ async def test_guest_object_set_codec_restores_and_rewrites_exact_file_set(
             )
         )
     output_artifact = ArtifactObject(
-        workspace_id=workspace_id,
+        workspace_id=WORKSPACE_ID,
         artifact_type=key.id,
         schema_version=key.schema_version,
         content_type="image/tiff",

@@ -25,7 +25,7 @@ from grafy_core.domain.plugin_releases import (
 )
 from grafy_core.plugin_inspector import InspectionResult
 from grafy_core.runtime.plugin_loader import (
-    WORKSPACE_PLUGIN_LOADER_TARGET,
+    DEFAULT_PLUGIN_LOADER_TARGET,
     split_plugin_loader_target,
 )
 
@@ -82,7 +82,7 @@ def project_loader_target(project: Path) -> str:
                 "pyproject.toml [tool.grafy.plugin] must be a table"
             )
         plugin = cast(dict[str, object], plugin)
-        value = plugin.get("loader-target", WORKSPACE_PLUGIN_LOADER_TARGET)
+        value = plugin.get("loader-target", DEFAULT_PLUGIN_LOADER_TARGET)
         if not isinstance(value, str):
             raise PluginPublishingError(
                 "pyproject.toml Plugin loader-target must be a string"

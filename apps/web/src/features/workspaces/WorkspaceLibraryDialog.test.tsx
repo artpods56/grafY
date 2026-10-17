@@ -10,12 +10,8 @@ import type { ModuleLibraryEntry, Workspace } from "@/lib/api";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const mocks = vi.hoisted(() => ({
-  deprecateModule: vi.fn(),
-  importModuleRelease: vi.fn(),
   listWorkspaceModules: vi.fn(),
-  withdrawModule: vi.fn(),
   routerPush: vi.fn(),
-  workspaces: [] as Workspace[],
   artifactTypes: [] as {
     key: { id: string; schema_version: number };
     title: string;
@@ -32,19 +28,11 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/lib/api", () => ({
-  deprecateModule: mocks.deprecateModule,
-  importModuleRelease: mocks.importModuleRelease,
   listWorkspaceModules: mocks.listWorkspaceModules,
-  withdrawModule: mocks.withdrawModule,
 }));
 
 vi.mock("@/hooks/use-api", () => ({
-  useWorkspaces: () => ({ data: mocks.workspaces }),
   useNodeRegistry: () => ({ data: { artifact_types: mocks.artifactTypes } }),
-}));
-
-vi.mock("@/features/auth/AuthSessionBoundary", () => ({
-  useAuthSession: () => ({ session: { user_id: "user-1" } }),
 }));
 
 import {
@@ -61,12 +49,7 @@ function workspace(overrides: Partial<Workspace> = {}): Workspace {
     slug: "operations",
     kind: "shared",
     role: "owner",
-    capabilities: [
-      "view_graph",
-      "create_graph",
-      "publish_module",
-      "manage_module_library",
-    ],
+    capabilities: ["view_graph", "create_graph", "publish_module"],
     ...overrides,
   };
 }
@@ -161,7 +144,6 @@ afterEach(async () => {
   }
   roots.clear();
   vi.clearAllMocks();
-  mocks.workspaces = [];
   mocks.artifactTypes = [];
 });
 
@@ -170,14 +152,13 @@ beforeEach(() => {
 });
 
 describe("filterWorkspaceModules", () => {
-  it("searches names, contract ports, artifact types, states, releases, and source ids", () => {
+  it("searches names, contract ports, artifact types, releases, and source ids", () => {
     const invoice = moduleEntry();
     const geocoder = moduleEntry({
       id: "module-2",
       source_graph_id: "graph-geo",
       name: "Address geocoder",
       description: null,
-      publication_state: "deprecated",
       current_library_release: 8,
       inputs: [],
       outputs: [],
@@ -185,9 +166,6 @@ describe("filterWorkspaceModules", () => {
 
     expect(filterWorkspaceModules([invoice, geocoder], "normalized")).toEqual([
       invoice,
-    ]);
-    expect(filterWorkspaceModules([invoice, geocoder], "deprecated")).toEqual([
-      geocoder,
     ]);
     expect(filterWorkspaceModules([invoice, geocoder], "graph-geo")).toEqual([
       geocoder,
@@ -227,7 +205,7 @@ describe("WorkspaceModuleLibrary", () => {
     );
   });
 
-  it("renders state, current release, contract, source graph, and filters without a dead end", async () => {
+  it("renders the current release, contract, and source graph, and filters without a dead end", async () => {
     mocks.artifactTypes = [
       { key: { id: "table.data", schema_version: 1 }, title: "Table data" },
     ];
@@ -237,7 +215,6 @@ describe("WorkspaceModuleLibrary", () => {
     await vi.waitFor(() => {
       expect(container.textContent).toContain("Invoice normalizer");
     });
-    expect(container.textContent).toContain("published");
     expect(container.textContent).toContain("Current release 4");
     expect(container.textContent).toContain("2 immutable releases");
     expect(container.textContent).toContain("invoice · Table data · required");
@@ -245,6 +222,11 @@ describe("WorkspaceModuleLibrary", () => {
     // The contract names the type; the identity it carries stays on hover.
     expect(container.querySelectorAll('[title="table.data@1"]').length).toBe(2);
     expect(container.textContent).toContain("Source graph graph-1");
+    // Nothing advertises a lifecycle action: a published release is the only state.
+    expect(container.textContent).not.toContain("published");
+    expect(container.textContent).not.toContain("Deprecate");
+    expect(container.textContent).not.toContain("Withdraw");
+    expect(container.textContent).not.toContain("Import");
 
     const search = container.querySelector('[aria-label="Search Modules"]');
     expect(search).toBeInstanceOf(HTMLInputElement);
@@ -254,102 +236,21 @@ describe("WorkspaceModuleLibrary", () => {
     expect(container.textContent).toContain("Invoice normalizer");
   });
 
-  it("hides Owner stewardship actions when server capabilities do not grant them", async () => {
+  it("opens the source graph behind a Module", async () => {
     mocks.listWorkspaceModules.mockResolvedValue({ modules: [moduleEntry()] });
-    const container = await renderLibrary(
-      workspace({
-        role: "editor",
-        capabilities: ["view_graph", "create_graph", "publish_module"],
-      }),
-    );
-
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain("Invoice normalizer");
-    });
-    expect(container.textContent).not.toContain("Deprecate");
-    expect(container.textContent).not.toContain("Withdraw from library");
-  });
-
-  it("deprecates and withdraws in-product while preserving the pinned-call contract", async () => {
-    const published = moduleEntry();
-    const deprecated = moduleEntry({ publication_state: "deprecated" });
-    const withdrawn = moduleEntry({ publication_state: "withdrawn" });
-    mocks.listWorkspaceModules.mockResolvedValue({ modules: [published] });
-    mocks.deprecateModule.mockResolvedValue(deprecated);
-    mocks.withdrawModule.mockResolvedValue(withdrawn);
     const container = await renderLibrary();
 
     await vi.waitFor(() => {
       expect(container.textContent).toContain("Invoice normalizer");
     });
-    await React.act(async () => buttonNamed(container, "Deprecate").click());
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain(
-        "is deprecated. Existing pinned calls keep working.",
-      );
-    });
-    expect(mocks.deprecateModule).toHaveBeenCalledWith(
-      "workspace-1",
-      "module-1",
-    );
-
-    React.act(() => buttonNamed(container, "Withdraw from library").click());
-    expect(container.textContent).toContain("This is not a hard delete.");
     await React.act(async () =>
-      buttonNamed(container, "Confirm withdraw").click(),
-    );
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain("was withdrawn from the library");
-    });
-    expect(mocks.withdrawModule).toHaveBeenCalledWith(
-      "workspace-1",
-      "module-1",
-    );
-    expect(container.querySelector('[data-module-id="module-1"]')).toBeNull();
-  });
-
-  it("imports an exact release as an independent copy and opens its new source graph", async () => {
-    const sourceModule = moduleEntry();
-    const destination = workspace({
-      id: "workspace-2",
-      name: "Finance",
-      slug: "finance",
-      role: "editor",
-      capabilities: ["view_graph", "create_graph"],
-    });
-    mocks.workspaces = [workspace(), destination];
-    mocks.listWorkspaceModules.mockResolvedValue({ modules: [sourceModule] });
-    mocks.importModuleRelease.mockResolvedValue({
-      graph_id: "graph-copy",
-      module: moduleEntry({
-        id: "module-copy",
-        workspace_id: "workspace-2",
-        source_graph_id: "graph-copy",
-        current_library_release: 1,
-      }),
-    });
-    const container = await renderLibrary();
-
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain("Invoice normalizer");
-    });
-    React.act(() => buttonNamed(container, "Import copy to Team").click());
-    expect(container.textContent).toContain(
-      "independent—not a live cross-Team link",
-    );
-    expect(container.textContent).toContain("Team · Finance");
-
-    await React.act(async () =>
-      buttonNamed(container, "Confirm import").click(),
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent?.includes("Open source graph"))
+        ?.click(),
     );
 
-    expect(mocks.importModuleRelease).toHaveBeenCalledWith("workspace-2", {
-      source_workspace_id: "workspace-1",
-      source_module_id: "module-1",
-      revision: 4,
-    });
     expect(mocks.routerPush).toHaveBeenCalledWith(
-      "/workspaces/finance/graphs/graph-copy",
+      "/workspaces/operations/graphs/graph-1",
     );
   });
 });

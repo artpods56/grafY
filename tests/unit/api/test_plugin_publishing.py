@@ -31,7 +31,7 @@ from grafy_core.domain.plugin_releases import (
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-EXAMPLE_PLUGIN = REPOSITORY_ROOT / "examples" / "plugin-notes"
+PLUGIN_FIXTURE = REPOSITORY_ROOT / "tests" / "fixtures" / "plugin-notes"
 
 
 def test_project_can_own_a_non_generic_loader_target() -> None:
@@ -45,7 +45,7 @@ def _copy_example_plugin(destination_root: Path) -> Path:
     project = destination_root / "plugin-notes"
     project.mkdir()
     for entry in ("pyproject.toml", "uv.lock", "wheels", "src", "tests"):
-        source = EXAMPLE_PLUGIN / entry
+        source = PLUGIN_FIXTURE / entry
         target = project / entry
         if source.is_dir():
             shutil.copytree(source, target)
@@ -79,8 +79,8 @@ def _minimal_catalog(
 
 def test_plugin_directory_is_tested_inspected_and_frozen(tmp_path: Path) -> None:
     verified = PluginDirectoryPublisher(
-        (REPOSITORY_ROOT / "examples",), runtime_profile="python-uv"
-    ).verify(EXAMPLE_PLUGIN)
+        (REPOSITORY_ROOT / "tests" / "fixtures",), runtime_profile="python-uv"
+    ).verify(PLUGIN_FIXTURE)
 
     assert verified.catalog.slug == "notes"
     assert {node.operator_id for node in verified.catalog.nodes} == {
@@ -111,8 +111,8 @@ def test_host_secrets_cannot_reach_the_verification_environment(
     monkeypatch.setenv("DATABASE_URL", "postgresql://leaked")
 
     verified = PluginDirectoryPublisher(
-        (REPOSITORY_ROOT / "examples",), runtime_profile="python-uv"
-    ).verify(EXAMPLE_PLUGIN)
+        (REPOSITORY_ROOT / "tests" / "fixtures",), runtime_profile="python-uv"
+    ).verify(PLUGIN_FIXTURE)
 
     assert verified.catalog.slug == "notes"
     environment = constrained_environment(
@@ -158,7 +158,7 @@ def test_tests_mutating_the_working_copy_cannot_change_the_freeze(
 
 
 def test_source_digest_is_stable_under_enumeration_reorder() -> None:
-    entries = scan_source_tree(EXAMPLE_PLUGIN)
+    entries = scan_source_tree(PLUGIN_FIXTURE)
 
     forward_digest = sha256(build_deterministic_archive(entries)).hexdigest()
     backward_digest = sha256(
@@ -169,7 +169,7 @@ def test_source_digest_is_stable_under_enumeration_reorder() -> None:
 
 
 def test_generated_release_metadata_does_not_change_the_source_digest() -> None:
-    source_archive = build_deterministic_archive(scan_source_tree(EXAMPLE_PLUGIN))
+    source_archive = build_deterministic_archive(scan_source_tree(PLUGIN_FIXTURE))
     source_digest = sha256(source_archive).hexdigest()
 
     releases = [
@@ -251,16 +251,16 @@ def test_path_dependencies_outside_the_snapshot_are_rejected(tmp_path: Path) -> 
 def test_project_must_be_below_an_allowed_root(tmp_path: Path) -> None:
     with pytest.raises(PluginPublishingError, match="outside configured roots"):
         PluginDirectoryPublisher((tmp_path,), runtime_profile="python-uv").verify(
-            EXAMPLE_PLUGIN
+            PLUGIN_FIXTURE
         )
 
 
 def test_inspected_slug_must_match_the_publish_target() -> None:
     with pytest.raises(PluginPublishingError) as excinfo:
         PluginDirectoryPublisher(
-            (REPOSITORY_ROOT / "examples",), runtime_profile="python-uv"
+            (REPOSITORY_ROOT / "tests" / "fixtures",), runtime_profile="python-uv"
         ).verify(
-            EXAMPLE_PLUGIN,
+            PLUGIN_FIXTURE,
             expected_slug="other",
         )
 

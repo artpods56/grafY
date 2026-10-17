@@ -2,14 +2,7 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import {
-  ArrowUpRight,
-  Check,
-  Copy,
-  Library,
-  Search,
-  ShieldAlert,
-} from "lucide-react";
+import { ArrowUpRight, Library, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
 
@@ -22,15 +15,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  deprecateModule,
-  importModuleRelease,
   listWorkspaceModules,
-  withdrawModule,
   type ModuleLibraryEntry,
   type Workspace,
 } from "@/lib/api";
-import { useNodeRegistry, useWorkspaces } from "@/hooks/use-api";
-import { useAuthSession } from "@/features/auth/AuthSessionBoundary";
+import { useNodeRegistry } from "@/hooks/use-api";
 import { workbenchGraphPath } from "@/features/workbench/routes";
 import { artifactTypeKey } from "@/features/workbench/canvas/artifact-type-key";
 import {
@@ -52,7 +41,6 @@ function moduleSearchText(module: ModuleLibraryEntry): string {
   return [
     module.name,
     module.description ?? "",
-    module.publication_state,
     module.source_graph_id,
     String(module.current_library_release ?? ""),
     // Search still matches a type by its raw identity, not just its title.
@@ -80,12 +68,6 @@ function libraryLabel(workspace: Workspace): string {
   return workspace.kind === "personal"
     ? "My Module library"
     : `${workspace.name} Team Modules`;
-}
-
-function destinationLabel(workspace: Workspace): string {
-  return workspace.kind === "personal"
-    ? `My graphs · ${workspace.name}`
-    : `Team · ${workspace.name}`;
 }
 
 const s = stylex.create({
@@ -125,24 +107,6 @@ const s = stylex.create({
     color: tokens.colorSubtle,
     fontSize: tokens.fontSizeXs,
     whiteSpace: "nowrap",
-  },
-  message: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: tokens.space2,
-    margin: 0,
-    padding: tokens.space3,
-    borderLeftWidth: 2,
-    borderLeftStyle: "solid",
-    borderLeftColor: tokens.colorSuccess,
-    backgroundColor: tokens.colorAccentSoft,
-    color: tokens.colorText,
-    fontSize: tokens.fontSizeSm,
-    lineHeight: 1.45,
-  },
-  error: {
-    borderLeftColor: tokens.colorDanger,
-    backgroundColor: tokens.colorDangerHover,
   },
   empty: {
     display: "grid",
@@ -211,23 +175,6 @@ const s = stylex.create({
     fontSize: tokens.fontSizeMd,
     fontWeight: 700,
   },
-  state: {
-    display: "inline-flex",
-    alignItems: "center",
-    minHeight: "20px",
-    padding: `0 ${tokens.space2}`,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: "999px",
-    color: tokens.colorMuted,
-    fontSize: tokens.fontSizeXs,
-    textTransform: "capitalize",
-  },
-  deprecated: {
-    borderColor: tokens.colorWarning,
-    color: tokens.colorWarning,
-  },
   metadata: {
     display: "flex",
     flexWrap: "wrap",
@@ -274,57 +221,6 @@ const s = stylex.create({
     flexWrap: "wrap",
     gap: tokens.space2,
     maxWidth: "310px",
-  },
-  actionPanel: {
-    display: "grid",
-    gap: tokens.space3,
-    padding: tokens.space4,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: tokens.radiusMd,
-    backgroundColor: tokens.colorSurfaceRaised,
-  },
-  panelHeading: {
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: tokens.space3,
-  },
-  panelTitle: {
-    margin: 0,
-    color: tokens.colorText,
-    fontSize: tokens.fontSizeMd,
-    fontWeight: 700,
-  },
-  field: {
-    display: "grid",
-    gap: "5px",
-    color: tokens.colorMuted,
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 700,
-    textTransform: "uppercase",
-  },
-  select: {
-    width: "100%",
-    minHeight: "36px",
-    padding: `0 ${tokens.space2}`,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: tokens.radiusSm,
-    outline: "none",
-    backgroundColor: tokens.colorSurface,
-    color: tokens.colorText,
-    fontSize: tokens.fontSizeSm,
-    fontWeight: 400,
-    textTransform: "none",
-  },
-  panelActions: {
-    display: "flex",
-    justifyContent: "flex-end",
-    flexWrap: "wrap",
-    gap: tokens.space2,
   },
   mobileModule: {
     "@media (max-width: 720px)": {
@@ -389,29 +285,17 @@ export function WorkspaceModuleLibrary({
   workspace,
   focusedModuleId = null,
   onOpenSourceGraph,
-  onLibraryChanged,
 }: {
   workspace: Workspace;
   focusedModuleId?: string | null;
   onOpenSourceGraph?: (graphId: string) => void;
-  onLibraryChanged?: () => void | Promise<unknown>;
 }) {
   const router = useRouter();
-  const { session } = useAuthSession();
-  const { data: workspaces = [] } = useWorkspaces(session.user_id);
   // The Module contract names its ports' types, so it reads them the way the
   // workspace's own catalog does.
   const { data: registry } = useNodeRegistry(workspace.id);
   const artifactTypes = registry?.artifact_types ?? null;
   const [query, setQuery] = React.useState("");
-  const [busyId, setBusyId] = React.useState<string | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
-  const [message, setMessage] = React.useState<string | null>(null);
-  const [importTarget, setImportTarget] =
-    React.useState<ModuleLibraryEntry | null>(null);
-  const [withdrawTarget, setWithdrawTarget] =
-    React.useState<ModuleLibraryEntry | null>(null);
-  const [destinationId, setDestinationId] = React.useState("");
 
   const {
     data,
@@ -423,112 +307,6 @@ export function WorkspaceModuleLibrary({
   );
   const modules = data?.modules ?? [];
   const visibleModules = filterWorkspaceModules(modules, query);
-  const importDestinations = workspaces.filter(
-    (candidate) =>
-      candidate.id !== workspace.id &&
-      candidate.capabilities.includes("create_graph"),
-  );
-  const canPublish = workspace.capabilities.includes("publish_module");
-  const canManageLibrary = workspace.capabilities.includes(
-    "manage_module_library",
-  );
-
-  const applyModuleUpdate = async (updated: ModuleLibraryEntry) => {
-    await mutate(
-      (current) => {
-        if (!current) return { modules: [updated] };
-        if (updated.publication_state === "withdrawn") {
-          return {
-            modules: current.modules.filter(
-              (module) => module.id !== updated.id,
-            ),
-          };
-        }
-        return {
-          modules: current.modules.map((module) =>
-            module.id === updated.id ? updated : module,
-          ),
-        };
-      },
-      { revalidate: false },
-    );
-    await onLibraryChanged?.();
-  };
-
-  const runDeprecate = async (module: ModuleLibraryEntry) => {
-    setBusyId(module.id);
-    setError(null);
-    setMessage(null);
-    try {
-      const updated = await deprecateModule(workspace.id, module.id);
-      await applyModuleUpdate(updated);
-      setMessage(
-        `${module.name} is deprecated. Existing pinned calls keep working.`,
-      );
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? `${err.message} Retry deprecating this Module.`
-          : "The Module could not be deprecated. Retry the action.",
-      );
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const runWithdraw = async () => {
-    if (!withdrawTarget) return;
-    const target = withdrawTarget;
-    setBusyId(target.id);
-    setError(null);
-    setMessage(null);
-    try {
-      const updated = await withdrawModule(workspace.id, target.id);
-      await applyModuleUpdate(updated);
-      setWithdrawTarget(null);
-      setMessage(
-        `${target.name} was withdrawn from the library. Existing pinned calls keep working.`,
-      );
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? `${err.message} The Module is still in the library; retry or cancel.`
-          : "The Module could not be withdrawn. It remains in the library; retry or cancel.",
-      );
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const runImport = async () => {
-    if (!importTarget || !destinationId) return;
-    const destination = importDestinations.find(
-      (candidate) => candidate.id === destinationId,
-    );
-    if (!destination) return;
-    setBusyId(importTarget.id);
-    setError(null);
-    setMessage(null);
-    try {
-      const imported = await importModuleRelease(destinationId, {
-        source_workspace_id: workspace.id,
-        source_module_id: importTarget.id,
-        revision: importTarget.current_library_release ?? undefined,
-      });
-      setImportTarget(null);
-      setDestinationId("");
-      await onLibraryChanged?.();
-      router.push(workbenchGraphPath(destination.slug, imported.graph_id));
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? `${err.message} Choose another destination or retry the import.`
-          : "The copy could not be imported. Choose another destination or retry.",
-      );
-    } finally {
-      setBusyId(null);
-    }
-  };
 
   return (
     <div {...stylex.props(s.surface)}>
@@ -547,19 +325,6 @@ export function WorkspaceModuleLibrary({
           {visibleModules.length} of {modules.length}
         </span>
       </div>
-
-      {error ? (
-        <p role="alert" {...stylex.props(s.message, s.error)}>
-          <ShieldAlert size={15} aria-hidden="true" />
-          <span>{error}</span>
-        </p>
-      ) : null}
-      {message ? (
-        <p role="status" {...stylex.props(s.message)}>
-          <Check size={15} aria-hidden="true" />
-          <span>{message}</span>
-        </p>
-      ) : null}
 
       {libraryError ? (
         <div role="alert" {...stylex.props(s.empty)}>
@@ -597,7 +362,7 @@ export function WorkspaceModuleLibrary({
               Add Module Input boundaries for values callers should provide.
             </li>
             <li>Save the graph, then Publish release from Module setup.</li>
-            {canPublish ? null : (
+            {workspace.capabilities.includes("publish_module") ? null : (
               <li>Publishing requires Editor or Owner access here.</li>
             )}
           </ol>
@@ -623,9 +388,6 @@ export function WorkspaceModuleLibrary({
         <ul aria-label="Modules" {...stylex.props(s.list)}>
           {visibleModules.map((module) => {
             const releaseCount = module.releases?.length ?? 0;
-            const canImport =
-              module.publication_state !== "withdrawn" &&
-              importDestinations.length > 0;
             return (
               <li
                 key={module.id}
@@ -639,16 +401,6 @@ export function WorkspaceModuleLibrary({
                 <div {...stylex.props(s.moduleMain)}>
                   <div {...stylex.props(s.moduleHeading)}>
                     <h3 {...stylex.props(s.moduleName)}>{module.name}</h3>
-                    <span
-                      {...stylex.props(
-                        s.state,
-                        module.publication_state === "deprecated"
-                          ? s.deprecated
-                          : null,
-                      )}
-                    >
-                      {module.publication_state}
-                    </span>
                   </div>
                   <div {...stylex.props(s.metadata)}>
                     <span>
@@ -697,150 +449,12 @@ export function WorkspaceModuleLibrary({
                   >
                     Open source graph <ArrowUpRight size={13} />
                   </button>
-                  {canManageLibrary &&
-                  module.publication_state === "published" ? (
-                    <button
-                      type="button"
-                      className="grafy-workspace-button"
-                      disabled={busyId === module.id}
-                      onClick={() => void runDeprecate(module)}
-                    >
-                      Deprecate
-                    </button>
-                  ) : null}
-                  {canManageLibrary ? (
-                    <button
-                      type="button"
-                      className="grafy-workspace-button"
-                      disabled={busyId === module.id}
-                      onClick={() => {
-                        setError(null);
-                        setMessage(null);
-                        setWithdrawTarget(module);
-                      }}
-                    >
-                      Withdraw from library
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="grafy-workspace-button"
-                    disabled={busyId === module.id || !canImport}
-                    title={
-                      importDestinations.length
-                        ? "Create an independent Module copy in another Team or My graphs"
-                        : "No other Team or My graphs location allows graph creation"
-                    }
-                    onClick={() => {
-                      setError(null);
-                      setMessage(null);
-                      setImportTarget(module);
-                      setDestinationId(importDestinations[0]?.id ?? "");
-                    }}
-                  >
-                    <Copy size={13} /> Import copy to Team
-                  </button>
                 </div>
               </li>
             );
           })}
         </ul>
       )}
-
-      {withdrawTarget ? (
-        <section
-          aria-labelledby="withdraw-module-heading"
-          {...stylex.props(s.actionPanel)}
-        >
-          <div {...stylex.props(s.panelHeading)}>
-            <div>
-              <h3 id="withdraw-module-heading" {...stylex.props(s.panelTitle)}>
-                Withdraw {withdrawTarget.name} from the library?
-              </h3>
-              <p {...stylex.props(s.copyText)}>
-                It will disappear from browse and new inserts. Existing Module
-                calls keep resolving their pinned releases. This is not a hard
-                delete.
-              </p>
-            </div>
-          </div>
-          <div {...stylex.props(s.panelActions)}>
-            <button
-              type="button"
-              className="grafy-workspace-button"
-              disabled={busyId === withdrawTarget.id}
-              onClick={() => setWithdrawTarget(null)}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="grafy-workspace-button grafy-workspace-button--primary"
-              disabled={busyId === withdrawTarget.id}
-              onClick={() => void runWithdraw()}
-            >
-              {busyId === withdrawTarget.id
-                ? "Withdrawing…"
-                : "Confirm withdraw"}
-            </button>
-          </div>
-        </section>
-      ) : null}
-
-      {importTarget ? (
-        <section
-          aria-labelledby="import-module-heading"
-          {...stylex.props(s.actionPanel)}
-        >
-          <div {...stylex.props(s.panelHeading)}>
-            <div>
-              <h3 id="import-module-heading" {...stylex.props(s.panelTitle)}>
-                Import copy of {importTarget.name}
-              </h3>
-              <p {...stylex.props(s.copyText)}>
-                This copies release{" "}
-                {importTarget.current_library_release ?? "—"} into the
-                destination as a new source graph and published Module. It is
-                independent—not a live cross-Team link.
-              </p>
-            </div>
-          </div>
-          <label {...stylex.props(s.field)}>
-            Team or My graphs destination
-            <select
-              {...stylex.props(s.select)}
-              value={destinationId}
-              onChange={(event) => setDestinationId(event.currentTarget.value)}
-            >
-              {importDestinations.map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {destinationLabel(candidate)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div {...stylex.props(s.panelActions)}>
-            <button
-              type="button"
-              className="grafy-workspace-button"
-              disabled={busyId === importTarget.id}
-              onClick={() => setImportTarget(null)}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="grafy-workspace-button grafy-workspace-button--primary"
-              disabled={!destinationId || busyId === importTarget.id}
-              onClick={() => void runImport()}
-            >
-              {busyId === importTarget.id
-                ? "Importing copy…"
-                : "Confirm import"}
-            </button>
-          </div>
-        </section>
-      ) : null}
     </div>
   );
 }
@@ -853,7 +467,6 @@ export function WorkspaceLibraryDialog({
   showTrigger = true,
   focusedModuleId = null,
   onOpenSourceGraph,
-  onLibraryChanged,
 }: {
   workspace: Workspace;
   open?: boolean;
@@ -862,7 +475,6 @@ export function WorkspaceLibraryDialog({
   showTrigger?: boolean;
   focusedModuleId?: string | null;
   onOpenSourceGraph?: (graphId: string) => void;
-  onLibraryChanged?: () => void | Promise<unknown>;
 }) {
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
@@ -885,12 +497,11 @@ export function WorkspaceLibraryDialog({
           <DialogHeader>
             <DialogTitle>{libraryLabel(workspace)}</DialogTitle>
             <DialogDescription>
-              Search published contracts, open source graphs, and steward what
+              Search the published contracts
               {workspace.kind === "personal"
                 ? " you keep"
                 : " this Team offers"}{" "}
-              for reuse. Withdrawn Modules leave browse while pinned calls keep
-              working.
+              and open the graph behind any of them.
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
@@ -899,7 +510,6 @@ export function WorkspaceLibraryDialog({
                 workspace={workspace}
                 focusedModuleId={focusedModuleId}
                 onOpenSourceGraph={onOpenSourceGraph}
-                onLibraryChanged={onLibraryChanged}
               />
             ) : null}
           </DialogBody>

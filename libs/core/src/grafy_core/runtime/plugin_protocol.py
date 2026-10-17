@@ -99,8 +99,15 @@ def _validate_relative_bundle_path(value: str) -> str:
 
 
 class PluginInvocationRelease(PluginProtocolValue):
-    scope: PluginReleaseScope
-    workspace_id: UUID | None
+    """Exact release identity inside an invocation.
+
+    The serialized scope and workspace fields stay in the envelope because the
+    protocol is versioned independently of the deployment, but only the System
+    namespace validates (ADR 0015).
+    """
+
+    scope: PluginReleaseScope = PluginReleaseScope.SYSTEM
+    workspace_id: UUID | None = None
     slug: str = Field(
         pattern=r"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$",
         max_length=100,
@@ -113,9 +120,9 @@ class PluginInvocationRelease(PluginProtocolValue):
 
     @model_validator(mode="after")
     def validate_namespace(self) -> Self:
-        if self.scope is PluginReleaseScope.WORKSPACE and self.workspace_id is None:
-            raise ValueError("Workspace Plugin invocation release requires an owner")
-        if self.scope is PluginReleaseScope.SYSTEM and self.workspace_id is not None:
+        if self.scope is not PluginReleaseScope.SYSTEM:
+            raise ValueError("Plugin invocation releases are System-only")
+        if self.workspace_id is not None:
             raise ValueError("System Plugin invocation release cannot have an owner")
         return self
 
@@ -297,13 +304,6 @@ class PluginInvocationEnvelope(PluginProtocolValue):
 
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
-        if (
-            self.release.scope is PluginReleaseScope.WORKSPACE
-            and self.release.workspace_id != self.workspace_id
-        ):
-            raise ValueError(
-                "Plugin invocation release owner must match the invocation workspace"
-            )
         input_ports = [binding.port for binding in self.inputs]
         if len(input_ports) != len(set(input_ports)):
             raise ValueError("Plugin invocation input port bindings must be unique")

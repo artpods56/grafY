@@ -62,10 +62,12 @@ class WorkspaceCapabilityTupleType(TypeDecorator[tuple[WorkspaceCapability, ...]
             if not isinstance(item, str):
                 raise ValueError("Stored string tuple is not a JSON string list")
             items.append(item)
-        try:
-            return tuple(WorkspaceCapability(item) for item in items)
-        except ValueError as exc:
-            raise ValueError("Stored workspace capability is unknown") from exc
+        # A stored token keeps the scope list it was issued with. Values that are
+        # no longer capabilities belonged to retired features, so they grant nothing
+        # and are dropped rather than failing the token load. Minting a new token
+        # still validates every scope in `PersonalAccessToken`.
+        known = {capability.value for capability in WorkspaceCapability}
+        return tuple(WorkspaceCapability(item) for item in items if item in known)
 
 
 class PlatformTokenScopeTupleType(TypeDecorator[tuple[PlatformTokenScope, ...]]):

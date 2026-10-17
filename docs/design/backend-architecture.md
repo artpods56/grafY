@@ -16,7 +16,7 @@ supersedes the historical host-eligible Plugin execution model.
 | `libs/persistence/src/grafy_persistence` | SQL repositories, transaction adapters, table metadata, database setup, System cutover and baseline persistence operations. |
 | `libs/storage/src/grafy_storage` | Local and S3 object-store adapters. |
 | `libs/workbench/src/grafy_workbench` | Application-owned builtin families: image, sequence, value, text, schema, table, and file. |
-| `plugins/{gis,llm,ocr,sql}` | Independently published Plugin implementations and their provider-specific dependencies. |
+| `plugins/{gis,llm,mistral,sql}` | Independently published Plugin implementations and their provider-specific dependencies. |
 | `libs/client/src/grafy_client` | Python HTTP client contracts and operations. |
 
 Core defines ports; persistence and storage implement them. Core does not import
@@ -59,7 +59,7 @@ single API owner; multiple workers are not an interchangeable deployment mode.
 
 `v1/routes/<feature>/views.py` owns request handling and HTTP error translation.
 Route-local models describe transport. Route files need not contain application
-services merely to satisfy a directory template.
+services merely to satisfy a directory pattern.
 
 Authentication's cookie, OIDC, PAT, and abuse-handling code remains under
 `v1/routes/auth`. Workspace transport models belong to `v1/routes/workspaces`;
@@ -70,8 +70,8 @@ for cross-workspace copies.
 
 Core `CollaborationService` owns head commands and checkpoints. Shared
 `application/graph_creation.py` stages the saved graph, revision, head, and initial
-checkpoint for creation workflows. Saved graphs, Modules, and Templates retain
-their own workflows and identities.
+checkpoint for creation workflows. Saved graphs and Modules retain their own
+workflows and identities.
 
 `grafy_api.realtime` owns the room hub and post-commit publishing. The publisher
 receives its dependencies instead of finding request resources. HTTP/WebSocket

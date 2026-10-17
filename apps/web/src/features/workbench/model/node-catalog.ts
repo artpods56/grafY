@@ -441,11 +441,9 @@ export function catalogNodeProviderLabel(
 ): string {
   const plugin = catalogPlugin(registry, spec.plugin_slug);
   if (plugin.origin === "module" || plugin.entry_kind === "module") {
-    const state = spec.publication_state ?? "published";
-    return `Module · release ${spec.module_graph_revision} · ${state}`;
+    return `Module · release ${spec.module_graph_revision}`;
   }
   if (plugin.origin === "builtin") return plugin.title || "Built-in";
-  if (plugin.scope === "workspace") return `${plugin.title} · Workspace`;
   return plugin.title || "Plugin";
 }
 

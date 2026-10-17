@@ -64,7 +64,7 @@ from grafy_core.runtime.plugin_invocation import (
 )
 from grafy_core.runtime.plugin_loader import (
     PluginGuestLoaderManifest,
-    WORKSPACE_PLUGIN_LOADER_TARGET,
+    DEFAULT_PLUGIN_LOADER_TARGET,
 )
 from grafy_core.runtime.plugin_protocol import (
     PluginArtifactShape,
@@ -187,7 +187,7 @@ class SubprocessPluginGuestRunner(PluginGuestRunner):
         command: tuple[str, ...],
         *,
         environment: Mapping[str, str] | None = None,
-        loader_target: str = WORKSPACE_PLUGIN_LOADER_TARGET,
+        loader_target: str = DEFAULT_PLUGIN_LOADER_TARGET,
     ) -> None:
         if not command:
             raise ValueError("Plugin guest subprocess command must not be empty")

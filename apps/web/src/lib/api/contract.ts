@@ -128,8 +128,6 @@ export type ArtifactRefSequence = Schemas["ArtifactRefSequence"];
 export type SavedGraphSummary = Schemas["SavedGraphSummaryResponse"];
 export type GraphBrowserGraph = Schemas["GraphBrowserItemResponse"];
 export type GraphBrowserList = Schemas["GraphBrowserListResponse"];
-export type GraphFolder = Schemas["GraphFolderResponse"];
-export type GraphFolderList = Schemas["GraphFolderListResponse"];
 export type NodeSecretInput = Schemas["NodeSecretInputResponse"];
 export type NodeSecretStatus = Schemas["NodeSecretStatusResponse"];
 export type GraphNodeSecrets = Schemas["GraphNodeSecretsResponse"];
@@ -145,18 +143,6 @@ export type ModuleRelease = Schemas["ModuleReleaseResponse"];
 export type ModuleList = Schemas["ModuleListResponse"];
 export type PublishModuleReleaseRequest =
   Schemas["PublishModuleReleaseRequest"];
-export type ImportModuleReleaseRequest = Schemas["ImportModuleReleaseRequest"];
-export type ImportModuleReleaseResponse =
-  Schemas["ImportModuleReleaseResponse"];
-export type TemplateState = Schemas["TemplateState"];
-export type GraphTemplate = Schemas["TemplateResponse"];
-export type TemplateList = Schemas["TemplateListResponse"];
-export type CreateTemplateRequest = Schemas["CreateTemplateRequest"];
-export type UpdateTemplateMetadataRequest =
-  Schemas["UpdateTemplateMetadataRequest"];
-export type InstantiateTemplateRequest = Schemas["InstantiateTemplateRequest"];
-export type TemplateInstantiationResponse =
-  Schemas["TemplateInstantiationResponse"];
 export type UploadResponse = Schemas["ImageUploadItemResponse"];
 export type UploadTarget = Schemas["UploadTargetResponse"];
 export type RunScopeInput = Schemas["GraphExecutionScope"];

@@ -26,9 +26,9 @@ from grafy_core.runtime.persistence import ArtifactOutputWriter, ArtifactWriterR
 from grafy_core.runtime.resolvers import Resolver, ResolverRegistry
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.file.resolvers import FileBytesResolver
+from tests.support.scenarios.text_fixtures import ReplaceTextNode
 from grafy_workbench.text.nodes import (
     TEXT_VALUE,
-    ReplaceTextNode,
     TextValueOutputWriter,
     TextValueResolver,
 )

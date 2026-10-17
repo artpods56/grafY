@@ -14,6 +14,7 @@ from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
 from grafy_core.domain.plugin_installations import InstalledPluginRelease
 from grafy_core.domain.plugin_releases import PluginReleaseScope, plugin_contract_digest
+from grafy_core.domain.saved_graphs import SavedGraphPluginReleasePin
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.plugin_invocation import PluginInvocationRequest
 from grafy_core.runtime.plugin_protocol import PluginInvocationLimits
@@ -56,7 +57,7 @@ def _containers() -> list[str]:
 
 
 @pytest.mark.asyncio
-async def test_python_presets_equal_text_nodes_cache_and_clean_sandbox(
+async def test_python_presets_run_exact_cached_and_clean_sandbox(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -204,61 +205,6 @@ async def test_python_presets_equal_text_nodes_cache_and_clean_sandbox(
         assert joined is not None and joined.inline_payload == {
             "value": "changed,second,changed"
         }
-        legacy = RunRequest(
-            nodes=[
-                nodes[0],
-                RunNodeRequest(
-                    kind="builtin",
-                    id="split",
-                    operator_id="text.split",
-                    operator_version=1,
-                    config={"separator": "|"},
-                ),
-                RunNodeRequest(
-                    kind="builtin",
-                    id="replace",
-                    operator_id="text.replace",
-                    operator_version=1,
-                    config={"search": "first", "replacement": "changed"},
-                ),
-                RunNodeRequest(
-                    kind="builtin",
-                    id="join",
-                    operator_id="text.join",
-                    operator_version=1,
-                    config={"separator": ","},
-                ),
-            ],
-            edges=[
-                RunEdgeRequest(
-                    from_node="source",
-                    from_port="text",
-                    to_node="split",
-                    to_port="text",
-                ),
-                RunEdgeRequest(
-                    from_node="split",
-                    from_port="parts",
-                    to_node="replace",
-                    to_port="text",
-                    collection_mode="map",
-                ),
-                RunEdgeRequest(
-                    from_node="replace",
-                    from_port="text",
-                    to_node="join",
-                    to_port="parts",
-                ),
-            ],
-        )
-        old = await components.run_graph.run(WORKSPACE_ID, legacy)
-        assert old.status == "succeeded"
-        old_ref = old.outputs["join"]["text"]
-        assert isinstance(old_ref, ArtifactRef)
-        async with uow as entered:
-            old_joined = await entered.artifacts.get(WORKSPACE_ID, old_ref.artifact_id)
-        assert old_joined is not None
-        assert old_joined.inline_payload == joined.inline_payload
         assert len(observed_containers) == 5
         assert (
             len({container for group in observed_containers for container in group})
@@ -284,20 +230,19 @@ async def test_python_presets_equal_text_nodes_cache_and_clean_sandbox(
         assert set(_containers()) == before
 
         assert components.python_apply is not None
+        python_release = SavedGraphPluginReleasePin(
+            scope=PluginReleaseScope.SYSTEM, slug=PYTHON.slug, revision=1
+        )
         inspected = await components.python_apply.apply(
             workspace_id=WORKSPACE_ID,
             code=presets["replace-text"].code,
-            scope=PluginReleaseScope.SYSTEM,
-            slug=PYTHON.slug,
-            revision=1,
+            plugin_release=python_release,
         )
         assert inspected.contract is not None and not inspected.diagnostics
         network = await components.python_apply.apply(
             workspace_id=WORKSPACE_ID,
             code="import socket\nsocket.create_connection(('1.1.1.1', 53), timeout=0.2)\ndef transform(text: str) -> str:\n    return text\n",
-            scope=PluginReleaseScope.SYSTEM,
-            slug=PYTHON.slug,
-            revision=1,
+            plugin_release=python_release,
         )
         assert network.contract is None
         assert network.diagnostics and network.diagnostics[0].line == 2

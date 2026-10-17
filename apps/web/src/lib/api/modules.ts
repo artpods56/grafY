@@ -1,7 +1,5 @@
 import { request } from "./client";
 import type {
-  ImportModuleReleaseRequest,
-  ImportModuleReleaseResponse,
   ModuleLibraryEntry,
   ModuleList,
   PublishModuleReleaseRequest,
@@ -14,13 +12,6 @@ export function listWorkspaceModules(workspaceId: string) {
   );
 }
 
-export function getWorkspaceModule(workspaceId: string, moduleId: string) {
-  return request<ModuleLibraryEntry>(
-    "GET",
-    `/v1/workspaces/${encodeURIComponent(workspaceId)}/modules/${encodeURIComponent(moduleId)}`,
-  );
-}
-
 export function publishModuleRelease(
   workspaceId: string,
   body: PublishModuleReleaseRequest,
@@ -28,31 +19,6 @@ export function publishModuleRelease(
   return request<ModuleLibraryEntry>(
     "POST",
     `/v1/workspaces/${encodeURIComponent(workspaceId)}/modules/publish`,
-    { body },
-  );
-}
-
-export function deprecateModule(workspaceId: string, moduleId: string) {
-  return request<ModuleLibraryEntry>(
-    "POST",
-    `/v1/workspaces/${encodeURIComponent(workspaceId)}/modules/${encodeURIComponent(moduleId)}/deprecate`,
-  );
-}
-
-export function withdrawModule(workspaceId: string, moduleId: string) {
-  return request<ModuleLibraryEntry>(
-    "POST",
-    `/v1/workspaces/${encodeURIComponent(workspaceId)}/modules/${encodeURIComponent(moduleId)}/withdraw`,
-  );
-}
-
-export function importModuleRelease(
-  workspaceId: string,
-  body: ImportModuleReleaseRequest,
-) {
-  return request<ImportModuleReleaseResponse>(
-    "POST",
-    `/v1/workspaces/${encodeURIComponent(workspaceId)}/modules/import`,
     { body },
   );
 }

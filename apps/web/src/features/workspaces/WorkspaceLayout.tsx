@@ -187,8 +187,6 @@ export function workspaceMobileContextLabel(
   workspace: Pick<Workspace, "kind" | "name"> | undefined,
 ): string {
   if (pathname === "/" || pathname === "/graphs") return "Graphs";
-  if (pathname === "/templates/new") return "Save template";
-  if (pathname.startsWith("/templates")) return "Templates";
   if (/^\/workspaces\/[^/]+\/settings\/?$/.test(pathname)) return "Settings";
   if (pathname === "/workspaces" || /^\/workspaces\/[^/]+\/?$/.test(pathname)) {
     return "Teams & access";

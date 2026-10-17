@@ -31,13 +31,6 @@ from grafy_core.domain.security_audit import (
     SecurityAuditEvent,
     SecurityAuditOutcome,
 )
-from grafy_core.domain.templates import (
-    Template,
-    TemplateCopyRejectedError,
-    TemplateLibraryError,
-    TemplateState,
-    TemplateUnavailableError,
-)
 
 __all__ = [
     "GraphModuleDefinition",
@@ -65,9 +58,4 @@ __all__ = [
     "SecurityAuditActorKind",
     "SecurityAuditEvent",
     "SecurityAuditOutcome",
-    "Template",
-    "TemplateCopyRejectedError",
-    "TemplateLibraryError",
-    "TemplateState",
-    "TemplateUnavailableError",
 ]

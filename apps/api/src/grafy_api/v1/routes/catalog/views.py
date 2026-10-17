@@ -35,7 +35,7 @@ async def list_nodes(
     catalog_releases = (
         []
         if plugin_releases is None
-        else await plugin_releases.list_catalog(access.workspace_id)
+        else await plugin_releases.list_catalog()
     )
     catalog_releases = without_shadowed_releases(
         catalog_releases, resources.workbench.dev_plugin_slugs
@@ -52,7 +52,6 @@ async def list_nodes(
             registry,
             module_listing,
             releases,
-            workspace_id=access.workspace_id,
             release_admission=resources.workbench.release_admission,
             plugin_release_states=release_states,
         ),

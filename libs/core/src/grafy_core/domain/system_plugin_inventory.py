@@ -21,7 +21,6 @@ SYSTEM_PLUGIN_SLUGS = frozenset(
         "external.gis",
         "external.llm",
         "external.mistral",
-        "external.ocr",
         "external.python",
         "external.sql",
         "external.typesafe",
@@ -276,55 +275,6 @@ class SystemPluginInventory(_InventoryValue):
             f"System Plugin {entry.slug!r} owned {identity_kind} {identity!r} "
             f"falls under prefix {owner_prefix!r} delegated to {owner_slug!r}"
         )
-
-    def require_workspace_catalog_authority(
-        self,
-        catalog: PluginCatalogManifest,
-    ) -> None:
-        """Reserve every checked-in System identity prefix from Workspaces."""
-
-        operator_prefixes = tuple(
-            prefix for entry in self.plugins for prefix in entry.operator_prefixes
-        )
-        artifact_type_prefixes = tuple(
-            prefix for entry in self.plugins for prefix in entry.artifact_type_prefixes
-        )
-        self._require_workspace_identities(
-            catalog,
-            "node",
-            (node.operator_id for node in catalog.nodes),
-            operator_prefixes,
-        )
-        self._require_workspace_identities(
-            catalog,
-            "artifact type",
-            (artifact.key.id for artifact in catalog.artifact_types),
-            artifact_type_prefixes,
-        )
-
-    @staticmethod
-    def _require_workspace_identities(
-        catalog: PluginCatalogManifest,
-        identity_kind: str,
-        identities: Iterable[str],
-        prefixes: tuple[str, ...],
-    ) -> None:
-        for identity in identities:
-            reserved = next(
-                (
-                    prefix
-                    for prefix in prefixes
-                    if _matches_identity_prefix(identity, prefix)
-                ),
-                None,
-            )
-            if reserved is None:
-                continue
-            raise SystemPluginInventoryError(
-                f"Workspace Plugin {catalog.slug!r} owned {identity_kind} "
-                f"{identity!r} uses platform-reserved System prefix {reserved!r}"
-            )
-
 
 def _matches_identity_prefix(identity: str, prefix: str) -> bool:
     return identity == prefix or identity.startswith(f"{prefix}.")

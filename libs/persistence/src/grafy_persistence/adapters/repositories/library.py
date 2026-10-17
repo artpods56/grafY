@@ -4,7 +4,6 @@ from sqlalchemy import (
     delete,
     func,
     insert,
-    or_,
     select,
     update,
 )
@@ -18,10 +17,8 @@ from grafy_core.domain.module_library import (
     ModulePublicationState,
     ModuleRelease,
 )
-from grafy_core.domain.templates import Template, TemplateState
 from grafy_core.ports.library_folders import LibraryFolderRepositoryPort
 from grafy_core.ports.module_library import ModuleLibraryRepositoryPort
-from grafy_core.ports.templates import TemplateRepositoryPort
 from grafy_persistence import schema
 
 
@@ -79,12 +76,7 @@ class SqlModuleLibraryRepository(ModuleLibraryRepositoryPort):
             select(Module)
             .where(
                 schema.modules.c.workspace_id == workspace_id,
-                schema.modules.c.publication_state.in_(
-                    (
-                        ModulePublicationState.PUBLISHED,
-                        ModulePublicationState.DEPRECATED,
-                    )
-                ),
+                schema.modules.c.publication_state == ModulePublicationState.PUBLISHED,
             )
             .order_by(
                 schema.modules.c.name.asc(),
@@ -106,61 +98,6 @@ class SqlModuleLibraryRepository(ModuleLibraryRepositoryPort):
                 schema.module_releases.c.module_id == module_id,
             )
             .order_by(schema.module_releases.c.revision.desc())
-        )
-        return list(result)
-
-
-class SqlTemplateRepository(TemplateRepositoryPort):
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
-
-    @override
-    async def add(self, template: Template) -> None:
-        self._session.add(template)
-        await self._session.flush()
-
-    @override
-    async def get(
-        self,
-        workspace_id: UUID,
-        template_id: UUID,
-    ) -> Template | None:
-        return await self._session.scalar(
-            select(Template).where(
-                schema.templates.c.workspace_id == workspace_id,
-                schema.templates.c.id == template_id,
-            )
-        )
-
-    @override
-    async def list(
-        self,
-        workspace_id: UUID,
-        *,
-        query: str | None,
-        include_archived: bool,
-    ) -> list[Template]:
-        statement = select(Template).where(
-            schema.templates.c.workspace_id == workspace_id
-        )
-        if not include_archived:
-            statement = statement.where(
-                schema.templates.c.state == TemplateState.ACTIVE
-            )
-        if query is not None:
-            pattern = f"%{query.lower()}%"
-            statement = statement.where(
-                or_(
-                    func.lower(schema.templates.c.name).like(pattern),
-                    func.lower(schema.templates.c.description).like(pattern),
-                    func.lower(schema.templates.c.source_graph_name).like(pattern),
-                )
-            )
-        result = await self._session.scalars(
-            statement.order_by(
-                schema.templates.c.name.asc(),
-                schema.templates.c.id.asc(),
-            )
         )
         return list(result)
 
@@ -325,9 +262,7 @@ class SqlLibraryFolderRepository(LibraryFolderRepositoryPort):
             select(
                 schema.library_artifact_placements.c.artifact_id,
                 schema.library_artifact_placements.c.folder_id,
-            ).where(
-                schema.library_artifact_placements.c.workspace_id == workspace_id
-            )
+            ).where(schema.library_artifact_placements.c.workspace_id == workspace_id)
         )
         return {row.artifact_id: row.folder_id for row in result}
 

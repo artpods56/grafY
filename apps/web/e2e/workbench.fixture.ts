@@ -5,7 +5,6 @@ import type {
   NodeRegistry,
   SavedGraphList,
   Session,
-  TemplateList,
   Workspace,
   WorkspaceInvitationForRecipient,
 } from "../src/lib/api/contract";
@@ -45,9 +44,6 @@ const workspace = {
     "execute_graph",
     "cancel_execution",
     "publish_module",
-    "manage_module_library",
-    "create_template",
-    "manage_template_library",
     "manage_secrets",
     "delete_graph",
     "manage_members",
@@ -56,7 +52,6 @@ const workspace = {
 } satisfies Workspace;
 
 const savedGraphs = { graphs: [] } satisfies SavedGraphList;
-const templates = { templates: [] } satisfies TemplateList;
 export const nodeRegistry = {
   artifact_conversions: [],
   artifact_types: [],
@@ -147,7 +142,6 @@ export const test = base.extend<{ registry: NodeRegistry }>({
         | Session
         | readonly Workspace[]
         | SavedGraphList
-        | TemplateList
         | NodeRegistry
         | readonly WorkspaceInvitationForRecipient[]
         | undefined;
@@ -167,11 +161,6 @@ export const test = base.extend<{ registry: NodeRegistry }>({
         path === `/api/v1/workspaces/${WORKSPACE_ID}/nodes`
       ) {
         body = registry;
-      } else if (
-        method === "GET" &&
-        path === `/api/v1/workspaces/${WORKSPACE_ID}/templates`
-      ) {
-        body = templates;
       }
 
       if (body !== undefined) {

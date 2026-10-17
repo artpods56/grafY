@@ -66,40 +66,16 @@ class _ReleaseLookup:
 
     async def get_by_revision(
         self,
-        workspace_id: UUID,
         slug: str,
         revision: int,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
     ) -> InstalledPluginRelease | None:
         release = self._release
-        if (
-            workspace_id == release.installation.workspace_id
-            and scope is release.installation.scope
-            and slug == release.release.slug
-            and revision == release.release.revision
-        ):
+        if slug == release.release.slug and revision == release.release.revision:
             return release
         return None
 
-    async def get_selection(
-        self,
-        workspace_id: UUID,
-        slug: str,
-        *,
-        scope: PluginReleaseScope = PluginReleaseScope.WORKSPACE,
-    ) -> None:
-        del workspace_id, slug, scope
-        return None
-
-    async def get_revocation(
-        self,
-        *,
-        workspace_id: UUID,
-        slug: str,
-        revision: int,
-    ) -> None:
-        del workspace_id, slug, revision
+    async def get_selection(self, slug: str) -> None:
+        del slug
         return None
 
     async def get_system_revocation(self, *, slug: str, revision: int) -> None:
@@ -184,13 +160,9 @@ def _release() -> InstalledPluginRelease:
         release=release,
         installation=PluginInstallation.from_release(
             release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.WORKSPACE,
-                workspace_id=WORKSPACE_ID,
-            ),
+            namespace=PluginReleaseNamespace(),
             execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_user_id=WORKSPACE_ID,
-            installed_by_platform_actor=None,
+            installed_by_platform_actor="test:platform",
         ),
     )
 
@@ -233,7 +205,7 @@ def _run_request(operator_id: str) -> RunRequest:
                 operator_id=operator_id,
                 operator_version=1,
                 plugin_release=PluginReleasePinModel(
-                    scope=PluginReleaseScope.WORKSPACE,
+                    scope=PluginReleaseScope.SYSTEM,
                     slug="parity",
                     revision=1,
                 ),
@@ -256,7 +228,6 @@ async def test_catalog_and_compiler_admit_each_contract_with_the_same_policy(
             PluginRegistry(),
             [],
             [release],
-            workspace_id=WORKSPACE_ID,
             release_admission=admission,
         ),
         _UnusedModuleExecutor(),
@@ -316,7 +287,6 @@ async def test_catalog_and_compiler_share_release_rejection_reasons(
             PluginRegistry(),
             [],
             [release],
-            workspace_id=WORKSPACE_ID,
             release_admission=admission,
         ),
         _UnusedModuleExecutor(),

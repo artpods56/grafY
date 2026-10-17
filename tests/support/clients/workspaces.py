@@ -26,7 +26,6 @@ from tests.support.clients.executions import ExecutionsApi
 from tests.support.clients.modules import ModulesApi
 from tests.support.clients.node_secrets import NodeSecretsApi
 from tests.support.clients.saved_graphs import GraphFoldersApi, SavedGraphsApi
-from tests.support.clients.templates import TemplatesApi
 from tests.support.clients.uploads import UploadsApi
 
 
@@ -64,10 +63,6 @@ class WorkspaceApi:
     @property
     def catalog(self) -> CatalogApi:
         return CatalogApi(self._client, self._workspace_id)
-
-    @property
-    def templates(self) -> TemplatesApi:
-        return TemplatesApi(self._client, self._workspace_id)
 
     @property
     def uploads(self) -> UploadsApi:

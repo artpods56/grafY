@@ -7,8 +7,6 @@ from httpx import Response
 from starlette.testclient import TestClient
 
 from grafy_api.v1.routes.modules.models import (
-    ImportModuleReleaseRequest,
-    ImportModuleReleaseResponse,
     ModuleListResponse,
     ModuleResponse,
     PublishModuleReleaseRequest,
@@ -72,59 +70,4 @@ class ModulesApi:
     ) -> ModuleResponse:
         return _parse(
             ModuleResponse, _expect(self.publish(payload, headers=headers), 201)
-        )
-
-    def import_release(
-        self,
-        payload: ImportModuleReleaseRequest,
-        *,
-        headers: Mapping[str, str] | None = None,
-    ) -> Response:
-        return _request(
-            self._client,
-            "POST",
-            f"/v1/workspaces/{self._workspace_id}/modules/import",
-            payload=payload,
-            headers=headers,
-        )
-
-    def import_release_ok(
-        self,
-        payload: ImportModuleReleaseRequest,
-        *,
-        headers: Mapping[str, str] | None = None,
-    ) -> ImportModuleReleaseResponse:
-        return _parse(
-            ImportModuleReleaseResponse,
-            _expect(self.import_release(payload, headers=headers), 201),
-        )
-
-    def deprecate(
-        self, module_id: UUID, *, headers: Mapping[str, str] | None = None
-    ) -> Response:
-        return self._client.post(
-            f"/v1/workspaces/{self._workspace_id}/modules/{module_id}/deprecate",
-            headers=headers,
-        )
-
-    def deprecate_ok(
-        self, module_id: UUID, *, headers: Mapping[str, str] | None = None
-    ) -> ModuleResponse:
-        return _parse(
-            ModuleResponse, _expect(self.deprecate(module_id, headers=headers), 200)
-        )
-
-    def withdraw(
-        self, module_id: UUID, *, headers: Mapping[str, str] | None = None
-    ) -> Response:
-        return self._client.post(
-            f"/v1/workspaces/{self._workspace_id}/modules/{module_id}/withdraw",
-            headers=headers,
-        )
-
-    def withdraw_ok(
-        self, module_id: UUID, *, headers: Mapping[str, str] | None = None
-    ) -> ModuleResponse:
-        return _parse(
-            ModuleResponse, _expect(self.withdraw(module_id, headers=headers), 200)
         )

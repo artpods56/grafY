@@ -247,12 +247,6 @@ describe("workspace route and capability state", () => {
     });
 
     expect(workspaceMobileContextLabel("/graphs", personal)).toBe("Graphs");
-    expect(workspaceMobileContextLabel("/templates", personal)).toBe(
-      "Templates",
-    );
-    expect(workspaceMobileContextLabel("/templates/new", personal)).toBe(
-      "Save template",
-    );
     expect(workspaceMobileContextLabel("/workspaces", personal)).toBe(
       "Teams & access",
     );

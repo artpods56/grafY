@@ -22,7 +22,6 @@ from grafy_core.domain.plugin_releases import (
     PluginExecutionPolicy,
     PluginRelease,
     PluginReleaseNamespace,
-    PluginReleaseScope,
     plugin_contract_digest,
     plugin_profile_digest,
     plugin_protocol_digest,
@@ -47,7 +46,6 @@ from grafy_core.runtime.plugin_invocation import (
     PluginReleaseNode,
 )
 from grafy_storage import LocalFileObjectStore
-
 from grafy_api.plugins.runtime.artifacts import (
     ArtifactBundlePluginInvoker,
     SubprocessPluginGuestRunner,
@@ -66,7 +64,7 @@ def _plugin_python_path(
             str(
                 plugin_source
                 if plugin_source is not None
-                else project_root / "examples" / "plugin-notes" / "src"
+                else project_root / "tests" / "fixtures" / "plugin-notes" / "src"
             ),
             str(project_root / "libs" / "core" / "src"),
         ]
@@ -109,19 +107,15 @@ def _release(
         lock_digest="b" * 64,
         runtime_profile="python-uv",
         loader_target="grafy_plugin:PLUGIN",
-        published_by_user_id=WORKSPACE_ID,
+        published_by_platform_actor="test:platform",
     )
     return InstalledPluginRelease(
         release=release,
         installation=PluginInstallation.from_release(
             release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.WORKSPACE,
-                workspace_id=WORKSPACE_ID,
-            ),
+            namespace=PluginReleaseNamespace(),
             execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_user_id=WORKSPACE_ID,
-            installed_by_platform_actor=None,
+            installed_by_platform_actor="test:platform",
         ),
     )
 

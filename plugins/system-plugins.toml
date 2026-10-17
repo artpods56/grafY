@@ -31,16 +31,6 @@ operator_prefixes = ["mistral"]
 artifact_type_prefixes = []
 
 [[plugins]]
-slug = "external.ocr"
-project = "plugins/ocr"
-distribution_name = "grafy-plugin-ocr"
-loader_target = "grafy_plugin_ocr.plugin:OCR"
-execution_policy = "isolated-only"
-capabilities = ["native.tesseract"]
-operator_prefixes = ["ocr"]
-artifact_type_prefixes = ["ocr"]
-
-[[plugins]]
 slug = "external.python"
 project = "plugins/python"
 distribution_name = "grafy-plugin-python"

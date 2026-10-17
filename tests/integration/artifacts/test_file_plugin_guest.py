@@ -11,7 +11,6 @@ from grafy_core.domain.plugin_releases import (
     PluginArtifactBundleContract,
     PluginArtifactTypeKey,
     PluginCatalogManifest,
-    PluginReleaseScope,
     plugin_contract_digest,
     plugin_protocol_digest,
 )
@@ -75,8 +74,6 @@ async def test_file_operator_exports_exact_portable_output(
         execution_scope_id=uuid4(),
         workspace_id=uuid4(),
         release=PluginInvocationRelease(
-            scope=PluginReleaseScope.SYSTEM,
-            workspace_id=None,
             slug=plugin.slug,
             revision=1,
             source_digest="a" * 64,

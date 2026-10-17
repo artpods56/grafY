@@ -99,7 +99,7 @@ To make "just download it" work without a picker, each type also declares a
 
 | Artifact kind | Default format | Why |
 |---|---|---|
-| JSON payloads (`llm.*`, `sql.result`, `ocr.*`) | `json` | whole-document is the faithful representation |
+| JSON payloads (`llm.*`, `sql.result`) | `json` | whole-document is the faithful representation |
 | Text scalars (`scalar.text`, `text.markdown`) | `txt` | users want the bare value, not `{"value": ...}` |
 | Tables (`table.data`) | `csv` | spreadsheet-friendly, most common human use |
 | Geo feature collections | `geojson` | interoperable, drop into GIS tools |

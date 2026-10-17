@@ -196,19 +196,15 @@ from grafy_core.domain.saved_graphs import GraphPoint
 catalog = await grafy.catalog.get(workspace_id)
 graph = GraphBuilder(catalog)
 extract = graph.add_catalog_node(
-    "notarius.dataset.extract_structured",
+    "llm.openai_compatible.chat_completion",
     {
         "base_url": "https://api.openai.com/v1",
         "model": "gpt-4.1-mini",
-        "context_strategy": "sliding_window",
-        "window_size": 5,
-        "max_concurrent": 5,
-        "lookahead_images": True,
         "temperature": 0,
         "max_completion_tokens": 8192,
         "timeout_ms": 120000,
         "max_retries": 0,
-        "schema_name": "chwalewik_entry",
+        "schema_name": "invoice_entry",
         "strict": True,
     },
     position=GraphPoint(x=720, y=120),

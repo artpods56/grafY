@@ -1,10 +1,10 @@
 from io import BytesIO
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 from grafy_core.artifact_contracts import IMAGE_REGIONS, RASTER_IMAGE, RasterImageContent
-from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
+from grafy_core.artifacts import ArtifactRefSequence
 from grafy_core.file_contracts import PNG_FILE
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
@@ -21,10 +21,6 @@ from grafy_core.runtime.persistence import (
     PersistedNodeOutput,
 )
 from grafy_core.runtime.resolvers import ResolverRegistry
-from grafy_plugin_ocr.artifacts import OCR_PAGE_RESULT
-from grafy_plugin_ocr.persistence import OcrPageResultOutputWriter
-from grafy_plugin_ocr.resolvers import PilImageResolver
-from grafy_plugin_ocr.tesseract import FakeOcrEngine, TesseractOcrNode
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.image import IMAGES
 from grafy_plugin_image import IMAGES as IMAGE_OPERATORS
@@ -50,7 +46,7 @@ def _png_bytes(size: tuple[int, int]) -> bytes:
 
 
 @pytest.mark.asyncio
-async def test_runtime_chains_image_collect_and_ocr_writers(tmp_path: Path) -> None:
+async def test_runtime_chains_image_collect_and_raster_writers(tmp_path: Path) -> None:
     uow = InMemoryUnitOfWork()
     first_content = _png_bytes((3, 2))
     second_content = _png_bytes((5, 4))
@@ -74,9 +70,7 @@ async def test_runtime_chains_image_collect_and_ocr_writers(tmp_path: Path) -> N
         content_type="image/png",
     )
     runtime = NodeRuntime(
-        materializer=InputMaterializer(
-            ResolverRegistry([PilImageResolver(uow=uow, storage=storage)])
-        ),
+        materializer=InputMaterializer(ResolverRegistry()),
         persister=OutputPersister(
             ArtifactWriterRegistry(
                 [
@@ -84,8 +78,7 @@ async def test_runtime_chains_image_collect_and_ocr_writers(tmp_path: Path) -> N
                         storage=storage,
                         uow=uow,
                         bucket="artifacts",
-                    ),
-                    OcrPageResultOutputWriter(uow=uow, engine="fake"),
+                    )
                 ]
             )
         ),
@@ -131,26 +124,10 @@ async def test_runtime_chains_image_collect_and_ocr_writers(tmp_path: Path) -> N
         }
     ]
 
-    ocr_output = await runtime.run_node(
-        TesseractOcrNode(FakeOcrEngine()),
-        NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="ocr_1"),
-        {"pages": collected_images},
-    )
-    assert isinstance(ocr_output, PersistedNodeOutput)
-    ocr_results = ocr_output["results"]
-
-    assert isinstance(ocr_results, ArtifactRefSequence)
-    assert ocr_results.artifact_type == OCR_PAGE_RESULT.key.id
-    assert len(ocr_results.item_refs) == 2
-
     async with uow as entered:
         image_artifacts = await entered.artifacts.list_by_type(
             TEST_WORKSPACE_ID,
             RASTER_IMAGE.key,
-        )
-        ocr_artifacts = await entered.artifacts.list_by_type(
-            TEST_WORKSPACE_ID,
-            OCR_PAGE_RESULT.key,
         )
 
     assert [artifact.metadata["original_filename"] for artifact in image_artifacts] == [
@@ -170,28 +147,6 @@ async def test_runtime_chains_image_collect_and_ocr_writers(tmp_path: Path) -> N
         artifact.workspace_id == TEST_WORKSPACE_ID for artifact in image_artifacts
     )
     assert all("upload_key" not in artifact.metadata for artifact in image_artifacts)
-    texts: list[object] = []
-    for artifact in ocr_artifacts:
-        assert artifact.inline_payload is not None
-        texts.append(artifact.inline_payload["text"])
-
-    assert texts == ["fake OCR image 5x4", "fake OCR image 3x2"]
-
-
-@pytest.mark.asyncio
-async def test_ocr_many_input_requires_artifact_ref_sequence() -> None:
-    page_ref = ArtifactRef.from_key(
-        artifact_id=uuid4(),
-        key=RASTER_IMAGE.key,
-    )
-    materializer = InputMaterializer(ResolverRegistry())
-
-    with pytest.raises(RuntimeError, match="wrap refs in an ArtifactRefSequence"):
-        await materializer.materialize(
-            TesseractOcrNode.input_contract,
-            {"pages": [page_ref]},
-            TEST_WORKSPACE_ID,
-        )
 
 
 @pytest.mark.asyncio

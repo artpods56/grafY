@@ -29,8 +29,8 @@ Network policy applies independently to three planes:
    graph node runs.
 
 Each plane selects a named `NetworkAccessProfile`. Network profiles are
-orthogonal to Plugin runtime profiles such as `python-uv` or native GDAL and
-Tesseract images. An administrator assigns profiles; Plugin source, graph
+orthogonal to Plugin runtime profiles such as `python-uv` or native GDAL
+images. An administrator assigns profiles; Plugin source, graph
 configuration, and coding-agent output cannot select or modify them.
 
 The first execution profile that must be implemented is
@@ -84,8 +84,8 @@ the publisher's initial `uv sync` would leave image construction able to fetch
 dependencies through its own build network, so both paths must resolve the
 same publication policy.
 
-Grafy also has a working-copy workflow intended for coding agents, but Grafy
-does not yet own or sandbox the agent process. If Grafy later hosts coding
+Grafy does not own or sandbox the agent process that edits a Plugin working
+copy. If Grafy later hosts coding
 agents, their setup and task network access must be explicit environment
 policy rather than ambient host access.
 
@@ -231,10 +231,12 @@ the digest.
 
 The deployment resolves one profile using this precedence:
 
-1. Exact release assignment: scope, optional Workspace, slug, and revision.
-2. Plugin-family assignment: scope, optional Workspace, and slug.
-3. Scope default: System or Workspace.
-4. Plane default.
+1. Exact release assignment: slug and revision.
+2. Plugin-family assignment: slug.
+3. Plane default.
+
+Plugin releases are System-owned (ADR 0015), so an assignment names a slug, not
+a scope or a Workspace.
 
 An assignment that names an unknown profile is a startup error. Ambiguous
 assignments at the same precedence are startup errors. Absence of an
@@ -298,13 +300,12 @@ domain_sets = ["python-packages"]
 
 [[assignments]]
 plane = "plugin-execution"
-scope = "system"
 slug = "external.llm"
 profile = "configured-public"
 
 [[assignments]]
 plane = "plugin-execution"
-scope = "workspace"
+slug = "external.sql"
 profile = "offline"
 ```
 
@@ -383,9 +384,9 @@ path-dependency checks.
 
 ### 8.3 Hosted coding-agent authoring
 
-Grafy does not currently launch the coding agent that edits a reserved Plugin
-working copy. This plane becomes enforceable only when Grafy owns the agent
-container or virtual machine.
+Grafy does not currently launch the coding agent that edits a Plugin working
+copy; publication reads a checked-in project. This plane becomes enforceable only
+when Grafy owns the agent container or virtual machine.
 
 The future host must support independent setup and task profiles:
 
@@ -554,7 +555,7 @@ SandboxKey
 
 The canonical sandbox hash includes normalized origins in sorted order.
 
-- Same release, scope, profile, and origins may reuse a sandbox.
+- Same release, profile, and origins may reuse a sandbox.
 - A different origin or profile digest selects a different sandbox.
 - A profile change cannot reuse a sandbox created under the old authority.
 

@@ -20,7 +20,6 @@ table = ["grafy-plugin-table"]
 gis = ["grafy-plugin-gis"]
 llm = ["grafy-plugin-llm"]
 mistral = ["grafy-plugin-mistral"]
-ocr = ["grafy-plugin-ocr"]
 python = ["grafy-plugin-python"]
 sql = ["grafy-plugin-sql"]
 typesafe = ["grafy-plugin-typesafe"]
@@ -40,13 +39,12 @@ members = [
     "apps/plugin-egress-broker",
 ]
 exclude = [
-    "examples/plugin-notes",
+    "tests/fixtures/plugin-notes",
     "plugins/image",
     "plugins/table",
     "plugins/gis",
     "plugins/llm",
     "plugins/mistral",
-    "plugins/ocr",
     "plugins/python",
     "plugins/sql",
     "plugins/typesafe",
@@ -71,7 +69,6 @@ grafy-plugin-image = { path = "plugins/image", editable = true }
 grafy-plugin-table = { path = "plugins/table", editable = true }
 grafy-plugin-llm = { path = "plugins/llm", editable = true }
 grafy-plugin-mistral = { path = "plugins/mistral", editable = true }
-grafy-plugin-ocr = { path = "plugins/ocr", editable = true }
 grafy-plugin-gis = { path = "plugins/gis", editable = true }
 grafy-plugin-python = { path = "plugins/python", editable = true }
 grafy-plugin-sql = { path = "plugins/sql", editable = true }
@@ -107,7 +104,6 @@ include = [
     "plugins/table/*",
     "plugins/llm/*",
     "plugins/mistral/*",
-    "plugins/ocr/*",
     "plugins/gis/*",
     "plugins/python/*",
     "plugins/sql/*",
@@ -136,7 +132,6 @@ executionEnvironments = [
         "plugins/table/src",
         "plugins/llm/src",
         "plugins/mistral/src",
-        "plugins/ocr/src",
         "plugins/gis/src",
         "plugins/python/src",
         "plugins/sql/src",

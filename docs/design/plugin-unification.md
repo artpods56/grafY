@@ -1,54 +1,50 @@
-# Plugin unification (System and Workspace releases)
+# Plugin unification (one System release model)
 
-- **Status:** Scoped release identity implemented; unified System catalog,
-  runtime policy, package convergence, and compatibility cutover in progress.
-- **Date:** 2026-08-24
-- **Audience:** Engineers changing plugin discovery, catalog identity, CLI,
-  agent authoring, or isolated execution
-- **Document type:** Explanation — intended architecture and boundaries
+- **Status:** Implemented. One release module, one namespace, one publication
+  authority.
+- **Date:** 2026-08-24, retargeted for ADR 0015
+- **Audience:** Engineers changing plugin discovery, catalog identity, CLI, or
+  isolated execution
+- **Document type:** Explanation — architecture and boundaries
 - **Related:** [plugin development](plugin-development.md) (first-party System
-  authoring and transitional host adapter),
-  [unified releases ADR](../adr/0004-unify-system-and-workspace-plugin-releases.md),
-  [modules conceptual model](modules-conceptual-model.md),
+  authoring), [ADR 0005](../adr/0005-separate-plugin-releases-from-installations.md)
+  (releases vs installations), [ADR 0015](../adr/0015-plugins-are-system-only.md)
+  (Plugins are System-only), [modules conceptual model](modules-conceptual-model.md),
   [backend architecture](backend-architecture.md),
   [product vocabulary](../../CONTEXT.md)
-- **Implementation plan:**
-  [Workspace Plugin feature slices](../plans/workspace-plugins/README.md)
 
 ## Summary
 
 A **Plugin** is a uv-managed project (`pyproject.toml`, `uv.lock`, typed nodes,
 tests, artifact contracts, and runtime registrations). Execution trusts an
-immutable release, never a mutable working tree. Workspace projects export
-`grafy_plugin.PLUGIN`; co-installed System distributions use a family-specific
-package named by platform-owned loader metadata. The Python import name is not
-catalog identity.
+immutable release, never a mutable working tree. A project exports
+`grafy_plugin.PLUGIN`; the checked-in inventory names the loader target each slug
+may publish under. The Python import name is not catalog identity.
 
-One release module serves two publication authorities. A Workspace owner or
-coding agent publishes an owner-scoped, isolated-only release. A one-shot
-platform/CI publisher stages a global System release with explicit distribution
-and execution policy. Both retain exact source, contract, lock, protocol,
-profile, capability, and OCI identities. Graphs pin the operator and
-`{scope, slug, revision}` independently.
+One release module serves one publication authority: a platform/CI publisher
+holding a platform access token stages a release with explicit distribution and
+execution policy, and a separate platform action promotes it. A release retains
+exact source, contract, lock, protocol, profile, capability, and OCI identities.
+Graphs pin the operator and `{scope, slug, revision}` independently, and `scope`
+is always `system`.
 
-The current exact System release may use a deployment-bound in-process fast
-path only when loaded bytes match its baked host binding. Historical System
-releases and every Workspace release use retained OCI. Catalog, compiler, and
-the defensive Docker boundary share one deployment-owned release admission;
-an exact revocation is always denied as `revoked`. Host code is imported only
-from an exact deployment manifest; absent configuration is Module-only.
+The current exact System release may use a deployment-bound in-process fast path
+only when loaded bytes match its baked host binding. Historical System releases
+use retained OCI. Catalog, compiler, and the defensive Docker boundary share one
+deployment-owned release admission; an exact revocation is always denied as
+`revoked`. Host code is imported only from an exact deployment manifest; absent
+configuration is Module-only.
 
 A **Module** stays a published subgraph. It is not a Plugin.
 
 ## Shared release lifecycle
 
-`grafy plugin publish <directory> --slug <slug>` now authenticates with a
-Workspace-bound PAT and derives both the Workspace and publishing User from
-that credential. `grafy plugin publish <directory> --slug <slug> --global
---sandbox-image <image>` uses a scoped platform token instead:
+`grafy plugin publish <directory> --slug <slug> --sandbox-image <image>`
+authenticates with a platform token whose scope is `plugin.publish_global`:
 
-1. Requires the directory to be below a configured Plugin root and to contain
-   its own `pyproject.toml`, `uv.lock`, source, and tests.
+1. Requires the slug to appear in `plugins/system-plugins.toml` and the
+   directory to be below a configured Plugin root and to contain its own
+   `pyproject.toml`, `uv.lock`, source, and tests.
 2. Resolves the directory canonically, rejects symlinks, special files,
    traversal, escaping paths, and oversized trees before snapshotting, and
    stages the accepted files into a private directory.
@@ -59,11 +55,9 @@ that credential. `grafy plugin publish <directory> --slug <slug> --global
    the mutable working copy.
 4. Runs `uv lock --check` and a locked sync against the frozen snapshot,
    rejecting `[tool.uv.sources]` path dependencies that resolve outside the
-   snapshot; then runs the Plugin's locked tests and catalog inspection. The
-   existing Workspace command sanitizes the subprocess environment but is not
-   a filesystem or network sandbox. System candidates run these steps in the
-   Docker-isolated one-shot publisher before promotion; the online API never
-   imports a working copy or receives platform publication authority.
+   snapshot; then runs the Plugin's locked tests and catalog inspection. These
+   steps run in the Docker-isolated one-shot publisher; the online API never
+   imports a working copy or receives publication authority.
 5. Stores the digest-addressed source archive under the garbage-collectable
    `plugin-releases/` namespace, builds and stores the immutable OCI runtime
    artifact, and appends an append-only `plugin_releases` row whose descriptor
@@ -94,14 +88,15 @@ the window it was published in. The guest image hashes with the
 SDK wheel vendored in its own lock, so that wheel carries the same
 canonicalization as the host.
 
-After changing contract canonicalization, run `just rebuild-plugin-sdk`. The
-recipe builds `libs/core`, copies the wheel to all six vendored wheelhouses,
-refreshes the `plugin-notes` lock hash, and refreshes the architecture-test pin.
-`test_vendored_sdk_wheels_accept_the_digest_the_host_stores` reruns every
-vendored wheel against a real catalog, so a wheel rebuilt from a different
-field-role table fails instead of shipping.
+After changing contract canonicalization, run `just sdk-wheel`. The recipe
+builds `grafy-core`, copies the wheel to every vendored wheelhouse including the
+freeze fixture, and prints the digest
+`test_vendored_sdk_wheels_accept_the_digest_the_host_stores` compares against;
+update that pin in the same commit. Rerunning every vendored wheel against a real
+catalog means a wheel built from a different field-role table fails instead of
+shipping.
 
-6. Overlays the current release in `GET /v1/workspaces/{id}/nodes`, including
+6. Overlays the promoted releases in `GET /v1/workspaces/{id}/nodes`, including
    Plugin-owned artifact types and function-node contracts.
 
 Catalog nodes carry an exact `{scope, slug, revision}` pin and derived
@@ -111,44 +106,38 @@ capabilities, and complete artifact contract are supported by the deployment.
 The selector disables unsupported or revoked releases with a stable reason;
 deprecated and withdrawn families stay visible but cannot be newly inserted,
 while their retained exact pins may continue to run. Insertion of a runnable
-Plugin writes its exact scoped release pin into the graph.
-`examples/plugin-notes` is the executable authoring, publication, Table-bundle,
-and offline Docker fixture.
+Plugin writes its exact release pin into the graph.
+`tests/fixtures/plugin-notes` is the executable freeze, Table-bundle, and
+offline fixture the publication tests run against.
 
-The coding-agent commands `scaffold`, `reserve`, `review`, `publish-reviewed`,
-and `release-reservation` add a fenced pre-publish workflow without adding a
-second release path. A standalone database registration aggregate remains
-unnecessary: first publish establishes `(Workspace, slug)`, while the local
-reservation owns only exclusive access to one Workspace-namespaced working
-copy. System selection is deliberately separate. Global publication never
-means promotion, and current is an exact pointer rather than the highest
-revision.
+Publication never means promotion, and current is an exact pointer rather than
+the highest revision. Extension-claim collisions against an installed format or
+another selected family are refused at promotion; the release stays retained, so
+the operator fixes the claim and promotes again.
 
 ```mermaid
 flowchart LR
-    Workspace["Workspace owner / agent"] --> Freeze["Immutable release contract"]
-    Platform["Platform CI publisher"] --> Freeze
+    Platform["Platform CI publisher"] --> Freeze["Immutable release contract"]
     Freeze --> Store["Source + retained OCI"]
-    Store --> Selection["Explicit scoped selection"]
+    Store --> Selection["Explicit System selection"]
     Selection --> Catalog["Effective Workspace catalog"]
     Catalog --> Host["Exact System host binding"]
     Catalog --> OCI["Isolated runtime adapter"]
 ```
 
-## What closed this
+## What the seam is for
 
-The missing piece was not “how the agent writes Python.” It was **how a
+The hard question was never "how does someone write Python." It is **how a
 directory becomes a revisioned catalog entry without loading it into FastAPI**.
 
-Review and publication are that seam. Human publication and reviewed-agent
-publication converge before tests, inspection, image construction, policy, and
-the append-only release transaction. Diffs answer only “how does this verified
-freeze differ from revision N?” They never invent revision N+1 or retarget
-graph pins.
+Verification and promotion are that seam. Verification answers "what would this
+freeze be?"; promotion answers "is it live?". Neither invents a revision ahead
+of its bytes nor retargets graph pins. Graphs stay on exact Plugin release N
+until someone explicitly selects retained release N+1.
 
 ## Working copy vs freeze
 
-The **working copy** is the directory you open in Cursor. It is not
+The **working copy** is the directory you open in your editor. It is not
 authoritative for execution.
 
 The **freeze** is the immutable artifact Grafy stores (source archive + locked
@@ -159,76 +148,47 @@ copies. Publish always hashes exact bytes.
 
 ## Plugin roots (deploy config)
 
-A deployment config allowlists **roots** — directories where Plugins may live.
-It is not the catalog.
+A deployment config allowlists **roots** — directories where Plugin working
+copies may be read from. It is not the catalog.
 
 ```toml
-[[plugin_roots]]
-path = "./examples"
-path = "./plugins"
-path = "./.grafy-artifacts/workspace-plugins"
+plugin_roots = ["./plugins"]
 ```
 
 Relative paths resolve from the process working directory (normally the
-deployment or project root), not from the target Workspace's data directory.
-The coding agent does not discover arbitrary host paths; it receives the
-deterministic `<authoring-root>/<workspace-id>/<slug>` project directory. Roots prevent
-scaffold, reserve, review, or publish from pointing at `/` or a secrets volume.
+deployment or project root). A root prevents publish from pointing at `/` or a
+secrets volume; it grants no visibility. Catalog membership comes from persisted
+System selections, and identity authority comes from the inventory.
 
-Catalog membership comes from persisted selections. A root on the API host
-does not make a Plugin visible. Only System scope is global; Workspace scope is
-limited to its exact owner.
+## Runtime profile
 
-## Reservation, not registration
-
-The first successful publish establishes `(Workspace, slug)`. Before agent
-publication, an exclusive mode-`0600` reservation file fences Workspace, actor,
-session, path, current source digest, reviewed source digest, and reviewed base
-revision. It is deployment-local control state excluded from the source freeze;
-it neither imports Python nor creates a catalog identity or graph pin.
-
-The runtime profile remains deployment policy (`python-uv` today), never
-Plugin source or agent-selected metadata.
+The runtime profile is deployment policy (`python-uv` today), never Plugin
+source or author-selected metadata.
 
 ## Publish lifecycle
 
-Human `grafy plugin publish` and agent `grafy plugin publish-reviewed` use the
-same verification pipeline:
-
-1. Confirm the tree is under an allowlisted Plugin root for this Workspace
-   and that the inspected `grafy_plugin.PLUGIN` slug matches the publish
-   target and any established `(Workspace, slug)` identity.
+1. Confirm the tree is under an allowlisted Plugin root and that the inspected
+   `grafy_plugin.PLUGIN` slug, loader target, and capabilities match the
+   inventory entry for the publish target.
 2. Snapshot the source, lock-check, locked sync, required tests, inspection —
    all against the frozen snapshot, never the working copy.
 3. Freeze the source archive, build the deployment-owned runtime profile, and
    store both digest-addressed artifacts in the object bucket (S3 or local).
 4. Insert append-only **revision N** (monotonic). Same digest as revision N
    → no new row.
-5. Require an active owner with `publish_plugin` before untrusted tests/builds
-   and again at the release transaction. Reviewed-agent publication also
-   requires exact source and release-head fences. The first executable runtime
-   approves only an empty capability set, so the agent has no policy side door.
+5. Require `plugin.publish_global` on the platform credential before untrusted
+   tests/builds and again at the release transaction.
 
-After publish, `GET /v1/workspaces/{id}/nodes` lists Plugin `notes` and its
-nodes (`notes.table.summarize@1`, …) from that release row, not from the host
-registry. The compiler resolves those operator ids from
-the Workspace release and executes the freeze offline.
+After promotion, `GET /v1/workspaces/{id}/nodes` lists the Plugin's nodes
+(`llm.openai_compatible.chat_completion@1`, …) from that release row, not from
+the host registry. The compiler resolves those operator ids from the selected
+release and executes the freeze offline.
 
 `runnable` is derived from the complete release. The current runtime supports
 canonical inline scalar JSON, release-owned inline JSON contracts, and the
 portable `table.data@1` bundle. Missing images, old invocation protocols,
 unsupported profiles/capabilities, and unknown artifact formats remain visible
 but disabled with a stable reason.
-
-## Diffs
-
-`grafy plugin review` verifies the frozen candidate and compares its archive to
-the last retained freeze. It returns a bounded unified diff plus lock, node,
-artifact, capability, and profile change flags.
-
-Do **not** watch the folder and auto-publish. That is “track latest”: dirty
-agent sessions, leftover files, and silent pin movement. Graphs stay on exact
-Plugin release N until someone explicitly selects retained release N+1.
 
 ## Typing, types, and dependencies
 
@@ -241,14 +201,14 @@ Dependencies on Table or GIS are complete exact artifact contracts
 `table-bundle@1`), not `grafy-plugin-gis` in `pyproject.toml`. A key/version
 alone cannot prove compatibility.
 
-Python wheels live in the Plugin’s `uv.lock` and are installed only at freeze.
+Python wheels live in the Plugin's `uv.lock` and are installed only at freeze.
 Native tools (GDAL) are **named profiles**: ops-pinned image digests, never
 `apt` in the sandbox, never a user Dockerfile. Graph run stays
-`--network none`. `uv` talks only to the deployment’s package index.
+`--network none`. `uv` talks only to the deployment's package index.
 
 The versioned Grafy Plugin SDK (`grafy-core`) is supplied as a wheel, never a
-monorepo-relative path dependency: examples vendor it under `wheels/` and pin
-it through `[tool.uv.sources]`, and deployments that build their own SDK
+monorepo-relative path dependency: each project vendors it under `wheels/` and
+pins it through `[tool.uv.sources]`, and deployments that build their own SDK
 wheel expose it to the publisher through `UV_FIND_LINKS`. Publication rejects
 any path dependency resolving outside the frozen snapshot.
 
@@ -259,25 +219,20 @@ portable bundle contract exists and the host explicitly supports it. Another
 Plugin cannot consume a custom type by importing its owner; it must
 independently support the same stable wire contract.
 
-Every coding-agent-authored node lands in an ordinary Plugin, even if the
-family has one node. The scaffold uses a stable caller-selected slug; it never
-mints a synthetic generated-node namespace.
-
 ## Catalog overlays
 
 | Entry | Visibility | Exact identity |
 | --- | --- | --- |
 | System Plugin release | Every Workspace | `{system, slug, revision}` |
-| Workspace Plugin release | Owning Workspace | `{workspace, slug, revision}` |
 | Module release | Owning Workspace library | `graph.module.{id}@{revision}` |
 
-No synthetic agent overlay exists. Scope and System distribution replace
-origin as authoritative facts; Module uses a separate entry kind. Unknown
-saved operators use generic inert compatibility rendering and remain
-non-runnable until explicitly mapped to a verified release.
+Unknown saved operators use generic inert compatibility rendering and remain
+non-runnable until explicitly mapped to a verified release. A stored pin naming
+the removed Workspace scope resolves to nothing and is reported as
+`unsupported_plugin_release_scope`.
 
-Cross-Workspace reuse is later and copy-by-value (like Module import): freeze
-bytes into the destination Workspace as its own release, no live link.
+Cross-Workspace reuse stays copy-by-value for Modules (import into workspace).
+Plugins were never Workspace-owned, so there is nothing to copy.
 
 ## Execution
 
@@ -298,17 +253,19 @@ installation occurs at graph run.
 - Put teammate writer/resolver code on the API `sys.path`.
 - Treat `docker-trusted-development` as a production isolation boundary.
   Profiles and verified publication do not replace a later hardened runtime.
+- Reintroduce a per-Workspace catalog by widening `PluginReleaseScope`. A
+  Workspace-scoped catalog needs a real owner, authority, and lifecycle, and
+  ADR 0015 removed all three on purpose.
 
-## Current migration boundary
+## Migration boundary
 
 ```text
 transitional host package → staged System release + OCI → exact host binding
-Workspace project         → verified freeze             → Workspace release
-coding agent              → reserve/review              → same Workspace publish
-saved graph               → verified baseline map       → exact scoped pins
+Plugin project            → verified freeze             → System release
+saved graph               → verified baseline map       → exact System pins
 ```
 
 Host packages are inert until an exact deployment manifest names their loader
-target and installed-byte digest. A future Canvas authoring surface must call
-the existing reservation, review, publication, and exact-pin boundaries rather
-than introduce synthetic catalog nodes or a mutable execution path.
+target and installed-byte digest. A future authoring surface must call the
+existing verification, promotion, and exact-pin boundaries rather than introduce
+synthetic catalog nodes or a mutable execution path.

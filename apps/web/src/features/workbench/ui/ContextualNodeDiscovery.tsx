@@ -565,16 +565,7 @@ export function ContextualNodeDiscovery({
   const selectCandidate = (candidate: ContextualCandidate) => {
     if (!canInsert) return;
     if (candidate.choices.length === 1) {
-      const choice = candidate.choices[0]!;
-      if (
-        candidate.spec.publication_state === "deprecated" &&
-        !window.confirm(
-          `Insert deprecated Module “${candidate.spec.title}”? New inserts are discouraged. Existing pinned calls keep working.`,
-        )
-      ) {
-        return;
-      }
-      onConfirm(candidate, choice);
+      onConfirm(candidate, candidate.choices[0]!);
       return;
     }
     setPendingCandidate(candidate);
@@ -583,14 +574,6 @@ export function ContextualNodeDiscovery({
 
   const selectChoice = (choice: ContextualRouteChoice) => {
     if (!pendingCandidate || !canInsert) return;
-    if (
-      pendingCandidate.spec.publication_state === "deprecated" &&
-      !window.confirm(
-        `Insert deprecated Module “${pendingCandidate.spec.title}”? New inserts are discouraged. Existing pinned calls keep working.`,
-      )
-    ) {
-      return;
-    }
     onConfirm(pendingCandidate, choice);
   };
 

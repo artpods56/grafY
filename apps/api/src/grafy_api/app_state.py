@@ -7,7 +7,6 @@ from fastapi import FastAPI
 from grafy_core.application.collaboration import CollaborationService
 from grafy_core.application.identity import IdentityService
 from grafy_core.application.saved_graphs import SavedGraphService
-from grafy_core.application.templates import TemplateService
 from grafy_persistence.database import Database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
@@ -53,7 +52,6 @@ class AppResources:
 
     database: Database
     workbench: WorkbenchComponents
-    templates: TemplateService
     saved_graphs: SavedGraphService
     collaboration: CollaborationService
     node_secrets: NodeSecretService

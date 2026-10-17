@@ -36,9 +36,6 @@ from .library import (
 from .library import (
     SqlModuleLibraryRepository as SqlModuleLibraryRepository,
 )
-from .library import (
-    SqlTemplateRepository as SqlTemplateRepository,
-)
 from .plugins import (
     SqlPluginReleaseRepository as SqlPluginReleaseRepository,
 )

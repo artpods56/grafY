@@ -24,8 +24,8 @@ class PluginCatalogRelease:
             or selection.selected_revision != release.release.revision
         ):
             raise PluginReleaseError(
-                f"Catalog selection does not identify {release.installation.scope.value} "
-                f"Plugin {release.release.slug!r} revision {release.release.revision}"
+                f"Catalog selection does not identify System Plugin "
+                f"{release.release.slug!r} revision {release.release.revision}"
             )
         if self.revocation is not None and (
             self.revocation.installation_id != release.installation.id

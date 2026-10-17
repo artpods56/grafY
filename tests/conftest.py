@@ -8,6 +8,10 @@ from grafy_shared.config import AppConfig, AuthConfig
 from grafy_api.settings import Settings
 from tests.support.identity import TEST_COMMAND_HMAC_KEY
 
+# The freeze tests publish this Plugin project; its own tests import the
+# project's package and run in that project's environment, not this one.
+collect_ignore = ["fixtures/plugin-notes"]
+
 
 @pytest.fixture(autouse=True)
 def _disable_single_api_owner_by_default(

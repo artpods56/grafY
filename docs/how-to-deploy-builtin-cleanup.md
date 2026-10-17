@@ -6,8 +6,8 @@ It does not delete stored graphs, artifacts, or retained Plugin releases.
 
 1. Back up PostgreSQL and the exact System selection rows. Keep the currently
    deployed image references with the backup.
-2. Audit current graph documents, collaborative heads, templates, and retained
-   revisions. For exported `SavedGraphDocument` JSON files, run:
+2. Audit current graph documents, collaborative heads, and retained revisions.
+   For exported `SavedGraphDocument` JSON files, run:
 
    ```console
    uv run python scripts/audit_builtin_cleanup.py graph-document.json

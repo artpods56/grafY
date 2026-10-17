@@ -7,7 +7,6 @@ from uuid import UUID
 import pytest
 
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.domain.plugin_identity import PluginReleaseScope
 from grafy_core.domain.plugin_releases import (
     PluginNodeContract,
     PluginNodeHttpEgressContract,
@@ -83,14 +82,11 @@ def _resolve(
     contract: PluginNodeContract,
     config: dict[str, object],
     *,
-    scope: PluginReleaseScope = PluginReleaseScope.SYSTEM,
     slug: str = SLUG,
     revision: int = 1,
 ) -> HttpEgressResolution:
     return resolve_http_egress_authority(
         policy,
-        scope=scope,
-        workspace_id=None if scope is PluginReleaseScope.SYSTEM else WORKSPACE_ID,
         slug=slug,
         revision=revision,
         contract=contract,
@@ -130,7 +126,6 @@ def _policy(
             NetworkProfileAssignment(
                 plane=profile.plane,
                 profile=profile.name,
-                scope=PluginReleaseScope.SYSTEM,
                 slug=slug,
                 revision=revision,
             ),
@@ -138,7 +133,7 @@ def _policy(
     )
 
 
-def test_development_manifest_allows_notarius_configured_public_egress() -> None:
+def test_development_manifest_allows_llm_configured_public_egress() -> None:
     policy = load_network_policy_manifest(
         Path(__file__).resolve().parents[3] / "network-policy.toml"
     )
@@ -147,18 +142,14 @@ def test_development_manifest_allows_notarius_configured_public_egress() -> None
 
     resolution = resolve_http_egress_authority(
         policy,
-        scope=PluginReleaseScope.WORKSPACE,
-        workspace_id=UUID("5ff0b54e-a3fd-4904-8d58-ee157e419b3a"),
-        slug="external.notarius",
+        slug="external.llm",
         revision=1,
         contract=contract,
         config=config,
     )
-    unrelated_workspace = resolve_http_egress_authority(
+    unassigned = resolve_http_egress_authority(
         policy,
-        scope=PluginReleaseScope.WORKSPACE,
-        workspace_id=WORKSPACE_ID,
-        slug="external.notarius",
+        slug="external.python",
         revision=1,
         contract=contract,
         config=config,
@@ -170,7 +161,7 @@ def test_development_manifest_allows_notarius_configured_public_egress() -> None
     assert resolution.origins == (
         PluginEgressDestination.parse("https://api.openai.com:443"),
     )
-    assert unrelated_workspace.reason is NetworkRejectionReason.PROFILE_DISABLED
+    assert unassigned.reason is NetworkRejectionReason.PROFILE_DISABLED
 
 
 def test_manifest_parses_profiles_assignments_and_defaults(tmp_path: Path) -> None:
@@ -194,7 +185,6 @@ domain_sets = ["python-packages"]
 
 [[assignments]]
 plane = "plugin-execution"
-scope = "system"
 slug = "external.llm"
 profile = "llm-public"
 
@@ -218,16 +208,12 @@ profile = "deps"
 
     resolved = policy.resolve(
         NetworkAccessPlane.PLUGIN_EXECUTION,
-        scope=PluginReleaseScope.SYSTEM,
-        workspace_id=None,
         slug="external.llm",
         revision=1,
     )
     assert resolved is profile
     default = policy.resolve(
         NetworkAccessPlane.PLUGIN_EXECUTION,
-        scope=PluginReleaseScope.SYSTEM,
-        workspace_id=None,
         slug="other",
         revision=1,
     )
@@ -390,7 +376,7 @@ def test_builtin_offline_profile_exists_on_every_plane() -> None:
         assert policy.profile(plane, "offline") == built_in_offline_profile(plane)
 
 
-def test_resolution_precedence_is_revision_over_slug_over_scope_over_default() -> None:
+def test_resolution_precedence_is_revision_over_slug_over_default() -> None:
     execution = NetworkAccessPlane.PLUGIN_EXECUTION
     exact = _public_profile(name="exact")
     family = _public_profile(name="family")
@@ -405,20 +391,13 @@ def test_resolution_precedence_is_revision_over_slug_over_scope_over_default() -
             NetworkProfileAssignment(
                 plane=execution,
                 profile="exact",
-                scope=PluginReleaseScope.SYSTEM,
                 slug=SLUG,
                 revision=3,
             ),
             NetworkProfileAssignment(
                 plane=execution,
                 profile="family",
-                scope=PluginReleaseScope.SYSTEM,
                 slug=SLUG,
-            ),
-            NetworkProfileAssignment(
-                plane=execution,
-                profile="scoped",
-                scope=PluginReleaseScope.SYSTEM,
             ),
         ),
         defaults={execution: "default"},
@@ -426,35 +405,13 @@ def test_resolution_precedence_is_revision_over_slug_over_scope_over_default() -
 
     resolved = policy.resolve(
         execution,
-        scope=PluginReleaseScope.SYSTEM,
-        workspace_id=None,
         slug=SLUG,
         revision=3,
     )
     assert resolved is exact
-    resolved = policy.resolve(
-        execution,
-        scope=PluginReleaseScope.SYSTEM,
-        workspace_id=None,
-        slug=SLUG,
-        revision=1,
-    )
+    resolved = policy.resolve(execution, slug=SLUG, revision=1)
     assert resolved is family
-    resolved = policy.resolve(
-        execution,
-        scope=PluginReleaseScope.SYSTEM,
-        workspace_id=None,
-        slug="other",
-        revision=1,
-    )
-    assert resolved is scoped
-    resolved = policy.resolve(
-        execution,
-        scope=PluginReleaseScope.WORKSPACE,
-        workspace_id=WORKSPACE_ID,
-        slug=SLUG,
-        revision=1,
-    )
+    resolved = policy.resolve(execution, slug="other", revision=1)
     assert resolved is default
 
 
@@ -470,26 +427,36 @@ def test_ambiguous_assignments_are_rejected() -> None:
                 NetworkProfileAssignment(
                     plane=execution,
                     profile="one",
-                    scope=PluginReleaseScope.SYSTEM,
                     slug=SLUG,
                 ),
                 NetworkProfileAssignment(
                     plane=execution,
                     profile="two",
-                    scope=PluginReleaseScope.SYSTEM,
                     slug=SLUG,
                 ),
             ),
         )
 
 
-def test_workspace_assignments_require_workspace_scope() -> None:
-    with pytest.raises(NetworkPolicyError, match="workspace"):
-        NetworkProfileAssignment(
-            plane=NetworkAccessPlane.PLUGIN_EXECUTION,
-            profile="offline",
-            workspace_id=WORKSPACE_ID,
-        )
+def test_manifest_rejects_a_workspace_scoped_assignment(tmp_path: Path) -> None:
+    path = _write_manifest(
+        tmp_path,
+        """
+schema_version = 1
+
+[profiles."plugin-execution".deny]
+mode = "disabled"
+
+[[assignments]]
+plane = "plugin-execution"
+profile = "deny"
+scope = "workspace"
+workspace_id = "5ff0b54e-a3fd-4904-8d58-ee157e419b3a"
+""",
+    )
+
+    with pytest.raises(NetworkPolicyError, match="System-only"):
+        load_network_policy_manifest(path)
 
 
 def test_curated_profile_may_allow_rfc1918_for_exact_origins() -> None:
@@ -629,7 +596,6 @@ ca_bundle_path = "{ca_path}"
     )
     rendered = render_effective_network_policy(
         resolution,
-        plugin_scope=PluginReleaseScope.SYSTEM,
         slug=SLUG,
         revision=1,
         node_operator="llm.openai_compatible.chat_completion@1",
@@ -852,14 +818,13 @@ def test_render_effective_policy_is_read_only_and_complete() -> None:
     )
     rendered = render_effective_network_policy(
         resolution,
-        plugin_scope=PluginReleaseScope.SYSTEM,
         slug=SLUG,
         revision=1,
         node_operator="llm.openai_compatible.chat_completion@1",
         configured_fields=("base_url",),
     )
 
-    assert "system/external.llm@1" in rendered
+    assert "Plugin: external.llm@1" in rendered
     assert "Profile digest: " in rendered
     assert "https://api.example.com:443" in rendered
     assert "token=secret" not in rendered
@@ -868,7 +833,6 @@ def test_render_effective_policy_is_read_only_and_complete() -> None:
     denied = _resolve(policy, _contract(dynamic=True), {})
     rendered = render_effective_network_policy(
         denied,
-        plugin_scope=PluginReleaseScope.SYSTEM,
         slug=SLUG,
         revision=1,
         node_operator="llm.openai_compatible.chat_completion@1",

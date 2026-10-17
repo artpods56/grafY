@@ -8,7 +8,6 @@ import pytest
 
 from grafy_core.application.plugin_releases import (
     require_canonical_conversion_references,
-    require_workspace_catalog_authority,
 )
 from grafy_core.artifacts import (
     ArtifactBundleContract,
@@ -358,9 +357,7 @@ def test_catalog_manifest_leaves_conversion_authority_to_publication() -> None:
     )
 
 
-def test_workspace_publication_accepts_only_exact_canonical_conversion_references() -> (
-    None
-):
+def test_publication_accepts_only_exact_canonical_conversion_references() -> None:
     catalog = PluginCatalogManifest.from_plugin(PLUGIN).model_copy(
         update={
             "artifact_conversions": (
@@ -369,7 +366,6 @@ def test_workspace_publication_accepts_only_exact_canonical_conversion_reference
         }
     )
 
-    require_workspace_catalog_authority(catalog)
     require_canonical_conversion_references(catalog)
 
     with pytest.raises(PluginReleaseError, match="deployment-owned canonical"):
@@ -519,55 +515,48 @@ def test_runtime_artifact_rejects_unsafe_object_keys(object_key: str) -> None:
         )
 
 
-def test_installation_scope_requires_exactly_the_matching_workspace_owner() -> None:
+def test_installations_are_reserved_for_the_platform_owned_namespace() -> None:
     release = _release()
-    with pytest.raises(ValueError, match="require a Workspace owner"):
-        PluginInstallation.from_release(
-            release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.WORKSPACE,
-                workspace_id=None,
-            ),
-            execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_user_id=UUID(int=1),
-            installed_by_platform_actor=None,
+    with pytest.raises(ValueError, match="visible only in the System namespace"):
+        PluginReleaseNamespace(
+            scope=PluginReleaseScope.WORKSPACE,
+            workspace_id=UUID(int=7),
         )
     with pytest.raises(ValueError, match="cannot have a Workspace owner"):
-        PluginInstallation.from_release(
-            release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.SYSTEM,
-                workspace_id=UUID(int=1),
-            ),
-            execution_policy=PluginExecutionPolicy.HOST_ELIGIBLE,
-            installed_by_user_id=None,
-            installed_by_platform_actor="test:system",
+        PluginReleaseNamespace(
+            scope=PluginReleaseScope.SYSTEM,
+            workspace_id=UUID(int=7),
         )
-    with pytest.raises(PluginReleaseError, match="isolated-only"):
+    with pytest.raises(
+        PluginReleaseError, match="actor reference must contain 1 to 255"
+    ):
         PluginInstallation.from_release(
             release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.WORKSPACE,
-                workspace_id=UUID(int=1),
-            ),
-            execution_policy=PluginExecutionPolicy.HOST_ELIGIBLE,
-            installed_by_user_id=UUID(int=1),
-            installed_by_platform_actor=None,
+            namespace=PluginReleaseNamespace(),
+            execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
+            installed_by_platform_actor="  ",
+        )
+    with pytest.raises(PluginReleaseError, match="Workspace user actor"):
+        PluginInstallation(
+            release_id=release.id,
+            scope=PluginReleaseScope.SYSTEM,
+            workspace_id=None,
+            slug=release.slug,
+            release_revision=release.revision,
+            execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
+            installed_by_user_id=UUID(int=8),
+            installed_by_platform_actor="test:platform",
         )
 
     system = PluginInstallation.from_release(
         release,
-        namespace=PluginReleaseNamespace(
-            scope=PluginReleaseScope.SYSTEM,
-            workspace_id=None,
-        ),
+        namespace=PluginReleaseNamespace(),
         execution_policy=PluginExecutionPolicy.HOST_ELIGIBLE,
-        installed_by_user_id=None,
         installed_by_platform_actor="test:system",
     )
 
     assert system.namespace.scope is PluginReleaseScope.SYSTEM
-    assert system.namespace.storage_path == "system"
+    assert system.namespace.workspace_id is None
     assert system.execution_policy is PluginExecutionPolicy.HOST_ELIGIBLE
 
 

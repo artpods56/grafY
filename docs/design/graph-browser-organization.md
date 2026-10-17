@@ -98,6 +98,8 @@ Shared organization mutations are metadata-only security-audited operations.
 
 This foundation does not add tags, nested folders, generic organization
 interfaces, per-graph ACLs, public links, or graph moves between Workspaces.
-Templates and Modules keep their separate contracts: a Template creates an
-independent graph from one exact revision, while a Module is a callable graph
-with immutable pinned releases.
+Duplicating a graph and calling one stay separate contracts, and this surface
+owns only the first: a duplicate is an independent graph in a chosen Workspace,
+while a Module is a callable graph with immutable pinned releases. Reusing a
+Module in another Workspace means duplicating its source graph there
+([ADR 0016](../adr/0016-graph-reuse-is-copies-and-modules.md)).

@@ -168,9 +168,9 @@ names an artifact by identity rather than searching for one. An origin and an
 enabled edge never satisfy the same input, though a disabled edge may wait beside
 one. An origin whose artifact can no longer be read stays in the saved document
 exactly as written and leaves its input unsatisfied. An origin therefore belongs
-to the Workspace that owns its artifact: copying a graph or a template into
-another Workspace drops the origin and leaves that input unsatisfied, rather than
-moving bytes across the tenancy boundary.
+to the Workspace that owns its artifact: copying a graph into another Workspace
+drops the origin and leaves that input unsatisfied, rather than moving bytes
+across the tenancy boundary.
 _Avoid_: source node, source operator, input node
 
 ### Materialized output binding
@@ -319,10 +319,9 @@ Containers are reused within a run scope, including mapped invocations.
 A versioned, ready-filled single node copied into a graph. A Python preset carries
 code, port types and shapes, params schema and defaults. The node stores the preset
 id and version, but later preset changes never update the copied node. Split text,
-Replace text, Join text and As Markdown are presets of the Python node. The old
-operators stay registered for saved graphs and are hidden from the node browser.
-
-A Preset fills one node. A Template copies a whole graph.
+Replace text, Join text and As Markdown are presets of the Python node. The
+operators they replaced are gone: a Saved Graph that still contains one fails to
+compile and must be rebuilt on the preset.
 
 ### Invocation cache entry
 
@@ -486,62 +485,55 @@ A uv-managed project that groups nodes, artifact types, and the resolver/writer
 factories those types require under one stable slug.
 The working copy is a directory; execution trusts an immutable **Plugin
 release** and an exact **Plugin installation**, not an ambient import into the
-API process. An installation is either globally visible in **System** scope or
-owned by one **Workspace**. Module is a separate catalog entry kind, not a
-Plugin scope.
+API process. Every installation is visible in **System** scope; no Plugin
+release belongs to a **Workspace**. Module is a separate catalog entry kind, not
+a Plugin scope.
 
 Each project owns one loader target in `[tool.grafy.plugin]`; projects without
 that declaration use `grafy_plugin:PLUGIN`. System inventory repeats the target
 as a deployment assertion, not as a second runtime path. The import name is
-never catalog identity. Publishing a Plugin directory under a deployment
-**Plugin root** creates revision N. Installing that release may establish a
-System or Workspace family.
-Coding-agent authoring reserves the deterministic
-`<authoring-root>/<workspace-id>/<slug>` working copy, verifies and reviews an
-exact freeze, then uses the same publication workflow as human publication.
-Diffs do not auto-publish or retarget graph pins. See
-[plugin unification](docs/design/plugin-unification.md).
-
-System publication is a separate platform/CI authority and always retains an
-OCI artifact. Published Plugins execute in isolated workers. Builtin families
-owned by `grafy-workbench` run in-process with the API and are not Plugin
-releases. Plugins depend inward on core contracts and ports, never on the API
-host or concrete storage adapters.
+never catalog identity. Publication is a platform/CI authority holding a
+platform access token, and it always retains an OCI artifact. Published Plugins
+execute in isolated workers. Builtin families owned by `grafy-workbench` run
+in-process with the API and are not Plugin releases. Plugins depend inward on
+core contracts and ports, never on the API host or concrete storage adapters.
+See [plugin unification](docs/design/plugin-unification.md) and
+[ADR 0015](docs/adr/0015-plugins-are-system-only.md).
 
 ### Plugin root
 
 A deployment-allowlisted directory under which a Plugin working copy may live
-and be published from. Roots are not the node catalog and do not grant
-Workspace visibility. Repository-owned `plugins/<family>/` System projects and
-mutable Workspace authoring state use separate roots; Workspace working copies
-are additionally namespaced by Workspace id.
+and be published from. Roots are not the node catalog and grant no visibility by
+themselves: only the checked-in System inventory decides which slug and identity
+a publication may claim. Repository-owned `plugins/<family>/` directories are the
+roots of a normal deployment.
 
 ### Plugin release
 
 An append-only, digest-addressed freeze of one Plugin package: source archive,
 lock, inspected node and artifact contracts, canonical-conversion references,
 runtime profile, invocation protocol, capabilities, loader contract, publisher
-attribution, and immutable OCI artifact. A release has no System or Workspace
-scope. The same descriptor bytes do not create another revision.
+attribution, and immutable OCI artifact. The same descriptor bytes do not create
+another revision.
 
 ### Plugin installation
 
-An append-only assignment of one exact Plugin release to either System scope or
-one Workspace. The installation owns execution policy, installation authority,
-and installation time. Assigning the same release to another scope does not
-rebuild or copy its source or OCI artifact.
+An append-only assignment of one exact Plugin release to the System namespace.
+The installation owns execution policy, installation authority, and installation
+time, and its authority is always a platform actor.
 
 ### Plugin selection
 
-The mutable current installation for one scoped Plugin family. Its public graph
-pin is `{scope, slug, release revision}`. A selection has a generation and a
-published, deprecated, or withdrawn lifecycle state. Current never means the
-greatest retained release revision.
+The mutable current installation for one System Plugin family. Its public graph
+pin is `{scope, slug, release revision}`, and `scope` is always `system`. A
+selection has a generation and a published, deprecated, or withdrawn lifecycle
+state. Current never means the greatest retained release revision.
 
 A graph node carries two independent exact identities: the operator
 (`notes.table.summarize@1`) and the installed Plugin release
-(`{scope: workspace, slug: notes, revision: 4}`). Publishing revision 5 never
-moves that pin. Deprecation and withdrawal prevent new insertion while retained
+(`{scope: system, slug: notes, revision: 4}`). Publishing revision 5 never
+moves that pin. A stored pin that names the Workspace scope resolves to nothing
+and is reported as unsupported. Deprecation and withdrawal prevent new insertion while retained
 exact pins may run. Exact revocation retains the release and installation but
 denies execution.
 
@@ -549,31 +541,23 @@ denies execution.
 
 A reusable workflow building block hosted by a workspace library. A Saved graph
 with Module Input/Output boundaries is only a candidate until someone
-**publishes a release**. Call sites pin an immutable Module release
-(`graph.module.{source_graph_id}@{revision}`). Publication states are
-published, deprecated, and withdrawn. Withdraw hides a Module from Add node /
-library browse; existing pins keep resolving. There is no hard delete of
-releases in v1. Cross-workspace reuse is **Import into workspace** (copy-by-value).
-Publish release requires Editor or Owner; Deprecate and Withdraw require Owner.
-
-### Template (New graph library)
-
-An immutable, sanitized copy source captured from one exact Saved graph
-revision. **Use template** creates a new independent Saved graph in an explicit
-My graphs or Team save location, with a chosen name and optional one-level
-Folder. It copies graph structure and safe configuration by value, but never
-secrets, execution history, materialized artifacts, uploads, caches, or invalid
-runtime capabilities. Later source or Template changes never mutate an existing
-copy. Templates appear in New graph / Library; unlike Modules, they are not
-callable, do not have contracts or pinned releases, and are not inserted as
-nodes.
+**publishes a release**. Publishing takes a checkpoint of the source graph, so a
+release's contract and its source revision move together, and freezes a copy of
+the graph document: the source graph stays editable and editing it never changes
+an existing release. Call sites pin an immutable Module release
+(`graph.module.{source_graph_id}@{revision}`) and keep resolving that exact
+release. A published release is the only Module state; publishing again adds
+another release. There is no deprecate, withdraw, un-publish, or hard delete of
+releases, and no cross-workspace Module import: reuse a Module from another
+Workspace by duplicating the graph. A Module stored in the retired `deprecated`
+or `withdrawn` state stays out of library browse and Add node while its pinned
+calls keep resolving.
 
 ### Node catalog / Add node
 
-The effective Workspace catalog contains app-owned builtin families, selected
-global System Plugin releases, selected Plugin releases owned by that
-Workspace, and published Modules as a separate entry kind.
-Every insertable Plugin node supplies an exact scoped release pin and a derived
+The effective Workspace catalog contains app-owned builtin families, the
+selected System Plugin releases, and published Modules as a separate entry kind.
+Every insertable Plugin node supplies an exact release pin and a derived
 runnable or disabled reason from the same admission policy used by compilation.
 Builtin nodes are identified by family slug and the deployment's build digest;
 they do not carry a Plugin release pin.
@@ -597,7 +581,7 @@ text-specific collectors are not separate builtin nodes. Schema provides one
 recursive JSON Schema Builder, and the LLM Plugin provides deterministic
 prompt-message construction; provider-backed execution remains an optional
 System Plugin.
-OCR table fragments remain OCR-owned because deciding how Markdown rows become
+OCR table fragments remain Mistral-owned because deciding how Markdown rows become
 headers, columns, and inferred values is a source-specific normalization rather
 than a shape-preserving artifact conversion. Optional System families provide
 remote or domain-specific nodes through the same release schema. SQL remains
@@ -739,7 +723,7 @@ the origin stays the executable truth: the card owns the order, so reordering a
 bound card rewrites the origin that carries it, and removing the card removes
 what it passed in. The reference is durable document state and is never dropped
 when the artifact is deleted, becomes inaccessible, or cannot cross a Workspace
-or Template boundary; the card stays and reports the reference as missing until
+or Workspace boundary; the card stays and reports the reference as missing until
 the user removes the card deliberately.
 
 Collect replaces selected, unconnected artifact cards with one sequence card.

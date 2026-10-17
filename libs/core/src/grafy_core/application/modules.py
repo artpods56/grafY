@@ -1,22 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from grafy_core.application.graph_creation import stage_checkpointed_graph
-from grafy_core.domain.collaboration import (
-    sanitize_document_for_cross_workspace_copy,
-)
-from grafy_core.domain.errors import (
-    CollaborationCommandRejectedError,
-    NotFoundError,
-)
-from grafy_core.application.identity import authorize_workspace, authorize_workspaces
+from grafy_core.domain.errors import NotFoundError
+from grafy_core.application.identity import authorize_workspace
 from grafy_core.domain.identity import ActorContext, WorkspaceCapability
 from grafy_core.domain.module_library import (
     Module,
     ModuleLibraryError,
-    ModulePublicationState,
     ModuleRelease,
 )
 from grafy_core.domain.modules import (
@@ -25,14 +17,13 @@ from grafy_core.domain.modules import (
     GraphModuleReference,
     GraphModuleReferenceError,
 )
-from grafy_core.domain.saved_graphs import SavedGraph
 from grafy_core.ports.module_library import ModuleLibraryUnitOfWorkPort
 from grafy_core.ports.saved_graphs import SavedGraphRepositoryPort
 from grafy_core.plugins import PluginRegistry, UnknownOperatorError
 
 
 class ModuleLibraryService:
-    """Publish and steward modules in a workspace library."""
+    """Publish reusable modules into a workspace library."""
 
     def __init__(
         self,
@@ -168,154 +159,6 @@ class ModuleLibraryService:
                 release = existing_release
             await unit_of_work.commit()
             return module, release, definition
-
-    async def deprecate(
-        self,
-        *,
-        actor: ActorContext,
-        workspace_id: UUID,
-        module_id: UUID,
-    ) -> Module:
-        async with self._unit_of_work_factory() as unit_of_work:
-            await authorize_workspace(
-                unit_of_work.identity,
-                actor=actor,
-                workspace_id=workspace_id,
-                capability=WorkspaceCapability.MANAGE_MODULE_LIBRARY,
-            )
-            module = await unit_of_work.modules.get(workspace_id, module_id)
-            if module is None:
-                raise NotFoundError("Module", str(module_id))
-            module.deprecate()
-            await unit_of_work.commit()
-            return module
-
-    async def withdraw(
-        self,
-        *,
-        actor: ActorContext,
-        workspace_id: UUID,
-        module_id: UUID,
-    ) -> Module:
-        async with self._unit_of_work_factory() as unit_of_work:
-            await authorize_workspace(
-                unit_of_work.identity,
-                actor=actor,
-                workspace_id=workspace_id,
-                capability=WorkspaceCapability.MANAGE_MODULE_LIBRARY,
-            )
-            module = await unit_of_work.modules.get(workspace_id, module_id)
-            if module is None:
-                raise NotFoundError("Module", str(module_id))
-            module.withdraw()
-            await unit_of_work.commit()
-            return module
-
-    async def import_release(
-        self,
-        *,
-        actor: ActorContext,
-        source_workspace_id: UUID,
-        source_module_id: UUID,
-        source_revision: int | None,
-        destination_workspace_id: UUID,
-        name: str | None = None,
-    ) -> tuple[SavedGraph, Module, ModuleRelease, GraphModuleDefinition]:
-        """Copy a module release by value into another workspace library."""
-        async with self._unit_of_work_factory() as unit_of_work:
-            await authorize_workspaces(
-                unit_of_work.identity,
-                actor=actor,
-                requirements=(
-                    (source_workspace_id, WorkspaceCapability.VIEW_GRAPH),
-                    (destination_workspace_id, WorkspaceCapability.CREATE_GRAPH),
-                ),
-            )
-            source_module = await unit_of_work.modules.get(
-                source_workspace_id,
-                source_module_id,
-            )
-            if source_module is None:
-                raise NotFoundError("Module", str(source_module_id))
-            if not source_module.is_listed_in_library:
-                raise ModuleLibraryError(
-                    "Withdrawn modules cannot be imported into another workspace"
-                )
-            revision = (
-                source_module.current_library_release
-                if source_revision is None
-                else source_revision
-            )
-            if revision is None:
-                raise ModuleLibraryError("Module has no library release to import")
-            release = await unit_of_work.modules.get_release(
-                source_workspace_id,
-                source_module_id,
-                revision,
-            )
-            if release is None:
-                raise NotFoundError(
-                    "Module release",
-                    f"{source_module_id}@{revision}",
-                )
-            snapshot = await unit_of_work.graphs.get_revision(
-                source_workspace_id,
-                source_module.source_graph_id,
-                revision,
-            )
-            if snapshot is None:
-                raise NotFoundError(
-                    "Saved graph revision",
-                    f"{source_module.source_graph_id}@{revision}",
-                )
-            try:
-                copied_document = sanitize_document_for_cross_workspace_copy(
-                    snapshot.document
-                )
-            except CollaborationCommandRejectedError as exc:
-                raise ModuleLibraryError(str(exc)) from exc
-
-            copied_name = (
-                name.strip()
-                if name is not None and name.strip() != ""
-                else source_module.name
-            )
-            graph = SavedGraph(
-                workspace_id=destination_workspace_id,
-                created_by_user_id=actor.user_id,
-                name=copied_name,
-                document=copied_document,
-                id=uuid4(),
-            )
-            await stage_checkpointed_graph(
-                graph,
-                graphs=unit_of_work.graphs,
-                collaboration=unit_of_work.collaboration,
-            )
-
-            try:
-                definition = GraphModuleDefinition.from_saved_graph(graph)
-            except GraphModuleDefinitionError as exc:
-                raise ModuleLibraryError(str(exc)) from exc
-
-            module = Module(
-                workspace_id=destination_workspace_id,
-                source_graph_id=graph.id,
-                name=copied_name,
-                description=source_module.description,
-            )
-            module.apply_publish(revision=graph.revision)
-            await unit_of_work.modules.add(module)
-            dest_release = ModuleRelease(
-                workspace_id=destination_workspace_id,
-                module_id=module.id,
-                revision=graph.revision,
-                source_graph_id=graph.id,
-                published_by_user_id=actor.user_id,
-            )
-            await unit_of_work.modules.add_release(dest_release)
-            await unit_of_work.commit()
-            return graph, module, dest_release, definition
 
     async def catalog_definitions(
         self,
@@ -480,4 +323,4 @@ class ModuleLibraryService:
             return definition
 
 
-__all__ = ["ModuleLibraryService", "ModulePublicationState"]
+__all__ = ["ModuleLibraryService"]

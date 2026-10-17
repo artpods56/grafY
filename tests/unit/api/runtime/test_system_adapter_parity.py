@@ -35,7 +35,6 @@ from grafy_core.domain.plugin_releases import (
     PluginRelease,
     PluginReleaseIdentity,
     PluginReleaseNamespace,
-    PluginReleaseScope,
     PluginRuntimeArtifact,
     PluginSecretInputContract,
     plugin_contract_digest,
@@ -235,12 +234,8 @@ def _release() -> InstalledPluginRelease:
         release=release,
         installation=PluginInstallation.from_release(
             release,
-            namespace=PluginReleaseNamespace(
-                scope=PluginReleaseScope.SYSTEM,
-                workspace_id=None,
-            ),
+            namespace=PluginReleaseNamespace(),
             execution_policy=PluginExecutionPolicy.HOST_ELIGIBLE,
-            installed_by_user_id=None,
             installed_by_platform_actor="test:parity",
         ),
     )
@@ -288,7 +283,6 @@ def _secret_release() -> InstalledPluginRelease:
             release,
             namespace=base.installation.namespace,
             execution_policy=base.installation.execution_policy,
-            installed_by_user_id=None,
             installed_by_platform_actor=base.release.published_by_platform_actor,
         ),
     )
