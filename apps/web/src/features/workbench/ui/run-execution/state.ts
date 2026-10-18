@@ -8,15 +8,29 @@ import type { NodeExecutionStatus } from "../../canvas/types";
 import type { WorkflowNode } from "../../model/execution-plan";
 import type { ActiveSavedGraph } from "../useSavedGraphLifecycle";
 
+/** A status that ends the run: nothing after it may move it backwards. */
+export type RunTerminalStatus = "cancelled" | "succeeded" | "failed";
+
+/** Statuses the status card can show, including the pre-submission window. */
+export type RunVisibleStatus = "preparing" | RunExecution["status"];
+
 export interface VisibleRunExecution {
   generation: number;
   executionId: string | null;
-  status: "preparing" | RunExecution["status"];
+  status: RunVisibleStatus;
   activeNodeId: string | null;
   queuePosition: number | null;
   statusError: string | null;
 }
 
+/**
+ * Synchronous arbitration for one run. This is deliberately a ref and not
+ * render state: the run loop, the event stream, and a cancellation request all
+ * read and settle these flags in the same tick, before React publishes anything
+ * (see the reserved run request in `useRunExecution`). Only the decisions that
+ * need that immediacy live here; what the person sees is published through the
+ * run lifecycle reducer, which takes these facts as typed events.
+ */
 export interface RunExecutionGuard {
   generation: number;
   executionId: string | null;
@@ -26,7 +40,7 @@ export interface RunExecutionGuard {
   activeNodeId: string | null;
   lastEventSequence: number;
   reconciliationRequested: boolean;
-  terminalEventStatus: "cancelled" | "succeeded" | "failed" | null;
+  terminalEventStatus: RunTerminalStatus | null;
   planningActiveGraph: ActiveSavedGraph | null;
   planningFingerprint: string;
   finished: boolean;
@@ -54,6 +68,46 @@ export function nodeExecutionIsTerminal(status: NodeExecutionStatus): boolean {
     status === "failed" ||
     status === "skipped" ||
     status === "cancelled"
+  );
+}
+
+/**
+ * A workflow status that ends the run. Everything after it may only preserve or
+ * restate this outcome, never replace it.
+ */
+export function executionStatusIsTerminal(
+  status: RunExecution["status"],
+): status is RunTerminalStatus {
+  return (
+    status === "cancelled" || status === "succeeded" || status === "failed"
+  );
+}
+
+/**
+ * The canvas after a cancellation attempt is given up: the node left showing
+ * `cancelling` returns to what the server last reported for the run, so the
+ * person is not left looking at a cancellation that never took.
+ */
+export function withoutCancellationOverlay(
+  nodes: WorkflowNode[],
+  guard: Pick<RunExecutionGuard, "activeNodeId" | "lastServerStatus">,
+): WorkflowNode[] {
+  return nodes.map((node) =>
+    node.id === guard.activeNodeId &&
+    node.data.execution.status === "cancelling"
+      ? {
+          ...node,
+          data: {
+            ...node.data,
+            execution: {
+              status:
+                guard.lastServerStatus === "cancelling"
+                  ? "cancelling"
+                  : "running",
+            },
+          },
+        }
+      : node,
   );
 }
 
