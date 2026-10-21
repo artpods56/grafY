@@ -65,7 +65,9 @@ afterEach(async () => {
   mountedRoots.clear();
   document.body.replaceChildren();
   vi.unstubAllGlobals();
-  vi.clearAllMocks();
+  // Reset, not clear: an unconsumed mockRejectedValueOnce would otherwise be
+  // handed to the next test and fail it for a reason that is not its own.
+  vi.resetAllMocks();
 });
 
 beforeEach(() => {
@@ -156,6 +158,11 @@ const OLDER_RUN = summary("execution-1", {
   graph_revision: 3,
   finished_at: "2026-07-17T08:00:02Z",
 });
+/** The run a finished execution adds, so `Latest run` points at a new record. */
+const NEWER_RUN = summary("execution-3", {
+  graph_revision: 5,
+  finished_at: "2026-07-19T08:00:02Z",
+});
 
 const NODE_TITLES = {
   "resize-1": "Resize",
@@ -185,14 +192,38 @@ function libraryItem(artifactId: string): LibraryItem {
   };
 }
 
+/** One SWR cache, so a second mount reads what the first one already loaded. */
+function createSwrCache() {
+  return new Map();
+}
+
+function alerts(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>('[role="alert"]')];
+}
+
+function alertMentioning(container: HTMLElement, text: string): HTMLElement {
+  const alert = alerts(container).find((node) =>
+    node.textContent?.includes(text),
+  );
+  if (!alert) {
+    throw new Error(
+      `No alert mentions ${text}. Alerts: ${JSON.stringify(
+        alerts(container).map((node) => node.textContent),
+      )}`,
+    );
+  }
+  return alert as HTMLElement;
+}
+
 async function renderDrawer(
   props: Partial<React.ComponentProps<typeof GeneratedDrawer>> = {},
+  options: { cache?: ReturnType<typeof createSwrCache> } = {},
 ) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   mountedRoots.set(root, container);
-  const cache = new Map();
+  const cache = options.cache ?? createSwrCache();
   const swrConfig = { provider: () => cache, dedupingInterval: 0 };
   let currentProps: React.ComponentProps<typeof GeneratedDrawer> = {
     workspaceId: "workspace-1",
@@ -219,7 +250,39 @@ async function renderDrawer(
     currentProps = { ...currentProps, ...nextProps };
     await render();
   };
-  return { container, rerender };
+  /** Closing and reopening the panel: the cache survives, the component does not. */
+  const unmount = async () => {
+    mountedRoots.delete(root);
+    await React.act(async () => root.unmount());
+    container.remove();
+  };
+  return { container, rerender, unmount };
+}
+
+/**
+ * SWR defers the revalidation of a key that already holds data to the next
+ * animation frame, so a re-read only starts once a frame has passed.
+ */
+async function nextFrame() {
+  await React.act(async () => {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+}
+
+/** One recorded run whose only output is `artifactId`, made by `resize-1`. */
+function runDetail(execution: GraphExecutionSummary, artifactId: string) {
+  return detail(execution, [
+    {
+      node_id: "resize-1",
+      position: 0,
+      status: "succeeded",
+      error: null,
+      completed_at: "2026-07-18T08:00:02Z",
+      outputs: [tableOutput(artifactId)],
+    },
+  ]);
 }
 
 function buttonNamed(container: HTMLElement, name: string): HTMLButtonElement {
@@ -742,5 +805,202 @@ describe("GeneratedDrawer", () => {
     );
     expect(rowFor(container, "artifact-latest")).toBeDefined();
     expect(apiMocks.saveRunArtifactToLibrary).not.toHaveBeenCalled();
+  });
+
+  it("keeps the listed runs when refreshing the list fails, and reads again on request", async () => {
+    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
+    apiMocks.getGraphExecution.mockResolvedValue(
+      runDetail(LATEST_RUN, "artifact-latest"),
+    );
+    apiMocks.listGraphExecutions.mockResolvedValueOnce({
+      items: [LATEST_RUN],
+      next_cursor: null,
+    });
+
+    const { container } = await renderDrawer();
+    expect(rowFor(container, "artifact-latest")).toBeDefined();
+
+    apiMocks.listGraphExecutions.mockRejectedValueOnce(
+      new Error("the runs are offline"),
+    );
+    await React.act(async () => {
+      buttonNamed(container, "Refresh Run artifacts").click();
+    });
+
+    // The read failed, the rows did not: what was on screen is still there.
+    expect(rowFor(container, "artifact-latest")).toBeDefined();
+    const notice = alertMentioning(container, "the runs are offline");
+    expect(notice.textContent).toContain("last successful read");
+    // Asking again re-reads the list, and a good read clears the notice.
+    const before = apiMocks.listGraphExecutions.mock.calls.length;
+    apiMocks.listGraphExecutions.mockResolvedValueOnce({
+      items: [LATEST_RUN],
+      next_cursor: null,
+    });
+    await React.act(async () => {
+      buttonNamed(notice, "Try again").click();
+    });
+
+    expect(apiMocks.listGraphExecutions.mock.calls.length).toBe(before + 1);
+    expect(rowFor(container, "artifact-latest")).toBeDefined();
+    expect(alerts(container)).toHaveLength(0);
+  });
+
+  it("keeps saying no run is recorded when the refresh of an empty list fails", async () => {
+    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
+    apiMocks.listGraphExecutions.mockResolvedValueOnce({
+      items: [],
+      next_cursor: null,
+    });
+
+    const { container } = await renderDrawer();
+    expect(container.textContent).toContain("No run of this canvas");
+
+    apiMocks.listGraphExecutions.mockRejectedValueOnce(
+      new Error("the runs are offline"),
+    );
+    await React.act(async () => {
+      buttonNamed(container, "Refresh Run artifacts").click();
+    });
+
+    // The empty list is the answer that was read, so it stays on screen.
+    expect(container.textContent).toContain("No run of this canvas");
+    expect(alertMentioning(container, "the runs are offline")).toBeDefined();
+  });
+
+  it("reads the list again when the first read of the runs fails", async () => {
+    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
+    apiMocks.listGraphExecutions.mockRejectedValueOnce(
+      new Error("the runs are offline"),
+    );
+
+    const { container } = await renderDrawer();
+    const notice = alertMentioning(container, "the runs are offline");
+
+    apiMocks.listGraphExecutions.mockResolvedValueOnce({
+      items: [LATEST_RUN],
+      next_cursor: null,
+    });
+    apiMocks.getGraphExecution.mockResolvedValue(
+      runDetail(LATEST_RUN, "artifact-latest"),
+    );
+    await React.act(async () => {
+      buttonNamed(notice, "Try again").click();
+    });
+
+    expect(rowFor(container, "artifact-latest")).toBeDefined();
+    expect(alerts(container)).toHaveLength(0);
+  });
+
+  it("keeps the run rows already shown when reopening the drawer cannot read them", async () => {
+    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
+    apiMocks.getGraphExecution.mockResolvedValue(
+      runDetail(LATEST_RUN, "artifact-latest"),
+    );
+    apiMocks.listGraphExecutions.mockResolvedValue({
+      items: [LATEST_RUN],
+      next_cursor: null,
+    });
+
+    const cache = createSwrCache();
+    const first = await renderDrawer({}, { cache });
+    expect(rowFor(first.container, "artifact-latest")).toBeDefined();
+    await first.unmount();
+
+    apiMocks.getGraphExecution.mockRejectedValueOnce(
+      new Error("this run is offline"),
+    );
+    const { container } = await renderDrawer({}, { cache });
+    await nextFrame();
+
+    expect(rowFor(container, "artifact-latest")).toBeDefined();
+    const notice = alertMentioning(container, "this run is offline");
+    expect(notice.textContent).toContain("last successful read");
+
+    apiMocks.getGraphExecution.mockResolvedValueOnce(
+      runDetail(LATEST_RUN, "artifact-latest"),
+    );
+    const before = apiMocks.getGraphExecution.mock.calls.length;
+    await React.act(async () => {
+      buttonNamed(notice, "Try again").click();
+    });
+
+    expect(apiMocks.getGraphExecution.mock.calls.length).toBe(before + 1);
+    expect(alerts(container)).toHaveLength(0);
+  });
+
+  it("keeps the run on screen when a finished run cannot be read, and recovers on retry", async () => {
+    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
+    apiMocks.listGraphExecutions.mockResolvedValueOnce({
+      items: [LATEST_RUN],
+      next_cursor: null,
+    });
+    apiMocks.listGraphExecutions.mockResolvedValue({
+      items: [NEWER_RUN, LATEST_RUN],
+      next_cursor: null,
+    });
+    const detailAttempts: Record<string, number> = {};
+    apiMocks.getGraphExecution.mockImplementation(
+      async (_workspaceId, _graphId, executionId) => {
+        detailAttempts[executionId] = (detailAttempts[executionId] ?? 0) + 1;
+        if (executionId !== LATEST_RUN.execution_id) {
+          if (detailAttempts[executionId] === 1) {
+            throw new Error("the new run is offline");
+          }
+          return runDetail(NEWER_RUN, "artifact-new");
+        }
+        return runDetail(LATEST_RUN, "artifact-latest");
+      },
+    );
+
+    const { container, rerender } = await renderDrawer({
+      executionRunning: true,
+    });
+    expect(rowFor(container, "artifact-latest")).toBeDefined();
+
+    // The run finishes, so the drawer reads the run it just recorded — and fails.
+    await rerender({ executionRunning: false });
+
+    expect(rowFor(container, "artifact-latest")).toBeDefined();
+    const notice = alertMentioning(container, "the new run is offline");
+    expect(notice.textContent).toContain("last successful read");
+
+    apiMocks.listGraphExecutions.mockResolvedValue({
+      items: [NEWER_RUN, LATEST_RUN],
+      next_cursor: null,
+    });
+    await React.act(async () => {
+      buttonNamed(notice, "Try again").click();
+    });
+
+    expect(rowFor(container, "artifact-new")).toBeDefined();
+    expect(alerts(container)).toHaveLength(0);
+  });
+
+  it("offers to read a run again when its first read fails", async () => {
+    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
+    apiMocks.listGraphExecutions.mockResolvedValue({
+      items: [LATEST_RUN],
+      next_cursor: null,
+    });
+    apiMocks.getGraphExecution.mockRejectedValueOnce(
+      new Error("this run is offline"),
+    );
+
+    const { container } = await renderDrawer();
+    // Nothing was ever shown for this run, so only the failure is on screen.
+    expect(container.querySelector("[data-artifact-row]")).toBeNull();
+    const notice = alertMentioning(container, "this run is offline");
+    expect(notice.textContent).not.toContain("last successful read");
+
+    apiMocks.getGraphExecution.mockResolvedValueOnce(
+      runDetail(LATEST_RUN, "artifact-latest"),
+    );
+    await React.act(async () => {
+      buttonNamed(notice, "Try again").click();
+    });
+
+    expect(rowFor(container, "artifact-latest")).toBeDefined();
+    expect(alerts(container)).toHaveLength(0);
   });
 });

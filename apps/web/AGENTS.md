@@ -28,9 +28,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
   measuring the handle. Playwright trial clicks can scroll clipped ancestors
   and give stale target coordinates.
 - After changing canvas pointer/touch handlers or React Flow interaction options,
-  run the Playwright gesture suite described in `README.md`. Cover touch pan,
-  pinch, cancellation, blank-pane tap deselection, node dragging, port wiring,
-  and desktop mouse selection. A resized viewport alone does not test touch.
+  run the Playwright gesture suite (`e2e/canvas-gestures.spec.ts`) described in
+  `README.md`. Cover touch pan, pinch, cancellation, blank-pane tap deselection,
+  node dragging, port wiring, and desktop mouse selection. A resized viewport
+  alone does not test touch.
 <!-- END:grafy-workbench-rules -->
 
 <!-- BEGIN:web-app-conventions -->
@@ -71,10 +72,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
   height, or responsive frame constraints inline.
 - Use `useMediaQuery` for reactive JavaScript breakpoint state. Keep ARIA and
   behavior breakpoints aligned with the corresponding CSS media query.
-- After changing popup geometry, run the Playwright popup suite at phone,
-  tablet, desktop, and short landscape sizes. Verify the popup stays inside the
-  viewport and its primary action remains visible. A width cap alone does not
-  prevent an anchored popover from being positioned offscreen.
+- After changing popup geometry, run the Playwright popup suite
+  (`e2e/workbench-popups.spec.ts`) at phone, tablet, desktop, and short
+  landscape sizes. Verify the popup stays inside the viewport and its primary
+  action remains visible. A width cap alone does not prevent an anchored popover
+  from being positioned offscreen.
 
 ## CSS
 
@@ -115,10 +117,24 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - When verifying a worktree, use `GRAFY_E2E_PORT` to give its dev server a free
   port. Do not reuse a server from another checkout; its compiled code does not
   verify this worktree.
+- The **Web browser acceptance** job in `.github/workflows/ci.yml` runs every
+  spec in `e2e/` on desktop, phone, and tablet for each pull request, and
+  `publish-images` waits for it. Run the specs you touched before pushing; CI
+  runs all of them either way.
 - Run Playwright invocations serially with the default configuration. Separate
   invocations share the output and report directories; a new run can delete
   another run's active traces and cause teardown failures. Parallel invocations
   require distinct output and reporter directories.
+- `e2e/` answers the API boundary with fixtures; `e2e-real/` talks to a real
+  FastAPI process and a real Keycloak (`npm run test:e2e:real`, its own config
+  and output directories). Do not move a step from one suite into the other: the
+  mocked suite fails on an unexpected API request on purpose, and the real suite
+  is where the two applications are proven to still speak to each other.
+- The real-backend suite needs the checkout to itself. Next runs one dev server
+  per directory, so stop `just web` for this worktree and run one invocation at a
+  time. `scripts/real-smoke.mjs` owns only the provider container, addressed by the
+  project name it generated; the API and dev server belong to Playwright's
+  `webServer`, which holds their pids. Do not add pattern-based cleanup for either.
 
 ## API hooks
 

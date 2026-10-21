@@ -30,7 +30,7 @@ import {
 import { useSavedGraphs } from "@/hooks/use-api";
 import type { SavedGraphSummary } from "@/lib/api";
 
-type GraphBrowserView = "recent" | "all";
+import { useGraphBrowserFilters } from "./use-graph-browser-filters";
 
 const RECENT_GRAPH_LIMIT = 8;
 
@@ -69,12 +69,29 @@ function GraphRow({
   );
 }
 
+/**
+ * The search text and the Recent/All choice live in the address, so a reload,
+ * a shared link, or Back lands on the same list. See
+ * {@link useGraphBrowserFilters} for how the field and the address stay in step
+ * with typing.
+ *
+ * The filter state comes from `useSearchParams`, so the browser sits behind a
+ * Suspense boundary: the shell renders before the address is known.
+ */
 export function WorkspaceGraphBrowser() {
+  return (
+    <React.Suspense fallback={<GraphBrowserLoadingShell />}>
+      <WorkspaceGraphBrowserContent />
+    </React.Suspense>
+  );
+}
+
+function WorkspaceGraphBrowserContent() {
   const router = useRouter();
   const { workspace } = useWorkspaceContext();
   const { data, error, isLoading, mutate } = useSavedGraphs(workspace.id);
-  const [query, setQuery] = React.useState("");
-  const [view, setView] = React.useState<GraphBrowserView>("recent");
+  const { query, view, setQuery, setView, searchFieldRef } =
+    useGraphBrowserFilters();
 
   const workspaceName = workspaceDisplayName(workspace);
   const canCreate = workspace.capabilities.includes("create_graph");
@@ -121,8 +138,9 @@ export function WorkspaceGraphBrowser() {
           <label className="grafy-graphs__search">
             <Search size={16} aria-hidden="true" />
             <input
+              ref={searchFieldRef}
               type="search"
-              value={query}
+              defaultValue={query}
               aria-label="Search graphs"
               placeholder="Search graphs"
               onChange={(event) => setQuery(event.currentTarget.value)}
@@ -159,10 +177,7 @@ export function WorkspaceGraphBrowser() {
         </div>
 
         {!data && isLoading ? (
-          <div className="grafy-graphs__loading" role="status">
-            <BrandLoader size={36} label="Loading graphs" />
-            <span>Loading graphs…</span>
-          </div>
+          <GraphBrowserLoadingBlock label="Loading graphs" />
         ) : !data && error ? (
           <section className="grafy-graphs__state" role="alert">
             <Workflow size={22} aria-hidden="true" />
@@ -234,6 +249,26 @@ export function WorkspaceGraphBrowser() {
             </button>
           </p>
         ) : null}
+      </main>
+    </div>
+  );
+}
+
+/** The list's own loading state, and the shell shown while the address settles. */
+function GraphBrowserLoadingBlock({ label }: { label: string }) {
+  return (
+    <div className="grafy-graphs__loading" role="status">
+      <BrandLoader size={36} label={label} />
+      <span>{label}…</span>
+    </div>
+  );
+}
+
+function GraphBrowserLoadingShell() {
+  return (
+    <div className="grafy-graphs">
+      <main className="grafy-graphs__main">
+        <GraphBrowserLoadingBlock label="Loading graphs" />
       </main>
     </div>
   );

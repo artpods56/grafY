@@ -1,4 +1,5 @@
 import { expect, test as base } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 import { libraryStub } from "./library-folders-stub";
 import type {
@@ -126,57 +127,108 @@ export const nodeRegistry = {
   ],
   unavailable_modules: [],
 } satisfies NodeRegistry;
-const invitations = [] satisfies WorkspaceInvitationForRecipient[];
+const invitations: readonly WorkspaceInvitationForRecipient[] = [];
+
+/**
+ * `/api/v1/workspaces/{workspace_id}/{tail}` — the shape every location-scoped
+ * endpoint shares, so `graphs` and `nodes` are matched as siblings by one read
+ * of the tail. Matching them in sequence instead lets a broad `graphs` rule
+ * swallow `/nodes`, and a spec then fails on a catalog that never arrived.
+ */
+const WORKSPACE_SCOPED = /^\/api\/v1\/workspaces\/([^/]+)\/([^/]+)$/;
+
+export interface GrafyApiFixtures {
+  readonly workspaces: readonly Workspace[];
+  /** Saved-graph lists keyed by workspace id, the way the API addresses them. */
+  readonly graphsByWorkspace: Readonly<Record<string, SavedGraphList>>;
+  readonly registry?: NodeRegistry;
+  readonly invitations?: readonly WorkspaceInvitationForRecipient[];
+}
+
+/** The one-person, one-workspace world every workbench spec already expects. */
+export const workbenchApiFixtures: GrafyApiFixtures = {
+  workspaces: [workspace],
+  graphsByWorkspace: { [WORKSPACE_ID]: savedGraphs },
+  registry: nodeRegistry,
+};
+
+type FixtureBody =
+  | Session
+  | readonly Workspace[]
+  | SavedGraphList
+  | NodeRegistry
+  | readonly WorkspaceInvitationForRecipient[];
+
+/**
+ * The answer this fixture world gives for one GET, or `undefined` when it has
+ * none: an endpoint it was not given, or a workspace it was given no graph list
+ * for. Both end in the same loud 501 below.
+ */
+function fixtureBody(
+  path: string,
+  fixtures: GrafyApiFixtures,
+): FixtureBody | undefined {
+  if (path === "/api/v1/auth/session") return session;
+  if (path === "/api/v1/workspaces") return fixtures.workspaces;
+  if (path === "/api/v1/me/invitations")
+    return fixtures.invitations ?? invitations;
+
+  const scoped = path.match(WORKSPACE_SCOPED);
+  const workspaceId = scoped?.[1];
+  const tail = scoped?.[2];
+  if (workspaceId === undefined || tail === undefined) return undefined;
+  // A saved graph's own document (`/graphs/{graph_id}`) is deliberately not
+  // here: these specs author drafts, and a spec that starts opening one should
+  // see a 501 rather than a blank canvas it mistakes for the app being broken.
+  if (tail === "nodes") return fixtures.registry;
+  if (tail === "graphs") return fixtures.graphsByWorkspace[workspaceId];
+  return undefined;
+}
+
+/**
+ * Answer the endpoints the web app calls, and hand back a reader for anything
+ * this fixture did not cover. A spec that starts asking for an endpoint it was
+ * not given sees a 501 and a non-empty list instead of a silent hole.
+ */
+export async function mockGrafyApi(
+  page: Page,
+  fixtures: GrafyApiFixtures = workbenchApiFixtures,
+): Promise<() => readonly string[]> {
+  const unhandledApiRequests: string[] = [];
+
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const path = url.pathname;
+    const method = request.method();
+
+    const body = method === "GET" ? fixtureBody(path, fixtures) : undefined;
+
+    if (body !== undefined) {
+      await route.fulfill({ json: body });
+      return;
+    }
+
+    const unhandledRequest = `${method} ${path}`;
+    unhandledApiRequests.push(unhandledRequest);
+    await route.fulfill({
+      status: 501,
+      contentType: "application/json",
+      body: JSON.stringify({
+        detail: `Unhandled Playwright API fixture: ${unhandledRequest}`,
+      }),
+    });
+  });
+
+  return () => unhandledApiRequests;
+}
 
 export const test = base.extend<{ registry: NodeRegistry }>({
   registry: [nodeRegistry, { option: true }],
   page: async ({ page, registry }, runTest) => {
-    const unhandledApiRequests: string[] = [];
-    await page.route("**/api/**", async (route) => {
-      const request = route.request();
-      const url = new URL(request.url());
-      const path = url.pathname;
-      const method = request.method();
-
-      let body:
-        | Session
-        | readonly Workspace[]
-        | SavedGraphList
-        | NodeRegistry
-        | readonly WorkspaceInvitationForRecipient[]
-        | undefined;
-      if (method === "GET" && path === "/api/v1/auth/session") {
-        body = session;
-      } else if (method === "GET" && path === "/api/v1/workspaces") {
-        body = [workspace];
-      } else if (method === "GET" && path === "/api/v1/me/invitations") {
-        body = invitations;
-      } else if (
-        method === "GET" &&
-        path === `/api/v1/workspaces/${WORKSPACE_ID}/graphs`
-      ) {
-        body = savedGraphs;
-      } else if (
-        method === "GET" &&
-        path === `/api/v1/workspaces/${WORKSPACE_ID}/nodes`
-      ) {
-        body = registry;
-      }
-
-      if (body !== undefined) {
-        await route.fulfill({ json: body });
-        return;
-      }
-
-      const unhandledRequest = `${method} ${path}`;
-      unhandledApiRequests.push(unhandledRequest);
-      await route.fulfill({
-        status: 501,
-        contentType: "application/json",
-        body: JSON.stringify({
-          detail: `Unhandled Playwright API fixture: ${unhandledRequest}`,
-        }),
-      });
+    const unhandled = await mockGrafyApi(page, {
+      ...workbenchApiFixtures,
+      registry,
     });
 
     // The Library folder tree is the server's now, so every workbench test needs
@@ -187,9 +239,7 @@ export const test = base.extend<{ registry: NodeRegistry }>({
     await page.goto(WORKBENCH_PATH);
     await expect(page.locator(".react-flow")).toBeVisible();
     await runTest(page);
-    expect(unhandledApiRequests, "Unhandled Playwright API requests").toEqual(
-      [],
-    );
+    expect(unhandled(), "Unhandled Playwright API requests").toEqual([]);
   },
 });
 

@@ -318,11 +318,21 @@ graph LR
   backdrop and follows a swipe. Motion is off on first paint, during a resize
   drag, and under `prefers-reduced-motion`.
 
+- **A failed read keeps what it read.** When refreshing the Generated view
+  fails, the runs and run rows already on screen stay there. A warning line
+  names the read they came from and offers `Try again`, which asks for the
+  failed read and nothing else; only a first read that never returned replaces
+  the body. Throwing away the panel on a transient failure loses the one thing
+  the user opened it for. The run detail reads with `keepPreviousData` so the
+  groups of the run being shown survive the read of the run that just became
+  the newest one.
+
 ## 6. Verification
 
 - `npm --prefix apps/web test` — the refusal codes mapped to the panel's errors,
   the recursive projection and filter, the panel (create, rename, fold, move,
-  preview, and a delete the server refuses), and the shell.
+  preview, and a delete the server refuses), the shell, and the Generated view
+  keeping its last good read through a refresh that fails.
 - `npm --prefix apps/web run typecheck`, `npm --prefix apps/web run lint`.
 - `npm --prefix apps/web test:e2e` — the panel opens docked, takes width, folds
   and unfolds; a folder is created, nested, filled by drag, emptied and deleted;

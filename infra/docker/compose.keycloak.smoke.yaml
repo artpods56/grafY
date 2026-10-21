@@ -1,0 +1,50 @@
+# Disposable Keycloak for the real-backend browser smoke test
+# (`npm run test:e2e:real` in apps/web). Not for human use.
+#
+# Same provider image and realm shape the repository develops against; see
+# infra/docker/compose.keycloak.yaml and infra/keycloak/README.md. Three things
+# differ, and they are the whole reason this file exists:
+#
+#   1. no named volume: `start-dev` keeps its data inside the container, so
+#      removing the container removes the provider, its users, and its keys,
+#   2. no `restart` policy, so a run cannot leave a provider behind that keeps
+#      answering on a loopback port,
+#   3. the caller passes its own `--project-name`, so a run cannot collide with,
+#      recycle, or reuse the developer's `just keycloak-up`.
+#
+# The realm is not imported from a bind mount: `apps/web/scripts/real-smoke.mjs`
+# derives a per-run realm from infra/keycloak/realm-import/grafy-realm.json — the
+# run's own loopback callback replaces the committed :3000 one — and posts it to
+# the admin API. That keeps the provider's configuration in one place and avoids
+# depending on which host paths the Docker daemon can see.
+#
+# Most variables have defaults so that `down` works after a run was killed before
+# its teardown. The admin password does not: the launcher always supplies it,
+# and compose refuses to start without it.
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.1
+    command: ["start-dev"]
+    environment:
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-http://127.0.0.1:8080}
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_MANAGEMENT_HEALTH_ENABLED: "false"
+      # Only the launcher authenticates here, to import the run's realm, and it
+      # generates this password per run. The console is never opened.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-real-smoke-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set by the launcher}
+    ports:
+      - "127.0.0.1:${KEYCLOAK_PORT:-55555}:8080"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "bash -c \"exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3\"",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 36
+      start_period: 10s
+    restart: "no"

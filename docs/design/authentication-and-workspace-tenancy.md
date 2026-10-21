@@ -757,6 +757,9 @@ acceptance includes:
 
 - OIDC issuer/audience/signature/algorithm/time/state/nonce/PKCE and replay
   tests;
+- a browser journey that finishes the login round trip through the
+  browser-facing proxy against a disposable Keycloak running the repository's own
+  realm, then reloads a saved graph from the live API (`apps/web/e2e-real`);
 - session rotation, expiry, logout, user disablement, CSRF, and Origin tests;
 - PAT hash, expiry, revocation, scope/membership intersection, and concurrent
   MCP actor isolation tests;

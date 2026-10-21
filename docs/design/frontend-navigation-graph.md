@@ -40,6 +40,45 @@ and `WorkspaceLayout.tsx` treats both as the active "graph browser"
 interchangeable — the graph below draws an alias edge `ROOT --> GRAPHS` rather
 than treating them as distinct screens.
 
+## Query strings
+
+Only the graph browser puts state in the address, and only three parameters are
+its own. `apps/web/src/features/graphs/browser-filters.ts` owns reading and
+writing them, so no route parses `q` by hand.
+
+| Parameter | Values | Omitted when |
+|---|---|---|
+| `q` | Free-form search text, bounded to 200 characters | Empty |
+| `view` | `recent` or `all` | `recent` (the default) |
+| `location` | A Workspace **slug** — never an id | Absent, blank, or read by a non-entry route |
+
+Rules that hold across the family:
+
+- **Defaults leave the address.** A browsed list is as short as a shared one, so
+  `?view=recent` is never written.
+- **Unrecognised values read as the default.** `?view=archive` is Recent; the
+  bad value is cleaned out of the next address the browser writes.
+- **Any other parameter belongs to another writer** (an analytics tag, a return
+  path) and travels through untouched.
+- **`location` is entry-only.** `/` and `/graphs` read it, then drop it when they
+  hand off to `/workspaces/[slug]/graphs`; on the browser it is someone else's
+  parameter.
+- **A slug in the address is a request, not a fact.** The entry route matches it
+  against the locations the person can actually reach and falls back to their
+  usual location otherwise, so a stale bookmark never opens a Workspace they
+  cannot read. The filters are still carried.
+- **Commits use `router.replace`.** Typing does not leave one history entry per
+  keystroke, so Back leaves the page instead of unwinding a word letter by
+  letter.
+
+The search field is deliberately uncontrolled: a field whose value comes back
+from the address can be written back to a value the person already typed past,
+which is how keystrokes get lost. `use-graph-browser-filters.ts` writes the
+field only when the *address* moved (reload, Back, Forward, a control such as
+Clear search), never while a keystroke of the person's own is still in flight.
+Playwright covers this in `e2e/graph-browser-filters.spec.ts`, and it fails when
+the field is made controlled again.
+
 ## Navigation mechanisms
 
 The app uses four distinct navigation primitives. Knowing which one an edge
