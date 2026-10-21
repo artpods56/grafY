@@ -91,11 +91,11 @@ lint:
 
 # Format the web app with Prettier. See apps/web/.prettierrc.
 format:
-    cd apps/web && npm exec prettier -- --write "src/**/*.{ts,tsx,css,md,json}" "e2e/**/*.{ts,tsx}"
+    cd apps/web && npm exec prettier -- --write "src/**/*.{ts,tsx,css,md,json}" "e2e*/**/*.{ts,tsx}" "playwright*.config.ts"
 
 # Fail when the web app is not formatted. CI runs this.
 format-check:
-    cd apps/web && npm exec prettier -- --check "src/**/*.{ts,tsx,css,md,json}" "e2e/**/*.{ts,tsx}"
+    cd apps/web && npm exec prettier -- --check "src/**/*.{ts,tsx,css,md,json}" "e2e*/**/*.{ts,tsx}" "playwright*.config.ts"
 
 # Install the repository-owned Git commit hook for this clone.
 hooks-install:

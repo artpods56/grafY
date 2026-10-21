@@ -10,7 +10,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    exclude: [...configDefaults.exclude, "e2e/**"],
+    // The Playwright suites have their own runner and need launcher-supplied
+    // environment, so collecting them here fails at import.
+    exclude: [...configDefaults.exclude, "e2e*/**"],
     setupFiles: ["./vitest.setup.ts"],
   },
 });

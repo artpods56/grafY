@@ -106,8 +106,8 @@ const SEQUENCE_LIBRARY: LibraryList = {
   ],
 };
 
-// A second kind that asks for nothing: a card for a small JSON or an image reads
-// its artifact back over HTTP, and this page's stub serves the Library only.
+// A second kind whose card reads its own bytes back: a `file.txt` card asks the
+// API for the head of its content, so a test that lands one answers that read.
 const MIXED_KIND_LIBRARY: LibraryList = {
   items: [
     LIBRARY_ITEM,
@@ -1487,6 +1487,14 @@ test("a selection of two kinds becomes two cards side by side", async ({
 }) => {
   test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
 
+  await page.route(
+    "**/api/v1/workspaces/*/artifacts/dddddddd-dddd-4ddd-8ddd-dddddddddddd/content",
+    (route) =>
+      route.fulfill({
+        contentType: "text/plain",
+        body: "rain at 06:10, wind from the north\n",
+      }),
+  );
   await stubResponses(page, MIXED_KIND_LIBRARY);
   await openPanel(page);
 
@@ -1505,7 +1513,10 @@ test("a selection of two kinds becomes two cards side by side", async ({
   const cards = page.locator("[data-artifact-card-id]");
   await expect(cards).toHaveCount(2);
   await expect(cards.filter({ hasText: "measurements.csv" })).toBeVisible();
-  await expect(cards.filter({ hasText: "field-notes.txt" })).toBeVisible();
+  const notes = cards.filter({ hasText: "field-notes.txt" });
+  await expect(notes).toBeVisible();
+  // The text card showed what its content read returned, not a load failure.
+  await expect(notes).toContainText("rain at 06:10");
   // Side by side at the cursor: same row, different columns.
   const [first, second] = await Promise.all([
     cards.nth(0).boundingBox(),

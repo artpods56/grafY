@@ -9,6 +9,7 @@
     "start": "next start",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:real": "node scripts/real-smoke.mjs",
     "test:e2e:headed": "playwright test --headed",
     "lint": "eslint",
     "check:stylex": "node scripts/check-stylex.mjs",

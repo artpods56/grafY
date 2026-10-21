@@ -113,6 +113,37 @@ const s = stylex.create({
     fontSize: tokens.fontSizeXs,
     lineHeight: 1.45,
   },
+  /**
+   * A failed read whose result is still on screen. Warning, not danger: nothing
+   * was lost, this line only says how old what is left is.
+   */
+  stale: {
+    display: "flex",
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+    gap: "4px 6px",
+    flexShrink: 0,
+    padding: "6px 10px",
+    borderBottomWidth: 1,
+    borderBottomStyle: "solid",
+    borderBottomColor: tokens.colorBorder,
+    color: tokens.colorWarning,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.45,
+  },
+  staleInline: {
+    display: "flex",
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+    gap: "3px 6px",
+    padding: "4px 4px 5px",
+    color: tokens.colorWarning,
+    fontSize: "10px",
+    lineHeight: 1.45,
+  },
+  staleText: { minWidth: 0, flex: 1 },
+  staleIcon: { flexShrink: 0, marginTop: "2px" },
+  staleRetry: { flexShrink: 0, marginInlineStart: "auto" },
   scrollRoot: { position: "relative", flex: 1, minHeight: 0, display: "flex" },
   scrollViewport: {
     width: "100%",
@@ -445,6 +476,42 @@ function nodeGroups(
   return groups;
 }
 
+/**
+ * A read that failed while its result was already on screen. The content stays;
+ * this line names the read those rows came from and asks for the failed one
+ * again. `inline` sits inside an open batch instead of under the header.
+ */
+function RefreshFailure({
+  reason,
+  onRetry,
+  pending,
+  inline = false,
+}: {
+  readonly reason: string;
+  readonly onRetry: () => void;
+  readonly pending: boolean;
+  readonly inline?: boolean;
+}) {
+  return (
+    <p role="alert" {...stylex.props(inline ? s.staleInline : s.stale)}>
+      <CircleAlert
+        size={inline ? 11 : 13}
+        aria-hidden
+        {...stylex.props(s.staleIcon)}
+      />
+      <span {...stylex.props(s.staleText)}>{reason}</span>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={onRetry}
+        {...stylex.props(s.retry, s.staleRetry)}
+      >
+        {pending ? "Retrying…" : "Try again"}
+      </button>
+    </p>
+  );
+}
+
 function ArtifactRow({
   artifact,
   registry,
@@ -580,13 +647,18 @@ function RunNodeGroups({
   canSave: boolean;
   onSave: (artifact: GeneratedRowArtifact, name: string) => void;
 }) {
-  const { data, error, isLoading } = useSWR<
-    GraphExecutionDetail,
-    Error,
-    ExecutionDetailKey
-  >(
+  const {
+    data,
+    error,
+    isLoading,
+    isValidating,
+    mutate: reloadRun,
+  } = useSWR<GraphExecutionDetail, Error, ExecutionDetailKey>(
     ["graph-execution-detail", workspaceId, graphId, executionId],
     loadExecutionDetail,
+    // Re-reading this run, or reading the run that just became the latest one,
+    // must not blank the groups an earlier read already put on screen.
+    { keepPreviousData: true },
   );
 
   if (isLoading) {
@@ -596,33 +668,44 @@ function RunNodeGroups({
       </p>
     );
   }
-  if (error || !data) {
+  if (data) {
+    const groups = nodeGroups(data, nodeTitles);
     return (
-      <p role="alert" {...stylex.props(s.groupMessage, s.messageError)}>
-        {error instanceof Error ? error.message : "Could not load this run."}
-      </p>
+      <>
+        {error ? (
+          <RefreshFailure
+            inline
+            pending={isValidating}
+            onRetry={() => void reloadRun()}
+            reason={`Showing this run from the last successful read. Refresh failed: ${error.message}`}
+          />
+        ) : null}
+        {groups.length ? (
+          groups.map((group) => (
+            <NodeGroup
+              key={group.key}
+              group={group}
+              registry={registry}
+              savedArtifactIds={savedArtifactIds}
+              savingArtifactId={savingArtifactId}
+              canSave={canSave}
+              onSave={onSave}
+            />
+          ))
+        ) : (
+          <p {...stylex.props(s.groupMessage)}>This run recorded no outputs.</p>
+        )}
+      </>
     );
   }
-  const groups = nodeGroups(data, nodeTitles);
-  if (!groups.length) {
-    return (
-      <p {...stylex.props(s.groupMessage)}>This run recorded no outputs.</p>
-    );
-  }
+  // Nothing was ever read for this run, so there is nothing here to keep.
   return (
-    <>
-      {groups.map((group) => (
-        <NodeGroup
-          key={group.key}
-          group={group}
-          registry={registry}
-          savedArtifactIds={savedArtifactIds}
-          savingArtifactId={savingArtifactId}
-          canSave={canSave}
-          onSave={onSave}
-        />
-      ))}
-    </>
+    <RefreshFailure
+      inline
+      pending={isValidating}
+      onRetry={() => void reloadRun()}
+      reason={error ? error.message : "Could not load this run."}
+    />
   );
 }
 
@@ -690,6 +773,8 @@ export function GeneratedDrawer({
   const executions = history?.items ?? [];
   const latest = executions[0] ?? null;
   const previous = executions.slice(1);
+  /** A failed refresh still has the list the last good read returned. */
+  const historyLoaded = history !== undefined;
   const savedArtifactIds = React.useMemo(
     () =>
       new Set((library?.items ?? []).map((item) => item.artifact.artifact_id)),
@@ -767,6 +852,14 @@ export function GeneratedDrawer({
         </p>
       ) : null}
 
+      {historyError && historyLoaded ? (
+        <RefreshFailure
+          pending={isValidating}
+          onRetry={() => void refreshHistory()}
+          reason={`Showing the runs from the last successful read. Refresh failed: ${historyError.message}`}
+        />
+      ) : null}
+
       <ScrollArea.Root {...stylex.props(s.scrollRoot)}>
         <ScrollArea.Viewport {...stylex.props(s.scrollViewport)}>
           <ScrollArea.Content {...stylex.props(s.scrollContent)}>
@@ -784,7 +877,7 @@ export function GeneratedDrawer({
                 />
                 Loading runs…
               </p>
-            ) : historyError ? (
+            ) : historyError && !historyLoaded ? (
               <p role="alert" {...stylex.props(s.message, s.messageError)}>
                 <CircleAlert size={15} aria-hidden />
                 {historyError.message}
