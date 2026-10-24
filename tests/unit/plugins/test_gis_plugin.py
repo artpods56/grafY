@@ -2,6 +2,7 @@ import json
 import math
 import socket
 import subprocess
+import sys
 from hashlib import sha256
 from pathlib import Path
 from typing import cast
@@ -249,6 +250,94 @@ def test_wfs_import_declares_its_configured_http_egress_contract() -> None:
         NodeHttpEgressInput(config_field="service_url"),
     )
     assert registration.http_egress.dynamic_destinations is False
+
+
+def test_gdal_cli_uses_bounded_runner_and_scrubs_ambient_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import grafy_plugin_gis.gdal as gdal_module
+
+    monkeypatch.setenv("GRAFY_TEST_SECRET_SENTINEL", "must-not-reach-gdal")
+    monkeypatch.setenv("LANG", "allowlisted-locale")
+    executable = tmp_path / "fake-gdal"
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import os\n"
+        "print(os.environ.get('GRAFY_TEST_SECRET_SENTINEL', 'missing'))\n"
+        "print(os.environ.get('LANG', 'missing'))\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+
+    calls: list[str] = []
+    real_run = gdal_module.run_bounded
+
+    def tracked_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(str(args[0][0]))
+        return real_run(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(gdal_module, "run_bounded", tracked_run)
+    cli = GdalCli(gdalinfo=str(executable), gdal_translate=str(executable))
+
+    info = cli._run(str(executable), [], operation="fake gdalinfo")
+    translate = cli._run(str(executable), [], operation="fake gdal_translate")
+
+    assert info.stdout.splitlines() == ["missing", "allowlisted-locale"]
+    assert translate.stdout.splitlines() == ["missing", "allowlisted-locale"]
+    assert info.stderr == ""
+    assert translate.stderr == ""
+    assert calls == [str(executable), str(executable)]
+
+
+def test_gdal_run_preserves_error_message_shapes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import grafy_plugin_gis.gdal as gdal_module
+
+    missing = tmp_path / "missing-gdal"
+    with pytest.raises(GdalError) as not_found:
+        GdalCli(gdalinfo=str(missing))._run(
+            str(missing), [], operation="checking gdalinfo version"
+        )
+    assert str(not_found.value) == (
+        "checking gdalinfo version could not start because executable "
+        f"{str(missing)!r} was not found"
+    )
+
+    executable = tmp_path / "fake-gdal"
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "print('  bad\\n source  ', file=sys.stderr)\n"
+        "sys.exit(7)\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    cli = GdalCli(gdalinfo=str(executable))
+    with pytest.raises(GdalError) as nonzero:
+        cli._run(str(executable), [], operation="checking gdalinfo version")
+    assert str(nonzero.value) == (
+        f"checking gdalinfo version failed in executable {str(executable)!r} "
+        "with exit code 7: bad source"
+    )
+
+    def timed_out(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise gdal_module.BoundedSubprocessError(
+            "checking gdalinfo version",
+            -9,
+            True,
+            "",
+        )
+
+    monkeypatch.setattr(gdal_module, "run_bounded", timed_out)
+    with pytest.raises(GdalError) as timeout:
+        cli._run(str(executable), [], operation="checking gdalinfo version")
+    assert str(timeout.value) == (
+        f"checking gdalinfo version failed in executable {str(executable)!r} "
+        "because it exceeded the bounded wall-clock limit: no diagnostic output"
+    )
 
 
 def test_bounds_config_schemas_describe_fixed_wgs84_positions() -> None:

@@ -1,4 +1,5 @@
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -6,6 +7,7 @@ from pathlib import Path
 from typing import Final, Literal, final
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, ValidationError
+from grafy_core.bounded_subprocess import BoundedSubprocessError, run as run_bounded
 
 
 RasterBounds = tuple[float, float, float, float]
@@ -13,6 +15,20 @@ RasterBounds = tuple[float, float, float, float]
 MINIMUM_GDAL_VERSION: Final = (3, 8, 0)
 PMTILES_MAX_ZOOM: Final = 22
 COG_BLOCK_SIZE: Final = 256
+_GDAL_ENVIRONMENT_ALLOWLIST: Final = (
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "LANG",
+    "LC_ALL",
+    "GDAL_DATA",
+    "PROJ_LIB",
+    "PROJ_DATA",
+    "GDAL_CACHEMAX",
+    "GDAL_NUM_THREADS",
+)
 
 
 class GdalError(RuntimeError):
@@ -147,6 +163,11 @@ class GdalCli:
         self._ogr2ogr = ogr2ogr
         self._gdal_translate = gdal_translate
         self._gdal2tiles = gdal2tiles
+        self._environment = {
+            key: os.environ[key]
+            for key in _GDAL_ENVIRONMENT_ALLOWLIST
+            if key in os.environ
+        }
         self._versions: dict[str, str] = {}
         self._driver_support: dict[tuple[str, str, str], bool] = {}
 
@@ -781,30 +802,33 @@ class GdalCli:
         *,
         operation: str,
     ) -> subprocess.CompletedProcess[str]:
-        try:
-            result = subprocess.run(
-                [executable, *arguments],
-                check=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-        except FileNotFoundError as exc:
+        if shutil.which(executable, path=self._environment.get("PATH")) is None:
             raise GdalError(
                 f"{operation} could not start because executable {executable!r} "
                 "was not found"
-            ) from exc
-        except OSError as exc:
-            raise GdalError(
-                f"{operation} could not start executable {executable!r}: {exc}"
-            ) from exc
-        if result.returncode != 0:
-            diagnostic = result.stderr.strip() or result.stdout.strip()
+            )
+        try:
+            result = run_bounded(
+                [executable, *arguments],
+                operation=operation,
+                env=self._environment,
+            )
+        except BoundedSubprocessError as exc:
+            if exc.returncode is None:
+                raise GdalError(
+                    f"{operation} could not start executable {executable!r}: "
+                    f"{exc.diagnostic}"
+                ) from exc
+            if exc.timed_out:
+                raise GdalError(
+                    f"{operation} failed in executable {executable!r} because "
+                    "it exceeded the bounded wall-clock limit: "
+                    f"{exc.diagnostic}"
+                ) from exc
             raise GdalError(
                 f"{operation} failed in executable {executable!r} with exit code "
-                f"{result.returncode}: {self._diagnostic(diagnostic)}"
-            )
+                f"{exc.returncode}: {exc.diagnostic}"
+            ) from exc
         return result
 
     def _diagnostic(self, value: str) -> str:
