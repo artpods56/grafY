@@ -1,6 +1,7 @@
 # ADR 0015: Plugins are System-only
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR 0017 (its premise — one System namespace of published
+  releases — is gone with the release lifecycle itself)
 - **Implements:** removal of Workspace Plugins and coding-agent Plugin authoring
 - **Supersedes:** ADR 0004 (already superseded by ADR 0005) and, for its
   Workspace half, ADR 0005 (releases and installations), ADR 0006 (publication
