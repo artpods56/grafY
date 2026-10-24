@@ -39,11 +39,9 @@ api-dev +slugs: db-upgrade
 web port="":
     npm --prefix apps/web run dev {{ if port != "" {"--port=" + port} else {""} }}
 
-# Rebuild the vendored Grafy Plugin SDK wheel from libs/core into every Plugin
-# project. Plugins resolve grafy_core from these committed wheels, never from the
-# monorepo, so run this whenever libs/core changes a module a Plugin imports and
-# commit the rebuilt wheel with that change. tests/unit/architecture pins the
-# resulting digest; update it when this recipe prints a new one.
+# Rebuild the grafy-core wheel used by the plugin-notes publication fixture.
+# tests/unit/architecture pins the resulting digest; update it when this recipe
+# prints a new one.
 sdk-wheel:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -60,12 +58,8 @@ sdk-wheel:
         printf 'expected one grafy-core wheel, found %d\n' "${#wheels[@]}" >&2
         exit 1
     fi
-    # The freeze fixture publishes like any other Plugin project, so its vendored
-    # wheel moves with the rest or tests/unit/architecture rejects the digest.
-    for directory in plugins/*/wheels tests/fixtures/plugin-notes/wheels; do
-        cp "${wheels[0]}" "$directory/"
-        printf 'vendored %s\n' "$directory/$(basename "${wheels[0]}")"
-    done
+    cp "${wheels[0]}" tests/fixtures/plugin-notes/wheels/
+    printf 'vendored %s\n' "tests/fixtures/plugin-notes/wheels/$(basename "${wheels[0]}")"
     (sha256sum "${wheels[0]}" 2>/dev/null || shasum -a 256 "${wheels[0]}")
 
 # Run backend and web tests.
