@@ -88,13 +88,13 @@ the window it was published in. The guest image hashes with the
 SDK wheel vendored in its own lock, so that wheel carries the same
 canonicalization as the host.
 
-After changing contract canonicalization, run `just sdk-wheel`. The recipe
-builds `grafy-core`, copies the wheel to every vendored wheelhouse including the
-freeze fixture, and prints the digest
-`test_vendored_sdk_wheels_accept_the_digest_the_host_stores` compares against;
-update that pin in the same commit. Rerunning every vendored wheel against a real
-catalog means a wheel built from a different field-role table fails instead of
-shipping.
+Anything that changes `libs/core` changes that wheel, so rebuild it in the same
+commit: `just sdk-wheel`, then `uv lock --upgrade-package grafy-core` inside
+`tests/fixtures/plugin-notes`, then set the new digest in
+`test_plugin_families_are_installed_from_the_workspace`. The order matters — the
+fixture's lock records the wheel's digest, so locking before rebuilding leaves it
+stale and publication fails with a hash mismatch. The architecture test fails when
+you forget the digest.
 
 6. Overlays the promoted releases in `GET /v1/workspaces/{id}/nodes`, including
    Plugin-owned artifact types and function-node contracts.

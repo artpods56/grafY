@@ -20,9 +20,11 @@ from grafy_core.application.modules import ModuleLibraryService
 from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.identity import parse_oidc_domain_workspace_grants
+from grafy_core.egress import TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE, EgressPolicy
 from grafy_core.ports.storage import FileStoragePort
 from grafy_persistence.database import Database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
+from grafy_shared.config import EgressConfig
 from grafy_workbench import BuiltinNodeCatalog
 from grafy_workbench.catalog import BUILTIN_FAMILIES
 
@@ -151,6 +153,22 @@ async def _build_plugin_runtime(
     )
 
 
+def workbench_egress_policy(egress: EgressConfig) -> EgressPolicy:
+    """The grants the workbench dials node-named destinations against.
+
+    Built while the app starts, so a destination the egress authority cannot read
+    fails the deployment here and names the variable the operator set, instead of
+    failing the first node that names the destination.
+    """
+
+    try:
+        return EgressPolicy.from_destinations(egress.egress_trusted_destinations)
+    except ValueError as exc:
+        raise ValueError(
+            f"{TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE} is not usable: {exc}"
+        ) from exc
+
+
 async def build_app_resources(
     *,
     settings: Settings,
@@ -228,6 +246,7 @@ async def build_app_resources(
             node_secrets=node_secrets,
             graph_room_hub=graph_room_hub,
             network_policy=network_policy,
+            egress_policy=workbench_egress_policy(settings.egress),
             build_digest=app.resolved_build_digest,
         ),
         saved_graphs=saved_graphs,

@@ -1,8 +1,6 @@
 import asyncio
-import ipaddress
 import json
 import re
-import socket
 import ssl
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
@@ -17,7 +15,13 @@ from grafy_core.artifact_collections import (
     JSON_COLLECTIONS_STORAGE_FORMAT,
     load_json_collections_page,
 )
-from grafy_core.spatial_contracts import validated_public_service_url
+from grafy_core.egress import (
+    EgressPolicy,
+    default_egress_policy,
+    dial_port,
+    resolved_dial_addresses,
+    validated_public_destination,
+)
 from grafy_core.spatial_storage import load_feature_collection
 from grafy_core.artifacts import (
     ArtifactExportFormat,
@@ -336,11 +340,17 @@ class ArtifactService:
         artifact_types: Mapping[tuple[str, int], ArtifactTypeSpec] | None = None,
         *,
         availability: ArtifactAvailability,
+        egress_policy: EgressPolicy | None = None,
     ) -> None:
         self._availability = availability
         self._unit_of_work = unit_of_work
         self._storage = storage
         self._artifact_types = artifact_types or {}
+        # A WMS tile URL is author input, so the deployment policy decides what
+        # it may reach. `None` takes the policy named by the environment.
+        self._egress_policy = (
+            default_egress_policy() if egress_policy is None else egress_policy
+        )
         self._wms_client = httpx.AsyncClient(
             timeout=httpx.Timeout(15.0),
             follow_redirects=False,
@@ -1105,7 +1115,7 @@ class ArtifactService:
             )
         if layer.style.kind != "raster":
             raise ValueError("WMS layer has non-raster style")
-        _ = validated_public_service_url(layer.source.url, service_name="WMS")
+        _ = validated_public_destination(layer.source.url, service_name="WMS")
         return GeoRenderLayerResponse(
             id=str(layer_artifact.id),
             title=layer.title,
@@ -1211,7 +1221,7 @@ class ArtifactService:
                 minzoom=max(layer.min_zoom, projection.min_zoom),
                 maxzoom=min(layer.max_zoom, projection.max_zoom),
             )
-        _ = validated_public_service_url(layer.source.url, service_name="WMS")
+        _ = validated_public_destination(layer.source.url, service_name="WMS")
         return GeoRasterTileJsonResponse(
             name=layer.title,
             tiles=[
@@ -1321,43 +1331,10 @@ class ArtifactService:
         x: int,
         y: int,
     ) -> GeoTileRead:
-        _ = validated_public_service_url(source.url, service_name="WMS")
+        _ = validated_public_destination(source.url, service_name="WMS")
         host = source.url.host
         if host is None:
             raise ArtifactContentUnavailableError("WMS URL does not have a host")
-        port = source.url.port
-        if port is None:
-            port = 443 if source.url.scheme == "https" else 80
-        try:
-            addresses = await asyncio.wait_for(
-                asyncio.get_running_loop().getaddrinfo(
-                    host,
-                    port,
-                    type=socket.SOCK_STREAM,
-                ),
-                timeout=3.0,
-            )
-        except Exception as exc:
-            raise ArtifactContentUnavailableError(
-                f"Could not resolve WMS host {host!r}"
-            ) from exc
-        if not addresses:
-            raise ArtifactContentUnavailableError(
-                f"WMS host {host!r} resolved to no addresses"
-            )
-        resolved_addresses: list[str] = []
-        for address_info in addresses:
-            resolved_address = ipaddress.ip_address(
-                address_info[4][0].split("%", maxsplit=1)[0]
-            )
-            if not resolved_address.is_global:
-                raise ArtifactContentUnavailableError(
-                    f"WMS host {host!r} resolved to non-public address "
-                    f"{resolved_address}"
-                )
-            normalized_address = str(resolved_address)
-            if normalized_address not in resolved_addresses:
-                resolved_addresses.append(normalized_address)
         west, south, east, north = _web_mercator_tile_bounds(z, x, y)
         parameters = {
             "service": "WMS",
@@ -1377,7 +1354,15 @@ class ArtifactService:
             parameters["srs"] = "EPSG:3857"
         service_request_url = httpx.URL(str(source.url))
         try:
-            for address_index, resolved_address in enumerate(resolved_addresses):
+            # One guard for every dial: the same resolve-and-decide step the
+            # Plugin families share answers this host, then the tile is dialed
+            # on that address while the request keeps the configured name.
+            addresses = await resolved_dial_addresses(
+                host,
+                dial_port(source.url),
+                policy=self._egress_policy,
+            )
+            for address_index, resolved_address in enumerate(addresses):
                 pinned_url = service_request_url.copy_with(host=resolved_address)
                 try:
                     chunks: list[bytes] = []
@@ -1423,7 +1408,7 @@ class ArtifactService:
                         etag=None,
                     )
                 except (httpx.ConnectError, httpx.ConnectTimeout):
-                    if address_index == len(resolved_addresses) - 1:
+                    if address_index == len(addresses) - 1:
                         raise
             raise RuntimeError(f"WMS host {host!r} had no usable public address")
         except Exception as exc:

@@ -2,7 +2,6 @@
 
 import json
 import math
-from ipaddress import ip_address
 from typing import Annotated, Literal, Self, cast
 
 from pydantic import (
@@ -19,6 +18,7 @@ from pydantic import (
 )
 
 from grafy_core.artifacts import ArtifactRef, JsonObject
+from grafy_core.egress import validated_public_destination
 
 
 type GeoBounds = tuple[float, float, float, float]
@@ -306,36 +306,6 @@ WmsImageFormat = Literal["image/png", "image/jpeg"]
 BasemapKind = Literal["openstreetmap", "none"]
 
 
-def validated_public_service_url(
-    value: AnyHttpUrl,
-    *,
-    service_name: str,
-) -> AnyHttpUrl:
-    if value.username is not None or value.password is not None:
-        raise ValueError(f"{service_name} URL must not contain embedded credentials")
-    if value.query is not None:
-        raise ValueError(
-            f"{service_name} URL must be a query-free service endpoint; request "
-            "parameters are derived from typed configuration"
-        )
-    host = value.host
-    if host is None:
-        raise ValueError(f"{service_name} URL must include a host")
-    normalized_host = host.rstrip(".").lower()
-    if normalized_host == "localhost" or normalized_host.endswith(".localhost"):
-        raise ValueError(f"{service_name} URL must not target localhost")
-    try:
-        literal_address = ip_address(normalized_host)
-    except ValueError:
-        return value
-    if not literal_address.is_global:
-        raise ValueError(
-            f"{service_name} URL must not target a private, loopback, link-local, "
-            "reserved, multicast, or unspecified address"
-        )
-    return value
-
-
 def _validated_bounds(value: Bounds | None, *, field_name: str) -> Bounds | None:
     if value is None:
         return None
@@ -499,8 +469,8 @@ class GeoWmsSource(BaseModel):
         return validated
 
     @model_validator(mode="after")
-    def reject_embedded_credentials(self) -> Self:
-        validated_public_service_url(self.url, service_name="WMS")
+    def reject_non_public_endpoint(self) -> Self:
+        validated_public_destination(self.url, service_name="WMS")
         return self
 
 

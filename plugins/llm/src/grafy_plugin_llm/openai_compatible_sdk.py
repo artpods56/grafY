@@ -29,6 +29,11 @@ from openai.types.shared_params import ResponseFormatJSONSchema
 from pydantic import SecretStr, ValidationError
 
 from grafy_core.artifacts import JsonObject
+from grafy_core.egress import (
+    EgressPolicy,
+    EgressRejectedError,
+    PinnedPublicAddressTransport,
+)
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.prompt_contracts import PromptMessage, PromptMessageRole
 from grafy_core.schema_contracts import (
@@ -63,6 +68,17 @@ OPENAI_COMPATIBLE_SUPPORTED_IMAGE_CONTENT_TYPES: Final = frozenset(
 )
 
 
+def _egress_rejection(exc: BaseException) -> EgressRejectedError | None:
+    """The egress refusal inside a wrapped connection error, if there was one."""
+
+    current: BaseException | None = exc
+    while current is not None:
+        if isinstance(current, EgressRejectedError):
+            return current
+        current = current.__cause__
+    return None
+
+
 @final
 class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
     """OpenAI SDK adapter for compatible Chat Completions providers."""
@@ -72,9 +88,14 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
         *,
         uow: UnitOfWorkPort,
         storage: FileStoragePort,
+        egress_policy: EgressPolicy | None = None,
     ) -> None:
         self._uow = uow
         self._storage = storage
+        # The OpenAI SDK builds its own requests, so the base URL an author named
+        # can only be pinned from below. `None` takes the deployment policy named
+        # by `GRAFY_EGRESS_TRUSTED_DESTINATIONS`, read when the request is dialed.
+        self._egress_policy = egress_policy
 
     @override
     async def complete(
@@ -202,6 +223,7 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
         try:
             async with DefaultAsyncHttpxClient(
                 follow_redirects=False,
+                transport=PinnedPublicAddressTransport(policy=self._egress_policy),
             ) as http_client:
                 async with AsyncOpenAI(
                     api_key=api_key_value,
@@ -257,7 +279,18 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
                 f"Chat Completions request to {endpoint!r} returned HTTP "
                 f"{exc.status_code} for model {config.model!r}. {guidance}"
             ) from None
-        except APIConnectionError:
+        except APIConnectionError as exc:
+            # The SDK wraps anything its transport raises, and the wrapped error
+            # is not shown to graph users, so the distinction is made here: a
+            # refusal this deployment made is about the author's own configuration
+            # and belongs in the message, while a provider that will not answer
+            # does not get to put its text in front of them.
+            rejection = _egress_rejection(exc)
+            if rejection is not None:
+                raise OpenAICompatibleProviderError(
+                    f"Chat Completions request to {endpoint!r} may not be dialed "
+                    f"by this deployment for model {config.model!r}: {rejection}"
+                ) from None
             raise OpenAICompatibleProviderError(
                 f"Chat Completions request to {endpoint!r} could not connect for "
                 f"model {config.model!r}"
