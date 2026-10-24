@@ -529,6 +529,7 @@ name = "grafy-core"
 version = "0.1.0"
 source = { editable = "libs/core" }
 dependencies = [
+    { name = "httpx" },
     { name = "jsonschema" },
     { name = "pydantic" },
     { name = "referencing" },
@@ -536,6 +537,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "pydantic" },
     { name = "referencing", specifier = ">=0.36.2" },
