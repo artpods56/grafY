@@ -49,7 +49,7 @@ def test_explicit_target_does_not_read_inventory(tmp_path: Path) -> None:
         (("unknown.slug",), "Unknown dev Plugin slug.*known slugs:.*external.image"),
         (
             ("missing_dev_plugin_module:PLUGIN",),
-            "Cannot import dev Plugin.*uv sync --all-extras",
+            "Cannot import dev Plugin.*uv sync`",
         ),
         (("grafy_plugin_image:MISSING",), "has no attribute 'MISSING'"),
         (("grafy_plugin_image:__name__",), "must be a Plugin, got str"),

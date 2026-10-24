@@ -198,13 +198,9 @@ Install both workspaces:
 just install
 ```
 
-The default installation contains the API, core, persistence, storage, and web
-application. Install every System project into the root integration-test
-environment using:
-
-```bash
-just install-all
-```
+Every node family, including the ones under `plugins/`, is a member of the root
+uv workspace, so one `just install` installs the API and all of its families into
+the same environment the tests run in.
 
 Installation does not activate a System Plugin. Publish and explicitly promote
 a System release to select it for the catalog. Plugin execution uses the

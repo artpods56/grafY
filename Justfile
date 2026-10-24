@@ -16,11 +16,6 @@ install:
     uv sync
     npm --prefix apps/web ci
 
-# Install all optional plugins and the web workspace.
-install-all:
-    uv sync --all-extras
-    npm --prefix apps/web ci
-
 # Start the API with builtin families and Module boundaries. Published Plugins
 # execute in isolated workers.
 api: db-upgrade
@@ -33,7 +28,7 @@ api-dev +slugs: db-upgrade
     #!/usr/bin/env bash
     set -euo pipefail
     export GRAFY_DEV_PLUGINS="$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1:]))' {{slugs}})"
-    exec uv run --all-extras uvicorn grafy_api.main:app --reload --reload-dir apps --reload-dir libs --reload-dir plugins --host 0.0.0.0 --port 8000
+    exec uv run uvicorn grafy_api.main:app --reload --reload-dir apps --reload-dir libs --reload-dir plugins --host 0.0.0.0 --port 8000
 
 # Start the web development server.
 web port="":
@@ -64,7 +59,7 @@ sdk-wheel:
 
 # Run backend and web tests.
 test:
-    uv run --all-extras pytest
+    uv run pytest
     npm --prefix apps/web test
 
 # Prove presigned S3 uploads through the gateway's /storage/ location.
@@ -102,7 +97,7 @@ hooks-check:
 
 # Run Python and TypeScript type checks.
 typecheck:
-    uv run --all-extras basedpyright
+    uv run basedpyright
     npm --prefix apps/web run typecheck
 
 # Verify the generated API client contract.
@@ -118,7 +113,7 @@ check: test lint typecheck contract build
 
 # Exercise the workbench runtime without the browser.
 smoke:
-    uv run --extra image python scripts/smoke_workbench.py
+    uv run python scripts/smoke_workbench.py
 
 # Upgrade the database to the latest migration.
 db-upgrade:
