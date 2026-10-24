@@ -1,6 +1,8 @@
 # ADR 0007: Builtin families are application code, not Plugin releases
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by ADR 0017 (the builtin-family / Plugin split it assumed
+  no longer holds: Plugin packages became application code too, so this ADR's identity
+  rule — family slug plus deployment build digest — now covers every node family)
 - **Amends:** ADR 0005
 - **Supersedes:** ADR 0004's bundled / optional / published System distribution
   and host-eligible Plugin execution model

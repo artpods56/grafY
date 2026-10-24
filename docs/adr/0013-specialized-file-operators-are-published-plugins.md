@@ -1,6 +1,7 @@
 # ADR 0013: Specialized file operators are published Plugins
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR 0017 (`external.image` and `external.table` stay, but as
+  in-process application code: no publication, no isolation, no release pin)
 - **Amends:** ADR 0007
 - **Related:** ADR 0008, ADR 0012
 

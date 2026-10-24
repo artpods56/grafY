@@ -1,6 +1,7 @@
 # ADR 0006: Authenticate Plugin publication with scoped tokens
 
-- **Status:** Accepted, narrowed by ADR 0015
+- **Status:** Superseded by ADR 0017 (there is no publication to authenticate, and the
+  Platform Access Token that carried its scopes is removed). Narrowed earlier by ADR 0015.
 - **Amended by:** ADR 0015 (publication is platform-only; the Workspace-User
   authority and its `publish_plugin` capability are removed)
 

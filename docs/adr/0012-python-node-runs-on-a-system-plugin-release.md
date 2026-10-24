@@ -1,6 +1,7 @@
 # ADR 0012: The Python node runs on a System Plugin release
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR 0017 (the Python node, its sandbox and the release it ran
+  on are removed; the text presets it replaced the builtin operators with are removed too)
 - **Implements:** grafY issue #138
 - **Replaces:** the draft ADR 0012 on the abandoned `t3code/user-defined-python-block`
   branch, which ran user code through its own Docker runner
