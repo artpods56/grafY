@@ -60,12 +60,12 @@ plugin.
 
 ## Develop and verify
 
-Install the optional plugin in the host workspace with `uv sync --extra typesafe`.
+`uv sync` at the repository root installs this family into the workspace, because
+it is a workspace member.
 To test the publishable project independently, run these commands from the repository root:
 
 ```sh
-uv sync --directory plugins/typesafe --locked --find-links wheels
-uv run --directory plugins/typesafe --locked --find-links wheels pytest -q
+uv run --directory plugins/typesafe pytest -q
 ```
 
 The project carries its own lockfile and Grafy SDK wheel. The system inventory

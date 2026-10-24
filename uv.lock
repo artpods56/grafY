@@ -9,6 +9,14 @@ members = [
     "grafy-core",
     "grafy-persistence",
     "grafy-plugin-egress-broker",
+    "grafy-plugin-gis",
+    "grafy-plugin-image",
+    "grafy-plugin-llm",
+    "grafy-plugin-mistral",
+    "grafy-plugin-python",
+    "grafy-plugin-sql",
+    "grafy-plugin-table",
+    "grafy-plugin-typesafe",
     "grafy-shared",
     "grafy-storage",
     "grafy-workbench",
@@ -572,9 +580,14 @@ dependencies = [
     { name = "truststore" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "grafy-core", specifier = "==0.1.0" },
+    { name = "grafy-core", editable = "libs/core" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pydantic" },
     { name = "pyproj", specifier = ">=3.7.0" },
@@ -595,9 +608,15 @@ dependencies = [
     { name = "pydantic" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "grafy-core", specifier = "==0.1.0" },
+    { name = "grafy-core", editable = "libs/core" },
     { name = "pillow" },
     { name = "pydantic" },
 ]
@@ -618,9 +637,14 @@ dependencies = [
     { name = "pydantic" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "grafy-core", specifier = "==0.1.0" },
+    { name = "grafy-core", editable = "libs/core" },
     { name = "openai", specifier = ">=2.0.0" },
     { name = "pydantic" },
 ]
@@ -639,9 +663,14 @@ dependencies = [
     { name = "pydantic" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "grafy-core", specifier = "==0.1.0" },
+    { name = "grafy-core", editable = "libs/core" },
     { name = "httpx2", specifier = ">=2.0" },
     { name = "mistralai", specifier = ">=3.1.0,<4" },
     { name = "pydantic" },
@@ -659,9 +688,14 @@ dependencies = [
     { name = "pydantic" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "grafy-core", specifier = "==0.1.0" },
+    { name = "grafy-core", editable = "libs/core" },
     { name = "pydantic" },
 ]
 
@@ -681,11 +715,16 @@ dependencies = [
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "duckdb", specifier = "==1.5.5" },
-    { name = "grafy-core", specifier = "==0.1.0" },
+    { name = "grafy-core", editable = "libs/core" },
     { name = "pydantic" },
     { name = "pytz", specifier = ">=2024.1" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.51" },
@@ -704,9 +743,14 @@ dependencies = [
     { name = "pydantic" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "grafy-core", specifier = "==0.1.0" },
+    { name = "grafy-core", editable = "libs/core" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pydantic" },
 ]
@@ -724,9 +768,15 @@ dependencies = [
     { name = "typesafe-sdk" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "grafy-core", specifier = "==0.1.0" },
+    { name = "grafy-core", editable = "libs/core" },
     { name = "pydantic" },
     { name = "typesafe-sdk", specifier = ">=0.7.2" },
 ]
@@ -794,41 +844,23 @@ dependencies = [
     { name = "grafy-client" },
     { name = "grafy-core" },
     { name = "grafy-persistence" },
+    { name = "grafy-plugin-gis" },
+    { name = "grafy-plugin-image" },
+    { name = "grafy-plugin-llm" },
+    { name = "grafy-plugin-mistral" },
+    { name = "grafy-plugin-sql" },
+    { name = "grafy-plugin-table" },
+    { name = "grafy-plugin-typesafe" },
     { name = "grafy-shared" },
     { name = "grafy-storage" },
     { name = "grafy-workbench" },
-]
-
-[package.optional-dependencies]
-gis = [
-    { name = "grafy-plugin-gis" },
-]
-image = [
-    { name = "grafy-plugin-image" },
-]
-llm = [
-    { name = "grafy-plugin-llm" },
-]
-mistral = [
-    { name = "grafy-plugin-mistral" },
-]
-python = [
-    { name = "grafy-plugin-python" },
-]
-sql = [
-    { name = "grafy-plugin-sql" },
-]
-table = [
-    { name = "grafy-plugin-table" },
-]
-typesafe = [
-    { name = "grafy-plugin-typesafe" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "asgi-lifespan" },
     { name = "grafy-plugin-egress-broker" },
+    { name = "grafy-plugin-python" },
     { name = "httpx" },
     { name = "polyfactory" },
     { name = "prek" },
@@ -846,24 +878,23 @@ requires-dist = [
     { name = "grafy-client", editable = "libs/client" },
     { name = "grafy-core", editable = "libs/core" },
     { name = "grafy-persistence", editable = "libs/persistence" },
-    { name = "grafy-plugin-gis", marker = "extra == 'gis'", editable = "plugins/gis" },
-    { name = "grafy-plugin-image", marker = "extra == 'image'", editable = "plugins/image" },
-    { name = "grafy-plugin-llm", marker = "extra == 'llm'", editable = "plugins/llm" },
-    { name = "grafy-plugin-mistral", marker = "extra == 'mistral'", editable = "plugins/mistral" },
-    { name = "grafy-plugin-python", marker = "extra == 'python'", editable = "plugins/python" },
-    { name = "grafy-plugin-sql", marker = "extra == 'sql'", editable = "plugins/sql" },
-    { name = "grafy-plugin-table", marker = "extra == 'table'", editable = "plugins/table" },
-    { name = "grafy-plugin-typesafe", marker = "extra == 'typesafe'", editable = "plugins/typesafe" },
+    { name = "grafy-plugin-gis", editable = "plugins/gis" },
+    { name = "grafy-plugin-image", editable = "plugins/image" },
+    { name = "grafy-plugin-llm", editable = "plugins/llm" },
+    { name = "grafy-plugin-mistral", editable = "plugins/mistral" },
+    { name = "grafy-plugin-sql", editable = "plugins/sql" },
+    { name = "grafy-plugin-table", editable = "plugins/table" },
+    { name = "grafy-plugin-typesafe", editable = "plugins/typesafe" },
     { name = "grafy-shared", editable = "libs/shared" },
     { name = "grafy-storage", editable = "libs/storage" },
     { name = "grafy-workbench", editable = "libs/workbench" },
 ]
-provides-extras = ["image", "table", "gis", "llm", "mistral", "python", "sql", "typesafe"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "asgi-lifespan", specifier = ">=2.1.0" },
     { name = "grafy-plugin-egress-broker", editable = "apps/plugin-egress-broker" },
+    { name = "grafy-plugin-python", editable = "plugins/python" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "polyfactory", specifier = ">=3.3.0" },
     { name = "prek", specifier = "==0.5.4" },

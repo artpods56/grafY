@@ -64,9 +64,9 @@ with `kinds=image`. Crop regions returns a sequence and cannot itself be mapped.
 
 ## Development and compatibility
 
-From this directory, run `uv sync --locked --no-sources --find-links wheels` to
-install against the vendored SDK. The root workspace uses editable source.
-`just api-dev external.image external.mistral` loads both plugins in process.
+`uv sync` at the repository root installs this family into the workspace, because
+it is a workspace member. Run its own suite with
+`uv run --directory plugins/mistral pytest -q`.
 
 When upgrading the SDK, verify serialized requests through its HTTP transport
 and conversion of responses into the three outputs. The SDK distinguishes omitted

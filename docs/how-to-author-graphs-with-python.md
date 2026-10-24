@@ -38,7 +38,7 @@ chmod 600 "$GRAFY_TOKEN_FILE" "$GRAFY_PROVIDER_SECRET_FILE"
 Install the workspace with the optional LLM plugin:
 
 ```bash
-uv sync --all-extras
+uv sync
 ```
 
 The deployment must also assign `external.llm` an execution network profile.

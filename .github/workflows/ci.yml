@@ -58,19 +58,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends gdal-bin
       - name: Install locked Python workspace
-        run: uv sync --locked --all-extras
+        run: uv sync --locked
       - name: Verify fresh PostgreSQL migration
         env:
           GRAFY_TEST_POSTGRES_URL: postgresql+asyncpg://grafy:grafy-ci@127.0.0.1:5432/grafy
         run: >-
-          uv run --all-extras pytest -q -o log_cli=false
+          uv run pytest -q -o log_cli=false
           tests/unit/persistence/test_migrations.py::test_fresh_postgresql_database_upgrades_to_head
       - name: Verify PostgreSQL persistence contracts
         env:
           GRAFY_TEST_POSTGRES_URL: postgresql+asyncpg://grafy:grafy-ci@127.0.0.1:5432/grafy
           GRAFY_TEST_TRANSIENT_POSTGRES_URL: postgresql+asyncpg://grafy:grafy-ci@127.0.0.1:5432/grafy
         run: >-
-          uv run --all-extras pytest -q -o log_cli=false tests/unit/persistence
+          uv run pytest -q -o log_cli=false tests/unit/persistence
           --deselect tests/unit/persistence/test_migrations.py::test_fresh_postgresql_database_upgrades_to_head
       - name: Verify OCI and GIS capabilities
         run: |
@@ -93,7 +93,7 @@ jobs:
           print(capabilities.model_dump_json())
           PY
       - name: Run backend tests
-        run: uv run --all-extras pytest
+        run: uv run pytest
       - name: Verify presigned uploads through the gateway
         run: |
           stack=(docker compose --file infra/docker/compose.storage-gateway-test.yaml)
@@ -101,7 +101,7 @@ jobs:
           "${stack[@]}" up --detach --wait
           GRAFY_TEST_S3_GATEWAY_URL=http://127.0.0.1:18080/storage \
           GRAFY_TEST_S3_ENDPOINT_URL=http://127.0.0.1:19000 \
-            uv run --all-extras pytest -q -o log_cli=false tests/integration/uploads/test_storage_gateway.py
+            uv run pytest -q -o log_cli=false tests/integration/uploads/test_storage_gateway.py
 
   native-runtime:
     name: Native Plugin runtime image
@@ -149,7 +149,7 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
       - name: Install locked Python workspace
         id: python_install
-        run: uv sync --locked --all-extras
+        run: uv sync --locked
       - name: Install locked web workspace
         id: web_install
         if: ${{ !cancelled() }}
@@ -320,7 +320,9 @@ jobs:
       - name: Build API image with locked workspace
         run: docker build --file infra/docker/api.Dockerfile --target api --tag grafy-api-ci .
       - name: Construct installed API contracts
-        run: docker run --rm --entrypoint .venv/bin/python grafy-api-ci -c 'import grafy_shared.config.keys; import grafy_api.v1.routes.library.views'
+        run: docker run --rm --entrypoint .venv/bin/python grafy-api-ci -c 'import grafy_shared.config.keys; import grafy_api.v1.routes.library.views; import grafy_plugin_gis, grafy_plugin_llm, grafy_plugin_sql'
+      - name: Verify API image GIS tools
+        run: docker run --rm --entrypoint sh grafy-api-ci -c "gdalinfo --version && command -v gdal2tiles.py"
       - name: Build publisher and Plugin API image
         run: docker build --file infra/docker/api.Dockerfile --target publisher --tag grafy-publisher-ci .
       - name: Construct publisher CLI and verify tools

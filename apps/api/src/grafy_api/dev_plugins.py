@@ -52,7 +52,7 @@ def load_dev_plugins(
         except ModuleNotFoundError as exc:
             raise DevPluginError(
                 f"Cannot import dev Plugin {entry!r} ({loader_target}); "
-                "install it into the API environment with `uv sync --all-extras`"
+                "install it into the API environment with `uv sync`"
             ) from exc
         try:
             value = getattr(module, attribute)

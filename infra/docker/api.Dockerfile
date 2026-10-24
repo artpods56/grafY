@@ -1,6 +1,6 @@
 FROM docker:28.4.0-cli@sha256:6a73c9433f2ba4279815be1e60f5739288b939dda1e48151d8c393537802de37 AS docker-cli
 
-FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim AS source
+FROM ghcr.io/astral-sh/uv:python3.14-trixie-slim AS source
 
 WORKDIR /app
 
@@ -49,4 +49,7 @@ ENV GRAFY_BUILD_DIGEST=$GRAFY_BUILD_DIGEST
 
 FROM source AS api
 
-RUN uv sync --locked --no-dev --package grafy-api
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates gdal-bin python3-gdal python3-numpy python3-pil \
+    && rm -rf /var/lib/apt/lists/*
+RUN uv sync --locked --no-dev

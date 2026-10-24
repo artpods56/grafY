@@ -128,33 +128,21 @@ package-dir = {"" = "src"}
 where = ["src"]
 ```
 
-Repository System projects are excluded from the root uv workspace. Each owns
-its lock and a vendored exact SDK wheel, and must construct without local source
-overrides:
+Repository System projects are members of the root uv workspace and resolve
+`grafy-core` from `libs/core` in this repository. One `uv sync` at the root installs
+them beside the API, in the environment the tests already run in, and a family's own
+suite runs with:
 
 ```bash
-cd plugins/my-plugin
-uv lock --no-sources --find-links wheels
-uv sync --locked --no-sources --find-links wheels
+uv run --directory plugins/my-plugin pytest -q
 ```
 
-The vendored SDK wheel is a committed artifact, so it goes stale whenever
-`libs/core` changes a module a Plugin imports. Run `just sdk-wheel` from the
-repository root to rebuild it into every `plugins/*/wheels` directory, and commit
-the rebuilt wheel with the `libs/core` change. The recipe pins
-`SOURCE_DATE_EPOCH=0`, so the wheel's contents are a function of `libs/core`
-source alone -- but not its bytes: deflate output differs between build
-environments, so rebuilding on another machine changes the file digest while
-leaving every packaged file identical. Expect to update the digest pinned in
-`tests/unit/architecture/test_import_boundaries.py` when you rebuild. The durable
-checks are the module-coverage guard there and the wheel-is-runnable guard beside
-it; both are portable, and `tests/unit/architecture` fails when a Plugin imports
-a `grafy_core` module that its vendored wheel does not contain.
-
-Path dependencies may not escape a publishable snapshot. The root development
-environment may depend on System project paths for integration tests, but that
-does not participate in the project's independent lock. Python package and
-distribution names are loader metadata, never catalog identity.
+There is no vendored SDK wheel and no rebuild step to remember: a change under
+`libs/core` is visible to every family the moment you sync. ADR 0017 removed the
+wheel mechanism; until the publication path comes out with it, publication still
+snapshots the family directory, so a path dependency that escapes that directory is
+still not allowed in a family manifest. Python package and distribution names are
+loader metadata, never catalog identity.
 
 ### 2.2 `declaration.py`
 

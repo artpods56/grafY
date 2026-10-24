@@ -13,6 +13,10 @@ from grafy_storage import LocalFileObjectStore
 from grafy_api.plugins.profiles import runtime_profile
 from grafy_api.plugins.publication.oci import PluginOciImageBuilder
 from grafy_api.plugins.publication.source import PluginDirectoryPublisher
+from tests.support.plugin_project import (
+    lock_against_built_core_wheel,
+    without_workspace_sources,
+)
 
 
 SYSTEM_LOADER_TARGET = "grafy_plugin_llm.plugin:LLM"
@@ -43,37 +47,8 @@ def _system_llm_project(repository: Path, destination: Path) -> Path:
             "__pycache__",
         ),
     )
-    wheels = destination / "wheels"
-    wheels.mkdir(exist_ok=True)
-    for wheel in wheels.glob("grafy_core-*.whl"):
-        wheel.unlink()
-    subprocess.run(
-        (
-            "uv",
-            "build",
-            "--wheel",
-            "--out-dir",
-            str(wheels),
-            str(repository / "libs" / "core"),
-        ),
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    subprocess.run(
-        (
-            "uv",
-            "lock",
-            "--find-links",
-            "wheels",
-        ),
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=120,
-        cwd=destination,
-    )
+    without_workspace_sources(destination / "pyproject.toml")
+    lock_against_built_core_wheel(repository, destination)
     return destination
 
 
