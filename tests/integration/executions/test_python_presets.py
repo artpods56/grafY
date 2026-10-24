@@ -34,6 +34,10 @@ from grafy_api.v1.models import (
     PluginReleasePinModel,
 )
 from tests.support.identity import WORKSPACE_ID
+from tests.support.plugin_project import (
+    lock_against_built_core_wheel,
+    without_workspace_sources,
+)
 from tests.support.system_plugins import (
     SelectedSystemReleaseLookup,
     build_explicit_plugin_registry,
@@ -76,6 +80,8 @@ async def test_python_presets_run_exact_cached_and_clean_sandbox(
         project,
         ignore=shutil.ignore_patterns(".venv", "build", "*.egg-info", "__pycache__"),
     )
+    without_workspace_sources(project / "pyproject.toml")
+    lock_against_built_core_wheel(repository, project)
     verified = await asyncio.to_thread(
         PluginDirectoryPublisher((tmp_path,), runtime_profile="python-uv").verify,
         project,
