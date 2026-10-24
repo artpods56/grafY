@@ -84,13 +84,19 @@ revisions are kept as they are, not rewritten.
 The sandbox network policy protected internal hosts from user-supplied destinations. Each
 destination now carries that check where it is dialed.
 
-- **One egress guard.** `grafy_core.egress` rejects embedded credentials and query
-  strings, resolves the host, refuses the address set unless every answer is a global
-  address, and pins the connection to one of those answers while TLS validates the
-  original hostname. It generalises what WMS and WFS already did, and applies to the LLM,
-  Mistral and Typesafe `base_url`, to WFS and WMS, and to the SQL node's PostgreSQL
-  `host`. The deployment's own Postgres, MinIO and Keycloak are unreachable from node
-  configuration because they are not global addresses.
+- **One egress guard.** `grafy_core.egress` decides, for every destination named in node
+  configuration, whether the API may dial it: reject embedded credentials, resolve the
+  host, refuse the address set unless every answer is a global address, and then hold the
+  connection to one of those answers. For HTTP the guard dials the validated address
+  directly while the TLS server name and the `Host` header keep the configured hostname.
+  PostgreSQL gives a driver no way to separate the dialled address from the name a
+  certificate is verified against, so there the guard connects by name with verification
+  untouched and asserts the kernel-reported peer address is one of the answers it
+  validated before it lets a statement run: a DNS answer that moved between validation and
+  connect aborts the connection instead of becoming a request. It generalises what WMS and
+  WFS already did, and it applies to the LLM, Mistral and Typesafe `base_url`, to WFS and
+  WMS, and to the SQL node's PostgreSQL `host`. The deployment's own Postgres, MinIO and
+  Keycloak are unreachable from node configuration because they are not global addresses.
 - **Operators allowlist, authors never.** Destination policy is one operator-owned
   setting listing exact trusted destinations. Node configuration, a graph and a Workspace
   can never widen it. This is what replaces the sandbox's network namespace: a self-hosted

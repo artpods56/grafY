@@ -481,8 +481,11 @@ See [ADR 0017](docs/adr/0017-plugins-are-application-code-in-process.md).
 
 The single place that decides whether a destination named in node configuration
 may be dialed: it resolves the host, refuses the address set unless every answer
-is a global address, and pins the connection to one of those answers while TLS
-validates the original hostname. Every user-supplied destination goes through it
+is a global address, and holds the connection to one of those answers — by
+dialing the validated address for HTTP, and by asserting the kernel-reported peer
+address before any statement runs for PostgreSQL, whose driver cannot separate
+the address it dials from the name a certificate is verified against. Every
+user-supplied destination goes through it
 — LLM, Mistral and Typesafe `base_url`, WFS and WMS, and the SQL node's
 PostgreSQL host — so the deployment's own Postgres, MinIO and Keycloak are
 unreachable from a graph. A trusted private destination comes from operator
