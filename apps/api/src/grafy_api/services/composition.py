@@ -13,6 +13,7 @@ from grafy_core.canonical_conversions import (
     CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,
     CanonicalArtifactConversionMap,
 )
+from grafy_core.egress import EgressPolicy, default_egress_policy
 from grafy_core.file_contracts import BUILTIN_FILE_FORMATS, build_extension_table
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.materialized_outputs import WorkbenchUnitOfWorkPort
@@ -139,6 +140,7 @@ def build_workbench_components(
     node_secrets: NodeSecretResolverPort | None = None,
     graph_room_hub: GraphRoomHub | None = None,
     network_policy: NetworkPolicy | None = None,
+    egress_policy: EgressPolicy | None = None,
     canonical_artifact_conversions: CanonicalArtifactConversionMap = (
         CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY
     ),
@@ -148,6 +150,12 @@ def build_workbench_components(
     resolved_workspace = workspace.expanduser().resolve()
     resolved_unit_of_work = unit_of_work or InMemoryUnitOfWork()
     resolved_storage = storage or LocalFileObjectStore(resolved_workspace / "objects")
+    # A workbench dials what node configuration names, so the deployment policy
+    # is composed here rather than read where the request is made. `None` takes
+    # the policy named by `GRAFY_EGRESS_TRUSTED_DESTINATIONS`.
+    resolved_egress_policy = (
+        default_egress_policy() if egress_policy is None else egress_policy
+    )
     artifact_types = {
         (spec.key.id, spec.key.schema_version): spec
         for spec in (*BUILTIN_FILE_FORMATS, *plugin_registry.artifact_types)
@@ -224,6 +232,7 @@ def build_workbench_components(
         resolved_storage,
         availability=availability,
         artifact_types=artifact_types,
+        egress_policy=resolved_egress_policy,
     )
     materializations = MaterializationService(
         resolved_unit_of_work,

@@ -1,16 +1,21 @@
 import json
-from functools import partial
 
 import httpx2
 import pytest
 from pydantic import SecretStr
-from typesafe_sdk import AsyncTypeSafeClient
 
 from grafy_core.nodes import UserFacingNodeError
-from grafy_plugin_typesafe import sdk
 from grafy_plugin_typesafe.connection import TypeSafeConnectionConfig
 from grafy_plugin_typesafe.models import QuestionPayload
 from grafy_plugin_typesafe.sdk import SdkTypeSafeClient
+from tests.support.egress import (
+    PUBLIC_ADDRESS,
+    answer_httpx2_dials,
+    first_egress_rejection,
+    loopback_http_listener,
+    no_grants,
+    trusted_loopback_destination,
+)
 
 
 def _question(question_id: str, body: object) -> QuestionPayload:
@@ -53,14 +58,7 @@ def requests(monkeypatch: pytest.MonkeyPatch) -> list[httpx2.Request]:
             },
         )
 
-    monkeypatch.setattr(
-        sdk,
-        "AsyncTypeSafeClient",
-        partial(
-            AsyncTypeSafeClient,
-            transport=httpx2.MockTransport(respond),
-        ),
-    )
+    answer_httpx2_dials(monkeypatch, respond)
     return captured
 
 
@@ -102,7 +100,10 @@ async def test_sdk_sends_mixed_questions_and_maps_answers(
     assert len(requests) == 1
     request = requests[0]
     assert request.method == "POST"
-    assert str(request.url) == "https://api.typesafe.ai/v1/systemone"
+    # The dial goes to the validated address while the request keeps the name.
+    assert str(request.url) == f"https://{PUBLIC_ADDRESS}/v1/systemone"
+    assert request.headers["host"] == "api.typesafe.ai"
+    assert request.extensions["sni_hostname"] == "api.typesafe.ai"
     assert request.headers["authorization"] == "Bearer typesafe-test-key"
     body = json.loads(request.content)
     assert body == {
@@ -148,14 +149,7 @@ async def test_sdk_hides_provider_bodies_and_preserves_cause(
             json={"detail": "ticket body sk-secret-value"},
         )
 
-    monkeypatch.setattr(
-        sdk,
-        "AsyncTypeSafeClient",
-        partial(
-            AsyncTypeSafeClient,
-            transport=httpx2.MockTransport(respond),
-        ),
-    )
+    answer_httpx2_dials(monkeypatch, respond)
     with pytest.raises(UserFacingNodeError, match=f"HTTP {status}") as raised:
         await SdkTypeSafeClient().evaluate(
             api_key=SecretStr("typesafe-test-key"),
@@ -198,14 +192,7 @@ async def test_sdk_rejects_missing_or_wrong_answer_type(
             },
         )
 
-    monkeypatch.setattr(
-        sdk,
-        "AsyncTypeSafeClient",
-        partial(
-            AsyncTypeSafeClient,
-            transport=httpx2.MockTransport(respond),
-        ),
-    )
+    answer_httpx2_dials(monkeypatch, respond)
     with pytest.raises(UserFacingNodeError, match="could not be stored"):
         await SdkTypeSafeClient().evaluate(
             api_key=SecretStr("typesafe-test-key"),
@@ -235,14 +222,7 @@ async def test_sdk_retries_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
             },
         )
 
-    monkeypatch.setattr(
-        sdk,
-        "AsyncTypeSafeClient",
-        partial(
-            AsyncTypeSafeClient,
-            transport=httpx2.MockTransport(respond),
-        ),
-    )
+    answer_httpx2_dials(monkeypatch, respond)
     evaluation = await SdkTypeSafeClient().evaluate(
         api_key=SecretStr("key"),
         config=TypeSafeConnectionConfig(max_retries=1),
@@ -251,3 +231,56 @@ async def test_sdk_retries_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     assert evaluation.nouls[0].noul == 0.3
     assert attempts == 2
+
+
+def _noul_answer_body() -> bytes:
+    return json.dumps(
+        {
+            "model": "jev-1.13.0",
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+            "answers": {"billing": {"type": "noul", "noul": 0.91}},
+        }
+    ).encode("utf-8")
+
+
+async def test_sdk_dials_a_model_server_only_an_operator_trusted_destination_reaches() -> (
+    None
+):
+    """The base URL is author input, so the deployment policy decides it.
+
+    A model server kept on loopback is dialable with the grant an operator writes
+    for it. Without the grant the same request is refused before a socket opens,
+    and the listener never sees it.
+    """
+
+    async with loopback_http_listener(body=_noul_answer_body()) as listener:
+        config = TypeSafeConnectionConfig(
+            base_url=listener.base_url,
+            max_retries=0,
+            timeout_seconds=5,
+        )
+
+        evaluation = await SdkTypeSafeClient(
+            egress_policy=trusted_loopback_destination()
+        ).evaluate(
+            api_key=SecretStr("typesafe-test-key"),
+            config=config,
+            state="hello",
+            questions=[BILLING],
+        )
+
+        assert evaluation.nouls[0].noul == 0.91
+        assert [request.path for request in listener.requests] == ["/v1/systemone"]
+
+        with pytest.raises(UserFacingNodeError) as raised:
+            await SdkTypeSafeClient(egress_policy=no_grants()).evaluate(
+                api_key=SecretStr("typesafe-test-key"),
+                config=config,
+                state="hello",
+                questions=[BILLING],
+            )
+
+        rejection = first_egress_rejection(raised.value)
+        assert rejection is not None
+        assert "127.0.0.1" in str(rejection)
+        assert len(listener.requests) == 1

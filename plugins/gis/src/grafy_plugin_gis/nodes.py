@@ -11,6 +11,7 @@ from grafy_core.artifacts import (
     NodeOutput,
 )
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.egress import validated_public_destination
 from grafy_core.file_artifacts import load_file_artifact
 from grafy_core.file_contracts import GEOJSON_FILE, JSON_FILE, TIFF_FILE
 from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
@@ -68,7 +69,6 @@ from grafy_plugin_gis.models import (
     GeoWmsSource,
     WmsImageFormat,
     WmsVersion,
-    validated_public_service_url,
 )
 from grafy_plugin_gis.wfs import (
     WFS_IMPORT_MAX_FEATURES,
@@ -599,7 +599,7 @@ class WfsImportConfig(NodeConfig):
     @field_validator("service_url")
     @classmethod
     def validate_service_url(cls, value: AnyHttpUrl) -> AnyHttpUrl:
-        return validated_public_service_url(value, service_name="WFS")
+        return validated_public_destination(value, service_name="WFS")
 
     @field_validator("max_features", mode="before")
     @classmethod
@@ -791,7 +791,7 @@ class WmsLayerConfig(_CommonLayerConfig):
     @field_validator("url")
     @classmethod
     def validate_service_url(cls, value: AnyHttpUrl) -> AnyHttpUrl:
-        return validated_public_service_url(value, service_name="WMS")
+        return validated_public_destination(value, service_name="WMS")
 
 
 class WmsLayerInput(NodeInput):

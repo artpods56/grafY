@@ -1,5 +1,6 @@
 """Configuration sections, their environment binding, and the composed parent."""
 
+import json
 import re
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from grafy_api.plugins.runtime.egress import (
     PluginEgressBrokerPolicy,
     PluginEgressProtocol,
 )
+from grafy_api.services.application import workbench_egress_policy
 from grafy_api.plugins.runtime.network_policy import (
     NetworkAccessPlane,
     NetworkPolicy,
@@ -30,6 +32,7 @@ from grafy_api.plugins.runtime.network_policy import (
 from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.settings import Settings
 from grafy_core.domain.identity import parse_oidc_domain_workspace_grants
+from grafy_core.egress import TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -676,3 +679,45 @@ def test_realtime_presence_bounds_are_independent_of_execution(
 
     assert realtime.graph_room_heartbeat_seconds == 3.0
     assert hub.heartbeat_seconds == 3.0
+
+
+def test_trusted_egress_destinations_are_the_grants_the_workbench_dials_with(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One variable: the section reads it, the workbench policy acts on it."""
+
+    monkeypatch.setenv(
+        TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE,
+        '["models.internal:11434", "10.0.0.0/8"]',
+    )
+
+    policy = workbench_egress_policy(EgressConfig(_env_file=None))  # pyright: ignore[reportCallIssue]
+
+    assert policy.trusts_host("models.internal", 11434) is True
+    assert policy.trusts_host("models.internal", 443) is False
+    assert policy.trusts_address("10.20.30.40") is True
+    assert policy.trusts_address("93.184.216.34") is False
+
+
+@pytest.mark.parametrize(
+    "entry",
+    ["models.internal:http", "models.internal:99999", "[models.internal:11434"],
+)
+def test_a_malformed_trusted_egress_destination_names_the_variable_it_came_from(
+    monkeypatch: pytest.MonkeyPatch,
+    entry: str,
+) -> None:
+    """The grant list is read while the app starts, and says where it came from.
+
+    The destination grammar belongs to `grafy_core.egress`; the operator still
+    needs to know which variable to fix, and a failure at startup is the only
+    moment a malformed grant is cheap to report.
+    """
+
+    monkeypatch.setenv(TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE, json.dumps([entry]))
+
+    with pytest.raises(ValueError) as raised:
+        workbench_egress_policy(EgressConfig(_env_file=None))  # pyright: ignore[reportCallIssue]
+
+    assert TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE in str(raised.value)
+    assert entry in str(raised.value)

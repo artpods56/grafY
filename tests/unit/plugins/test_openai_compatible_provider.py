@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncIterator, Callable
+import socket
 from io import BytesIO
 from typing import cast
 from uuid import UUID, uuid4
@@ -20,6 +21,12 @@ from grafy_plugin_llm.openai_compatible import (
 from grafy_plugin_llm.openai_compatible_sdk import (
     OPENAI_COMPATIBLE_MAX_IMAGES,
     OpenAICompatibleSdkProvider,
+)
+from tests.support.egress import (
+    loopback_http_listener,
+    no_grants,
+    resolve_public_host,
+    trusted_loopback_destination,
 )
 
 
@@ -103,6 +110,10 @@ class TransportRequestRecorder:
             "handle_async_request",
             handle_async_request,
         )
+        # The egress pin sits above this transport and resolves the configured
+        # name before dialing it, so the answer is pinned here too: the test does
+        # not depend on this machine's resolver.
+        monkeypatch.setattr(socket, "getaddrinfo", resolve_public_host)
 
 
 class FakeStorage:
@@ -816,3 +827,47 @@ async def test_provider_enforces_aggregate_image_limit_before_request(
         )
 
     assert recorder.requests == []
+
+
+async def test_provider_dials_a_local_model_server_only_when_the_operator_allows_it() -> (
+    None
+):
+    """The base URL is author input, so the deployment policy decides it.
+
+    A model server on loopback (an OpenAI-compatible gateway on the same network)
+    is reached with the grant an operator writes for it. Without the grant the
+    provider fails with the egress rejection as its cause and never opens a socket.
+    """
+
+    async with loopback_http_listener(body=completion_response().content) as listener:
+        config = OpenAICompatibleConfig(base_url=f"{listener.base_url}/v1")
+
+        async def complete(egress_policy: object) -> str:
+            provider = OpenAICompatibleSdkProvider(
+                uow=InMemoryUnitOfWork(),
+                storage=FakeStorage(),
+                egress_policy=egress_policy,  # pyright: ignore[reportArgumentType]
+            )
+            result = await provider.complete(
+                [PromptMessage(role=PromptMessageRole.USER, text="What is 6 times 7?")],
+                None,
+                config,
+                SecretStr("graph-provider-key"),
+                workspace_id=WORKSPACE_ID,
+            )
+            return result.content
+
+        assert await complete(trusted_loopback_destination()) == "A concise answer."
+        request = listener.requests[0]
+        assert request.path == "/v1/chat/completions"
+        assert request.headers["authorization"] == "Bearer graph-provider-key"
+
+        # A destination this deployment refuses says so as itself, instead of
+        # arriving as the generic "could not connect" the provider would cause.
+        with pytest.raises(
+            OpenAICompatibleProviderError, match="may not be dialed"
+        ) as raised:
+            await complete(no_grants())
+
+        assert "127.0.0.1" in str(raised.value)
+        assert len(listener.requests) == 1

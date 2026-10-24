@@ -20,9 +20,11 @@ from typesafe_sdk import (
     TypeSafeError,
 )
 
+from grafy_core.egress import EgressPolicy
 from grafy_core.nodes import UserFacingNodeError
 
 from grafy_plugin_typesafe.connection import TypeSafeConnectionConfig, shown
+from grafy_plugin_typesafe.egress_transport import EgressPinnedHttpx2Transport
 from grafy_plugin_typesafe.models import (
     ChoiceAnswerPayload,
     EvaluationPayload,
@@ -40,6 +42,12 @@ from grafy_plugin_typesafe.parsing import (
 
 class SdkTypeSafeClient:
     """TypeSafe SDK adapter. One client is opened per call and then closed."""
+
+    def __init__(self, *, egress_policy: EgressPolicy | None = None) -> None:
+        # The SDK builds its own requests, so the base URL an author named can
+        # only be pinned from below. `None` takes the deployment policy named by
+        # `GRAFY_EGRESS_TRUSTED_DESTINATIONS`, read when the request is dialed.
+        self._egress_policy = egress_policy
 
     async def evaluate(
         self,
@@ -59,6 +67,7 @@ class SdkTypeSafeClient:
                 model=config.model,
                 timeout=config.timeout_seconds,
                 retry=_retry_policy(config),
+                transport=EgressPinnedHttpx2Transport(policy=self._egress_policy),
             ) as client:
                 # SDK 0.7 uses string-based recursive aliases that Pyright cannot resolve.
                 response = await client.system_one(  # pyright: ignore[reportUnknownMemberType]
