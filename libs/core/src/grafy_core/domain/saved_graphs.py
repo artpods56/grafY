@@ -62,14 +62,18 @@ class SavedGraphNodeLayout(SavedGraphValue):
     """Canvas chrome sizes for a node shell and its artifact appendix."""
 
     width: float | None = Field(default=None, ge=260, le=GRAPH_LAYOUT_DIMENSION_MAX)
-    body_height: float | None = Field(default=None, ge=96, le=GRAPH_LAYOUT_DIMENSION_MAX)
+    body_height: float | None = Field(
+        default=None, ge=96, le=GRAPH_LAYOUT_DIMENSION_MAX
+    )
     appendix_height: float | None = Field(
         default=None, ge=120, le=GRAPH_LAYOUT_DIMENSION_MAX
     )
 
     @model_validator(mode="after")
     def require_at_least_one_dimension(self) -> Self:
-        validate_graph_layout_dimensions(self.width, self.body_height, self.appendix_height)
+        validate_graph_layout_dimensions(
+            self.width, self.body_height, self.appendix_height
+        )
         return self
 
 
@@ -153,18 +157,7 @@ class SavedGraphArtifactTypeBinding(SavedGraphValue):
         return value
 
 
-SavedGraphNodeKind = Literal["builtin", "plugin", "module"]
-
-
-def validate_graph_node_release_pin(kind: SavedGraphNodeKind, *, has_pin: bool) -> None:
-    if kind == "plugin":
-        if not has_pin:
-            raise ValueError(
-                "Plugin node must pin an exact Plugin release with scope, slug, "
-                "and revision"
-            )
-    elif has_pin:
-        raise ValueError(f"{kind} node cannot carry a Plugin release pin")
+SavedGraphNodeKind = Literal["builtin", "module"]
 
 
 class SavedGraphPluginReleasePin(SavedGraphValue):
@@ -218,7 +211,7 @@ class ModuleNodeRef(SavedGraphValue):
 
 
 SavedGraphNodeRef = Annotated[
-    BuiltinNodeRef | PluginNodeRef | ModuleNodeRef,
+    BuiltinNodeRef | ModuleNodeRef,
     Field(discriminator="kind"),
 ]
 
@@ -233,21 +226,17 @@ class SavedGraphNode(SavedGraphValue):
     layout: SavedGraphNodeLayout | None = None
     input_plugs: tuple[SavedGraphInputPlug, ...] = ()
     artifact_type_bindings: tuple[SavedGraphArtifactTypeBinding, ...] = ()
-    plugin_release_pin: SavedGraphPluginReleasePin | None = None
 
-    @field_validator("plugin_release_pin", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def validate_plugin_release_pin_shape(cls, value: object) -> object:
+    def normalize_legacy_implementation(cls, value: object) -> object:
         if not isinstance(value, Mapping):
             return value
-        raw = cast(Mapping[object, object], value)
-        expected_fields = {"scope", "slug", "revision"}
-        if set(raw) != expected_fields:
-            raise ValueError(
-                "Saved graph Plugin release pin must contain exactly scope, slug, "
-                "and revision"
-            )
-        return dict(raw)
+        normalized = dict(cast(Mapping[object, object], value))
+        normalized.pop("plugin_release_pin", None)
+        if normalized.get("kind") == "plugin":
+            normalized["kind"] = "builtin"
+        return normalized
 
     @field_validator("config")
     @classmethod
@@ -272,11 +261,6 @@ class SavedGraphNode(SavedGraphValue):
         if not isinstance(thawed, dict):
             raise ValueError("Saved graph node config must be an object")
         return cast(dict[str, object], thawed)
-
-    @model_validator(mode="after")
-    def validate_kind_and_pin(self) -> Self:
-        validate_graph_node_release_pin(self.kind, has_pin=self.plugin_release_pin is not None)
-        return self
 
     @model_validator(mode="after")
     def validate_artifact_type_bindings(self) -> Self:

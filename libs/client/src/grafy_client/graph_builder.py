@@ -71,13 +71,10 @@ class _AuthoredNode:
     position: GraphPoint | None
 
 
-def _node_kind(catalog_node: CatalogNode) -> Literal["builtin", "plugin", "module"]:
-    if catalog_node.origin in {"builtin", "plugin", "module"}:
-        return catalog_node.origin
-    if catalog_node.plugin_release is not None:
-        return "plugin"
+def _node_kind(catalog_node: CatalogNode) -> Literal["builtin", "module"]:
     if (
-        catalog_node.module_graph_id is not None
+        catalog_node.origin == "module"
+        or catalog_node.module_graph_id is not None
         or catalog_node.plugin_slug == "graph.module"
     ):
         return "module"
@@ -577,11 +574,6 @@ class GraphBuilder:
                         artifact_type=artifact_type,
                     )
                     for variable, artifact_type in sorted(authored.bindings.items())
-                ),
-                plugin_release_pin=(
-                    authored.catalog_node.plugin_release
-                    if authored.catalog_node.origin == "plugin"
-                    else None
                 ),
             )
             for index, authored in enumerate(self._nodes)

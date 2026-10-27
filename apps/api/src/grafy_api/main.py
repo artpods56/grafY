@@ -11,7 +11,6 @@ from grafy_api.app_state import get_identity
 from grafy_api.diagnostics import configure_diagnostics
 from grafy_api.health import HealthResponse, health, readiness
 from grafy_api.http_errors import register_http_error_handlers
-from grafy_api.plugins.runtime.egress import PluginEgressBrokerPolicy
 from grafy_api.services.application import (
     acquire_api_owner_lease,
     build_app_identity,
@@ -28,7 +27,6 @@ from grafy_api.v1.routes.library.views import folders_router as library_folders_
 from grafy_api.v1.routes.library.views import router as library_router
 from grafy_api.v1.routes.modules.views import router as modules_router
 from grafy_api.v1.routes.node_secrets.views import router as node_secrets_router
-from grafy_api.v1.routes.python_nodes.views import router as python_nodes_router
 from grafy_api.v1.routes.saved_graphs.views import (
     browser_router as graph_browser_router,
 )
@@ -49,11 +47,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         level=resolved_settings.app.log_level,
         renderer=resolved_settings.app.log_renderer,
     )
-    # Reaching an egress policy is what proves the configured destinations parse
-    # and the broker image is pinned. Config no longer imports the Plugin runtime,
-    # so this composition root builds that policy up front: a deployment with
-    # half-wired egress still fails before it serves a request.
-    egress_policy = PluginEgressBrokerPolicy.from_config(resolved_settings.egress)
     database = create_database(resolved_settings.app.resolved_database_url)
     identity = build_app_identity(resolved_settings, database)
 
@@ -67,7 +60,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             resources = await build_app_resources(
                 settings=resolved_settings,
                 database=database,
-                egress_policy=egress_policy,
                 owner_lease=owner_lease,
             )
             try:
@@ -163,7 +155,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(collaboration_router, prefix="/v1")
     application.include_router(node_secrets_router, prefix="/v1")
     application.include_router(catalog_router, prefix="/v1")
-    application.include_router(python_nodes_router, prefix="/v1")
     application.include_router(modules_router, prefix="/v1")
     application.include_router(uploads_router, prefix="/v1")
     application.include_router(executions_router, prefix="/v1")

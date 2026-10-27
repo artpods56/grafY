@@ -31,16 +31,6 @@ operator_prefixes = ["mistral"]
 artifact_type_prefixes = []
 
 [[plugins]]
-slug = "external.python"
-project = "plugins/python"
-distribution_name = "grafy-plugin-python"
-loader_target = "grafy_plugin_python.plugin:PYTHON"
-execution_policy = "isolated-only"
-capabilities = []
-operator_prefixes = ["python"]
-artifact_type_prefixes = []
-
-[[plugins]]
 slug = "external.sql"
 project = "plugins/sql"
 distribution_name = "grafy-plugin-sql"

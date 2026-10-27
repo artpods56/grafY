@@ -477,6 +477,11 @@ versioned, published, or executed in another process; the import name is still
 never catalog identity, and the slug is.
 See [ADR 0017](docs/adr/0017-plugins-are-application-code-in-process.md).
 
+The current application registry excludes Python and SQL. Python execution and
+its presets are retired. SQL remains unavailable pending its execution safety
+review. Historical Plugin pins are ignored on read without rewriting stored
+checkpoints; all registered nodes use the deployment build identity.
+
 ### Egress guard
 
 The single place that decides whether a destination named in node configuration

@@ -6,7 +6,6 @@ import pytest
 
 from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.collaboration import (
-    GRAPH_COMMAND_ADAPTER,
     GraphCommand,
     AddEdgeCommand,
     AddNodeCommand,
@@ -32,7 +31,6 @@ from grafy_core.domain.collaboration import (
     UpdateNodeConfigurationAndInputPlugsCommand,
     UpdateNodeConfigurationCommand,
     UpdateNodeLayoutCommand,
-    UpdateNodePluginReleaseCommand,
     UpdateOriginCommand,
     apply_graph_command,
     command_hmac_digest,
@@ -41,7 +39,6 @@ from grafy_core.domain.collaboration import (
     sanitize_document_for_cross_workspace_copy,
 )
 from grafy_core.domain.errors import CollaborationCommandRejectedError
-from grafy_core.domain.plugin_identity import PluginReleaseScope
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     GraphPresentationAnnotation,
@@ -304,214 +301,6 @@ def test_replacing_input_plugs_drops_wiring_to_removed_plugs() -> None:
     assert updated.origins == (kept_origin,)
 
 
-def test_update_node_plugin_release_is_a_single_node_cas() -> None:
-    current_pin = SavedGraphPluginReleasePin(
-        scope=PluginReleaseScope.SYSTEM,
-        slug="notes",
-        revision=4,
-    )
-    next_pin = SavedGraphPluginReleasePin(
-        scope=PluginReleaseScope.SYSTEM,
-        slug="notes",
-        revision=2,
-    )
-    target = SavedGraphNode(
-        kind="plugin",
-        id="target",
-        operator_id="notes.write",
-        operator_version=1,
-        config={"text": "Keep me"},
-        position=GraphPoint(x=10, y=20),
-        layout=SavedGraphNodeLayout(width=400, body_height=200),
-        input_plugs=(SavedGraphInputPlug(id="plug-a", port="value"),),
-        artifact_type_bindings=(
-            SavedGraphArtifactTypeBinding(
-                variable="T",
-                artifact_type=ArtifactTypeKey(id="text.value", schema_version=1),
-            ),
-        ),
-        plugin_release_pin=current_pin,
-    )
-    other = _node("other", x=30, y=40, config={"untouched": True})
-    edge = SavedGraphEdge(
-        id="edge",
-        from_node="other",
-        from_port="result",
-        to_node="target",
-        to_port="value",
-        to_plug="plug-a",
-    )
-    presentation = GraphPresentationDocument(
-        annotations=(
-            GraphPresentationAnnotation(
-                id="annotation-pin-update",
-                kind="text",
-                position=GraphPoint(x=5, y=6),
-                layout=SavedGraphAnnotationLayout(width=240, height=120),
-                text="Keep this too",
-            ),
-        ),
-    )
-    document = SavedGraphDocument(
-        nodes=(target, other),
-        edges=(edge,),
-        presentation=presentation,
-    )
-
-    name, updated = apply_graph_command(
-        name="Graph",
-        document=document,
-        command=UpdateNodePluginReleaseCommand(
-            node_id="target",
-            plugin_release_pin=next_pin,
-            expected_plugin_release_pin=current_pin,
-        ),
-    )
-
-    assert name == "Graph"
-    assert updated.nodes[0] == target.model_copy(
-        update={"plugin_release_pin": next_pin}
-    )
-    assert updated.nodes[1] == other
-    assert updated.edges == document.edges
-    assert updated.presentation == document.presentation
-
-
-def test_update_node_plugin_release_rejects_missing_node_and_stale_pin() -> None:
-    expected_pin = SavedGraphPluginReleasePin(
-        scope=PluginReleaseScope.WORKSPACE,
-        slug="notes",
-        revision=1,
-    )
-    next_pin = expected_pin.model_copy(update={"revision": 2})
-    command = UpdateNodePluginReleaseCommand(
-        node_id="missing",
-        plugin_release_pin=next_pin,
-        expected_plugin_release_pin=expected_pin,
-    )
-    with pytest.raises(CollaborationCommandRejectedError) as missing:
-        apply_graph_command(
-            name="Graph",
-            document=SavedGraphDocument(),
-            command=command,
-        )
-    assert missing.value.error_code == "missing_node"
-    assert "missing" in str(missing.value)
-
-    current_pin = expected_pin.model_copy(update={"revision": 3})
-    document = SavedGraphDocument(
-        nodes=(_node("target", plugin_release_pin=current_pin),)
-    )
-    with pytest.raises(CollaborationCommandRejectedError) as stale:
-        apply_graph_command(
-            name="Graph",
-            document=document,
-            command=command.model_copy(update={"node_id": "target"}),
-        )
-    assert stale.value.error_code == "field_conflict"
-    assert "workspace:notes@1" in str(stale.value)
-    assert "workspace:notes@3" in str(stale.value)
-
-
-@pytest.mark.parametrize(
-    "next_pin",
-    [
-        SavedGraphPluginReleasePin(
-            scope=PluginReleaseScope.SYSTEM,
-            slug="other",
-            revision=2,
-        ),
-        SavedGraphPluginReleasePin(
-            scope=PluginReleaseScope.WORKSPACE,
-            slug="notes",
-            revision=2,
-        ),
-    ],
-)
-def test_update_node_plugin_release_rejects_family_changes(
-    next_pin: SavedGraphPluginReleasePin,
-) -> None:
-    current_pin = SavedGraphPluginReleasePin(
-        scope=PluginReleaseScope.SYSTEM,
-        slug="notes",
-        revision=1,
-    )
-    document = SavedGraphDocument(
-        nodes=(_node("target", plugin_release_pin=current_pin),)
-    )
-
-    with pytest.raises(CollaborationCommandRejectedError) as rejected:
-        apply_graph_command(
-            name="Graph",
-            document=document,
-            command=UpdateNodePluginReleaseCommand(
-                node_id="target",
-                plugin_release_pin=next_pin,
-                expected_plugin_release_pin=current_pin,
-            ),
-        )
-
-    assert rejected.value.error_code == "invalid_plugin_release_update"
-    assert "target" in str(rejected.value)
-    assert "system:notes" in str(rejected.value)
-
-
-def test_update_node_plugin_release_serializes_and_is_not_exact_sequence() -> None:
-    expected_pin = SavedGraphPluginReleasePin(
-        scope=PluginReleaseScope.SYSTEM,
-        slug="notes",
-        revision=1,
-    )
-    next_pin = expected_pin.model_copy(update={"revision": 2})
-    command = UpdateNodePluginReleaseCommand(
-        node_id="target",
-        plugin_release_pin=next_pin,
-        expected_plugin_release_pin=expected_pin,
-    )
-    payload = command.model_dump(mode="json")
-
-    assert payload == {
-        "kind": "update_node_plugin_release",
-        "node_id": "target",
-        "plugin_release_pin": {
-            "scope": "system",
-            "slug": "notes",
-            "revision": 2,
-        },
-        "expected_plugin_release_pin": {
-            "scope": "system",
-            "slug": "notes",
-            "revision": 1,
-        },
-    }
-    assert GRAPH_COMMAND_ADAPTER.validate_python(payload) == command
-    assert not command_requires_exact_sequence(command)
-
-    digest = command_hmac_digest(
-        b"key",
-        key_version=1,
-        workspace_id=UUID("00000000-0000-0000-0000-000000000001"),
-        graph_id=UUID("00000000-0000-0000-0000-000000000002"),
-        actor_user_id=UUID("00000000-0000-0000-0000-000000000003"),
-        room_epoch=UUID("00000000-0000-0000-0000-000000000004"),
-        observed_sequence=7,
-        command=command,
-    )
-    moved_digest = command_hmac_digest(
-        b"key",
-        key_version=1,
-        workspace_id=UUID("00000000-0000-0000-0000-000000000001"),
-        graph_id=UUID("00000000-0000-0000-0000-000000000002"),
-        actor_user_id=UUID("00000000-0000-0000-0000-000000000003"),
-        room_epoch=UUID("00000000-0000-0000-0000-000000000004"),
-        observed_sequence=7,
-        command=command.model_copy(
-            update={"plugin_release_pin": next_pin.model_copy(update={"revision": 3})}
-        ),
-    )
-    assert digest != moved_digest
-
-
 def _origin(origin_id: str = "o1", *, to_node: str = "n1") -> SavedGraphOrigin:
     return SavedGraphOrigin(
         id=origin_id,
@@ -677,31 +466,6 @@ def test_cross_workspace_copy_keeps_an_unsatisfied_artifact_card_reference() -> 
     copied = sanitize_document_for_cross_workspace_copy(document)
 
     assert copied.presentation.viewers[0].artifact_ref == reference
-
-
-def test_cross_workspace_copy_preserves_system_pins_and_refuses_legacy_pins() -> None:
-    system_pin = SavedGraphPluginReleasePin(
-        scope=PluginReleaseScope.SYSTEM,
-        slug="value",
-        revision=3,
-    )
-    system_document = SavedGraphDocument(nodes=(_node(plugin_release_pin=system_pin),))
-
-    copied = sanitize_document_for_cross_workspace_copy(system_document)
-
-    assert copied.nodes[0].plugin_release_pin == system_pin
-
-    stored_workspace_pin = SavedGraphPluginReleasePin(
-        scope=PluginReleaseScope.WORKSPACE,
-        slug="legacy-notes",
-        revision=1,
-    )
-    legacy_document = SavedGraphDocument(
-        nodes=(_node(plugin_release_pin=stored_workspace_pin),)
-    )
-    with pytest.raises(CollaborationCommandRejectedError) as exc:
-        sanitize_document_for_cross_workspace_copy(legacy_document)
-    assert exc.value.error_code == "unsupported_plugin_release_scope"
 
 
 def test_command_hmac_digest_is_stable_and_keyed() -> None:
@@ -1036,30 +800,6 @@ def test_update_node_layout_rejects_stale_layout() -> None:
             ),
         )
     assert exc.value.error_code == "field_conflict"
-
-
-def test_update_node_plugin_release_rejects_non_plugin_node() -> None:
-    pin = SavedGraphPluginReleasePin(
-        scope=PluginReleaseScope.SYSTEM,
-        slug="notes",
-        revision=1,
-    )
-    document = SavedGraphDocument(nodes=(_node("n1"),))
-    assert document.nodes[0].kind == "builtin"
-    with pytest.raises(
-        CollaborationCommandRejectedError,
-        match="is only valid for Plugin nodes",
-    ) as exc:
-        apply_graph_command(
-            name="Graph",
-            document=document,
-            command=UpdateNodePluginReleaseCommand(
-                node_id="n1",
-                plugin_release_pin=pin.model_copy(update={"revision": 2}),
-                expected_plugin_release_pin=pin,
-            ),
-        )
-    assert exc.value.error_code == "invalid_plugin_release_update"
 
 
 def test_set_node_input_plugs_rejects_stale_plug_ids() -> None:

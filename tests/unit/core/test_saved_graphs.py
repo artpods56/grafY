@@ -867,7 +867,7 @@ def test_saved_graph_replace_preserves_timezone_aware_timestamp_invariant() -> N
         )
 
 
-def test_saved_graph_node_serializes_the_plugin_release_pin() -> None:
+def test_saved_graph_node_reads_legacy_pin_without_serializing_it() -> None:
     pin = SavedGraphPluginReleasePin(
         scope=PluginReleaseScope.WORKSPACE,
         slug="notes",
@@ -877,14 +877,9 @@ def test_saved_graph_node_serializes_the_plugin_release_pin() -> None:
 
     payload = node.model_dump(mode="json")
 
-    assert payload["plugin_release_pin"] == {
-        "scope": "workspace",
-        "slug": "notes",
-        "revision": 4,
-    }
+    assert payload["kind"] == "builtin"
+    assert "plugin_release_pin" not in payload
     assert SavedGraphNode.model_validate(payload) == node
-    unpinned = _node("host")
-    assert unpinned.plugin_release_pin is None
 
 
 def test_saved_graph_plugin_release_pin_rejects_extra_or_missing_fields() -> None:

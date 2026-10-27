@@ -12,7 +12,7 @@ import pytest
 
 from grafy_persistence.database import create_database
 from grafy_persistence.orm import metadata
-from grafy_workbench import BUILTIN_FAMILIES
+from grafy_api.services.families import APPLICATION_FAMILIES
 
 from grafy_api.main import create_app
 from grafy_api.settings import Settings
@@ -48,16 +48,14 @@ async def test_startup_registers_builtin_families_without_host_deployment(
 
     async with LifespanManager(application):
         registry = application.state.resources.workbench.plugin_registry
-        expected_slugs = {family.slug for family in BUILTIN_FAMILIES}
+        expected_slugs = {family.slug for family in APPLICATION_FAMILIES}
 
         assert {plugin.slug for plugin in registry.plugins} == expected_slugs
         assert {("module.input", 1), ("module.output", 1)}.issubset(
             {node.key for node in registry.nodes}
         )
         admission = application.state.resources.workbench.release_admission
-        assert admission is not None
-        assert admission.isolated_adapter_available is False
-        assert admission.runtime_profile is None
+        assert admission is None
 
 
 @pytest.mark.asyncio
@@ -99,5 +97,5 @@ async def test_runtime_startup_without_owner_does_not_reap_other_workers(
         with_setting_values(startup_settings, plugin_runtime_enabled=True)
     )
     async with LifespanManager(application):
-        assert get_resources(application).workbench.plugin_runtime is not None
+        assert get_resources(application).workbench.plugin_runtime is None
     orphan_recovery.assert_not_awaited()

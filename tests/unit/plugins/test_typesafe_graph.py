@@ -13,7 +13,6 @@ from grafy_api.execution.requests import (
     RunNodeRequest,
     RunRequest,
 )
-from grafy_api.plugins.runtime.admission import ReleaseExecutionAdmission
 from grafy_api.v1.models import ArtifactTypeBindingModel, ArtifactTypeKeyResponse
 from grafy_core.application.modules import ModuleLibraryService
 from grafy_core.domain.modules import GraphModuleDefinition
@@ -48,7 +47,6 @@ from tests.support.system_plugins import (
     TEST_BUILD_DIGEST,
     TEST_SYSTEM_PLUGINS,
     build_explicit_plugin_registry,
-    build_selected_system_plugin_deployment,
 )
 from tests.unit.plugins.test_typesafe_nodes import (
     WORKSPACE_ID,
@@ -107,17 +105,11 @@ async def test_compiler_accepts_a_question_stack_and_asks_once(
     tmp_path: Path,
 ) -> None:
     registry = _registry()
-    deployment = build_selected_system_plugin_deployment()
     compiler = GraphCompiler(
         plugin_registry=registry,
         plugin_context=_plugin_context(tmp_path),
         module_library=ModuleLibraryService(_unused_saved_graph_uow, registry),
         canonical_artifact_conversions=CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,
-        plugin_release_lookup=deployment.release_lookup,
-        release_admission=ReleaseExecutionAdmission(
-            isolated_adapter_available=False,
-            runtime_profile=None,
-        ),
         build_digest=TEST_BUILD_DIGEST,
     )
     request = RunRequest(
@@ -192,9 +184,7 @@ async def test_compiler_accepts_a_question_stack_and_asks_once(
     )
 
     compiled = await compiler.compile(
-        request.model_copy(
-            update={"nodes": [deployment.pin_node(node) for node in request.nodes]}
-        ),
+        request,
         _UnusedModuleExecutor(),
         workspace_id=WORKSPACE_ID,
     )
