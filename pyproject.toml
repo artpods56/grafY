@@ -38,7 +38,6 @@ members = [
     "plugins/image",
     "plugins/llm",
     "plugins/mistral",
-    "plugins/python",
     "plugins/sql",
     "plugins/table",
     "plugins/typesafe",
@@ -60,7 +59,6 @@ grafy-plugin-gis = { workspace = true }
 grafy-plugin-image = { workspace = true }
 grafy-plugin-llm = { workspace = true }
 grafy-plugin-mistral = { workspace = true }
-grafy-plugin-python = { workspace = true }
 grafy-plugin-sql = { workspace = true }
 grafy-plugin-table = { workspace = true }
 grafy-plugin-typesafe = { workspace = true }
@@ -68,7 +66,6 @@ grafy-plugin-typesafe = { workspace = true }
 [dependency-groups]
 dev = [
     "grafy-plugin-egress-broker",
-    "grafy-plugin-python",
     "asgi-lifespan>=2.1.0",
     "httpx>=0.28.0",
     "polyfactory>=3.3.0",
@@ -97,7 +94,6 @@ include = [
     "plugins/llm/*",
     "plugins/mistral/*",
     "plugins/gis/*",
-    "plugins/python/*",
     "plugins/sql/*",
     "plugins/typesafe/*",
     "apps/api/*",
@@ -125,7 +121,6 @@ executionEnvironments = [
         "plugins/llm/src",
         "plugins/mistral/src",
         "plugins/gis/src",
-        "plugins/python/src",
         "plugins/sql/src",
         "plugins/typesafe/src",
         "apps/api/src",

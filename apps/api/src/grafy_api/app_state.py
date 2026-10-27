@@ -61,23 +61,13 @@ class AppResources:
         return CapacityDiagnostics(
             execution_admission=self.workbench.execution_admission.diagnostics(),
             execution_queue=await self.workbench.execution_manager.diagnostics(),
-            plugin_invocations=(
-                None
-                if self.workbench.plugin_invoker is None
-                else self.workbench.plugin_invoker.diagnostics()
-            ),
-            plugin_sandboxes=(
-                None
-                if self.workbench.plugin_runtime is None
-                else await self.workbench.plugin_runtime.diagnostics()
-            ),
+            plugin_invocations=None,
+            plugin_sandboxes=None,
         )
 
     async def cleanup(self) -> None:
         await self.graph_room_hub.shutdown()
         await self.workbench.execution_manager.shutdown()
-        if self.workbench.plugin_runtime is not None:
-            await self.workbench.plugin_runtime.shutdown()
         await self.workbench.artifacts.close()
 
 

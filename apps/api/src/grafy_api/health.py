@@ -23,8 +23,6 @@ async def readiness(request: Request) -> HealthResponse:
 
             async with resources.database.engine.connect() as connection:
                 await connection.execute(text("SELECT 1"))
-            if resources.workbench.plugin_runtime is not None:
-                await resources.workbench.plugin_runtime.check_ready()
     except Exception as exc:
         raise HTTPException(
             status_code=503,

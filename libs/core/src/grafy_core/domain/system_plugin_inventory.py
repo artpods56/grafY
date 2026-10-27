@@ -21,7 +21,6 @@ SYSTEM_PLUGIN_SLUGS = frozenset(
         "external.gis",
         "external.llm",
         "external.mistral",
-        "external.python",
         "external.sql",
         "external.typesafe",
     }
@@ -275,6 +274,7 @@ class SystemPluginInventory(_InventoryValue):
             f"System Plugin {entry.slug!r} owned {identity_kind} {identity!r} "
             f"falls under prefix {owner_prefix!r} delegated to {owner_slug!r}"
         )
+
 
 def _matches_identity_prefix(identity: str, prefix: str) -> bool:
     return identity == prefix or identity.startswith(f"{prefix}.")

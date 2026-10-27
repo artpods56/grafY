@@ -6,7 +6,6 @@ import type {
   ArtifactTypeKey,
   InputPlugInput,
   NodeSpec,
-  PluginReleasePin,
   Port,
   RunEdgeCollectionMode,
   RunEdgeProjectionInput,
@@ -215,11 +214,6 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   compatibility: WorkflowNodeCompatibility;
   /** Persisted concrete choices for artifact type variables declared by ports. */
   artifactTypeBindings: WorkflowArtifactTypeBindings;
-  /**
-   * Exact scoped Plugin release pin persisted with the node; independent
-   * from the operator identity and never derived from it.
-   */
-  pluginReleasePin: PluginReleasePin | null;
   /** Ordered, serializable input instances. Their ids remain stable on reorder. */
   inputPlugs: readonly WorkflowInputPlug[];
   /** Edge- and result-derived display data; never persisted. */
@@ -243,10 +237,6 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   historyContext: WorkflowNodeHistoryContext | null;
   /** Ephemeral collaborator selection tint; never persisted. */
   remoteSelectionColor?: string | null;
-  onApplyPythonCode?: (
-    nodeId: string,
-    code: string,
-  ) => Promise<import("@/lib/api").ApplyPythonCodeResponse>;
   onConfigChange?: (nodeId: string, name: string, value: unknown) => void;
   onLayoutChange?: (nodeId: string, layout: WorkflowNodeLayout | null) => void;
   onRemoveNode?: (nodeId: string) => void;
@@ -289,9 +279,6 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   /** When set, the pinned Module call can upgrade to this library release. */
   moduleUpgradeRelease?: number | null;
   onUpgradeModuleCall?: (nodeId: string) => void;
-  /** When set, the pinned Plugin can move to this current scoped release. */
-  pluginUpgradeRelease?: number | null;
-  onUpgradePluginRelease?: (nodeId: string) => void;
   onOpenExecutionHistory?: (nodeId: string, executionId?: string) => void;
   /** A collection's members in plug order; derived, never persisted. */
   collectionMembers?: readonly CollectionMember[];
@@ -382,9 +369,7 @@ export function createWorkflowNodeData(
         portName: plug.port,
       }))
     : initialInputPlugs(spec);
-  const config: WorkflowNodeConfig = spec.preset
-    ? { ...structuredClone(spec.preset.config) }
-    : defaultNodeConfig(spec);
+  const config = defaultNodeConfig(spec);
   if (!savedInputPlugs && spec.operator_id === ARTIFACT_QUERY_OPERATOR_ID) {
     const relationPlug = inputPlugs.find(
       (plug) => plug.portName === ARTIFACT_QUERY_RELATIONS_PORT,
@@ -398,36 +383,9 @@ export function createWorkflowNodeData(
     ]);
   }
   return {
-    spec: spec.preset
-      ? {
-          ...spec,
-          inputs: spec.inputs.map((port) => ({
-            ...port,
-            artifact_type: null,
-            artifact_type_variable: port.name,
-          })),
-          outputs: spec.outputs.map((port) => ({
-            ...port,
-            artifact_type: null,
-            artifact_type_variable: port.name,
-          })),
-        }
-      : spec,
+    spec,
     compatibility: { status: "supported" },
-    artifactTypeBindings: Object.fromEntries(
-      (spec.preset?.artifact_type_bindings ?? []).map((binding) => [
-        binding.variable,
-        binding.artifact_type,
-      ]),
-    ),
-    pluginReleasePin:
-      spec.origin === "plugin" && spec.plugin_release
-        ? {
-            scope: spec.plugin_release.scope,
-            slug: spec.plugin_release.slug,
-            revision: spec.plugin_release.revision,
-          }
-        : null,
+    artifactTypeBindings: {},
     inputPlugs,
     inputPlugBindings: {},
     mappedInputPorts: [],
@@ -455,7 +413,7 @@ export function serializeRunNode(
   }
   const inputPlugs = serializeInputPlugs(data);
   return {
-    kind: data.spec.origin,
+    kind: data.spec.origin === "module" ? "module" : "builtin",
     id,
     operator_id: data.spec.operator_id,
     operator_version: data.spec.operator_version,
@@ -464,15 +422,6 @@ export function serializeRunNode(
       ? inputPlugs.filter((plug) => activeInputPlugIds.has(plug.id))
       : inputPlugs,
     artifact_type_bindings: serializeArtifactTypeBindings(data),
-    ...(data.spec.origin === "plugin" && data.pluginReleasePin
-      ? {
-          plugin_release: {
-            scope: data.pluginReleasePin.scope,
-            slug: data.pluginReleasePin.slug,
-            revision: data.pluginReleasePin.revision,
-          },
-        }
-      : {}),
   };
 }
 

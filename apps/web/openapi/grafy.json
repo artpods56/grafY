@@ -101,59 +101,6 @@
         "title": "ApiUploadTargetResponse",
         "type": "object"
       },
-      "ApplyPythonCodeRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "code": {
-            "maxLength": 65536,
-            "title": "Code",
-            "type": "string"
-          },
-          "plugin_release": {
-            "$ref": "#/components/schemas/PluginReleasePinModel",
-            "description": "The Python runner release the node pins."
-          }
-        },
-        "required": [
-          "code",
-          "plugin_release"
-        ],
-        "title": "ApplyPythonCodeRequest",
-        "type": "object"
-      },
-      "ApplyPythonCodeResponse": {
-        "properties": {
-          "code_sha256": {
-            "title": "Code Sha256",
-            "type": "string"
-          },
-          "contract": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PythonCodeContract"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The ports and params schema to store; null when diagnostics block Apply."
-          },
-          "diagnostics": {
-            "items": {
-              "$ref": "#/components/schemas/PythonDiagnostic"
-            },
-            "title": "Diagnostics",
-            "type": "array"
-          }
-        },
-        "required": [
-          "code_sha256",
-          "contract",
-          "diagnostics"
-        ],
-        "title": "ApplyPythonCodeResponse",
-        "type": "object"
-      },
       "ArtifactBundleContractResponse": {
         "properties": {
           "format": {
@@ -3308,7 +3255,6 @@
         "title": "ImageUploadItemResponse",
         "type": "object"
       },
-      "JsonValue": {},
       "LibraryFolderListResponse": {
         "properties": {
           "folders": {
@@ -3985,47 +3931,6 @@
         "title": "MoveNodesCommand",
         "type": "object"
       },
-      "NodePresetResponse": {
-        "description": "A ready filled node: inserting it copies config and bindings by value.",
-        "properties": {
-          "artifact_type_bindings": {
-            "items": {
-              "$ref": "#/components/schemas/ArtifactTypeBindingModel"
-            },
-            "title": "Artifact Type Bindings",
-            "type": "array"
-          },
-          "config": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "title": "Config",
-            "type": "object"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "node": {
-            "$ref": "#/components/schemas/NodeSpecResponse",
-            "description": "The preset's target operator, titled and typed as the preset so the node library can list and match it like any node."
-          },
-          "version": {
-            "minimum": 1.0,
-            "title": "Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "version",
-          "node",
-          "config",
-          "artifact_type_bindings"
-        ],
-        "title": "NodePresetResponse",
-        "type": "object"
-      },
       "NodeRegistryResponse": {
         "properties": {
           "artifact_conversions": {
@@ -4054,13 +3959,6 @@
               "$ref": "#/components/schemas/PluginSpecResponse"
             },
             "title": "Plugins",
-            "type": "array"
-          },
-          "presets": {
-            "items": {
-              "$ref": "#/components/schemas/NodePresetResponse"
-            },
-            "title": "Presets",
             "type": "array"
           },
           "unavailable_modules": {
@@ -4968,105 +4866,6 @@
         "title": "PublishModuleReleaseRequest",
         "type": "object"
       },
-      "PythonArtifactType": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "schema_version": {
-            "minimum": 1.0,
-            "title": "Schema Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "schema_version"
-        ],
-        "title": "PythonArtifactType",
-        "type": "object"
-      },
-      "PythonCodeContract": {
-        "additionalProperties": false,
-        "properties": {
-          "input": {
-            "$ref": "#/components/schemas/PythonPortContract"
-          },
-          "input_name": {
-            "title": "Input Name",
-            "type": "string"
-          },
-          "output": {
-            "$ref": "#/components/schemas/PythonPortContract"
-          },
-          "params_schema": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/JsonValue"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Params Schema"
-          }
-        },
-        "required": [
-          "input_name",
-          "input",
-          "output"
-        ],
-        "title": "PythonCodeContract",
-        "type": "object"
-      },
-      "PythonDiagnostic": {
-        "additionalProperties": false,
-        "properties": {
-          "column": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Column",
-            "type": "integer"
-          },
-          "line": {
-            "minimum": 1.0,
-            "title": "Line",
-            "type": "integer"
-          },
-          "message": {
-            "title": "Message",
-            "type": "string"
-          }
-        },
-        "required": [
-          "line",
-          "message"
-        ],
-        "title": "PythonDiagnostic",
-        "type": "object"
-      },
-      "PythonPortContract": {
-        "additionalProperties": false,
-        "properties": {
-          "artifact_type": {
-            "$ref": "#/components/schemas/PythonArtifactType"
-          },
-          "shape": {
-            "$ref": "#/components/schemas/PortShape"
-          }
-        },
-        "required": [
-          "artifact_type",
-          "shape"
-        ],
-        "title": "PythonPortContract",
-        "type": "object"
-      },
       "RemoveEdgesCommand": {
         "additionalProperties": false,
         "properties": {
@@ -5490,7 +5289,6 @@
           "kind": {
             "enum": [
               "builtin",
-              "plugin",
               "module"
             ],
             "title": "Kind",
@@ -5503,16 +5301,6 @@
           "operator_version": {
             "title": "Operator Version",
             "type": "integer"
-          },
-          "plugin_release": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PluginReleasePinModel"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "required": [
@@ -6305,7 +6093,6 @@
           "kind": {
             "enum": [
               "builtin",
-              "plugin",
               "module"
             ],
             "title": "Kind",
@@ -6331,16 +6118,6 @@
             "minimum": 1.0,
             "title": "Operator Version",
             "type": "integer"
-          },
-          "plugin_release_pin": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SavedGraphPluginReleasePin"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "position": {
             "$ref": "#/components/schemas/GraphPoint"
@@ -6480,7 +6257,6 @@
           "kind": {
             "enum": [
               "builtin",
-              "plugin",
               "module"
             ],
             "title": "Kind",
@@ -6506,16 +6282,6 @@
             "minimum": 1.0,
             "title": "Operator Version",
             "type": "integer"
-          },
-          "plugin_release": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PluginReleasePinModel"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "position": {
             "$ref": "#/components/schemas/GraphPointModel"
@@ -6675,33 +6441,6 @@
           "value"
         ],
         "title": "SavedGraphOriginModel",
-        "type": "object"
-      },
-      "SavedGraphPluginReleasePin": {
-        "additionalProperties": false,
-        "description": "Exact scoped Plugin release identity pinned on one graph node.\n\nThe pin is independent from the operator identity: publishing revision\nN+1 never moves a node pinned to revision N. Workspace membership for a\nWorkspace release comes from the owning graph.",
-        "properties": {
-          "revision": {
-            "minimum": 1.0,
-            "title": "Revision",
-            "type": "integer"
-          },
-          "scope": {
-            "$ref": "#/components/schemas/PluginReleaseScope"
-          },
-          "slug": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Slug",
-            "type": "string"
-          }
-        },
-        "required": [
-          "scope",
-          "slug",
-          "revision"
-        ],
-        "title": "SavedGraphPluginReleasePin",
         "type": "object"
       },
       "SavedGraphProjection": {
@@ -7059,7 +6798,6 @@
                 "update_node_configuration": "#/components/schemas/UpdateNodeConfigurationCommand",
                 "update_node_configuration_and_input_plugs": "#/components/schemas/UpdateNodeConfigurationAndInputPlugsCommand",
                 "update_node_layout": "#/components/schemas/UpdateNodeLayoutCommand",
-                "update_node_plugin_release": "#/components/schemas/UpdateNodePluginReleaseCommand",
                 "update_origin": "#/components/schemas/UpdateOriginCommand"
               },
               "propertyName": "kind"
@@ -7085,9 +6823,6 @@
               },
               {
                 "$ref": "#/components/schemas/UpdateNodeLayoutCommand"
-              },
-              {
-                "$ref": "#/components/schemas/UpdateNodePluginReleaseCommand"
               },
               {
                 "$ref": "#/components/schemas/SetNodeInputPlugsCommand"
@@ -7676,34 +7411,6 @@
           "layout"
         ],
         "title": "UpdateNodeLayoutCommand",
-        "type": "object"
-      },
-      "UpdateNodePluginReleaseCommand": {
-        "additionalProperties": false,
-        "properties": {
-          "expected_plugin_release_pin": {
-            "$ref": "#/components/schemas/SavedGraphPluginReleasePin"
-          },
-          "kind": {
-            "const": "update_node_plugin_release",
-            "default": "update_node_plugin_release",
-            "title": "Kind",
-            "type": "string"
-          },
-          "node_id": {
-            "title": "Node Id",
-            "type": "string"
-          },
-          "plugin_release_pin": {
-            "$ref": "#/components/schemas/SavedGraphPluginReleasePin"
-          }
-        },
-        "required": [
-          "node_id",
-          "plugin_release_pin",
-          "expected_plugin_release_pin"
-        ],
-        "title": "UpdateNodePluginReleaseCommand",
         "type": "object"
       },
       "UpdateOriginCommand": {
@@ -13498,68 +13205,6 @@
         "summary": "Revoke Personal Access Token",
         "tags": [
           "workspaces"
-        ]
-      }
-    },
-    "/v1/workspaces/{workspace_id}/python/apply": {
-      "post": {
-        "description": "Derive the contract of Python node code without running it on the host.",
-        "operationId": "apply_python_code_v1_workspaces__workspace_id__python_apply_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ApplyPythonCodeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApplyPythonCodeResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "APIKeyCookie": []
-          },
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Apply Python Code",
-        "tags": [
-          "python nodes"
         ]
       }
     },

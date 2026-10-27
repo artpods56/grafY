@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from grafy_core.application.saved_graphs import SavedGraphService
+from grafy_core.artifacts import ArtifactRefSequence
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.domain.saved_graphs import SavedGraphRevision
@@ -25,10 +26,13 @@ class MaterializationService:
         unit_of_work: WorkbenchUnitOfWorkPort,
         availability: ArtifactAvailability,
         saved_graphs: SavedGraphService | None,
+        *,
+        build_digest: str | None = None,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._availability = availability
         self._saved_graphs = saved_graphs
+        self._build_digest = build_digest
 
     async def saved_graph_revision(
         self,
@@ -63,6 +67,9 @@ class MaterializationService:
                 graph_id,
                 graph_revision,
             )
+        materializations = await self._current_build_outputs(
+            workspace_id, materializations
+        )
         by_node = {
             materialization.node_id: materialization
             for materialization in materializations
@@ -176,8 +183,41 @@ class MaterializationService:
     ) -> list[MaterializedNodeOutputs]:
         await self.saved_graph_revision(workspace_id, graph_id, graph_revision)
         async with self._unit_of_work as unit_of_work:
-            return await unit_of_work.materialized_outputs.list_for_graph(
+            outputs = await unit_of_work.materialized_outputs.list_for_graph(
                 workspace_id,
                 graph_id,
                 graph_revision,
             )
+        return await self._current_build_outputs(workspace_id, outputs)
+
+    async def _current_build_outputs(
+        self,
+        workspace_id: UUID,
+        outputs: Sequence[MaterializedNodeOutputs],
+    ) -> list[MaterializedNodeOutputs]:
+        if self._build_digest is None:
+            return list(outputs)
+        batch = await self._availability.load(
+            workspace_id,
+            (value for output in outputs for value in output.outputs.values()),
+        )
+        identity = {"kind": "builtin", "build_digest": self._build_digest}
+        current: list[MaterializedNodeOutputs] = []
+        for output in outputs:
+            refs = [
+                ref
+                for value in output.outputs.values()
+                for ref in (
+                    value.item_refs
+                    if isinstance(value, ArtifactRefSequence)
+                    else (value,)
+                )
+            ]
+            if refs and all(
+                (artifact := batch.artifacts.get(ref.artifact_id)) is not None
+                and artifact.ref() == ref
+                and artifact.metadata.get("implementation") == identity
+                for ref in refs
+            ):
+                current.append(output)
+        return current

@@ -25,7 +25,6 @@ def _utc_now() -> datetime:
 
 
 def _node_execution_signature(node: "SavedGraphNode") -> tuple[object, ...]:
-    pin = node.plugin_release_pin
     # JSON keeps booleans, integers, and floats distinct unlike Python equality.
     config = json.dumps(node.config_dict(), sort_keys=True, separators=(",", ":"))
     return (
@@ -34,7 +33,6 @@ def _node_execution_signature(node: "SavedGraphNode") -> tuple[object, ...]:
         node.operator_version,
         config,
         tuple((plug.id, plug.port) for plug in node.input_plugs),
-        None if pin is None else (pin.scope, pin.slug, pin.revision),
         tuple(
             (
                 binding.variable,

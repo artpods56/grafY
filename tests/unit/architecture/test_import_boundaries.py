@@ -15,13 +15,10 @@ PUBLISHED_PLUGIN_FAMILIES = (
     "gis",
     "llm",
     "mistral",
-    "python",
     "sql",
     "typesafe",
 )
-INSTALLED_PLUGIN_FAMILIES = tuple(
-    family for family in PUBLISHED_PLUGIN_FAMILIES if family != "python"
-)
+INSTALLED_PLUGIN_FAMILIES = PUBLISHED_PLUGIN_FAMILIES
 WORKBENCH_FAMILIES = (
     "image",
     "value",
@@ -252,6 +249,7 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
         if family not in {"image", "table"}:
             assert not (REPO_ROOT / "plugins" / family).exists()
 
+
 def test_plugin_families_do_not_import_http_or_api_modules() -> None:
     offenders: list[str] = []
     for family in PUBLISHED_PLUGIN_FAMILIES:
@@ -314,3 +312,25 @@ def test_application_owners_do_not_depend_on_route_modules() -> None:
                     f"{path.relative_to(REPO_ROOT)}: request resource lookup"
                 )
     assert offenders == []
+
+
+def test_active_graph_execution_has_no_release_or_sandbox_dependency() -> None:
+    owners = (
+        "services/application.py",
+        "services/composition.py",
+        "execution/compiler.py",
+        "execution/preflight.py",
+        "execution/run_graph.py",
+        "node_secrets.py",
+    )
+    root = REPO_ROOT / "apps/api/src/grafy_api"
+    for owner in owners:
+        path = root / owner
+        package = "grafy_api." + str(Path(owner).parent).replace("/", ".")
+        imports = _imported_modules(path.read_text(), package)
+        assert not any(
+            module.startswith(
+                ("grafy_api.plugins.runtime", "grafy_api.execution.releases")
+            )
+            for module in imports
+        ), f"{owner} must execute application families through the static registry"

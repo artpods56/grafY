@@ -303,7 +303,6 @@ def test_builder_adds_typed_builtin_node_without_a_plugin_pin() -> None:
                 "layout": None,
                 "input_plugs": [],
                 "artifact_type_bindings": [],
-                "plugin_release_pin": None,
             }
         ],
         "edges": [],
@@ -343,7 +342,7 @@ def test_builder_validates_catalog_node_configuration() -> None:
         graph.add_catalog_node("text.input", {"text": 42})
 
 
-def test_builder_pins_catalog_only_plugin_node_release() -> None:
+def test_builder_reads_legacy_plugin_catalog_as_builtin_without_pin() -> None:
     graph = GraphBuilder(_catalog())
     text = graph.add_catalog_node("text.input", {"text": "hello"})
     markdown = graph.add_catalog_node(
@@ -359,11 +358,8 @@ def test_builder_pins_catalog_only_plugin_node_release() -> None:
     )
 
     document = graph.build()
-    assert document.nodes[1].plugin_release_pin == SavedGraphPluginReleasePin(
-        scope=PluginReleaseScope.WORKSPACE,
-        slug="test.markdown",
-        revision=7,
-    )
+    assert document.nodes[1].kind == "builtin"
+    assert "plugin_release_pin" not in document.nodes[1].model_dump()
 
 
 def test_builder_connects_ports_and_infers_variadic_artifact_binding() -> None:

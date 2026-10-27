@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
-from typing import Protocol, cast
+from typing import cast
 from uuid import UUID
 
 from cryptography.exceptions import InvalidTag
@@ -16,10 +16,6 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pydantic import SecretStr, ValidationError
 
 from grafy_core.domain.errors import NotFoundError
-from grafy_core.domain.plugin_installations import InstalledPluginRelease
-from grafy_core.domain.plugin_releases import (
-    PluginSecretInputContract,
-)
 from grafy_core.domain.node_secrets import (
     EncryptedNodeSecret,
     InvalidNodeSecretDependenciesError,
@@ -63,14 +59,6 @@ class NodeSecretResolutionReason(StrEnum):
     INVALID_CONFIGURATION = "invalid_configuration"
 
 
-class NodeSecretPluginReleaseLookup(Protocol):
-    async def get_by_revision(
-        self,
-        slug: str,
-        revision: int,
-    ) -> InstalledPluginRelease | None: ...
-
-
 @dataclass(frozen=True, slots=True)
 class NodeSecretState:
     node_id: str
@@ -106,7 +94,7 @@ class _NodeSecretBinding:
 
 @dataclass(frozen=True, slots=True)
 class _ResolvedNodeSecretContract:
-    secret_inputs: tuple[NodeSecretInput | PluginSecretInputContract, ...]
+    secret_inputs: tuple[NodeSecretInput, ...]
     config: Mapping[str, object]
 
 
@@ -116,12 +104,10 @@ class NodeSecretService(NodeSecretResolverPort):
         *,
         unit_of_work_factory: Callable[[], NodeSecretUnitOfWorkPort],
         plugin_registry: PluginRegistry,
-        plugin_release_lookup: NodeSecretPluginReleaseLookup | None = None,
         encryption_key: SecretStr | None,
     ) -> None:
         self._unit_of_work_factory = unit_of_work_factory
         self._plugin_registry = plugin_registry
-        self._plugin_release_lookup = plugin_release_lookup
         self._encryption_key = encryption_key
 
     async def status(
@@ -431,12 +417,6 @@ class NodeSecretService(NodeSecretResolverPort):
             )
         contract = await self._resolved_node_secret_contract(node)
         if contract is None:
-            pin = node.plugin_release_pin
-            if pin is not None and self._plugin_release_lookup is not None:
-                raise NodeSecretDeclarationError(
-                    f"Node {node_id!r} uses an unavailable operator in pinned "
-                    f"Plugin release {pin.slug!r} revision {pin.revision}"
-                )
             raise NodeSecretDeclarationError(
                 f"Node {node_id!r} uses an unavailable operator"
             )
@@ -469,30 +449,6 @@ class NodeSecretService(NodeSecretResolverPort):
         self,
         node: SavedGraphNode,
     ) -> _ResolvedNodeSecretContract | None:
-        pin = node.plugin_release_pin
-        if pin is not None and self._plugin_release_lookup is not None:
-            release = await self._plugin_release_lookup.get_by_revision(
-                pin.slug,
-                pin.revision,
-            )
-            if release is None:
-                return None
-            node_contract = next(
-                (
-                    candidate
-                    for candidate in release.release.catalog.nodes
-                    if candidate.operator_id == node.operator_id
-                    and candidate.operator_version == node.operator_version
-                ),
-                None,
-            )
-            if node_contract is None:
-                return None
-            return _ResolvedNodeSecretContract(
-                secret_inputs=node_contract.secret_inputs,
-                config=node.config_dict(),
-            )
-
         registration = self._registration(node.operator_id, node.operator_version)
         if registration is None:
             return None
@@ -520,7 +476,7 @@ class NodeSecretService(NodeSecretResolverPort):
 
     @staticmethod
     def _declared_dependencies(
-        declaration: NodeSecretInput | PluginSecretInputContract,
+        declaration: NodeSecretInput,
         config: Mapping[str, object],
     ) -> dict[str, JsonValue]:
         return {

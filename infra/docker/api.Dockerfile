@@ -25,31 +25,30 @@ EXPOSE 8000
 
 CMD [".venv/bin/uvicorn", "grafy_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
 
-FROM source AS api-plugins
+FROM source AS api
 
+# GDAL's Python tools use Debian's system interpreter and bindings. The API
+# uses uv's Python 3.14 and the installed application families.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates gdal-bin python3-gdal python3-numpy python3-pil \
+    && rm -rf /var/lib/apt/lists/*
+RUN uv sync --locked --no-dev
+RUN .venv/bin/python -c "from grafy_plugin_gis.gdal import GdalCli; c = GdalCli().capabilities(); assert c.pmtiles_write and c.cog_write and c.png_write, c"
+
+# Retained for legacy publication tooling while it is retired. Online API and
+# release targets do not inherit Docker tooling.
+FROM api AS api-plugins
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
-# Isolated-only families and their native tools live solely in their retained
-# OCI images. The online API installs only its declared bundled dependencies.
-RUN uv sync --locked --no-dev --package grafy-api
 
-# The one-shot publisher uses this checked-in target. It shares the API
-# package and adds the Docker CLI/buildx tools above for sibling sandboxes.
 FROM api-plugins AS publisher
 
 # Release image for deployment. The digest identifies the exact source archive
 # the built-in node implementations were built from, so it is fixed at build
 # time instead of being supplied by the host. Local builds use the targets above.
-FROM api-plugins AS api-release
+FROM api AS api-release
 
 ARG GRAFY_BUILD_DIGEST
 RUN printf '%s' "$GRAFY_BUILD_DIGEST" | grep -Eq '^[0-9a-f]{64}$' \
     || { echo "GRAFY_BUILD_DIGEST build argument must be a 64-character SHA-256" >&2; exit 1; }
 ENV GRAFY_BUILD_DIGEST=$GRAFY_BUILD_DIGEST
-
-FROM source AS api
-
-RUN apt-get update \
-    && apt-get install --no-install-recommends -y ca-certificates gdal-bin python3-gdal python3-numpy python3-pil \
-    && rm -rf /var/lib/apt/lists/*
-RUN uv sync --locked --no-dev
