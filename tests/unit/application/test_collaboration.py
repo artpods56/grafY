@@ -16,7 +16,6 @@ from grafy_core.domain.collaboration import (
     RenameGraphCommand,
     ReplaceDocumentCommand,
     UpdateNodeConfigurationAndInputPlugsCommand,
-    UpdateNodePluginReleaseCommand,
 )
 from grafy_core.domain.errors import (
     CapabilityDeniedError,
@@ -38,14 +37,12 @@ from grafy_core.domain.identity import (
     WorkspaceMembership,
     WorkspaceRole,
 )
-from grafy_core.domain.plugin_identity import PluginReleaseScope
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     SavedGraph,
     SavedGraphDocument,
     SavedGraphInputPlug,
     SavedGraphNode,
-    SavedGraphPluginReleasePin,
     SavedGraphRevision,
 )
 from grafy_core.domain.security_audit import (
@@ -907,67 +904,6 @@ async def test_accept_command_rebases_move_against_newer_head() -> None:
 
     assert updated.collaboration_sequence == 3
     assert updated.document.nodes[0].position == GraphPoint(x=9, y=8)
-    assert receipt.accepted_sequence == 3
-
-
-@pytest.mark.asyncio
-async def test_accept_command_rebases_plugin_release_cas_against_newer_head() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    current_pin = SavedGraphPluginReleasePin(
-        scope=PluginReleaseScope.SYSTEM,
-        slug="notes",
-        revision=1,
-    )
-    next_pin = current_pin.model_copy(update={"revision": 2})
-    node = SavedGraphNode(
-        kind="plugin",
-        id="n1",
-        operator_id="notes.write",
-        operator_version=1,
-        position=GraphPoint(x=0, y=0),
-        plugin_release_pin=current_pin,
-    )
-    _, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(
-            name="Draft",
-            document=SavedGraphDocument(nodes=(node,)),
-        ),
-        graph_id=graph_id,
-    )
-    observed_sequence = head.collaboration_sequence
-    observed_epoch = head.room_epoch
-    await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        command_id=uuid4(),
-        observed_sequence=observed_sequence,
-        observed_room_epoch=observed_epoch,
-        command=RenameGraphCommand(name="Moved ahead", expected_name="Draft"),
-    )
-
-    updated, receipt = await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        command_id=uuid4(),
-        observed_sequence=observed_sequence,
-        observed_room_epoch=observed_epoch,
-        command=UpdateNodePluginReleaseCommand(
-            node_id="n1",
-            plugin_release_pin=next_pin,
-            expected_plugin_release_pin=current_pin,
-        ),
-    )
-
-    assert updated.name == "Moved ahead"
-    assert updated.collaboration_sequence == 3
-    assert updated.document.nodes[0].plugin_release_pin == next_pin
     assert receipt.accepted_sequence == 3
 
 

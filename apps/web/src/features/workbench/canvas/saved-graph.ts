@@ -4,8 +4,6 @@ import {
   type CreateSavedGraphRequest,
   type NodeRegistry,
   type NodeSpec,
-  type PluginReleasePin,
-  type Port,
   type RunNodeResult,
   type SavedGraph,
   type SavedGraphEdge,
@@ -102,56 +100,6 @@ function operatorKey(operatorId: string, operatorVersion: number): string {
   return `${operatorId}@${operatorVersion}`;
 }
 
-function scopedOperatorKey(
-  operatorId: string,
-  operatorVersion: number,
-  pluginRelease: Pick<PluginReleasePin, "scope" | "slug"> | null | undefined,
-): string {
-  const operator = operatorKey(operatorId, operatorVersion);
-  return pluginRelease
-    ? `${operator}::${pluginRelease.scope}:${pluginRelease.slug}`
-    : operator;
-}
-
-function presentCopiedPreset(
-  spec: NodeSpec,
-  config: WorkflowNodeData["config"],
-  registry: NodeRegistry,
-): NodeSpec {
-  const presetId = config.preset_id;
-  const presetVersion = config.preset_version;
-  const codeSha256 = config.code_sha256;
-  if (
-    typeof presetId !== "string" ||
-    typeof presetVersion !== "number" ||
-    typeof codeSha256 !== "string"
-  ) {
-    return spec;
-  }
-  const preset = (registry.presets ?? []).find(
-    (candidate) =>
-      candidate.id === presetId && candidate.version === presetVersion,
-  );
-  if (!preset) return spec;
-  const unchanged = preset.config.code_sha256 === codeSha256;
-  const retitle = (ports: readonly Port[], source: readonly Port[]): Port[] =>
-    ports.map((port) => {
-      const match = source.find((candidate) => candidate.name === port.name);
-      return match
-        ? { ...port, title: match.title, description: match.description }
-        : port;
-    });
-  return {
-    ...spec,
-    title: preset.node.title,
-    description: preset.node.description,
-    inputs: unchanged ? retitle(spec.inputs, preset.node.inputs) : spec.inputs,
-    outputs: unchanged
-      ? retitle(spec.outputs, preset.node.outputs)
-      : spec.outputs,
-  };
-}
-
 function compatibilityEndpoints(
   savedNode: SavedGraphNode,
   savedEdges: readonly SavedGraphEdge[],
@@ -194,7 +142,7 @@ function unavailableNodeSpec(savedNode: SavedGraphNode): NodeSpec {
     operator_id: savedNode.operator_id,
     operator_version: savedNode.operator_version,
     plugin_slug: "unavailable",
-    origin: savedNode.kind,
+    origin: savedNode.kind === "module" ? "module" : "builtin",
     title: savedNode.operator_id,
     description: `Saved operator ${identity} is not available in the live registry.`,
     catalog_visible: false,
@@ -205,15 +153,6 @@ function unavailableNodeSpec(savedNode: SavedGraphNode): NodeSpec {
     inputs: [],
     outputs: [],
   };
-}
-
-function persistedPluginReleasePin(
-  savedNode: SavedGraphNode,
-): WorkflowNodeData["pluginReleasePin"] {
-  const pin = savedNode.plugin_release_pin;
-  return pin
-    ? { scope: pin.scope, slug: pin.slug, revision: pin.revision }
-    : null;
 }
 
 function incompatibleNodeData(
@@ -241,7 +180,6 @@ function incompatibleNodeData(
     persistedNode: structuredClone(savedNode),
   };
   data.artifactTypeBindings = artifactTypeBindings;
-  data.pluginReleasePin = persistedPluginReleasePin(savedNode);
   data.config = structuredClone(savedNode.config ?? {});
   data.layout = hydrateNodeLayout(savedNode.layout);
   return data;
@@ -461,11 +399,7 @@ export function hydrateSavedGraph(
   const savedEdges = savedGraph.document.edges;
   const specs = new Map(
     registry.nodes.map((spec) => [
-      scopedOperatorKey(
-        spec.operator_id,
-        spec.operator_version,
-        spec.plugin_release,
-      ),
+      operatorKey(spec.operator_id, spec.operator_version),
       spec,
     ]),
   );
@@ -482,13 +416,7 @@ export function hydrateSavedGraph(
         savedNode.operator_id,
         savedNode.operator_version,
       );
-      const spec = specs.get(
-        scopedOperatorKey(
-          savedNode.operator_id,
-          savedNode.operator_version,
-          savedNode.plugin_release_pin,
-        ),
-      );
+      const spec = specs.get(operatorIdentity);
       let data: WorkflowNodeData;
       if (!spec) {
         data = incompatibleNodeData(savedNode, savedEdges, "unsupported", [
@@ -504,13 +432,8 @@ export function hydrateSavedGraph(
             spec,
             registry,
           );
-          data.pluginReleasePin = persistedPluginReleasePin(savedNode);
           data.config = structuredClone(savedNode.config ?? {});
-          data.spec = presentCopiedPreset(
-            resolveInstancePortShapes(spec, data.config),
-            data.config,
-            registry,
-          );
+          data.spec = resolveInstancePortShapes(spec, data.config);
           data.layout =
             hydrateNodeLayout(savedNode.layout) ?? defaultNodeLayout(spec);
         } catch (error) {

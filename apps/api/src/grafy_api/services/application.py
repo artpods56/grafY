@@ -11,7 +11,6 @@ built before the workbench components that receive it; it used to be built after
 
 import asyncio
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 
 from grafy_core.application.collaboration import CollaborationService
@@ -20,19 +19,14 @@ from grafy_core.application.modules import ModuleLibraryService
 from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.identity import parse_oidc_domain_workspace_grants
-from grafy_core.ports.storage import FileStoragePort
+from grafy_core.egress import TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE, EgressPolicy
 from grafy_persistence.database import Database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
-from grafy_workbench import BuiltinNodeCatalog
-from grafy_workbench.catalog import BUILTIN_FAMILIES
+from grafy_shared.config import EgressConfig
 
 from grafy_api.app_state import AppIdentity, AppResources
-from grafy_api.dev_plugins import DevPluginError, load_dev_plugins
+from grafy_api.services.families import build_application_registry
 from grafy_api.node_secrets import NodeSecretService
-from grafy_api.plugins.profiles import runtime_profile
-from grafy_api.plugins.runtime.docker import DockerPluginRuntime
-from grafy_api.plugins.runtime.egress import PluginEgressBrokerPolicy
-from grafy_api.plugins.runtime.network_policy import NetworkPolicy
 from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.services.composition import ExecutionLimits, build_workbench_components
 from grafy_api.settings import Settings
@@ -86,93 +80,36 @@ def build_app_identity(settings: Settings, database: Database) -> AppIdentity:
     )
 
 
-@dataclass(slots=True)
-class _RuntimeStartup:
-    plugin_runtime: DockerPluginRuntime | None
-    orphan_cleanup_confirmed: bool
+def workbench_egress_policy(egress: EgressConfig) -> EgressPolicy:
+    """The grants the workbench dials node-named destinations against.
 
+    Built while the app starts, so a destination the egress authority cannot read
+    fails the deployment here and names the variable the operator set, instead of
+    failing the first node that names the destination.
+    """
 
-async def _build_plugin_runtime(
-    *,
-    settings: Settings,
-    storage: FileStoragePort,
-    releases: PluginReleaseService,
-    egress_policy: PluginEgressBrokerPolicy,
-    network_policy: NetworkPolicy,
-    owner_lease: ApiOwnerLease | None,
-) -> _RuntimeStartup:
-    """Build and ready the host Docker sandbox, or report it is not enabled."""
-
-    plugins = settings.plugins
-    if not plugins.plugin_runtime_enabled:
-        return _RuntimeStartup(plugin_runtime=None, orphan_cleanup_confirmed=False)
-
-    seccomp_profile = plugins.resolved_seccomp_profile
-    if seccomp_profile is not None and not seccomp_profile.is_file():
-        raise RuntimeError("Configured Plugin seccomp profile is not a regular file")
-    plugin_runtime = DockerPluginRuntime(
-        releases=releases,
-        storage=storage,
-        bucket=settings.storage.storage_bucket,
-        profile=runtime_profile(
-            plugins.plugin_runtime_profile,
-            native_base_image=plugins.plugin_runtime_native_base_image,
-            native_base_image_digest=plugins.plugin_runtime_native_base_image_digest,
-        ),
-        scratch_root=settings.app.workspace / "plugin-runtime" / "scratch",
-        docker_binary=plugins.plugin_docker_binary,
-        seccomp_profile=seccomp_profile,
-        max_live_sandboxes=plugins.max_live_plugin_sandboxes,
-        max_distinct_releases_per_scope=(
-            plugins.max_distinct_plugin_releases_per_graph
-        ),
-        max_sandbox_variants_per_scope=(
-            plugins.max_plugin_sandbox_variants_per_execution
-        ),
-        egress_policy=egress_policy,
-        network_policy=network_policy,
-    )
-    await plugin_runtime.check_ready()
-    orphan_cleanup_confirmed = False
-    if owner_lease is not None:
-        await plugin_runtime.recover_orphans()
-        orphan_cleanup_confirmed = True
-    for profile in network_policy.profiles:
-        logger.info(
-            "network_profile plane=%s name=%s mode=%s digest=%s",
-            profile.plane.value,
-            profile.name,
-            profile.mode.value,
-            profile.policy_digest,
-        )
-    return _RuntimeStartup(
-        plugin_runtime=plugin_runtime,
-        orphan_cleanup_confirmed=orphan_cleanup_confirmed,
-    )
+    try:
+        return EgressPolicy.from_destinations(egress.egress_trusted_destinations)
+    except ValueError as exc:
+        raise ValueError(
+            f"{TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE} is not usable: {exc}"
+        ) from exc
 
 
 async def build_app_resources(
     *,
     settings: Settings,
     database: Database,
-    egress_policy: PluginEgressBrokerPolicy,
     owner_lease: ApiOwnerLease | None,
 ) -> AppResources:
     """Construct every lifespan resource and recover its execution state.
 
     On any recovery failure the partially built resources are torn down before the
-    error propagates, so a refused startup leaves no sandbox or room behind.
+    error propagates, so a refused startup leaves no active execution or room.
     """
 
     app = settings.app
-    if app.environment == "production" and settings.plugins.dev_plugins:
-        raise DevPluginError(
-            "GRAFY_DEV_PLUGINS is development-only and cannot run in production"
-        )
-    dev_plugins = load_dev_plugins(settings.plugins.dev_plugins)
-    registry = BuiltinNodeCatalog.load(
-        app.resolved_build_digest, families=(*BUILTIN_FAMILIES, *dev_plugins)
-    ).registry
+    registry = build_application_registry()
     storage = configured_file_storage(settings.storage, app.workspace)
 
     def new_unit_of_work() -> SqlAlchemyUnitOfWork:
@@ -186,15 +123,6 @@ async def build_app_resources(
         bucket=settings.storage.storage_bucket,
     )
     graph_room_hub = GraphRoomHub.from_settings(settings.realtime)
-    network_policy = NetworkPolicy.from_config(settings.egress)
-    runtime_startup = await _build_plugin_runtime(
-        settings=settings,
-        storage=storage,
-        releases=plugin_releases,
-        egress_policy=egress_policy,
-        network_policy=network_policy,
-        owner_lease=owner_lease,
-    )
     collaboration = CollaborationService(
         new_unit_of_work,
         registry,
@@ -205,17 +133,14 @@ async def build_app_resources(
     node_secrets = NodeSecretService(
         unit_of_work_factory=new_unit_of_work,
         plugin_registry=registry,
-        plugin_release_lookup=plugin_releases,
         encryption_key=settings.keys.credential_encryption_key,
     )
     resources = AppResources(
         database=database,
         workbench=build_workbench_components(
             plugin_registry=registry,
-            dev_plugin_slugs=frozenset(plugin.slug for plugin in dev_plugins),
-            dedupe_artifact_handlers=bool(dev_plugins),
             workspace=app.workspace,
-            limits=ExecutionLimits.from_config(settings.execution, settings.plugins),
+            limits=ExecutionLimits.from_config(settings.execution),
             unit_of_work=SqlAlchemyUnitOfWork(database.sessions),
             storage=storage,
             storage_backend=settings.storage.storage_backend,
@@ -224,10 +149,9 @@ async def build_app_resources(
             saved_graphs=saved_graphs,
             module_library=module_library,
             plugin_releases=plugin_releases,
-            plugin_runtime=runtime_startup.plugin_runtime,
             node_secrets=node_secrets,
             graph_room_hub=graph_room_hub,
-            network_policy=network_policy,
+            egress_policy=workbench_egress_policy(settings.egress),
             build_digest=app.resolved_build_digest,
         ),
         saved_graphs=saved_graphs,
@@ -239,7 +163,7 @@ async def build_app_resources(
         await _recover(
             resources,
             owner_lease=owner_lease,
-            orphan_cleanup_confirmed=runtime_startup.orphan_cleanup_confirmed,
+            orphan_cleanup_confirmed=True,
         )
     except BaseException:
         await resources.cleanup()

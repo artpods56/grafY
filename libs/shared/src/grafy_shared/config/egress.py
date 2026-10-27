@@ -19,6 +19,12 @@ class EgressConfig(BaseSettings):
     # that plane (they remain the source for postgresql.egress only).
     plugin_http_egress_destinations: tuple[str, ...] = ()
     plugin_postgresql_egress_destinations: tuple[str, ...] = ()
+    # Exact destinations an operator declares reachable even though they are not
+    # public addresses (ADR 0017): a self-hosted database behind a private
+    # address, or a model server on the local network. `grafy_core.egress` owns the
+    # grammar and the decision; this field exists so the variable belongs to the
+    # declared configuration surface and a malformed value is operator-visible.
+    egress_trusted_destinations: tuple[str, ...] = ()
     # Versioned deployment manifest of network access profiles and their
     # assignments. When configured, it replaces legacy HTTP destination grants
     # for Plugin execution; its absence translates the legacy egress variables.

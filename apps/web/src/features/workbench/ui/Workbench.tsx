@@ -1,7 +1,5 @@
 "use client";
 
-import { applyPythonCode, type ApplyPythonCodeResponse } from "@/lib/api";
-
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import * as stylex from "@stylexjs/stylex";
@@ -283,7 +281,6 @@ import {
   catalogNodeSpecs,
   downstreamCandidatesFromOutput,
   moduleCallUpgradeTarget,
-  pluginReleaseUpgradeTarget,
   upstreamCandidatesFromInput,
 } from "../model/node-catalog";
 import { workbenchGraphPath } from "../routes";
@@ -670,110 +667,6 @@ function WorkbenchBody({
     [applyAuthoringCommands],
   );
 
-  const applyNodePythonCode = React.useCallback(
-    async (nodeId: string, code: string): Promise<ApplyPythonCodeResponse> => {
-      const node = nodesRef.current.find(
-        (candidate) => candidate.id === nodeId,
-      );
-      if (!node?.data.pluginReleasePin)
-        throw new Error("Python runner is unavailable");
-      const result = await applyPythonCode(
-        workspaceId,
-        code,
-        node.data.pluginReleasePin,
-      );
-      if (!result.contract || result.diagnostics.length) return result;
-      const current = nodesRef.current.find(
-        (candidate) => candidate.id === nodeId,
-      );
-      if (
-        !current ||
-        current.data.config.code !== node.data.config.code ||
-        JSON.stringify(current.data.pluginReleasePin) !==
-          JSON.stringify(node.data.pluginReleasePin)
-      )
-        throw new Error(
-          "This node changed while Apply was running. Apply again.",
-        );
-      const contract = result.contract;
-      const changed = (port: "input" | "output") => {
-        const binding = current.data.artifactTypeBindings[port];
-        const next = contract[port];
-        return (
-          binding?.id !== next.artifact_type.id ||
-          binding.schema_version !== next.artifact_type.schema_version ||
-          current.data.config[`${port}_shape`] !== next.shape
-        );
-      };
-      const broken = edgesRef.current.filter(
-        (edge) =>
-          (edge.source === nodeId && changed("output")) ||
-          (edge.target === nodeId && changed("input")),
-      );
-      if (
-        broken.length &&
-        !window.confirm(
-          `Apply will disconnect these wires:\n${broken.map((edge) => `${edge.source} → ${edge.target} (${edge.id})`).join("\n")}\nContinue?`,
-        )
-      )
-        return result;
-      const params = current.data.config.params;
-      const defaults = Object.fromEntries(
-        Object.entries(contract.params_schema?.properties ?? {}).flatMap(
-          ([name, schema]) =>
-            typeof schema === "object" &&
-            schema !== null &&
-            !Array.isArray(schema) &&
-            "default" in schema
-              ? [[name, schema.default]]
-              : [],
-        ),
-      );
-      const config = {
-        ...current.data.config,
-        code,
-        code_sha256: result.code_sha256,
-        input_shape: contract.input.shape,
-        output_shape: contract.output.shape,
-        params_schema: contract.params_schema,
-        params: {
-          ...defaults,
-          ...(typeof params === "object" && params !== null ? params : {}),
-        },
-      };
-      applyAuthoringCommands([
-        ...(broken.length
-          ? [
-              {
-                kind: "remove_edges" as const,
-                edge_ids: broken.map((edge) => edge.id),
-              },
-            ]
-          : []),
-        ...Object.entries(config).map(([field, value]): GraphCommand => ({
-          kind: "update_node_configuration",
-          node_id: nodeId,
-          field,
-          value,
-        })),
-        {
-          kind: "bind_artifact_type",
-          node_id: nodeId,
-          variable: "input",
-          artifact_type: contract.input.artifact_type,
-        },
-        {
-          kind: "bind_artifact_type",
-          node_id: nodeId,
-          variable: "output",
-          artifact_type: contract.output.artifact_type,
-        },
-      ]);
-      return result;
-    },
-    [applyAuthoringCommands, workspaceId],
-  );
-
   const updateLayout = React.useCallback(
     (nodeId: string, layout: WorkflowNodeData["layout"]) => {
       applyAuthoringCommands([
@@ -909,44 +802,12 @@ function WorkbenchBody({
     [applyAuthoringCommands, canvasSelection, registry],
   );
 
-  const upgradePluginRelease = React.useCallback(
-    (nodeId: string) => {
-      const node = nodesRef.current.find(
-        (candidate) => candidate.id === nodeId,
-      );
-      if (!node || !workflowNodeIsSupported(node.data)) return;
-      const currentPin = pluginReleaseUpgradeTarget(
-        node.data.spec,
-        node.data.pluginReleasePin,
-      );
-      if (!currentPin) return;
-      applyAuthoringCommands([
-        {
-          kind: "update_node_plugin_release",
-          node_id: nodeId,
-          plugin_release: {
-            scope: currentPin.scope,
-            slug: currentPin.slug,
-            revision: currentPin.revision,
-          },
-        },
-      ]);
-      canvasSelection.selectOnly({ nodeIds: [nodeId] });
-      setRunError(null);
-    },
-    [applyAuthoringCommands, canvasSelection],
-  );
-
   const attachNodeCallbacks = React.useCallback(
     (data: WorkflowNodeData): WorkflowNodeData => {
       const upgradeTarget =
         registry && workflowNodeIsSupported(data)
           ? moduleCallUpgradeTarget(registry, data.spec)
           : null;
-      const pluginUpgradeTarget = pluginReleaseUpgradeTarget(
-        data.spec,
-        data.pluginReleasePin,
-      );
       if (!workflowNodeIsSupported(data)) {
         return {
           ...data,
@@ -965,15 +826,12 @@ function WorkbenchBody({
           onOpenModuleSource: undefined,
           moduleUpgradeRelease: null,
           onUpgradeModuleCall: undefined,
-          pluginUpgradeRelease: null,
-          onUpgradePluginRelease: undefined,
           onOpenExecutionHistory: openNodeExecutionHistory,
         };
       }
       return {
         ...data,
         onConfigChange: updateConfig,
-        onApplyPythonCode: applyNodePythonCode,
         onLayoutChange: updateLayout,
         onRemoveNode: removeNode,
         onAddInputPlug: addNodeInputPlug,
@@ -992,10 +850,6 @@ function WorkbenchBody({
           : undefined,
         moduleUpgradeRelease: upgradeTarget?.module_graph_revision ?? null,
         onUpgradeModuleCall: upgradeTarget ? upgradeModuleCall : undefined,
-        pluginUpgradeRelease: pluginUpgradeTarget?.revision ?? null,
-        onUpgradePluginRelease: pluginUpgradeTarget
-          ? upgradePluginRelease
-          : undefined,
         onOpenExecutionHistory: openNodeExecutionHistory,
       };
     },
@@ -1011,12 +865,10 @@ function WorkbenchBody({
       reorderNodeInputPlug,
       resetNodeArtifactTypeBinding,
       updateConfig,
-      applyNodePythonCode,
       updateLayout,
       updateArtifactQueryRelations,
       updateSchemaBuilderFields,
       upgradeModuleCall,
-      upgradePluginRelease,
     ],
   );
 

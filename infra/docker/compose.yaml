@@ -35,6 +35,7 @@ x-api-environment: &api-environment
   GRAFY_COMMAND_HMAC_KEY: ${GRAFY_COMMAND_HMAC_KEY:?GRAFY_COMMAND_HMAC_KEY must be set and non-empty}
   GRAFY_COMMAND_HMAC_KEY_VERSION: ${GRAFY_COMMAND_HMAC_KEY_VERSION:-1}
   GRAFY_REQUIRE_SINGLE_API_OWNER: "true"
+  GRAFY_EGRESS_TRUSTED_DESTINATIONS: ${GRAFY_EGRESS_TRUSTED_DESTINATIONS:-[]}
   GRAFY_MAP_MAX_CONCURRENCY: ${GRAFY_MAP_MAX_CONCURRENCY:-4}
   GRAFY_MAX_ACTIVE_EXECUTIONS: ${GRAFY_MAX_ACTIVE_EXECUTIONS:-2}
   GRAFY_STORAGE_BACKEND: ${GRAFY_STORAGE_BACKEND:-local}
@@ -57,7 +58,7 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/api.Dockerfile
-      target: api-plugins
+      target: api
     command: [".venv/bin/alembic", "upgrade", "head"]
     environment: *persistence-environment
     logging: *default-logging
@@ -71,7 +72,7 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/api.Dockerfile
-      target: api-plugins
+      target: api
     environment: *api-environment
     init: true
     logging: *default-logging

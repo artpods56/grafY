@@ -52,12 +52,11 @@ const scopedNode: AuthoredGraphDocument["nodes"][number] = {
   ],
   config: { nested: { threshold: 3 } },
   id: "scoped",
-  kind: "plugin",
+  kind: "builtin",
   input_plugs: [{ id: "plug-1", port: "rows" }],
   layout: { width: 420, body_height: 180, appendix_height: 260 },
   operator_id: "reports.render",
   operator_version: 7,
-  plugin_release_pin: { scope: "system", slug: "reports", revision: 11 },
   position: { x: 80, y: 120 },
 };
 
@@ -107,16 +106,11 @@ describe("room-command-bridge", () => {
         ],
         config: { nested: { threshold: 3 } },
         id: "scoped",
-        kind: "plugin",
+        kind: "builtin",
         input_plugs: [{ id: "plug-1", port: "rows" }],
         layout: { width: 420, body_height: 180, appendix_height: 260 },
         operator_id: "reports.render",
         operator_version: 7,
-        plugin_release_pin: {
-          scope: "system",
-          slug: "reports",
-          revision: 11,
-        },
         position: { x: 80, y: 120 },
       },
     });
@@ -158,14 +152,11 @@ describe("room-command-bridge", () => {
     Object.assign(room.node.config ?? {}, { nested: { threshold: 77 } });
     expect(local.node.config).toEqual({ nested: { threshold: 3 } });
     expect(replayedNode?.config).toEqual({ nested: { threshold: 3 } });
-    expect(replayedNode).toHaveProperty(
-      "plugin_release_pin",
-      scopedNode.plugin_release_pin,
-    );
+    expect(replayedNode).not.toHaveProperty("plugin_release_pin");
     expect(replayedNode).not.toHaveProperty("plugin_release");
   });
 
-  it("maps scoped pins through replace_document in both directions", () => {
+  it("maps family nodes through replace_document in both directions", () => {
     const room = toRoomGraphCommand(
       {
         kind: "replace_document",
@@ -186,11 +177,6 @@ describe("room-command-bridge", () => {
         nodes: [
           {
             id: "scoped",
-            plugin_release_pin: {
-              scope: "system",
-              slug: "reports",
-              revision: 11,
-            },
           },
         ],
       },
@@ -202,11 +188,6 @@ describe("room-command-bridge", () => {
         nodes: [
           {
             id: "scoped",
-            plugin_release_pin: {
-              scope: "system",
-              slug: "reports",
-              revision: 11,
-            },
           },
         ],
       },
@@ -218,11 +199,6 @@ describe("room-command-bridge", () => {
         nodes: [
           {
             id: "scoped",
-            plugin_release_pin: {
-              scope: "system",
-              slug: "reports",
-              revision: 11,
-            },
           },
         ],
       },
@@ -261,16 +237,11 @@ describe("room-command-bridge", () => {
             ],
             config: { nested: { threshold: 3 } },
             id: "scoped",
-            kind: "plugin",
+            kind: "builtin",
             input_plugs: [{ id: "plug-1", port: "rows" }],
             layout: { width: 420, body_height: 180, appendix_height: 260 },
             operator_id: "reports.render",
             operator_version: 7,
-            plugin_release_pin: {
-              scope: "system",
-              slug: "reports",
-              revision: 11,
-            },
             position: { x: 80, y: 120 },
           },
         ],
@@ -284,93 +255,6 @@ describe("room-command-bridge", () => {
         },
       },
     });
-  });
-
-  it("maps a Plugin upgrade to a scoped single-node CAS command", () => {
-    const room = toRoomGraphCommand(
-      {
-        kind: "update_node_plugin_release",
-        node_id: "scoped",
-        plugin_release: {
-          scope: "system",
-          slug: "reports",
-          revision: 12,
-        },
-      },
-      { name: "Demo", nodes: [scopedNode], edges: [], origins: [] },
-    );
-
-    expect(room).toEqual({
-      kind: "update_node_plugin_release",
-      node_id: "scoped",
-      plugin_release_pin: {
-        scope: "system",
-        slug: "reports",
-        revision: 12,
-      },
-      expected_plugin_release_pin: {
-        scope: "system",
-        slug: "reports",
-        revision: 11,
-      },
-    });
-    expect(toLocalGraphCommand(room!)).toEqual({
-      kind: "update_node_plugin_release",
-      node_id: "scoped",
-      plugin_release: {
-        scope: "system",
-        slug: "reports",
-        revision: 12,
-      },
-    });
-  });
-
-  it("applies an accepted Plugin upgrade without replacing presentation", () => {
-    const presentation = {
-      viewers: [
-        {
-          id: "viewer-1",
-          position: { x: 4, y: 8 },
-          layout: null,
-          mode: null,
-        },
-      ],
-      links: [],
-      bindings: [],
-      annotations: [],
-    };
-    const scopedHead: CollaborativeHead = {
-      ...head,
-      document: {
-        ...head.document,
-        nodes: [scopedNode, ...head.document.nodes],
-        presentation,
-      },
-    };
-    const room = toRoomGraphCommand(
-      {
-        kind: "update_node_plugin_release",
-        node_id: "scoped",
-        plugin_release: {
-          scope: "system",
-          slug: "reports",
-          revision: 12,
-        },
-      },
-      { name: "Demo", nodes: [scopedNode], edges: [], origins: [] },
-    );
-    if (!room) throw new Error("Expected Plugin upgrade command");
-
-    const next = applyRoomCommandToHead(scopedHead, room, 9);
-
-    expect(next.document.nodes[0]?.plugin_release_pin).toEqual({
-      scope: "system",
-      slug: "reports",
-      revision: 12,
-    });
-    expect(next.document.nodes[1]).toMatchObject(head.document.nodes[0]!);
-    expect(next.document.presentation).toEqual(presentation);
-    expect(next.collaboration_sequence).toBe(9);
   });
 
   it("maps an accepted room duplicate back to the REST authored shape", () => {
@@ -390,11 +274,6 @@ describe("room-command-bridge", () => {
       kind: "add_node",
       node: {
         id: "scoped-copy",
-        plugin_release_pin: {
-          scope: "system",
-          slug: "reports",
-          revision: 11,
-        },
       },
     });
   });
@@ -526,11 +405,6 @@ describe("room-command-bridge", () => {
     const afterAdd = applyRoomCommandToHead(head, add, 4);
     expect(afterAdd.document.nodes[1]).toMatchObject({
       id: "scoped",
-      plugin_release_pin: {
-        scope: "system",
-        slug: "reports",
-        revision: 11,
-      },
     });
     const afterDuplicate = applyRoomCommandToHead(
       afterAdd,
@@ -543,11 +417,6 @@ describe("room-command-bridge", () => {
     );
     expect(afterDuplicate.document.nodes[2]).toMatchObject({
       id: "scoped-copy",
-      plugin_release_pin: {
-        scope: "system",
-        slug: "reports",
-        revision: 11,
-      },
     });
   });
 

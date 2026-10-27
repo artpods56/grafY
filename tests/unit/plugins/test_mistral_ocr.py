@@ -59,7 +59,13 @@ from grafy_plugin_mistral.ocr import (
     MistralOcrNode,
     MistralOcrProviderError,
 )
+from grafy_plugin_mistral import ocr_sdk
 from grafy_plugin_mistral.ocr_sdk import MistralOcrSdkProvider
+from tests.support.egress import (
+    loopback_http_listener,
+    no_grants,
+    trusted_loopback_destination,
+)
 from grafy_core.domain.node_secrets import node_secret_dependency_sha256
 from grafy_core.domain.plugin_releases import (
     PluginArtifactTypeKey,
@@ -956,3 +962,47 @@ async def test_decode_images_maps_ocr_through_api_compile_and_execute(
                     image.getpixel((45 if index == 0 else 10, 50 if index == 0 else 10))
                     == base_color
                 )
+
+
+async def test_provider_dials_a_self_hosted_endpoint_only_when_the_operator_allows_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The provider endpoint is dialable only through the deployment policy.
+
+    A Mistral-compatible server kept on the local network is reached with the grant
+    an operator writes for it. Without the grant the request is refused before a
+    socket opens, so the listener never sees it.
+    """
+
+    monkeypatch.setattr(ocr_sdk, "MISTRAL_API_BASE_URL", "http://127.0.0.1:1")
+    async with loopback_http_listener(body=ocr_response().content) as listener:
+        monkeypatch.setattr(ocr_sdk, "MISTRAL_API_BASE_URL", listener.base_url)
+        config = MistralOcrConfig(timeout_ms=5_000, max_retries=0)
+
+        async def process(egress_policy: object) -> str:
+            provider = MistralOcrSdkProvider(
+                uow=InMemoryUnitOfWork(),
+                storage=FakeStorage(),
+                egress_policy=egress_policy,  # pyright: ignore[reportArgumentType]
+            )
+            output = await provider.process(
+                document_url="https://files.example/report.pdf",
+                image=None,
+                config=config,
+                api_key=SecretStr("secret-provider-key"),
+                workspace_id=WORKSPACE_ID,
+            )
+            return output.markdown.markdown
+
+        assert await process(trusted_loopback_destination()) == "# Invoice\n\nTotal 10"
+        assert [request.path for request in listener.requests] == ["/v1/ocr"]
+
+        # A destination this deployment refuses says so as itself, instead of
+        # arriving as a connection failure the provider would also cause.
+        with pytest.raises(
+            MistralOcrProviderError, match="may not be dialed"
+        ) as raised:
+            await process(no_grants())
+
+        assert "127.0.0.1" in str(raised.value)
+        assert len(listener.requests) == 1

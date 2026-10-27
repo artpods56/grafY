@@ -157,7 +157,7 @@ export function addNodeCommand(
       ),
       config: structuredClone(data.config),
       id: nodeId,
-      kind: data.spec.origin,
+      kind: data.spec.origin === "module" ? "module" : "builtin",
       input_plugs: data.inputPlugs.map((plug) => ({
         id: plug.id,
         port: plug.portName,
@@ -165,14 +165,6 @@ export function addNodeCommand(
       layout: serializeNodeLayout(data.layout),
       operator_id: data.spec.operator_id,
       operator_version: data.spec.operator_version,
-      plugin_release_pin:
-        data.spec.origin === "plugin" && data.pluginReleasePin
-          ? {
-              scope: data.pluginReleasePin.scope,
-              slug: data.pluginReleasePin.slug,
-              revision: data.pluginReleasePin.revision,
-            }
-          : null,
       position: { x: position.x, y: position.y },
     },
   };

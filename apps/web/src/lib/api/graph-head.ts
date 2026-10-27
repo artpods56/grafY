@@ -9,11 +9,10 @@ export function collaborativeHeadFromLegacy(
     ...metadata,
     document: {
       schema_version: 7,
-      nodes: nodes.map(({ plugin_release, ...node }) => ({
+      nodes: nodes.map((node) => ({
         ...node,
         artifact_type_bindings: node.artifact_type_bindings ?? [],
         input_plugs: node.input_plugs ?? [],
-        plugin_release_pin: plugin_release,
       })),
       edges: edges.map((edge) => ({
         ...edge,

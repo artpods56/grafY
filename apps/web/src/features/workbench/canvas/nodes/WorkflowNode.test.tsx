@@ -159,7 +159,7 @@ import { fieldFootprint } from "./field-footprints";
 
 function unavailableSpec(): NodeSpec {
   return {
-    operator_id: "legacy.operator",
+    operator_id: "python.transform",
     operator_version: 4,
     plugin_slug: "unavailable",
     origin: "builtin",
@@ -731,63 +731,6 @@ describe("WorkflowNode module upgrade", () => {
   });
 });
 
-describe("WorkflowNode scoped Plugin upgrade", () => {
-  it("moves an exact pin only after the user chooses the current release", () => {
-    const onUpgradePluginRelease = vi.fn();
-    const data = createWorkflowNodeData({
-      operator_id: "notes.summary.render",
-      operator_version: 1,
-      plugin_slug: "notes",
-      origin: "plugin",
-      plugin_revision: 3,
-      plugin_release: { scope: "workspace", slug: "notes", revision: 3 },
-      title: "Render summary",
-      description: "Workspace Plugin node",
-      catalog_visible: true,
-      runnable: true,
-      config_schema: {},
-      input_schema: {},
-      output_schema: {},
-      inputs: [],
-      outputs: [],
-    });
-    data.pluginReleasePin = {
-      scope: "workspace",
-      slug: "notes",
-      revision: 1,
-    };
-    data.pluginUpgradeRelease = 3;
-    data.onUpgradePluginRelease = onUpgradePluginRelease;
-
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    React.act(() => {
-      root.render(
-        <WorkflowNodeCard
-          {...({
-            id: "plugin-node",
-            data,
-            selected: true,
-          } as React.ComponentProps<typeof WorkflowNodeCard>)}
-        />,
-      );
-    });
-
-    expect(data.pluginReleasePin).toEqual({
-      scope: "workspace",
-      slug: "notes",
-      revision: 1,
-    });
-    const upgradeButton = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Upgrade Plugin to release 3"]',
-    );
-    expect(upgradeButton).not.toBeNull();
-    React.act(() => upgradeButton?.click());
-    expect(onUpgradePluginRelease).toHaveBeenCalledWith("plugin-node");
-    React.act(() => root.unmount());
-  });
-});
-
 describe("WorkflowNode compatibility rendering", () => {
   it("renders an unsupported node with inert historical handles and removal", () => {
     const removeNode = vi.fn();
@@ -797,13 +740,13 @@ describe("WorkflowNode compatibility rendering", () => {
     data.config = { preserved: true };
     data.compatibility = {
       status: "unsupported",
-      issues: ["Operator legacy.operator@4 is unavailable."],
+      issues: ["Operator python.transform@4 is unavailable."],
       inputs: [input],
       outputs: [output],
       persistedNode: {
         id: "legacy-node",
         kind: "builtin",
-        operator_id: "legacy.operator",
+        operator_id: "python.transform",
         operator_version: 4,
         config: { preserved: true },
         position: { x: 10, y: 20 },
@@ -834,7 +777,7 @@ describe("WorkflowNode compatibility rendering", () => {
     ).not.toBeNull();
     expect(container.textContent).toContain("unsupported");
     expect(container.textContent).toContain(
-      "Operator legacy.operator@4 is unavailable.",
+      "Operator python.transform@4 is unavailable.",
     );
     expect(container.textContent).toContain('"preserved": true');
 

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated, ClassVar, Literal, Self
+from typing import cast, Annotated, ClassVar, Literal, Self
 from uuid import UUID
 
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
@@ -25,7 +25,6 @@ from grafy_core.domain.saved_graphs import (
     UserGraphState,
     normalize_saved_graph_edge_conversion,
     validate_graph_layout_dimensions,
-    validate_graph_node_release_pin,
 )
 from pydantic import (
     BaseModel,
@@ -38,7 +37,6 @@ from pydantic import (
 
 from grafy_api.v1.models import (
     ArtifactTypeBindingModel,
-    PluginReleasePinModel,
 )
 
 Identifier = GraphIdentifier
@@ -79,7 +77,7 @@ class SavedGraphNodeLayoutModel(SavedGraphApiModel):
 
 
 class SavedGraphNodeModel(SavedGraphApiModel):
-    kind: Literal["builtin", "plugin", "module"]
+    kind: Literal["builtin", "module"]
     id: Identifier
     operator_id: Identifier
     operator_version: int = Field(ge=1)
@@ -90,7 +88,6 @@ class SavedGraphNodeModel(SavedGraphApiModel):
     artifact_type_bindings: list[ArtifactTypeBindingModel] = Field(
         default_factory=list,
     )
-    plugin_release: PluginReleasePinModel | None = None
 
     @model_validator(mode="after")
     def validate_artifact_type_bindings(self) -> Self:
@@ -99,12 +96,17 @@ class SavedGraphNodeModel(SavedGraphApiModel):
             raise ValueError("Node artifact type binding variables must be unique")
         return self
 
-    @model_validator(mode="after")
-    def validate_kind_and_pin(self) -> Self:
-        validate_graph_node_release_pin(
-            self.kind, has_pin=self.plugin_release is not None
-        )
-        return self
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_implementation(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(cast(dict[object, object], value))
+        normalized.pop("plugin_release", None)
+        normalized.pop("plugin_release_pin", None)
+        if normalized.get("kind") == "plugin":
+            normalized["kind"] = "builtin"
+        return normalized
 
 
 class SavedGraphProjectionModel(SavedGraphApiModel):
@@ -468,7 +470,6 @@ class CollaborativeHeadResponse(SavedGraphApiModel):
         nodes: list[dict[str, object]] = []
         for node in head.document.nodes:
             serialized = node.model_dump()
-            serialized["plugin_release"] = serialized.pop("plugin_release_pin")
             nodes.append(serialized)
         payload["nodes"] = nodes
         return cls.model_validate(payload)

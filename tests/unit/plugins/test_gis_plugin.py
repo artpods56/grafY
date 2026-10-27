@@ -2,6 +2,7 @@ import json
 import math
 import socket
 import subprocess
+import sys
 from hashlib import sha256
 from pathlib import Path
 from typing import cast
@@ -11,6 +12,7 @@ import grafy_plugin_gis.wfs as wfs_module
 import httpx
 import pytest
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeSpec
+from grafy_core.bounded_subprocess import BoundedSubprocessError
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.file_contracts import BLOB_FILE, TIFF_FILE
 from grafy_core.nodes import NodeExecutionContext
@@ -89,6 +91,12 @@ from grafy_storage import LocalFileObjectStore
 from grafy_workbench.table import TABLES
 from pydantic import ValidationError
 
+from tests.support.egress import (
+    loopback_http_listener,
+    no_grants,
+    resolve_loopback_host,
+    trusted_loopback_network,
+)
 from tests.support.file_artifacts import seed_file_artifact
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
@@ -243,6 +251,98 @@ def test_wfs_import_declares_its_configured_http_egress_contract() -> None:
         NodeHttpEgressInput(config_field="service_url"),
     )
     assert registration.http_egress.dynamic_destinations is False
+
+
+def test_gdal_cli_scrubs_ambient_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GRAFY_TEST_SECRET_SENTINEL", "must-not-reach-gdal")
+    monkeypatch.setenv("LANG", "allowlisted-locale")
+    monkeypatch.setenv("GDAL_NUM_THREADS", "ALL_CPUS")
+    environment_path = tmp_path / "child-environment.json"
+    executable = tmp_path / "fake-gdal"
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        f"with open({str(environment_path)!r}, 'w') as stream:\n"
+        " json.dump([os.getenv(key) for key in "
+        "('GRAFY_TEST_SECRET_SENTINEL', 'LANG', 'HOME', 'GDAL_CONFIG_FILE', "
+        "'GDAL_NUM_THREADS', 'GDAL_CACHEMAX')], stream)\n"
+        "print('GDAL 3.10.3' if '--version' in sys.argv else "
+        "'PMTiles -vector- (rw)\\nCOG -raster- (rw)\\nPNG -raster- (rw)')\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    cli = GdalCli(
+        gdalinfo=str(executable),
+        ogr2ogr=str(executable),
+        gdal_translate=str(executable),
+        gdal2tiles=str(executable),
+    )
+    capabilities = cli.capabilities()
+    assert capabilities.gdalinfo_version == "3.10.3"
+    assert (
+        capabilities.pmtiles_write and capabilities.cog_write and capabilities.png_write
+    )
+    assert json.loads(environment_path.read_text()) == [
+        None,
+        "allowlisted-locale",
+        None,
+        "/dev/null",
+        "1",
+        "64",
+    ]
+
+
+def test_gdal_run_preserves_error_message_shapes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import grafy_plugin_gis.gdal as gdal_module
+
+    missing = tmp_path / "missing-gdal"
+    with pytest.raises(GdalError) as not_found:
+        GdalCli(gdalinfo=str(missing)).capabilities()
+    assert str(not_found.value) == (
+        "checking gdalinfo version could not start because executable "
+        f"{str(missing)!r} was not found"
+    )
+
+    executable = tmp_path / "fake-gdal"
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "print('  bad\\n source  ', file=sys.stderr)\n"
+        "sys.exit(7)\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    cli = GdalCli(gdalinfo=str(executable))
+    with pytest.raises(GdalError) as nonzero:
+        cli.capabilities()
+    assert str(nonzero.value) == (
+        f"checking gdalinfo version failed in executable {str(executable)!r} "
+        "with exit code 7: bad source"
+    )
+
+    def timed_out(
+        *_args: object, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        raise BoundedSubprocessError(
+            "checking gdalinfo version",
+            -9,
+            True,
+            "",
+        )
+
+    monkeypatch.setattr(gdal_module, "run_bounded", timed_out)
+    with pytest.raises(GdalError) as timeout:
+        cli.capabilities()
+    assert str(timeout.value) == (
+        f"checking gdalinfo version failed in executable {str(executable)!r} "
+        "because it exceeded the bounded wall-clock limit: no diagnostic output"
+    )
 
 
 def test_bounds_config_schemas_describe_fixed_wgs84_positions() -> None:
@@ -705,47 +805,6 @@ def test_wfs_import_requires_a_bounded_total_feature_limit(
                 "max_features": max_features,
             }
         )
-
-
-@pytest.mark.asyncio
-async def test_wfs_import_routes_through_the_broker_without_guest_dns(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    requested: list[httpx.URL] = []
-
-    def respond(request: httpx.Request) -> httpx.Response:
-        requested.append(request.url)
-        payload = json.loads(feature_collection([(13.4, 52.5)]))
-        payload["numberMatched"] = 1
-        payload["numberReturned"] = 1
-        return httpx.Response(200, json=payload)
-
-    monkeypatch.setenv("GRAFY_PLUGIN_PROXY", "http://127.0.0.1:3128")
-
-    def fail_if_resolving(*_args: object, **_kwargs: object) -> object:
-        raise AssertionError("broker mode must not resolve DNS in the guest")
-
-    monkeypatch.setattr(socket, "getaddrinfo", fail_if_resolving)
-
-    node = ImportWfsNode(WfsClient(transport=httpx.MockTransport(respond)))
-    result = await node.run(
-        NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="wfs"),
-        WfsImportConfig.model_validate(
-            {
-                "service_url": "https://example.com/geoserver/ows",
-                "type_name": "geonode:roads",
-                "source_name": "Roads",
-                "max_features": 1,
-            }
-        ),
-        WfsImportInput(),
-    )
-
-    assert len(result.features.features) == 1
-    assert len(requested) == 1
-    assert requested[0].raw_host == b"example.com"
-    assert requested[0].path == "/geoserver/ows"
-    assert requested[0].params["startIndex"] == "0"
 
 
 @pytest.mark.asyncio
@@ -1290,3 +1349,68 @@ async def test_missing_gdal_driver_error_preserves_source_and_node_context(
             ),
         )
     assert isinstance(error.value.__cause__, GdalError)
+
+
+@pytest.mark.asyncio
+async def test_wfs_import_dials_a_named_private_service_only_with_the_operator_grant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A self-hosted WFS behind a private address is dialable by grant alone.
+
+    The node configuration still rejects a loopback literal, so the destination is
+    named the way an author would name it and resolves to the listener behind the
+    grant. The dial keeps the name in the `Host` header, so the service sees the
+    endpoint the graph named rather than an address.
+    """
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve_loopback_host)
+
+    async def fetch(egress_policy: object) -> int:
+        client = WfsClient(egress_policy=egress_policy)  # pyright: ignore[reportArgumentType]
+        result = await client.fetch_feature_collection(
+            service_url=f"http://wfs.internal:{listener.port}/geoserver/ows",
+            type_name="internal:roads",
+            source_name="Roads",
+            page_size=1,
+            max_features=1,
+            max_page_bytes=1_024,
+            timeout_seconds=5,
+            bbox=None,
+        )
+        return len(result.features)
+
+    async with loopback_http_listener(
+        body=feature_collection((13.4, 52.5))
+    ) as listener:
+        assert await fetch(trusted_loopback_network()) == 1
+        request = listener.requests[0]
+        assert request.path.startswith("/geoserver/ows")
+        assert request.headers["host"] == f"wfs.internal:{listener.port}"
+
+        with pytest.raises(WfsImportError, match="non-public address 127.0.0.1"):
+            await fetch(no_grants())
+
+        assert len(listener.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "service_url",
+    ["http://[::1]:4000/geoserver/ows", "http://[fd00::10]:4000/geoserver/ows"],
+)
+def test_wfs_config_rejects_a_bracketed_ipv6_literal_address(service_url: str) -> None:
+    """A bracketed IPv6 literal is an address, not a name to be trusted.
+
+    `AnyHttpUrl` keeps the brackets, and an address that cannot be parsed is not
+    the same as an address that is public; the guard that rejects them is the one
+    that reads them.
+    """
+
+    with pytest.raises(ValidationError, match="must not target"):
+        WfsImportConfig.model_validate(
+            {
+                "service_url": service_url,
+                "type_name": "internal:roads",
+                "source_name": "Roads",
+                "max_features": 1,
+            }
+        )

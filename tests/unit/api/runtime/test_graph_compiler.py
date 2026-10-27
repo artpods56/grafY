@@ -18,7 +18,6 @@ from grafy_api.execution.requests import (
     RunOriginRequest,
     RunRequest,
 )
-from grafy_api.plugins.runtime.admission import ReleaseExecutionAdmission
 from grafy_api.v1.models import (
     ArtifactTypeBindingModel,
     ArtifactTypeKeyResponse,
@@ -113,11 +112,6 @@ def _compiler(
         plugin_context=plugin_context,
         module_library=ModuleLibraryService(_unused_saved_graph_uow, resolved_registry),
         canonical_artifact_conversions=canonical_artifact_conversions,
-        plugin_release_lookup=SYSTEM_DEPLOYMENT.release_lookup,
-        release_admission=ReleaseExecutionAdmission(
-            isolated_adapter_available=False,
-            runtime_profile=None,
-        ),
         build_digest=TEST_BUILD_DIGEST,
     )
 
