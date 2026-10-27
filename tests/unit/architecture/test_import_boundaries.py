@@ -117,12 +117,16 @@ def test_plugin_families_are_installed_from_the_workspace() -> None:
         assert "wheels/" not in plugin_text
         assert "SOURCE_DATE_EPOCH" not in plugin_text
 
+    # The publication fixture hands this wheel to a Plugin as if it were a release,
+    # so it has to be the wheel `just sdk-wheel` builds from current `libs/core`
+    # source. `SOURCE_DATE_EPOCH=0` makes it byte-for-byte reproducible, which is
+    # what lets a digest stand in for content here.
     core_wheel = (
         REPO_ROOT
         / "tests/fixtures/plugin-notes/wheels/grafy_core-0.1.0-py3-none-any.whl"
     )
     assert sha256(core_wheel.read_bytes()).hexdigest() == (
-        "bb1a53b247ef934625d985b3bdb1f3fbe6e726b0f002d77f60d452906475bcd2"
+        "a84f39c411156a2ce4f4314373ac9d603948d70e618140fbe093bb26fa631d9d"
     )
 
 

@@ -16,8 +16,10 @@ x-api-environment: &api-environment
   GRAFY_ENVIRONMENT: ${GRAFY_ENVIRONMENT:-development}
   # GRAFY_BUILD_DIGEST is deliberately not listed. Release images bake it in
   # (api.Dockerfile, api-release), and listing it here, even as a null import,
-  # removes the baked value from the container. Local builds leave it absent so
-  # development settings fall back to an ephemeral digest.
+  # removes the baked value from the container. Local builds leave it absent, so
+  # development settings derive the digest from the working tree they run from
+  # (AppConfig.resolved_build_digest) and fall back to a per-process digest only
+  # when no repository is readable.
   GRAFY_LOG_LEVEL: ${GRAFY_LOG_LEVEL:-INFO}
   GRAFY_LOG_RENDERER: ${GRAFY_LOG_RENDERER:-json}
   GRAFY_PUBLIC_ORIGIN: ${GRAFY_PUBLIC_ORIGIN:-https://grafy.example.com}

@@ -43,6 +43,15 @@ implementation build digest in the cache key. Mutable remote reads use
 `NodeCachePolicy.NEVER`. A deployment invalidates earlier node implementations,
 including expensive GIS and provider work.
 
+Every artifact an execution writes records that digest in its metadata, including
+each item of a sequence port, because that record is how a later read tells
+whether the current build produced an output. A development process has no image
+to bake a digest into, so it derives one from its working tree: HEAD plus the
+content of every path that differs from it. Restarting an unchanged tree therefore
+keeps materialized outputs and cached invocations, and any edit to source moves
+the digest. Outside a readable repository it falls back to a per-process digest,
+which matches nothing.
+
 ## Stored-data compatibility
 
 Family slugs such as `external.gis` remain stable because saved documents and
@@ -54,3 +63,13 @@ historical artifact metadata even when the producing operator is unavailable.
 The retained release and publication modules support historical data during the
 first milestone. They do not register executable families. Their tests and the
 archived notes SDK wheel are independent of live family dependencies.
+
+That archived wheel is nonetheless a reproducible build of current `libs/core`
+(`just sdk-wheel` fixes `SOURCE_DATE_EPOCH=0`), so it moves whenever a module a
+Plugin imports moves. Three artifacts have to move together: the wheel under
+`tests/fixtures/plugin-notes/wheels`, the hash `tests/fixtures/plugin-notes/uv.lock`
+records for it (`uv lock --upgrade-package grafy-core`), and the digest pinned in
+`tests/unit/architecture/test_import_boundaries.py`. Note what that pin does and
+does not catch: it compares the wheel to a digest, never to `libs/core`, so a wheel
+that lags the source stays green until something tries to resolve it and reports a
+hash mismatch.

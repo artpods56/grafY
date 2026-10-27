@@ -263,6 +263,12 @@ class OutputPersister:
                         node_context=context.node_context,
                         provenance=context.provenance,
                         item_index=index,
+                        # The node's own metadata describes who produced this port's
+                        # output, and it describes each item equally. Dropping it here
+                        # left sequence items without an implementation identity, so
+                        # every read that asks "was this written by the current build?"
+                        # answered no.
+                        metadata=context.metadata,
                     ),
                 )
                 for index, item in enumerate(items)

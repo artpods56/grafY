@@ -226,11 +226,9 @@ def _graph_payload(expected_revision: int | None = None) -> dict[str, object]:
         SavedGraphEdgeModel.model_validate({"id": f"edge-{index}", **edge})
         for index, edge in enumerate(edges, start=1)
     ]
-    serialized_nodes: list[dict[str, object]] = []
-    for node in node_models:
-        serialized = node.model_dump(mode="json")
-        serialized["plugin_release_pin"] = serialized.pop("plugin_release")
-        serialized_nodes.append(serialized)
+    serialized_nodes: list[dict[str, object]] = [
+        node.model_dump(mode="json") for node in node_models
+    ]
     document = SavedGraphDocument.model_validate(
         {
             "nodes": serialized_nodes,
@@ -351,11 +349,9 @@ def _collect_graph_payload() -> dict[str, object]:
             to_plug="sequence-plug",
         ),
     ]
-    serialized_nodes: list[dict[str, object]] = []
-    for node in nodes:
-        serialized = node.model_dump(mode="json")
-        serialized["plugin_release_pin"] = serialized.pop("plugin_release")
-        serialized_nodes.append(serialized)
+    serialized_nodes: list[dict[str, object]] = [
+        node.model_dump(mode="json") for node in nodes
+    ]
     return CreateSavedGraphRequest(
         name="Durable collect graph",
         document=SavedGraphDocument.model_validate(
