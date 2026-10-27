@@ -1,15 +1,13 @@
 import json
-from functools import partial
 from pathlib import Path
 from typing import Literal
 
 import httpx2
 import pytest
 from pydantic import SecretStr
-from typesafe_sdk import AsyncTypeSafeClient
 
-from grafy_plugin_typesafe import sdk
 from scripts.smoke_typesafe import LocalGraph, run_case
+from tests.support.egress import answer_httpx2_dials
 
 
 @pytest.mark.parametrize("state_form", ["text", "json"])
@@ -62,14 +60,7 @@ async def test_smoke_runs_all_four_nodes_with_one_sdk_request(
             },
         )
 
-    monkeypatch.setattr(
-        sdk,
-        "AsyncTypeSafeClient",
-        partial(
-            AsyncTypeSafeClient,
-            transport=httpx2.MockTransport(respond),
-        ),
-    )
+    answer_httpx2_dials(monkeypatch, respond)
     state = (
         "Refund please"
         if state_form == "text"

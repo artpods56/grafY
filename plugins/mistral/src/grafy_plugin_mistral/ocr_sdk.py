@@ -14,9 +14,11 @@ from pydantic import SecretStr
 
 from grafy_core.artifact_contracts import RASTER_IMAGE
 from grafy_core.artifacts import ArtifactRef
+from grafy_core.egress import EgressPolicy, EgressRejectedError
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.storage import FileStoragePort
 
+from grafy_plugin_mistral.egress_transport import EgressPinnedHttpx2Transport
 from grafy_plugin_mistral.ocr import (
     MistralOcrConfig,
     MistralOcrOutput,
@@ -51,9 +53,14 @@ class MistralOcrSdkProvider(MistralOcrProvider):
         *,
         uow: UnitOfWorkPort,
         storage: FileStoragePort,
+        egress_policy: EgressPolicy | None = None,
     ) -> None:
         self._uow = uow
         self._storage = storage
+        # The Mistral SDK builds its own requests, so the provider endpoint can
+        # only be pinned from below. `None` takes the deployment policy named by
+        # `GRAFY_EGRESS_TRUSTED_DESTINATIONS`, read when the request is dialed.
+        self._egress_policy = egress_policy
 
     @override
     async def process(
@@ -101,6 +108,7 @@ class MistralOcrSdkProvider(MistralOcrProvider):
             async with httpx.AsyncClient(
                 follow_redirects=False,
                 timeout=config.timeout_ms / 1_000,
+                transport=EgressPinnedHttpx2Transport(policy=self._egress_policy),
             ) as http_client:
                 async with Mistral(
                     api_key=api_key_value,
@@ -249,6 +257,11 @@ def _provider_error(
     endpoint: str,
     model: str,
 ) -> MistralOcrProviderError:
+    if isinstance(exc, EgressRejectedError):
+        return MistralOcrProviderError(
+            f"OCR request to {endpoint!r} may not be dialed by this deployment "
+            f"for model {model!r}: {exc}"
+        )
     if isinstance(exc, httpx.TimeoutException):
         return MistralOcrProviderError(
             f"OCR request to {endpoint!r} timed out for model {model!r}"

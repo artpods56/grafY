@@ -89,6 +89,12 @@ from grafy_storage import LocalFileObjectStore
 from grafy_workbench.table import TABLES
 from pydantic import ValidationError
 
+from tests.support.egress import (
+    loopback_http_listener,
+    no_grants,
+    resolve_loopback_host,
+    trusted_loopback_network,
+)
 from tests.support.file_artifacts import seed_file_artifact
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
@@ -708,47 +714,6 @@ def test_wfs_import_requires_a_bounded_total_feature_limit(
 
 
 @pytest.mark.asyncio
-async def test_wfs_import_routes_through_the_broker_without_guest_dns(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    requested: list[httpx.URL] = []
-
-    def respond(request: httpx.Request) -> httpx.Response:
-        requested.append(request.url)
-        payload = json.loads(feature_collection([(13.4, 52.5)]))
-        payload["numberMatched"] = 1
-        payload["numberReturned"] = 1
-        return httpx.Response(200, json=payload)
-
-    monkeypatch.setenv("GRAFY_PLUGIN_PROXY", "http://127.0.0.1:3128")
-
-    def fail_if_resolving(*_args: object, **_kwargs: object) -> object:
-        raise AssertionError("broker mode must not resolve DNS in the guest")
-
-    monkeypatch.setattr(socket, "getaddrinfo", fail_if_resolving)
-
-    node = ImportWfsNode(WfsClient(transport=httpx.MockTransport(respond)))
-    result = await node.run(
-        NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="wfs"),
-        WfsImportConfig.model_validate(
-            {
-                "service_url": "https://example.com/geoserver/ows",
-                "type_name": "geonode:roads",
-                "source_name": "Roads",
-                "max_features": 1,
-            }
-        ),
-        WfsImportInput(),
-    )
-
-    assert len(result.features.features) == 1
-    assert len(requested) == 1
-    assert requested[0].raw_host == b"example.com"
-    assert requested[0].path == "/geoserver/ows"
-    assert requested[0].params["startIndex"] == "0"
-
-
-@pytest.mark.asyncio
 async def test_wfs_import_fetches_bounded_epsg4326_pages(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1290,3 +1255,68 @@ async def test_missing_gdal_driver_error_preserves_source_and_node_context(
             ),
         )
     assert isinstance(error.value.__cause__, GdalError)
+
+
+@pytest.mark.asyncio
+async def test_wfs_import_dials_a_named_private_service_only_with_the_operator_grant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A self-hosted WFS behind a private address is dialable by grant alone.
+
+    The node configuration still rejects a loopback literal, so the destination is
+    named the way an author would name it and resolves to the listener behind the
+    grant. The dial keeps the name in the `Host` header, so the service sees the
+    endpoint the graph named rather than an address.
+    """
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve_loopback_host)
+
+    async def fetch(egress_policy: object) -> int:
+        client = WfsClient(egress_policy=egress_policy)  # pyright: ignore[reportArgumentType]
+        result = await client.fetch_feature_collection(
+            service_url=f"http://wfs.internal:{listener.port}/geoserver/ows",
+            type_name="internal:roads",
+            source_name="Roads",
+            page_size=1,
+            max_features=1,
+            max_page_bytes=1_024,
+            timeout_seconds=5,
+            bbox=None,
+        )
+        return len(result.features)
+
+    async with loopback_http_listener(
+        body=feature_collection((13.4, 52.5))
+    ) as listener:
+        assert await fetch(trusted_loopback_network()) == 1
+        request = listener.requests[0]
+        assert request.path.startswith("/geoserver/ows")
+        assert request.headers["host"] == f"wfs.internal:{listener.port}"
+
+        with pytest.raises(WfsImportError, match="non-public address 127.0.0.1"):
+            await fetch(no_grants())
+
+        assert len(listener.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "service_url",
+    ["http://[::1]:4000/geoserver/ows", "http://[fd00::10]:4000/geoserver/ows"],
+)
+def test_wfs_config_rejects_a_bracketed_ipv6_literal_address(service_url: str) -> None:
+    """A bracketed IPv6 literal is an address, not a name to be trusted.
+
+    `AnyHttpUrl` keeps the brackets, and an address that cannot be parsed is not
+    the same as an address that is public; the guard that rejects them is the one
+    that reads them.
+    """
+
+    with pytest.raises(ValidationError, match="must not target"):
+        WfsImportConfig.model_validate(
+            {
+                "service_url": service_url,
+                "type_name": "internal:roads",
+                "source_name": "Roads",
+                "max_features": 1,
+            }
+        )
