@@ -518,6 +518,7 @@ class GeoRasterScanImportOutput(NodeOutput):
     operator_id="gis.raster_scan.import",
     version=1,
     title="Import raster scan",
+    cache_policy=NodeCachePolicy.EXACT,
     factory=lambda context: ImportRasterScanNode(
         storage=context.storage,
         uow=context.uow,
