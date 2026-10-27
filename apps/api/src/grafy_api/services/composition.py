@@ -1,8 +1,7 @@
 """Composition root for workbench-facing application components."""
 
 import logging
-from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from grafy_core.artifacts import ArtifactTypeKey
@@ -13,6 +12,7 @@ from grafy_core.canonical_conversions import (
     CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,
     CanonicalArtifactConversionMap,
 )
+from grafy_core.egress import EgressPolicy, default_egress_policy
 from grafy_core.file_contracts import BUILTIN_FILE_FORMATS, build_extension_table
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.materialized_outputs import WorkbenchUnitOfWorkPort
@@ -31,7 +31,7 @@ from grafy_core.runtime.persistence import (
 )
 from grafy_core.runtime.persistent_invocation_cache import PersistentInvocationCache
 from grafy_core.runtime.resolvers import Resolver, ResolverRegistry
-from grafy_shared.config import ExecutionConfig, PluginsConfig
+from grafy_shared.config import ExecutionConfig
 from grafy_storage import LocalFileObjectStore
 
 from grafy_api.artifact_availability import ArtifactAvailability
@@ -45,13 +45,6 @@ from grafy_api.execution.materializations import MaterializationService
 from grafy_api.execution.node_execution import NodeExecutionService
 from grafy_api.execution.preflight import GraphRunPreflight
 from grafy_api.execution.run_graph import RunGraph
-from grafy_api.plugins.runtime.admission import (
-    ReleaseExecutionAdmission,
-)
-from grafy_api.plugins.runtime.artifacts import ArtifactBundlePluginInvoker
-from grafy_api.plugins.runtime.docker import DockerPluginRuntime
-from grafy_api.plugins.runtime.network_policy import NetworkPolicy
-from grafy_api.python_nodes import PythonApplyService
 from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.uploads import UploadService, UploadServiceConfig
 from grafy_core.ports.storage import PresigningStorage
@@ -81,18 +74,17 @@ class WorkbenchComponents:
     artifacts: ArtifactService
     library: LibraryService
     library_folders: LibraryFoldersService
-    plugin_invoker: ArtifactBundlePluginInvoker | None
-    plugin_runtime: DockerPluginRuntime | None
-    release_admission: ReleaseExecutionAdmission | None
-    dev_plugin_slugs: frozenset[str] = frozenset()
-    python_apply: PythonApplyService | None = None
+    plugin_invoker: None
+    plugin_runtime: None
+    release_admission: None
+    python_apply: None = None
 
 
 @dataclass(frozen=True, slots=True)
 class ExecutionLimits:
     """How much concurrent work one workbench instance is allowed to admit.
 
-    The deployment supplies this from ExecutionConfig and PluginsConfig; the
+    The deployment supplies this from ExecutionConfig; the
     literal defaults keep a standalone composition independent of the operator
     environment instead of silently reading GRAFY_* variables.
     """
@@ -100,32 +92,21 @@ class ExecutionLimits:
     map_max_concurrency: int = 4
     max_active_executions: int = 2
     max_pending_graphs: int = 20
-    max_active_plugin_invocations: int = 4
-    plugin_invocation_wall_time_seconds_by_slug: Mapping[str, int] = field(
-        default_factory=dict
-    )
 
     @classmethod
-    def from_config(
-        cls, execution: ExecutionConfig, plugins: PluginsConfig
-    ) -> "ExecutionLimits":
+    def from_config(cls, execution: ExecutionConfig) -> "ExecutionLimits":
         return cls(
             map_max_concurrency=execution.map_max_concurrency,
             max_active_executions=execution.max_active_executions,
             max_pending_graphs=execution.max_pending_graphs,
-            max_active_plugin_invocations=plugins.max_active_plugin_invocations,
-            plugin_invocation_wall_time_seconds_by_slug=(
-                plugins.plugin_invocation_wall_time_seconds_by_slug
-            ),
         )
 
 
 def build_workbench_components(
     *,
-    plugin_registry: PluginRegistry,
+    plugin_registry: PluginRegistry | None = None,
     workspace: Path,
-    dev_plugin_slugs: frozenset[str] = frozenset(),
-    dedupe_artifact_handlers: bool = False,
+    dedupe_artifact_handlers: bool = True,
     limits: ExecutionLimits | None = None,
     unit_of_work: WorkbenchUnitOfWorkPort | None = None,
     storage: FileStoragePort | None = None,
@@ -135,19 +116,28 @@ def build_workbench_components(
     saved_graphs: SavedGraphService | None = None,
     module_library: ModuleLibraryService | None = None,
     plugin_releases: PluginReleaseService | None = None,
-    plugin_runtime: DockerPluginRuntime | None = None,
     node_secrets: NodeSecretResolverPort | None = None,
     graph_room_hub: GraphRoomHub | None = None,
-    network_policy: NetworkPolicy | None = None,
+    egress_policy: EgressPolicy | None = None,
     canonical_artifact_conversions: CanonicalArtifactConversionMap = (
         CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY
     ),
     build_digest: str = "a" * 64,
 ) -> WorkbenchComponents:
+    if plugin_registry is None:
+        from grafy_api.services.families import build_application_registry
+
+        plugin_registry = build_application_registry()
     resolved_limits = limits or ExecutionLimits()
     resolved_workspace = workspace.expanduser().resolve()
     resolved_unit_of_work = unit_of_work or InMemoryUnitOfWork()
     resolved_storage = storage or LocalFileObjectStore(resolved_workspace / "objects")
+    # A workbench dials what node configuration names, so the deployment policy
+    # is composed here rather than read where the request is made. `None` takes
+    # the policy named by `GRAFY_EGRESS_TRUSTED_DESTINATIONS`.
+    resolved_egress_policy = (
+        default_egress_policy() if egress_policy is None else egress_policy
+    )
     artifact_types = {
         (spec.key.id, spec.key.schema_version): spec
         for spec in (*BUILTIN_FILE_FORMATS, *plugin_registry.artifact_types)
@@ -155,9 +145,7 @@ def build_workbench_components(
     extension_claims = build_extension_table(
         (spec.key, spec.extensions) for spec in artifact_types.values()
     )
-    # The builtins and System Plugin registry cover every claimable extension:
-    # a Plugin release cannot add a family outside the checked-in inventory, so
-    # upload typing needs no per-Workspace catalog read.
+    # The static registry owns every extension, independent of release tables.
     resolved_upload_config = upload_config or UploadServiceConfig()
     uploads = UploadService.from_config(
         resolved_upload_config,
@@ -193,7 +181,7 @@ def build_workbench_components(
             key = (resolver.source, resolver.target)
             if key in resolver_keys:
                 logger.info(
-                    "dev_plugin_duplicate_resolver_dropped source=%s@%s target=%s",
+                    "shared_artifact_resolver_deduplicated source=%s@%s target=%s",
                     resolver.source.id,
                     resolver.source.schema_version,
                     resolver.target,
@@ -207,7 +195,7 @@ def build_workbench_components(
         for writer in writers:
             if writer.artifact_type in writer_keys:
                 logger.info(
-                    "dev_plugin_duplicate_writer_dropped artifact_type=%s@%s",
+                    "shared_artifact_writer_deduplicated artifact_type=%s@%s",
                     writer.artifact_type.id,
                     writer.artifact_type.schema_version,
                 )
@@ -224,11 +212,13 @@ def build_workbench_components(
         resolved_storage,
         availability=availability,
         artifact_types=artifact_types,
+        egress_policy=resolved_egress_policy,
     )
     materializations = MaterializationService(
         resolved_unit_of_work,
         availability,
         saved_graphs,
+        build_digest=build_digest,
     )
     presenter = RunResultPresenter(artifacts, availability)
     library = LibraryService(
@@ -239,47 +229,11 @@ def build_workbench_components(
         storage=resolved_storage,
     )
     library_folders = LibraryFoldersService(resolved_unit_of_work)
-    plugin_invoker = None
-    artifact_plugin_invoker = None
-    python_apply: PythonApplyService | None = None
-    release_admission: ReleaseExecutionAdmission | None = None
-    if plugin_releases is not None:
-        if plugin_runtime is None:
-            release_admission = ReleaseExecutionAdmission(
-                isolated_adapter_available=False,
-                runtime_profile=None,
-            )
-        else:
-            artifact_plugin_invoker = ArtifactBundlePluginInvoker(
-                unit_of_work=resolved_unit_of_work,
-                runner=plugin_runtime,
-                scratch=plugin_runtime,
-                storage=resolved_storage,
-                bucket=bucket,
-                storage_backend=storage_backend,
-                max_concurrent_invocations=resolved_limits.max_active_plugin_invocations,
-                wall_time_seconds_by_plugin_slug=(
-                    resolved_limits.plugin_invocation_wall_time_seconds_by_slug
-                ),
-                node_secrets=resolved_node_secrets,
-            )
-            plugin_invoker = artifact_plugin_invoker
-            release_admission = plugin_runtime.release_admission
-            python_apply = PythonApplyService(
-                releases=plugin_releases,
-                admission=release_admission,
-                sandbox=plugin_runtime,
-                storage=resolved_storage,
-                bucket=bucket,
-            )
     compiler = GraphCompiler(
         plugin_registry=plugin_registry,
         plugin_context=plugin_context,
         module_library=module_library,
         canonical_artifact_conversions=canonical_artifact_conversions,
-        plugin_release_lookup=plugin_releases,
-        plugin_invoker=plugin_invoker,
-        release_admission=release_admission,
         build_digest=build_digest,
     )
     edge_values = EdgeValueResolver(
@@ -302,24 +256,15 @@ def build_workbench_components(
         max_map_concurrency=resolved_limits.map_max_concurrency,
     )
     coordinator = GraphExecutionCoordinator(node_execution=node_execution)
-    if network_policy is not None:
-        resolved_network_policy = network_policy
-    elif plugin_runtime is not None:
-        resolved_network_policy = plugin_runtime.network_policy
-    else:
-        resolved_network_policy = NetworkPolicy()
     preflight = GraphRunPreflight(
         plugin_registry=plugin_registry,
         saved_graphs=saved_graphs,
-        plugin_release_lookup=plugin_releases,
-        network_policy=resolved_network_policy,
     )
     run_graph = RunGraph(
         preflight=preflight,
         compiler=compiler,
         coordinator=coordinator,
         materializations=materializations,
-        plugin_sandboxes=plugin_runtime,
     )
     execution_history = ExecutionHistoryService(resolved_unit_of_work, saved_graphs)
     execution_admission = ExecutionAdmissionLimiter(
@@ -347,11 +292,10 @@ def build_workbench_components(
         artifacts=artifacts,
         library=library,
         library_folders=library_folders,
-        plugin_invoker=artifact_plugin_invoker,
-        plugin_runtime=plugin_runtime,
-        release_admission=release_admission,
-        dev_plugin_slugs=dev_plugin_slugs,
-        python_apply=python_apply,
+        plugin_invoker=None,
+        plugin_runtime=None,
+        release_admission=None,
+        python_apply=None,
     )
 
 

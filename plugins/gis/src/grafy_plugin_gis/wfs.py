@@ -1,8 +1,4 @@
-import asyncio
 from hashlib import sha256
-from ipaddress import ip_address
-import os
-import socket
 import ssl
 
 import httpx
@@ -19,11 +15,17 @@ from pydantic import (
 import truststore
 
 from grafy_core.artifacts import JsonObject
+from grafy_core.egress import (
+    EgressPolicy,
+    EgressRejectedError,
+    dial_port,
+    resolved_dial_addresses,
+    validated_public_destination,
+)
 
 from grafy_plugin_gis.models import (
     Bounds,
     GeoFeatureCollection,
-    validated_public_service_url,
 )
 
 
@@ -32,43 +34,6 @@ _HTTP_URL_ADAPTER = TypeAdapter(AnyHttpUrl)
 # while validating GeoJSON. Neither a small page size nor paging alone is a cap.
 WFS_IMPORT_MAX_FEATURES = 10_000
 WFS_IMPORT_TOTAL_RESPONSE_MAX_BYTES = 16 * 1024 * 1024
-_PROXY_ENVIRONMENT_VARIABLES = (
-    "GRAFY_PLUGIN_PROXY",
-    "HTTPS_PROXY",
-    "https_proxy",
-    "HTTP_PROXY",
-    "http_proxy",
-    "ALL_PROXY",
-    "all_proxy",
-)
-
-
-def _proxy_broker_is_configured() -> bool:
-    """True when the runtime routes plugin egress through its egress broker."""
-
-    return any(
-        os.environ.get(variable, "").strip() != ""
-        for variable in _PROXY_ENVIRONMENT_VARIABLES
-    )
-
-
-async def _resolve_public_addresses(host: str, port: int) -> tuple[str, ...]:
-    address_info = await asyncio.get_running_loop().getaddrinfo(
-        host,
-        port,
-        type=socket.SOCK_STREAM,
-    )
-    resolved_addresses = tuple(
-        sorted({address[4][0].split("%", maxsplit=1)[0] for address in address_info})
-    )
-    if not resolved_addresses:
-        raise ValueError(f"host {host!r} did not resolve to any address")
-    for resolved_address in resolved_addresses:
-        if not ip_address(resolved_address).is_global:
-            raise ValueError(
-                f"host {host!r} resolved to non-public address {resolved_address!r}"
-            )
-    return resolved_addresses
 
 
 class WfsImportError(RuntimeError):
@@ -96,8 +61,16 @@ class _WfsFeaturePage(BaseModel):
 class WfsClient:
     """Fetches bounded WFS 2.0 GeoJSON pages from a real remote service."""
 
-    def __init__(self, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+        egress_policy: EgressPolicy | None = None,
+    ) -> None:
         self._transport = transport
+        # None means the deployment policy named by the environment, read per
+        # page so an operator grant is honoured without rebuilding the client.
+        self._egress_policy = egress_policy
 
     async def fetch_feature_collection(
         self,
@@ -114,7 +87,7 @@ class WfsClient:
     ) -> GeoFeatureCollection:
         try:
             parsed_url = _HTTP_URL_ADAPTER.validate_python(service_url)
-            validated_public_service_url(parsed_url, service_name="WFS")
+            validated_public_destination(parsed_url, service_name="WFS")
         except ValueError as exc:
             raise WfsImportError(
                 f"Rejected WFS 2.0 service endpoint {service_url!r} for type "
@@ -123,11 +96,11 @@ class WfsClient:
         service_url = str(parsed_url)
         service_request_url = httpx.URL(service_url)
         service_host = parsed_url.host
-        service_port = parsed_url.port
-        if service_host is None or service_port is None:
+        service_port = dial_port(parsed_url)
+        if service_host is None:
             raise WfsImportError(
                 f"Rejected WFS 2.0 service endpoint {service_url!r} for type "
-                f"{type_name!r}: URL must include a host and port"
+                f"{type_name!r}: URL must include a host"
             )
 
         if page_size < 1:
@@ -156,16 +129,11 @@ class WfsClient:
         start_index = 0
         previous_page_hash: str | None = None
         total_response_bytes = 0
-        # With the broker, the runtime owns DNS safety and origin enforcement,
-        # so the client requests the original URL and lets httpx route it
-        # through the broker. Without the broker, the client pins each answer
-        # of its own public-DNS validation before connecting.
-        use_broker = _proxy_broker_is_configured()
         async with httpx.AsyncClient(
             transport=self._transport,
             timeout=timeout_seconds,
             follow_redirects=False,
-            trust_env=use_broker,
+            trust_env=False,
             verify=truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT),
         ) as client:
             response_bytes = bytearray()
@@ -190,116 +158,77 @@ class WfsClient:
                     params["bbox"] = ",".join(str(coordinate) for coordinate in bbox)
                     params["bbox"] += ",EPSG:4326"
 
-                if use_broker:
-                    # The broker owns DNS safety, origin matching, and the
-                    # end-to-end CONNECT tunnel; the client must never bypass
-                    # it or resolve the hostname itself.
-                    try:
-                        async with client.stream(
-                            "GET",
-                            service_request_url,
-                            params=params,
-                            headers={
-                                "Accept": (
-                                    "application/geo+json, application/json"
-                                ),
-                            },
-                        ) as response:
-                            response.raise_for_status()
-                            response_bytes.clear()
-                            async for chunk in response.aiter_bytes():
-                                response_bytes.extend(chunk)
-                                if len(response_bytes) > max_page_bytes:
-                                    raise WfsImportError(
-                                        "WFS 2.0 GetFeature from "
-                                        f"{service_url!r} for type "
-                                        f"{type_name!r} at "
-                                        f"startIndex={start_index} exceeded "
-                                        f"the {max_page_bytes}-byte page limit"
-                                    )
-                    except httpx.HTTPStatusError as exc:
-                        raise WfsImportError(
-                            f"Failed WFS 2.0 GetFeature from {service_url!r} for "
-                            f"type {type_name!r} at startIndex={start_index}, "
-                            f"count={request_count}, "
-                            f"status={exc.response.status_code}"
-                        ) from exc
-                    except httpx.HTTPError as exc:
-                        raise WfsImportError(
-                            f"Failed WFS 2.0 GetFeature from {service_url!r} for "
-                            f"type {type_name!r} at startIndex={start_index}, "
-                            f"count={request_count}: {exc}"
-                        ) from exc
-                else:
-                    try:
-                        resolved_addresses = await _resolve_public_addresses(
-                            service_host,
-                            service_port,
-                        )
-                    except (OSError, ValueError) as exc:
-                        raise WfsImportError(
-                            f"Rejected WFS 2.0 GetFeature from {service_url!r} for "
-                            f"type {type_name!r} at startIndex={start_index}, "
-                            f"count={request_count} after runtime DNS validation: {exc}"
-                        ) from exc
+                # One page is one decision: the guard answers at the moment of
+                # the connection, so a name that rebinds between pages is caught
+                # on the page that rebinds rather than on the first one only.
+                try:
+                    resolved_addresses = await resolved_dial_addresses(
+                        service_host,
+                        service_port,
+                        policy=self._egress_policy,
+                    )
+                except (EgressRejectedError, OSError) as exc:
+                    raise WfsImportError(
+                        f"Rejected WFS 2.0 GetFeature from {service_url!r} for "
+                        f"type {type_name!r} at startIndex={start_index}, "
+                        f"count={request_count} after runtime DNS validation: {exc}"
+                    ) from exc
 
-                    try:
-                        response_bytes.clear()
-                        for address_index, resolved_address in enumerate(
-                            resolved_addresses
-                        ):
-                            pinned_url = service_request_url.copy_with(
-                                host=resolved_address
-                            )
-                            try:
-                                async with client.stream(
-                                    "GET",
-                                    pinned_url,
-                                    params=params,
-                                    headers={
-                                        "Accept": (
-                                            "application/geo+json, application/json"
-                                        ),
-                                        "Host": service_request_url.netloc.decode(
-                                            "ascii"
-                                        ),
-                                    },
-                                    extensions={
-                                        "sni_hostname": service_request_url.raw_host.decode(
-                                            "ascii"
+                try:
+                    response_bytes.clear()
+                    for address_index, resolved_address in enumerate(
+                        resolved_addresses
+                    ):
+                        pinned_url = service_request_url.copy_with(
+                            host=resolved_address
+                        )
+                        try:
+                            async with client.stream(
+                                "GET",
+                                pinned_url,
+                                params=params,
+                                headers={
+                                    "Accept": (
+                                        "application/geo+json, application/json"
+                                    ),
+                                    "Host": service_request_url.netloc.decode("ascii"),
+                                },
+                                extensions={
+                                    "sni_hostname": service_request_url.raw_host.decode(
+                                        "ascii"
+                                    )
+                                },
+                            ) as response:
+                                response.raise_for_status()
+                                response_bytes.clear()
+                                async for chunk in response.aiter_bytes():
+                                    response_bytes.extend(chunk)
+                                    if len(response_bytes) > max_page_bytes:
+                                        raise WfsImportError(
+                                            "WFS 2.0 GetFeature from "
+                                            f"{service_url!r} for type "
+                                            f"{type_name!r} at "
+                                            f"startIndex={start_index} exceeded "
+                                            f"the {max_page_bytes}-byte page limit"
                                         )
-                                    },
-                                ) as response:
-                                    response.raise_for_status()
-                                    response_bytes.clear()
-                                    async for chunk in response.aiter_bytes():
-                                        response_bytes.extend(chunk)
-                                        if len(response_bytes) > max_page_bytes:
-                                            raise WfsImportError(
-                                                "WFS 2.0 GetFeature from "
-                                                f"{service_url!r} for type "
-                                                f"{type_name!r} at "
-                                                f"startIndex={start_index} exceeded "
-                                                f"the {max_page_bytes}-byte page limit"
-                                            )
-                                break
-                            except (httpx.ConnectError, httpx.ConnectTimeout):
-                                if address_index == len(resolved_addresses) - 1:
-                                    raise
-                    except WfsImportError:
-                        raise
-                    except httpx.HTTPStatusError as exc:
-                        raise WfsImportError(
-                            f"Failed WFS 2.0 GetFeature from {service_url!r} for "
-                            f"type {type_name!r} at startIndex={start_index}, "
-                            f"count={request_count}, status={exc.response.status_code}"
-                        ) from exc
-                    except httpx.HTTPError as exc:
-                        raise WfsImportError(
-                            f"Failed WFS 2.0 GetFeature from {service_url!r} for "
-                            f"type {type_name!r} at startIndex={start_index}, "
-                            f"count={request_count}: {exc}"
-                        ) from exc
+                            break
+                        except (httpx.ConnectError, httpx.ConnectTimeout):
+                            if address_index == len(resolved_addresses) - 1:
+                                raise
+                except WfsImportError:
+                    raise
+                except httpx.HTTPStatusError as exc:
+                    raise WfsImportError(
+                        f"Failed WFS 2.0 GetFeature from {service_url!r} for "
+                        f"type {type_name!r} at startIndex={start_index}, "
+                        f"count={request_count}, status={exc.response.status_code}"
+                    ) from exc
+                except httpx.HTTPError as exc:
+                    raise WfsImportError(
+                        f"Failed WFS 2.0 GetFeature from {service_url!r} for "
+                        f"type {type_name!r} at startIndex={start_index}, "
+                        f"count={request_count}: {exc}"
+                    ) from exc
 
                 prospective_total_response_bytes = total_response_bytes + len(
                     response_bytes

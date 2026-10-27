@@ -118,21 +118,13 @@ async def test_create_app_startup_acquires_owner_lease(
 
         resources = get_resources(app)
         workbench = resources.workbench
-        assert workbench.release_admission is not None
-        if workbench.plugin_runtime is not None:
-            assert (
-                workbench.release_admission
-                == workbench.plugin_runtime.release_admission
-            )
-        else:
-            assert workbench.release_admission.isolated_adapter_available is False
+        assert workbench.release_admission is None
+        assert workbench.plugin_runtime is None
         capacity = await resources.capacity_diagnostics()
         assert capacity.execution_admission.active_executions == 0
-        assert (capacity.plugin_sandboxes is not None) is plugin_runtime_enabled
-        assert (capacity.plugin_invocations is not None) is plugin_runtime_enabled
-    expected = ["rooms", "executions", "plugins", "artifacts"]
-    if not plugin_runtime_enabled:
-        expected.remove("plugins")
+        assert capacity.plugin_sandboxes is None
+        assert capacity.plugin_invocations is None
+    expected = ["rooms", "executions", "artifacts"]
     assert shutdown_order == expected
     with pytest.raises(RuntimeError, match="not initialized"):
         get_resources(app)
@@ -147,11 +139,10 @@ async def test_create_app_startup_acquires_owner_lease(
         "recovered",
         "owner_disabled",
         "runtime_disabled",
-        "orphan_failure",
         "lease_contended",
     ],
 )
-async def test_startup_recovers_transient_activity_only_after_exclusive_orphan_cleanup(
+async def test_startup_recovers_in_process_transient_activity_only_with_exclusive_owner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
     workspace = tmp_path / "workbench"
@@ -198,18 +189,16 @@ async def test_startup_recovers_transient_activity_only_after_exclusive_orphan_c
     if mode == "lease_contended":
         lock.acquire()
     try:
-        if mode == "recovered":
+        if mode in {"recovered", "runtime_disabled"}:
             async with LifespanManager(app):
                 phases.append("ready")
                 get_resources(app)
                 async with SqlAlchemyUnitOfWork(database.sessions) as transaction:
                     assert await transaction.execution_history.list_transient() == ()
-            assert phases == ["orphans", "ready"]
+            assert phases == ["ready"]
         else:
             expected = {
                 "owner_disabled": "exclusive API ownership",
-                "runtime_disabled": "confirmed Plugin orphan cleanup",
-                "orphan_failure": "orphan cleanup failed",
                 "lease_contended": "Another Grafy API owner",
             }[mode]
             with pytest.raises(RuntimeError, match=expected):
@@ -220,7 +209,7 @@ async def test_startup_recovers_transient_activity_only_after_exclusive_orphan_c
                     row.execution_id
                     for row in await transaction.execution_history.list_transient()
                 ] == [execution_id]
-            assert phases == (["orphans"] if mode == "orphan_failure" else [])
+            assert phases == []
         with pytest.raises(RuntimeError, match="not initialized"):
             get_resources(app)
     finally:

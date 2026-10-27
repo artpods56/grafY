@@ -1,6 +1,5 @@
 """Application use case for top-level and nested graph execution."""
 
-import asyncio
 from collections.abc import Mapping
 from contextvars import ContextVar
 from uuid import UUID
@@ -31,13 +30,6 @@ from grafy_api.execution.models import (
     PreparedGraphExecution,
 )
 from grafy_api.execution.preflight import GraphRunPreflight
-from grafy_api.plugins.runtime.sandbox import (
-    PluginSandboxCleanupError,
-    PluginSandboxLifecycle,
-    PluginSandboxScopeId,
-    activate_plugin_sandbox_scope,
-    reset_plugin_sandbox_scope,
-)
 
 
 _current_execution_control: ContextVar[RunExecutionControl | None] = ContextVar(
@@ -56,13 +48,11 @@ class RunGraph:
         compiler: GraphCompiler,
         coordinator: GraphExecutionCoordinator,
         materializations: MaterializationService,
-        plugin_sandboxes: PluginSandboxLifecycle | None = None,
     ) -> None:
         self._preflight = preflight
         self._compiler = compiler
         self._coordinator = coordinator
         self._materializations = materializations
-        self._plugin_sandboxes = plugin_sandboxes
 
     async def run(
         self,
@@ -71,8 +61,6 @@ class RunGraph:
         control: RunExecutionControl | None = None,
     ) -> GraphExecutionResult:
         control_token = _current_execution_control.set(control)
-        sandbox_scope = PluginSandboxScopeId.new()
-        sandbox_token = activate_plugin_sandbox_scope(sandbox_scope)
         try:
             return await self._execute(
                 request,
@@ -86,31 +74,7 @@ class RunGraph:
                 control=control,
             )
         finally:
-            try:
-                if self._plugin_sandboxes is not None:
-                    cleanup_task: asyncio.Task[None] | None = None
-                    try:
-                        cleanup_task = asyncio.create_task(
-                            self._plugin_sandboxes.close_scope(sandbox_scope)
-                        )
-                        try:
-                            await asyncio.shield(cleanup_task)
-                        except asyncio.CancelledError:
-                            await cleanup_task
-                            raise
-                    except BaseException as exc:
-                        if (
-                            cleanup_task is not None
-                            and cleanup_task.done()
-                            and not cleanup_task.cancelled()
-                            and cleanup_task.exception() is None
-                        ):
-                            # Caller cancellation after confirmed cleanup stays cancellation.
-                            raise
-                        raise PluginSandboxCleanupError(sandbox_scope) from exc
-            finally:
-                reset_plugin_sandbox_scope(sandbox_token)
-                _current_execution_control.reset(control_token)
+            _current_execution_control.reset(control_token)
 
     async def execute_module(
         self,
@@ -249,7 +213,6 @@ class RunGraph:
             request,
             self,
             workspace_id=workspace_id,
-            resolved_releases=run_context.resolved_releases,
         )
         if (
             validate_materialized_pins

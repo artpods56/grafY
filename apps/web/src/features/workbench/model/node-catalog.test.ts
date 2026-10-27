@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
-import { schemaFields } from "../canvas/config-schema";
 import { encodeHandleId } from "../canvas/handles";
 import { portMetaForPort } from "../canvas/types";
 import {
@@ -12,13 +11,11 @@ import {
   catalogNodeKey,
   catalogNodePortSummary,
   catalogNodeSpecs,
-  catalogSettingsSchema,
   catalogNodesForFilter,
   downstreamCandidatesFromOutput,
   filterAndSearchCatalogNodes,
   INPUT_NODES_FILTER,
   moduleCallUpgradeTarget,
-  pluginReleaseUpgradeTarget,
   sortCatalogNodes,
   sourceFilterId,
   upstreamCandidatesFromInput,
@@ -278,79 +275,10 @@ describe("node catalog modules", () => {
   });
 });
 
-describe("scoped Plugin release upgrades", () => {
-  const current = {
-    ...nodeSpec("reports.render", "reports"),
-    plugin_revision: 3,
-    plugin_release: { scope: "system", slug: "reports", revision: 3 },
-  } satisfies NodeSpec;
-
-  it("offers a newer release only within the same scope and slug", () => {
-    expect(
-      pluginReleaseUpgradeTarget(current, {
-        scope: "system",
-        slug: "reports",
-        revision: 1,
-      }),
-    ).toEqual({ scope: "system", slug: "reports", revision: 3 });
-    expect(
-      pluginReleaseUpgradeTarget(current, {
-        scope: "workspace",
-        slug: "reports",
-        revision: 1,
-      }),
-    ).toBeNull();
-    expect(
-      pluginReleaseUpgradeTarget(current, {
-        scope: "system",
-        slug: "other",
-        revision: 1,
-      }),
-    ).toBeNull();
-  });
-
-  it("keeps same-operator releases distinct by scope without keying revisions", () => {
-    expect(catalogNodeKey(current)).toBe(
-      "plugin-release:system:reports:reports.render@1",
-    );
-    expect(
-      catalogNodeKey({
-        ...current,
-        plugin_release: {
-          scope: "workspace",
-          slug: "reports",
-          revision: 8,
-        },
-      }),
-    ).toBe("plugin-release:workspace:reports:reports.render@1");
-    expect(
-      catalogNodeKey({
-        ...current,
-        plugin_release: {
-          scope: "system",
-          slug: "reports",
-          revision: 4,
-        },
-      }),
-    ).toBe("plugin-release:system:reports:reports.render@1");
-  });
-
-  it("does not offer the pinned or an older catalog release", () => {
-    expect(
-      pluginReleaseUpgradeTarget(current, {
-        scope: "system",
-        slug: "reports",
-        revision: 3,
-      }),
-    ).toBeNull();
-    expect(
-      pluginReleaseUpgradeTarget(current, {
-        scope: "system",
-        slug: "reports",
-        revision: 4,
-      }),
-    ).toBeNull();
-  });
+it("keys a deployed family by operator version without release selection", () => {
+  expect(catalogNodeKey(nodeSpec("gis.raster.import", "external.gis"))).toBe(
+    "gis.raster.import@1",
+  );
 });
 
 describe("artifact catalog filters", () => {
@@ -676,43 +604,4 @@ it("keeps unlisted nodes out of the library and both discovery directions", () =
   });
   expect(downstream).toHaveLength(1);
   expect(upstream).toHaveLength(1);
-});
-
-it("shows a preset's params in the library, not the runner's code and hash", () => {
-  const node = nodeSpec("python.transform", "external.python", 1, null, true, {
-    title: "Split text",
-  });
-  const spec: NodeSpec = {
-    ...node,
-    config_schema: {
-      type: "object",
-      properties: {
-        code: { type: "string", title: "Code" },
-        code_sha256: { type: "string", title: "Code Sha256" },
-      },
-    },
-    preset: {
-      id: "split-text",
-      version: 1,
-      config: {
-        params_schema: {
-          type: "object",
-          required: ["separator"],
-          properties: {
-            separator: {
-              type: "string",
-              title: "Separator",
-              minLength: 1,
-            },
-          },
-        },
-      },
-      artifact_type_bindings: [],
-      node,
-    },
-  };
-
-  expect(
-    schemaFields(catalogSettingsSchema(spec)).map((field) => field.title),
-  ).toEqual(["Separator"]);
 });

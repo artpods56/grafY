@@ -38,7 +38,6 @@ const savedNode = (id: string) => ({
   config: {},
   input_plugs: [],
   artifact_type_bindings: [],
-  plugin_release_pin: null,
   position: { x: 0, y: 0 },
   layout: null,
 });

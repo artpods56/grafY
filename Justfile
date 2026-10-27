@@ -16,34 +16,21 @@ install:
     uv sync
     npm --prefix apps/web ci
 
-# Install all optional plugins and the web workspace.
-install-all:
-    uv sync --all-extras
-    npm --prefix apps/web ci
-
-# Start the API with builtin families and Module boundaries. Published Plugins
-# execute in isolated workers.
+# Start the API with installed application families and native GIS tools.
 api: db-upgrade
-    uv run --exact --no-dev --package grafy-api uvicorn grafy_api.main:app --reload --host 0.0.0.0 --port 8000
+    uv run --exact --no-dev uvicorn grafy_api.main:app --reload --host 0.0.0.0 --port 8000
 
-# Start the API with local Plugin projects loaded in-process, unsandboxed, for
-# development. Pass System Plugin slugs: just api-dev external.image external.mistral
-# Edits under plugins/ reload the server. Never use this in a deployment.
-api-dev +slugs: db-upgrade
-    #!/usr/bin/env bash
-    set -euo pipefail
-    export GRAFY_DEV_PLUGINS="$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1:]))' {{slugs}})"
-    exec uv run --all-extras uvicorn grafy_api.main:app --reload --reload-dir apps --reload-dir libs --reload-dir plugins --host 0.0.0.0 --port 8000
+# Start the API with installed families and reload edits under apps, libs and plugins.
+api-dev: db-upgrade
+    uv run --no-dev uvicorn grafy_api.main:app --reload --reload-dir apps --reload-dir libs --reload-dir plugins --host 0.0.0.0 --port 8000
 
 # Start the web development server.
 web port="":
     npm --prefix apps/web run dev {{ if port != "" {"--port=" + port} else {""} }}
 
-# Rebuild the vendored Grafy Plugin SDK wheel from libs/core into every Plugin
-# project. Plugins resolve grafy_core from these committed wheels, never from the
-# monorepo, so run this whenever libs/core changes a module a Plugin imports and
-# commit the rebuilt wheel with that change. tests/unit/architecture pins the
-# resulting digest; update it when this recipe prints a new one.
+# Rebuild the grafy-core wheel used by the plugin-notes publication fixture.
+# tests/unit/architecture pins the resulting digest; update it when this recipe
+# prints a new one.
 sdk-wheel:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -60,17 +47,13 @@ sdk-wheel:
         printf 'expected one grafy-core wheel, found %d\n' "${#wheels[@]}" >&2
         exit 1
     fi
-    # The freeze fixture publishes like any other Plugin project, so its vendored
-    # wheel moves with the rest or tests/unit/architecture rejects the digest.
-    for directory in plugins/*/wheels tests/fixtures/plugin-notes/wheels; do
-        cp "${wheels[0]}" "$directory/"
-        printf 'vendored %s\n' "$directory/$(basename "${wheels[0]}")"
-    done
+    cp "${wheels[0]}" tests/fixtures/plugin-notes/wheels/
+    printf 'vendored %s\n' "tests/fixtures/plugin-notes/wheels/$(basename "${wheels[0]}")"
     (sha256sum "${wheels[0]}" 2>/dev/null || shasum -a 256 "${wheels[0]}")
 
 # Run backend and web tests.
 test:
-    uv run --all-extras pytest
+    uv run pytest
     npm --prefix apps/web test
 
 # Prove presigned S3 uploads through the gateway's /storage/ location.
@@ -108,7 +91,7 @@ hooks-check:
 
 # Run Python and TypeScript type checks.
 typecheck:
-    uv run --all-extras basedpyright
+    uv run basedpyright
     npm --prefix apps/web run typecheck
 
 # Verify the generated API client contract.
@@ -124,7 +107,7 @@ check: test lint typecheck contract build
 
 # Exercise the workbench runtime without the browser.
 smoke:
-    uv run --extra image python scripts/smoke_workbench.py
+    uv run python scripts/smoke_workbench.py
 
 # Upgrade the database to the latest migration.
 db-upgrade:

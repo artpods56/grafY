@@ -118,27 +118,6 @@ export function toRoomGraphCommand(
         expected_layout: node.layout ?? null,
       });
     }
-    case "update_node_plugin_release": {
-      const node = document.nodes.find(
-        (candidate) => candidate.id === command.node_id,
-      );
-      const expectedPin = node?.plugin_release_pin;
-      if (!expectedPin) return null;
-      return {
-        kind: "update_node_plugin_release",
-        node_id: command.node_id,
-        plugin_release_pin: {
-          scope: command.plugin_release.scope,
-          slug: command.plugin_release.slug,
-          revision: command.plugin_release.revision,
-        },
-        expected_plugin_release_pin: {
-          scope: expectedPin.scope,
-          slug: expectedPin.slug,
-          revision: expectedPin.revision,
-        },
-      };
-    }
     case "update_node_configuration_and_input_plugs": {
       const node = document.nodes.find(
         (candidate) => candidate.id === command.node_id,
@@ -272,16 +251,6 @@ export function toLocalGraphCommand(
         kind: "update_node_layout",
         node_id: command.node_id,
         layout: command.layout,
-      };
-    case "update_node_plugin_release":
-      return {
-        kind: "update_node_plugin_release",
-        node_id: command.node_id,
-        plugin_release: {
-          scope: command.plugin_release_pin.scope,
-          slug: command.plugin_release_pin.slug,
-          revision: command.plugin_release_pin.revision,
-        },
       };
     case "update_node_configuration_and_input_plugs":
       return {

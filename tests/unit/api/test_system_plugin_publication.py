@@ -426,26 +426,26 @@ async def test_system_publication_cannot_claim_another_plugins_identity(
     )
     builds_after_gis = image_builder.build_count
 
-    python_entry = inventory.entry_for("external.python")
+    image_entry = inventory.entry_for("external.image")
     with pytest.raises(PluginPublishingError, match="allowlisted prefixes"):
         await workflow.publish_verified(
             _verified(
                 b"impersonating",
                 catalog=_catalog(
-                    slug="external.python",
+                    slug="external.image",
                     operator_id="gis.node",
-                    required_capabilities=python_entry.capabilities,
+                    required_capabilities=image_entry.capabilities,
                 ),
                 capabilities=PluginCapabilityManifest(
-                    capabilities=python_entry.capabilities
+                    capabilities=image_entry.capabilities
                 ),
-                loader_target=python_entry.loader_target,
+                loader_target=image_entry.loader_target,
             ),
             platform_actor=PlatformPluginActor("ci:system-release"),
         )
 
     assert image_builder.build_count == builds_after_gis
-    assert await releases.get_by_revision("external.python", 1) is None
+    assert await releases.get_by_revision("external.image", 1) is None
     retained = await releases.get_by_revision("external.gis", 1)
     assert retained is not None
     assert [item.release.release.slug for item in await releases.list_catalog()] == []

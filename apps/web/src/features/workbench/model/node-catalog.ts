@@ -3,7 +3,6 @@ import type {
   ArtifactTypeSpec,
   NodeRegistry,
   NodeSpec,
-  PluginReleasePin,
   Port,
 } from "@/lib/api";
 
@@ -71,12 +70,7 @@ export interface ContextualCandidate {
 const MODULE_PLUGIN_SLUG = "graph.module";
 
 export function catalogNodeKey(spec: NodeSpec): string {
-  const operator = spec.preset
-    ? `preset:${spec.preset.id}@${spec.preset.version}`
-    : `${spec.operator_id}@${spec.operator_version}`;
-  return spec.plugin_release
-    ? `plugin-release:${spec.plugin_release.scope}:${spec.plugin_release.slug}:${operator}`
-    : operator;
+  return `${spec.operator_id}@${spec.operator_version}`;
 }
 
 export function artifactFilterId(key: ArtifactTypeKey): CatalogFilterId {
@@ -269,25 +263,12 @@ export function sortCatalogNodes(nodes: readonly NodeSpec[]): NodeSpec[] {
   });
 }
 
-/**
- * Settings the library should show. A preset's editable values live in
- * `params_schema`; the operator schema is the runner's code, hash and shapes.
- */
-export function catalogSettingsSchema(spec: NodeSpec): unknown {
-  if (!spec.preset) return spec.config_schema;
-  const params = spec.preset.config.params_schema;
-  if (typeof params === "object" && params !== null && !Array.isArray(params)) {
-    return params;
-  }
-  return { type: "object", properties: {} };
-}
-
 export function nodeCatalogSearchText(
   spec: NodeSpec,
   registry: NodeRegistry,
 ): string {
   const plugin = catalogPlugin(registry, spec.plugin_slug);
-  const fields = schemaFields(catalogSettingsSchema(spec));
+  const fields = schemaFields(spec.config_schema);
   return [
     spec.title,
     spec.operator_id,
@@ -395,10 +376,7 @@ export function catalogNodeSpecs(
   registry: NodeRegistry,
   activeGraphId: string | null,
 ): readonly NodeSpec[] {
-  return [
-    ...registry.nodes,
-    ...(registry.presets ?? []).map((preset) => ({ ...preset.node, preset })),
-  ].filter(
+  return registry.nodes.filter(
     (spec) =>
       spec.catalog_visible !== false &&
       // Collections are made from artifacts on the canvas, not picked here.
@@ -491,28 +469,6 @@ export function moduleCallUpgradeTarget(
     return null;
   }
   return current;
-}
-
-/** Current exact release when it advances the same scoped Plugin identity. */
-export function pluginReleaseUpgradeTarget(
-  current: NodeSpec,
-  pinned: PluginReleasePin | null,
-): PluginReleasePin | null {
-  const release = current.plugin_release;
-  if (
-    !release ||
-    !pinned ||
-    release.scope !== pinned.scope ||
-    release.slug !== pinned.slug ||
-    release.revision <= pinned.revision
-  ) {
-    return null;
-  }
-  return {
-    scope: release.scope,
-    slug: release.slug,
-    revision: release.revision,
-  };
 }
 
 function shapesAreCompatible(source: Port, target: Port): boolean {

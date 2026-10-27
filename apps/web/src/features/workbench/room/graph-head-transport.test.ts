@@ -23,10 +23,9 @@ const canonical: CollaborativeHead = {
     nodes: [
       {
         id: "source",
-        kind: "plugin",
+        kind: "builtin",
         operator_id: "table.read",
         operator_version: 1,
-        plugin_release_pin: { scope: "system", slug: "tables", revision: 7 },
         config: { nested: { delimiter: "," } },
         position: { x: 21, y: 34 },
         layout: { width: 420 },
@@ -87,10 +86,7 @@ const legacy: LegacyCollaborativeHead = {
   checkpoint_sequence: canonical.checkpoint_sequence,
   checkpoint_revision: canonical.checkpoint_revision,
   updated_at: canonical.updated_at,
-  nodes: canonical.document.nodes.map(({ plugin_release_pin, ...node }) => ({
-    ...node,
-    plugin_release: plugin_release_pin,
-  })),
+  nodes: canonical.document.nodes,
   edges: canonical.document.edges,
   origins: canonical.document.origins,
   presentation: canonical.document.presentation,
@@ -179,11 +175,6 @@ describe("canonical collaborative head flow", () => {
         9,
       );
       expect(moved.document.nodes[0]?.position).toEqual({ x: 100, y: 200 });
-      expect(moved.document.nodes[0]?.plugin_release_pin).toEqual({
-        scope: "system",
-        slug: "tables",
-        revision: 7,
-      });
       expect(moved.document.presentation).toEqual(
         canonical.document.presentation,
       );
@@ -196,7 +187,7 @@ describe("canonical collaborative head flow", () => {
     );
     expect(submitted.receipt).toEqual(receipt);
     expect(checkpointed.saved_revision).toBe(2);
-    expect(legacy.nodes[0]).toHaveProperty("plugin_release");
+    expect(legacy.nodes[0]).not.toHaveProperty("plugin_release");
     expect(legacy.nodes[0]).not.toHaveProperty("plugin_release_pin");
   });
 

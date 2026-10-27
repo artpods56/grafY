@@ -2,7 +2,7 @@
 
 This guide deploys one reviewed `main` commit to a single Linux host from
 pre-built container images. Application deployment needs no Git checkout or host
-build. Plugin publication is a separate operation that builds runtime images.
+build. The API image contains the installed application families and GDAL.
 PostgreSQL runs inside the Grafy Compose project and stores its data in a
 dedicated Docker volume. The database has no host port.
 
@@ -119,8 +119,8 @@ Run the deployment script:
 The script downloads that commit's `compose.yaml` and `compose.postgres.yaml`
 into `/opt/graphy/.deployment/releases/<sha>/`, renders the merged Compose
 configuration, and pulls the active services' SHA-tagged images before stopping
-API traffic. The publisher profile is inactive during application deployment.
-Pull `ghcr.io/artpods56/grafy-publisher:<sha>` explicitly before Plugin publication.
+API traffic. The legacy publisher profile stays inactive. Do not publish or
+promote Plugins for an ADR 0017 application deployment.
 A SHA without published images fails at the pull, while the previous release is
 still serving. The script then creates a PostgreSQL dump and removes the previous one-shot `migrate`
 container. Compose runs Alembic once before it starts the API, waits for every
@@ -160,8 +160,10 @@ ssh ai-ihpan 'docker inspect grafy-api-1 --format \
 Use the deployment's existing wrapper. On `ai-ihpan`,
 `/opt/graphy/.deployment/current-deployment` identifies the directory containing
 `deploy.sh`. That wrapper supplies the production environment and combined site
-and runtime override. Preserve those paths instead of using the host checkout's
-modified Compose files or replacing the environment with an example file.
+override. Before the ADR 0017 cutover, remove the retired Plugin runtime and
+egress-broker services from that override, including the API Docker socket
+mount and runtime environment variables. Keep the storage, network, and secret
+configuration. Do not replace the environment with an example file.
 
 Run the pinned release and capture the complete output:
 
@@ -184,11 +186,14 @@ consume the remaining script sent through SSH. Read the saved log after a
 failure; do not pipe a running deployment into `head` or another command that
 closes its input early.
 
-If the release changes a Plugin, publish and promote its matching source after
-the application is ready. Follow the
-[native System Plugin publication guide](how-to-publish-native-system-plugins.md).
-An application restart alone does not update an immutable Plugin release.
-For a web-only change, retain the existing Plugin selections.
+Every family updates with the API image. Do not run Plugin publication,
+promotion, or selection commands. Deploying a different source digest invalidates
+node invocation caches, including GIS and provider calls.
+
+Node requests now leave from the API network. Set
+`GRAFY_EGRESS_TRUSTED_DESTINATIONS` only for deployment-owned private
+services that nodes must reach. Keep deployment egress filtering as a backstop;
+the application guard validates and pins graph-configured destinations.
 
 ## Verify and record the deployment
 
@@ -203,9 +208,9 @@ curl --fail --silent --show-error --output /dev/null \
 ```
 
 Confirm that API, web, and gateway use the target SHA and report healthy.
-Verify Plugin selections and catalog readiness in each affected Workspace.
-If no Plugins changed, compare the exact selection rows before and after.
-If Plugins changed, record their returned revisions and retain unrelated selections.
+Verify catalog readiness in each affected Workspace. Python and SQL nodes must
+be absent. Run the [GIS raster smoke procedure](how-to-run-gis.md) with a small
+GeoTIFF and open its artifact before declaring the deployment usable.
 
 Verify the source digest when release identity needs an independent check:
 
@@ -216,9 +221,8 @@ ssh ai-ihpan 'docker exec grafy-api-1 .venv/bin/python -c \
 	"import os; print(os.environ[\"GRAFY_BUILD_DIGEST\"])"'
 ```
 
-Keep the SHA, previous SHA, database dump path, deployment log, Plugin revisions,
-and verification results in the operation directory. Keep exported selections
-and database dumps protected. Never include environment contents or bearer
+Keep the SHA, previous SHA, database dump path, deployment log, and verification
+results in the operation directory. Keep database dumps protected. Never include environment contents or bearer
 credentials in the report. Health and catalog checks do not prove an
 authenticated graph run; record whether you exercised that separately.
 
@@ -231,9 +235,10 @@ If the release fails before Alembic changes the database, run the script with
 the previous SHA. Rollback targets must have published images, so they must be
 commits from after the images were introduced. If Alembic changed the database, stop Grafy and restore the
 matching dump before you start the previous commit. Do not run an older binary
-against a newer schema. If you also changed Plugin selections, restore compatible
-selections for the old application. Retain the old immutable releases for this
-rollback; do not rewrite their manifests.
+against a newer schema. If the ADR 0017 migration has dropped release tables,
+its downgrade recreates empty tables. Restore the matching pre-migration dump
+before starting the old application. Retain historical immutable releases for
+that recovery; do not rewrite their manifests.
 
 Restore a dump only during a maintenance window:
 

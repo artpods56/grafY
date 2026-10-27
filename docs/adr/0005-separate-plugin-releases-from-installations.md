@@ -1,6 +1,8 @@
 # ADR 0005: Separate Plugin releases from installations
 
-- **Status:** Accepted, narrowed by ADR 0015
+- **Status:** Superseded by ADR 0017 (Plugin releases and installations no longer exist;
+  every family is application code identified by the deployment build digest). Narrowed
+  earlier by ADR 0015.
 - **Amended by:** ADR 0007 (installations no longer carry System distribution
   metadata), ADR 0015 (only the System namespace survives; a release installs
   into one namespace, not "either System or one Workspace")

@@ -71,7 +71,6 @@ from grafy_api.v1.routes.node_secrets.dependencies import node_secret_service
 
 from tests.support.clients import GrafyApi
 from tests.support.system_plugins import (
-    SelectedSystemReleaseLookup,
     build_selected_system_plugin_deployment,
 )
 from tests.support.workbench import workbench_dependency_overrides
@@ -573,7 +572,7 @@ async def test_unavailable_operator_keeps_secret_dormant_until_supported_again(
     assert restored.get_secret_value() == "dormant-provider-key"
 
 
-async def test_pinned_isolated_operator_uses_release_contract_for_secret_binding(
+async def test_legacy_pinned_operator_uses_registry_for_secret_binding(
     node_secret_setup: tuple[
         Database,
         NodeSecretService,
@@ -581,20 +580,15 @@ async def test_pinned_isolated_operator_uses_release_contract_for_secret_binding
         PluginRegistry,
     ],
 ) -> None:
-    database, _, _, _ = node_secret_setup
+    database, _, _, registry = node_secret_setup
     graph = await _saved_secret_graph(
         database,
-        name="Isolated extraction",
+        name="Legacy extraction",
         document=_secret_document(plugin_release_pin=SAVED_PLUGIN_RELEASE_PIN),
     )
-    release = _isolated_secret_release()
-    lookup = SelectedSystemReleaseLookup((release,), ())
-    host_registry = PluginRegistry()
-    host_registry.freeze()
     service = NodeSecretService(
         unit_of_work_factory=lambda: SqlAlchemyUnitOfWork(database.sessions),
-        plugin_registry=host_registry,
-        plugin_release_lookup=lookup,
+        plugin_registry=registry,
         encryption_key=_encryption_key(),
     )
 

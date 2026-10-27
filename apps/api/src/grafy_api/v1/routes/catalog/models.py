@@ -30,15 +30,7 @@ from grafy_core.nodes import (
 from grafy_core.operators.modules import GraphModuleNode
 from grafy_core.plugins import NodeRegistration, NodeSecretInput
 from grafy_core.ports.modules import GraphModuleExecutorPort
-from grafy_workbench.presets import (
-    PYTHON_PLUGIN_SLUG,
-    PYTHON_PRESETS,
-    PYTHON_TRANSFORM_OPERATOR_ID,
-    PYTHON_TRANSFORM_OPERATOR_VERSION,
-    NodePreset,
-    PresetPort,
-)
-from pydantic import BaseModel, Field, JsonValue, model_validator
+from pydantic import BaseModel, Field, model_validator
 from pydantic.errors import PydanticInvalidForJsonSchema
 
 from grafy_api.catalog import (
@@ -52,7 +44,6 @@ from grafy_api.plugins.runtime.admission import (
 )
 from grafy_api.v1.models import (
     ApiResponse,
-    ArtifactTypeBindingModel,
     ArtifactTypeKeyResponse,
     ArtifactTypeVariableIdentifier,
     PluginReleasePinModel,
@@ -588,131 +579,6 @@ class NodeSpecResponse(ApiResponse):
         )
 
 
-class NodePresetResponse(ApiResponse):
-    """A ready filled node: inserting it copies config and bindings by value."""
-
-    id: str
-    version: int = Field(ge=1)
-    node: NodeSpecResponse = Field(
-        description=(
-            "The preset's target operator, titled and typed as the preset so "
-            "the node library can list and match it like any node."
-        )
-    )
-    config: dict[str, JsonValue]
-    artifact_type_bindings: list[ArtifactTypeBindingModel]
-
-    @classmethod
-    def from_preset(
-        cls,
-        preset: NodePreset,
-        release: InstalledPluginRelease,
-        contract: PluginNodeContract,
-        readiness: PluginReleaseReadiness,
-    ) -> Self:
-        spec = NodeSpecResponse.from_plugin_release(release, contract, readiness)
-        ports = {"input": preset.contract.input, "output": preset.contract.output}
-        return cls(
-            id=preset.id,
-            version=preset.version,
-            node=spec.model_copy(
-                update={
-                    "title": preset.title,
-                    "description": preset.description,
-                    "inputs": [
-                        _preset_port(
-                            port,
-                            ports.get(port.name),
-                            preset.display_port_title("input"),
-                        )
-                        for port in spec.inputs
-                    ],
-                    "outputs": [
-                        _preset_port(
-                            port,
-                            ports.get(port.name),
-                            preset.display_port_title("output"),
-                        )
-                        for port in spec.outputs
-                    ],
-                    "catalog_visible": True,
-                }
-            ),
-            config=preset.node_config(),
-            artifact_type_bindings=[
-                ArtifactTypeBindingModel(
-                    variable=variable,
-                    artifact_type=ArtifactTypeKeyResponse.from_key(
-                        port.artifact_type.key()
-                    ),
-                )
-                for variable, port in ports.items()
-            ],
-        )
-
-
-def _preset_port(
-    port: PortResponse,
-    preset_port: PresetPort | None,
-    title: str,
-) -> PortResponse:
-    if preset_port is None:
-        return port
-    return port.model_copy(
-        update={
-            "title": title,
-            "description": None,
-            "artifact_type": ArtifactTypeKeyResponse.from_key(
-                preset_port.artifact_type.key()
-            ),
-            "artifact_type_variable": None,
-            "shape": preset_port.shape,
-            "accepted_shapes": [preset_port.shape],
-        }
-    )
-
-
-def node_presets(snapshot: CatalogSnapshot) -> list[NodePresetResponse]:
-    """Presets of the selected Python runner whose port types it declares."""
-
-    for release in snapshot.releases:
-        if (
-            release.installation.scope is not PluginReleaseScope.SYSTEM
-            or release.release.slug != PYTHON_PLUGIN_SLUG
-        ):
-            continue
-        contract = next(
-            (
-                node
-                for node in release.release.catalog.nodes
-                if node.operator_id == PYTHON_TRANSFORM_OPERATOR_ID
-                and node.operator_version == PYTHON_TRANSFORM_OPERATOR_VERSION
-            ),
-            None,
-        )
-        if contract is None:
-            return []
-        declared = {
-            (artifact.key.id, artifact.key.schema_version)
-            for artifact in (
-                *release.release.catalog.artifact_types,
-                *release.release.catalog.artifact_type_dependencies,
-            )
-        }
-        readiness = snapshot.node_readiness[
-            (release.release.slug, contract.operator_id, contract.operator_version)
-        ]
-        return [
-            NodePresetResponse.from_preset(preset, release, contract, readiness)
-            for preset in PYTHON_PRESETS
-            if all(
-                (port.artifact_type.id, port.artifact_type.schema_version) in declared
-                for port in (preset.contract.input, preset.contract.output)
-            )
-        ]
-    return []
-
-
 class UnavailableGraphModuleResponse(ApiResponse):
     graph_id: UUID
     revision: int = Field(ge=1, strict=True)
@@ -725,7 +591,6 @@ class NodeRegistryResponse(ApiResponse):
     artifact_types: list[ArtifactTypeSpecResponse]
     artifact_conversions: list[ArtifactConversionSpecResponse]
     nodes: list[NodeSpecResponse]
-    presets: list[NodePresetResponse] = Field(default_factory=list)
     unavailable_modules: list[UnavailableGraphModuleResponse] = Field(
         default_factory=list
     )
@@ -796,7 +661,6 @@ class NodeRegistryResponse(ApiResponse):
                 for release in snapshot.releases
                 for contract in release.release.catalog.nodes
             ],
-            presets=node_presets(snapshot),
             unavailable_modules=[],
         )
 
@@ -813,7 +677,6 @@ __all__ = [
     "ConfirmationRuleResponse",
     "FieldProjectionResponse",
     "MagicSegmentResponse",
-    "NodePresetResponse",
     "NodeRegistryResponse",
     "NodeSecretInputResponse",
     "NodeSpecResponse",

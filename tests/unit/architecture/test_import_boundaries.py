@@ -2,22 +2,10 @@ import ast
 from hashlib import sha256
 from importlib.util import resolve_name
 from pathlib import Path
-import subprocess
-import sys
 from typing import cast
-from zipfile import ZipFile
 
 import pytest
 import tomllib
-
-from grafy_core.domain.plugin_releases import (
-    PluginCatalogManifest,
-    plugin_contract_digest,
-)
-from grafy_plugin_llm import LLM
-from tests.support.plugin_contract_digests import (
-    stored_contract_digest_before_canonicalization,
-)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -27,10 +15,10 @@ PUBLISHED_PLUGIN_FAMILIES = (
     "gis",
     "llm",
     "mistral",
-    "python",
     "sql",
     "typesafe",
 )
+INSTALLED_PLUGIN_FAMILIES = PUBLISHED_PLUGIN_FAMILIES
 WORKBENCH_FAMILIES = (
     "image",
     "value",
@@ -98,51 +86,44 @@ def test_import_boundary_scan_resolves_python_import_forms(
     assert expected in _imported_modules(source, package)
 
 
-def test_optional_plugin_dependencies_are_not_owned_by_host_projects() -> None:
+def test_plugin_families_are_installed_from_the_workspace() -> None:
     root_document = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
-    api_document = tomllib.loads((REPO_ROOT / "apps/api/pyproject.toml").read_text())
-    core_document = tomllib.loads((REPO_ROOT / "libs/core/pyproject.toml").read_text())
-
     root_project = cast(dict[str, object], root_document["project"])
-    api_project = cast(dict[str, object], api_document["project"])
-    core_project = cast(dict[str, object], core_document["project"])
-
     root_dependencies = cast(list[str], root_project["dependencies"])
-    root_extras = cast(dict[str, list[str]], root_project["optional-dependencies"])
-    api_dependencies = cast(list[str], api_project["dependencies"])
-    core_dependencies = cast(list[str], core_project["dependencies"])
+    assert not root_project.get("optional-dependencies")
+    for family in INSTALLED_PLUGIN_FAMILIES:
+        assert f"grafy-plugin-{family}" in root_dependencies
 
-    assert not any(
-        requirement.startswith("grafy-plugin-llm") for requirement in root_dependencies
-    )
-    assert not any(
-        requirement.startswith("grafy-plugin-sql") for requirement in root_dependencies
-    )
-    assert not any(
-        requirement.startswith("grafy-plugin-mistral")
-        for requirement in root_dependencies
-    )
-    assert not any(
-        requirement.startswith("grafy-plugin-typesafe")
-        for requirement in root_dependencies
-    )
-    assert root_extras["llm"] == ["grafy-plugin-llm"]
-    assert root_extras["mistral"] == ["grafy-plugin-mistral"]
-    assert root_extras["sql"] == ["grafy-plugin-sql"]
-    assert root_extras["typesafe"] == ["grafy-plugin-typesafe"]
-
-    for dependencies in (api_dependencies, core_dependencies):
-        assert not any(
-            requirement.startswith(
-                (
-                    "grafy-plugin-llm",
-                    "grafy-plugin-mistral",
-                    "grafy-plugin-sql",
-                    "grafy-plugin-typesafe",
-                )
-            )
-            for requirement in dependencies
+    workspace = cast(dict[str, object], root_document["tool"])["uv"]
+    workspace = cast(dict[str, object], workspace)["workspace"]
+    workspace = cast(dict[str, object], workspace)
+    members = cast(list[str], workspace["members"])
+    excluded = cast(list[str], workspace["exclude"])
+    for family in PUBLISHED_PLUGIN_FAMILIES:
+        project_path = f"plugins/{family}"
+        assert project_path in members
+        assert project_path not in excluded
+        plugin_document = tomllib.loads(
+            (REPO_ROOT / project_path / "pyproject.toml").read_text()
         )
+        plugin_sources = cast(
+            dict[str, object], cast(dict[str, object], plugin_document["tool"])["uv"]
+        )["sources"]
+        assert cast(dict[str, object], plugin_sources)["grafy-core"] == {
+            "workspace": True
+        }
+        assert not (REPO_ROOT / project_path / "wheels").exists()
+        plugin_text = (REPO_ROOT / project_path / "pyproject.toml").read_text()
+        assert "wheels/" not in plugin_text
+        assert "SOURCE_DATE_EPOCH" not in plugin_text
+
+    core_wheel = (
+        REPO_ROOT
+        / "tests/fixtures/plugin-notes/wheels/grafy_core-0.1.0-py3-none-any.whl"
+    )
+    assert sha256(core_wheel.read_bytes()).hexdigest() == (
+        "bb1a53b247ef934625d985b3bdb1f3fbe6e726b0f002d77f60d452906475bcd2"
+    )
 
 
 def test_relational_dependencies_are_owned_by_persistence() -> None:
@@ -268,70 +249,19 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
         if family not in {"image", "table"}:
             assert not (REPO_ROOT / "plugins" / family).exists()
 
+
+def test_plugin_families_do_not_import_http_or_api_modules() -> None:
+    offenders: list[str] = []
     for family in PUBLISHED_PLUGIN_FAMILIES:
-        project_root = REPO_ROOT / "plugins" / family
-        document = tomllib.loads((project_root / "pyproject.toml").read_text())
-        project = cast(dict[str, object], document["project"])
-
-        assert (project_root / "uv.lock").is_file()
-        assert "grafy-core==0.1.0" in cast(list[str], project["dependencies"])
-        core_wheel = project_root / "wheels/grafy_core-0.1.0-py3-none-any.whl"
-        assert sha256(core_wheel.read_bytes()).hexdigest() == (
-            "06a3f0568b70fd50b1d3a15522c63a62fe333b6f1919d9e48e8161728850c2b0"
-        )
-        assert "workspace = true" not in (project_root / "pyproject.toml").read_text()
-
-
-_GUEST_DIGEST_PROBE = """
-import sys
-
-sys.path.insert(0, sys.argv[1])
-
-import grafy_core
-from grafy_core.domain.plugin_releases import (
-    PluginCatalogManifest,
-    plugin_contract_digest,
-    plugin_contract_digest_matches,
-)
-
-catalog = PluginCatalogManifest.model_validate_json(sys.stdin.read())
-print(grafy_core.__file__)
-print(plugin_contract_digest(catalog))
-print(plugin_contract_digest_matches(catalog, sys.argv[2]))
-"""
-
-
-def test_vendored_sdk_wheels_accept_the_digest_the_host_stores() -> None:
-    """Every vendored SDK wheel must canonicalize the catalog digest itself.
-
-    The guest runtime hashes the catalog with the SDK wheel installed in its own
-    image, so a wheel built before empty-default canonicalization rejects every
-    release the host publishes now. The wheel is run, not grepped: the symbols
-    being present says nothing about which fields the wheel's canonicalization
-    drops, so a wheel built from a different field-role table would pass a
-    source-text check and still reject the release the host just stored.
-    """
-
-    catalog = PluginCatalogManifest.from_plugin(LLM)
-    payload = catalog.model_dump_json()
-    canonical = plugin_contract_digest(catalog)
-    historical = stored_contract_digest_before_canonicalization(catalog)
-    assert historical != canonical
-
-    wheels = sorted(REPO_ROOT.glob("*/**/wheels/grafy_core-*.whl"))
-    assert len(wheels) >= len(PUBLISHED_PLUGIN_FAMILIES) + 1
-    for wheel in wheels:
-        guest = subprocess.run(
-            [sys.executable, "-c", _GUEST_DIGEST_PROBE, str(wheel), historical],
-            input=payload,
-            capture_output=True,
-            text=True,
-        )
-        assert guest.returncode == 0, f"{wheel}: {guest.stderr}"
-        module_file, digest, accepts_historical = guest.stdout.splitlines()
-        assert str(wheel) in module_file, module_file
-        assert digest == canonical, wheel
-        assert accepts_historical == "True", wheel
+        source_root = REPO_ROOT / "plugins" / family / "src"
+        for path in source_root.rglob("*.py"):
+            package = ".".join(path.parent.relative_to(source_root).parts)
+            for module in _imported_modules(path.read_text(), package):
+                if module == "grafy_api" or module.startswith("grafy_api."):
+                    offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+                if module == "fastapi" or module.startswith("fastapi."):
+                    offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+    assert offenders == []
 
 
 def test_execution_and_plugin_hosting_do_not_import_http_or_legacy_hosting() -> None:
@@ -384,70 +314,23 @@ def test_application_owners_do_not_depend_on_route_modules() -> None:
     assert offenders == []
 
 
-def _modules_in_wheel(wheel: Path) -> set[str]:
-    with ZipFile(wheel) as archive:
-        names = archive.namelist()
-
-    modules: set[str] = set()
-    for name in names:
-        if not name.endswith(".py"):
-            continue
-        parts = name.removesuffix(".py").split("/")
-        if parts[-1] == "__init__":
-            parts.pop()
-        if parts:
-            modules.add(".".join(parts))
-    return modules
-
-
-def _imported_core_modules(source: str) -> set[str]:
-    """Absolute ``grafy_core`` modules imported by one source file.
-
-    Imported names are deliberately not expanded into attribute paths:
-    ``from grafy_core.artifacts import ArtifactKind`` names one module and one
-    symbol, and only the module belongs to the wheel's module list.
-    """
-
-    modules: set[str] = set()
-    for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.Import):
-            modules.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module is not None:
-            modules.add(node.module)
-    return {
-        module
-        for module in modules
-        if module == "grafy_core" or module.startswith("grafy_core.")
-    }
-
-
-def test_vendored_sdk_wheels_contain_every_module_their_plugins_import() -> None:
-    """A Plugin resolves ``grafy_core`` from its committed vendored wheel.
-
-    The monorepo copy under ``libs/core`` is not on the Plugin's path, so a
-    stale wheel stays invisible until Plugin publication runs the candidate's
-    tests inside the publisher sandbox. Run ``just sdk-wheel`` and commit the
-    rebuilt wheel whenever ``libs/core`` gains a module a Plugin imports.
-    """
-
-    missing: list[str] = []
-    for wheel_root in sorted((REPO_ROOT / "plugins").glob("*/wheels")):
-        project = wheel_root.parent
-        wheels = sorted(wheel_root.glob("grafy_core-*.whl"))
-        assert len(wheels) <= 1, f"{project.name} vendors {len(wheels)} SDK wheels"
-        if not wheels:
-            continue
-
-        available = _modules_in_wheel(wheels[0])
-        for source in sorted((project / "src").rglob("*.py")):
-            for module in sorted(_imported_core_modules(source.read_text())):
-                if module not in available:
-                    missing.append(
-                        f"{project.name}: {module} (imported by {source.name})"
-                    )
-
-    assert not missing, (
-        "Vendored SDK wheels are missing grafy_core modules their Plugins "
-        "import. Run `just sdk-wheel` and commit the rebuilt wheels:\n  "
-        + "\n  ".join(sorted(set(missing)))
+def test_active_graph_execution_has_no_release_or_sandbox_dependency() -> None:
+    owners = (
+        "services/application.py",
+        "services/composition.py",
+        "execution/compiler.py",
+        "execution/preflight.py",
+        "execution/run_graph.py",
+        "node_secrets.py",
     )
+    root = REPO_ROOT / "apps/api/src/grafy_api"
+    for owner in owners:
+        path = root / owner
+        package = "grafy_api." + str(Path(owner).parent).replace("/", ".")
+        imports = _imported_modules(path.read_text(), package)
+        assert not any(
+            module.startswith(
+                ("grafy_api.plugins.runtime", "grafy_api.execution.releases")
+            )
+            for module in imports
+        ), f"{owner} must execute application families through the static registry"

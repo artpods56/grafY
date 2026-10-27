@@ -26,7 +26,6 @@ from grafy_core.domain.saved_graphs import (
 from grafy_api.v1.models import (
     ArtifactTypeBindingModel,
     ArtifactTypeKeyResponse,
-    PluginReleasePinModel,
 )
 
 
@@ -57,7 +56,6 @@ class RunNodeRequest(BaseModel):
     artifact_type_bindings: list[ArtifactTypeBindingModel] = Field(
         default_factory=list,
     )
-    plugin_release: PluginReleasePinModel | None = None
 
     @classmethod
     def from_saved_node(
@@ -86,11 +84,6 @@ class RunNodeRequest(BaseModel):
                 )
                 for binding in node.artifact_type_bindings
             ],
-            plugin_release=(
-                PluginReleasePinModel.from_saved_pin(node.plugin_release_pin)
-                if node.plugin_release_pin is not None
-                else None
-            ),
         )
 
     @model_validator(mode="after")
@@ -100,17 +93,17 @@ class RunNodeRequest(BaseModel):
             raise ValueError("Node artifact type binding variables must be unique")
         return self
 
-    @model_validator(mode="after")
-    def validate_kind_and_pin(self) -> "RunNodeRequest":
-        if self.kind == "plugin":
-            if self.plugin_release is None:
-                raise ValueError(
-                    "Plugin node must pin an exact Plugin release with scope, slug, "
-                    "and revision"
-                )
-        elif self.plugin_release is not None:
-            raise ValueError(f"{self.kind} node cannot carry a Plugin release pin")
-        return self
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_implementation(cls, value: object) -> object:
+        if not isinstance(value, Mapping):
+            return value
+        normalized = dict(cast(Mapping[object, object], value))
+        normalized.pop("plugin_release", None)
+        normalized.pop("plugin_release_pin", None)
+        if normalized.get("kind") == "plugin":
+            normalized["kind"] = "builtin"
+        return normalized
 
 
 class FieldProjectionRequest(BaseModel):

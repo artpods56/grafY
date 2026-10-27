@@ -83,13 +83,6 @@ export type GraphCommand =
       readonly layout: AuthoredGraphNode["layout"];
     }
   | {
-      readonly kind: "update_node_plugin_release";
-      readonly node_id: string;
-      readonly plugin_release: NonNullable<
-        AuthoredGraphNode["plugin_release_pin"]
-      >;
-    }
-  | {
       readonly kind: "add_input_plug";
       readonly node_id: string;
       readonly plug: NonNullable<AuthoredGraphNode["input_plugs"]>[number];
@@ -230,26 +223,17 @@ function presentationForDocument(
 }
 
 export function projectSavedGraphNode(node: SavedGraphNode): SavedGraphNode {
-  const pluginReleasePin = node.plugin_release_pin;
   return {
     artifact_type_bindings: (node.artifact_type_bindings ?? []).map(
       projectArtifactTypeBinding,
     ),
     config: structuredClone(node.config ?? {}),
     id: node.id,
-    kind: node.kind,
+    kind: node.kind === "module" ? "module" : "builtin",
     input_plugs: (node.input_plugs ?? []).map(projectSavedGraphInputPlug),
     layout: projectSavedGraphLayout(node.layout),
     operator_id: node.operator_id,
     operator_version: node.operator_version,
-    plugin_release_pin:
-      pluginReleasePin === null || pluginReleasePin === undefined
-        ? null
-        : {
-            scope: pluginReleasePin.scope,
-            slug: pluginReleasePin.slug,
-            revision: pluginReleasePin.revision,
-          },
     position: {
       x: node.position.x,
       y: node.position.y,
@@ -443,7 +427,6 @@ export function executionInvalidatedNodeIds(
   switch (command.kind) {
     case "update_node_configuration":
     case "update_node_configuration_and_input_plugs":
-    case "update_node_plugin_release":
     case "add_input_plug":
     case "remove_input_plug":
     case "reorder_input_plug":
@@ -610,15 +593,6 @@ export function applyGraphCommandNormalized(
       return updateNode(document, command.node_id, (node) => ({
         ...node,
         layout: projectSavedGraphLayout(command.layout),
-      }));
-    case "update_node_plugin_release":
-      return updateNode(document, command.node_id, (node) => ({
-        ...node,
-        plugin_release_pin: {
-          scope: command.plugin_release.scope,
-          slug: command.plugin_release.slug,
-          revision: command.plugin_release.revision,
-        },
       }));
     case "add_input_plug":
       return updateNode(document, command.node_id, (node) => ({

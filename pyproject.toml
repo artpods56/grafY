@@ -12,17 +12,14 @@ dependencies = [
     "grafy-workbench",
     "grafy-storage",
     "grafy-shared",
+    "grafy-plugin-gis",
+    "grafy-plugin-image",
+    "grafy-plugin-llm",
+    "grafy-plugin-mistral",
+    "grafy-plugin-sql",
+    "grafy-plugin-table",
+    "grafy-plugin-typesafe",
 ]
-
-[project.optional-dependencies]
-image = ["grafy-plugin-image"]
-table = ["grafy-plugin-table"]
-gis = ["grafy-plugin-gis"]
-llm = ["grafy-plugin-llm"]
-mistral = ["grafy-plugin-mistral"]
-python = ["grafy-plugin-python"]
-sql = ["grafy-plugin-sql"]
-typesafe = ["grafy-plugin-typesafe"]
 
 [tool.uv]
 package = false
@@ -37,17 +34,16 @@ members = [
     "libs/shared",
     "apps/api",
     "apps/plugin-egress-broker",
+    "plugins/gis",
+    "plugins/image",
+    "plugins/llm",
+    "plugins/mistral",
+    "plugins/sql",
+    "plugins/table",
+    "plugins/typesafe",
 ]
 exclude = [
     "tests/fixtures/plugin-notes",
-    "plugins/image",
-    "plugins/table",
-    "plugins/gis",
-    "plugins/llm",
-    "plugins/mistral",
-    "plugins/python",
-    "plugins/sql",
-    "plugins/typesafe",
 ]
 
 [tool.uv.sources]
@@ -59,20 +55,13 @@ grafy-persistence = { workspace = true }
 grafy-storage = { workspace = true }
 grafy-workbench = { workspace = true }
 grafy-shared = { workspace = true }
-# The Plugin projects stay out of the workspace so their own environments keep
-# resolving grafy_core from the vendored wheels in plugins/*/wheels. The root
-# workspace still imports them for tests, lint, and type checks, and a
-# non-editable path install is a snapshot: uv reports "Checked 110 packages"
-# and never rebuilds it after plugins/*/src changes, so the monorepo silently
-# tests stale Plugin code. Editable keeps the root import pointed at source.
-grafy-plugin-image = { path = "plugins/image", editable = true }
-grafy-plugin-table = { path = "plugins/table", editable = true }
-grafy-plugin-llm = { path = "plugins/llm", editable = true }
-grafy-plugin-mistral = { path = "plugins/mistral", editable = true }
-grafy-plugin-gis = { path = "plugins/gis", editable = true }
-grafy-plugin-python = { path = "plugins/python", editable = true }
-grafy-plugin-sql = { path = "plugins/sql", editable = true }
-grafy-plugin-typesafe = { path = "plugins/typesafe", editable = true }
+grafy-plugin-gis = { workspace = true }
+grafy-plugin-image = { workspace = true }
+grafy-plugin-llm = { workspace = true }
+grafy-plugin-mistral = { workspace = true }
+grafy-plugin-sql = { workspace = true }
+grafy-plugin-table = { workspace = true }
+grafy-plugin-typesafe = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -105,7 +94,6 @@ include = [
     "plugins/llm/*",
     "plugins/mistral/*",
     "plugins/gis/*",
-    "plugins/python/*",
     "plugins/sql/*",
     "plugins/typesafe/*",
     "apps/api/*",
@@ -133,7 +121,6 @@ executionEnvironments = [
         "plugins/llm/src",
         "plugins/mistral/src",
         "plugins/gis/src",
-        "plugins/python/src",
         "plugins/sql/src",
         "plugins/typesafe/src",
         "apps/api/src",

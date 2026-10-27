@@ -77,7 +77,7 @@ function state(): WorkbenchAuthoringState {
 }
 
 describe("Workbench authored document adapter", () => {
-  it("authors the exact scoped catalog pin at the requested insertion position", () => {
+  it("authors a deployed family at the requested insertion position", () => {
     const data = createWorkflowNodeData({
       operator_id: "reports.render",
       operator_version: 7,
@@ -112,16 +112,11 @@ describe("Workbench authored document adapter", () => {
         ],
         config: { nested: { threshold: 3 } },
         id: "plugin-node",
-        kind: "plugin",
+        kind: "builtin",
         input_plugs: [],
         layout: { width: 420, body_height: 180, appendix_height: 260 },
         operator_id: "reports.render",
         operator_version: 7,
-        plugin_release_pin: {
-          scope: "system",
-          slug: "reports",
-          revision: 11,
-        },
         position: { x: 80, y: 120 },
       },
     });

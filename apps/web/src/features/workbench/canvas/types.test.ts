@@ -132,33 +132,6 @@ describe("artifact query initialization", () => {
   });
 });
 
-describe("scoped Plugin release pins", () => {
-  it("pins a newly authored catalog node to its advertised immutable release", () => {
-    const data = createWorkflowNodeData({
-      ...genericNodeSpec,
-      plugin_slug: "notes",
-      origin: "plugin",
-      plugin_revision: 4,
-      plugin_release: { scope: "system", slug: "notes", revision: 4 },
-    });
-
-    expect(data.pluginReleasePin).toEqual({
-      scope: "system",
-      slug: "notes",
-      revision: 4,
-    });
-    expect(serializeRunNode("notes-1", data).plugin_release).toEqual({
-      scope: "system",
-      slug: "notes",
-      revision: 4,
-    });
-  });
-
-  it("keeps host Plugin nodes unpinned", () => {
-    expect(createWorkflowNodeData(genericNodeSpec).pluginReleasePin).toBeNull();
-  });
-});
-
 describe("generic artifact type reset", () => {
   it("keeps an incident binding and clears a disconnected binding", () => {
     const data = createWorkflowNodeData(genericNodeSpec);

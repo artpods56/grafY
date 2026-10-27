@@ -50,10 +50,10 @@ The contract for an artifact payload. It owns the stable type id, schema
 version, payload schema, display title, materialized JSON shape, declared field
 projections and exports, and an exact portable bundle format/version. Another
 Plugin may reference the type only by carrying the same complete serialized
-contract as a release dependency; a matching id/version with different
+contract as an artifact-type dependency; a matching id/version with different
 contract bytes is a collision. Versioned conversions between artifact types
 are deployment-owned canonical behavior, not an asset of either endpoint's
-Plugin release.
+family.
 
 An inline artifact type also declares every field that contains persisted
 artifact references, including the JSON path, target artifact type, and whether
@@ -105,10 +105,10 @@ _Avoid_: json file, generic json
 ### Extension claim
 
 The mapping a `file.*` artifact type declares from one extension string to
-itself, carried in the artifact type contract and published with the type's
-release. One extension maps to exactly one format type, so a type cannot claim an
-extension the deployment already holds, and the deployment refuses the
-installation that would collide. A claim states which bytes belong to the format.
+itself, carried in the artifact type contract and registered with the type. One
+extension maps to exactly one format type, so a type cannot claim an extension
+the deployment already holds, and composition refuses a family whose claim would
+collide. A claim states which bytes belong to the format.
 Confirming those bytes is the format's own rule.
 _Avoid_: file type registration, extension mapping, upload node
 
@@ -300,29 +300,6 @@ also require shared execution state, event replay, cancellation routing, and an
 owner lease; adding more HTTP stream endpoints alone would not make execution
 multi-worker safe.
 
-### Python node
-
-A node of the published `external.python` System Plugin that runs an applied
-`transform` function in the existing Plugin sandbox. It has one data input and
-one output, whose annotations choose registered artifact types and ONE or MANY
-shape through `list[T]`. An optional `Params` Pydantic class supplies the settings
-form in the card. Apply derives and stores the contract and code hash; opening or
-compiling a graph needs no sandbox. Code edits stay drafts until Apply.
-
-Python transforms use EXACT caching and are expected to be deterministic. Code,
-params, bindings, the exact release and inputs participate in the key. Invocation
-metadata is read-only and must not be used to make outputs depend on a run ID.
-Containers are reused within a run scope, including mapped invocations.
-
-### Preset
-
-A versioned, ready-filled single node copied into a graph. A Python preset carries
-code, port types and shapes, params schema and defaults. The node stores the preset
-id and version, but later preset changes never update the copied node. Split text,
-Replace text, Join text and As Markdown are presets of the Python node. The
-operators they replaced are gone: a Saved Graph that still contains one fails to
-compile and must be rebuilt on the preset.
-
 ### Invocation cache entry
 
 A global, content-addressed reuse record for one node invocation. It is not a
@@ -347,7 +324,7 @@ roots, so future artifact garbage collection must include them.
 A path from one compound artifact payload to a value that can be materialized as
 another artifact type. The registry derives structural projections for nested
 JSON Schema `string` and `integer` leaves when canonical scalar targets are
-installed; plugins may explicitly override a path when they need a different
+registered; plugins may explicitly override a path when they need a different
 target or title. A projection is selected on an edge, persisted by exact path,
 and validated again at runtime. It is not a visible adapter node and does not
 introduce operation-specific leaf artifact types. Arrays and schema-less dynamic
@@ -457,8 +434,8 @@ older contracts.
 
 Programmatic authors build the same versioned `SavedGraphDocument` persisted by
 the API and edited by the Workbench. A client resolves each local Node class
-against the effective Workspace catalog, embeds the catalog's exact Plugin
-release pin, validates port shapes and artifact-type bindings, and submits the
+against the deployment catalog, records the operator id and version, validates
+port shapes and artifact-type bindings, and submits the
 ordinary nested `{ name, document }` graph contract. There is no automation-only
 graph representation or execution path. Saved execution reloads the requested
 revision on the server and derives the runtime request from that canonical
@@ -474,68 +451,51 @@ to own its projection and artifact conversion path.
 
 ### Builtin family
 
-A node family that ships as part of the workbench application, not as a Plugin
-package. Builtin nodes identify by family slug and the deployment's build
-digest. They are not Plugin releases and do not carry a release pin.
+A node family that ships inside the `grafy-workbench` package rather than in its
+own package under `plugins/`. Builtin nodes identify by family slug and the
+deployment's build digest.
 _Avoid_: bundled plugin, host plugin, system builtin plugin
 
 ### Plugin
 
-A uv-managed project that groups nodes, artifact types, and the resolver/writer
-factories those types require under one stable slug.
-The working copy is a directory; execution trusts an immutable **Plugin
-release** and an exact **Plugin installation**, not an ambient import into the
-API process. Every installation is visible in **System** scope; no Plugin
-release belongs to a **Workspace**. Module is a separate catalog entry kind, not
-a Plugin scope.
+A node-family package under `plugins/<family>/` that the API process loads at
+composition: nodes, artifact types, and the resolver and writer factories those
+types require, under one stable slug. A Plugin is application code, not a
+deployable. It ships in the API's own image and lockfile, is installed into the
+same `PluginRegistry` as the builtin families from one static tuple, and its
+nodes identify by family slug and the deployment's build digest — exactly as a
+builtin family does. Which families exist is a build decision: a family absent
+from the tuple has no nodes, no artifact types and no catalog entry.
+_Avoid_: release, revision, installation, selection, revocation, publication,
+promotion, registry, sandbox, isolated-only, system plugin
 
-Each project owns one loader target in `[tool.grafy.plugin]`; projects without
-that declaration use `grafy_plugin:PLUGIN`. System inventory repeats the target
-as a deployment assertion, not as a second runtime path. The import name is
-never catalog identity. Publication is a platform/CI authority holding a
-platform access token, and it always retains an OCI artifact. Published Plugins
-execute in isolated workers. Builtin families owned by `grafy-workbench` run
-in-process with the API and are not Plugin releases. Plugins depend inward on
-core contracts and ports, never on the API host or concrete storage adapters.
-See [plugin unification](docs/design/plugin-unification.md) and
-[ADR 0015](docs/adr/0015-plugins-are-system-only.md).
+A Plugin keeps its own package and third-party dependencies, so a heavy native
+or provider dependency set stays out of `grafy-workbench`. It depends inward on
+core contracts and ports, never on the API host or concrete storage adapters,
+and it owns no HTTP route. What ADR 0017 took away is the ability to be
+versioned, published, or executed in another process; the import name is still
+never catalog identity, and the slug is.
+See [ADR 0017](docs/adr/0017-plugins-are-application-code-in-process.md).
 
-### Plugin root
+The current application registry excludes Python and SQL. Python execution and
+its presets are retired. SQL remains unavailable pending its execution safety
+review. Historical Plugin pins are ignored on read without rewriting stored
+checkpoints; all registered nodes use the deployment build identity.
 
-A deployment-allowlisted directory under which a Plugin working copy may live
-and be published from. Roots are not the node catalog and grant no visibility by
-themselves: only the checked-in System inventory decides which slug and identity
-a publication may claim. Repository-owned `plugins/<family>/` directories are the
-roots of a normal deployment.
+### Egress guard
 
-### Plugin release
-
-An append-only, digest-addressed freeze of one Plugin package: source archive,
-lock, inspected node and artifact contracts, canonical-conversion references,
-runtime profile, invocation protocol, capabilities, loader contract, publisher
-attribution, and immutable OCI artifact. The same descriptor bytes do not create
-another revision.
-
-### Plugin installation
-
-An append-only assignment of one exact Plugin release to the System namespace.
-The installation owns execution policy, installation authority, and installation
-time, and its authority is always a platform actor.
-
-### Plugin selection
-
-The mutable current installation for one System Plugin family. Its public graph
-pin is `{scope, slug, release revision}`, and `scope` is always `system`. A
-selection has a generation and a published, deprecated, or withdrawn lifecycle
-state. Current never means the greatest retained release revision.
-
-A graph node carries two independent exact identities: the operator
-(`notes.table.summarize@1`) and the installed Plugin release
-(`{scope: system, slug: notes, revision: 4}`). Publishing revision 5 never
-moves that pin. A stored pin that names the Workspace scope resolves to nothing
-and is reported as unsupported. Deprecation and withdrawal prevent new insertion while retained
-exact pins may run. Exact revocation retains the release and installation but
-denies execution.
+The single place that decides whether a destination named in node configuration
+may be dialed: it resolves the host, refuses the address set unless every answer
+is a global address, and holds the connection to one of those answers — by
+dialing the validated address for HTTP, and by asserting the kernel-reported peer
+address before any statement runs for PostgreSQL, whose driver cannot separate
+the address it dials from the name a certificate is verified against. Every
+user-supplied destination goes through it
+— LLM, Mistral and Typesafe `base_url`, WFS and WMS, and the SQL node's
+PostgreSQL host — so the deployment's own Postgres, MinIO and Keycloak are
+unreachable from a graph. A trusted private destination comes from operator
+configuration only; a node, a graph and a Workspace can never widen it.
+_Avoid_: egress broker, network policy, sandbox network
 
 ### Module (workspace library)
 
@@ -555,12 +515,11 @@ calls keep resolving.
 
 ### Node catalog / Add node
 
-The effective Workspace catalog contains app-owned builtin families, the
-selected System Plugin releases, and published Modules as a separate entry kind.
-Every insertable Plugin node supplies an exact release pin and a derived
-runnable or disabled reason from the same admission policy used by compilation.
-Builtin nodes are identified by family slug and the deployment's build digest;
-they do not carry a Plugin release pin.
+The catalog lists the builtin families, the Plugin families installed in this
+deployment, and published Modules as a separate entry kind. Every insertable node
+carries its operator id and version plus the deployment's build digest; an
+operator that is not in the registry is a compile error, not a disabled entry
+waiting for a release.
 
 Grafy's builtin families contain broadly reusable operations: Image, Sequence,
 Value, Text, Schema, Table, and File. A builtin artifact type must have precise,
@@ -579,14 +538,15 @@ table interpretation remains with its producer.
 Sequence provides `Collect<T>`, Count, Slice, and Pick item; image- and
 text-specific collectors are not separate builtin nodes. Schema provides one
 recursive JSON Schema Builder, and the LLM Plugin provides deterministic
-prompt-message construction; provider-backed execution remains an optional
-System Plugin.
+prompt-message construction; provider-backed execution stays in the
+`external.llm` Plugin.
 OCR table fragments remain Mistral-owned because deciding how Markdown rows become
 headers, columns, and inferred values is a source-specific normalization rather
-than a shape-preserving artifact conversion. Optional System families provide
-remote or domain-specific nodes through the same release schema. SQL remains
-isolated-only because user-authored queries are executable code and validation
-is not a sandbox. [R45: Untrusted Query Isolation]
+than a shape-preserving artifact conversion. Plugin families provide remote and
+domain-specific nodes through the same registry as the builtin families. SQL still
+runs outside the API process — in the DuckDB subprocess worker, or in the author's
+own database behind the egress guard — because user-authored queries are
+executable code and validation is not a sandbox. [R45: Untrusted Query Isolation]
 
 ### Port
 

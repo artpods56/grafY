@@ -39,7 +39,6 @@ from grafy_core.spatial_contracts import (
     VectorProjectionMetadata as VectorProjectionMetadata,
     WmsImageFormat as WmsImageFormat,
     WmsVersion as WmsVersion,
-    validated_public_service_url as validated_public_service_url,
 )
 
 
