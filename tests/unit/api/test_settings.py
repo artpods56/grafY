@@ -1,7 +1,9 @@
 """Configuration sections, their environment binding, and the composed parent."""
 
 import json
+import os
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -17,6 +19,9 @@ from grafy_shared.config import (
     RealtimeConfig,
     StorageConfig,
     UploadConfig,
+)
+from grafy_shared.config.app import (
+    _working_tree_build_digest,  # pyright: ignore[reportPrivateUsage]
 )
 
 from grafy_api.plugins.runtime.egress import (
@@ -721,3 +726,185 @@ def test_a_malformed_trusted_egress_destination_names_the_variable_it_came_from(
 
     assert TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE in str(raised.value)
     assert entry in str(raised.value)
+
+
+def _git_repository(root: Path) -> Path:
+    """Create a throwaway repository holding one committed file.
+
+    The development build digest is read from the working tree, so these tests need a
+    repository that answers the same way on every machine: no global or system git
+    config, and an identity supplied per command rather than borrowed from whoever
+    runs the suite.
+    """
+
+    environment = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+
+    def run(*arguments: str) -> None:
+        subprocess.run(
+            ("git", *arguments),
+            cwd=root,
+            env=environment,
+            check=True,
+            capture_output=True,
+        )
+
+    root.mkdir(parents=True, exist_ok=True)
+    run("init", "-q", "--initial-branch=main")
+    (root / "operator.py").write_text("VALUE = 1\n", encoding="utf-8")
+    run("add", "operator.py")
+    run(
+        "-c",
+        "user.email=grafy@example.invalid",
+        "-c",
+        "user.name=Grafy Test",
+        "commit",
+        "-q",
+        "-m",
+        "source",
+    )
+    return root
+
+
+def _tree_digest(root: Path) -> str | None:
+    """Read the working-tree digest now, bypassing the one-read-per-process cache.
+
+    A restart is exactly that: a fresh read of the tree. Asserting through the uncached
+    derivation is what lets a test say something about a second process, which the
+    process that runs the test cannot be.
+    """
+
+    return _working_tree_build_digest(root)
+
+
+def _inside_repository(root: Path) -> bool:
+    completed = subprocess.run(
+        ("git", "-C", str(root), "rev-parse", "--show-toplevel"),
+        capture_output=True,
+    )
+    return completed.returncode == 0
+
+
+def _development_digest() -> str:
+    """The digest a development process gives itself in the current directory."""
+
+    return AppConfig(
+        environment="development",
+        _env_file=None,  # pyright: ignore[reportCallIssue]
+    ).resolved_build_digest
+
+
+def test_the_development_digest_is_a_property_of_the_tree_not_of_the_process(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A restart that changed no source must keep what the last run produced.
+
+    Materialized outputs and cached invocations carry the build digest as their
+    identity. A development process invented a new digest every boot, so restarting the
+    API presented every output card as never materialized even though the source was
+    byte-identical. The identity comes from the tree instead, and a tree answers the
+    same question the same way twice.
+    """
+
+    repository = _git_repository(tmp_path / "repo")
+    monkeypatch.chdir(repository)
+
+    assert _tree_digest(repository) == _tree_digest(repository)
+    assert _development_digest() == _tree_digest(repository)
+
+
+def test_editing_source_moves_the_development_digest(tmp_path: Path) -> None:
+    """A stable digest still has to move when the code behind an output changes.
+
+    Stability alone would be worse than the digest it replaced: an output produced by
+    different code must never be served as current. Both ways an edit reaches a running
+    process count — a tracked file rewritten, and a new file picked up without ever
+    being committed.
+    """
+
+    repository = _git_repository(tmp_path / "repo")
+    committed = _tree_digest(repository)
+
+    (repository / "operator.py").write_text("VALUE = 2\n", encoding="utf-8")
+    edited = _tree_digest(repository)
+    (repository / "operator.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    assert committed is not None
+    assert edited is not None
+    assert edited != committed
+    assert _tree_digest(repository) == committed
+
+    (repository / "new_operator.py").write_text("VALUE = 3\n", encoding="utf-8")
+    assert _tree_digest(repository) != committed
+
+
+def test_ignored_paths_are_not_source_for_the_development_digest(
+    tmp_path: Path,
+) -> None:
+    """The local database, object store and secrets do not identify the code.
+
+    Reading the tree happens at startup, so `.gitignore` is what keeps a development
+    database and a rewritten `.env` from being hashed as if they were source — and what
+    keeps an unrelated write from discarding every cached output.
+    """
+
+    repository = _git_repository(tmp_path / "repo")
+    (repository / ".gitignore").write_text("*.sqlite3\n", encoding="utf-8")
+    before = _tree_digest(repository)
+
+    (repository / "grafy.sqlite3").write_bytes(b"\x00" * 4096)
+
+    assert _tree_digest(repository) == before
+
+
+def test_a_source_tree_that_cannot_be_read_falls_back_to_invalidating_everything(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Where no identity can be verified, none is claimed.
+
+    Outside a repository the digest cannot be derived, so the process keeps the
+    per-process digest it had before: every materialized output reads as foreign to it,
+    which is the safe direction to be wrong in.
+    """
+
+    if _inside_repository(tmp_path):
+        pytest.skip("the temporary directory sits inside a repository")
+    monkeypatch.chdir(tmp_path)
+
+    digest = _development_digest()
+
+    assert re.fullmatch(r"[0-9a-f]{64}", digest)
+    assert digest == _development_digest()
+
+
+def test_an_explicit_build_digest_wins_over_the_working_tree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The deployment always states its own identity; derivation is only the fallback."""
+
+    monkeypatch.chdir(_git_repository(tmp_path / "repo"))
+    monkeypatch.setenv("GRAFY_BUILD_DIGEST", "b" * 64)
+
+    assert _development_digest() == "b" * 64
+
+
+def test_production_refuses_to_derive_its_build_digest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A container's digest names an immutable image, so a working tree never stands in."""
+
+    monkeypatch.chdir(_git_repository(tmp_path / "repo"))
+
+    with pytest.raises(ValueError, match="GRAFY_BUILD_DIGEST"):
+        AppConfig(  # pyright: ignore[reportCallIssue]
+            environment="production",
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+        ).resolved_build_digest

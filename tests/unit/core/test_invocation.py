@@ -98,6 +98,7 @@ class RecordingWriter:
         self.values: list[int] = []
         self.item_indexes: list[int | None] = []
         self.completed_counts: list[int] = []
+        self.context_metadata: list[dict[str, object]] = []
         self.refs: list[ArtifactRef] = []
 
     async def write(
@@ -109,6 +110,7 @@ class RecordingWriter:
         self.values.append(value)
         self.item_indexes.append(context.item_index)
         self.completed_counts.append(self._completed_count())
+        self.context_metadata.append(dict(context.metadata))
         ref = ArtifactRef.from_key(
             artifact_id=uuid4(),
             key=self.artifact_type,
@@ -564,6 +566,41 @@ async def test_output_persister_rejects_passthrough_key_and_shape_mismatches() -
             ),
             provenance,
         )
+
+
+@pytest.mark.asyncio
+async def test_sequence_items_carry_the_metadata_of_their_port() -> None:
+    """Every item of a sequence port came from the same implementation as its port.
+
+    The implementation identity recorded in artifact metadata is how a later read tells
+    whether an output came from the code now running. It reached a single-value output
+    and was dropped from each item written for a MANY port, so every sequence output —
+    a decoded image, a scanned raster — could not read as current to the build that
+    produced it, and the card that follows it fell back to waiting.
+    """
+
+    writer = RecordingWriter()
+    writers = ArtifactWriterRegistry()
+    writers.register(cast(ArtifactOutputWriter, writer))
+    implementation = BuiltinImplementationIdentity(build_digest="a" * 64)
+
+    await OutputPersister(writers).persist(
+        derive_output_contract(ManyOutput),
+        NodeExecutionContext(
+            workspace_id=TEST_WORKSPACE_ID,
+            node_id="many",
+        ),
+        ManyOutput(values=[1, 2, 3]),
+        MaterializationProvenance(refs_by_input={}),
+        metadata={"implementation": implementation.provenance_document()},
+    )
+
+    assert writer.item_indexes == [0, 1, 2]
+    assert writer.context_metadata == [
+        {"implementation": {"kind": "builtin", "build_digest": "a" * 64}},
+        {"implementation": {"kind": "builtin", "build_digest": "a" * 64}},
+        {"implementation": {"kind": "builtin", "build_digest": "a" * 64}},
+    ]
 
 
 class FingerprintConfig(NodeConfig):
