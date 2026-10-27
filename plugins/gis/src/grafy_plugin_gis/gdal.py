@@ -17,7 +17,6 @@ PMTILES_MAX_ZOOM: Final = 22
 COG_BLOCK_SIZE: Final = 256
 _GDAL_ENVIRONMENT_ALLOWLIST: Final = (
     "PATH",
-    "HOME",
     "TMPDIR",
     "TMP",
     "TEMP",
@@ -26,8 +25,6 @@ _GDAL_ENVIRONMENT_ALLOWLIST: Final = (
     "GDAL_DATA",
     "PROJ_LIB",
     "PROJ_DATA",
-    "GDAL_CACHEMAX",
-    "GDAL_NUM_THREADS",
 )
 
 
@@ -168,6 +165,15 @@ class GdalCli:
             for key in _GDAL_ENVIRONMENT_ALLOWLIST
             if key in os.environ
         }
+        # Avoid per-user GDAL configuration and native thread/cache growth.
+        self._environment.update(
+            GDAL_CONFIG_FILE=os.devnull,
+            GDAL_CACHEMAX="64",
+            GDAL_NUM_THREADS="1",
+            OMP_NUM_THREADS="1",
+            OPENBLAS_NUM_THREADS="1",
+            PROJ_NETWORK="OFF",
+        )
         self._versions: dict[str, str] = {}
         self._driver_support: dict[tuple[str, str, str], bool] = {}
 

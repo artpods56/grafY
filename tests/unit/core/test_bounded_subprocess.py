@@ -1,9 +1,13 @@
+import asyncio
+import json
 import os
 import socket
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from threading import BoundedSemaphore
+from dataclasses import replace
+from pathlib import Path
+from threading import BoundedSemaphore, Event
 
 import pytest
 import grafy_core.bounded_subprocess as bounded
@@ -11,21 +15,19 @@ from grafy_core.bounded_subprocess import (
     BoundedSubprocessError,
     BoundedSubprocessPolicy,
     run,
+    run_in_thread,
 )
 
 
-def policy(**overrides: object) -> BoundedSubprocessPolicy:
-    values: dict[str, int | float] = {
-        "address_space_bytes": 16 * 1_024 * 1_024 * 1_024,
-        "cpu_seconds": 30,
-        "open_files": 64,
-        "wall_time_seconds": 10.0,
-        "stdout_limit_bytes": 2_000,
-        "stderr_limit_bytes": 2_000,
-        "file_size_bytes": 1_024 * 1_024,
-    }
-    values.update(overrides)  # type: ignore[arg-type]
-    return BoundedSubprocessPolicy(**values)
+def policy(**overrides: int | float) -> BoundedSubprocessPolicy:
+    base = replace(
+        bounded.DEFAULT_POLICY,
+        cpu_seconds=30,
+        wall_time_seconds=10.0,
+        stdout_limit_bytes=2_000,
+        stderr_limit_bytes=2_000,
+    )
+    return replace(base, **overrides)  # type: ignore[arg-type]
 
 
 def child_env() -> dict[str, str]:
@@ -46,7 +48,11 @@ def test_run_returns_captured_stdout() -> None:
 def test_nonzero_exit_has_operation_and_bounded_diagnostic() -> None:
     with pytest.raises(BoundedSubprocessError) as raised:
         run(
-            [sys.executable, "-c", "import sys; print('  bad\\n output  '); sys.exit(7)"],
+            [
+                sys.executable,
+                "-c",
+                "import sys; print('  bad\\n output  '); sys.exit(7)",
+            ],
             operation="convert raster",
             env=child_env(),
             policy=policy(stderr_limit_bytes=8_000),
@@ -84,28 +90,6 @@ def test_stdout_and_stderr_have_independent_capture_limits() -> None:
 
     assert result.stdout == "abc"
     assert result.stderr == "12345"
-
-
-def test_launcher_parses_resource_limits_from_argv() -> None:
-    limits, command = bounded._parse_launcher_arguments(
-        [
-            "--address-space=1024",
-            "--cpu-seconds=30",
-            "--open-files=64",
-            "--file-size=4096",
-            "--",
-            "gdalinfo",
-            "--version",
-        ]
-    )
-
-    assert limits == bounded.BoundedSubprocessResourceLimits(
-        address_space_bytes=1024,
-        cpu_seconds=30,
-        open_files=64,
-        file_size_bytes=4096,
-    )
-    assert command == ["gdalinfo", "--version"]
 
 
 def test_timeout_kills_process_group_including_grandchildren() -> None:
@@ -211,3 +195,152 @@ def test_semaphore_caps_concurrent_children(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert peak == cap
 
+
+def test_successful_parent_cannot_leave_descendants_holding_output_pipes() -> None:
+    result = run(
+        [
+            sys.executable,
+            "-c",
+            "import subprocess, sys; "
+            "subprocess.Popen([sys.executable, '-c', 'import signal; signal.pause()']); "
+            "print('parent complete')",
+        ],
+        operation="descendant pipe cleanup",
+        env=child_env(),
+        policy=policy(),
+    )
+    assert result.stdout == "parent complete\n"
+
+
+def test_crashed_native_process_does_not_break_next_invocation() -> None:
+    with pytest.raises(BoundedSubprocessError) as raised:
+        run(
+            [
+                sys.executable,
+                "-c",
+                "import os, signal; os.kill(os.getpid(), signal.SIGSEGV)",
+            ],
+            operation="native crash",
+            env=child_env(),
+        )
+    assert raised.value.returncode == -11
+    result = run(
+        [sys.executable, "-c", "print('alive')"],
+        operation="after crash",
+        env=child_env(),
+    )
+    assert result.stdout == "alive\n"
+
+
+def test_child_receives_cpu_file_descriptor_and_file_size_limits() -> None:
+    result = run(
+        [
+            sys.executable,
+            "-c",
+            "import json, resource; "
+            "print(json.dumps([resource.getrlimit(k) for k in "
+            "(resource.RLIMIT_CPU, resource.RLIMIT_NOFILE, resource.RLIMIT_FSIZE, resource.RLIMIT_CORE)]))",
+        ],
+        operation="inspect limits",
+        env=child_env(),
+        policy=policy(open_files=64, file_size_bytes=4096),
+    )
+    assert json.loads(result.stdout) == [[30, 31], [64, 64], [4096, 4096], [0, 0]]
+
+
+@pytest.mark.skipif(sys.platform == "darwin", reason="macOS CPU rlimits differ")
+def test_cpu_bound_native_child_is_terminated() -> None:
+    with pytest.raises(BoundedSubprocessError) as raised:
+        run(
+            [sys.executable, "-c", "while True: pass"],
+            operation="cpu hog",
+            env=child_env(),
+            policy=policy(cpu_seconds=1),
+        )
+    assert raised.value.returncode in {-24, -9}
+    assert not raised.value.timed_out
+
+
+@pytest.mark.asyncio
+async def test_cancellation_waits_for_process_exit_and_releases_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gate = BoundedSemaphore(1)
+    monkeypatch.setattr(bounded, "_SEMAPHORE", gate)
+    accepted: asyncio.Queue[tuple[asyncio.StreamReader, asyncio.StreamWriter]] = (
+        asyncio.Queue()
+    )
+
+    async def connected(
+        reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ) -> None:
+        await accepted.put((reader, writer))
+
+    server = await asyncio.start_server(connected, "127.0.0.1", 0)
+    async with server:
+        port = server.sockets[0].getsockname()[1]
+        command = (
+            "import socket, os; "
+            f"s=socket.create_connection(('127.0.0.1', {port})); "
+            "s.sendall((str(os.getpid()) + '\\n').encode()); s.recv(1)"
+        )
+        work = asyncio.create_task(
+            run_in_thread(
+                run,
+                [sys.executable, "-c", command],
+                operation="cancel running child",
+                env=child_env(),
+                policy=policy(),
+            )
+        )
+        reader, writer = await asyncio.wait_for(accepted.get(), timeout=5)
+        try:
+            pid = int(await asyncio.wait_for(reader.readline(), timeout=5))
+            work.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(work, timeout=5)
+            with pytest.raises(ProcessLookupError):
+                os.kill(pid, 0)
+            assert await asyncio.wait_for(reader.read(), timeout=5) == b""
+            assert gate.acquire(blocking=False)
+            gate.release()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_cancellation_while_waiting_for_capacity_never_spawns_child(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gate = BoundedSemaphore(1)
+    gate.acquire()
+    monkeypatch.setattr(bounded, "_SEMAPHORE", gate)
+    entered = Event()
+    loop = asyncio.get_running_loop()
+    waiting = asyncio.Event()
+    marker = tmp_path / "unexpected-child"
+
+    def operation() -> None:
+        entered.set()
+        loop.call_soon_threadsafe(waiting.set)
+        run(
+            [
+                sys.executable,
+                "-c",
+                f"from pathlib import Path; Path({str(marker)!r}).touch()",
+            ],
+            operation="queued child",
+            env=child_env(),
+        )
+
+    work = asyncio.create_task(run_in_thread(operation))
+    await asyncio.wait_for(waiting.wait(), timeout=5)
+    assert entered.is_set()
+    work.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(work, timeout=5)
+    assert not gate.acquire(blocking=False)
+    gate.release()
+    assert not marker.exists()

@@ -1,11 +1,15 @@
 import argparse
+import asyncio
+import math
 import os
 import resource
 import signal
 import subprocess
 import sys
 import threading
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO
@@ -31,19 +35,83 @@ class BoundedSubprocessPolicy:
 
 
 DEFAULT_POLICY = BoundedSubprocessPolicy(
-    address_space_bytes=16 * 1_024 * 1_024 * 1_024,
-    cpu_seconds=3_600,
+    address_space_bytes=1_024 * 1_024 * 1_024,
+    cpu_seconds=300,
     open_files=256,
-    wall_time_seconds=3_600.0,
+    wall_time_seconds=600.0,
     stdout_limit_bytes=1 * 1_024 * 1_024,
     stderr_limit_bytes=1 * 1_024 * 1_024,
-    file_size_bytes=100 * 1_024 * 1_024 * 1_024,
+    file_size_bytes=1_024 * 1_024 * 1_024,
 )
 # One process-wide cap shared by every run() caller.
-_MAX_CONCURRENT_PROCESSES = 4
+_MAX_CONCURRENT_PROCESSES = 2
 _SEMAPHORE = threading.BoundedSemaphore(_MAX_CONCURRENT_PROCESSES)
 _DIAGNOSTIC_LIMIT = 1_000
 _RESERVED_ENVIRONMENT_PREFIX = "GRAFY_BOUNDED_"
+
+
+class _NativeWorkCancelled(RuntimeError):
+    pass
+
+
+class _Cancellation:
+    def __init__(self) -> None:
+        self.cancelled = threading.Event()
+        self._lock = threading.Lock()
+        self._process: subprocess.Popen[bytes] | None = None
+
+    def check(self) -> None:
+        if self.cancelled.is_set():
+            raise _NativeWorkCancelled("native work cancelled")
+
+    def attach(self, process: subprocess.Popen[bytes] | None) -> None:
+        with self._lock:
+            self._process = process
+            if process is not None and self.cancelled.is_set():
+                _kill_group(process)
+
+    def cancel(self) -> None:
+        with self._lock:
+            self.cancelled.set()
+            if self._process is not None:
+                _kill_group(self._process)
+
+
+_CANCELLATION: ContextVar[_Cancellation | None] = ContextVar(
+    "native_subprocess_cancellation", default=None
+)
+
+
+async def run_in_thread[**P, T](
+    function: Callable[P, T], *args: P.args, **kwargs: P.kwargs
+) -> T:
+    """Cancel native work and await process/thread cleanup before returning."""
+    cancellation = _Cancellation()
+
+    def invoke() -> T:
+        token = _CANCELLATION.set(cancellation)
+        try:
+            cancellation.check()
+            return function(*args, **kwargs)
+        finally:
+            _CANCELLATION.reset(token)
+
+    worker = asyncio.create_task(asyncio.to_thread(invoke))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        cancellation.cancel()
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        # Retrieve any failure without replacing the caller's cancellation.
+        if not worker.cancelled():
+            worker.exception()
+        raise
 
 
 class BoundedSubprocessError(RuntimeError):
@@ -188,7 +256,8 @@ def run(
     if any(value <= 0 for value in resource_values):
         raise ValueError("subprocess resource limits must be positive")
     if (
-        policy.wall_time_seconds <= 0
+        not math.isfinite(policy.wall_time_seconds)
+        or policy.wall_time_seconds <= 0
         or policy.stdout_limit_bytes < 0
         or policy.stderr_limit_bytes < 0
     ):
@@ -212,9 +281,9 @@ def run(
     }
     stdout = _CapturedStream(policy.stdout_limit_bytes)
     stderr = _CapturedStream(policy.stderr_limit_bytes)
-    process: subprocess.Popen[bytes] | None = None
+    cancellation = _CANCELLATION.get()
     try:
-        with _SEMAPHORE:
+        with _admit(cancellation):
             process = subprocess.Popen(
                 command,
                 stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
@@ -226,61 +295,51 @@ def run(
                 close_fds=True,
                 start_new_session=True,
             )
-            stdout_pipe = process.stdout
-            stderr_pipe = process.stderr
-            if stdout_pipe is None or stderr_pipe is None:
-                _kill_group(process)
-                returncode = process.wait()
-                raise BoundedSubprocessError(
-                    operation,
-                    returncode,
-                    False,
-                    "subprocess output pipes were unavailable",
-                )
-
-            stdout_reader = threading.Thread(
-                target=_read_bounded,
-                args=(stdout_pipe, stdout),
-                daemon=True,
-            )
-            stderr_reader = threading.Thread(
-                target=_read_bounded,
-                args=(stderr_pipe, stderr),
-                daemon=True,
-            )
-            stdout_reader.start()
-            stderr_reader.start()
-
+            readers: list[threading.Thread] = []
             writer: threading.Thread | None = None
-            if stdin is not None:
-                stdin_pipe = process.stdin
-                if stdin_pipe is None:
-                    _kill_group(process)
-                    returncode = process.wait()
-                    stdout_reader.join()
-                    stderr_reader.join()
-                    raise BoundedSubprocessError(
-                        operation,
-                        returncode,
-                        False,
-                        "subprocess input pipe was unavailable",
-                    )
-                writer = threading.Thread(
-                    target=_write_stdin,
-                    args=(stdin_pipe, stdin.encode("utf-8")),
-                    daemon=True,
-                )
-                writer.start()
-
+            timed_out = False
             try:
-                returncode = process.wait(timeout=policy.wall_time_seconds)
-            except subprocess.TimeoutExpired:
+                if cancellation is not None:
+                    cancellation.attach(process)
+                stdout_pipe = process.stdout
+                stderr_pipe = process.stderr
+                assert stdout_pipe is not None and stderr_pipe is not None
+                for pipe, capture in ((stdout_pipe, stdout), (stderr_pipe, stderr)):
+                    reader = threading.Thread(
+                        target=_read_bounded, args=(pipe, capture), daemon=True
+                    )
+                    reader.start()
+                    readers.append(reader)
+                if stdin is not None:
+                    stdin_pipe = process.stdin
+                    assert stdin_pipe is not None
+                    writer = threading.Thread(
+                        target=_write_stdin,
+                        args=(stdin_pipe, stdin.encode("utf-8")),
+                        daemon=True,
+                    )
+                    writer.start()
+                try:
+                    process.wait(timeout=policy.wall_time_seconds)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+            finally:
+                # Descendants may still hold pipes after their parent exits.
+                # Kill the captured process group before joining pipe workers.
                 _kill_group(process)
                 returncode = process.wait()
+                if cancellation is not None:
+                    cancellation.attach(None)
                 if writer is not None:
                     writer.join()
-                stdout_reader.join()
-                stderr_reader.join()
+                for reader in readers:
+                    reader.join()
+                for pipe in (process.stdin, process.stdout, process.stderr):
+                    if pipe is not None:
+                        pipe.close()
+            if cancellation is not None:
+                cancellation.check()
+            if timed_out:
                 diagnostic, truncated = _diagnostic(stderr, stdout)
                 raise BoundedSubprocessError(
                     operation,
@@ -289,12 +348,6 @@ def run(
                     diagnostic,
                     diagnostic_truncated=truncated,
                 )
-            if writer is not None:
-                writer.join()
-            stdout_reader.join()
-            stderr_reader.join()
-    except BoundedSubprocessError:
-        raise
     except OSError as exc:
         raise BoundedSubprocessError(operation, None, False, str(exc)) from exc
 
@@ -311,6 +364,23 @@ def run(
             diagnostic_truncated=truncated,
         )
     return result
+
+
+@contextmanager
+def _admit(cancellation: _Cancellation | None) -> Generator[None]:
+    if cancellation is None:
+        _SEMAPHORE.acquire()
+    else:
+        while True:
+            cancellation.check()
+            if _SEMAPHORE.acquire(timeout=0.05):
+                break
+    try:
+        if cancellation is not None:
+            cancellation.check()
+        yield
+    finally:
+        _SEMAPHORE.release()
 
 
 def _write_stdin(stream: BinaryIO, value: bytes) -> None:

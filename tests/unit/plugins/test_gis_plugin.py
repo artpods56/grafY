@@ -12,6 +12,7 @@ import grafy_plugin_gis.wfs as wfs_module
 import httpx
 import pytest
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeSpec
+from grafy_core.bounded_subprocess import BoundedSubprocessError
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.file_contracts import BLOB_FILE, TIFF_FILE
 from grafy_core.nodes import NodeExecutionContext
@@ -252,42 +253,46 @@ def test_wfs_import_declares_its_configured_http_egress_contract() -> None:
     assert registration.http_egress.dynamic_destinations is False
 
 
-def test_gdal_cli_uses_bounded_runner_and_scrubs_ambient_environment(
+def test_gdal_cli_scrubs_ambient_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import grafy_plugin_gis.gdal as gdal_module
-
     monkeypatch.setenv("GRAFY_TEST_SECRET_SENTINEL", "must-not-reach-gdal")
     monkeypatch.setenv("LANG", "allowlisted-locale")
+    monkeypatch.setenv("GDAL_NUM_THREADS", "ALL_CPUS")
+    environment_path = tmp_path / "child-environment.json"
     executable = tmp_path / "fake-gdal"
     executable.write_text(
         f"#!{sys.executable}\n"
-        "import os\n"
-        "print(os.environ.get('GRAFY_TEST_SECRET_SENTINEL', 'missing'))\n"
-        "print(os.environ.get('LANG', 'missing'))\n",
+        "import json, os, sys\n"
+        f"with open({str(environment_path)!r}, 'w') as stream:\n"
+        " json.dump([os.getenv(key) for key in "
+        "('GRAFY_TEST_SECRET_SENTINEL', 'LANG', 'HOME', 'GDAL_CONFIG_FILE', "
+        "'GDAL_NUM_THREADS', 'GDAL_CACHEMAX')], stream)\n"
+        "print('GDAL 3.10.3' if '--version' in sys.argv else "
+        "'PMTiles -vector- (rw)\\nCOG -raster- (rw)\\nPNG -raster- (rw)')\n",
         encoding="utf-8",
     )
     executable.chmod(0o755)
-
-    calls: list[str] = []
-    real_run = gdal_module.run_bounded
-
-    def tracked_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append(str(args[0][0]))
-        return real_run(*args, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(gdal_module, "run_bounded", tracked_run)
-    cli = GdalCli(gdalinfo=str(executable), gdal_translate=str(executable))
-
-    info = cli._run(str(executable), [], operation="fake gdalinfo")
-    translate = cli._run(str(executable), [], operation="fake gdal_translate")
-
-    assert info.stdout.splitlines() == ["missing", "allowlisted-locale"]
-    assert translate.stdout.splitlines() == ["missing", "allowlisted-locale"]
-    assert info.stderr == ""
-    assert translate.stderr == ""
-    assert calls == [str(executable), str(executable)]
+    cli = GdalCli(
+        gdalinfo=str(executable),
+        ogr2ogr=str(executable),
+        gdal_translate=str(executable),
+        gdal2tiles=str(executable),
+    )
+    capabilities = cli.capabilities()
+    assert capabilities.gdalinfo_version == "3.10.3"
+    assert (
+        capabilities.pmtiles_write and capabilities.cog_write and capabilities.png_write
+    )
+    assert json.loads(environment_path.read_text()) == [
+        None,
+        "allowlisted-locale",
+        None,
+        "/dev/null",
+        "1",
+        "64",
+    ]
 
 
 def test_gdal_run_preserves_error_message_shapes(
@@ -298,9 +303,7 @@ def test_gdal_run_preserves_error_message_shapes(
 
     missing = tmp_path / "missing-gdal"
     with pytest.raises(GdalError) as not_found:
-        GdalCli(gdalinfo=str(missing))._run(
-            str(missing), [], operation="checking gdalinfo version"
-        )
+        GdalCli(gdalinfo=str(missing)).capabilities()
     assert str(not_found.value) == (
         "checking gdalinfo version could not start because executable "
         f"{str(missing)!r} was not found"
@@ -317,14 +320,16 @@ def test_gdal_run_preserves_error_message_shapes(
     executable.chmod(0o755)
     cli = GdalCli(gdalinfo=str(executable))
     with pytest.raises(GdalError) as nonzero:
-        cli._run(str(executable), [], operation="checking gdalinfo version")
+        cli.capabilities()
     assert str(nonzero.value) == (
         f"checking gdalinfo version failed in executable {str(executable)!r} "
         "with exit code 7: bad source"
     )
 
-    def timed_out(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        raise gdal_module.BoundedSubprocessError(
+    def timed_out(
+        *_args: object, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        raise BoundedSubprocessError(
             "checking gdalinfo version",
             -9,
             True,
@@ -333,7 +338,7 @@ def test_gdal_run_preserves_error_message_shapes(
 
     monkeypatch.setattr(gdal_module, "run_bounded", timed_out)
     with pytest.raises(GdalError) as timeout:
-        cli._run(str(executable), [], operation="checking gdalinfo version")
+        cli.capabilities()
     assert str(timeout.value) == (
         f"checking gdalinfo version failed in executable {str(executable)!r} "
         "because it exceeded the bounded wall-clock limit: no diagnostic output"

@@ -1,5 +1,4 @@
 import json
-from asyncio import to_thread
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
@@ -25,6 +24,7 @@ from grafy_core.spatial_storage import (
     load_feature_collection,
     verify_spatial_artifact_content,
 )
+from grafy_core.bounded_subprocess import run_in_thread
 from grafy_core.artifacts import ArtifactObject, ArtifactRef, JsonObject
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.domain.errors import NotFoundError
@@ -202,7 +202,7 @@ class FeatureCollectionOutputWriter(ArtifactOutputWriter):
                     encoding="utf-8",
                 )
                 try:
-                    compilation = await to_thread(
+                    compilation = await run_in_thread(
                         self._gdal.compile_geojson_to_pmtiles,
                         source_path,
                         projection_path,
@@ -430,7 +430,7 @@ class RasterScanOutputWriter(ArtifactOutputWriter):
             tiles_dir = work_dir / "tiles"
             source_path.write_bytes(payload.content)
             try:
-                cog = await to_thread(
+                cog = await run_in_thread(
                     self._gdal.normalize_geotiff_to_cog,
                     source_path,
                     cog_path,
@@ -445,7 +445,7 @@ class RasterScanOutputWriter(ArtifactOutputWriter):
             cog_content = cog_path.read_bytes()
             cog_hash = sha256(cog_content).hexdigest()
             try:
-                tile_projection = await to_thread(
+                tile_projection = await run_in_thread(
                     self._gdal.tile_raster_to_xyz,
                     cog_path,
                     tiles_dir,
