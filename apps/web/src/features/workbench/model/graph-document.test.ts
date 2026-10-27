@@ -17,7 +17,6 @@ const node = (id: string) => ({
   config: { label: id },
   input_plugs: [],
   artifact_type_bindings: [],
-  plugin_release_pin: null,
   position: { x: 0, y: 0 },
   layout: null,
 });
@@ -170,7 +169,6 @@ describe("authored graph document", () => {
                 artifact_type: { id: "artifact.a", schema_version: 1 },
               },
             ],
-            plugin_release_pin: null,
             position: { x: 120, y: 240 },
             layout: { width: 420, body_height: 180, appendix_height: 320 },
           },
@@ -660,59 +658,6 @@ describe("authored graph document", () => {
     expect(() =>
       applyGraphCommand(withOrigin, { kind: "add_origin", origin }),
     ).toThrow("duplicate origin origin-1");
-  });
-
-  it("moves only the selected exact Plugin release pin", () => {
-    const original = authoredGraphDocument(
-      createSavedGraphRequest({
-        name: "Pinned Plugins",
-        nodes: [
-          {
-            ...node("source"),
-            plugin_release_pin: {
-              scope: "system",
-              slug: "notes",
-              revision: 1,
-            },
-          },
-          {
-            ...node("target"),
-            plugin_release_pin: {
-              scope: "workspace",
-              slug: "notes",
-              revision: 4,
-            },
-          },
-        ],
-        edges: [edge],
-        origins: [],
-      }),
-    );
-
-    const upgraded = applyGraphCommand(original, {
-      kind: "update_node_plugin_release",
-      node_id: "source",
-      plugin_release: { scope: "system", slug: "notes", revision: 3 },
-    });
-
-    expect(original.nodes[0]?.plugin_release_pin).toEqual({
-      scope: "system",
-      slug: "notes",
-      revision: 1,
-    });
-    expect(upgraded.nodes[0]?.plugin_release_pin).toEqual({
-      scope: "system",
-      slug: "notes",
-      revision: 3,
-    });
-    expect(upgraded.nodes[1]).toEqual(original.nodes[1]);
-    expect(
-      executionInvalidatedNodeIds(original, {
-        kind: "update_node_plugin_release",
-        node_id: "source",
-        plugin_release: { scope: "system", slug: "notes", revision: 3 },
-      }),
-    ).toEqual(new Set(["source", "target"]));
   });
 
   it("rejects an edge update for a missing edge", () => {
