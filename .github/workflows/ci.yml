@@ -104,31 +104,27 @@ jobs:
             uv run pytest -q -o log_cli=false tests/integration/uploads/test_storage_gateway.py
 
   native-runtime:
-    name: Native Plugin runtime image
+    name: Native API runtime image
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Build checked-in native runtime
-        run: docker build --file infra/docker/plugin-native-runtime.Dockerfile --tag grafy-native-runtime-ci .
-      - name: Verify opt-in loopback registry
+      - name: Build the native API release image
         run: |
-          registry_compose=(docker compose --project-name grafy-runtime-ci --file infra/docker/compose.plugin-registry.yaml)
-          trap '"${registry_compose[@]}" down --volumes' EXIT
-          "${registry_compose[@]}" up --detach
-          curl --fail --retry 20 --retry-delay 1 --retry-connrefused http://127.0.0.1:5000/v2/
-      - name: Exercise native runtime tools
-        run: |
-          docker run --rm grafy-native-runtime-ci sh -eu -c '
-            uv --version
-            python --version
-            /usr/bin/python3 -c "from osgeo import gdal; import numpy; from PIL import Image; print(gdal.VersionInfo())"
-            gdal_create -of GTiff -outsize 64 64 -bands 1 -burn 127 -a_srs EPSG:4326 -a_ullr -1 1 1 -1 /tmp/source.tif
-            gdal_translate -of COG /tmp/source.tif /tmp/cog.tif
-            gdalinfo /tmp/cog.tif | grep "LAYOUT=COG"
-            /usr/bin/python3 /usr/bin/gdal2tiles.py --xyz --zoom=0 --processes=1 /tmp/cog.tif /tmp/tiles
-            test -s /tmp/tiles/0/0/0.png
-          '
+          digest="$(git archive HEAD | sha256sum | cut -d ' ' -f 1)"
+          docker build --file infra/docker/api.Dockerfile --target api-release \
+            --build-arg GRAFY_BUILD_DIGEST="$digest" --tag grafy-native-api-ci .
+      - name: Persist a raster through the installed GIS family
+        run: >-
+          docker run --rm --network=none --entrypoint .venv/bin/python
+          grafy-native-api-ci -m grafy_plugin_gis.smoke
+      - name: Verify bounded subprocesses on Linux
+        # The release image deliberately has no test dependencies. Use the
+        # runner's locked workspace to exercise real rlimits and cancellation.
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv run pytest -q -o log_cli=false tests/unit/core/test_bounded_subprocess.py
 
   quality-contracts:
     name: Lint, type and API contracts
@@ -317,12 +313,27 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Build API image with locked workspace
-        run: docker build --file infra/docker/api.Dockerfile --target api --tag grafy-api-ci .
+      - name: Build API release image with locked workspace
+        run: |
+          digest="$(git archive HEAD | sha256sum | cut -d ' ' -f 1)"
+          docker build --file infra/docker/api.Dockerfile --target api-release \
+            --build-arg GRAFY_BUILD_DIGEST="$digest" --tag grafy-api-ci .
       - name: Construct installed API contracts
-        run: docker run --rm --entrypoint .venv/bin/python grafy-api-ci -c 'import grafy_shared.config.keys; import grafy_api.v1.routes.library.views; import grafy_plugin_gis, grafy_plugin_llm, grafy_plugin_sql'
+        run: |
+          docker run --rm --network=none --entrypoint .venv/bin/python grafy-api-ci -c '
+          import importlib.util
+          import grafy_shared.config.keys
+          import grafy_api.v1.routes.library.views
+          import grafy_plugin_gis, grafy_plugin_image, grafy_plugin_table
+          import grafy_plugin_llm, grafy_plugin_mistral, grafy_plugin_typesafe
+          assert importlib.util.find_spec("grafy_plugin_python") is None
+          '
       - name: Verify API image GIS tools
-        run: docker run --rm --entrypoint sh grafy-api-ci -c "gdalinfo --version && command -v gdal2tiles.py"
+        run: >-
+          docker run --rm --network=none --entrypoint .venv/bin/python grafy-api-ci
+          -c 'from grafy_plugin_gis.gdal import GdalCli; c = GdalCli().capabilities();
+          assert c.pmtiles_write and c.cog_write and c.png_write, c;
+          print(c.model_dump_json())'
       - name: Build publisher and Plugin API image
         run: docker build --file infra/docker/api.Dockerfile --target publisher --tag grafy-publisher-ci .
       - name: Construct publisher CLI and verify tools
