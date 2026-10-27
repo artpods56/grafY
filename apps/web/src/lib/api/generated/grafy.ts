@@ -1067,26 +1067,6 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/v1/workspaces/{workspace_id}/python/apply": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /**
-         * Apply Python Code
-         * @description Derive the contract of Python node code without running it on the host.
-         */
-        readonly post: operations["apply_python_code_v1_workspaces__workspace_id__python_apply_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
     readonly "/v1/workspaces/{workspace_id}/runs": {
         readonly parameters: {
             readonly query?: never;
@@ -1211,22 +1191,6 @@ export interface components {
             readonly upload_id: string;
             /** Url */
             readonly url: string;
-        };
-        /** ApplyPythonCodeRequest */
-        readonly ApplyPythonCodeRequest: {
-            /** Code */
-            readonly code: string;
-            /** @description The Python runner release the node pins. */
-            readonly plugin_release: components["schemas"]["PluginReleasePinModel"];
-        };
-        /** ApplyPythonCodeResponse */
-        readonly ApplyPythonCodeResponse: {
-            /** Code Sha256 */
-            readonly code_sha256: string;
-            /** @description The ports and params schema to store; null when diagnostics block Apply. */
-            readonly contract: components["schemas"]["PythonCodeContract"] | null;
-            /** Diagnostics */
-            readonly diagnostics: readonly components["schemas"]["PythonDiagnostic"][];
         };
         /** ArtifactBundleContractResponse */
         readonly ArtifactBundleContractResponse: {
@@ -2340,7 +2304,6 @@ export interface components {
             /** Upload Key */
             readonly upload_key: string;
         };
-        readonly JsonValue: unknown;
         /** LibraryFolderListResponse */
         readonly LibraryFolderListResponse: {
             /** Folders */
@@ -2613,24 +2576,6 @@ export interface components {
             /** Positions */
             readonly positions: readonly components["schemas"]["MoveNodePosition"][];
         };
-        /**
-         * NodePresetResponse
-         * @description A ready filled node: inserting it copies config and bindings by value.
-         */
-        readonly NodePresetResponse: {
-            /** Artifact Type Bindings */
-            readonly artifact_type_bindings: readonly components["schemas"]["ArtifactTypeBindingModel"][];
-            /** Config */
-            readonly config: {
-                readonly [key: string]: components["schemas"]["JsonValue"];
-            };
-            /** Id */
-            readonly id: string;
-            /** @description The preset's target operator, titled and typed as the preset so the node library can list and match it like any node. */
-            readonly node: components["schemas"]["NodeSpecResponse"];
-            /** Version */
-            readonly version: number;
-        };
         /** NodeRegistryResponse */
         readonly NodeRegistryResponse: {
             /** Artifact Conversions */
@@ -2641,8 +2586,6 @@ export interface components {
             readonly nodes: readonly components["schemas"]["NodeSpecResponse"][];
             /** Plugins */
             readonly plugins: readonly components["schemas"]["PluginSpecResponse"][];
-            /** Presets */
-            readonly presets?: readonly components["schemas"]["NodePresetResponse"][];
             /** Unavailable Modules */
             readonly unavailable_modules?: readonly components["schemas"]["UnavailableGraphModuleResponse"][];
         };
@@ -2952,41 +2895,6 @@ export interface components {
              */
             readonly source_graph_id: string;
         };
-        /** PythonArtifactType */
-        readonly PythonArtifactType: {
-            /** Id */
-            readonly id: string;
-            /** Schema Version */
-            readonly schema_version: number;
-        };
-        /** PythonCodeContract */
-        readonly PythonCodeContract: {
-            readonly input: components["schemas"]["PythonPortContract"];
-            /** Input Name */
-            readonly input_name: string;
-            readonly output: components["schemas"]["PythonPortContract"];
-            /** Params Schema */
-            readonly params_schema?: {
-                readonly [key: string]: components["schemas"]["JsonValue"];
-            } | null;
-        };
-        /** PythonDiagnostic */
-        readonly PythonDiagnostic: {
-            /**
-             * Column
-             * @default 0
-             */
-            readonly column: number;
-            /** Line */
-            readonly line: number;
-            /** Message */
-            readonly message: string;
-        };
-        /** PythonPortContract */
-        readonly PythonPortContract: {
-            readonly artifact_type: components["schemas"]["PythonArtifactType"];
-            readonly shape: components["schemas"]["PortShape"];
-        };
         /** RemoveEdgesCommand */
         readonly RemoveEdgesCommand: {
             /** Edge Ids */
@@ -3151,12 +3059,11 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            readonly kind: "builtin" | "plugin" | "module";
+            readonly kind: "builtin" | "module";
             /** Operator Id */
             readonly operator_id: string;
             /** Operator Version */
             readonly operator_version: number;
-            readonly plugin_release?: components["schemas"]["PluginReleasePinModel"] | null;
         };
         /** RunNodeResponse */
         readonly RunNodeResponse: {
@@ -3407,13 +3314,12 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            readonly kind: "builtin" | "plugin" | "module";
+            readonly kind: "builtin" | "module";
             readonly layout?: components["schemas"]["SavedGraphNodeLayout"] | null;
             /** Operator Id */
             readonly operator_id: string;
             /** Operator Version */
             readonly operator_version: number;
-            readonly plugin_release_pin?: components["schemas"]["SavedGraphPluginReleasePin"] | null;
             readonly position: components["schemas"]["GraphPoint"];
         };
         /**
@@ -3453,13 +3359,12 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            readonly kind: "builtin" | "plugin" | "module";
+            readonly kind: "builtin" | "module";
             readonly layout?: components["schemas"]["SavedGraphNodeLayoutModel"] | null;
             /** Operator Id */
             readonly operator_id: string;
             /** Operator Version */
             readonly operator_version: number;
-            readonly plugin_release?: components["schemas"]["PluginReleasePinModel"] | null;
             readonly position: components["schemas"]["GraphPointModel"];
         };
         /**
@@ -3509,21 +3414,6 @@ export interface components {
             readonly to_port: string;
             /** Value */
             readonly value: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"];
-        };
-        /**
-         * SavedGraphPluginReleasePin
-         * @description Exact scoped Plugin release identity pinned on one graph node.
-         *
-         *     The pin is independent from the operator identity: publishing revision
-         *     N+1 never moves a node pinned to revision N. Workspace membership for a
-         *     Workspace release comes from the owning graph.
-         */
-        readonly SavedGraphPluginReleasePin: {
-            /** Revision */
-            readonly revision: number;
-            readonly scope: components["schemas"]["PluginReleaseScope"];
-            /** Slug */
-            readonly slug: string;
         };
         /** SavedGraphProjection */
         readonly SavedGraphProjection: {
@@ -3706,7 +3596,7 @@ export interface components {
         /** SubmitGraphCommandRequest */
         readonly SubmitGraphCommandRequest: {
             /** Command */
-            readonly command: components["schemas"]["RenameGraphCommand"] | components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["UpdateNodePluginReleaseCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["AddOriginCommand"] | components["schemas"]["UpdateOriginCommand"] | components["schemas"]["RemoveOriginsCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"];
+            readonly command: components["schemas"]["RenameGraphCommand"] | components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["AddOriginCommand"] | components["schemas"]["UpdateOriginCommand"] | components["schemas"]["RemoveOriginsCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"];
             /**
              * Command Id
              * Format: uuid
@@ -3909,18 +3799,6 @@ export interface components {
             readonly layout: components["schemas"]["SavedGraphNodeLayout"] | null;
             /** Node Id */
             readonly node_id: string;
-        };
-        /** UpdateNodePluginReleaseCommand */
-        readonly UpdateNodePluginReleaseCommand: {
-            readonly expected_plugin_release_pin: components["schemas"]["SavedGraphPluginReleasePin"];
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            readonly kind: "update_node_plugin_release";
-            /** Node Id */
-            readonly node_id: string;
-            readonly plugin_release_pin: components["schemas"]["SavedGraphPluginReleasePin"];
         };
         /** UpdateOriginCommand */
         readonly UpdateOriginCommand: {
@@ -7001,41 +6879,6 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly apply_python_code_v1_workspaces__workspace_id__python_apply_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["ApplyPythonCodeRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["ApplyPythonCodeResponse"];
-                };
             };
             /** @description Validation Error */
             readonly 422: {

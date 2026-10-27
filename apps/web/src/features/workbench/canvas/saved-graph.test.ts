@@ -183,66 +183,6 @@ describe("saved conversion paths", () => {
   });
 });
 
-describe("scoped Plugin node hydration", () => {
-  it("selects the matching scope and slug when operator identities overlap", () => {
-    const base = graphWithEdge({ conversion_path: conversionPath });
-    const graph: SavedGraph = {
-      ...base,
-      document: {
-        ...base.document,
-        nodes: base.document.nodes.map((node) =>
-          node.id === "source-node"
-            ? {
-                ...node,
-                plugin_release_pin: {
-                  scope: "system",
-                  slug: "reports",
-                  revision: 1,
-                },
-              }
-            : node,
-        ),
-      },
-    };
-    const liveRegistry = registry();
-    const systemSpec: NodeSpec = {
-      ...nodeSpec("source", "output", "x"),
-      plugin_slug: "reports",
-      origin: "plugin",
-      plugin_revision: 3,
-      plugin_release: { scope: "system", slug: "reports", revision: 3 },
-      title: "System report source",
-    };
-    const workspaceSpec: NodeSpec = {
-      ...nodeSpec("source", "output", "x"),
-      plugin_slug: "reports",
-      origin: "plugin",
-      plugin_revision: 5,
-      plugin_release: {
-        scope: "workspace",
-        slug: "reports",
-        revision: 5,
-      },
-      title: "Workspace report source",
-    };
-    const hydrated = hydrateSavedGraph(graph, {
-      ...liveRegistry,
-      nodes: [
-        systemSpec,
-        workspaceSpec,
-        ...liveRegistry.nodes.filter((spec) => spec.operator_id !== "source"),
-      ],
-    });
-
-    expect(hydrated.nodes[0]?.data.spec.title).toBe("System report source");
-    expect(hydrated.nodes[0]?.data.pluginReleasePin).toEqual({
-      scope: "system",
-      slug: "reports",
-      revision: 1,
-    });
-  });
-});
-
 describe("unavailable saved operators", () => {
   it("hydrates a placeholder and preserves its incident connection", () => {
     const base = graphWithEdge({ conversion_path: conversionPath });
@@ -254,12 +194,7 @@ describe("unavailable saved operators", () => {
           node.id === "source-node"
             ? {
                 ...node,
-                operator_id: "gis.map.compose",
-                plugin_release_pin: {
-                  scope: "system",
-                  slug: "gis",
-                  revision: 4,
-                },
+                operator_id: "python.transform",
                 config: { nested: { preserved: true } },
                 input_plugs: [
                   { id: "historical-plug", port: "historical-input" },
@@ -286,7 +221,7 @@ describe("unavailable saved operators", () => {
     const hydrated = hydrateSavedGraph(graph, {
       ...liveRegistry,
       nodes: liveRegistry.nodes.filter(
-        (spec) => spec.operator_id !== "gis.map.compose",
+        (spec) => spec.operator_id !== "python.transform",
       ),
     });
     const sourceNode = hydrated.nodes.find((node) => node.id === "source-node");
@@ -298,14 +233,9 @@ describe("unavailable saved operators", () => {
     });
     expect(sourceNode?.data.compatibility).toHaveProperty(
       "issues.0",
-      "Operator gis.map.compose@1 is unavailable. This saved node is preserved but cannot run.",
+      "Operator python.transform@1 is unavailable. This saved node is preserved but cannot run.",
     );
     expect(sourceNode?.data.layout).toBeNull();
-    expect(sourceNode?.data.pluginReleasePin).toEqual({
-      scope: "system",
-      slug: "gis",
-      revision: 4,
-    });
     expect(edge?.sourceHandle).toContain("$compatibility::output");
     expect(decodeHandleId(edge?.sourceHandle)).toBeNull();
     expect(decodeHandleId(edge?.targetHandle)).toMatchObject({
@@ -1188,145 +1118,5 @@ describe("saved graph module nodes", () => {
           )
         : null,
     ).toBe("many");
-  });
-});
-
-describe("copied Python presets", () => {
-  function pythonSpec(): NodeSpec {
-    const port = (direction: "input" | "output") => ({
-      name: direction,
-      title: null,
-      description: "runner port",
-      direction,
-      artifact_type: { id: "scalar.text", schema_version: 1 },
-      shape: "one" as const,
-      accepted_shapes: ["one" as const],
-      instance_plugs: false,
-      variadic: false,
-      required: true,
-      shape_field: `${direction}_shape`,
-    });
-    return {
-      operator_id: "python.transform",
-      operator_version: 1,
-      plugin_slug: "external.python",
-      origin: "plugin",
-      title: "Python",
-      description: "Runs applied Python code.",
-      catalog_visible: false,
-      runnable: true,
-      config_schema: { type: "object" },
-      input_schema: {},
-      output_schema: {},
-      inputs: [port("input")],
-      outputs: [port("output")],
-    };
-  }
-
-  function splitGraph(codeSha256: string): SavedGraph {
-    return {
-      id: "00000000-0000-4000-8000-000000000010",
-      revision: 1,
-      name: "Split",
-      created_at: "2026-07-16T12:00:00Z",
-      updated_at: "2026-07-16T12:00:00Z",
-      document: {
-        schema_version: 7,
-        origins: [],
-        nodes: [
-          {
-            id: "split",
-            kind: "builtin",
-            operator_id: "python.transform",
-            operator_version: 1,
-            config: {
-              preset_id: "split-text",
-              preset_version: 1,
-              code_sha256: codeSha256,
-              input_shape: "one",
-              output_shape: "many",
-            },
-            input_plugs: [],
-            artifact_type_bindings: [],
-            position: { x: 0, y: 0 },
-          },
-        ],
-        edges: [],
-        presentation: {
-          viewers: [],
-          links: [],
-          bindings: [],
-          annotations: [],
-        },
-      },
-    };
-  }
-
-  function splitRegistry(spec: NodeSpec): NodeRegistry {
-    return {
-      plugins: [],
-      artifact_types: [
-        {
-          key: { id: "scalar.text", schema_version: 1 },
-          title: "Text",
-          payload_schema: {},
-          field_projections: [],
-          bundle: { format: "inline-json", version: 1 },
-        },
-      ],
-      artifact_conversions: [],
-      nodes: [spec],
-      presets: [
-        {
-          id: "split-text",
-          version: 1,
-          config: { code_sha256: "abc" },
-          artifact_type_bindings: [],
-          node: {
-            ...spec,
-            title: "Split text",
-            description: "Splits text on an exact separator.",
-            catalog_visible: true,
-            config_schema: { type: "object", properties: { separator: {} } },
-            inputs: spec.inputs.map((port) => ({
-              ...port,
-              title: "text",
-              description: null,
-            })),
-            outputs: spec.outputs.map((port) => ({
-              ...port,
-              title: "parts",
-              description: null,
-            })),
-          },
-        },
-      ],
-    };
-  }
-
-  it("shows the preset title and port labels while the copied code is unchanged", () => {
-    const spec = pythonSpec();
-    const hydrated = hydrateSavedGraph(splitGraph("abc"), splitRegistry(spec));
-    const node = hydrated.nodes[0]?.data.spec;
-
-    expect(node?.title).toBe("Split text");
-    expect(node?.description).toBe("Splits text on an exact separator.");
-    expect(node?.inputs[0]?.title).toBe("text");
-    expect(node?.inputs[0]?.description).toBeNull();
-    expect(node?.outputs[0]?.title).toBe("parts");
-    expect(node?.outputs[0]?.shape).toBe("many");
-    expect(node?.config_schema).toEqual({ type: "object" });
-  });
-
-  it("keeps the preset name and drops stale port labels after the code changes", () => {
-    const hydrated = hydrateSavedGraph(
-      splitGraph("changed"),
-      splitRegistry(pythonSpec()),
-    );
-
-    expect(hydrated.nodes[0]?.data.spec.title).toBe("Split text");
-    expect(hydrated.nodes[0]?.data.spec.inputs[0]?.title).toBeNull();
-    expect(hydrated.nodes[0]?.data.spec.outputs[0]?.title).toBeNull();
-    expect(hydrated.nodes[0]?.data.spec.outputs[0]?.shape).toBe("many");
   });
 });

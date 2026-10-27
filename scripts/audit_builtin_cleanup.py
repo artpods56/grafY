@@ -16,7 +16,7 @@ class BuiltinCleanupFinding(BaseModel):
         "replace_with_plugin",
         "remove",
         "rebuild_with_artifact_cards",
-        "rebuild_with_python_preset",
+        "manually_rebuild_or_remove",
     ]
     incoming_edges: int
     outgoing_edges: int
@@ -46,7 +46,7 @@ if __name__ == "__main__":
                 "text.replace",
                 "text.join",
             }:
-                action = "rebuild_with_python_preset"
+                action = "manually_rebuild_or_remove"
             elif node.operator_id in {
                 "sequence.count",
                 "sequence.slice",

@@ -169,19 +169,6 @@ export function NodeHeader({
           Upgrade to release {data.moduleUpgradeRelease}
         </button>
       ) : null}
-      {typeof data.pluginUpgradeRelease === "number" &&
-      data.onUpgradePluginRelease ? (
-        <button
-          type="button"
-          aria-label={`Upgrade Plugin to release ${data.pluginUpgradeRelease}`}
-          title={`Upgrade Plugin to release ${data.pluginUpgradeRelease}`}
-          {...nodeInteractionProps(stylex.props(s.upgradeModuleCall))}
-          onClick={() => data.onUpgradePluginRelease?.(id)}
-        >
-          <ArrowUp size={11} />
-          Upgrade Plugin to release {data.pluginUpgradeRelease}
-        </button>
-      ) : null}
     </CanvasNodeHeader>
   );
 }
