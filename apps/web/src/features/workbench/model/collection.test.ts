@@ -393,7 +393,7 @@ describe("ungrouping a collection", () => {
   });
 });
 
-describe("collections elsewhere", () => {
+describe("collection nodes", () => {
   it("run with a spare plug once one member is in", () => {
     const collection = node("collection", collectSpec, ["a", "spare"]);
     expect(
@@ -402,7 +402,7 @@ describe("collections elsewhere", () => {
     expect(missingRequiredInputsFor([collection], [], [])).toHaveLength(1);
   });
 
-  it("are not offered in the node catalog", () => {
+  it("are offered in the node catalog so live producers can feed one", () => {
     const registry = {
       nodes: [collectSpec, resizeSpec],
     } as unknown as NodeRegistry;
@@ -410,6 +410,6 @@ describe("collections elsewhere", () => {
       catalogNodeSpecs(registry, null).map(
         (candidate) => candidate.operator_id,
       ),
-    ).toEqual(["image.resize"]);
+    ).toEqual(["sequence.collect", "image.resize"]);
   });
 });
