@@ -19,8 +19,14 @@ The hole is load-bearing now that ordered Plugin consumers exist. `gis.map.compo
 input, and its own model validator rejects a sequence with `ordered=False`. That port
 therefore accepts exactly one ordered sequence, and after ADR 0013 nothing in the catalog
 could produce one from live edges. A graph holding two **Raster map layer** nodes and one
-**Compose map** has no legal wiring: the layers cannot be collected, and the canvas action
-cannot help because the sources are node outputs rather than Library cards.
+**Compose map** has no legal wiring.
+
+The canvas Collect action did not cover for the missing operator; it quietly became a
+different feature. `Workbench` resolves the action's spec with
+`registry.nodes.find(isCollectionSpec)`, and with no `sequence.collect` in the catalog
+`collectSelectedArtifacts` fell through to `collectArtifactCards`, which bundles cards in
+canvas view state and adds no node to the graph. The button kept its label and lost its
+meaning: it no longer produced a sequence any operator could consume.
 
 The machinery for that sequence never left. `ArtifactRefSequence` and its `ordered` flag,
 reference shapes `one` and `many`, variadic ports, instance plugs, one-level expansion in
@@ -54,6 +60,12 @@ the same decision in every consumer that wants a sequence.
 The `test.sequence.*` fixtures stay where they are, so runtime tests can still exercise a
 sequence producer that is deliberately absent from the production catalog.
 
+The web stops hiding the operator. `catalogNodeSpecs` filtered `sequence.collect` out of the
+node catalog because "collections are made from artifacts on the canvas, not picked here",
+which described a composite card group and does not describe a node that live edges feed.
+Grouping needs the cards to exist first, so that filter left no way to place an empty Collect
+and wire producers into it. Both doors now write the same operator.
+
 One correction comes with the port. `sequence.item_at` is registered with
 `cache_policy=NodeCachePolicy.EXACT`. In both the deleted production module and the fixture
 the argument was the enum class rather than the member, and `execution/node_execution.py`
@@ -66,6 +78,9 @@ The canvas gains four catalog entries and no new concept: ordering across a Coll
 from explicit plugs, which the graph already stores and the card already shows. Collect
 expands nested sequences one level, refuses a mixed artifact type, and clears `ordered` if
 any source was unordered, so an unordered source still cannot reach Compose map.
+
+A sequence can now start either way: placed empty from the palette and wired up, or grown
+from selected cards by the canvas action. Ungrouping still returns a collection to cards.
 
 This restores the sequence containers only. ADR 0013's other removals stay removed: the
 text presets, Normalize table text and Fuzzy match tables do not come back, and the file
