@@ -253,6 +253,31 @@ describe("node catalog modules", () => {
     ]);
   });
 
+  it("lists Collect, which gathers live producers as well as Library cards", () => {
+    const base = registry();
+    const collect = nodeSpec("sequence.collect", "builtin", 1, null, true, {
+      title: "Collect",
+      inputs: [
+        port("items", "input", {
+          artifact_type: null,
+          artifact_type_variable: "T",
+          instance_plugs: true,
+          variadic: true,
+        }),
+      ],
+      outputs: [port("items", "output", { shape: "many" })],
+    });
+
+    const available = catalogNodeSpecs(
+      { ...base, nodes: [...base.nodes, collect] },
+      null,
+    );
+
+    expect(available.map((spec) => spec.operator_id)).toContain(
+      "sequence.collect",
+    );
+  });
+
   it("keeps the latest visible revision available outside its own graph", () => {
     const available = catalogNodeSpecs(registry(), null);
 

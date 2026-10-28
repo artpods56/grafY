@@ -15,7 +15,6 @@ class BuiltinCleanupFinding(BaseModel):
     action: Literal[
         "replace_with_plugin",
         "remove",
-        "rebuild_with_artifact_cards",
         "manually_rebuild_or_remove",
     ]
     incoming_edges: int
@@ -38,8 +37,6 @@ if __name__ == "__main__":
                 continue
             if node.operator_id in {"image.decode", "table.import"}:
                 action = "replace_with_plugin"
-            elif node.operator_id == "sequence.collect":
-                action = "rebuild_with_artifact_cards"
             elif node.operator_id in {
                 "text.as_markdown",
                 "text.split",
@@ -48,9 +45,6 @@ if __name__ == "__main__":
             }:
                 action = "manually_rebuild_or_remove"
             elif node.operator_id in {
-                "sequence.count",
-                "sequence.slice",
-                "sequence.item_at",
                 "table.text.normalize",
                 "table.fuzzy_match",
             }:
