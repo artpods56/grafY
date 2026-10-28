@@ -77,7 +77,7 @@ def test_cleanup_audit_reports_removed_text_operators(tmp_path: Path) -> None:
     }
 
 
-def test_cleanup_audit_reports_live_collect_dependencies_without_configuration(
+def test_cleanup_audit_reports_retired_nodes_without_leaking_configuration(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "graph.json"
@@ -92,6 +92,15 @@ def test_cleanup_audit_reports_live_collect_dependencies_without_configuration(
                 config={"text": "do-not-print"},
             ),
             SavedGraphNode(
+                id="normalize",
+                kind="builtin",
+                operator_id="table.text.normalize",
+                operator_version=1,
+                position=GraphPoint(x=0, y=0),
+            ),
+            # ADR 0018 put the Sequence family back in the catalog, so a saved
+            # Collect node compiles and runs again and is no longer a finding.
+            SavedGraphNode(
                 id="collect",
                 kind="builtin",
                 operator_id="sequence.collect",
@@ -104,8 +113,8 @@ def test_cleanup_audit_reports_live_collect_dependencies_without_configuration(
                 id="edge",
                 from_node="input",
                 from_port="text",
-                to_node="collect",
-                to_port="items",
+                to_node="normalize",
+                to_port="text",
             ),
         ),
     )
@@ -119,13 +128,14 @@ def test_cleanup_audit_reports_live_collect_dependencies_without_configuration(
     )
 
     assert "do-not-print" not in result.stdout
+    assert "sequence.collect" not in result.stdout
     assert json.loads(result.stdout) == {
         "findings": [
             {
                 "document": str(path),
-                "node_id": "collect",
-                "operator_id": "sequence.collect",
-                "action": "rebuild_with_artifact_cards",
+                "node_id": "normalize",
+                "operator_id": "table.text.normalize",
+                "action": "remove",
                 "incoming_edges": 1,
                 "outgoing_edges": 0,
             },
