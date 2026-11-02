@@ -32,10 +32,6 @@ from grafy_core.ports.node_secrets import (
     NodeSecretRepositoryPort,
     NodeSecretUnitOfWorkPort,
 )
-from grafy_core.ports.plugin_releases import (
-    PluginReleaseRepositoryPort,
-    PluginReleaseUnitOfWorkPort,
-)
 from grafy_core.ports.saved_graphs import (
     SavedGraphRepositoryPort,
     SavedGraphUnitOfWorkPort,
@@ -57,7 +53,6 @@ from grafy_persistence.adapters.repositories import (
     SqlMaterializedNodeOutputsRepository,
     SqlModuleLibraryRepository,
     SqlNodeSecretRepository,
-    SqlPluginReleaseRepository,
     SqlSavedGraphRepository,
     SqlSecurityAuditRepository,
     SqlUploadRepository,
@@ -79,7 +74,6 @@ class _SqlAlchemyUnitOfWorkState:
     library_folders: LibraryFolderRepositoryPort
     collaboration: CollaborationRepositoryPort
     modules: ModuleLibraryRepositoryPort
-    plugin_releases: PluginReleaseRepositoryPort
 
 
 class SqlAlchemyUnitOfWork(
@@ -91,7 +85,6 @@ class SqlAlchemyUnitOfWork(
     UploadUnitOfWorkPort,
     CollaborationUnitOfWorkPort,
     ModuleLibraryUnitOfWorkPort,
-    PluginReleaseUnitOfWorkPort,
 ):
     """Reusable task-local SQLAlchemy transaction boundary.
 
@@ -170,11 +163,6 @@ class SqlAlchemyUnitOfWork(
     def modules(self) -> ModuleLibraryRepositoryPort:
         return self._entered_state().modules
 
-    @property
-    @override
-    def plugin_releases(self) -> PluginReleaseRepositoryPort:
-        return self._entered_state().plugin_releases
-
     @override
     async def __aenter__(self) -> "SqlAlchemyUnitOfWork":
         if self._state.get() is not None:
@@ -195,7 +183,6 @@ class SqlAlchemyUnitOfWork(
                 library_folders=SqlLibraryFolderRepository(session),
                 collaboration=SqlCollaborationRepository(session),
                 modules=SqlModuleLibraryRepository(session),
-                plugin_releases=SqlPluginReleaseRepository(session),
             )
         )
         return self

@@ -22,22 +22,7 @@ from grafy_core.domain.saved_graphs import (
 )
 from grafy_core.domain.errors import SavedGraphRevisionConflictError
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.domain.plugin_identity import PluginExecutionPolicy
-from grafy_core.domain.plugin_installations import (
-    InstalledPluginRelease,
-    PluginInstallation,
-)
-from grafy_core.domain.plugin_releases import (
-    PluginCapabilityManifest,
-    PluginCatalogManifest,
-    PluginRelease,
-    PluginReleaseNamespace,
-    PluginReleaseScope,
-    PluginRuntimeArtifact,
-    plugin_contract_digest,
-    plugin_profile_digest,
-    plugin_protocol_digest,
-)
+from grafy_core.domain.plugin_identity import PluginReleaseScope
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.plugins import NodeSecretInput, Plugin, PluginRegistry
 from grafy_core.ports.node_secrets import NodeSecretUnavailableError
@@ -268,46 +253,6 @@ def _secret_document(
                 plugin_release_pin=plugin_release_pin,
             ),
         )
-    )
-
-
-def _isolated_secret_release() -> InstalledPluginRelease:
-    catalog = PluginCatalogManifest.from_plugin(SECRET_TEST_PLUGIN)
-    capabilities = PluginCapabilityManifest(
-        capabilities=(PluginRuntimeCapability.NODE_SECRETS,)
-    )
-    runtime = PluginRuntimeArtifact(
-        object_key="plugin-releases/system/test.node-secrets/runtime.oci.tar",
-        archive_digest="a" * 64,
-        manifest_digest="b" * 64,
-        config_digest="c" * 64,
-    )
-    release = PluginRelease(
-        slug=catalog.slug,
-        revision=1,
-        catalog=catalog,
-        contract_digest=plugin_contract_digest(catalog),
-        capabilities=capabilities,
-        capability_digest=capabilities.digest,
-        protocol_digest=plugin_protocol_digest(),
-        profile_digest=plugin_profile_digest("python-uv"),
-        source_object_key="plugin-releases/system/test.node-secrets/source.tar.gz",
-        source_digest="d" * 64,
-        lock_digest="e" * 64,
-        runtime_profile="python-uv",
-        loader_target="tests.integration.node_secrets:SECRET_TEST_PLUGIN",
-        runtime_image_digest=runtime.manifest_digest,
-        runtime_artifact=runtime,
-        published_by_platform_actor="test:secrets",
-    )
-    return InstalledPluginRelease(
-        release=release,
-        installation=PluginInstallation.from_release(
-            release,
-            namespace=PluginReleaseNamespace(),
-            execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_platform_actor="test:secrets",
-        ),
     )
 
 

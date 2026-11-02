@@ -10,12 +10,6 @@ from sqlalchemy.types import TypeDecorator
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from grafy_core.domain.saved_graphs import SavedGraphDocument
-from grafy_core.domain.plugin_releases import (
-    PluginCapabilityManifest,
-    PluginCatalogManifest,
-    PluginRuntimeArtifact,
-    PluginNodeContract,
-)
 from grafy_core.domain.identity import (
     WorkspaceCapability,
     WorkspaceKind,
@@ -23,9 +17,6 @@ from grafy_core.domain.identity import (
     WorkspaceInvitationStatus,
 )
 from grafy_core.domain.module_library import ModulePublicationState
-from grafy_core.domain.plugin_releases import PluginReleaseScope, PluginExecutionPolicy
-from grafy_core.domain.plugin_revocations import PluginReleaseRevocationReason
-from grafy_core.domain.plugin_selection import PluginFamilyLifecycle
 from grafy_core.domain.security_audit import (
     SecurityAuditActorKind,
     SecurityAuditOutcome,
@@ -35,46 +26,8 @@ from grafy_persistence import schema
 
 MODEL_CASES = [
     (schema.SavedGraphDocumentType, SavedGraphDocument()),
-    (
-        schema.PluginCatalogManifestType,
-        PluginCatalogManifest(
-            slug="notes",
-            title="Notes",
-            nodes=(
-                PluginNodeContract(
-                    operator_id="notes.echo",
-                    operator_version=1,
-                    title="Echo",
-                    description="Echo text",
-                    config_schema={"type": "object"},
-                    input_schema={"type": "object"},
-                    output_schema={"type": "object"},
-                    inputs=(),
-                    outputs=(),
-                ),
-            ),
-        ),
-    ),
-    (schema.PluginCapabilityManifestType, PluginCapabilityManifest()),
-    (
-        schema.PluginRuntimeArtifactType,
-        PluginRuntimeArtifact(
-            object_key="plugins/image.tar",
-            archive_digest="a" * 64,
-            manifest_digest="b" * 64,
-            config_digest="c" * 64,
-        ),
-    ),
 ]
 ENUM_CASES = [
-    (schema.PluginReleaseScopeType, PluginReleaseScope, 16),
-    (
-        schema.PluginReleaseRevocationReasonType,
-        PluginReleaseRevocationReason,
-        16,
-    ),
-    (schema.PluginExecutionPolicyType, PluginExecutionPolicy, 24),
-    (schema.PluginFamilyLifecycleType, PluginFamilyLifecycle, 16),
     (schema.WorkspaceKindType, WorkspaceKind, 16),
     (schema.WorkspaceRoleType, WorkspaceRole, 16),
     (schema.WorkspaceInvitationStatusType, WorkspaceInvitationStatus, 16),
@@ -121,20 +74,22 @@ def test_enum_storage_processors_preserve_values_lengths_and_errors[E: StrEnum](
 
 
 @pytest.mark.parametrize("dialect", [sqlite.dialect(), postgresql.dialect()])
-def test_stored_token_scopes_ignore_names_this_build_does_not_grant(
+def test_stored_token_scopes_reject_names_this_build_does_not_grant(
     dialect: Dialect,
 ) -> None:
-    """An old token keeps parsing and grants nothing it cannot name."""
+    """A stored scope this build cannot name is corrupt data, not an empty grant."""
 
     column = schema.WorkspaceCapabilityTupleType()
-    assert column.process_bind_param(
-        (WorkspaceCapability.EDIT_GRAPH,), dialect
-    ) == ["edit_graph"]
-    assert column.process_result_value(
-        ["edit_graph", "publish_plugin"], dialect
-    ) == (WorkspaceCapability.EDIT_GRAPH,)
+    assert column.process_bind_param((WorkspaceCapability.EDIT_GRAPH,), dialect) == [
+        "edit_graph"
+    ]
+    assert column.process_result_value(["edit_graph"], dialect) == (
+        WorkspaceCapability.EDIT_GRAPH,
+    )
     assert column.process_result_value([], dialect) == ()
     assert column.process_result_value(None, dialect) is None
+    with pytest.raises(ValueError, match="unknown"):
+        column.process_result_value(["edit_graph", "publish_plugin"], dialect)
     with pytest.raises(ValueError, match="not a JSON string list"):
         column.process_result_value("edit_graph", dialect)
     with pytest.raises(ValueError, match="not a JSON string list"):

@@ -1,14 +1,9 @@
 from collections.abc import Sequence
-from dataclasses import replace
 from typing import Annotated, cast, get_args
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 import pytest
 
-from grafy_core.application.plugin_releases import (
-    require_canonical_conversion_references,
-)
 from grafy_core.artifacts import (
     ArtifactBundleContract,
     ArtifactBundleFormat,
@@ -19,33 +14,20 @@ from grafy_core.artifacts import (
     NodeOutput,
 )
 from grafy_core.conversions import ArtifactConversion, ArtifactConversionKey
-from grafy_core.canonical_conversions import INTEGER_TO_TEXT
 from grafy_core.domain.plugin_releases import (
-    PLUGIN_CONTRACT_DIGEST_FIELD_ROLES,
     PluginArtifactBundleContract,
     PluginArtifactConversionContract,
     PluginArtifactConversionKey,
     PluginArtifactReferenceContract,
     PluginArtifactTypeContract,
     PluginArtifactTypeKey,
-    PluginCapabilityManifest,
     PluginCatalogManifest,
     PluginConfirmationRule,
-    PluginExecutionPolicy,
     PluginNodeContract,
     PluginNodeHttpEgressContract,
     PluginPortContract,
-    PluginRelease,
-    PluginReleaseError,
-    PluginReleaseScope,
-    PluginRuntimeArtifact,
     PluginSecretInputContract,
-    plugin_contract_digest,
-    plugin_profile_digest,
-    plugin_protocol_digest,
 )
-from grafy_core.domain.plugin_installations import PluginInstallation
-from grafy_core.domain.plugin_identity import PluginReleaseNamespace
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import InPort, OutPort, PortShape
 from grafy_core.artifact_contracts import (
@@ -104,26 +86,6 @@ PLUGIN.register_artifact_type(PORTABLE_VALUE)
 PLUGIN.register_artifact_type_dependency(INTEGER_VALUE)
 PLUGIN.register_artifact_type_dependency(TEXT_VALUE)
 PLUGIN.register_artifact_conversion(INTEGER_TO_PORTABLE_VALUE)
-
-
-def _release() -> PluginRelease:
-    catalog = PluginCatalogManifest.from_plugin(PLUGIN)
-    capabilities = PluginCapabilityManifest()
-    return PluginRelease(
-        slug=catalog.slug,
-        revision=1,
-        catalog=catalog,
-        contract_digest=plugin_contract_digest(catalog),
-        capabilities=capabilities,
-        capability_digest=capabilities.digest,
-        protocol_digest=plugin_protocol_digest(),
-        profile_digest=plugin_profile_digest("python-uv"),
-        source_object_key="plugin-releases/test.notes/source.tar.gz",
-        source_digest="4" * 64,
-        lock_digest="5" * 64,
-        runtime_profile="python-uv",
-        loader_target="grafy_plugin:PLUGIN",
-    )
 
 
 def test_catalog_manifest_is_derived_from_function_node_contracts() -> None:
@@ -239,7 +201,9 @@ def test_catalog_manifest_rejects_owned_dependency_overlap() -> None:
 def test_builtin_scalar_and_table_catalogs_preserve_portable_contracts() -> None:
     value = PluginCatalogManifest.from_plugin(VALUE)
     text = PluginCatalogManifest.from_plugin(TEXT)
-    table_contracts = tuple(PluginArtifactTypeContract.from_spec(spec) for spec in TABLES.artifact_types)
+    table_contracts = tuple(
+        PluginArtifactTypeContract.from_spec(spec) for spec in TABLES.artifact_types
+    )
 
     integer_contract = next(
         artifact
@@ -250,9 +214,7 @@ def test_builtin_scalar_and_table_catalogs_preserve_portable_contracts() -> None
         artifact for artifact in text.artifact_types if artifact.key.id == "scalar.text"
     )
     table_contract = next(
-        artifact
-        for artifact in table_contracts
-        if artifact.key.id == "table.data"
+        artifact for artifact in table_contracts if artifact.key.id == "table.data"
     )
 
     assert integer_contract.materialized_json_type == "integer"
@@ -264,53 +226,6 @@ def test_builtin_scalar_and_table_catalogs_preserve_portable_contracts() -> None
         version=1,
     )
     assert text.artifact_conversions == ()
-
-
-def test_artifact_and_conversion_contract_changes_are_digest_bound() -> None:
-    catalog = PluginCatalogManifest.from_plugin(PLUGIN)
-    artifact = catalog.artifact_types[0]
-    conversion = catalog.artifact_conversions[0]
-    changed_bundle = PluginCatalogManifest.model_validate(
-        catalog.model_copy(
-            update={
-                "artifact_types": (
-                    artifact.model_copy(
-                        update={
-                            "bundle": PluginArtifactBundleContract(
-                                format="inline-json",
-                                version=2,
-                            )
-                        }
-                    ),
-                )
-            }
-        ).model_dump()
-    )
-    changed_conversion = PluginCatalogManifest.model_validate(
-        catalog.model_copy(
-            update={
-                "artifact_conversions": (
-                    conversion.model_copy(update={"title": "Render portable value"}),
-                )
-            }
-        ).model_dump()
-    )
-    changed_dependency = PluginCatalogManifest.model_validate(
-        catalog.model_copy(
-            update={
-                "artifact_type_dependencies": (
-                    catalog.artifact_type_dependencies[0].model_copy(
-                        update={"title": "Different integer contract"}
-                    ),
-                    *catalog.artifact_type_dependencies[1:],
-                )
-            }
-        ).model_dump()
-    )
-
-    assert plugin_contract_digest(changed_bundle) != plugin_contract_digest(catalog)
-    assert plugin_contract_digest(changed_conversion) != plugin_contract_digest(catalog)
-    assert plugin_contract_digest(changed_dependency) != plugin_contract_digest(catalog)
 
 
 def test_catalog_manifest_rejects_conversion_identity_collisions() -> None:
@@ -355,23 +270,6 @@ def test_catalog_manifest_leaves_conversion_authority_to_publication() -> None:
     assert validated.artifact_conversions[0].key.id == (
         "other.integer_to_portable_value"
     )
-
-
-def test_publication_accepts_only_exact_canonical_conversion_references() -> None:
-    catalog = PluginCatalogManifest.from_plugin(PLUGIN).model_copy(
-        update={
-            "artifact_conversions": (
-                PluginArtifactConversionContract.from_conversion(INTEGER_TO_TEXT),
-            )
-        }
-    )
-
-    require_canonical_conversion_references(catalog)
-
-    with pytest.raises(PluginReleaseError, match="deployment-owned canonical"):
-        require_canonical_conversion_references(
-            PluginCatalogManifest.from_plugin(PLUGIN)
-        )
 
 
 def test_artifact_bundle_contract_rejects_unknown_formats_and_versions() -> None:
@@ -423,143 +321,6 @@ def test_catalog_manifest_leaves_artifact_authority_to_publication() -> None:
     assert validated.artifact_types[0].key == replacement_key
 
 
-def test_runtime_artifact_makes_release_executable_and_part_of_its_identity() -> None:
-    catalog = PluginCatalogManifest.from_plugin(PLUGIN)
-    capabilities = PluginCapabilityManifest()
-    artifact = PluginRuntimeArtifact(
-        object_key="plugin-releases/test.notes/runtime/image.oci.tar",
-        archive_digest="1" * 64,
-        manifest_digest="2" * 64,
-        config_digest="3" * 64,
-    )
-    source_only = PluginRelease(
-        slug=catalog.slug,
-        revision=1,
-        catalog=catalog,
-        contract_digest=plugin_contract_digest(catalog),
-        capabilities=capabilities,
-        capability_digest=capabilities.digest,
-        protocol_digest=plugin_protocol_digest(),
-        profile_digest=plugin_profile_digest("python-uv"),
-        source_object_key="plugin-releases/test.notes/source.tar.gz",
-        source_digest="4" * 64,
-        lock_digest="5" * 64,
-        runtime_profile="python-uv",
-        loader_target="grafy_plugin:PLUGIN",
-    )
-    executable = PluginRelease(
-        slug=catalog.slug,
-        revision=2,
-        catalog=catalog,
-        contract_digest=source_only.contract_digest,
-        capabilities=capabilities,
-        capability_digest=capabilities.digest,
-        protocol_digest=source_only.protocol_digest,
-        profile_digest=source_only.profile_digest,
-        source_object_key=source_only.source_object_key,
-        source_digest=source_only.source_digest,
-        lock_digest=source_only.lock_digest,
-        runtime_profile=source_only.runtime_profile,
-        loader_target=source_only.loader_target,
-        runtime_image_digest=artifact.manifest_digest,
-        runtime_artifact=artifact,
-    )
-
-    assert source_only.executable is False
-    assert executable.executable is True
-    assert executable.descriptor.runtime_artifact == artifact
-    assert executable.descriptor_digest != source_only.descriptor_digest
-
-
-def test_release_rejects_runtime_image_that_does_not_match_oci_manifest() -> None:
-    catalog = PluginCatalogManifest.from_plugin(PLUGIN)
-    capabilities = PluginCapabilityManifest()
-    artifact = PluginRuntimeArtifact(
-        object_key="plugin-releases/test.notes/runtime/image.oci.tar",
-        archive_digest="1" * 64,
-        manifest_digest="2" * 64,
-        config_digest="3" * 64,
-    )
-
-    with pytest.raises(PluginReleaseError, match="must match its OCI artifact"):
-        PluginRelease(
-            slug=catalog.slug,
-            revision=1,
-            catalog=catalog,
-            contract_digest=plugin_contract_digest(catalog),
-            capabilities=capabilities,
-            capability_digest=capabilities.digest,
-            protocol_digest=plugin_protocol_digest(),
-            profile_digest=plugin_profile_digest("python-uv"),
-            source_object_key="plugin-releases/test.notes/source.tar.gz",
-            source_digest="4" * 64,
-            lock_digest="5" * 64,
-            runtime_profile="python-uv",
-            loader_target="grafy_plugin:PLUGIN",
-            runtime_image_digest="6" * 64,
-            runtime_artifact=artifact,
-        )
-
-
-@pytest.mark.parametrize(
-    "object_key",
-    ["/absolute/image.oci.tar", "runtime/../image.oci.tar", r"runtime\image.oci.tar"],
-)
-def test_runtime_artifact_rejects_unsafe_object_keys(object_key: str) -> None:
-    with pytest.raises(ValueError, match="object key must be safe"):
-        PluginRuntimeArtifact(
-            object_key=object_key,
-            archive_digest="1" * 64,
-            manifest_digest="2" * 64,
-            config_digest="3" * 64,
-        )
-
-
-def test_installations_are_reserved_for_the_platform_owned_namespace() -> None:
-    release = _release()
-    with pytest.raises(ValueError, match="visible only in the System namespace"):
-        PluginReleaseNamespace(
-            scope=PluginReleaseScope.WORKSPACE,
-            workspace_id=UUID(int=7),
-        )
-    with pytest.raises(ValueError, match="cannot have a Workspace owner"):
-        PluginReleaseNamespace(
-            scope=PluginReleaseScope.SYSTEM,
-            workspace_id=UUID(int=7),
-        )
-    with pytest.raises(
-        PluginReleaseError, match="actor reference must contain 1 to 255"
-    ):
-        PluginInstallation.from_release(
-            release,
-            namespace=PluginReleaseNamespace(),
-            execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_platform_actor="  ",
-        )
-    with pytest.raises(PluginReleaseError, match="Workspace user actor"):
-        PluginInstallation(
-            release_id=release.id,
-            scope=PluginReleaseScope.SYSTEM,
-            workspace_id=None,
-            slug=release.slug,
-            release_revision=release.revision,
-            execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_user_id=UUID(int=8),
-            installed_by_platform_actor="test:platform",
-        )
-
-    system = PluginInstallation.from_release(
-        release,
-        namespace=PluginReleaseNamespace(),
-        execution_policy=PluginExecutionPolicy.HOST_ELIGIBLE,
-        installed_by_platform_actor="test:system",
-    )
-
-    assert system.namespace.scope is PluginReleaseScope.SYSTEM
-    assert system.namespace.workspace_id is None
-    assert system.execution_policy is PluginExecutionPolicy.HOST_ELIGIBLE
-
-
 def test_untrusted_artifact_query_cannot_gain_network_secrets_or_native_access() -> (
     None
 ):
@@ -578,41 +339,6 @@ def test_untrusted_artifact_query_cannot_gain_network_secrets_or_native_access()
                 PluginRuntimeCapability.NETWORK_EGRESS,
                 PluginRuntimeCapability.UNTRUSTED_SQL,
             ),
-        )
-
-
-def test_release_capabilities_are_normalized_and_equal_exact_node_union() -> None:
-    normalized = PluginCapabilityManifest(
-        capabilities=(
-            PluginRuntimeCapability.NETWORK_EGRESS,
-            PluginRuntimeCapability.NETWORK_EGRESS,
-        )
-    )
-    assert normalized.capabilities == (PluginRuntimeCapability.NETWORK_EGRESS,)
-    node = PluginNodeContract(
-        operator_id="test.notes.network",
-        operator_version=1,
-        title="Network",
-        description="Use one exact network capability.",
-        config_schema={"type": "object"},
-        input_schema={"type": "object"},
-        output_schema={"type": "object"},
-        inputs=(),
-        outputs=(),
-        required_capabilities=(
-            PluginRuntimeCapability.NETWORK_EGRESS,
-            PluginRuntimeCapability.NETWORK_EGRESS,
-        ),
-    )
-    assert node.required_capabilities == (PluginRuntimeCapability.NETWORK_EGRESS,)
-
-    release = _release()
-    with pytest.raises(PluginReleaseError, match="exceeds exact node requirements"):
-        replace(
-            release,
-            capabilities=normalized,
-            capability_digest=normalized.digest,
-            descriptor_digest=None,
         )
 
 
@@ -671,31 +397,10 @@ def test_plugin_node_contract_http_egress_requires_network_egress() -> None:
             http_egress=PluginNodeHttpEgressContract(configured_inputs=("base_url",))
         )
 
-    historical = _http_egress_node(
+    undeclared = _http_egress_node(
         capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,)
     )
-    assert historical.http_egress is None
-
-
-def test_contract_digest_changes_when_http_egress_is_declared() -> None:
-    from grafy_core.domain.plugin_releases import PluginNodeHttpEgressContract
-
-    baseline = plugin_contract_digest(
-        _catalog_with(
-            _http_egress_node(capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,))
-        )
-    )
-    declared = plugin_contract_digest(
-        _catalog_with(
-            _http_egress_node(
-                capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,),
-                http_egress=PluginNodeHttpEgressContract(
-                    configured_inputs=("base_url",)
-                ),
-            )
-        )
-    )
-    assert declared != baseline
+    assert undeclared.http_egress is None
 
 
 def test_catalog_manifest_round_trips_the_http_egress_contract() -> None:
@@ -785,20 +490,6 @@ def _contract_catalog(
     )
 
 
-def test_contract_digest_changes_when_an_extension_claim_is_declared() -> None:
-    assert plugin_contract_digest(
-        _contract_catalog(extensions=("png",))
-    ) != plugin_contract_digest(_contract_catalog())
-
-
-def test_contract_digest_changes_when_a_confirmation_rule_is_declared() -> None:
-    assert plugin_contract_digest(
-        _contract_catalog(
-            confirmation_rule=PluginConfirmationRule(rule="json_document")
-        )
-    ) != plugin_contract_digest(_contract_catalog())
-
-
 def _catalog_contract_instances(catalog: BaseModel) -> set[type[BaseModel]]:
     """Every Pydantic model instantiated inside a catalog contract."""
 
@@ -814,27 +505,6 @@ def _catalog_contract_instances(catalog: BaseModel) -> set[type[BaseModel]]:
         elif isinstance(value, dict):
             pending.extend(cast(dict[str, object], value).values())
     return instances
-
-
-def test_contract_digest_ignores_every_empty_defaulting_catalog_field() -> None:
-    """Pin the digest of the catalog whose defaulted fields are all empty.
-
-    A new defaulted field keeps this value only while it is classified
-    ``omit``: a ``keep`` classification re-hashes the default and breaks the
-    bytes persisted before the field existed. Recompute this literal only
-    after deciding that role.
-    """
-
-    catalog = _contract_catalog()
-    assert plugin_contract_digest(catalog) == (
-        "bf0f88ca0e58a97c880e05b958ff649a5bb19b1a903d42a767708f3c8eb6a4c8"
-    )
-    # A model the pinned catalog never instantiates cannot fail the pin, so a
-    # new empty default classified ``keep`` on it would stay green while every
-    # row persisted before that field failed verification.
-    assert _catalog_contract_instances(catalog) >= set(
-        PLUGIN_CONTRACT_DIGEST_FIELD_ROLES
-    )
 
 
 def _catalog_contract_models() -> set[type[BaseModel]]:
@@ -857,18 +527,3 @@ def _catalog_contract_models() -> set[type[BaseModel]]:
                 field.annotation for field in annotation.model_fields.values()
             )
     return models
-
-
-def test_contract_digest_classifies_every_defaulted_catalog_field() -> None:
-    classified = {
-        (model.__name__, name)
-        for model, roles in PLUGIN_CONTRACT_DIGEST_FIELD_ROLES.items()
-        for name in roles
-    }
-    observed = {
-        (model.__name__, name)
-        for model in _catalog_contract_models()
-        for name, field in model.model_fields.items()
-        if not field.is_required()
-    }
-    assert classified == observed

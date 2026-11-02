@@ -9,15 +9,9 @@ from uuid import UUID, uuid4
 
 
 class ModulePublicationState(StrEnum):
-    """Publication state of a stored Module.
-
-    Only `published` is reachable now. `deprecated` and `withdrawn` remain so rows
-    written before the lifecycle was cut still load, and stay hidden from browse.
-    """
+    """Publication state of a stored Module."""
 
     PUBLISHED = "published"
-    DEPRECATED = "deprecated"
-    WITHDRAWN = "withdrawn"
 
 
 class ModuleLibraryError(ValueError):

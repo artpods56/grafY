@@ -1,13 +1,7 @@
-"""Append-only Plugin releases and their catalog contracts."""
+"""Catalog contracts a Plugin family declares for its nodes."""
 
-import json
 import re
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from hashlib import sha256
-from typing import TYPE_CHECKING, ClassVar, Literal, Self, cast
-from uuid import UUID, uuid4
+from typing import ClassVar, Literal, Self, cast
 
 from pydantic import (
     AnyHttpUrl,
@@ -19,7 +13,6 @@ from pydantic import (
     model_validator,
 )
 from pydantic.errors import PydanticInvalidForJsonSchema
-from pydantic.main import IncEx
 
 from grafy_core.artifacts import (
     ArtifactBundleContract,
@@ -35,12 +28,6 @@ from grafy_core.artifacts import (
 )
 from grafy_core.conversions import ArtifactConversion, ArtifactConversionKey
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.domain.plugin_identity import (
-    PlatformPluginActor,
-    PluginExecutionPolicy,
-    PluginReleaseNamespace,
-    PluginReleaseScope,
-)
 from grafy_core.nodes import (
     ArtifactTypeVariable,
     InputPortSpec,
@@ -49,145 +36,11 @@ from grafy_core.nodes import (
 )
 from grafy_core.plugins import NodeCachePolicy, NodeRegistration, Plugin
 
-if TYPE_CHECKING:
-    from grafy_core.domain.plugin_installations import InstalledPluginRelease
-
-
 PluginPortDirection = Literal["input", "output"]
-
-PLUGIN_INVOCATION_PROTOCOL = "grafy-plugin-invocation@7"
-
-
-def plugin_protocol_digest() -> str:
-    """Digest of the artifact invocation protocol a release was inspected for."""
-
-    return sha256(PLUGIN_INVOCATION_PROTOCOL.encode("utf-8")).hexdigest()
-
-
-def plugin_profile_digest(runtime_profile: str) -> str:
-    return sha256(runtime_profile.strip().encode("utf-8")).hexdigest()
-
-
-# Empty forms of fields added after releases began storing the historical
-# digest. That digest never hashed them, so verification drops them again.
-_PRE_CANONICALIZATION_EMPTY_FRAGMENTS = (
-    ',"http_egress":null',
-    ',"also_accepts":[]',
-    ',"shape_field":null',
-    ',"listed":true',
-)
-
-
-def _contract_digest_exclusions_for_model(
-    model: BaseModel,
-) -> dict[str, IncEx | bool]:
-    """Exclusion tree that drops contract fields holding their empty default."""
-
-    roles = PLUGIN_CONTRACT_DIGEST_FIELD_ROLES.get(type(model), {})
-    exclusions: dict[str, IncEx | bool] = {}
-    for name, field_info in type(model).model_fields.items():
-        value = getattr(model, name)
-        if roles.get(name) == "omit" and value == field_info.get_default(
-            call_default_factory=True
-        ):
-            exclusions[name] = True
-            continue
-        nested = _contract_digest_exclusions_for_value(value)
-        if nested is not None:
-            exclusions[name] = nested
-    return exclusions
-
-
-def _contract_digest_exclusions_for_value(value: object) -> IncEx | None:
-    if isinstance(value, BaseModel):
-        nested = _contract_digest_exclusions_for_model(value)
-        return nested or None
-    if isinstance(value, (tuple, list)):
-        items = {
-            index: nested
-            for index, item in enumerate(cast(Sequence[object], value))
-            if (nested := _contract_digest_exclusions_for_value(item)) is not None
-        }
-        return items or None
-    return None
-
-
-def plugin_contract_digest(catalog: PluginCatalogManifest) -> str:
-    """Digest of the serialized catalog contract.
-
-    A field classified ``omit`` in ``PLUGIN_CONTRACT_DIGEST_FIELD_ROLES`` is
-    excluded from the digest while it holds the empty value it was declared
-    with, so a
-    catalog parsed with those fields added later digests identically to the
-    bytes persisted before they existed. Every other defaulted field is
-    classified ``keep`` and stays serialized at its default, which keeps a
-    declared extension claim or a confirmation rule other than ``none`` in the
-    digest. The field roles live beside the contract models.
-    """
-
-    serialized = catalog.model_dump_json(
-        exclude=_contract_digest_exclusions_for_model(catalog)
-    )
-    return sha256(serialized.encode("utf-8")).hexdigest()
-
-
-def _stored_contract_digest_before_canonicalization(
-    catalog: PluginCatalogManifest,
-) -> str:
-    """Digest that releases published before empty-default canonicalization stored.
-
-    Those releases hashed the empty extension and confirmation defaults, so
-    verification still accepts this digest for them.
-    """
-
-    serialized = catalog.model_dump_json()
-    for fragment in _PRE_CANONICALIZATION_EMPTY_FRAGMENTS:
-        serialized = serialized.replace(fragment, "")
-    return sha256(serialized.encode("utf-8")).hexdigest()
-
-
-def plugin_contract_digest_matches(
-    catalog: PluginCatalogManifest,
-    contract_digest: str,
-) -> bool:
-    """Whether a persisted digest verifies against this catalog.
-
-    Releases published before empty-default canonicalization hashed the empty
-    extension and confirmation defaults, so both the canonical digest and that
-    historical form verify. Newly published releases store only the canonical
-    digest.
-    """
-
-    return contract_digest in {
-        plugin_contract_digest(catalog),
-        _stored_contract_digest_before_canonicalization(catalog),
-    }
 
 
 class PluginReleaseError(ValueError):
     """A Plugin release or catalog contract is invalid."""
-
-
-class PluginReleaseHeadConflictError(PluginReleaseError):
-    """Publication no longer matches the Workspace release that was reviewed."""
-
-    def __init__(
-        self,
-        *,
-        workspace_id: UUID,
-        slug: str,
-        expected_revision: int,
-        actual_revision: int,
-    ) -> None:
-        self.workspace_id = workspace_id
-        self.slug = slug
-        self.expected_revision = expected_revision
-        self.actual_revision = actual_revision
-        super().__init__(
-            f"Plugin release head changed after review for Workspace {workspace_id}, "
-            f"family {slug!r}: expected revision {expected_revision}, "
-            f"actual revision {actual_revision}"
-        )
 
 
 class PluginReleaseValue(BaseModel):
@@ -780,357 +633,6 @@ class PluginCatalogManifest(PluginReleaseValue):
         )
 
 
-# Digest role of every field that declares a default inside the catalog
-# contract. An ``omit`` field leaves ``plugin_contract_digest`` while it holds
-# that default, so bytes persisted before the field existed keep their digest.
-# A ``keep`` field stays in the digest because releases persisted before
-# empty-default canonicalization already hashed it.
-# test_contract_digest_classifies_every_defaulted_catalog_field fails until a
-# new defaulted field is classified here, and
-# test_contract_digest_ignores_every_empty_defaulting_catalog_field fails when a
-# new defaulted field is classified ``keep`` and re-hashes its default.
-CatalogDigestFieldRole = Literal["omit", "keep"]
-
-PLUGIN_CONTRACT_DIGEST_FIELD_ROLES: Mapping[
-    type[BaseModel], Mapping[str, CatalogDigestFieldRole]
-] = {
-    PluginArtifactTypeContract: {
-        "payload_schema": "keep",
-        "field_projections": "keep",
-        "materialized_json_type": "keep",
-        "export_formats": "keep",
-        "references": "keep",
-        "bundle": "keep",
-        "extensions": "omit",
-        "confirmation_rule": "omit",
-    },
-    PluginCatalogManifest: {
-        "artifact_types": "keep",
-        "artifact_type_dependencies": "keep",
-        "artifact_conversions": "keep",
-    },
-    PluginConfirmationRule: {
-        "rule": "keep",
-        "signatures": "keep",
-    },
-    PluginNodeContract: {
-        "secret_inputs": "keep",
-        "required_capabilities": "keep",
-        "cache_policy": "keep",
-        "http_egress": "omit",
-        "listed": "omit",
-    },
-    PluginNodeHttpEgressContract: {
-        "configured_inputs": "keep",
-        "fixed_destinations": "omit",
-        "dynamic_destinations": "keep",
-    },
-    PluginPortContract: {
-        "title": "keep",
-        "description": "keep",
-        "artifact_type": "keep",
-        "artifact_type_variable": "keep",
-        "also_accepts": "omit",
-        "instance_plugs": "keep",
-        "variadic": "keep",
-        "required": "keep",
-        "shape_field": "omit",
-    },
-    PluginSecretInputContract: {
-        "config_dependencies": "keep",
-        "description": "keep",
-    },
-}
-
-
-@dataclass(frozen=True, slots=True)
-class PluginReleaseIdentity:
-    """Exact immutable identity of one resolved Plugin release.
-
-    Invocation fingerprints and retained provenance use this value so two
-    releases containing the same operator version never share cache entries
-    or diagnostics.
-    """
-
-    scope: PluginReleaseScope
-    workspace_id: UUID | None
-    slug: str
-    revision: int
-    source_digest: str
-    contract_digest: str
-    protocol_digest: str
-    descriptor_digest: str
-
-    @classmethod
-    def from_release(cls, release: "InstalledPluginRelease") -> Self:
-        return cls(
-            scope=release.installation.scope,
-            workspace_id=release.installation.workspace_id,
-            slug=release.release.slug,
-            revision=release.release.revision,
-            source_digest=release.release.source_digest,
-            contract_digest=release.release.contract_digest,
-            protocol_digest=release.release.protocol_digest,
-            descriptor_digest=release.release.descriptor.digest,
-        )
-
-    def fingerprint_document(self) -> dict[str, object]:
-        return {
-            "scope": self.scope.value,
-            "workspace_id": (
-                None if self.workspace_id is None else str(self.workspace_id)
-            ),
-            "slug": self.slug,
-            "revision": self.revision,
-            "source_digest": self.source_digest,
-            "descriptor_digest": self.descriptor_digest,
-        }
-
-    def provenance_document(self) -> dict[str, object]:
-        return {
-            "scope": self.scope.value,
-            "workspace_id": (
-                None if self.workspace_id is None else str(self.workspace_id)
-            ),
-            "slug": self.slug,
-            "revision": self.revision,
-            "source_digest": self.source_digest,
-            "contract_digest": self.contract_digest,
-            "protocol_digest": self.protocol_digest,
-            "descriptor_digest": self.descriptor_digest,
-        }
-
-
-class PluginCapabilityManifest(PluginReleaseValue):
-    capabilities: tuple[PluginRuntimeCapability, ...] = ()
-
-    @field_validator("capabilities")
-    @classmethod
-    def normalize_capabilities(
-        cls,
-        value: tuple[PluginRuntimeCapability, ...],
-    ) -> tuple[PluginRuntimeCapability, ...]:
-        normalized: set[PluginRuntimeCapability] = set()
-        for capability in value:
-            normalized.add(PluginRuntimeCapability(capability))
-        return tuple(sorted(normalized, key=lambda capability: capability.value))
-
-    @property
-    def digest(self) -> str:
-        payload = self.model_dump_json().encode("utf-8")
-        return sha256(payload).hexdigest()
-
-
-class PluginReleaseDescriptor(PluginReleaseValue):
-    """Content identity inputs for idempotent immutable publication."""
-
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    contract_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    capability_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    protocol_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    profile_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    lock_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    runtime_profile: str = Field(min_length=1, max_length=100)
-    loader_target: str = Field(
-        pattern=r"^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*$",
-        max_length=255,
-    )
-    runtime_artifact: PluginRuntimeArtifact | None = None
-
-    @property
-    def digest(self) -> str:
-        document = self.model_dump(mode="json")
-        payload = json.dumps(
-            document,
-            ensure_ascii=False,
-            allow_nan=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        return sha256(payload).hexdigest()
-
-
-@dataclass
-class PluginRelease:
-    """One immutable, scope-neutral release of a Plugin package.
-
-    The release descriptor references independent immutable objects: the source
-    archive, the inspected catalog contract, the deployment runtime profile, the
-    artifact invocation protocol, and the declared capability manifest. The
-    runtime image digest stays absent until the image-building slice fills it.
-    """
-
-    slug: str
-    revision: int
-    catalog: PluginCatalogManifest
-    contract_digest: str
-    capabilities: PluginCapabilityManifest
-    capability_digest: str
-    protocol_digest: str
-    profile_digest: str
-    source_object_key: str
-    source_digest: str
-    lock_digest: str
-    runtime_profile: str
-    loader_target: str
-    runtime_image_digest: str | None = None
-    runtime_artifact: PluginRuntimeArtifact | None = None
-    descriptor_digest: str | None = None
-    published_by_user_id: UUID | None = None
-    published_by_platform_actor: str | None = None
-    published_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    id: UUID = field(default_factory=uuid4)
-
-    def __post_init__(self) -> None:
-        if self.published_by_platform_actor is not None:
-            try:
-                actor = PlatformPluginActor(self.published_by_platform_actor)
-            except ValueError as exc:
-                raise PluginReleaseError(str(exc)) from exc
-            self.published_by_platform_actor = actor.reference
-        if (
-            self.published_by_user_id is not None
-            and self.published_by_platform_actor is not None
-        ):
-            raise PluginReleaseError(
-                "Plugin releases cannot have both user and platform publishers"
-            )
-        if self.catalog.slug != self.slug:
-            raise PluginReleaseError("Plugin release slug must match its catalog")
-        if isinstance(self.revision, bool) or self.revision < 1:
-            raise PluginReleaseError("Plugin release revision must be positive")
-        if not plugin_contract_digest_matches(self.catalog, self.contract_digest):
-            raise PluginReleaseError(
-                "Plugin contract digest must match the serialized catalog contract"
-            )
-        self.capability_digest = _sha256(
-            self.capability_digest,
-            "Plugin capability digest",
-        )
-        if self.capability_digest != self.capabilities.digest:
-            raise PluginReleaseError(
-                "Plugin capability digest must match the capability manifest"
-            )
-        has_secret_inputs = any(node.secret_inputs for node in self.catalog.nodes)
-        if (
-            has_secret_inputs
-            and PluginRuntimeCapability.NODE_SECRETS
-            not in self.capabilities.capabilities
-        ):
-            raise PluginReleaseError(
-                "Plugin releases with secret inputs must declare the "
-                "node-secrets capability"
-            )
-        required_node_capabilities = {
-            capability
-            for node in self.catalog.nodes
-            for capability in node.required_capabilities
-        }
-        declared_capabilities = set(self.capabilities.capabilities)
-        missing_node_capabilities = sorted(
-            required_node_capabilities - declared_capabilities,
-            key=lambda capability: capability.value,
-        )
-        if missing_node_capabilities:
-            rendered = ", ".join(
-                capability.value for capability in missing_node_capabilities
-            )
-            raise PluginReleaseError(
-                "Plugin capability manifest omits node requirements: " + rendered
-            )
-        extra_release_capabilities = sorted(
-            declared_capabilities - required_node_capabilities,
-            key=lambda capability: capability.value,
-        )
-        if extra_release_capabilities:
-            rendered = ", ".join(
-                capability.value for capability in extra_release_capabilities
-            )
-            raise PluginReleaseError(
-                "Plugin capability manifest exceeds exact node requirements: "
-                + rendered
-            )
-        self.protocol_digest = _sha256(
-            self.protocol_digest,
-            "Plugin invocation protocol digest",
-        )
-        self.profile_digest = _sha256(
-            self.profile_digest,
-            "Plugin runtime profile digest",
-        )
-        if self.profile_digest != plugin_profile_digest(self.runtime_profile):
-            raise PluginReleaseError(
-                "Plugin profile digest must match the runtime profile"
-            )
-        self.source_digest = _sha256(self.source_digest, "Plugin source digest")
-        self.lock_digest = _sha256(self.lock_digest, "Plugin lock digest")
-        if self.runtime_image_digest is not None:
-            self.runtime_image_digest = _sha256(
-                self.runtime_image_digest,
-                "Plugin runtime image digest",
-            )
-        if self.runtime_artifact is not None:
-            if self.runtime_image_digest != self.runtime_artifact.manifest_digest:
-                raise PluginReleaseError(
-                    "Plugin runtime image digest must match its OCI artifact"
-                )
-        self.runtime_profile = self.runtime_profile.strip()
-        if self.runtime_profile == "":
-            raise PluginReleaseError("Plugin runtime profile must not be blank")
-        if len(self.runtime_profile) > 100:
-            raise PluginReleaseError(
-                "Plugin runtime profile must be at most 100 characters"
-            )
-        if (
-            re.fullmatch(
-                r"[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*",
-                self.loader_target,
-            )
-            is None
-        ):
-            raise PluginReleaseError("Plugin loader target is invalid")
-        if self.source_object_key == "":
-            raise PluginReleaseError("Plugin source object key must not be blank")
-        if self.source_object_key.startswith(
-            "/"
-        ) or ".." in self.source_object_key.split("/"):
-            raise PluginReleaseError(
-                "Plugin source object key must be a safe relative path"
-            )
-        expected_descriptor_digest = self.descriptor.digest
-        if self.descriptor_digest is None:
-            self.descriptor_digest = expected_descriptor_digest
-        else:
-            self.descriptor_digest = _sha256(
-                self.descriptor_digest,
-                "Plugin release descriptor digest",
-            )
-            if self.descriptor_digest != expected_descriptor_digest:
-                raise PluginReleaseError(
-                    "Plugin release descriptor digest must match its inputs"
-                )
-        if self.published_at.tzinfo is None:
-            raise PluginReleaseError("Plugin published_at must be timezone-aware")
-
-    @property
-    def descriptor(self) -> PluginReleaseDescriptor:
-        return PluginReleaseDescriptor(
-            source_digest=self.source_digest,
-            contract_digest=self.contract_digest,
-            capability_digest=self.capability_digest,
-            protocol_digest=self.protocol_digest,
-            profile_digest=self.profile_digest,
-            lock_digest=self.lock_digest,
-            runtime_profile=self.runtime_profile,
-            loader_target=self.loader_target,
-            runtime_artifact=self.runtime_artifact,
-        )
-
-    @property
-    def executable(self) -> bool:
-        return self.runtime_artifact is not None
-
-
 def _model_json_schema(model: type[BaseModel]) -> dict[str, object]:
     try:
         return cast(dict[str, object], model.model_json_schema())
@@ -1149,15 +651,7 @@ def _model_json_schema(model: type[BaseModel]) -> dict[str, object]:
         }
 
 
-def _sha256(value: str, label: str) -> str:
-    if re.fullmatch(r"[0-9a-f]{64}", value) is None:
-        raise PluginReleaseError(f"{label} must be a lowercase SHA-256 digest")
-    return value
-
-
 __all__ = [
-    "PLUGIN_CONTRACT_DIGEST_FIELD_ROLES",
-    "PLUGIN_INVOCATION_PROTOCOL",
     "PluginArtifactBundleContract",
     "PluginConfirmationRule",
     "PluginMagicSegment",
@@ -1167,27 +661,13 @@ __all__ = [
     "PluginArtifactConversionKey",
     "PluginArtifactTypeContract",
     "PluginArtifactTypeKey",
-    "PluginCapabilityManifest",
     "PluginCatalogManifest",
-    "PluginExecutionPolicy",
     "PluginExportFormat",
     "PluginFieldProjection",
     "PluginNodeContract",
     "PluginNodeHttpEgressContract",
     "PluginPortContract",
     "PluginPortDirection",
-    "PlatformPluginActor",
-    "PluginRelease",
-    "PluginReleaseDescriptor",
     "PluginReleaseError",
-    "PluginReleaseHeadConflictError",
-    "PluginReleaseIdentity",
-    "PluginReleaseNamespace",
-    "PluginReleaseScope",
-    "PluginRuntimeArtifact",
     "PluginSecretInputContract",
-    "plugin_contract_digest",
-    "plugin_contract_digest_matches",
-    "plugin_profile_digest",
-    "plugin_protocol_digest",
 ]

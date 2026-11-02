@@ -5,7 +5,6 @@ from tests.support.transient_activity import (
 )
 import asyncio
 from datetime import UTC, datetime
-from pathlib import Path
 from uuid import UUID, uuid4
 from typing import override
 
@@ -18,18 +17,10 @@ from grafy_api.execution.control import RunExecutionControl
 from grafy_api.execution.models import GraphExecutionResult
 from grafy_api.execution.admission import ExecutionAdmissionLimiter
 from grafy_api.execution.requests import RunRequest
-from grafy_core.application.plugin_releases import PluginReleaseService
-from grafy_core.domain.errors import NotFoundError
 from grafy_core.domain.execution_history import TransientExecution
-from grafy_core.domain.plugin_releases import PlatformPluginActor
-from grafy_core.domain.plugin_revocations import (
-    PluginReleaseRevocationReason,
-    SystemPluginRevocationDrainError,
-)
 from grafy_persistence import schema
 from grafy_persistence.database import Database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
-from grafy_storage import LocalFileObjectStore
 from tests.unit.api.runtime.test_execution_manager import ControlledRunGraph
 
 # Pytest collects fixtures from this module's namespace; the alias names the one
@@ -51,9 +42,8 @@ class FailingRunGraph(ControlledRunGraph):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("finish", ["success", "failure", "cancel", "shutdown"])
-async def test_transient_activity_blocks_maintenance_until_task_finishes(
+async def test_transient_activity_lives_and_dies_with_the_task(
     activity_database: Database,
-    tmp_path: Path,
     finish: str,
 ) -> None:
     database = activity_database
@@ -64,25 +54,17 @@ async def test_transient_activity_blocks_maintenance_until_task_finishes(
     history = ExecutionHistoryService(SqlAlchemyUnitOfWork(database.sessions), None)
     runner = FailingRunGraph() if finish == "failure" else ControlledRunGraph()
     manager = RunExecutionManager(runner, execution_history=history)
-    releases = PluginReleaseService(
-        lambda: SqlAlchemyUnitOfWork(database.sessions),
-        LocalFileObjectStore(tmp_path / "objects"),
-        bucket="plugins",
-    )
     try:
         snapshot = await manager.start(WORKSPACE_ID, RunRequest(nodes=[]))
         async with SqlAlchemyUnitOfWork(database.sessions) as transaction:
             activity = await transaction.execution_history.list_transient()
         assert [row.execution_id for row in activity] == [snapshot.execution_id]
+        with pytest.raises(RuntimeError, match=str(snapshot.execution_id)):
+            await history.recover_transient(
+                exclusive_owner=False, orphan_cleanup_confirmed=True
+            )
         if finish != "cancel_before_start":
             await asyncio.wait_for(runner.started.wait(), timeout=5)
-        with pytest.raises(SystemPluginRevocationDrainError):
-            await releases.revoke_system(
-                slug="retired",
-                revision=1,
-                reason=PluginReleaseRevocationReason.SECURITY,
-                platform_actor=PlatformPluginActor("test:maintenance"),
-            )
         if finish in {"cancel", "cancel_before_start"}:
             await manager.cancel(WORKSPACE_ID, snapshot.execution_id)
         elif finish in {"success", "failure"}:
@@ -99,13 +81,12 @@ async def test_transient_activity_blocks_maintenance_until_task_finishes(
         await manager.shutdown()
         async with SqlAlchemyUnitOfWork(database.sessions) as transaction:
             assert await transaction.execution_history.list_transient() == ()
-        with pytest.raises(NotFoundError):
-            await releases.revoke_system(
-                slug="retired",
-                revision=1,
-                reason=PluginReleaseRevocationReason.SECURITY,
-                platform_actor=PlatformPluginActor("test:maintenance"),
+        assert (
+            await history.recover_transient(
+                exclusive_owner=True, orphan_cleanup_confirmed=True
             )
+            == 0
+        )
     finally:
         runner.release.set()
         await manager.shutdown()

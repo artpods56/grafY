@@ -25,10 +25,6 @@ from grafy_core.domain.execution_history import (
 )
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.domain.module_library import Module, ModuleRelease
-from grafy_core.domain.plugin_releases import PluginRelease
-from grafy_core.domain.plugin_installations import PluginInstallation
-from grafy_core.domain.plugin_revocations import PluginReleaseRevocation
-from grafy_core.domain.plugin_selection import PluginReleaseSelection
 from grafy_core.domain.node_secrets import EncryptedNodeSecret
 from grafy_core.domain.collaboration import CollaborativeGraphHead
 from grafy_core.domain.saved_graphs import (
@@ -170,16 +166,3 @@ def start_mappers() -> None:
     )
     mapper_registry.map_imperatively(Module, schema.modules)
     mapper_registry.map_imperatively(ModuleRelease, schema.module_releases)
-    mapper_registry.map_imperatively(PluginRelease, schema.plugin_releases)
-    mapper_registry.map_imperatively(
-        PluginInstallation,
-        schema.plugin_installations,
-    )
-    mapper_registry.map_imperatively(
-        PluginReleaseRevocation,
-        schema.plugin_release_revocations,
-    )
-    mapper_registry.map_imperatively(
-        PluginReleaseSelection,
-        schema.plugin_release_selections,
-    )

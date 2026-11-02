@@ -14,11 +14,7 @@ from sqlalchemy import (
 )
 from sqlalchemy import Uuid as SaUuid
 
-from grafy_persistence.column_types import (
-    SavedGraphDocumentType,
-    StringEnumType,
-    UTCDateTime,
-)
+from grafy_persistence.column_types import StringEnumType, UTCDateTime
 
 from .base import metadata
 
@@ -58,7 +54,7 @@ modules = Table(
         name="fk_modules_source_graph_id_saved_graphs",
     ),
     CheckConstraint(
-        "publication_state IN ('published', 'deprecated', 'withdrawn')",
+        "publication_state IN ('published')",
         name="module_publication_state",
     ),
     CheckConstraint(
@@ -105,45 +101,6 @@ module_releases = Table(
         "module_id",
         "revision",
     ),
-)
-
-
-templates = Table(
-    "templates",
-    metadata,
-    Column("id", SaUuid(as_uuid=True), primary_key=True),
-    Column(
-        "workspace_id",
-        SaUuid(as_uuid=True),
-        ForeignKey("workspaces.id", ondelete="RESTRICT"),
-        nullable=False,
-    ),
-    Column("source_graph_id", SaUuid(as_uuid=True), nullable=False),
-    Column("source_revision", Integer, nullable=False),
-    Column("source_graph_name", String(160), nullable=False),
-    Column("snapshot_document", SavedGraphDocumentType(), nullable=False),
-    Column("name", String(160), nullable=False),
-    Column("description", String(1000), nullable=True),
-    # The template library is retired: the table, its column widths and its state
-    # check constraint remain so an existing database still compares clean, and
-    # nothing reads or writes them.
-    Column("state", String(16), nullable=False),
-    Column(
-        "created_by_user_id",
-        SaUuid(as_uuid=True),
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
-    ),
-    Column("created_at", UTCDateTime(), nullable=False),
-    Column("updated_at", UTCDateTime(), nullable=False),
-    UniqueConstraint("workspace_id", "id", name="uq_templates_workspace_id_id"),
-    CheckConstraint("source_revision >= 1", name="template_source_revision"),
-    CheckConstraint(
-        "state IN ('active', 'archived')",
-        name="template_state",
-    ),
-    Index("ix_templates_workspace_name", "workspace_id", "name"),
-    Index("ix_templates_workspace_updated_at", "workspace_id", "updated_at"),
 )
 
 

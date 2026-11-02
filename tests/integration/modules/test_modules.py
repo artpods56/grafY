@@ -7,7 +7,6 @@ from typing import Annotated, cast, final, override
 from uuid import UUID
 
 import pytest
-from sqlalchemy import update as sqlalchemy_update
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import Field, SecretStr, StrictStr
@@ -25,7 +24,6 @@ from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
 from grafy_core.artifact_contracts import TEXT_VALUE
 from grafy_core.plugins import NodeSecretInput, Plugin
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
-from grafy_persistence import schema
 from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
@@ -283,16 +281,12 @@ def _module_graph_payload(
     pinned_nodes: list[SavedGraphNodeModel] = []
     for node in nodes:
         if (node.operator_id, node.operator_version) in builtin_operators:
-            pinned_nodes.append(
-                node.model_copy(update={"kind": "builtin"})
-            )
+            pinned_nodes.append(node.model_copy(update={"kind": "builtin"}))
             continue
         if node.operator_id in {"module.input", "module.output"} or (
             node.operator_id.startswith("graph.module.")
         ):
-            pinned_nodes.append(
-                node.model_copy(update={"kind": "module"})
-            )
+            pinned_nodes.append(node.model_copy(update={"kind": "module"}))
             continue
         pinned_nodes.append(node)
     document = _saved_graph_document(pinned_nodes, edges)
@@ -1608,85 +1602,6 @@ def test_exact_module_revision_cycle_reports_the_nested_path(
     assert "Graph module cycle detected" in error
     assert f"graph.module.{first['id']}@2" in error
     assert f"graph.module.{second['id']}@2" in error
-
-
-def _mark_module_state(client: TestClient, module_id: UUID, state: str) -> None:
-    """Write a stored publication state no route can set any more.
-
-    Deprecate and withdraw are retired, but rows they left behind remain in real
-    databases, so this is how a test produces one.
-    """
-
-    database = get_resources(cast(FastAPI, client.app)).database
-
-    async def write() -> None:
-        async with database.engine.begin() as connection:
-            await connection.execute(
-                sqlalchemy_update(schema.modules)
-                .where(schema.modules.c.id == module_id)
-                .values(publication_state=state)
-            )
-
-    asyncio.run(write())
-
-
-def test_retired_module_states_stay_hidden_and_pinned_calls_resolve(
-    module_client: TestClient,
-) -> None:
-    created = module_client.post(
-        f"/v1/workspaces/{WORKSPACE}/graphs",
-        json=_text_module_payload(),
-    ).json()
-    graph_id = created["id"]
-    api = GrafyApi(module_client)
-    modules = api.workspace(UUID(WORKSPACE)).modules
-    published = modules.publish_ok(
-        PublishModuleReleaseRequest(source_graph_id=UUID(graph_id))
-    )
-    module_id = published.id
-
-    _mark_module_state(module_client, module_id, "withdrawn")
-
-    catalog = api.workspace(UUID(WORKSPACE)).catalog
-    registry = catalog.list_nodes().json()
-    assert all(node.get("module_graph_id") != graph_id for node in registry["nodes"])
-    assert modules.list_ok().modules == []
-
-    response = module_client.post(
-        f"/v1/workspaces/{WORKSPACE}/runs",
-        json=_system_run_request(
-            nodes=[
-                RunNodeRequest(
-                    kind="builtin",
-                    id="source",
-                    operator_id="text.input",
-                    operator_version=1,
-                    config={"text": "a"},
-                ),
-                RunNodeRequest(
-                    kind="module",
-                    id="module",
-                    operator_id=f"graph.module.{graph_id}",
-                    operator_version=1,
-                    config={},
-                ),
-            ],
-            edges=[
-                RunEdgeRequest(
-                    from_node="source",
-                    from_port="text",
-                    to_node="module",
-                    to_port="text",
-                )
-            ],
-        ).model_dump(mode="json"),
-    )
-    assert response.status_code == 200
-    result = response.json()
-    assert result["status"] == "succeeded"
-    output = cast(list[dict[str, object]], _module_node_run(result)["outputs"])[0]
-    artifacts = cast(list[dict[str, object]], output["artifacts"])
-    assert artifacts[0]["text"] == '"A"'
 
 
 def test_module_library_resolve_definition_is_the_core_contract(
