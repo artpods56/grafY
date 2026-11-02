@@ -60,16 +60,10 @@ operator id and version, without release pins. Reads normalize old Plugin nodes
 without changing immutable checkpoints. Keep artifact readers compatible with
 historical artifact metadata even when the producing operator is unavailable.
 
-The retained release and publication modules support historical data during the
-first milestone. They do not register executable families. Their tests and the
-archived notes SDK wheel are independent of live family dependencies.
-
-That archived wheel is nonetheless a reproducible build of current `libs/core`
-(`just sdk-wheel` fixes `SOURCE_DATE_EPOCH=0`), so it moves whenever a module a
-Plugin imports moves. Three artifacts have to move together: the wheel under
-`tests/fixtures/plugin-notes/wheels`, the hash `tests/fixtures/plugin-notes/uv.lock`
-records for it (`uv lock --upgrade-package grafy-core`), and the digest pinned in
-`tests/unit/architecture/test_import_boundaries.py`. Note what that pin does and
-does not catch: it compares the wheel to a digest, never to `libs/core`, so a wheel
-that lags the source stays green until something tries to resolve it and reports a
-hash mismatch.
+Nothing here publishes, freezes, or isolates a family: ADR 0017 removed publication, the
+Docker sandbox, the guest protocol, the egress broker, and the archived notes SDK wheel
+with its `just sdk-wheel` recipe and pinned digest. A family reaches a deployment only
+through the workspace dependency that installs its package and the static registration in
+`apps/api/src/grafy_api/services/families.py`. The release descriptor types and their
+repositories remain so historical rows stay readable; they register nothing and execute
+nothing.

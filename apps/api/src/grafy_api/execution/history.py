@@ -203,25 +203,6 @@ class ExecutionHistoryService:
             await unit_of_work.execution_history.update(execution)
             if result is not None:
                 for position, node_result in enumerate(result.node_results):
-                    diagnostics: JsonObject | None = None
-                    release = node_result.plugin_release
-                    if release is not None:
-                        diagnostics = {
-                            "plugin_release": {
-                                "scope": release.scope.value,
-                                "workspace_id": (
-                                    None
-                                    if release.workspace_id is None
-                                    else str(release.workspace_id)
-                                ),
-                                "slug": release.slug,
-                                "revision": release.revision,
-                                "source_digest": release.source_digest,
-                                "contract_digest": release.contract_digest,
-                                "protocol_digest": release.protocol_digest,
-                                "descriptor_digest": release.descriptor_digest,
-                            },
-                        }
                     await unit_of_work.execution_history.add_node_result(
                         GraphExecutionNodeResult(
                             workspace_id=workspace_id,
@@ -232,7 +213,7 @@ class ExecutionHistoryService:
                             outputs=dict(node_result.outputs),
                             error=node_result.error,
                             completed_at=completed_at,
-                            diagnostics=diagnostics,
+                            diagnostics=None,
                         )
                     )
             await unit_of_work.commit()

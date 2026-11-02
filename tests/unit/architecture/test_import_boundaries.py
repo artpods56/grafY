@@ -1,5 +1,4 @@
 import ast
-from hashlib import sha256
 from importlib.util import resolve_name
 from pathlib import Path
 from typing import cast
@@ -63,14 +62,14 @@ def _imported_modules(source: str, package: str) -> list[str]:
         ("from ..v1 import routes", "grafy_api.execution", "grafy_api.v1.routes"),
         ("from .. import v1", "grafy_api.execution", "grafy_api.v1"),
         (
-            "from ...v1.routes import artifacts",
-            "grafy_api.plugins.runtime",
+            "from ...routes import artifacts",
+            "grafy_api.v1.routes.catalog",
             "grafy_api.v1.routes.artifacts",
         ),
         (
-            "from ..publication import source",
-            "grafy_api.plugins.runtime",
-            "grafy_api.plugins.publication.source",
+            "from ..catalog import views",
+            "grafy_api.v1.routes.catalog",
+            "grafy_api.v1.routes.catalog.views",
         ),
         (
             "from . import views",
@@ -116,19 +115,6 @@ def test_plugin_families_are_installed_from_the_workspace() -> None:
         plugin_text = (REPO_ROOT / project_path / "pyproject.toml").read_text()
         assert "wheels/" not in plugin_text
         assert "SOURCE_DATE_EPOCH" not in plugin_text
-
-    # The publication fixture hands this wheel to a Plugin as if it were a release,
-    # so it has to be the wheel `just sdk-wheel` builds from current `libs/core`
-    # source. `SOURCE_DATE_EPOCH=0` makes it byte-for-byte reproducible, which is
-    # what lets a digest stand in for content here.
-    core_wheel = (
-        REPO_ROOT
-        / "tests/fixtures/plugin-notes/wheels/grafy_core-0.1.0-py3-none-any.whl"
-    )
-    assert sha256(core_wheel.read_bytes()).hexdigest() == (
-        "a84f39c411156a2ce4f4314373ac9d603948d70e618140fbe093bb26fa631d9d"
-    )
-
 
 def test_relational_dependencies_are_owned_by_persistence() -> None:
     api_document = tomllib.loads((REPO_ROOT / "apps/api/pyproject.toml").read_text())
@@ -193,11 +179,12 @@ def test_shared_configuration_is_a_leaf_package() -> None:
 
 
 def test_configuration_does_not_build_the_runtime_it_configures() -> None:
-    """The composed `Settings` never imports the plugin runtime (ADR 0011).
+    """The composed `Settings` imports no application module at all (ADR 0011).
 
     `settings.py` used to construct `NetworkPolicy` and `PluginEgressBrokerPolicy`, so
     configuration imported the thing it configures and the runtime could not read its
-    own section without a cycle. The runtime builds those objects with `from_config`.
+    own section without a cycle. Every policy object is now built by the application
+    from a plain section, which is what keeps configuration a leaf.
     """
 
     api_source_root = REPO_ROOT / "apps/api/src"
@@ -206,8 +193,7 @@ def test_configuration_does_not_build_the_runtime_it_configures() -> None:
     offenders = [
         module
         for module in _imported_modules(path.read_text(), package)
-        if module == "grafy_api.plugins.runtime"
-        or module.startswith("grafy_api.plugins.runtime.")
+        if module == "grafy_api" or module.startswith("grafy_api.")
     ]
 
     assert offenders == []
@@ -268,18 +254,16 @@ def test_plugin_families_do_not_import_http_or_api_modules() -> None:
     assert offenders == []
 
 
-def test_execution_and_plugin_hosting_do_not_import_http_or_legacy_hosting() -> None:
+def test_execution_does_not_import_http_or_legacy_hosting() -> None:
     api_root = REPO_ROOT / "apps/api/src/grafy_api"
     offenders: list[str] = []
-    for owner in (api_root / "execution", api_root / "plugins/runtime"):
+    for owner in (api_root / "execution",):
         forbidden = [
             "grafy_api.v1.routes",
             "grafy_api.plugins.compatibility",
             "fastapi",
             "starlette",
         ]
-        if owner.name == "runtime":
-            forbidden.append("grafy_api.execution")
         for path in owner.rglob("*.py"):
             package = ".".join(path.parent.relative_to(api_root.parent).parts)
             for module in _imported_modules(path.read_text(), package):
@@ -308,9 +292,8 @@ def test_application_owners_do_not_depend_on_route_modules() -> None:
                 "grafy_api.v1.routes."
             ):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
-            if path.name == "publish.py" and (
-                module == "grafy_api.app_state"
-                or module.startswith("grafy_api.app_state.")
+            if module == "grafy_api.app_state" or module.startswith(
+                "grafy_api.app_state."
             ):
                 offenders.append(
                     f"{path.relative_to(REPO_ROOT)}: request resource lookup"
@@ -334,7 +317,11 @@ def test_active_graph_execution_has_no_release_or_sandbox_dependency() -> None:
         imports = _imported_modules(path.read_text(), package)
         assert not any(
             module.startswith(
-                ("grafy_api.plugins.runtime", "grafy_api.execution.releases")
+                (
+                    "grafy_api.plugins",
+                    "grafy_api.execution.releases",
+                    "grafy_core.runtime.plugin_",
+                )
             )
             for module in imports
         ), f"{owner} must execute application families through the static registry"

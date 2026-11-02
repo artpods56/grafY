@@ -1,10 +1,5 @@
-from tests.testkit import with_setting_values
 from pathlib import Path
-from unittest.mock import AsyncMock
 from grafy_shared.config import AppConfig, KeysConfig, RealtimeConfig
-
-from grafy_api.plugins.runtime.docker import DockerPluginRuntime
-from grafy_api.app_state import get_resources
 
 from asgi_lifespan import LifespanManager
 from pydantic import SecretStr
@@ -54,8 +49,6 @@ async def test_startup_registers_builtin_families_without_host_deployment(
         assert {("module.input", 1), ("module.output", 1)}.issubset(
             {node.key for node in registry.nodes}
         )
-        admission = application.state.resources.workbench.release_admission
-        assert admission is None
 
 
 @pytest.mark.asyncio
@@ -81,21 +74,3 @@ async def test_startup_reports_actionable_command_hmac_key_error(
     assert ".env" in message
     assert "export GRAFY_COMMAND_HMAC_KEY" in message
     assert "openssl rand -hex 32" in message
-
-
-@pytest.mark.asyncio
-async def test_runtime_startup_without_owner_does_not_reap_other_workers(
-    startup_settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    orphan_recovery = AsyncMock(
-        side_effect=AssertionError("No authority to reap workers")
-    )
-    monkeypatch.setattr(DockerPluginRuntime, "check_ready", AsyncMock())
-    monkeypatch.setattr(DockerPluginRuntime, "recover_orphans", orphan_recovery)
-    monkeypatch.setattr(DockerPluginRuntime, "shutdown", AsyncMock())
-    application = create_app(
-        with_setting_values(startup_settings, plugin_runtime_enabled=True)
-    )
-    async with LifespanManager(application):
-        assert get_resources(application).workbench.plugin_runtime is None
-    orphan_recovery.assert_not_awaited()

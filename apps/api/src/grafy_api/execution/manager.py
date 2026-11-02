@@ -41,7 +41,6 @@ from grafy_api.execution.control import RunExecutionControl
 from grafy_api.execution.errors import render_execution_error
 from grafy_api.execution.models import GraphExecutionResult
 from grafy_api.execution.run_graph import RunGraph
-from grafy_api.plugins.runtime.sandbox import PluginSandboxCleanupError
 
 
 logger = logging.getLogger(__name__)
@@ -259,7 +258,6 @@ class _RunExecutionRecord:
     task: asyncio.Task[None] | None = None
     error: str | None = None
     terminal: _TerminalOutcome | None = None
-    cleanup_confirmed: bool = True
     activity_registration_attempted: bool = False
 
     def snapshot(self, queue_position: int | None) -> RunExecutionSnapshot:
@@ -358,8 +356,8 @@ class RunExecutionManager:
         """Run in the caller task; the caller retains its admission lease.
 
         Unlike background execution, errors and cancellation propagate directly.
-        Activity covers preflight through sandbox cleanup without creating saved
-        graph history or a pollable background execution.
+        Activity covers preflight through the release of the transient marker
+        without creating saved graph history or a pollable background execution.
         """
         if self._shutting_down:
             raise RuntimeError("Run execution manager is shutting down")
@@ -367,43 +365,33 @@ class RunExecutionManager:
             raise RuntimeError("Transient execution activity is not configured")
         execution_id = uuid7()
         execution_failed = False
-        cleanup_confirmed = True
         try:
             await self._execution_history.register_transient(
                 workspace_id, execution_id, self._transient_owner_id
             )
             return await self._run_graph.run(workspace_id, request)
-        except PluginSandboxCleanupError:
-            cleanup_confirmed = False
-            logger.exception(
-                "Retaining transient activity after unconfirmed sandbox cleanup "
-                "execution_id=%s",
-                execution_id,
-            )
-            raise
         except BaseException:
             execution_failed = True
             raise
         finally:
-            if cleanup_confirmed:
-                # Registration may have committed even if its acknowledgement failed.
-                for attempt in range(2):
-                    try:
-                        await self._execution_history.release_transient(
-                            execution_id, self._transient_owner_id
-                        )
-                    except Exception as exc:
-                        if attempt == 0:
-                            await asyncio.sleep(0)
-                            continue
-                        message = (
-                            f"Could not release transient execution {execution_id}; "
-                            "activity marker retained for maintenance"
-                        )
-                        logger.exception(message)
-                        if not execution_failed:
-                            raise RuntimeError(message) from exc
-                    break
+            # Registration may have committed even if its acknowledgement failed.
+            for attempt in range(2):
+                try:
+                    await self._execution_history.release_transient(
+                        execution_id, self._transient_owner_id
+                    )
+                except Exception as exc:
+                    if attempt == 0:
+                        await asyncio.sleep(0)
+                        continue
+                    message = (
+                        f"Could not release transient execution {execution_id}; "
+                        "activity marker retained for maintenance"
+                    )
+                    logger.exception(message)
+                    if not execution_failed:
+                        raise RuntimeError(message) from exc
+                break
 
     async def active_execution_summary(
         self,
@@ -851,16 +839,6 @@ class RunExecutionManager:
                 record.request,
                 control=record.control,
             )
-        except PluginSandboxCleanupError as exc:
-            record.cleanup_confirmed = False
-            logger.exception(
-                "Retaining execution activity after unconfirmed sandbox cleanup "
-                "execution_id=%s",
-                record.execution_id,
-            )
-            await self._complete(
-                record, status="failed", error=render_execution_error(exc)
-            )
         except asyncio.CancelledError:
             await self._complete(record, status="cancelled")
         except Exception as exc:
@@ -936,11 +914,7 @@ class RunExecutionManager:
             if record.status in _TERMINAL_STATUSES or record.terminal is not None:
                 return
             history_error: str | None = None
-            if (
-                record.cleanup_confirmed
-                and record.history_execution is not None
-                and self._execution_history is not None
-            ):
+            if record.history_execution is not None and self._execution_history is not None:
                 history_failure: Exception | None = None
                 for attempt in range(2):
                     try:
@@ -985,8 +959,7 @@ class RunExecutionManager:
                         f"{render_execution_error(history_failure)}"
                     )
             if (
-                record.cleanup_confirmed
-                and record.activity_registration_attempted
+                record.activity_registration_attempted
                 and self._execution_history is not None
             ):
                 for attempt in range(2):
@@ -1008,11 +981,6 @@ class RunExecutionManager:
                     logger.error(
                         "%s; activity marker retained for maintenance", history_error
                     )
-            if not record.cleanup_confirmed:
-                history_error = (
-                    f"Execution {record.execution_id} remains active for maintenance "
-                    "until sandbox cleanup is confirmed"
-                )
             active_node_id = record.control.active_node_id
             if active_node_id is not None:
                 record.control.finish_outer_node(active_node_id)

@@ -59,7 +59,7 @@ def head() -> CollaborativeGraphHead:
 
 
 @pytest.mark.parametrize("kind", ["builtin", "plugin", "module"])
-def test_node_conversion_preserves_pin_name_and_copies_nested_config(
+def test_node_conversion_drops_retired_pins_and_copies_nested_config(
     kind: Literal["builtin", "plugin", "module"],
     head: CollaborativeGraphHead,
 ) -> None:
@@ -79,13 +79,11 @@ def test_node_conversion_preserves_pin_name_and_copies_nested_config(
                     "artifact_type": {"id": "scalar.text", "schema_version": 1},
                 }
             ],
-            "plugin_release_pin": {
-                "scope": "workspace",
-                "slug": "example",
-                "revision": 3,
-            }
-            if kind == "plugin"
-            else None,
+            "plugin_release_pin": (
+                {"scope": "workspace", "slug": "example", "revision": 3}
+                if kind == "plugin"
+                else None
+            ),
         }
     )
     head.document = SavedGraphDocument(nodes=(node,))
@@ -93,11 +91,8 @@ def test_node_conversion_preserves_pin_name_and_copies_nested_config(
     payload = wire.model_dump(mode="json")
 
     assert "plugin_release_pin" not in payload
-    assert payload["plugin_release"] == (
-        {"scope": "workspace", "slug": "example", "revision": 3}
-        if kind == "plugin"
-        else None
-    )
+    assert "plugin_release" not in payload
+    assert payload["kind"] == ("builtin" if kind == "plugin" else kind)
     assert payload["input_plugs"] == [{"id": "plug", "port": "items"}]
     assert payload["artifact_type_bindings"] == [
         {"variable": "T", "artifact_type": {"id": "scalar.text", "schema_version": 1}}
@@ -306,33 +301,47 @@ def test_graph_layout_rejects_absent_dimensions(
 
 @pytest.mark.parametrize("model", [SavedGraphNode, SavedGraphNodeModel])
 @pytest.mark.parametrize("kind", ["builtin", "plugin", "module"])
-@pytest.mark.parametrize("has_pin", [False, True])
-def test_node_models_require_release_pins_only_for_plugins(
+@pytest.mark.parametrize(
+    "pin_field",
+    [
+        pytest.param(None, id="no-pin"),
+        pytest.param("plugin_release_pin", id="stored-pin"),
+        pytest.param("plugin_release", id="wire-pin"),
+    ],
+)
+def test_node_models_read_retired_pin_payloads_without_keeping_a_pin(
     model: type[SavedGraphNode] | type[SavedGraphNodeModel],
     kind: str,
-    has_pin: bool,
+    pin_field: str | None,
 ) -> None:
-    pin_field = "plugin_release_pin" if model is SavedGraphNode else "plugin_release"
-    payload = {
+    """A stored node keeps its operator; the release it once pinned decides nothing.
+
+    `plugin_release_pin` is the key immutable checkpoints carry; `plugin_release` is
+    the key the old HTTP wire format used. Each model strips the key it can be shown.
+    """
+
+    if model is SavedGraphNode and pin_field == "plugin_release":
+        pytest.skip("checkpoints never carried the wire key")
+    if model is SavedGraphNodeModel and pin_field == "plugin_release_pin":
+        pytest.skip("the wire format never carried the stored key")
+
+    payload: dict[str, object] = {
         "id": "node",
         "kind": kind,
         "operator_id": "example",
         "operator_version": 1,
         "position": {"x": 0, "y": 0},
-        pin_field: {"scope": "system", "slug": "example", "revision": 1}
-        if has_pin
-        else None,
     }
-    if (kind == "plugin") == has_pin:
-        assert model.model_validate(payload).kind == kind
-    else:
-        message = (
-            "Plugin node must pin an exact Plugin release"
-            if kind == "plugin"
-            else f"{kind} node cannot carry a Plugin release pin"
-        )
-        with pytest.raises(ValidationError, match=message):
-            model.model_validate(payload)
+    if pin_field is not None:
+        payload[pin_field] = {"scope": "system", "slug": "example", "revision": 1}
+
+    node = model.model_validate(payload)
+    assert node.kind == ("builtin" if kind == "plugin" else kind)
+    dumped = node.model_dump(mode="json")
+    assert "plugin_release" not in dumped
+    assert "plugin_release_pin" not in dumped
+
+
 
 
 def test_origin_conversion_retains_exact_value_and_conversion_path(

@@ -1,11 +1,10 @@
-from tests.unit.persistence.test_transient_execution_revocation import (
+from tests.support.transient_activity import (
     NOW,
     WORKSPACE_ID,
-    revocation_database as _revocation_database_fixture,
+    activity_database as _activity_database_fixture,
 )
 import asyncio
 from datetime import UTC, datetime
-from pathlib import Path
 from uuid import UUID, uuid4
 from typing import override
 
@@ -18,22 +17,15 @@ from grafy_api.execution.control import RunExecutionControl
 from grafy_api.execution.models import GraphExecutionResult
 from grafy_api.execution.admission import ExecutionAdmissionLimiter
 from grafy_api.execution.requests import RunRequest
-from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.domain.execution_history import TransientExecution
-from grafy_core.domain.plugin_installations import InstalledPluginRelease
-from grafy_core.domain.plugin_releases import PlatformPluginActor
-from grafy_core.domain.plugin_revocations import (
-    PluginReleaseRevocationReason,
-    SystemPluginRevocationDrainError,
-)
 from grafy_persistence import schema
 from grafy_persistence.database import Database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
-from grafy_storage import LocalFileObjectStore
 from tests.unit.api.runtime.test_execution_manager import ControlledRunGraph
 
-
-revocation_database = _revocation_database_fixture
+# Pytest collects fixtures from this module's namespace; the alias names the one
+# every test below takes as an argument.
+activity_database = _activity_database_fixture
 
 
 class FailingRunGraph(ControlledRunGraph):
@@ -51,11 +43,10 @@ class FailingRunGraph(ControlledRunGraph):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("finish", ["success", "failure", "cancel", "shutdown"])
 async def test_transient_activity_blocks_maintenance_until_task_finishes(
-    revocation_database: tuple[Database, InstalledPluginRelease],
-    tmp_path: Path,
+    activity_database: Database,
     finish: str,
 ) -> None:
-    database, release = revocation_database
+    database = activity_database
     async with database.engine.begin() as connection:
         await connection.execute(
             update(schema.graph_executions).values(status="succeeded", finished_at=NOW)
@@ -63,11 +54,6 @@ async def test_transient_activity_blocks_maintenance_until_task_finishes(
     history = ExecutionHistoryService(SqlAlchemyUnitOfWork(database.sessions), None)
     runner = FailingRunGraph() if finish == "failure" else ControlledRunGraph()
     manager = RunExecutionManager(runner, execution_history=history)
-    releases = PluginReleaseService(
-        lambda: SqlAlchemyUnitOfWork(database.sessions),
-        LocalFileObjectStore(tmp_path / "objects"),
-        bucket="plugins",
-    )
     try:
         snapshot = await manager.start(WORKSPACE_ID, RunRequest(nodes=[]))
         async with SqlAlchemyUnitOfWork(database.sessions) as transaction:
@@ -75,19 +61,10 @@ async def test_transient_activity_blocks_maintenance_until_task_finishes(
         assert [row.execution_id for row in activity] == [snapshot.execution_id]
         if finish != "cancel_before_start":
             await asyncio.wait_for(runner.started.wait(), timeout=5)
-        with pytest.raises(SystemPluginRevocationDrainError):
-            await releases.revoke_system(
-                slug=release.release.slug,
-                revision=release.release.revision,
-                reason=PluginReleaseRevocationReason.SECURITY,
-                platform_actor=PlatformPluginActor("cli:test"),
-            )
-        assert (
-            await releases.get_system_revocation(
-                slug=release.release.slug, revision=release.release.revision
-            )
-            is None
-        )
+        # Maintenance cannot proceed while a task holds the Workspace activity
+        # marker, whatever the marker's owner is about to do with the execution.
+        async with SqlAlchemyUnitOfWork(database.sessions) as transaction:
+            assert await transaction.execution_history.list_transient() != ()
         if finish in {"cancel", "cancel_before_start"}:
             await manager.cancel(WORKSPACE_ID, snapshot.execution_id)
         elif finish in {"success", "failure"}:
@@ -104,12 +81,6 @@ async def test_transient_activity_blocks_maintenance_until_task_finishes(
         await manager.shutdown()
         async with SqlAlchemyUnitOfWork(database.sessions) as transaction:
             assert await transaction.execution_history.list_transient() == ()
-        await releases.revoke_system(
-            slug=release.release.slug,
-            revision=release.release.revision,
-            reason=PluginReleaseRevocationReason.SECURITY,
-            platform_actor=PlatformPluginActor("cli:test"),
-        )
     finally:
         runner.release.set()
         await manager.shutdown()
@@ -121,11 +92,11 @@ async def test_transient_activity_blocks_maintenance_until_task_finishes(
     [(False, False), (False, True), (True, False), (True, True)],
 )
 async def test_transient_recovery_requires_exclusive_owner_and_drained_guests(
-    revocation_database: tuple[Database, InstalledPluginRelease],
+    activity_database: Database,
     exclusive: bool,
     drained: bool,
 ) -> None:
-    database, _ = revocation_database
+    database = activity_database
     history = ExecutionHistoryService(SqlAlchemyUnitOfWork(database.sessions), None)
     execution_id, owner_id = uuid4(), uuid4()
     await history.register_transient(WORKSPACE_ID, execution_id, owner_id)
@@ -148,9 +119,9 @@ async def test_transient_recovery_requires_exclusive_owner_and_drained_guests(
 
 @pytest.mark.asyncio
 async def test_transient_activity_is_transactional_and_owner_bound(
-    revocation_database: tuple[Database, InstalledPluginRelease],
+    activity_database: Database,
 ) -> None:
-    database, _ = revocation_database
+    database = activity_database
     marker = TransientExecution(
         execution_id=uuid4(),
         workspace_id=WORKSPACE_ID,
@@ -180,9 +151,9 @@ async def test_transient_activity_is_transactional_and_owner_bound(
 
 @pytest.mark.asyncio
 async def test_cancellation_before_first_task_step_clears_transient_activity(
-    revocation_database: tuple[Database, InstalledPluginRelease],
+    activity_database: Database,
 ) -> None:
-    database, _ = revocation_database
+    database = activity_database
     runner = ControlledRunGraph()
     manager = RunExecutionManager(
         runner,
@@ -204,10 +175,10 @@ async def test_cancellation_before_first_task_step_clears_transient_activity(
 
 @pytest.mark.asyncio
 async def test_transient_admission_failure_prevents_execution_and_returns_capacity(
-    revocation_database: tuple[Database, InstalledPluginRelease],
+    activity_database: Database,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    database, _ = revocation_database
+    database = activity_database
     history = ExecutionHistoryService(SqlAlchemyUnitOfWork(database.sessions), None)
     original = ExecutionHistoryService.register_transient
 
@@ -246,11 +217,11 @@ async def test_transient_admission_failure_prevents_execution_and_returns_capaci
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failures", [1, 2])
 async def test_transient_terminal_cleanup_retries_and_retains_marker_on_failure(
-    revocation_database: tuple[Database, InstalledPluginRelease],
+    activity_database: Database,
     monkeypatch: pytest.MonkeyPatch,
     failures: int,
 ) -> None:
-    database, _ = revocation_database
+    database = activity_database
     history = ExecutionHistoryService(SqlAlchemyUnitOfWork(database.sessions), None)
     original = ExecutionHistoryService.release_transient
     attempts = 0
@@ -300,10 +271,10 @@ async def test_transient_terminal_cleanup_retries_and_retains_marker_on_failure(
 
 @pytest.mark.asyncio
 async def test_failed_task_creation_clears_registered_activity(
-    revocation_database: tuple[Database, InstalledPluginRelease],
+    activity_database: Database,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    database, _ = revocation_database
+    database = activity_database
     runner = ControlledRunGraph()
     manager = RunExecutionManager(
         runner,
@@ -335,12 +306,12 @@ async def test_failed_task_creation_clears_registered_activity(
 @pytest.mark.parametrize("committed", [False, True])
 @pytest.mark.parametrize("cancelled", [False, True])
 async def test_inline_registration_failure_never_starts_the_executor(
-    revocation_database: tuple[Database, InstalledPluginRelease],
+    activity_database: Database,
     monkeypatch: pytest.MonkeyPatch,
     committed: bool,
     cancelled: bool,
 ) -> None:
-    database, _ = revocation_database
+    database = activity_database
     original = ExecutionHistoryService.register_transient
 
     async def fail_registration(
@@ -378,12 +349,12 @@ async def test_inline_registration_failure_never_starts_the_executor(
 @pytest.mark.parametrize("failures", [1, 2])
 @pytest.mark.parametrize("execution_fails", [False, True])
 async def test_inline_removal_retries_retains_activity_and_preserves_execution_errors(
-    revocation_database: tuple[Database, InstalledPluginRelease],
+    activity_database: Database,
     monkeypatch: pytest.MonkeyPatch,
     failures: int,
     execution_fails: bool,
 ) -> None:
-    database, _ = revocation_database
+    database = activity_database
     original = ExecutionHistoryService.release_transient
     attempts = 0
 

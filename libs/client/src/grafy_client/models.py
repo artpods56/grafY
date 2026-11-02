@@ -5,7 +5,6 @@ from uuid import UUID
 from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.domain.saved_graphs import (
     SavedGraphDocument,
-    SavedGraphPluginReleasePin,
 )
 from grafy_core.nodes import PortShape
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -49,7 +48,7 @@ class CatalogPort(ClientModel):
 
 
 class CatalogNode(ClientModel):
-    origin: Literal["builtin", "plugin", "module"] = "builtin"
+    origin: Literal["builtin", "module"] = "builtin"
     operator_id: str
     operator_version: int
     plugin_slug: str
@@ -66,11 +65,7 @@ class CatalogNode(ClientModel):
     module_id: UUID | None = None
     is_current_library_release: bool | None = None
     catalog_visible: bool = True
-    plugin_revision: int | None = None
-    plugin_release: SavedGraphPluginReleasePin | None = None
     runnable: bool = True
-    non_runnable_reason: str | None = None
-    non_runnable_detail: str | None = None
 
 
 class CatalogConversionKey(ClientModel):
@@ -98,7 +93,6 @@ class NodeCatalog(ClientModel):
     artifact_types: tuple[dict[str, object], ...]
     nodes: tuple[CatalogNode, ...]
     artifact_conversions: tuple[CatalogConversion, ...]
-    presets: tuple[dict[str, object], ...] = ()
     unavailable_modules: tuple[dict[str, object], ...] = ()
 
 

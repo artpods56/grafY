@@ -20,7 +20,7 @@ DI seam.
 ## Invariants
 
 **Config never imports runtime.** `grafy_shared` imports nothing from this workspace, and
-`apps/api/src/grafy_api/settings.py` imports nothing from `grafy_api.plugins.runtime`.
+`apps/api/src/grafy_api/settings.py` imports nothing from `grafy_api` at all.
 `tests/unit/architecture/test_import_boundaries.py` enforces both. This is the invariant
 that makes the split permanent; without it the next convenience property re-couples the
 layers.

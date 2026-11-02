@@ -181,33 +181,11 @@ async def _recover(
     logger.info(
         "capacity_diagnostics active_executions=%s "
         "max_active_executions=%s pending_graphs=%s "
-        "max_pending_graphs=%s active_plugin_invocations=%s "
-        "max_active_plugin_invocations=%s live_plugin_sandboxes=%s "
-        "max_live_plugin_sandboxes=%s",
+        "max_pending_graphs=%s",
         capacity.execution_admission.active_executions,
         capacity.execution_admission.max_active_executions,
         capacity.execution_queue.pending_graphs,
         capacity.execution_queue.max_pending_graphs,
-        (
-            None
-            if capacity.plugin_invocations is None
-            else capacity.plugin_invocations.active_invocations
-        ),
-        (
-            None
-            if capacity.plugin_invocations is None
-            else capacity.plugin_invocations.max_active_invocations
-        ),
-        (
-            None
-            if capacity.plugin_sandboxes is None
-            else capacity.plugin_sandboxes.live_sandboxes
-        ),
-        (
-            None
-            if capacity.plugin_sandboxes is None
-            else capacity.plugin_sandboxes.max_live_sandboxes
-        ),
     )
     # Migration 0009 backfills heads; refuse to serve if any graph still lacks one.
     await resources.collaboration.verify_every_graph_has_head()

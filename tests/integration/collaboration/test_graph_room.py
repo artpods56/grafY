@@ -18,7 +18,6 @@ from starlette.testclient import WebSocketDenialResponse, WebSocketTestSession
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from grafy_api.settings import Settings
-from grafy_api.v1.models import PluginReleasePinModel
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 from grafy_api.v1.routes.workspaces.models import WorkspaceMemberRoleRequest
 from grafy_api.realtime.hub import (
@@ -42,17 +41,14 @@ from grafy_api.graph_contracts import (
 )
 from grafy_core.domain.collaboration import (
     RenameGraphCommand,
-    UpdateNodePluginReleaseCommand,
 )
 from grafy_core.domain.identity import ActorContext, User, Workspace, WorkspaceRole
-from grafy_core.domain.plugin_identity import PluginReleaseScope
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     SavedGraphDocument,
     SavedGraphEdge,
     SavedGraphInputPlug,
     SavedGraphNode,
-    SavedGraphPluginReleasePin,
 )
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
@@ -813,73 +809,6 @@ def test_http_command_publishes_to_room(room_client: RoomClient) -> None:
         assert accepted["command"]["name"] == "HTTP rename"
 
 
-def test_http_plugin_release_update_publishes_semantic_command(
-    room_client: RoomClient,
-) -> None:
-    api, _switcher, population = room_client
-    workspace_api = api.workspace(population.workspace.id)
-    current_pin = SavedGraphPluginReleasePin(
-        scope=PluginReleaseScope.SYSTEM,
-        slug="notes",
-        revision=1,
-    )
-    next_pin = current_pin.model_copy(update={"revision": 2})
-    graph = workspace_api.graphs.create_ok(
-        CreateSavedGraphRequest(
-            name="Room graph",
-            document=SavedGraphDocument(
-                nodes=(
-                    SavedGraphNode(
-                        kind="plugin",
-                        id="n1",
-                        operator_id="notes.write",
-                        operator_version=1,
-                        position=GraphPoint(x=10, y=20),
-                        config={"text": "preserve"},
-                        plugin_release_pin=current_pin,
-                    ),
-                ),
-            ),
-        )
-    )
-    command_id = uuid4()
-
-    with _connect_room(api, population.workspace.id, graph.id) as websocket:
-        ready = websocket.receive_json()
-        response = workspace_api.graphs.submit_command_ok(
-            graph.id,
-            SubmitGraphCommandRequest(
-                command_id=command_id,
-                room_epoch=ready["head"]["room_epoch"],
-                observed_sequence=ready["head"]["collaboration_sequence"],
-                command=UpdateNodePluginReleaseCommand(
-                    node_id="n1",
-                    plugin_release_pin=next_pin,
-                    expected_plugin_release_pin=current_pin,
-                ),
-            ),
-        )
-        accepted = _receive_until(websocket, "graph.command.accepted")
-
-    assert response.head.nodes[0].config == {"text": "preserve"}
-    assert response.head.nodes[
-        0
-    ].plugin_release == PluginReleasePinModel.from_saved_pin(next_pin)
-    assert accepted["command_id"] == str(command_id)
-    assert accepted["command"] == {
-        "kind": "update_node_plugin_release",
-        "node_id": "n1",
-        "plugin_release_pin": {
-            "scope": "system",
-            "slug": "notes",
-            "revision": 2,
-        },
-        "expected_plugin_release_pin": {
-            "scope": "system",
-            "slug": "notes",
-            "revision": 1,
-        },
-    }
 
 
 def test_room_sends_application_heartbeat(heartbeat_room_client: RoomClient) -> None:

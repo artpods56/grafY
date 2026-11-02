@@ -3,9 +3,6 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 grafy_env := env_var_or_default("GRAFY_ENV_FILE", "/etc/grafy/grafy.env")
 grafy_override := env_var_or_default("GRAFY_COMPOSE_OVERRIDE", "/etc/grafy/storage.override.yaml")
-plugin_native_base_image := env_var_or_default("GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE", "127.0.0.1:5000/grafy-plugin-base")
-plugin_native_base_tag := env_var_or_default("GRAFY_PLUGIN_NATIVE_BASE_TAG", "gdal-tesseract")
-plugin_native_platform := env_var_or_default("GRAFY_PLUGIN_NATIVE_BUILD_PLATFORM", "linux/amd64")
 
 # List available recipes.
 default:
@@ -27,29 +24,6 @@ api-dev: db-upgrade
 # Start the web development server.
 web port="":
     npm --prefix apps/web run dev {{ if port != "" {"--port=" + port} else {""} }}
-
-# Rebuild the grafy-core wheel used by the plugin-notes publication fixture.
-# tests/unit/architecture pins the resulting digest; update it when this recipe
-# prints a new one.
-sdk-wheel:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    shopt -s nullglob
-    # setuptools stamps the wheel with the build clock, so an unpinned epoch
-    # rewrites every tracked wheel with new bytes on every run. This makes the
-    # vendored wheel a pure function of libs/core source content.
-    export SOURCE_DATE_EPOCH=0
-    output="$(mktemp -d)"
-    trap 'rm -rf "$output"' EXIT
-    uv build --wheel --package grafy-core --out-dir "$output"
-    wheels=( "$output"/grafy_core-*.whl )
-    if (( ${#wheels[@]} != 1 )); then
-        printf 'expected one grafy-core wheel, found %d\n' "${#wheels[@]}" >&2
-        exit 1
-    fi
-    cp "${wheels[0]}" tests/fixtures/plugin-notes/wheels/
-    printf 'vendored %s\n' "tests/fixtures/plugin-notes/wheels/$(basename "${wheels[0]}")"
-    (sha256sum "${wheels[0]}" 2>/dev/null || shasum -a 256 "${wheels[0]}")
 
 # Run backend and web tests.
 test:
@@ -136,27 +110,6 @@ docker-up:
 # Stop the local Docker stack.
 docker-down:
     docker compose -f infra/docker/compose.yaml down
-
-# Start the opt-in loopback registry used by the native Plugin runtime.
-plugin-native-registry-up:
-    docker compose -f infra/docker/compose.plugin-registry.yaml up -d registry
-
-# Build and push the native runtime image, then print its registry manifest digest.
-plugin-native-base-publish:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    metadata="$(mktemp)"
-    trap 'rm -f "$metadata"' EXIT
-    docker buildx build \
-        --platform "{{ plugin_native_platform }}" \
-        --tag "{{ plugin_native_base_image }}:{{ plugin_native_base_tag }}" \
-        --push \
-        --metadata-file "$metadata" \
-        --file infra/docker/plugin-native-runtime.Dockerfile \
-        .
-    digest="$(python -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["containerimage.digest"])' "$metadata")"
-    printf 'GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE=%s\n' "{{ plugin_native_base_image }}"
-    printf 'GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE_DIGEST=%s\n' "${digest#sha256:}"
 
 # Start the local Keycloak stack.
 keycloak-up:

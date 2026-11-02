@@ -42,8 +42,8 @@ flowchart LR
 
 - `apps/web` owns the canvas, node rendering, schema-driven controls, and edge
   projection/conversion/mapping editor.
-- `apps/api` owns exact release admission, runtime composition, and the HTTP
-  adapters for execution and saved-graph CRUD under `/v1`.
+- `apps/api` owns execution composition and the HTTP adapters for execution and
+  saved-graph CRUD under `/v1`.
 - `libs/core/src/grafy_core` owns artifacts, nodes, ports, projections,
   conversions, runtime execution, saved-graph aggregates and use cases, the
   Plugin contract, producer-neutral artifact contracts, portable runtime
@@ -105,157 +105,23 @@ wrapper nodes remain uncached unless their own declaration can supply every
 required stable identity. Cache entries store only the final digest and artifact
 refs; stale or inaccessible refs are evicted lazily.
 
-## Register a plugin
+## Node families
 
-Each Plugin project exports one `grafy_core.plugins.Plugin` declaration from a
-stable loader target. Every Plugin is System-owned: it is published as an
-immutable release and executes through the isolated runtime, and the API never
-imports its working copy (see [ADR 0015](docs/adr/0015-plugins-are-system-only.md)).
+Each Plugin package under `plugins/` exports one `grafy_core.plugins.Plugin` declaration,
+and `apps/api/src/grafy_api/services/families.py` decides which of them this build
+registers (ADR 0017). A registered family is application code: it executes in the API
+process, identifies by family slug plus the deployment build digest, and has no release,
+revision, installation or selection. A package that the composition does not list serves
+nothing, so adding a dependency alone does not activate a family. Startup registers the
+workbench builtin families and the Module boundaries alongside them; see
+[Plugin unification](docs/design/plugin-unification.md) and
+[Plugin development](docs/design/plugin-development.md).
 
-The platform-owned inventory under `plugins/system-plugins.toml` enumerates the
-projects, their slugs, loader targets, capabilities, and the identity prefixes
-each may claim. Publish an immutable release, then explicitly promote it to make
-it available. Plugins execute in isolated workers using their retained OCI
-artifacts. Startup registers the workbench's builtin families and Module
-boundaries. Installing a Plugin package alone does not activate it. See
-[Plugin development](docs/design/plugin-development.md) for project shape and
-publication workflows.
+### Develop against local families
 
-### Query artifact tables
-
-The SQL plugin keeps statement authoring separate from execution. Connect one
-or more **Raw SQL statement** nodes and one or more named table-artifact inputs
-to **Query artifact tables**. Relation names are stable node configuration, so
-renaming or reordering a relation does not discard its graph connection.
-
-```mermaid
-flowchart LR
-    CSV["CSV or table-producing node"] -->|"table.data@1 as parcels"| Query["Query artifact tables"]
-    Remote["Remote query result"] -->|"table.data@1 as owners"| Query
-    SQL1["Raw SQL statement 1"] --> Query
-    SQL2["Raw SQL statement 2"] --> Query
-    Query -->|"ordered table.data@1 sequence"| Downstream["GIS, export, or another query"]
-```
-
-Every statement artifact must contain exactly one read-only query. All queries
-see the same immutable relation snapshot and produce one ordered table output;
-the node returns no outputs when any query fails. Canonical `:name` parameters
-remain reusable by both executors—the DuckDB adapter translates them to native
-bindings without interpolating values into SQL.
-
-DuckDB runs in a fresh subprocess with bounded input/output, rows, wall time,
-CPU, file descriptors, and spill space, plus a DuckDB engine memory limit.
-External files, replacement scans, extension installation/loading, and
-configuration changes are disabled.
-DuckDB configuration is defense in depth rather than a complete operating-
-system sandbox; production deployments should additionally run the job worker
-in a networkless, least-privileged container or VM with no application data or
-credential mounts.
-
-### Report live node progress
-
-Nodes may publish short, user-visible progress messages through their execution
-context. The managed execution API streams those messages from
-`GET /v1/executions/{execution_id}/events`, and the workbench displays them on
-the node that emitted them. Messages from a graph module's child nodes are
-grouped under that module instance.
-
-```python
-async def run(
-    self,
-    context: NodeExecutionContext,
-    config: ImportConfig,
-    inputs: ImportInput,
-) -> ImportOutput:
-    await context.progress("Preparing the payload")
-    await context.progress("Uploading records", current=40, total=100)
-    ...
-```
-
-Function nodes may opt into the same context by declaring
-`(context, config, inputs)` instead of `(config, inputs)`. Progress is ephemeral
-and bounded: it is not saved in execution history or graph documents, and a
-missing subscriber never blocks or fails node execution. Messages must remain
-short status text; do not include credentials, secrets, full inputs, payloads,
-or one-time URLs. The JSON execution endpoint remains the source of truth for
-the terminal result.
-
-## Run locally
-
-Requirements:
-
-- Python 3.14
-- [uv](https://docs.astral.sh/uv/)
-- [just](https://github.com/casey/just)
-- Node.js 20+ and npm
-- For local GIS project tests: GDAL 3.8+ with writable PMTiles, COG, and PNG
-  drivers, plus `gdal2tiles.py`. Isolated Plugin runtime images own their native
-  tools; the API image does not.
-
-Install both workspaces:
-
-```bash
-just install
-```
-
-Every node family, including the ones under `plugins/`, is a member of the root
-uv workspace, so one `just install` installs the API and all of its families into
-the same environment the tests run in.
-
-Installation does not activate a System Plugin. Publish and explicitly promote
-a System release to select it for the catalog. Plugin execution uses the
-release's retained OCI artifact in an isolated worker.
-
-Start the API and web app in separate terminals:
-
-```bash
-just api
-just web
-```
-
-For a VPS deployment behind an existing Nginx instance, use the production
-[Docker Compose guide](infra/docker/README.md). The Compose services publish
-only loopback-bound ports, run migrations before the API, and keep the database
-and local artifact objects in one durable volume.
-
-On a configured production host, deploy the checked-out branch and wait for
-healthy services with:
-
-```bash
-just deploy
-```
-
-Use `just status`, `just logs`, and `just minio-status` for routine operations.
-The production recipes read `/etc/grafy/grafy.env` and merge
-`/etc/grafy/storage.override.yaml`; override those paths with
-`GRAFY_ENV_FILE` and `GRAFY_COMPOSE_OVERRIDE` when required.
-
-`just api` applies pending Alembic migrations before starting FastAPI. Saved
-graphs, artifact metadata, and materialization bindings are stored in SQLite at
-`.grafy-artifacts/workbench/grafy.sqlite3` by default, together with exact
-invocation-cache entries. Override
-`GRAFY_DATABASE_URL` with another SQLite URL or a
-`postgresql+asyncpg://...` URL for PostgreSQL. Useful
-migration commands are `just db-current`, `just db-history`, and
-`just db-revision "describe change"`.
-
-`just api` never discovers installed Plugin packages ambiently. Configure an
-exact System deployment manifest and selected release when exercising a System
-host binding; use the retained OCI runtime for isolated-only families such as
-GIS, LLM, Mistral, and SQL.
-
-### Develop Plugins in-process
-
-Run `just api-dev external.image external.mistral` to load local Plugin projects.
-Slugs come from `plugins/system-plugins.toml`; exact `module:attribute` loader
-targets also work. Edits under `plugins/` reload the server.
-
-Nodes run in the API process with no sandbox, egress policy, or release pin.
-Graph nodes added in dev mode are saved as builtin nodes and will not run on a
-server without the same dev plugins. Published releases with the same slug are
-hidden from the node catalog while dev mode is on. Set
-`GRAFY_PLUGIN_RUNTIME_ENABLED=false` if Docker is not running. Dev plugins are
-rejected in production.
+`just api-dev` reloads on edits under `apps`, `libs` and `plugins`, so a family edit is
+live on the next request. Nodes always run in the API process with no sandbox, no egress
+broker and no release pin, and the catalog is the set of operators this build registered.
 
 ### Compose vector and raster maps
 

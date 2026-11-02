@@ -45,7 +45,7 @@ from grafy_core.runtime.persistence import (
     OutputPersister,
     PersistedNodeOutput,
 )
-from grafy_core.runtime.plugin_protocol import PluginFailureCode
+from grafy_core.runtime.execution import PluginFailureCode
 from grafy_core.runtime.resolvers import ResolverRegistry
 
 

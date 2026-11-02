@@ -8,7 +8,6 @@ members = [
     "grafy-client",
     "grafy-core",
     "grafy-persistence",
-    "grafy-plugin-egress-broker",
     "grafy-plugin-gis",
     "grafy-plugin-image",
     "grafy-plugin-llm",
@@ -564,11 +563,6 @@ requires-dist = [
 ]
 
 [[package]]
-name = "grafy-plugin-egress-broker"
-version = "0.1.0"
-source = { editable = "apps/plugin-egress-broker" }
-
-[[package]]
 name = "grafy-plugin-gis"
 version = "0.1.0"
 source = { editable = "plugins/gis" }
@@ -837,7 +831,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "asgi-lifespan" },
-    { name = "grafy-plugin-egress-broker" },
     { name = "httpx" },
     { name = "polyfactory" },
     { name = "prek" },
@@ -870,7 +863,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "asgi-lifespan", specifier = ">=2.1.0" },
-    { name = "grafy-plugin-egress-broker", editable = "apps/plugin-egress-broker" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "polyfactory", specifier = ">=3.3.0" },
     { name = "prek", specifier = "==0.5.4" },

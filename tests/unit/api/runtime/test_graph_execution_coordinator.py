@@ -30,10 +30,13 @@ from grafy_core.nodes import (
 )
 from grafy_core.plugins import NodeCachePolicy, NodeRegistration
 from grafy_core.ports.node_secrets import UnavailableNodeSecretResolver
-from grafy_core.runtime.execution import NodeRunError, NodeRuntime
+from grafy_core.runtime.execution import (
+    NodeRunError,
+    NodeRuntime,
+    PluginFailureCode,
+)
 from grafy_core.runtime.invocation import InvocationMode, NodeInvocation
 from grafy_core.runtime.invocation_cache import InvocationCachePort
-from grafy_core.runtime.plugin_protocol import PluginFailureCode
 from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import (
     ArtifactOutputWriter,
@@ -41,7 +44,6 @@ from grafy_core.runtime.persistence import (
     ArtifactWriterRegistry,
     OutputPersister,
 )
-from grafy_core.runtime.plugin_invocation import PluginInvocationError
 from grafy_core.runtime.resolvers import Resolver, ResolverRegistry
 
 from grafy_api.execution.requests import (
@@ -964,10 +966,10 @@ async def test_failed_nodes_expose_typed_failure_codes_in_graph_results(
         invocation=NodeInvocation(),
     )
     oci_node = _compiled_add(
-        node_id="oci-failure",
+        node_id="output-failure",
         node=FailingNode(
-            PluginInvocationError(
-                "guest output rejected",
+            NodeRunError(
+                "operator output rejected",
                 failure_code=PluginFailureCode.OUTPUT_VALIDATION,
             )
         ),
@@ -1011,7 +1013,7 @@ async def test_failed_nodes_expose_typed_failure_codes_in_graph_results(
                 "item": operator_item,
                 "broadcast": operator_broadcast,
             },
-            "oci-failure": {
+            "output-failure": {
                 "item": oci_item,
                 "broadcast": oci_broadcast,
             },
@@ -1061,7 +1063,7 @@ async def test_failed_nodes_expose_typed_failure_codes_in_graph_results(
     ]
     assert codes == [
         ("operator-failure", PluginFailureCode.OPERATOR_FAILURE),
-        ("oci-failure", PluginFailureCode.OUTPUT_VALIDATION),
+        ("output-failure", PluginFailureCode.OUTPUT_VALIDATION),
         ("adapter-failure", PluginFailureCode.INTERNAL_ADAPTER_FAILURE),
         ("downstream", None),
     ]
@@ -1073,7 +1075,7 @@ async def test_failed_nodes_expose_typed_failure_codes_in_graph_results(
     ]
     assert [cast(str, record.__dict__["node_id"]) for record in failure_records] == [
         "operator-failure",
-        "oci-failure",
+        "output-failure",
         "adapter-failure",
     ]
     assert [

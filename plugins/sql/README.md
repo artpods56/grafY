@@ -1,8 +1,8 @@
-# Grafy SQL Plugin
+# Grafy SQL family
 
-Self-contained System publication input for the existing `sql` entry point.
-The project vendors the exact Grafy SDK wheel referenced by `uv.lock`; it does
-not resolve dependencies through the monorepo Workspace.
-
-The published Plugin identity remains `external.sql`. SQL remains isolated-only
-because query validation is not a process sandbox.
+Application-owned node family for database queries against an operator-named
+PostgreSQL destination.
+Its stable identifier is `external.sql`, and it is registered in-process by
+`apps/api/src/grafy_api/services/families.py`, resolving `grafy_core` through the
+monorepo workspace. SQL stays destination-checked and read-only because query
+validation is not a process sandbox.

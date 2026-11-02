@@ -164,48 +164,6 @@ services:
       retries: 12
       start_period: 10s
 
-  # Operator-invoked one-shot job. This is the only base-Compose service with
-  # Docker authority; the long-lived API never receives the socket.
-  publisher:
-    profiles: ["publisher"]
-    image: ${GRAFY_PUBLISHER_IMAGE:-grafy-publisher:local}
-    build:
-      context: ../..
-      dockerfile: infra/docker/api.Dockerfile
-      target: publisher
-    entrypoint: [".venv/bin/grafy"]
-    command: ["plugin", "publish", "--help"]
-    environment:
-      <<: *persistence-environment
-      GRAFY_PLUGIN_ROOTS: '["/publisher-input"]'
-      GRAFY_PLUGIN_RUNTIME_PROFILE: ${GRAFY_PLUGIN_RUNTIME_PROFILE:-python-uv}
-      # Native profiles import the deployment-owned base image pinned by
-      # digest; see infra/docker/.env.production.example.
-      GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE:
-      GRAFY_PLUGIN_RUNTIME_NATIVE_BASE_IMAGE_DIGEST:
-
-      GRAFY_PLUGIN_DOCKER_BINARY: /usr/local/bin/docker
-      GRAFY_PLUGIN_PUBLISHER_SCRATCH_ROOT: ${GRAFY_PUBLISHER_SCRATCH_ROOT:-/tmp/grafy-plugin-publisher}
-      GRAFY_STORAGE_BACKEND: ${GRAFY_STORAGE_BACKEND:-local}
-      GRAFY_STORAGE_BUCKET: ${GRAFY_STORAGE_BUCKET:-workbench-artifacts}
-      GRAFY_S3_ENDPOINT_URL: ${GRAFY_S3_ENDPOINT_URL:-}
-      GRAFY_S3_REGION: ${GRAFY_S3_REGION:-us-east-1}
-      GRAFY_S3_ACCESS_KEY_ID: ${GRAFY_S3_ACCESS_KEY_ID:-}
-      GRAFY_S3_SECRET_ACCESS_KEY: ${GRAFY_S3_SECRET_ACCESS_KEY:-}
-      GRAFY_S3_FORCE_PATH_STYLE: ${GRAFY_S3_FORCE_PATH_STYLE:-false}
-    init: true
-    logging: *default-logging
-    restart: "no"
-    security_opt:
-      - no-new-privileges:true
-    volumes:
-      - grafy-data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${GRAFY_PUBLISHER_SOURCE_ROOT:-../../plugins}:/publisher-input:ro
-      # The inner sandbox containers are Docker siblings. Mount this absolute
-      # path at the same path so the daemon can resolve frozen snapshot binds.
-      - ${GRAFY_PUBLISHER_SCRATCH_ROOT:-/tmp/grafy-plugin-publisher}:${GRAFY_PUBLISHER_SCRATCH_ROOT:-/tmp/grafy-plugin-publisher}
-
 volumes:
   grafy-data:
     name: ${GRAFY_DATA_VOLUME:-grafy-data}

@@ -36,7 +36,7 @@ from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
 from grafy_core.file_contracts import BUILTIN_FILE_FORMATS
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_storage import LocalFileObjectStore
-from grafy_workbench import BUILTIN_FAMILIES
+from grafy_api.services.families import APPLICATION_FAMILIES
 from pydantic import SecretStr
 
 from tests.support.clients import GrafyApi
@@ -100,14 +100,14 @@ def test_application_lifespan_builds_and_releases_workbench_components(
         assert hasattr(application.state, "resources")
         registry = application.state.resources.workbench.plugin_registry
         assert {plugin.slug for plugin in registry.plugins} == {
-            plugin.slug for plugin in BUILTIN_FAMILIES
+            plugin.slug for plugin in APPLICATION_FAMILIES
         }
         assert {node.key for node in registry.nodes} == {
             ("module.input", 1),
             ("module.output", 1),
             *(
                 registration.key
-                for plugin in BUILTIN_FAMILIES
+                for plugin in APPLICATION_FAMILIES
                 for registration in plugin.nodes
             ),
         }

@@ -23,7 +23,7 @@ def read_section(section: type[SectionT], *, env_file: str | Path | None) -> Sec
     """Read one section, choosing whether a ``.env`` file is read at all.
 
     ``env_file=None`` means "ignore ``.env`` completely", which is how the composed
-    ``Settings.from_environment`` keeps one environment-read decision for all nine
+    ``Settings.from_environment`` keeps one environment-read decision for all eight
     sections instead of leaving each caller to repeat it. The argument is a real
     pydantic-settings runtime parameter; only its generated ``__init__`` stub is
     missing it, so the suppression lives here once rather than at every call site.

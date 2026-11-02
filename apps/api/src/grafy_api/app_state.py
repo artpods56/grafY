@@ -15,12 +15,6 @@ from grafy_api.execution.manager import (
     RunExecutionQueueDiagnostics,
 )
 from grafy_api.node_secrets import NodeSecretService
-from grafy_api.plugins.runtime.artifacts import (
-    PluginInvocationCapacityDiagnostics,
-)
-from grafy_api.plugins.runtime.docker import (
-    PluginSandboxCapacityDiagnostics,
-)
 from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.services.composition import WorkbenchComponents
 from grafy_api.v1.routes.auth.services import AuthService
@@ -42,8 +36,6 @@ class AppIdentity:
 class CapacityDiagnostics:
     execution_admission: ExecutionAdmissionDiagnostics
     execution_queue: RunExecutionQueueDiagnostics
-    plugin_invocations: PluginInvocationCapacityDiagnostics | None
-    plugin_sandboxes: PluginSandboxCapacityDiagnostics | None
 
 
 @dataclass(slots=True)
@@ -61,8 +53,6 @@ class AppResources:
         return CapacityDiagnostics(
             execution_admission=self.workbench.execution_admission.diagnostics(),
             execution_queue=await self.workbench.execution_manager.diagnostics(),
-            plugin_invocations=None,
-            plugin_sandboxes=None,
         )
 
     async def cleanup(self) -> None:

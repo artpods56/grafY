@@ -15,7 +15,6 @@ from grafy_shared.config import (
     EgressConfig,
     ExecutionConfig,
     KeysConfig,
-    PluginsConfig,
     RealtimeConfig,
     StorageConfig,
     UploadConfig,
@@ -24,16 +23,7 @@ from grafy_shared.config.app import (
     _working_tree_build_digest,  # pyright: ignore[reportPrivateUsage]
 )
 
-from grafy_api.plugins.runtime.egress import (
-    PluginEgressBrokerPolicy,
-    PluginEgressProtocol,
-)
 from grafy_api.services.application import workbench_egress_policy
-from grafy_api.plugins.runtime.network_policy import (
-    NetworkAccessPlane,
-    NetworkPolicy,
-    NetworkProfileMode,
-)
 from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.settings import Settings
 from grafy_core.domain.identity import parse_oidc_domain_workspace_grants
@@ -49,7 +39,6 @@ CONFIG_SECTIONS: tuple[type, ...] = (
     RealtimeConfig,
     StorageConfig,
     UploadConfig,
-    PluginsConfig,
     EgressConfig,
 )
 
@@ -60,11 +49,6 @@ CONFIG_SECTIONS: tuple[type, ...] = (
 ADVERTISED_BUT_UNOWNED_VARIABLES = frozenset({"GRAFY_OIDC_BOOTSTRAP_SUBJECT"})
 
 
-@pytest.fixture(autouse=True)
-def isolate_network_policy_manifest(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep legacy-policy tests independent from deployment configuration."""
-
-    monkeypatch.delenv("GRAFY_NETWORK_POLICY_MANIFEST", raising=False)
 
 
 def test_no_setting_field_is_owned_by_more_than_one_section() -> None:
@@ -142,7 +126,7 @@ def test_parent_reads_one_env_file_for_every_section(
     # The sharpest trap in the split: a plain-BaseModel parent does not forward
     # _env_file to its children. That forwarding is one line per section, so a test
     # that checked one section would pass green while a developer's .env still leaked
-    # into the other eight. Every section is probed with a variable nothing else sets.
+    # into the others. Every section is probed with a variable nothing else sets.
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text(
         "\n".join(
@@ -154,8 +138,7 @@ def test_parent_reads_one_env_file_for_every_section(
                 "GRAFY_GRAPH_ROOM_PRESENCE_MAX_UPDATES_PER_SECOND=33",
                 "GRAFY_STORAGE_BUCKET=env-file-bucket",
                 "GRAFY_UPLOAD_LIFETIME_SECONDS=3600",
-                "GRAFY_PLUGIN_DOCKER_BINARY=/usr/bin/env-file-docker",
-                "GRAFY_NETWORK_POLICY_MANIFEST=env-file-policy.json",
+                'GRAFY_EGRESS_TRUSTED_DESTINATIONS=["models.internal:11434"]',
             )
         )
         + "\n",
@@ -174,8 +157,7 @@ def test_parent_reads_one_env_file_for_every_section(
     assert honoured.realtime.graph_room_presence_max_updates_per_second == 33
     assert honoured.storage.storage_bucket == "env-file-bucket"
     assert honoured.uploads.upload_lifetime_seconds == 3600
-    assert honoured.plugins.plugin_docker_binary == "/usr/bin/env-file-docker"
-    assert honoured.egress.network_policy_manifest == Path("env-file-policy.json")
+    assert honoured.egress.egress_trusted_destinations == ("models.internal:11434",)
 
     isolated = Settings.from_environment(env_file=None)
 
@@ -186,13 +168,9 @@ def test_parent_reads_one_env_file_for_every_section(
     assert isolated.realtime.graph_room_presence_max_updates_per_second == 20
     assert isolated.storage.storage_bucket == "workbench-artifacts"
     assert isolated.uploads.upload_lifetime_seconds == 86400
-    assert isolated.plugins.plugin_docker_binary == "docker"
-    assert isolated.egress.network_policy_manifest is None
+    assert isolated.egress.egress_trusted_destinations == ()
 
 
-def test_pytest_process_requires_explicit_external_plugin_runtime_opt_in() -> None:
-    assert PluginsConfig(_env_file=None).plugin_runtime_enabled is False  # pyright: ignore[reportCallIssue]
-    assert PluginsConfig(plugin_runtime_enabled=True).plugin_runtime_enabled is True
 
 
 def test_default_workspace_does_not_reuse_legacy_data(
@@ -211,47 +189,12 @@ def test_default_workspace_does_not_reuse_legacy_data(
 # pyright: ignore[reportCallIssue]
 
 
-def test_plugin_roots_resolve_from_the_deployment_allowlist(tmp_path: Path) -> None:
-    config = PluginsConfig(
-        _env_file=None,  # pyright: ignore[reportCallIssue]
-        plugin_roots=(tmp_path / "team-plugins", tmp_path / "examples"),
-    )
-
-    assert config.resolved_plugin_roots == (
-        (tmp_path / "team-plugins").resolve(),
-        (tmp_path / "examples").resolve(),
-    )
 
 
-# pyright: ignore[reportCallIssue]
 
 
-def test_plugin_authoring_paths_are_not_configured() -> None:
-    fields = PluginsConfig.model_fields
-
-    assert "plugin_authoring_root" not in fields
-    assert "plugin_sdk_project" not in fields
 
 
-def test_plugin_publisher_scratch_root_resolves_from_configuration(
-    tmp_path: Path,  # pyright: ignore[reportCallIssue]
-) -> None:
-    scratch_root = tmp_path / "publisher-scratch"
-
-    config = PluginsConfig(_env_file=None, plugin_publisher_scratch_root=scratch_root)  # pyright: ignore[reportCallIssue]
-
-    assert config.resolved_plugin_publisher_scratch_root == scratch_root.resolve()
-
-
-def test_default_publisher_roots_hold_the_system_plugin_packages(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,  # pyright: ignore[reportCallIssue]
-) -> None:
-    monkeypatch.chdir(tmp_path)
-
-    config = PluginsConfig(_env_file=None)  # pyright: ignore[reportCallIssue]
-
-    assert config.plugin_roots == (Path("plugins"),)
 
 
 def test_database_url_does_not_reuse_legacy_database(tmp_path: Path) -> None:  # pyright: ignore[reportCallIssue]
@@ -310,136 +253,16 @@ def test_max_pending_graphs_is_bounded(value: int) -> None:
         ExecutionConfig(_env_file=None, max_pending_graphs=value)  # pyright: ignore[reportCallIssue]
 
 
-def test_plugin_capacity_dimensions_can_be_selected_from_the_environment(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("GRAFY_MAX_ACTIVE_PLUGIN_INVOCATIONS", "6")  # pyright: ignore[reportCallIssue]
-    monkeypatch.setenv("GRAFY_MAX_LIVE_PLUGIN_SANDBOXES", "8")
-    monkeypatch.setenv("GRAFY_MAX_DISTINCT_PLUGIN_RELEASES_PER_GRAPH", "7")
-
-    config = PluginsConfig(_env_file=None)  # pyright: ignore[reportCallIssue]
-
-    assert config.max_active_plugin_invocations == 6
-    assert config.max_live_plugin_sandboxes == 8
-    assert config.max_distinct_plugin_releases_per_graph == 7
 
 
-def test_plugin_invocation_wall_times_can_be_selected_by_exact_slug(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(
-        "GRAFY_PLUGIN_INVOCATION_WALL_TIME_SECONDS_BY_SLUG",
-        '{"external.llm":900}',  # pyright: ignore[reportCallIssue]
-    )
-
-    assert PluginsConfig(
-        _env_file=None  # pyright: ignore[reportCallIssue]
-    ).plugin_invocation_wall_time_seconds_by_slug == {
-        "external.llm": 900,
-    }
 
 
-@pytest.mark.parametrize(
-    ("slug", "seconds"),
-    [("Invalid slug", 60), ("external.llm", 0), ("external.llm", 3_601)],
-)
-def test_plugin_invocation_wall_time_overrides_are_bounded(
-    slug: str,
-    seconds: int,  # pyright: ignore[reportCallIssue]
-) -> None:
-    with pytest.raises(ValidationError):
-        PluginsConfig(
-            _env_file=None,  # pyright: ignore[reportCallIssue]
-            plugin_invocation_wall_time_seconds_by_slug={slug: seconds},
-        )
 
 
-# pyright: ignore[reportCallIssue]
-def test_distinct_plugin_release_limit_cannot_exceed_live_sandboxes() -> None:
-    with pytest.raises(ValidationError):
-        PluginsConfig(
-            _env_file=None,  # pyright: ignore[reportCallIssue]
-            max_live_plugin_sandboxes=4,
-            max_distinct_plugin_releases_per_graph=5,
-        )
 
 
-# pyright: ignore[reportCallIssue]
-def test_sandbox_variant_limit_cannot_exceed_live_sandbox_limit() -> None:
-    with pytest.raises(ValidationError, match="cannot exceed"):
-        PluginsConfig(
-            _env_file=None,  # pyright: ignore[reportCallIssue]
-            max_live_plugin_sandboxes=2,
-            max_plugin_sandbox_variants_per_execution=3,
-        )
 
 
-# pyright: ignore[reportCallIssue]
-
-
-def test_plugin_egress_requires_a_pinned_broker_and_exact_destinations() -> None:
-    egress = EgressConfig(
-        _env_file=None,  # pyright: ignore[reportCallIssue]
-        plugin_egress_broker_image=("registry.example/grafy-egress@sha256:" + "a" * 64),
-        plugin_http_egress_destinations=("https://api.example.com:443",),
-        plugin_postgresql_egress_destinations=(
-            "postgresql://database.example.com:5432",
-        ),
-    )
-
-    policy = PluginEgressBrokerPolicy.from_config(egress)
-
-    assert policy.available is True
-    assert policy.destinations_for(PluginEgressProtocol.HTTPS)[0].host == (
-        "api.example.com"
-    )
-    assert policy.destinations_for(PluginEgressProtocol.POSTGRESQL)[0].port == 5432
-
-
-@pytest.mark.parametrize(
-    "values",
-    [
-        {"plugin_http_egress_destinations": ("https://api.example.com:443",)},
-        {
-            "plugin_egress_broker_image": (
-                "registry.example/grafy-egress@sha256:" + "a" * 64
-            )
-        },
-    ],
-)
-def test_plugin_egress_partial_configuration_fails_closed(
-    values: dict[str, object],
-) -> None:
-    with pytest.raises(ValidationError):
-        EgressConfig(_env_file=None, **values)  # pyright: ignore[reportCallIssue]
-
-
-@pytest.mark.parametrize(
-    "values",
-    [
-        {
-            "plugin_egress_broker_image": "registry.example/grafy-egress:latest",
-            "plugin_http_egress_destinations": ("https://api.example.com:443",),
-        },
-        {
-            "plugin_egress_broker_image": (
-                "registry.example/grafy-egress@sha256:" + "a" * 64
-            ),
-            "plugin_http_egress_destinations": (
-                "postgresql://database.example.com:5432",
-            ),
-        },
-    ],
-)
-def test_plugin_egress_mistyped_configuration_fails_closed(
-    values: dict[str, object],
-) -> None:  # pyright: ignore[reportCallIssue]
-    # The destination grammar and the pinned-image rule belong to the Plugin runtime,
-    # so they fail when the composition root builds the policy, not when EgressConfig
-    # parses its strings.
-    egress = EgressConfig(_env_file=None, **values)  # pyright: ignore[reportCallIssue]
-    with pytest.raises(ValueError):
-        PluginEgressBrokerPolicy.from_config(egress)
 
 
 def test_oidc_domain_workspaces_stay_raw_for_the_api_to_parse() -> None:  # pyright: ignore[reportCallIssue]
@@ -590,88 +413,12 @@ def test_command_hmac_key_fails_closed_when_empty() -> None:
         keys.resolved_command_hmac_key()
 
 
-def _write_manifest(tmp_path: Path, text: str) -> Path:
-    path = tmp_path / "network-policy.toml"
-    path.write_text(text, encoding="utf-8")
-    return path
 
 
-# pyright: ignore[reportCallIssue]
 
 
-def test_network_policy_manifest_resolves_named_profiles(tmp_path: Path) -> None:
-    egress = EgressConfig(
-        _env_file=None,  # pyright: ignore[reportCallIssue]
-        network_policy_manifest=_write_manifest(
-            tmp_path,
-            """
-schema_version = 1
-
-[profiles."plugin-execution".llm-public]
-mode = "configured-public"
-allowed_origins = ["https://api.example.com:443"]
-""",
-        ),
-    )
-
-    policy = NetworkPolicy.from_config(egress)
-
-    profile = policy.profile(NetworkAccessPlane.PLUGIN_EXECUTION, "llm-public")
-    assert profile is not None
-    assert len(profile.allowed_origins) == 1
 
 
-# pyright: ignore[reportCallIssue]
-
-
-def test_legacy_egress_env_translates_with_deprecation_warning() -> None:
-    egress = EgressConfig(
-        _env_file=None,  # pyright: ignore[reportCallIssue]
-        plugin_egress_broker_image="registry.example/grafy-egress@sha256:" + "a" * 64,
-        plugin_http_egress_destinations=("https://api.example.com:443",),
-    )
-
-    with pytest.warns(DeprecationWarning, match="deprecated"):
-        policy = NetworkPolicy.from_config(egress)
-
-    default = policy.default_profile(NetworkAccessPlane.PLUGIN_EXECUTION)
-    assert default is not None
-    assert default.mode is NetworkProfileMode.CURATED
-    assert any(
-        origin.protocol is PluginEgressProtocol.HTTPS
-        for origin in default.allowed_origins
-    )
-
-
-# pyright: ignore[reportCallIssue]
-
-
-def test_manifest_takes_precedence_and_excludes_legacy_http(tmp_path: Path) -> None:
-    egress = EgressConfig(
-        _env_file=None,  # pyright: ignore[reportCallIssue]
-        network_policy_manifest=_write_manifest(
-            tmp_path,
-            """
-schema_version = 1
-
-[profiles."plugin-execution".deps]
-mode = "curated"
-allowed_origins = ["https://pypi.org:443"]
-""",
-        ),
-        plugin_egress_broker_image="registry.example/grafy-egress@sha256:" + "a" * 64,
-        plugin_http_egress_destinations=("https://legacy.example.com:443",),
-        plugin_postgresql_egress_destinations=(
-            "postgresql://database.example.com:5432",
-        ),
-    )
-
-    policy = NetworkPolicy.from_config(egress)
-    assert policy.profile(NetworkAccessPlane.PLUGIN_EXECUTION, "deps") is not None
-
-    broker = PluginEgressBrokerPolicy.from_config(egress)
-    assert broker.available is True
-    assert {origin.host for origin in broker.destinations} == {"database.example.com"}
 
 
 def test_realtime_presence_bounds_are_independent_of_execution(

@@ -2,18 +2,16 @@
 
 from pathlib import Path
 from uuid import uuid4
-from grafy_shared.config import AppConfig, KeysConfig, PluginsConfig
+from grafy_shared.config import AppConfig, KeysConfig
 
 from grafy_api.execution.history import ExecutionHistoryService
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
-from unittest.mock import AsyncMock
 
 import pytest
 from asgi_lifespan import LifespanManager
 from grafy_api.app_state import get_resources
 from grafy_api.execution.manager import RunExecutionManager
 from grafy_api.main import create_app
-from grafy_api.plugins.runtime.docker import DockerPluginRuntime
 from grafy_api.realtime.hub import GraphRoomHub
 from grafy_api.settings import Settings
 from grafy_api.single_owner import ApiOwnerLease, assert_single_http_worker
@@ -53,11 +51,9 @@ def test_api_owner_lease_rejects_second_holder(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("plugin_runtime_enabled", [False, True])
 async def test_create_app_startup_acquires_owner_lease(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    plugin_runtime_enabled: bool,
 ) -> None:
     workspace = tmp_path / "workbench"
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'owner.sqlite3'}"
@@ -77,10 +73,6 @@ async def test_create_app_startup_acquires_owner_lease(
             _env_file=None,  # pyright: ignore[reportCallIssue]
             command_hmac_key=SecretStr("test-single-owner-hmac-key"),  # pyright: ignore[reportCallIssue]
         ),
-        plugins=PluginsConfig(
-            _env_file=None,  # pyright: ignore[reportCallIssue]
-            plugin_runtime_enabled=plugin_runtime_enabled,  # pyright: ignore[reportCallIssue]
-        ),
     )
     shutdown_order: list[str] = []
     original_hub_shutdown = GraphRoomHub.shutdown
@@ -99,15 +91,9 @@ async def test_create_app_startup_acquires_owner_lease(
         shutdown_order.append("artifacts")
         await original_artifact_close(artifacts)
 
-    async def stop_plugin_runtime(runtime: DockerPluginRuntime) -> None:
-        shutdown_order.append("plugins")
-
     monkeypatch.setattr(GraphRoomHub, "shutdown", close_rooms)
     monkeypatch.setattr(RunExecutionManager, "shutdown", stop_executions)
     monkeypatch.setattr(ArtifactService, "close", close_artifacts)
-    monkeypatch.setattr(DockerPluginRuntime, "shutdown", stop_plugin_runtime)
-    monkeypatch.setattr(DockerPluginRuntime, "check_ready", AsyncMock())
-    monkeypatch.setattr(DockerPluginRuntime, "recover_orphans", AsyncMock())
     app = create_app(settings)
     async with LifespanManager(app):
         lock_path = workspace / ".grafy-api-owner.lock"
@@ -116,14 +102,8 @@ async def test_create_app_startup_acquires_owner_lease(
         with pytest.raises(RuntimeError, match="Another Grafy API owner"):
             contested.acquire()
 
-        resources = get_resources(app)
-        workbench = resources.workbench
-        assert workbench.release_admission is None
-        assert workbench.plugin_runtime is None
-        capacity = await resources.capacity_diagnostics()
+        capacity = await get_resources(app).capacity_diagnostics()
         assert capacity.execution_admission.active_executions == 0
-        assert capacity.plugin_sandboxes is None
-        assert capacity.plugin_invocations is None
     expected = ["rooms", "executions", "artifacts"]
     assert shutdown_order == expected
     with pytest.raises(RuntimeError, match="not initialized"):
@@ -133,17 +113,9 @@ async def test_create_app_startup_acquires_owner_lease(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mode",
-    [
-        "recovered",
-        "owner_disabled",
-        "runtime_disabled",
-        "lease_contended",
-    ],
-)
+@pytest.mark.parametrize("mode", ["recovered", "owner_disabled", "lease_contended"])
 async def test_startup_recovers_in_process_transient_activity_only_with_exclusive_owner(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+    tmp_path: Path, mode: str
 ) -> None:
     workspace = tmp_path / "workbench"
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'recovery.sqlite3'}"
@@ -154,20 +126,6 @@ async def test_startup_recovers_in_process_transient_activity_only_with_exclusiv
     execution_id, owner_id = uuid4(), uuid4()
     await history.register_transient(uuid4(), execution_id, owner_id)
     phases: list[str] = []
-
-    async def recover_orphans(runtime: DockerPluginRuntime) -> None:
-        phases.append("orphans")
-        async with SqlAlchemyUnitOfWork(database.sessions) as transaction:
-            assert [
-                row.execution_id
-                for row in await transaction.execution_history.list_transient()
-            ] == [execution_id]
-        if mode == "orphan_failure":
-            raise RuntimeError("orphan cleanup failed")
-
-    monkeypatch.setattr(DockerPluginRuntime, "check_ready", AsyncMock())
-    monkeypatch.setattr(DockerPluginRuntime, "recover_orphans", recover_orphans)
-    monkeypatch.setattr(DockerPluginRuntime, "shutdown", AsyncMock())
     settings = Settings(
         app=AppConfig(
             _env_file=None,  # pyright: ignore[reportCallIssue]
@@ -179,17 +137,13 @@ async def test_startup_recovers_in_process_transient_activity_only_with_exclusiv
             _env_file=None,  # pyright: ignore[reportCallIssue]
             command_hmac_key=SecretStr("test-transient-recovery-key"),  # pyright: ignore[reportCallIssue]
         ),
-        plugins=PluginsConfig(
-            _env_file=None,  # pyright: ignore[reportCallIssue]
-            plugin_runtime_enabled=mode != "runtime_disabled",  # pyright: ignore[reportCallIssue]
-        ),
     )
     app = create_app(settings)
     lock = ApiOwnerLease(workspace / ".grafy-api-owner.lock")
     if mode == "lease_contended":
         lock.acquire()
     try:
-        if mode in {"recovered", "runtime_disabled"}:
+        if mode == "recovered":
             async with LifespanManager(app):
                 phases.append("ready")
                 get_resources(app)

@@ -9,7 +9,6 @@ PUBLISHED_SERVICES = {
     "api": "GRAFY_API_IMAGE",
     "web": "GRAFY_WEB_IMAGE",
     "gateway": "GRAFY_GATEWAY_IMAGE",
-    "publisher": "GRAFY_PUBLISHER_IMAGE",
 }
 
 
@@ -45,7 +44,6 @@ def test_ci_publishes_every_release_image_only_from_green_main() -> None:
     )
     assert {entry["image"] for entry in matrix} == {
         "grafy-api",
-        "grafy-publisher",
         "grafy-web",
         "grafy-gateway",
     }
