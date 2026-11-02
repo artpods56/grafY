@@ -5,10 +5,10 @@
 - **Amended by:** Issue #117 retires `GRAFY_SYSTEM_PLUGIN_DEPLOYMENT_MANIFEST`;
   the no-rename guarantee below describes the original configuration split.
 
-`grafy_shared.config` holds every operator-facing `GRAFY_*` variable as one of nine
+`grafy_shared.config` holds every operator-facing `GRAFY_*` variable as one of eight
 responsibility-owned `BaseSettings` sections: `AppConfig`, `AuthConfig`, `KeysConfig`,
-`ExecutionConfig`, `RealtimeConfig`, `StorageConfig`, `UploadConfig`, `PluginsConfig`,
-`EgressConfig`. `apps/api` composes them into one plain-`BaseModel` `Settings`, and only
+`ExecutionConfig`, `RealtimeConfig`, `StorageConfig`, `UploadConfig`, and `EgressConfig`.
+`apps/api` composes them into one plain-`BaseModel` `Settings`, and only
 the composition root reads that object.
 
 Before this, one `Settings(BaseSettings)` held all 72 fields and imported
@@ -25,9 +25,8 @@ DI seam.
 that makes the split permanent; without it the next convenience property re-couples the
 layers.
 
-Runtime policy objects invert instead: `NetworkPolicy.from_config(egress)` and
-`PluginEgressBrokerPolicy.from_config(egress)` live with the policy types and take an
-`EgressConfig`.
+Runtime policy objects invert instead: application composition passes the trusted
+destinations from `EgressConfig` to `grafy_core.egress.EgressPolicy`.
 
 **The leaf is why `grafy-shared` has no `grafy-core` dependency.** With a core
 dependency, `grafy_core` and `libs/storage` could never import their own configuration
@@ -36,14 +35,13 @@ raw `domain:slug[:name]` strings and `apps/api` parses them with
 `parse_oidc_domain_workspace_grants`. That is the right trade: a leaf config package is
 importable by every layer, a core-dependent one is importable by the outer layers only.
 
-**Nothing plugin-side imports `grafy_shared`.** Plugin environments resolve `grafy_core`
-from the wheel vendored in `plugins/*/wheels`, never from the monorepo. A shared config
-import inside a Plugin would silently break guest isolation and would not resolve at
-runtime. Configuring a Plugin sandbox remains the host's job: the host reads its sections
-and passes concrete values into the sandbox environment.
+**Families share workspace dependencies.** The node families under `plugins/` run in the
+API process and resolve `grafy_core` from the workspace, as described in ADR 0017. The
+composition root reads configuration and supplies the values needed by runtime services.
 
-**No operator-facing rename.** All 72 `GRAFY_*` names, their defaults and their bounds
-survive; `tests/unit/api/test_settings.py` pins that set and cross-checks `.env.example`.
+**No operator-facing rename for the configuration split.** The split preserved the
+existing `GRAFY_*` names, defaults and bounds. Later feature retirements may remove their
+own settings; `tests/unit/api/test_settings.py` cross-checks the current configuration.
 Each section uses `env_prefix="GRAFY_"` and **never** `env_nested_delimiter`, so
 `GRAFY_STORAGE_BUCKET` stays `GRAFY_STORAGE_BUCKET` rather than becoming
 `GRAFY_STORAGE__BUCKET`. `extra="ignore"` is mandatory per section: every section sees
@@ -76,8 +74,6 @@ now take a narrow carrier (`AppIdentity.public_origin`, `GraphRoomHub.heartbeat_
 
 ## Consequences
 
-Destination-syntax and pinned-broker-image validation moved from `EgressConfig` parsing
-to `PluginEgressBrokerPolicy.from_config`, because the destination grammar belongs to the
-Plugin runtime and config may not import it. `create_app` therefore builds the egress
-policy up front, so a half-wired egress deployment still fails before it serves a request
-rather than at first sandbox start.
+Trusted-destination syntax belongs to `grafy_core.egress`, while `EgressConfig` remains a
+leaf. Application composition builds the egress policy at startup, so invalid entries
+fail before the API serves requests.
