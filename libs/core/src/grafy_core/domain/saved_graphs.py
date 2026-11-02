@@ -157,7 +157,7 @@ class SavedGraphArtifactTypeBinding(SavedGraphValue):
         return value
 
 
-SavedGraphNodeKind = Literal["builtin", "module"]
+SavedGraphNodeKind = Literal["builtin", "module", "call"]
 
 
 class SavedGraphPluginReleasePin(SavedGraphValue):
