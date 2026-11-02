@@ -16,7 +16,6 @@ from pathlib import Path
 from grafy_core.application.collaboration import CollaborationService
 from grafy_core.application.identity import IdentityService
 from grafy_core.application.modules import ModuleLibraryService
-from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.identity import parse_oidc_domain_workspace_grants
 from grafy_core.egress import TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE, EgressPolicy
@@ -117,11 +116,6 @@ async def build_app_resources(
 
     saved_graphs = SavedGraphService(new_unit_of_work, registry)
     module_library = ModuleLibraryService(new_unit_of_work, registry)
-    plugin_releases = PluginReleaseService(
-        new_unit_of_work,
-        storage,
-        bucket=settings.storage.storage_bucket,
-    )
     graph_room_hub = GraphRoomHub.from_settings(settings.realtime)
     collaboration = CollaborationService(
         new_unit_of_work,
@@ -148,7 +142,6 @@ async def build_app_resources(
             upload_config=UploadServiceConfig.from_settings(settings.uploads),
             saved_graphs=saved_graphs,
             module_library=module_library,
-            plugin_releases=plugin_releases,
             node_secrets=node_secrets,
             graph_room_hub=graph_room_hub,
             egress_policy=workbench_egress_policy(settings.egress),

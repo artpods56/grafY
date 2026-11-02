@@ -26,11 +26,7 @@ async def list_nodes(
 ) -> NodeRegistryResponse:
     module_listing = await modules.catalog_definitions(access.workspace_id)
     return NodeRegistryResponse.from_snapshot(
-        CatalogSnapshot.from_registry(
-            registry,
-            module_listing,
-            [],
-        ),
+        CatalogSnapshot.from_registry(registry, module_listing),
         module_executor,
     )
 

@@ -6,7 +6,6 @@ from pathlib import Path
 
 from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.application.modules import ModuleLibraryService
-from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.canonical_conversions import (
     CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,
@@ -64,7 +63,6 @@ class WorkbenchComponents:
     upload_config: UploadServiceConfig
     uploads: UploadService
     module_library: ModuleLibraryService | None
-    plugin_releases: PluginReleaseService | None
     run_graph: RunGraph
     execution_admission: ExecutionAdmissionLimiter
     execution_manager: RunExecutionManager
@@ -115,7 +113,6 @@ def build_workbench_components(
     upload_config: UploadServiceConfig | None = None,
     saved_graphs: SavedGraphService | None = None,
     module_library: ModuleLibraryService | None = None,
-    plugin_releases: PluginReleaseService | None = None,
     node_secrets: NodeSecretResolverPort | None = None,
     graph_room_hub: GraphRoomHub | None = None,
     egress_policy: EgressPolicy | None = None,
@@ -282,7 +279,6 @@ def build_workbench_components(
         upload_config=resolved_upload_config,
         uploads=uploads,
         module_library=module_library,
-        plugin_releases=plugin_releases,
         run_graph=run_graph,
         execution_admission=execution_admission,
         execution_manager=execution_manager,

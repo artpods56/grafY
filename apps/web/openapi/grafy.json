@@ -4146,51 +4146,6 @@
             ],
             "title": "Module Id"
           },
-          "non_runnable_detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Non Runnable Detail"
-          },
-          "non_runnable_reason": {
-            "anyOf": [
-              {
-                "enum": [
-                  "revoked",
-                  "missing_runtime_artifact",
-                  "incompatible_protocol",
-                  "unsupported_runtime_profile",
-                  "unsupported_capabilities",
-                  "unsupported_artifact_type",
-                  "plugin_runtime_unavailable",
-                  "host_binding_mismatch",
-                  "network_profile_unassigned",
-                  "network_profile_disabled",
-                  "network_destination_undeclared",
-                  "network_dynamic_destination_denied",
-                  "network_destination_not_allowlisted",
-                  "network_origin_limit_exceeded"
-                ],
-                "type": "string"
-              },
-              {
-                "enum": [
-                  "deprecated",
-                  "withdrawn"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Non Runnable Reason"
-          },
           "operator_id": {
             "title": "Operator Id",
             "type": "string"
@@ -4200,10 +4155,9 @@
             "type": "integer"
           },
           "origin": {
-            "default": "plugin",
+            "default": "builtin",
             "enum": [
               "builtin",
-              "plugin",
               "module"
             ],
             "title": "Origin",
@@ -4220,28 +4174,6 @@
             },
             "title": "Outputs",
             "type": "array"
-          },
-          "plugin_release": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PluginReleasePinModel"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "plugin_revision": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Plugin Revision"
           },
           "plugin_slug": {
             "title": "Plugin Slug",
@@ -4519,41 +4451,6 @@
         "title": "PinnedOutputRequest",
         "type": "object"
       },
-      "PluginReleasePinModel": {
-        "additionalProperties": false,
-        "properties": {
-          "revision": {
-            "minimum": 1.0,
-            "title": "Revision",
-            "type": "integer"
-          },
-          "scope": {
-            "$ref": "#/components/schemas/PluginReleaseScope"
-          },
-          "slug": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Slug",
-            "type": "string"
-          }
-        },
-        "required": [
-          "scope",
-          "slug",
-          "revision"
-        ],
-        "title": "PluginReleasePinModel",
-        "type": "object"
-      },
-      "PluginReleaseScope": {
-        "description": "Durable release family scope carried by a Plugin release pin.",
-        "enum": [
-          "system",
-          "workspace"
-        ],
-        "title": "PluginReleaseScope",
-        "type": "string"
-      },
       "PluginSpecResponse": {
         "properties": {
           "entry_kind": {
@@ -4565,118 +4462,14 @@
             "title": "Entry Kind",
             "type": "string"
           },
-          "installation_scope": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PluginReleaseScope"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "non_runnable_detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Non Runnable Detail"
-          },
-          "non_runnable_reason": {
-            "anyOf": [
-              {
-                "enum": [
-                  "revoked",
-                  "missing_runtime_artifact",
-                  "incompatible_protocol",
-                  "unsupported_runtime_profile",
-                  "unsupported_capabilities",
-                  "unsupported_artifact_type",
-                  "plugin_runtime_unavailable",
-                  "host_binding_mismatch",
-                  "network_profile_unassigned",
-                  "network_profile_disabled",
-                  "network_destination_undeclared",
-                  "network_dynamic_destination_denied",
-                  "network_destination_not_allowlisted",
-                  "network_origin_limit_exceeded"
-                ],
-                "type": "string"
-              },
-              {
-                "enum": [
-                  "deprecated",
-                  "withdrawn"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Non Runnable Reason"
-          },
           "origin": {
-            "default": "plugin",
+            "default": "builtin",
             "enum": [
               "builtin",
-              "plugin",
               "module"
             ],
             "title": "Origin",
             "type": "string"
-          },
-          "plugin_release": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PluginReleasePinModel"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "publisher": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Publisher"
-          },
-          "revision": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Revision"
-          },
-          "runnable": {
-            "default": true,
-            "title": "Runnable",
-            "type": "boolean"
-          },
-          "scope": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PluginReleaseScope"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "slug": {
             "title": "Slug",

@@ -57,13 +57,7 @@ function node(
     inputs,
     outputs,
     catalog_visible: true,
-    origin:
-      pluginSlug === "graph.module"
-        ? "module"
-        : pluginSlug === "builtin"
-          ? "builtin"
-          : "plugin",
-    plugin_revision: null,
+    origin: pluginSlug === "graph.module" ? "module" : "builtin",
     runnable: true,
     ...overrides,
   };
@@ -107,29 +101,18 @@ function registry(): NodeRegistry {
         title: "Built-in",
         origin: "builtin",
         entry_kind: "plugin",
-        runnable: true,
       },
       {
         slug: "graph.module",
         title: "Workspace library",
         origin: "module",
         entry_kind: "module",
-        revision: null,
-        runnable: true,
       },
       {
         slug: "external.mistral",
         title: "Mistral OCR",
-        origin: "plugin",
+        origin: "builtin",
         entry_kind: "plugin",
-        scope: "system",
-        revision: 1,
-        plugin_release: {
-          scope: "system",
-          slug: "external.mistral",
-          revision: 1,
-        },
-        runnable: true,
       },
     ],
     artifact_types: [
@@ -780,7 +763,7 @@ describe("NodeSelector", () => {
     );
   });
 
-  it("shows catalog-only Plugin releases but prevents insertion", async () => {
+  it("shows a saved operator that left the registry but prevents insertion", async () => {
     const catalog = registry();
     const onAddNode = vi.fn();
     await renderSelector({
@@ -789,32 +772,18 @@ describe("NodeSelector", () => {
         plugins: [
           ...catalog.plugins,
           {
-            slug: "notes",
-            title: "Notes",
-            origin: "plugin",
+            slug: "unavailable",
+            title: "Unavailable",
+            origin: "builtin",
             entry_kind: "plugin",
-            scope: "workspace",
-            revision: 1,
-            plugin_release: {
-              scope: "workspace",
-              slug: "notes",
-              revision: 1,
-            },
-            runnable: false,
           },
         ],
         nodes: [
           ...catalog.nodes,
-          node("notes.summary.render", "Render summary", "notes", [], [], {
-            plugin_revision: 1,
-            plugin_release: {
-              scope: "workspace",
-              slug: "notes",
-              revision: 1,
-            },
+          node("notes.summary.render", "Render summary", "unavailable", [], [], {
             runnable: false,
-            non_runnable_reason: "missing_runtime_artifact",
-            non_runnable_detail: "This release has no immutable runtime image.",
+            description:
+              "Saved operator notes.summary.render@1 is not available in the live registry.",
           }),
         ],
       },
@@ -825,10 +794,12 @@ describe("NodeSelector", () => {
     const add = buttonNamed("Add to canvas");
     expect(dialog().textContent).toContain("Catalog preview only.");
     expect(dialog().textContent).toContain(
-      "This release has no immutable runtime image.",
+      "is not available in the live registry.",
     );
     expect(add.disabled).toBe(true);
-    expect(add.title).toBe("This release has no immutable runtime image.");
+    expect(add.title).toBe(
+      "This saved operator is not in the live registry, so it cannot be inserted.",
+    );
     await React.act(async () => add.click());
     expect(onAddNode).not.toHaveBeenCalled();
   });

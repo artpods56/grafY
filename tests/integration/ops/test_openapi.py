@@ -328,19 +328,21 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
 
     plugin_schema = schema["components"]["schemas"]["PluginSpecResponse"]
     assert plugin_schema["properties"]["origin"] == {
-        "default": "plugin",
-        "enum": ["builtin", "plugin", "module"],
+        "default": "builtin",
+        "enum": ["builtin", "module"],
         "title": "Origin",
         "type": "string",
     }
     assert set(plugin_schema["required"]) == {"slug", "title"}
     assert "Plugin" + "Origin" not in schema["components"]["schemas"]
-    assert plugin_schema["properties"]["runnable"] == {
-        "default": True,
-        "title": "Runnable",
-        "type": "boolean",
+    # A family entry is this build's code: it carries no release identity and
+    # nothing that could make it unrunnable.
+    assert set(plugin_schema["properties"]) == {
+        "slug",
+        "title",
+        "origin",
+        "entry_kind",
     }
-    assert "revision" in plugin_schema["properties"]
     assert "module_graph_id" in node_schema["properties"]
     assert "module_graph_revision" in node_schema["properties"]
     assert node_schema["properties"]["catalog_visible"] == {
@@ -353,7 +355,6 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "title": "Runnable",
         "type": "boolean",
     }
-    assert "plugin_revision" in node_schema["properties"]
     plugin_release_update_schema = schema["components"]["schemas"][
         "UpdateNodePluginReleaseCommand"
     ]

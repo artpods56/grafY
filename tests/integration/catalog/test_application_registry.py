@@ -47,11 +47,9 @@ def test_same_catalog_in_every_environment_without_releases(
         assert response.status_code == 200, response.text
         nodes = {node["operator_id"]: node for node in response.json()["nodes"]}
         assert nodes["gis.raster_scan.import"]["origin"] == "builtin"
-        assert nodes["gis.raster_scan.import"]["runnable"] is True
         assert nodes["image.draw_regions"]["origin"] == "builtin"
         assert (
             nodes["llm.openai_compatible.chat_completion"]["secret_inputs"][0]["name"]
             == "api_key"
         )
         assert not any(operator.startswith(("python.", "sql.")) for operator in nodes)
-        assert all(node["plugin_release"] is None for node in nodes.values())

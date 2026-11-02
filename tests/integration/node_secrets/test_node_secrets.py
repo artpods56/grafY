@@ -2,7 +2,7 @@ import asyncio
 import base64
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import ClassVar, cast, override
+from typing import ClassVar, override
 from uuid import UUID
 
 import pytest
@@ -11,7 +11,6 @@ from sqlalchemy import text
 
 from grafy_core.application.collaboration import CollaborationService
 from grafy_core.application.graph_creation import stage_checkpointed_graph
-from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.domain.saved_graphs import (
@@ -70,9 +69,6 @@ from grafy_api.settings import Settings
 from grafy_api.v1.routes.node_secrets.dependencies import node_secret_service
 
 from tests.support.clients import GrafyApi
-from tests.support.system_plugins import (
-    build_selected_system_plugin_deployment,
-)
 from tests.support.workbench import workbench_dependency_overrides
 from tests.support.identity import TEST_COMMAND_HMAC_KEY, browser_actor_override
 from tests.testkit import (
@@ -165,13 +161,11 @@ def _build_secret_components(
     saved_graphs: SavedGraphService | None = None,
     node_secrets: NodeSecretService | None = None,
 ) -> WorkbenchComponents:
-    deployment = build_selected_system_plugin_deployment((SECRET_TEST_PLUGIN,))
     return build_workbench_components(
         plugin_registry=registry,
         workspace=workspace,
         saved_graphs=saved_graphs,
         node_secrets=node_secrets,
-        plugin_releases=cast(PluginReleaseService, deployment.release_lookup),
     )
 
 

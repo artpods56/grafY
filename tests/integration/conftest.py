@@ -3,7 +3,6 @@
 import asyncio
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,7 +10,6 @@ from pydantic import SecretStr
 
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.application.saved_graphs import SavedGraphService
-from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY
 from grafy_workbench.table.persistence import TableArtifactWriter
 from grafy_persistence.database import create_database
@@ -55,7 +53,6 @@ def builtin_client(tmp_path: Path) -> Iterator[TestClient]:
         plugin_registry=registry,
         workspace=tmp_path / "workbench",
         saved_graphs=saved_graphs,
-        plugin_releases=cast(PluginReleaseService, deployment.release_lookup),
     )
     try:
         with client_with_overrides(
@@ -87,7 +84,6 @@ def table_artifact_client(
         workspace=tmp_path / "workbench",
         unit_of_work=unit_of_work,
         storage=storage,
-        plugin_releases=cast(PluginReleaseService, deployment.release_lookup),
     )
     writer = TableArtifactWriter(
         storage=storage,

@@ -13,7 +13,6 @@ from pydantic import SecretStr
 from sqlalchemy import delete
 
 from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactRefSequence
-from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.domain.saved_graphs import SavedGraphDocument
@@ -171,11 +170,6 @@ def _durable_client(fixture: DurableApiFixture) -> Iterator[TestClient]:
         deployment.registry,
     )
     storage = LocalFileObjectStore(fixture.settings.app.workspace / "objects")
-    plugin_releases = PluginReleaseService(
-        lambda: SqlAlchemyUnitOfWork(database.sessions),
-        storage,
-        bucket=fixture.settings.storage.storage_bucket,
-    )
     components = build_workbench_components(
         plugin_registry=deployment.registry,
         workspace=fixture.settings.app.workspace,
@@ -184,7 +178,6 @@ def _durable_client(fixture: DurableApiFixture) -> Iterator[TestClient]:
         storage_backend=fixture.settings.storage.storage_backend,
         bucket=fixture.settings.storage.storage_bucket,
         saved_graphs=saved_graphs,
-        plugin_releases=plugin_releases,
     )
     overrides = {
         **_OVERRIDES,

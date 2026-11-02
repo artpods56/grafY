@@ -1,189 +1,56 @@
 """Validated catalog policy, independent of HTTP response serialization."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from types import MappingProxyType
-from typing import Literal
-from uuid import UUID
+from typing import Any
 
-from grafy_core.artifacts import ArtifactTypeKey
+from grafy_core.artifacts import ArtifactTypeKey, ArtifactTypeSpec
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
+from grafy_core.conversions import ArtifactConversion
 from grafy_core.domain.module_library import Module, ModuleRelease
 from grafy_core.domain.modules import GraphModuleDefinition
-from grafy_core.domain.plugin_installations import InstalledPluginRelease
-from grafy_core.domain.plugin_releases import (
-    PluginArtifactConversionContract,
-    PluginArtifactTypeContract,
-    PluginNodeContract,
-)
-from grafy_core.domain.plugin_revocations import PluginReleaseRevocation
-from grafy_core.domain.plugin_selection import (
-    PluginFamilyLifecycle,
-    PluginReleaseSelection,
-)
 from grafy_core.file_contracts import BUILTIN_FILE_FORMATS, build_extension_table
 from grafy_core.plugins import InstalledPlugin, NodeRegistration, PluginRegistry
 
-from grafy_api.plugins.runtime.admission import (
-    PluginNonRunnableReason,
-    ReleaseExecutionAdmission,
-    ReleaseExecutionRejection,
-)
-
 GRAPH_MODULE_PLUGIN_SLUG = "graph.module"
 
-
-CatalogNonRunnableReason = (
-    PluginNonRunnableReason
-    | Literal[
-        "deprecated",
-        "withdrawn",
-    ]
-)
+type ModuleListing = Sequence[tuple[Module, ModuleRelease, GraphModuleDefinition]]
 
 
-@dataclass(frozen=True, slots=True)
-class PluginCatalogReleaseState:
-    selection: PluginReleaseSelection | None = None
-    revocation: PluginReleaseRevocation | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class PluginReleaseReadiness:
-    runnable: bool
-    reason: CatalogNonRunnableReason | None = None
-    detail: str | None = None
-
-
-def plugin_release_readiness(
-    release: InstalledPluginRelease,
-    admission: ReleaseExecutionAdmission | None,
-    *,
-    state: PluginCatalogReleaseState | None = None,
-    node_contract: PluginNodeContract | None = None,
-) -> PluginReleaseReadiness:
-    if admission is None:
-        return PluginReleaseReadiness(
-            runnable=False,
-            reason="plugin_runtime_unavailable",
-            detail="Plugin release execution is not configured for this workbench.",
-        )
-    release_state = state or PluginCatalogReleaseState()
-    decision = admission.decide(
-        release,
-        node_contract=node_contract,
-        selection=release_state.selection,
-        revocation=release_state.revocation,
-    )
-    if isinstance(decision, ReleaseExecutionRejection) and decision.reason == "revoked":
-        return PluginReleaseReadiness(
-            runnable=False,
-            reason=decision.reason,
-            detail=decision.detail,
-        )
-    if (
-        release_state.selection is not None
-        and release_state.selection.lifecycle is not PluginFamilyLifecycle.PUBLISHED
-    ):
-        lifecycle = release_state.selection.lifecycle
-        return PluginReleaseReadiness(
-            runnable=False,
-            reason=lifecycle.value,
-            detail=(
-                f"This Plugin family is {lifecycle.value} and unavailable for "
-                "new insertion. Existing exact pins remain retained."
-            ),
-        )
-    if isinstance(decision, ReleaseExecutionRejection):
-        return PluginReleaseReadiness(
-            runnable=False,
-            reason=decision.reason,
-            detail=decision.detail,
-        )
-    return PluginReleaseReadiness(runnable=True)
+def _by_key(
+    specs: tuple[ArtifactTypeSpec, ...],
+) -> dict[tuple[str, int], ArtifactTypeSpec]:
+    return {(spec.key.id, spec.key.schema_version): spec for spec in specs}
 
 
 @dataclass(frozen=True, slots=True)
 class CatalogSnapshot:
+    """What this deployment can execute: the families it installed and its Modules.
+
+    There is no per-entry readiness. A family that was not installed into the
+    registry has no entry here at all, so every entry is executable by
+    definition (ADR 0017).
+    """
+
     builtin_plugins: tuple[InstalledPlugin, ...]
     builtin_nodes: tuple[NodeRegistration, ...]
     module_boundary_nodes: tuple[NodeRegistration, ...]
     modules: tuple[tuple[Module, ModuleRelease, GraphModuleDefinition], ...]
-    releases: tuple[InstalledPluginRelease, ...]
-    artifact_contracts: tuple[PluginArtifactTypeContract, ...]
-    conversions: tuple[PluginArtifactConversionContract, ...]
+    artifact_types: tuple[ArtifactTypeSpec, ...]
+    conversions: tuple[ArtifactConversion[Any, Any], ...]
     extension_claims: Mapping[str, ArtifactTypeKey]
-    node_readiness: Mapping[tuple[str, str, int], PluginReleaseReadiness]
-    release_readiness: Mapping[str, PluginReleaseReadiness]
 
     @classmethod
     def from_registry(
         cls,
         registry: PluginRegistry,
-        module_listing: list[tuple[Module, ModuleRelease, GraphModuleDefinition]],
-        plugin_releases: list[InstalledPluginRelease],
-        *,
-        release_admission: ReleaseExecutionAdmission | None = None,
-        plugin_release_states: Mapping[UUID, PluginCatalogReleaseState] | None = None,
+        module_listing: ModuleListing,
     ) -> "CatalogSnapshot":
-        release_states = plugin_release_states or {}
-        slugs = {release.release.slug for release in plugin_releases}
-        if len(slugs) != len(plugin_releases):
-            raise ValueError("System Plugin catalog contains duplicate current slugs")
-        reserved_slugs = {GRAPH_MODULE_PLUGIN_SLUG} & slugs
-        if reserved_slugs:
-            raise ValueError(
-                f"Plugin releases conflict with reserved Module provider: "
-                f"{GRAPH_MODULE_PLUGIN_SLUG}"
-            )
-
-        installed_plugin_slugs = {
-            plugin.slug
-            for plugin in registry.plugins
-            if plugin.slug != GRAPH_MODULE_PLUGIN_SLUG
-        }
-        plugin_slug_collisions = installed_plugin_slugs & slugs
-        if plugin_slug_collisions:
-            rendered = ", ".join(sorted(plugin_slug_collisions))
-            raise ValueError(
-                "Published Plugin releases conflict with reserved builtin "
-                f"families: {rendered}"
-            )
-
-        host_nodes = {registration.key: registration for registration in registry.nodes}
-        reserved_builtin_keys = {
-            key
-            for key, registration in host_nodes.items()
-            if registration.plugin_slug != GRAPH_MODULE_PLUGIN_SLUG
-        }
-        release_node_owners: dict[tuple[str, int], InstalledPluginRelease] = {}
-        for release in plugin_releases:
-            for contract in release.release.catalog.nodes:
-                key = (contract.operator_id, contract.operator_version)
-                other_release = release_node_owners.get(key)
-                if other_release is not None:
-                    raise ValueError(
-                        f"System Plugin {release.release.slug!r} operator "
-                        f"{key[0]}@{key[1]} conflicts with System Plugin "
-                        f"{other_release.release.slug!r}"
-                    )
-                if key in reserved_builtin_keys:
-                    host_registration = host_nodes[key]
-                    raise ValueError(
-                        f"System Plugin {release.release.slug!r} operator "
-                        f"{key[0]}@{key[1]} conflicts with builtin "
-                        f"{host_registration.plugin_slug!r}"
-                    )
-                release_node_owners[key] = release
-
+        registered_keys = {registration.key for registration in registry.nodes}
         module_node_keys: set[tuple[str, int]] = set()
         for _, _, definition in module_listing:
             key = definition.reference.operator_key
-            if (
-                key in host_nodes
-                or key in release_node_owners
-                or key in module_node_keys
-            ):
+            if key in registered_keys or key in module_node_keys:
                 raise ValueError(
                     f"Module {definition.reference.graph_id}@"
                     f"{definition.reference.revision} operator {key[0]}@{key[1]} "
@@ -191,163 +58,39 @@ class CatalogSnapshot:
                 )
             module_node_keys.add(key)
 
-        node_readiness = {
-            (release.release.slug, contract.operator_id, contract.operator_version): (
-                plugin_release_readiness(
-                    release,
-                    release_admission,
-                    state=release_states.get(release.release.id),
-                    node_contract=contract,
-                )
-            )
-            for release in plugin_releases
-            for contract in release.release.catalog.nodes
-        }
-        release_readiness: dict[str, PluginReleaseReadiness] = {}
-        for release in plugin_releases:
-            node_states = [
-                node_readiness[
-                    (
-                        release.release.slug,
-                        contract.operator_id,
-                        contract.operator_version,
-                    )
-                ]
-                for contract in release.release.catalog.nodes
-            ]
-            if any(readiness.runnable for readiness in node_states):
-                release_readiness[release.release.slug] = PluginReleaseReadiness(
-                    runnable=True
-                )
-            else:
-                release_readiness[release.release.slug] = plugin_release_readiness(
-                    release,
-                    release_admission,
-                    state=release_states.get(release.release.id),
-                )
-        declared_host_artifacts = {
-            (spec.key.id, spec.key.schema_version): spec
-            for spec in registry.declared_artifact_types
-        }
-        expanded_host_artifact_contracts = {
-            (spec.key.id, spec.key.schema_version): (
-                PluginArtifactTypeContract.from_spec(spec)
-            )
-            for spec in registry.artifact_types
-        }
-        seen_artifact_owners: dict[tuple[str, int], InstalledPluginRelease] = {}
-        for release in plugin_releases:
-            for release_contract in release.release.catalog.artifact_types:
-                key = (release_contract.key.id, release_contract.key.schema_version)
-                other_release = seen_artifact_owners.get(key)
-                if other_release is not None:
-                    raise ValueError(
-                        f"System Plugin {release.release.slug!r} artifact type "
-                        f"{key[0]}@{key[1]} conflicts with "
-                        f"System Plugin {other_release.release.slug!r}"
-                    )
-                installed = declared_host_artifacts.get(key)
-                if installed is not None:
-                    overlays_matching_host = (
-                        registry.artifact_type_owner(installed.key)
-                        == release.release.slug
-                        and release_contract
-                        == PluginArtifactTypeContract.from_spec(installed)
-                    )
-                    if not overlays_matching_host:
-                        raise ValueError(
-                            f"System Plugin {release.release.slug!r} artifact type "
-                            f"{key[0]}@{key[1]} conflicts with the "
-                            "host catalog contract"
-                        )
-                seen_artifact_owners[key] = release
-
-        canonical_conversion_contracts = {
-            (conversion.key.id, conversion.key.version): (
-                PluginArtifactConversionContract.from_conversion(conversion)
-            )
-            for conversion in CANONICAL_ARTIFACT_CONVERSIONS
-        }
-        for release in plugin_releases:
-            for contract in release.release.catalog.artifact_conversions:
-                key = (contract.key.id, contract.key.version)
-                canonical_contract = canonical_conversion_contracts.get(key)
-                if canonical_contract is None:
-                    raise ValueError(
-                        f"System Plugin {release.release.slug!r} declares "
-                        f"non-canonical artifact conversion "
-                        f"{key[0]}@{key[1]}"
-                    )
-                if contract != canonical_contract:
-                    raise ValueError(
-                        f"System Plugin {release.release.slug!r} artifact "
-                        f"conversion {key[0]}@{key[1]} conflicts with "
-                        "the deployment-owned canonical contract"
-                    )
-
-        serialized_artifact_contracts: dict[
-            tuple[str, int], PluginArtifactTypeContract
-        ] = {
-            (spec.key.id, spec.key.schema_version): (
-                PluginArtifactTypeContract.from_spec(spec)
-            )
-            for spec in BUILTIN_FILE_FORMATS
-        }
-        serialized_artifact_contracts.update(expanded_host_artifact_contracts)
-        for release in plugin_releases:
-            for contract in (
-                *release.release.catalog.artifact_types,
-                *release.release.catalog.artifact_type_dependencies,
-            ):
-                key = (contract.key.id, contract.key.schema_version)
-                installed = declared_host_artifacts.get(key)
-                if installed is not None:
-                    if contract != PluginArtifactTypeContract.from_spec(installed):
-                        raise ValueError(
-                            f"{release.installation.scope.value.title()} Plugin {release.release.slug!r} "
-                            f"artifact type {key[0]}@{key[1]} conflicts with the "
-                            "host catalog contract"
-                        )
-                    continue
-                existing = serialized_artifact_contracts.get(key)
-                if existing is not None and existing != contract:
-                    raise ValueError(
-                        f"Plugin releases declare different exact contracts for "
-                        f"artifact type {key[0]}@{key[1]}"
-                    )
-                serialized_artifact_contracts.setdefault(key, contract)
-
+        # File formats are deployment-owned; an installed family that declares
+        # the same exact type replaces the deployment's copy in place.
+        serialized = _by_key(BUILTIN_FILE_FORMATS)
+        serialized.update(_by_key(registry.artifact_types))
         extension_claims = build_extension_table(
-            (
-                ArtifactTypeKey(contract.key.id, contract.key.schema_version),
-                contract.extensions,
-            )
-            for contract in serialized_artifact_contracts.values()
+            (spec.key, spec.extensions) for spec in serialized.values()
         )
-        builtin_nodes = [
-            registration
-            for registration in registry.nodes
-            if registration.plugin_slug != GRAPH_MODULE_PLUGIN_SLUG
-        ]
-        module_boundary_nodes = [
-            registration
-            for registration in registry.nodes
-            if registration.plugin_slug == GRAPH_MODULE_PLUGIN_SLUG
-        ]
-        builtin_plugins = [
-            plugin
-            for plugin in registry.plugins
-            if plugin.slug != GRAPH_MODULE_PLUGIN_SLUG
-        ]
+
         return cls(
-            builtin_plugins=tuple(builtin_plugins),
-            builtin_nodes=tuple(builtin_nodes),
-            module_boundary_nodes=tuple(module_boundary_nodes),
+            builtin_plugins=tuple(
+                plugin
+                for plugin in registry.plugins
+                if plugin.slug != GRAPH_MODULE_PLUGIN_SLUG
+            ),
+            builtin_nodes=tuple(
+                registration
+                for registration in registry.nodes
+                if registration.plugin_slug != GRAPH_MODULE_PLUGIN_SLUG
+            ),
+            module_boundary_nodes=tuple(
+                registration
+                for registration in registry.nodes
+                if registration.plugin_slug == GRAPH_MODULE_PLUGIN_SLUG
+            ),
             modules=tuple(module_listing),
-            releases=tuple(plugin_releases),
-            artifact_contracts=tuple(serialized_artifact_contracts.values()),
-            conversions=tuple(canonical_conversion_contracts.values()),
+            artifact_types=tuple(serialized.values()),
+            conversions=tuple(CANONICAL_ARTIFACT_CONVERSIONS),
             extension_claims=extension_claims,
-            node_readiness=MappingProxyType(node_readiness),
-            release_readiness=MappingProxyType(release_readiness),
         )
+
+
+__all__ = [
+    "GRAPH_MODULE_PLUGIN_SLUG",
+    "CatalogSnapshot",
+    "ModuleListing",
+]

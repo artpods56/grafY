@@ -1083,7 +1083,6 @@ describe("saved graph module nodes", () => {
           title: "Modules",
           origin: "module",
           entry_kind: "module",
-          runnable: true,
         },
       ],
       artifact_types: [

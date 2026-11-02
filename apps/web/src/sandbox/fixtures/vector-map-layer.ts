@@ -52,7 +52,7 @@ export const VECTOR_LAYER_SPEC: NodeSpec = {
   operator_id: "gis.map.vector_layer",
   operator_version: 1,
   plugin_slug: "gis",
-  origin: "plugin",
+  origin: "builtin",
   title: "Vector map layer",
   description: "Turn a feature collection into a styled vector map layer.",
   config_schema: {},
@@ -105,12 +105,8 @@ export const VECTOR_LAYER_REGISTRY: NodeRegistry = {
     {
       slug: "gis",
       title: "GIS",
-      origin: "plugin",
+      origin: "builtin",
       entry_kind: "plugin",
-      scope: "system",
-      revision: 1,
-      plugin_release: { scope: "system", slug: "gis", revision: 1 },
-      runnable: true,
     },
   ],
   artifact_types: [

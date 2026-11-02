@@ -23,18 +23,16 @@ from grafy_storage import LocalFileObjectStore
 WORKSPACE_ID = UUID(int=7)
 
 
-def test_static_registry_supplies_catalog_without_published_releases(
+def test_static_registry_supplies_the_catalog(
     tmp_path: Path,
 ) -> None:
     components = build_workbench_components(workspace=tmp_path)
     catalog = NodeRegistryResponse.from_snapshot(
-        CatalogSnapshot.from_registry(components.plugin_registry, [], []),
+        CatalogSnapshot.from_registry(components.plugin_registry, []),
         components.run_graph,
     )
     nodes = {node.operator_id: node for node in catalog.nodes}
     assert nodes["gis.raster_scan.import"].origin == "builtin"
-    assert nodes["gis.raster_scan.import"].runnable
-    assert nodes["gis.raster_scan.import"].plugin_release is None
     assert (
         nodes["llm.openai_compatible.chat_completion"].secret_inputs[0].name
         == "api_key"
@@ -43,8 +41,12 @@ def test_static_registry_supplies_catalog_without_published_releases(
     assert {"geo.raster_scan", "geo.map_layer", "geo.map_document"} <= {
         artifact.key.id for artifact in catalog.artifact_types
     }
-    assert components.plugin_runtime is None
-    assert components.plugin_invoker is None
+    assert {plugin.entry_kind for plugin in catalog.plugins} == {"plugin", "module"}
+    assert {plugin.origin for plugin in catalog.plugins} == {"builtin", "module"}
+    assert "graph.module" in {plugin.slug for plugin in catalog.plugins}
+    assert {node.plugin_slug for node in nodes.values()} <= {
+        plugin.slug for plugin in catalog.plugins
+    }
 
 
 def test_legacy_checkpoint_and_recovered_request_normalize_without_mutating_input() -> (

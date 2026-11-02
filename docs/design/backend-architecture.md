@@ -122,8 +122,11 @@ flowchart LR
     Admission --> Guest[Isolated Plugin runtime]
 ```
 
-`grafy_api.catalog.CatalogSnapshot` owns catalog assembly from builtin declarations,
-exact release facts, selection/revocation state, and Module library results.
+`grafy_api.catalog.CatalogSnapshot` owns catalog assembly from the installed family
+declarations and Module library results. An entry is what this build registered,
+so it carries no release identity and no readiness decision: a family that was
+not installed has no entry at all. The upload extension table is built from the
+same artifact declarations and refuses two owners for one extension.
 Release, installation, and selection remain separate concepts.
 `InstalledPluginRelease` exposes its release and installation explicitly.
 `PluginRegistry` retains immutable family declarations and lookup indexes.
