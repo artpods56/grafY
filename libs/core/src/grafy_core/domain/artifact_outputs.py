@@ -1,4 +1,6 @@
+from collections.abc import Mapping
 from typing import ClassVar, Literal, Self, cast
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -69,3 +71,15 @@ def artifact_outputs_from_storage(
             raise ValueError(f"Duplicate artifact output port {envelope.port!r}")
         outputs[envelope.port] = envelope.value
     return outputs
+
+
+def output_artifact_ids(outputs: Mapping[str, ArtifactOutputValue]) -> set[UUID]:
+    """Every artifact identity a recorded output names, sequence items included."""
+
+    artifact_ids: set[UUID] = set()
+    for output in outputs.values():
+        if isinstance(output, ArtifactRefSequence):
+            artifact_ids.update(ref.artifact_id for ref in output.item_refs)
+        else:
+            artifact_ids.add(output.artifact_id)
+    return artifact_ids

@@ -16,27 +16,37 @@ import pytest
         "grafy_core.plugins",
     ],
 )
-def test_artifact_sdk_exports_resolve_to_their_owners(first_module: str) -> None:
+def test_supported_artifact_imports_survive_any_import_order(first_module: str) -> None:
+    # Artifact models used to re-export ports and in-memory repositories lazily so
+    # that a host importing them first still worked. Each owner is imported directly
+    # now, so the same order independence has to hold without that indirection.
     source = f"""
 from importlib import import_module
 import_module({first_module!r})
 from grafy_core import artifacts
 from grafy_core.ports.artifacts import ArtifactRepositoryPort, UnitOfWorkPort
 from grafy_core.runtime.in_memory import InMemoryDataStore, InMemoryUnitOfWork
-assert artifacts.ArtifactRepositoryPort is ArtifactRepositoryPort
-assert artifacts.UnitOfWorkPort is UnitOfWorkPort
-assert artifacts.InMemoryDataStore is InMemoryDataStore
-assert artifacts.InMemoryUnitOfWork is InMemoryUnitOfWork
+assert ArtifactRepositoryPort.__module__ == "grafy_core.ports.artifacts"
+assert UnitOfWorkPort.__module__ == "grafy_core.ports.artifacts"
+assert InMemoryDataStore.__module__ == "grafy_core.runtime.in_memory"
+assert InMemoryUnitOfWork.__module__ == "grafy_core.runtime.in_memory"
 namespace = {{}}
 exec('from grafy_core.artifacts import *', namespace)
 for name in artifacts.__all__:
     assert namespace[name] is getattr(artifacts, name)
-try:
-    artifacts.unknown_export
-except AttributeError:
-    pass
-else:
-    raise AssertionError('Unknown exports must raise AttributeError')
+for name in (
+    "ArtifactRepositoryPort",
+    "InMemoryDataStore",
+    "InMemoryUnitOfWork",
+    "UnitOfWorkPort",
+    "unknown_export",
+):
+    try:
+        getattr(artifacts, name)
+    except AttributeError:
+        pass
+    else:
+        raise AssertionError(f"artifact models must not own {{name!r}}")
 """
     result = subprocess.run(
         [sys.executable, "-c", source],

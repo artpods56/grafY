@@ -11,11 +11,11 @@ from grafy_core.artifacts import (
     ArtifactObject,
     ArtifactRef,
     ArtifactRefSequence,
-    InMemoryUnitOfWork,
 )
 from grafy_core.file_contracts import PNG_FILE
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.ports.storage import SaveFileCommand
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.artifact_contracts import (
     RASTER_IMAGE,
 )

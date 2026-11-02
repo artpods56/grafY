@@ -126,7 +126,7 @@ def test_plugin_families_are_installed_from_the_workspace() -> None:
         / "tests/fixtures/plugin-notes/wheels/grafy_core-0.1.0-py3-none-any.whl"
     )
     assert sha256(core_wheel.read_bytes()).hexdigest() == (
-        "a84f39c411156a2ce4f4314373ac9d603948d70e618140fbe093bb26fa631d9d"
+        "4010edf5c5fd26cff3e87ced2cfe45a53b134d0a30cc8820ec18a4c5aed31390"
     )
 
 

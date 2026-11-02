@@ -5,11 +5,10 @@ from uuid import UUID
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.artifacts import (
     ArtifactObject,
-    ArtifactRefSequence,
     ArtifactTypeSpec,
     LibraryProvenance,
 )
-from grafy_core.domain.artifact_outputs import ArtifactOutputValue
+from grafy_core.domain.artifact_outputs import output_artifact_ids
 from grafy_core.domain.errors import (
     LibraryArtifactInUseError,
     NotFoundError,
@@ -22,16 +21,6 @@ from grafy_api.v1.routes.artifacts.services import ArtifactService
 
 from .items import LibraryItem, LibraryRun
 from .models import LibraryItemResponse
-
-
-def _output_artifact_ids(outputs: Mapping[str, ArtifactOutputValue]) -> set[UUID]:
-    artifact_ids: set[UUID] = set()
-    for output in outputs.values():
-        if isinstance(output, ArtifactRefSequence):
-            artifact_ids.update(ref.artifact_id for ref in output.item_refs)
-        else:
-            artifact_ids.add(output.artifact_id)
-    return artifact_ids
 
 
 class LibraryService:
@@ -143,7 +132,7 @@ class LibraryService:
             raise WorkbenchOperationError(
                 f"Execution {execution_id} has no node result {node_id!r}"
             )
-        if artifact_id not in _output_artifact_ids(node_result.outputs):
+        if artifact_id not in output_artifact_ids(node_result.outputs):
             raise WorkbenchOperationError(
                 f"Artifact {artifact_id} is not an output of node {node_id!r} "
                 f"in execution {execution_id}"

@@ -1,4 +1,4 @@
-from grafy_core.artifacts import UnitOfWorkPort
+from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.runtime.persistence import InlineModelOutputWriter
 from grafy_core.runtime.resolvers import InlineModelResolver
 

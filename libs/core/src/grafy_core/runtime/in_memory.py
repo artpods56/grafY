@@ -1,5 +1,5 @@
 from asyncio import Lock
-from collections.abc import Collection, Mapping
+from collections.abc import Collection
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
@@ -36,10 +36,9 @@ if TYPE_CHECKING:
 
 from grafy_core.artifacts import (
     ArtifactObject,
-    ArtifactRefSequence,
     ArtifactTypeKey,
 )
-from grafy_core.domain.artifact_outputs import ArtifactOutputValue
+from grafy_core.domain.artifact_outputs import output_artifact_ids
 from grafy_core.domain.errors import (
     CollaborationActiveExecutionError,
     LibraryFolderNameConflictError,
@@ -55,18 +54,6 @@ from grafy_core.ports.library_folders import LibraryFolderRepositoryPort
 
 def _clone[T](value: T) -> T:
     return deepcopy(value)
-
-
-def _output_artifact_ids(outputs: Mapping[str, ArtifactOutputValue]) -> set[UUID]:
-    """Every artifact identity a recorded output names, sequence items included."""
-
-    artifact_ids: set[UUID] = set()
-    for output in outputs.values():
-        if isinstance(output, ArtifactRefSequence):
-            artifact_ids.update(ref.artifact_id for ref in output.item_refs)
-        else:
-            artifact_ids.add(output.artifact_id)
-    return artifact_ids
 
 
 @dataclass(slots=True)
@@ -764,7 +751,7 @@ class InMemoryGraphExecutionHistoryRepository:
         ), (_position, result) in self._store.graph_execution_nodes.items():
             if stored_workspace_id != workspace_id or result is None:
                 continue
-            if artifact_id not in _output_artifact_ids(result.outputs):
+            if artifact_id not in output_artifact_ids(result.outputs):
                 continue
             execution = self._store.graph_executions.get(execution_id)
             if execution is not None and execution.workspace_id == workspace_id:
