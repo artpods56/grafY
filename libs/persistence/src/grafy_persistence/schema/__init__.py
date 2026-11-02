@@ -56,9 +56,6 @@ from .graphs import (
     user_graph_states as user_graph_states,
 )
 from .identity import (
-    PlatformTokenScopeTupleType as PlatformTokenScopeTupleType,
-)
-from .identity import (
     SecurityAuditActorKindType as SecurityAuditActorKindType,
 )
 from .identity import (
@@ -87,9 +84,6 @@ from .identity import (
 )
 from .identity import (
     personal_access_tokens as personal_access_tokens,
-)
-from .identity import (
-    platform_access_tokens as platform_access_tokens,
 )
 from .identity import (
     security_audit_events as security_audit_events,

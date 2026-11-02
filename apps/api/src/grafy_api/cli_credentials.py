@@ -5,7 +5,6 @@ import hashlib
 import os
 from pathlib import Path
 import re
-from typing import Literal
 
 import keyring
 from keyring.errors import KeyringError
@@ -23,7 +22,6 @@ class CliCredentialError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class CredentialDigest:
-    kind: Literal["personal", "platform"]
     public_prefix: str
     secret_digest: bytes
 
@@ -46,18 +44,11 @@ def parse_sensitive_bearer_token(value: str) -> CredentialDigest:
     public_prefix, separator, secret = value.partition(".")
     if (
         not separator
-        or not re.fullmatch(r"(?:nrt|gpat)_[A-Za-z0-9_-]{1,27}", public_prefix)
+        or not re.fullmatch(r"nrt_[A-Za-z0-9_-]{1,27}", public_prefix)
         or not re.fullmatch(r"[A-Za-z0-9_-]{20,128}", secret)
     ):
         raise CliCredentialError("Credential has an invalid format")
-    if public_prefix.startswith("nrt_"):
-        kind: Literal["personal", "platform"] = "personal"
-    elif public_prefix.startswith("gpat_"):
-        kind = "platform"
-    else:
-        raise CliCredentialError("Credential has an unknown prefix")
     return CredentialDigest(
-        kind=kind,
         public_prefix=public_prefix,
         secret_digest=hashlib.sha256(secret.encode("utf-8")).digest(),
     )

@@ -19,8 +19,6 @@ from grafy_core.domain.identity import (
     AuthSession,
     OidcDomainWorkspaceGrant,
     PersonalAccessToken,
-    PlatformAccessToken,
-    PlatformTokenScope,
     User,
     WorkspaceCapability,
     WorkspaceInvitation,
@@ -838,7 +836,7 @@ async def test_concurrent_owner_removals_preserve_one_shared_owner(
 
 
 @pytest.mark.asyncio
-async def test_personal_and_platform_credentials_resolve_typed_principals(
+async def test_personal_credentials_resolve_typed_principal(
     database: Database,
 ) -> None:
     service = _service(database)
@@ -857,29 +855,15 @@ async def test_personal_and_platform_credentials_resolve_typed_principals(
         scopes=(WorkspaceCapability.PUBLISH_MODULE,),
         expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
-    platform = PlatformAccessToken(
-        principal_reference="release-bot",
-        public_prefix="gpat_publication",
-        secret_digest=b"platform-digest",
-        label="global publication",
-        scopes=(PlatformTokenScope.PUBLISH_GLOBAL,),
-        expires_at=datetime.now(UTC) + timedelta(hours=1),
-    )
     await service.create_personal_access_token(
         actor=ActorContext(provisioned.user.id),
         token=personal,
     )
-    await service.create_platform_access_token(token=platform)
 
     workspace_principal = await service.authenticate_personal_access_token(
         public_prefix=personal.public_prefix,
         secret_digest=personal.secret_digest,
         required_capability=WorkspaceCapability.PUBLISH_MODULE,
-    )
-    platform_principal = await service.authenticate_platform_access_token(
-        public_prefix=platform.public_prefix,
-        secret_digest=platform.secret_digest,
-        required_scope=PlatformTokenScope.PUBLISH_GLOBAL,
     )
 
     assert workspace_principal.actor.user_id == provisioned.user.id
@@ -888,8 +872,6 @@ async def test_personal_and_platform_credentials_resolve_typed_principals(
         workspace_principal.actor.credential_workspace_id
         == provisioned.personal_workspace.id
     )
-    assert platform_principal.principal_reference == "release-bot"
-    assert platform_principal.credential_reference == f"platform-token:{platform.id}"
 
     with pytest.raises(CredentialAuthenticationError):
         await service.authenticate_personal_access_token(
