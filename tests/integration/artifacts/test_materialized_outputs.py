@@ -106,6 +106,9 @@ async def _persist_partially_accessible_materialization(
         content_type="application/json",
         storage_backend="inline",
         inline_payload={"value": 13},
+        metadata={
+            "implementation": {"kind": "builtin", "build_digest": "a" * 64},
+        },
     )
     missing = ArtifactRef(
         artifact_id=UUID("00000000-0000-0000-0000-000000000999"),
