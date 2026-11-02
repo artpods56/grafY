@@ -377,16 +377,20 @@ async def test_cancelling_one_run_leaves_another_runs_demand_alone() -> None:
     assert runner.cancelled == ["Y"]
     assert "X" not in runner.cancelled
 
-    runner.release("X").set()
+    # The withdrawn Run is answered at once; it does not wait for X, which
+    # Run 2 still demands and which has not finished.
     first = await _wait_run(scheduler, "run-1")
+    assert scheduler.in_flight("X") == "running"
+    assert first.status == "cancelled"
+    assert dict(first.computations) == {
+        "X": ComputationState.RUNNING,
+        "Y": ComputationState.CANCELLED,
+    }
+
+    runner.release("X").set()
     second = await _wait_run(scheduler, "run-2")
 
     assert runner.calls.count("X") == 1
-    assert first.status == "cancelled"
-    assert dict(first.computations) == {
-        "X": ComputationState.SUCCEEDED,
-        "Y": ComputationState.CANCELLED,
-    }
     assert second.status == "succeeded"
     assert dict(second.computations) == {"X": ComputationState.SUCCEEDED}
     pointer = await store.get_pointer(_key("X"))

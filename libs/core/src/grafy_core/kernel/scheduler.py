@@ -269,6 +269,10 @@ class _Scheduler:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
+        # The withdrawn Run is answered now, with the states its computations
+        # have at this moment. It does not wait for a computation that another
+        # Run still demands.
+        self._finish_run(run)
         self._dispatch()
 
     # Waiting and reading --------------------------------------------------
