@@ -7,13 +7,13 @@ from pydantic import ValidationError
 
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
 from grafy_core.domain.errors import SavedGraphRevisionConflictError
-from grafy_core.domain.plugin_identity import PluginReleaseScope
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     GraphPresentationAnnotation,
     GraphPresentationDocument,
     GraphPresentationLink,
     GraphPresentationViewer,
+    SAVED_GRAPH_SCHEMA_VERSION,
     SavedGraph,
     SavedGraphAnnotationLayout,
     SavedGraphArtifactTypeBinding,
@@ -24,7 +24,6 @@ from grafy_core.domain.saved_graphs import (
     SavedGraphNode,
     SavedGraphNodeLayout,
     SavedGraphOrigin,
-    SavedGraphPluginReleasePin,
 )
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
@@ -37,7 +36,6 @@ def _node(
     operator_id: str = "example.operator",
     input_plugs: tuple[SavedGraphInputPlug, ...] = (),
     artifact_type_bindings: tuple[SavedGraphArtifactTypeBinding, ...] = (),
-    plugin_release_pin: SavedGraphPluginReleasePin | None = None,
 ) -> SavedGraphNode:
     return SavedGraphNode(
         kind=kind,  # type: ignore[arg-type]
@@ -48,7 +46,6 @@ def _node(
         position=GraphPoint(x=10.0, y=20.0),
         input_plugs=input_plugs,
         artifact_type_bindings=artifact_type_bindings,
-        plugin_release_pin=plugin_release_pin,
     )
 
 
@@ -192,14 +189,14 @@ def test_presentation_annotations_round_trip_and_reject_shape_text() -> None:
     assert payload["presentation"]["annotations"][0]["color"] == "#B45309"
     assert SavedGraphDocument.model_validate(payload) == document
 
-    legacy = GraphPresentationAnnotation(
-        id="annotation-legacy",
-        kind="text",
-        position=GraphPoint(x=0.0, y=0.0),
-        layout=SavedGraphAnnotationLayout(width=80, height=80),
-        color="amber",
-    )
-    assert legacy.color == "#B45309"
+    with pytest.raises(ValidationError, match="pattern"):
+        GraphPresentationAnnotation(
+            id="annotation-named-color",
+            kind="text",
+            position=GraphPoint(x=0.0, y=0.0),
+            layout=SavedGraphAnnotationLayout(width=80, height=80),
+            color="amber",
+        )
 
     with pytest.raises(ValidationError, match="must start with 'annotation-'"):
         GraphPresentationAnnotation(
@@ -303,7 +300,7 @@ def test_artifact_card_keeps_its_reference_when_the_artifact_is_missing() -> Non
     # inaccessible artifact leaves the stored reference untouched.
     document = SavedGraphDocument.model_validate(
         {
-            "schema_version": 6,
+            "schema_version": SAVED_GRAPH_SCHEMA_VERSION,
             "nodes": [],
             "edges": [],
             "presentation": {
@@ -332,7 +329,7 @@ def test_artifact_card_keeps_its_reference_when_the_artifact_is_missing() -> Non
 def test_presentation_viewer_without_artifact_reference_reads_as_unset() -> None:
     document = SavedGraphDocument.model_validate(
         {
-            "schema_version": 6,
+            "schema_version": SAVED_GRAPH_SCHEMA_VERSION,
             "nodes": [],
             "edges": [],
             "presentation": {
@@ -628,17 +625,15 @@ def test_saved_graph_document_rejects_edges_to_missing_nodes(
         )
 
 
-def test_saved_graph_document_reads_version_six_with_empty_origins() -> None:
-    document = SavedGraphDocument.model_validate(
-        {
-            "schema_version": 6,
-            "nodes": [_node("source").model_dump(mode="json")],
-            "edges": [],
-        }
-    )
-
-    assert document.schema_version == 7
-    assert document.origins == ()
+def test_saved_graph_document_rejects_a_version_six_document() -> None:
+    with pytest.raises(ValidationError, match="schema_version"):
+        SavedGraphDocument.model_validate(
+            {
+                "schema_version": 6,
+                "nodes": [_node("source").model_dump(mode="json")],
+                "edges": [],
+            }
+        )
 
 
 def test_saved_graph_origin_round_trips_an_exact_reference() -> None:
@@ -867,41 +862,20 @@ def test_saved_graph_replace_preserves_timezone_aware_timestamp_invariant() -> N
         )
 
 
-def test_saved_graph_node_reads_legacy_pin_without_serializing_it() -> None:
-    pin = SavedGraphPluginReleasePin(
-        scope=PluginReleaseScope.WORKSPACE,
-        slug="notes",
-        revision=4,
-    )
-    node = _node("echo", kind="plugin", plugin_release_pin=pin)
-
-    payload = node.model_dump(mode="json")
-
-    assert payload["kind"] == "builtin"
-    assert "plugin_release_pin" not in payload
-    assert SavedGraphNode.model_validate(payload) == node
-
-
-def test_saved_graph_plugin_release_pin_rejects_extra_or_missing_fields() -> None:
+@pytest.mark.parametrize(
+    "implementation_key",
+    ["plugin_release", "plugin_release_pin"],
+)
+def test_saved_graph_node_rejects_plugin_implementation_fields(
+    implementation_key: str,
+) -> None:
     base = _node("echo").model_dump(mode="json")
     # The saved node model is fail-closed about unknown fields.
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        SavedGraphNode.model_validate({**base, "plugin_release": {"slug": "notes"}})
-
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        SavedGraphPluginReleasePin.model_validate(
-            {"slug": "notes", "revision": 4, "x": 1}
-        )
-    with pytest.raises(ValidationError):
-        SavedGraphPluginReleasePin.model_validate({"slug": "notes"})
-    with pytest.raises(ValidationError):
-        SavedGraphPluginReleasePin(
-            scope=PluginReleaseScope.WORKSPACE,
-            slug="notes",
-            revision=0,
-        )
+        SavedGraphNode.model_validate({**base, implementation_key: {"slug": "notes"}})
 
 
-def test_saved_graph_plugin_release_pin_rejects_legacy_workspace_shape() -> None:
-    with pytest.raises(ValidationError, match="scope"):
-        SavedGraphPluginReleasePin.model_validate({"slug": "notes", "revision": 4})
+def test_saved_graph_node_rejects_plugin_kind() -> None:
+    base = _node("echo").model_dump(mode="json")
+    with pytest.raises(ValidationError, match="kind"):
+        SavedGraphNode.model_validate({**base, "kind": "plugin"})

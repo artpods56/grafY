@@ -8,21 +8,21 @@ from grafy_core.spatial_contracts import (
     GeoRasterProjectionMetadata,
     GeoVectorProjectionMetadata,
 )
-from grafy_plugin_gis.models import (
+from grafy_core.spatial_contracts import (
     GeoFeatureCollection,
     RasterProjectionMetadata,
     VectorProjectionMetadata,
 )
 
 
-def test_feature_reader_preserves_legacy_payload_while_producer_checks_geometry() -> (
+def test_feature_reader_accepts_an_unbounded_payload_while_producer_checks_geometry() -> (
     None
 ):
     payload = {
         "features": [
             {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1, 2]}}
         ],
-        "source_name": "legacy",
+        "source_name": "unbounded",
         "bounds": None,
     }
 

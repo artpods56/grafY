@@ -18,10 +18,6 @@ def test_public_routes_are_registered_once(settings: Settings) -> None:
     ]
 
     assert len(operations) == len(set(operations))
-    assert (
-        "GET",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/head",
-    ) not in operations
 
 
 def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
@@ -354,16 +350,9 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "title": "Runnable",
         "type": "boolean",
     }
-    assert "UpdateNodePluginReleaseCommand" not in schema["components"]["schemas"]
     command_schema = schema["components"]["schemas"]["SubmitGraphCommandRequest"][
         "properties"
     ]["command"]
-    assert (
-        "update_node_plugin_release" not in command_schema["discriminator"]["mapping"]
-    )
-    assert {
-        "$ref": "#/components/schemas/UpdateNodePluginReleaseCommand"
-    } not in command_schema["oneOf"]
     assert command_schema["discriminator"]["mapping"]["add_node"] == (
         "#/components/schemas/AddNodeCommand"
     )
@@ -446,14 +435,14 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         {"type": "null"},
     ]
 
-    saved_node_schema = schema["components"]["schemas"]["SavedGraphNodeModel"]
+    saved_node_schema = schema["components"]["schemas"]["SavedGraphNode"]
     assert saved_node_schema["properties"]["input_plugs"]["items"] == {
-        "$ref": "#/components/schemas/SavedGraphInputPlugModel"
+        "$ref": "#/components/schemas/SavedGraphInputPlug"
     }
     assert saved_node_schema["properties"]["artifact_type_bindings"]["items"] == {
-        "$ref": "#/components/schemas/ArtifactTypeBindingModel"
+        "$ref": "#/components/schemas/SavedGraphArtifactTypeBinding"
     }
-    saved_edge_schema = schema["components"]["schemas"]["SavedGraphEdgeModel"]
+    saved_edge_schema = schema["components"]["schemas"]["SavedGraphEdge"]
     assert "to_plug" in saved_edge_schema["properties"]
     assert saved_edge_schema["properties"]["enabled"]["default"] is True
 

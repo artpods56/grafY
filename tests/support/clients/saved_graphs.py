@@ -10,7 +10,7 @@ from grafy_api.graph_contracts import (
     AssignGraphFolderRequest,
     CheckpointGraphRequest,
     CheckpointGraphResponse,
-    CanonicalCollaborativeHeadResponse,
+    CollaborativeHeadResponse,
     CopyExactHeadRequest,
     CreateSavedGraphRequest,
     GraphBrowserListResponse,
@@ -271,9 +271,9 @@ class SavedGraphsApi:
 
     def get_head_ok(
         self, graph_id: UUID, *, headers: Mapping[str, str] | None = None
-    ) -> CanonicalCollaborativeHeadResponse:
+    ) -> CollaborativeHeadResponse:
         return _parse(
-            CanonicalCollaborativeHeadResponse,
+            CollaborativeHeadResponse,
             _expect(self.get_head(graph_id, headers=headers), 200),
         )
 

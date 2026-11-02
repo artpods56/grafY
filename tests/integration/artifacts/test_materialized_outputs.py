@@ -12,10 +12,23 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import delete
 
-from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactRefSequence
+from grafy_core.artifacts import (
+    ArtifactObject,
+    ArtifactRef,
+    ArtifactRefSequence,
+    ArtifactTypeKey,
+)
+
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
-from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_core.domain.saved_graphs import (
+    GraphPoint,
+    SavedGraphArtifactTypeBinding,
+    SavedGraphDocument,
+    SavedGraphEdge,
+    SavedGraphInputPlug,
+    SavedGraphNode,
+)
 from grafy_persistence import schema
 from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
@@ -25,10 +38,6 @@ from grafy_shared.config import AppConfig
 
 from grafy_api.services.composition import build_workbench_components
 from grafy_api.settings import Settings
-from grafy_api.v1.models import (
-    ArtifactTypeBindingModel,
-    ArtifactTypeKeyResponse,
-)
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 from grafy_api.v1.routes.executions.models import (
     GraphMaterializationsResponse,
@@ -43,10 +52,6 @@ from grafy_api.execution.requests import (
 )
 from grafy_api.graph_contracts import (
     CreateSavedGraphRequest,
-    GraphPointModel,
-    SavedGraphEdgeModel,
-    SavedGraphInputPlugModel,
-    SavedGraphNodeModel,
     SavedGraphResponse,
     UpdateSavedGraphRequest,
 )
@@ -199,18 +204,18 @@ def _graph_payload(expected_revision: int | None = None) -> dict[str, object]:
     ]
     edges = _edges()
     node_models = [
-        SavedGraphNodeModel(
+        SavedGraphNode(
             kind="builtin",
             id=node_id,
             operator_id=operator_id,
             operator_version=1,
             config=config,
-            position=GraphPointModel(x=float(index * 200), y=20.0),
+            position=GraphPoint(x=float(index * 200), y=20.0),
         )
         for index, (node_id, operator_id, config) in enumerate(nodes)
     ]
     edge_models = [
-        SavedGraphEdgeModel.model_validate({"id": f"edge-{index}", **edge})
+        SavedGraphEdge.model_validate({"id": f"edge-{index}", **edge})
         for index, edge in enumerate(edges, start=1)
     ]
     serialized_nodes: list[dict[str, object]] = [
@@ -265,54 +270,54 @@ def _edges() -> list[dict[str, object]]:
 
 def _collect_graph_payload() -> dict[str, object]:
     nodes = [
-        SavedGraphNodeModel(
+        SavedGraphNode(
             kind="builtin",
             id="first",
             operator_id="text.input",
             operator_version=1,
             config={"text": "first"},
-            position=GraphPointModel(x=0.0, y=0.0),
+            position=GraphPoint(x=0.0, y=0.0),
         ),
-        SavedGraphNodeModel(
+        SavedGraphNode(
             kind="builtin",
             id="sequence-input",
             operator_id="text.input",
             operator_version=1,
             config={"text": "second|third"},
-            position=GraphPointModel(x=200.0, y=0.0),
+            position=GraphPoint(x=200.0, y=0.0),
         ),
-        SavedGraphNodeModel(
+        SavedGraphNode(
             kind="builtin",
             id="split",
             operator_id="test.text.split",
             operator_version=1,
             config={"separator": "|"},
-            position=GraphPointModel(x=400.0, y=0.0),
+            position=GraphPoint(x=400.0, y=0.0),
         ),
-        SavedGraphNodeModel(
+        SavedGraphNode(
             kind="builtin",
             id="collect",
             operator_id="test.sequence.collect",
             operator_version=1,
             config={},
-            position=GraphPointModel(x=600.0, y=0.0),
+            position=GraphPoint(x=600.0, y=0.0),
             artifact_type_bindings=[
-                ArtifactTypeBindingModel(
+                SavedGraphArtifactTypeBinding(
                     variable="T",
-                    artifact_type=ArtifactTypeKeyResponse(
+                    artifact_type=ArtifactTypeKey(
                         id="scalar.text",
                         schema_version=1,
                     ),
                 )
             ],
             input_plugs=[
-                SavedGraphInputPlugModel(id="sequence-plug", port="items"),
-                SavedGraphInputPlugModel(id="first-plug", port="items"),
+                SavedGraphInputPlug(id="sequence-plug", port="items"),
+                SavedGraphInputPlug(id="first-plug", port="items"),
             ],
         ),
     ]
     edges = [
-        SavedGraphEdgeModel(
+        SavedGraphEdge(
             id="first-edge",
             from_node="first",
             from_port="text",
@@ -320,14 +325,14 @@ def _collect_graph_payload() -> dict[str, object]:
             to_port="items",
             to_plug="first-plug",
         ),
-        SavedGraphEdgeModel(
+        SavedGraphEdge(
             id="sequence-input-edge",
             from_node="sequence-input",
             from_port="text",
             to_node="split",
             to_port="text",
         ),
-        SavedGraphEdgeModel(
+        SavedGraphEdge(
             id="sequence-edge",
             from_node="split",
             from_port="parts",

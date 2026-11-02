@@ -16,17 +16,13 @@ import pytest
         "grafy_core.plugins",
     ],
 )
-def test_artifact_sdk_exports_resolve_to_their_owners(first_module: str) -> None:
+def test_artifact_models_resolve_independently_of_import_order(
+    first_module: str,
+) -> None:
     source = f"""
 from importlib import import_module
 import_module({first_module!r})
 from grafy_core import artifacts
-from grafy_core.ports.artifacts import ArtifactRepositoryPort, UnitOfWorkPort
-from grafy_core.runtime.in_memory import InMemoryDataStore, InMemoryUnitOfWork
-assert artifacts.ArtifactRepositoryPort is ArtifactRepositoryPort
-assert artifacts.UnitOfWorkPort is UnitOfWorkPort
-assert artifacts.InMemoryDataStore is InMemoryDataStore
-assert artifacts.InMemoryUnitOfWork is InMemoryUnitOfWork
 namespace = {{}}
 exec('from grafy_core.artifacts import *', namespace)
 for name in artifacts.__all__:
@@ -45,3 +41,27 @@ else:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "ArtifactRepositoryPort",
+        "UnitOfWorkPort",
+        "InMemoryArtifactRepository",
+        "InMemoryDataStore",
+        "InMemoryGraphExecutionHistoryRepository",
+        "InMemoryInvocationCacheRepository",
+        "InMemoryMaterializedNodeOutputsRepository",
+        "InMemoryUnitOfWork",
+        "InMemoryUploadRepository",
+    ],
+)
+def test_artifact_module_no_longer_exports_owned_names(name: str) -> None:
+    """Ports and in-memory fakes are imported from the modules that own them."""
+
+    from grafy_core import artifacts
+
+    assert name not in artifacts.__all__
+    with pytest.raises(AttributeError, match=name):
+        getattr(artifacts, name)

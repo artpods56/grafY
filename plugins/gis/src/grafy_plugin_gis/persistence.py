@@ -47,11 +47,13 @@ from grafy_core.runtime.resolvers import (
 
 from grafy_plugin_gis.artifacts import GEO_FEATURE_COLLECTION, GEO_RASTER_SCAN
 from grafy_plugin_gis.gdal import GdalCli, GdalError
-from grafy_plugin_gis.models import (
+from grafy_core.spatial_contracts import (
     GeoFeatureCollection,
-    GeoRasterScan,
     RasterProjectionMetadata,
     VectorProjectionMetadata,
+)
+from grafy_plugin_gis.models import (
+    GeoRasterScan,
 )
 
 

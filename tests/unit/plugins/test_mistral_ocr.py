@@ -28,7 +28,7 @@ from grafy_core.domain.saved_graphs import (
 from grafy_plugin_image import IMAGES
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.catalog import BUILTIN_FAMILIES, build_builtin_registry
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from grafy_core.artifact_contracts import (
     RASTER_IMAGE,
@@ -333,6 +333,13 @@ def test_node_declares_ocr_ports_secret_and_egress() -> None:
     assert registration.http_egress.fixed_destinations == ("https://api.mistral.ai",)
     assert registration.http_egress.configured_inputs == ()
     assert not registration.http_egress.dynamic_destinations
+
+
+def test_config_rejects_the_retired_provider_fields() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        MistralOcrConfig.model_validate(
+            {"base_url": "https://api.mistral.ai/v1", "model": "mistral-ocr-latest"}
+        )
 
 
 def test_plugin_registers_dependency_writers(tmp_path: Path) -> None:

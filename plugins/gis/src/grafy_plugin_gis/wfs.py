@@ -23,7 +23,7 @@ from grafy_core.egress import (
     validated_public_destination,
 )
 
-from grafy_plugin_gis.models import (
+from grafy_core.spatial_contracts import (
     Bounds,
     GeoFeatureCollection,
 )

@@ -32,7 +32,6 @@ from grafy_core.domain.saved_graphs import (
     SavedGraphNode,
     SavedGraphNodeLayout,
     SavedGraphOrigin,
-    SavedGraphPluginReleasePin,
 )
 
 
@@ -58,7 +57,6 @@ class GraphCommandKind(StrEnum):
     MOVE_NODES = "move_nodes"
     UPDATE_NODE_CONFIGURATION = "update_node_configuration"
     UPDATE_NODE_LAYOUT = "update_node_layout"
-    UPDATE_NODE_PLUGIN_RELEASE = "update_node_plugin_release"
     SET_NODE_INPUT_PLUGS = "set_node_input_plugs"
     # Schema Builder field edits must use this one accept_command transaction
     # (config fields + owned input plugs). Do not split into separate primitive
@@ -152,15 +150,6 @@ class UpdateNodeLayoutCommand(CollaborationValue):
     node_id: str
     layout: SavedGraphNodeLayout | None
     expected_layout: SavedGraphNodeLayout | None = None
-
-
-class UpdateNodePluginReleaseCommand(CollaborationValue):
-    kind: Literal[GraphCommandKind.UPDATE_NODE_PLUGIN_RELEASE] = (
-        GraphCommandKind.UPDATE_NODE_PLUGIN_RELEASE
-    )
-    node_id: str
-    plugin_release_pin: SavedGraphPluginReleasePin
-    expected_plugin_release_pin: SavedGraphPluginReleasePin
 
 
 class SetNodeInputPlugsCommand(CollaborationValue):
@@ -1040,7 +1029,6 @@ __all__ = [
     "UpdateNodeConfigurationAndInputPlugsCommand",
     "UpdateNodeConfigurationCommand",
     "UpdateNodeLayoutCommand",
-    "UpdateNodePluginReleaseCommand",
     "UpdateOriginCommand",
     "apply_graph_command",
     "canonical_command_payload",

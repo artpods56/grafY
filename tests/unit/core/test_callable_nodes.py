@@ -10,9 +10,9 @@ from grafy_core.artifact_contracts import INTEGER_VALUE, TEXT_VALUE
 from grafy_core.artifacts import (
     ArtifactTypeKey,
     ArtifactTypeSpec,
-    InMemoryUnitOfWork,
     NodeOutput,
 )
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.domain.plugin_releases import PluginCatalogManifest
 from grafy_core.nodes import InPort, NodeExecutionContext, OutPort, PortShape

@@ -10,6 +10,7 @@ from uuid import UUID
 
 import httpx
 import pytest
+from pydantic import ValidationError
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -64,16 +65,15 @@ WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")
 TEST_USER_ID = UUID(int=1)
 
 
-def test_json_collections_manifest_accepts_legacy_storage_format() -> None:
-    manifest = JsonCollectionsManifest.model_validate(
-        {
-            "format": "notarius.json-collections.chunked.v1",
-            "total_items": 0,
-            "collections": [],
-        }
-    )
-
-    assert manifest.format == "notarius.json-collections.chunked.v1"
+def test_json_collections_manifest_rejects_the_old_storage_format() -> None:
+    with pytest.raises(ValidationError, match="format"):
+        JsonCollectionsManifest.model_validate(
+            {
+                "format": "notarius.json-collections.chunked.v1",
+                "total_items": 0,
+                "collections": [],
+            }
+        )
 
 
 class _AllowAllIdentityService:

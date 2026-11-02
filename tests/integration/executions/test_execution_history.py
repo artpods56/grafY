@@ -9,7 +9,12 @@ from sqlalchemy import create_engine, text
 
 from grafy_core.application.graph_creation import stage_checkpointed_graph
 from grafy_core.domain.execution_history import GraphExecution
-from grafy_core.domain.saved_graphs import SavedGraph, SavedGraphDocument
+from grafy_core.domain.saved_graphs import (
+    GraphPoint,
+    SavedGraph,
+    SavedGraphDocument,
+    SavedGraphNode,
+)
 from grafy_persistence.unit_of_work import (
     SqlAlchemyUnitOfWork,
 )
@@ -26,8 +31,6 @@ from tests.support.system_plugins import (
 from tests.support.clients import GrafyApi
 from grafy_api.graph_contracts import (
     CreateSavedGraphRequest,
-    GraphPointModel,
-    SavedGraphNodeModel,
     SavedGraphResponse,
     UpdateSavedGraphRequest,
 )
@@ -44,47 +47,33 @@ from tests.testkit import (
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")
 
 
-def _saved_text_graph_nodes(text: str) -> list[SavedGraphNodeModel]:
+def _saved_text_graph_nodes(text: str) -> list[SavedGraphNode]:
     return [
-        SavedGraphNodeModel(
+        SavedGraphNode(
             kind="builtin",
             id="text",
             operator_id="text.input",
             operator_version=1,
             config={"text": text},
-            position=GraphPointModel(x=0, y=0),
+            position=GraphPoint(x=0, y=0),
         )
     ]
 
 
 def _create_text_graph_request(name: str, text: str) -> CreateSavedGraphRequest:
-    node = _saved_text_graph_nodes(text)[0].model_dump(mode="json")
-    # Reading a pre-ADR-0017 node must not need the release it pinned.
-    node["plugin_release_pin"] = {
-        "scope": "system",
-        "slug": "builtin.text",
-        "revision": 1,
-    }
     return CreateSavedGraphRequest(
         name=name,
-        document=SavedGraphDocument.model_validate({"nodes": [node]}),
+        document=SavedGraphDocument(nodes=tuple(_saved_text_graph_nodes(text))),
     )
 
 
 def _update_text_graph_request(
     name: str, text: str, *, expected_revision: int
 ) -> UpdateSavedGraphRequest:
-    node = _saved_text_graph_nodes(text)[0].model_dump(mode="json")
-    # Reading a pre-ADR-0017 node must not need the release it pinned.
-    node["plugin_release_pin"] = {
-        "scope": "system",
-        "slug": "builtin.text",
-        "revision": 1,
-    }
     return UpdateSavedGraphRequest(
         name=name,
         expected_revision=expected_revision,
-        document=SavedGraphDocument.model_validate({"nodes": [node]}),
+        document=SavedGraphDocument(nodes=tuple(_saved_text_graph_nodes(text))),
     )
 
 
