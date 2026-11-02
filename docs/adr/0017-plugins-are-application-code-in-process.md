@@ -63,11 +63,12 @@ code that has since changed is not reachable.
 
 ### There is no sandbox and no release lifecycle
 
-Removed: the Docker plugin runtime with its admission, artifact-transport and network
-policy modules, the egress broker, OCI publication and the publisher registry flow,
-releases, installations, selections, revocations, the four plugin tables, the runtime
-capability manifest, the Platform Access Token that authenticated publication, and the
-vendored SDK wheels with `just sdk-wheel`.
+The Docker plugin runtime, its admission, artifact-transport and network policy modules,
+the egress broker, OCI publication, the publisher registry flow, and the vendored SDK wheel
+and its `just sdk-wheel` recipe are removed. Release, installation, selection and
+revocation records and services, the four plugin tables, capability declarations, and
+Platform Access Tokens remain for now. They do not register executable families. Removing
+the remaining lifecycle code and data is a separate migration.
 
 ### The Python node is removed
 
@@ -130,9 +131,9 @@ metadata dict, so it stays as historical fact. Materialized-output signatures an
 invocation-cache keys change shape, which makes outputs produced by sandboxed runs read as
 stale; they are recomputed on first execution after the deploy.
 
-The four plugin tables and `platform_access_tokens` are dropped by one migration whose
-downgrade recreates them empty. Rolling back the application after that migration is
-forward-only, because the code it would roll back to needs releases that no longer exist.
+The intended migration will drop the four plugin tables and `platform_access_tokens`; its
+downgrade must recreate them empty. That migration has not been made yet. Once it runs,
+rolling back the application cannot restore the deleted releases.
 
 ## Consequences
 
