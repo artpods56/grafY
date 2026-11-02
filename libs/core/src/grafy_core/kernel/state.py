@@ -29,4 +29,21 @@ async def derive_instance_state(
     """fresh if the fingerprint has a result; else running/queued if a
     computation for it is in flight; else failed if the instance's last
     failure is at this fingerprint; else stale."""
-    raise NotImplementedError
+    if await store.get_result(fingerprint) is not None:
+        return InstanceState.FRESH
+
+    flight = in_flight.in_flight(fingerprint)
+    if flight == "running":
+        return InstanceState.RUNNING
+    if flight == "queued":
+        return InstanceState.QUEUED
+
+    pointer = await store.get_pointer(instance)
+    if (
+        pointer is not None
+        and pointer.last_failure is not None
+        and pointer.last_failure.fingerprint == fingerprint
+    ):
+        return InstanceState.FAILED
+
+    return InstanceState.STALE
