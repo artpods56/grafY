@@ -1356,36 +1356,6 @@ export interface components {
             /** Folder Id */
             readonly folder_id: string | null;
         };
-        /**
-         * CanonicalCollaborativeHeadResponse
-         * @description Collaboration metadata paired with the canonical saved graph document.
-         */
-        readonly CanonicalCollaborativeHeadResponse: {
-            /** Checkpoint Revision */
-            readonly checkpoint_revision: number;
-            /** Checkpoint Sequence */
-            readonly checkpoint_sequence: number;
-            /** Collaboration Sequence */
-            readonly collaboration_sequence: number;
-            readonly document: components["schemas"]["SavedGraphDocument"];
-            /**
-             * Graph Id
-             * Format: uuid
-             */
-            readonly graph_id: string;
-            /** Name */
-            readonly name: string;
-            /**
-             * Room Epoch
-             * Format: uuid
-             */
-            readonly room_epoch: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            readonly updated_at: string;
-        };
         /** CheckpointGraphRequest */
         readonly CheckpointGraphRequest: {
             /**
@@ -1415,7 +1385,10 @@ export interface components {
             /** Variable */
             readonly variable: string;
         };
-        /** CollaborativeHeadResponse */
+        /**
+         * CollaborativeHeadResponse
+         * @description Collaboration metadata paired with the canonical saved graph document.
+         */
         readonly CollaborativeHeadResponse: {
             /** Checkpoint Revision */
             readonly checkpoint_revision: number;
@@ -1423,8 +1396,7 @@ export interface components {
             readonly checkpoint_sequence: number;
             /** Collaboration Sequence */
             readonly collaboration_sequence: number;
-            /** Edges */
-            readonly edges: readonly components["schemas"]["SavedGraphEdgeModel"][];
+            readonly document: components["schemas"]["SavedGraphDocument"];
             /**
              * Graph Id
              * Format: uuid
@@ -1432,11 +1404,6 @@ export interface components {
             readonly graph_id: string;
             /** Name */
             readonly name: string;
-            /** Nodes */
-            readonly nodes: readonly components["schemas"]["SavedGraphNodeModel"][];
-            /** Origins */
-            readonly origins?: readonly components["schemas"]["SavedGraphOriginModel"][];
-            readonly presentation?: components["schemas"]["GraphPresentationDocumentModel"];
             /**
              * Room Epoch
              * Format: uuid
@@ -2096,13 +2063,6 @@ export interface components {
             /** Y */
             readonly y: number;
         };
-        /** GraphPointModel */
-        readonly GraphPointModel: {
-            /** X */
-            readonly x: number;
-            /** Y */
-            readonly y: number;
-        };
         /**
          * GraphPresentationAnnotation
          * @description Non-executable canvas decoration used to document a graph (Miro-like).
@@ -2122,28 +2082,6 @@ export interface components {
             readonly kind: "text" | "rectangle" | "ellipse";
             readonly layout: components["schemas"]["SavedGraphAnnotationLayout"];
             readonly position: components["schemas"]["GraphPoint"];
-            /**
-             * Text
-             * @default
-             */
-            readonly text: string;
-        };
-        /** GraphPresentationAnnotationModel */
-        readonly GraphPresentationAnnotationModel: {
-            /**
-             * Color
-             * @default #475569
-             */
-            readonly color: string;
-            /** Id */
-            readonly id: string;
-            /**
-             * Kind
-             * @enum {string}
-             */
-            readonly kind: "text" | "rectangle" | "ellipse";
-            readonly layout: components["schemas"]["SavedGraphAnnotationLayoutModel"];
-            readonly position: components["schemas"]["GraphPointModel"];
             /**
              * Text
              * @default
@@ -2176,32 +2114,6 @@ export interface components {
             /** Target Field */
             readonly target_field: string;
         };
-        /** GraphPresentationBindingMappingModel */
-        readonly GraphPresentationBindingMappingModel: {
-            /** Source Field */
-            readonly source_field: string;
-            /** Target Field */
-            readonly target_field: string;
-        };
-        /** GraphPresentationBindingModel */
-        readonly GraphPresentationBindingModel: {
-            /** Effects */
-            readonly effects: readonly ("filter" | "highlight" | "focus")[];
-            /**
-             * Empty Selection
-             * @default show_all
-             * @constant
-             */
-            readonly empty_selection: "show_all";
-            /** Id */
-            readonly id: string;
-            /** Mappings */
-            readonly mappings: readonly components["schemas"]["GraphPresentationBindingMappingModel"][];
-            /** Source Viewer Id */
-            readonly source_viewer_id: string;
-            /** Target Viewer Id */
-            readonly target_viewer_id: string;
-        };
         /** GraphPresentationDocument */
         readonly GraphPresentationDocument: {
             /**
@@ -2225,36 +2137,12 @@ export interface components {
              */
             readonly viewers: readonly components["schemas"]["GraphPresentationViewer"][];
         };
-        /** GraphPresentationDocumentModel */
-        readonly GraphPresentationDocumentModel: {
-            /** Annotations */
-            readonly annotations?: readonly components["schemas"]["GraphPresentationAnnotationModel"][];
-            /** Bindings */
-            readonly bindings?: readonly components["schemas"]["GraphPresentationBindingModel"][];
-            /** Links */
-            readonly links?: readonly components["schemas"]["GraphPresentationLinkModel"][];
-            /** Viewers */
-            readonly viewers?: readonly components["schemas"]["GraphPresentationViewerModel"][];
-        };
         /** GraphPresentationLink */
         readonly GraphPresentationLink: {
             /** Id */
             readonly id: string;
             readonly projection?: components["schemas"]["SavedGraphProjection"] | null;
             readonly route_offset?: components["schemas"]["GraphPoint"] | null;
-            /** Source Node Id */
-            readonly source_node_id: string;
-            /** Source Port Name */
-            readonly source_port_name: string;
-            /** Target Viewer Id */
-            readonly target_viewer_id: string;
-        };
-        /** GraphPresentationLinkModel */
-        readonly GraphPresentationLinkModel: {
-            /** Id */
-            readonly id: string;
-            readonly projection?: components["schemas"]["SavedGraphProjectionModel"] | null;
-            readonly route_offset?: components["schemas"]["GraphPointModel"] | null;
             /** Source Node Id */
             readonly source_node_id: string;
             /** Source Port Name */
@@ -2272,17 +2160,6 @@ export interface components {
             /** Mode */
             readonly mode?: string | null;
             readonly position: components["schemas"]["GraphPoint"];
-        };
-        /** GraphPresentationViewerModel */
-        readonly GraphPresentationViewerModel: {
-            /** Artifact Ref */
-            readonly artifact_ref?: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"] | null;
-            /** Id */
-            readonly id: string;
-            readonly layout?: components["schemas"]["SavedGraphNodeLayoutModel"] | null;
-            /** Mode */
-            readonly mode?: string | null;
-            readonly position: components["schemas"]["GraphPointModel"];
         };
         /** HTTPValidationError */
         readonly HTTPValidationError: {
@@ -3019,7 +2896,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            readonly kind: "builtin" | "module";
+            readonly kind: "builtin" | "module" | "call";
             /** Operator Id */
             readonly operator_id: string;
             /** Operator Version */
@@ -3113,13 +2990,6 @@ export interface components {
             /** Width */
             readonly width: number;
         };
-        /** SavedGraphAnnotationLayoutModel */
-        readonly SavedGraphAnnotationLayoutModel: {
-            /** Height */
-            readonly height: number;
-            /** Width */
-            readonly width: number;
-        };
         /** SavedGraphArtifactTypeBinding */
         readonly SavedGraphArtifactTypeBinding: {
             readonly artifact_type: components["schemas"]["ArtifactTypeKey"];
@@ -3128,13 +2998,6 @@ export interface components {
         };
         /** SavedGraphConversion */
         readonly SavedGraphConversion: {
-            /** Id */
-            readonly id: string;
-            /** Version */
-            readonly version: number;
-        };
-        /** SavedGraphConversionModel */
-        readonly SavedGraphConversionModel: {
             /** Id */
             readonly id: string;
             /** Version */
@@ -3198,36 +3061,6 @@ export interface components {
             /** To Port */
             readonly to_port: string;
         };
-        /** SavedGraphEdgeModel */
-        readonly SavedGraphEdgeModel: {
-            /**
-             * Collection Mode
-             * @default direct
-             * @enum {string}
-             */
-            readonly collection_mode: "direct" | "map";
-            /** Conversion Path */
-            readonly conversion_path?: readonly components["schemas"]["SavedGraphConversionModel"][];
-            /**
-             * Enabled
-             * @default true
-             */
-            readonly enabled: boolean;
-            /** From Node */
-            readonly from_node: string;
-            /** From Port */
-            readonly from_port: string;
-            /** Id */
-            readonly id: string;
-            readonly projection?: components["schemas"]["SavedGraphProjectionModel"] | null;
-            readonly route_offset?: components["schemas"]["GraphPointModel"] | null;
-            /** To Node */
-            readonly to_node: string;
-            /** To Plug */
-            readonly to_plug?: string | null;
-            /** To Port */
-            readonly to_port: string;
-        };
         /** SavedGraphExecutionRequest */
         readonly SavedGraphExecutionRequest: {
             /** Expected Revision */
@@ -3235,13 +3068,6 @@ export interface components {
         };
         /** SavedGraphInputPlug */
         readonly SavedGraphInputPlug: {
-            /** Id */
-            readonly id: string;
-            /** Port */
-            readonly port: string;
-        };
-        /** SavedGraphInputPlugModel */
-        readonly SavedGraphInputPlugModel: {
             /** Id */
             readonly id: string;
             /** Port */
@@ -3274,7 +3100,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            readonly kind: "builtin" | "module";
+            readonly kind: "builtin" | "module" | "call";
             readonly layout?: components["schemas"]["SavedGraphNodeLayout"] | null;
             /** Operator Id */
             readonly operator_id: string;
@@ -3293,39 +3119,6 @@ export interface components {
             readonly body_height?: number | null;
             /** Width */
             readonly width?: number | null;
-        };
-        /** SavedGraphNodeLayoutModel */
-        readonly SavedGraphNodeLayoutModel: {
-            /** Appendix Height */
-            readonly appendix_height?: number | null;
-            /** Body Height */
-            readonly body_height?: number | null;
-            /** Width */
-            readonly width?: number | null;
-        };
-        /** SavedGraphNodeModel */
-        readonly SavedGraphNodeModel: {
-            /** Artifact Type Bindings */
-            readonly artifact_type_bindings?: readonly components["schemas"]["ArtifactTypeBindingModel"][];
-            /** Config */
-            readonly config?: {
-                readonly [key: string]: unknown;
-            };
-            /** Id */
-            readonly id: string;
-            /** Input Plugs */
-            readonly input_plugs?: readonly components["schemas"]["SavedGraphInputPlugModel"][];
-            /**
-             * Kind
-             * @enum {string}
-             */
-            readonly kind: "builtin" | "module";
-            readonly layout?: components["schemas"]["SavedGraphNodeLayoutModel"] | null;
-            /** Operator Id */
-            readonly operator_id: string;
-            /** Operator Version */
-            readonly operator_version: number;
-            readonly position: components["schemas"]["GraphPointModel"];
         };
         /**
          * SavedGraphOrigin
@@ -3354,34 +3147,8 @@ export interface components {
             /** Value */
             readonly value: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"];
         };
-        /** SavedGraphOriginModel */
-        readonly SavedGraphOriginModel: {
-            /**
-             * Collection Mode
-             * @default direct
-             * @enum {string}
-             */
-            readonly collection_mode: "direct" | "map";
-            /** Conversion Path */
-            readonly conversion_path?: readonly components["schemas"]["SavedGraphConversionModel"][];
-            /** Id */
-            readonly id: string;
-            /** To Node */
-            readonly to_node: string;
-            /** To Plug */
-            readonly to_plug?: string | null;
-            /** To Port */
-            readonly to_port: string;
-            /** Value */
-            readonly value: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"];
-        };
         /** SavedGraphProjection */
         readonly SavedGraphProjection: {
-            /** Path */
-            readonly path: readonly string[];
-        };
-        /** SavedGraphProjectionModel */
-        readonly SavedGraphProjectionModel: {
             /** Path */
             readonly path: readonly string[];
         };
@@ -5783,7 +5550,7 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": components["schemas"]["CanonicalCollaborativeHeadResponse"];
+                    readonly "application/json": components["schemas"]["CollaborativeHeadResponse"];
                 };
             };
             /** @description Validation Error */
