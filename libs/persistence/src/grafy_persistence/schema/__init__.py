@@ -121,41 +121,4 @@ from .library import (
 from .library import (
     modules as modules,
 )
-from .library import (
-    templates as templates,
-)
-from .plugins import (
-    PluginCapabilityManifestType as PluginCapabilityManifestType,
-)
-from .plugins import (
-    PluginCatalogManifestType as PluginCatalogManifestType,
-)
-from .plugins import (
-    PluginExecutionPolicyType as PluginExecutionPolicyType,
-)
-from .plugins import (
-    PluginFamilyLifecycleType as PluginFamilyLifecycleType,
-)
-from .plugins import (
-    PluginReleaseRevocationReasonType as PluginReleaseRevocationReasonType,
-)
-from .plugins import (
-    PluginReleaseScopeType as PluginReleaseScopeType,
-)
-from .plugins import (
-    PluginRuntimeArtifactType as PluginRuntimeArtifactType,
-)
-from .plugins import (
-    plugin_installations as plugin_installations,
-)
-from .plugins import (
-    plugin_release_revocations as plugin_release_revocations,
-)
-from .plugins import (
-    plugin_release_selections as plugin_release_selections,
-)
-from .plugins import (
-    plugin_releases as plugin_releases,
-)
-
 from .execution import transient_executions as transient_executions

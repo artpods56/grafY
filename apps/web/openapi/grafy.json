@@ -3601,11 +3601,9 @@
         "type": "object"
       },
       "ModulePublicationState": {
-        "description": "Publication state of a stored Module.\n\nOnly `published` is reachable now. `deprecated` and `withdrawn` remain so rows\nwritten before the lifecycle was cut still load, and stay hidden from browse.",
+        "description": "Publication state of a stored Module.",
         "enum": [
-          "published",
-          "deprecated",
-          "withdrawn"
+          "published"
         ],
         "title": "ModulePublicationState",
         "type": "string"

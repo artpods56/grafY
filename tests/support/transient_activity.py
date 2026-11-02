@@ -1,8 +1,4 @@
-"""A database holding one legacy saved graph, for transient-activity tests.
-
-The graph document and one stored artifact deliberately carry retired fields: they
-are rows a build after ADR 0017 still has to read.
-"""
+"""A database holding one saved graph, for transient-activity tests."""
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -21,7 +17,6 @@ from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000001201")
 GRAPH_ID = UUID("00000000-0000-0000-0000-000000001202")
 EXECUTION_ID = UUID("00000000-0000-0000-0000-000000001203")
-TEMPLATE_ID = UUID("00000000-0000-0000-0000-000000001204")
 ROOM_EPOCH = UUID("00000000-0000-0000-0000-000000001205")
 WORKFLOW_RUN_ID = UUID("00000000-0000-0000-0000-000000001206")
 ARTIFACT_ID = UUID("00000000-0000-0000-0000-000000001208")
@@ -45,10 +40,10 @@ def _graph_document() -> SavedGraphDocument:
                 },
                 {
                     "kind": "builtin",
-                    "id": "unknown",
-                    "operator_id": "retired.missing",
-                    "operator_version": 7,
-                    "config": {"opaque": [1, {"x": True}]},
+                    "id": "second",
+                    "operator_id": "text.concat",
+                    "operator_version": 1,
+                    "config": {"separator": ""},
                     "position": {"x": 56, "y": 78},
                 },
                 {
@@ -148,20 +143,6 @@ async def activity_database(
             )
         )
         await connection.execute(
-            schema.templates.insert().values(
-                id=TEMPLATE_ID,
-                workspace_id=WORKSPACE_ID,
-                source_graph_id=GRAPH_ID,
-                source_revision=7,
-                source_graph_name="Activity graph",
-                snapshot_document=document,
-                name="Legacy template",
-                state="active",
-                created_at=NOW,
-                updated_at=NOW,
-            )
-        )
-        await connection.execute(
             schema.graph_executions.insert().values(
                 workspace_id=WORKSPACE_ID,
                 execution_id=EXECUTION_ID,
@@ -182,14 +163,8 @@ async def activity_database(
                 schema_version=1,
                 content_type="text/plain",
                 storage_backend="inline",
-                inline_payload={"text": "legacy"},
-                metadata={
-                    "plugin_release": {
-                        "scope": "system",
-                        "slug": "builtin.text",
-                        "revision": 0,
-                    }
-                },
+                inline_payload={"text": "activity"},
+                metadata={"source": "test"},
             )
         )
         await connection.execute(

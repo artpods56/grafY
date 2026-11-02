@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
 from grafy_core.domain.errors import SavedGraphRevisionConflictError
-from grafy_core.domain.plugin_releases import PluginReleaseScope
+from grafy_core.domain.plugin_identity import PluginReleaseScope
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     GraphPresentationAnnotation,

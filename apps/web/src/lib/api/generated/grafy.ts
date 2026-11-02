@@ -2434,12 +2434,9 @@ export interface components {
         /**
          * ModulePublicationState
          * @description Publication state of a stored Module.
-         *
-         *     Only `published` is reachable now. `deprecated` and `withdrawn` remain so rows
-         *     written before the lifecycle was cut still load, and stay hidden from browse.
          * @enum {string}
          */
-        readonly ModulePublicationState: "published" | "deprecated" | "withdrawn";
+        readonly ModulePublicationState: "published";
         /** ModuleReleaseResponse */
         readonly ModuleReleaseResponse: {
             /**
