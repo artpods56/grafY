@@ -325,3 +325,44 @@ def test_active_graph_execution_has_no_release_or_sandbox_dependency() -> None:
             )
             for module in imports
         ), f"{owner} must execute application families through the static registry"
+
+
+KERNEL_FORBIDDEN_IMPORTS = (
+    "grafy_api",
+    "grafy_client",
+    "grafy_mcp",
+    "grafy_persistence",
+    "grafy_storage",
+    "grafy_workbench",
+    "grafy_core.application",
+    "grafy_core.runtime",
+    "fastapi",
+    "starlette",
+    "sqlalchemy",
+    "httpx",
+    *SYSTEM_PLUGIN_IMPORTS,
+)
+
+
+def test_project_kernel_imports_no_adapter_http_or_family_code() -> None:
+    """The Project kernel is pure core (ADR 0020, issue #194).
+
+    Fingerprints, the result store port and the scheduler must be testable with no
+    HTTP, persistence adapter, storage or node family around them. Hosts depend on
+    the kernel; the kernel never reaches back out to a host.
+    """
+
+    kernel_root = REPO_ROOT / "libs/core/src/grafy_core/kernel"
+    assert any(kernel_root.glob("*.py"))
+    offenders: list[str] = []
+
+    for path in kernel_root.rglob("*.py"):
+        package = ".".join(path.parent.relative_to(kernel_root.parents[1]).parts)
+        for module in _imported_modules(path.read_text(), package):
+            if any(
+                module == forbidden or module.startswith(f"{forbidden}.")
+                for forbidden in KERNEL_FORBIDDEN_IMPORTS
+            ):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+
+    assert offenders == []
