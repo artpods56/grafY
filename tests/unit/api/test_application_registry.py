@@ -1,4 +1,3 @@
-from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -49,53 +48,84 @@ def test_static_registry_supplies_the_catalog(
     }
 
 
-def test_legacy_checkpoint_and_recovered_request_normalize_without_mutating_input() -> (
-    None
-):
-    checkpoint = {
-        "schema_version": 7,
-        "nodes": [
-            {
-                "id": "scan",
-                "kind": "plugin",
-                "operator_id": "gis.raster_scan.import",
-                "operator_version": 1,
-                "position": {"x": 10, "y": 20},
-                "config": {"source_name": "Historical scan"},
-                "plugin_release_pin": {
-                    "scope": "workspace",
-                    "slug": "external.gis",
-                    "revision": 99,
-                },
-            }
-        ],
+def _stored_node(**overrides: object) -> dict[str, object]:
+    node: dict[str, object] = {
+        "id": "scan",
+        "kind": "builtin",
+        "operator_id": "gis.raster_scan.import",
+        "operator_version": 1,
+        "config": {"source_name": "Scan"},
+        "position": {"x": 10, "y": 20},
     }
-    original = deepcopy(checkpoint)
-    document = SavedGraphDocument.model_validate(checkpoint)
-    assert checkpoint == original
-    assert document.schema_version == 7
-    assert document.nodes[0].kind == "builtin"
-    assert "plugin_release_pin" not in document.nodes[0].model_dump()
+    node.update(overrides)
+    return node
+
+
+@pytest.mark.parametrize(
+    "node",
+    [
+        _stored_node(kind="plugin"),
+        _stored_node(
+            plugin_release_pin={
+                "scope": "workspace",
+                "slug": "external.gis",
+                "revision": 99,
+            }
+        ),
+        _stored_node(
+            plugin_release={
+                "scope": "system",
+                "slug": "external.gis",
+                "revision": 99,
+            }
+        ),
+    ],
+)
+def test_stored_checkpoint_rejects_plugin_node_identity(
+    node: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        SavedGraphDocument.model_validate({"schema_version": 7, "nodes": [node]})
+
+
+def test_recovered_run_request_rejects_the_plugin_node_kind() -> None:
+    with pytest.raises(ValidationError, match="kind"):
+        RunRequest.model_validate(
+            {
+                "nodes": [
+                    {
+                        "id": "scan",
+                        "kind": "plugin",
+                        "operator_id": "gis.raster_scan.import",
+                        "operator_version": 1,
+                    }
+                ]
+            }
+        )
+
+
+def test_recovered_run_request_carries_no_plugin_identity() -> None:
     request = RunRequest.model_validate(
         {
             "nodes": [
                 {
                     "id": "scan",
-                    "kind": "plugin",
+                    "kind": "builtin",
                     "operator_id": "gis.raster_scan.import",
                     "operator_version": 1,
-                    "config": {"source_name": "Historical scan"},
                     "plugin_release": {
                         "scope": "system",
                         "slug": "external.gis",
-                        "revision": 999,
+                        "revision": 99,
                     },
                 }
             ]
         }
     )
-    assert request.nodes[0].kind == "builtin"
-    assert "plugin_release" not in request.nodes[0].model_dump()
+    node = request.model_dump()["nodes"][0]
+    assert node["kind"] == "builtin"
+    assert "plugin_release" not in node
+    assert "plugin_release_pin" not in node
 
 
 def test_stale_release_update_command_is_rejected() -> None:
@@ -211,15 +241,10 @@ async def test_registered_raster_import_persists_tiles_and_cache_uses_build_iden
             "nodes": [
                 {
                     "id": "scan",
-                    "kind": "plugin",
+                    "kind": "builtin",
                     "operator_id": "gis.raster_scan.import",
                     "operator_version": 1,
                     "config": {"source_name": "Scan"},
-                    "plugin_release": {
-                        "scope": "system",
-                        "slug": "external.gis",
-                        "revision": 88,
-                    },
                 }
             ],
             "origins": [

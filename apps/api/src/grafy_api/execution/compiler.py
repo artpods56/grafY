@@ -330,12 +330,6 @@ class GraphCompiler:
         NodeRegistration | None,
         ImplementationIdentity | None,
     ]:
-        if request.operator_id.startswith("python."):
-            raise GraphExecutionError(
-                f"Node {request.id!r} uses retired Python operator "
-                f"{request.operator_id}@{request.operator_version}. "
-                "Python execution is no longer available."
-            )
         if module_reference is not None or is_module_boundary:
             raise GraphExecutionError(
                 f"Node {request.id!r} ({request.operator_id}@"

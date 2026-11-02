@@ -18,7 +18,6 @@ from grafy_core.domain.saved_graphs import (
     SavedGraph,
     SavedGraphDocument,
     SavedGraphNode,
-    SavedGraphPluginReleasePin,
 )
 from grafy_core.domain.errors import SavedGraphRevisionConflictError
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
@@ -32,7 +31,6 @@ from grafy_core.domain.plugin_releases import (
     PluginCatalogManifest,
     PluginRelease,
     PluginReleaseNamespace,
-    PluginReleaseScope,
     PluginRuntimeArtifact,
     plugin_contract_digest,
     plugin_profile_digest,
@@ -95,11 +93,6 @@ class EmptyOutput(NodeOutput):
 
 SECRET_TEST_PLUGIN = Plugin(slug="test.node-secrets", title="Node secrets test")
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")
-SAVED_PLUGIN_RELEASE_PIN = SavedGraphPluginReleasePin(
-    scope=PluginReleaseScope.SYSTEM,
-    slug=SECRET_TEST_PLUGIN.slug,
-    revision=1,
-)
 
 
 @SECRET_TEST_PLUGIN.node(
@@ -250,12 +243,11 @@ def _secret_document(
     model: str = "default-model",
     temperature: float = 0.0,
     position: GraphPoint | None = None,
-    plugin_release_pin: SavedGraphPluginReleasePin | None = None,
 ) -> SavedGraphDocument:
     return SavedGraphDocument(
         nodes=(
             SavedGraphNode(
-                kind="plugin" if plugin_release_pin is not None else "builtin",
+                kind="builtin",
                 id="llm",
                 operator_id="test.secret-node",
                 operator_version=1,
@@ -265,7 +257,6 @@ def _secret_document(
                     "temperature": temperature,
                 },
                 position=position or GraphPoint(x=0, y=0),
-                plugin_release_pin=plugin_release_pin,
             ),
         )
     )
@@ -564,47 +555,6 @@ async def test_unavailable_operator_keeps_secret_dormant_until_supported_again(
 
     assert restored_status.secrets[0].configured is True
     assert restored.get_secret_value() == "dormant-provider-key"
-
-
-async def test_legacy_pinned_operator_uses_registry_for_secret_binding(
-    node_secret_setup: tuple[
-        Database,
-        NodeSecretService,
-        SavedGraphService,
-        PluginRegistry,
-    ],
-) -> None:
-    database, _, _, registry = node_secret_setup
-    graph = await _saved_secret_graph(
-        database,
-        name="Legacy extraction",
-        document=_secret_document(plugin_release_pin=SAVED_PLUGIN_RELEASE_PIN),
-    )
-    service = NodeSecretService(
-        unit_of_work_factory=lambda: SqlAlchemyUnitOfWork(database.sessions),
-        plugin_registry=registry,
-        encryption_key=_encryption_key(),
-    )
-
-    configured = await service.configure(
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph.id,
-        node_id="llm",
-        name="api_key",
-        value=SecretStr("isolated-provider-key"),
-        expected_graph_revision=graph.revision,
-    )
-    resolved = await service.resolve_secret(
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph.id,
-        graph_revision=graph.revision,
-        node_id="llm",
-        name="api_key",
-        dependencies={"base_url": "https://llm.example/v1"},
-    )
-
-    assert configured.configured is True
-    assert resolved.get_secret_value() == "isolated-provider-key"
 
 
 async def test_secret_resolution_uses_the_pinned_saved_graph_revision(

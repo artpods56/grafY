@@ -17,14 +17,14 @@ from pydantic import (
 
 from grafy_core.artifacts import ArtifactExportFormat, JsonObject, ArtifactObject
 from grafy_core.spatial_contracts import (
-    GeoPropertyValueType as GeoPropertyValueType,
+    GeoPropertyValueType,
     GeoVectorStyle as StoredGeoVectorStyle,
     GeoRasterStyle as StoredGeoRasterStyle,
-    GeoBounds as GeoBounds,
-    GeoFeatureCollectionPayload as GeoFeatureCollectionPayload,
+    GeoBounds,
+    GeoFeatureCollectionPayload,
     GeoFeatureCollectionMetadata,
-    GeoVectorProjectionMetadata as GeoVectorProjectionMetadata,
-    GeoRasterProjectionMetadata as GeoRasterProjectionMetadata,
+    GeoVectorProjectionMetadata,
+    GeoRasterProjectionMetadata,
 )
 from grafy_core.table_contracts import TableColumn, TablePage, TableValueType
 

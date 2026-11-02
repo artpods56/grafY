@@ -1,5 +1,4 @@
-from collections.abc import Mapping
-from typing import Annotated, Final, Literal, cast
+from typing import Annotated, Final, Literal
 from uuid import UUID
 
 from pydantic import (
@@ -93,18 +92,6 @@ class RunNodeRequest(BaseModel):
             raise ValueError("Node artifact type binding variables must be unique")
         return self
 
-    @model_validator(mode="before")
-    @classmethod
-    def normalize_legacy_implementation(cls, value: object) -> object:
-        if not isinstance(value, Mapping):
-            return value
-        normalized = dict(cast(Mapping[object, object], value))
-        normalized.pop("plugin_release", None)
-        normalized.pop("plugin_release_pin", None)
-        if normalized.get("kind") == "plugin":
-            normalized["kind"] = "builtin"
-        return normalized
-
 
 class FieldProjectionRequest(BaseModel):
     path: list[str] = Field(min_length=1)
@@ -153,23 +140,6 @@ class RunEdgeRequest(BaseModel):
             ],
             collection_mode=edge.collection_mode,
         )
-
-    @model_validator(mode="before")
-    @classmethod
-    def normalize_singular_conversion(cls, value: object) -> object:
-        if not isinstance(value, Mapping):
-            return value
-        raw = cast(Mapping[object, object], value)
-        if "conversion" not in raw:
-            return dict(raw)
-        if "conversion_path" in raw:
-            raise ValueError(
-                "Run edge cannot declare both conversion and conversion_path"
-            )
-        normalized = dict(raw)
-        conversion = normalized.pop("conversion")
-        normalized["conversion_path"] = [] if conversion is None else [conversion]
-        return normalized
 
 
 class PinnedOutputRequest(BaseModel):

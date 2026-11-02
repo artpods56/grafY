@@ -53,7 +53,6 @@ from grafy_core.domain.saved_graphs import (
     SavedGraphNode,
     SavedGraphNodeLayout,
     SavedGraphOrigin,
-    SavedGraphPluginReleasePin,
 )
 
 
@@ -63,16 +62,14 @@ def _node(
     x: float = 0,
     y: float = 0,
     config: dict[str, object] | None = None,
-    plugin_release_pin: SavedGraphPluginReleasePin | None = None,
 ) -> SavedGraphNode:
     return SavedGraphNode(
-        kind="plugin" if plugin_release_pin is not None else "builtin",
+        kind="builtin",
         id=node_id,
         operator_id="example.operator",
         operator_version=1,
         position=GraphPoint(x=x, y=y),
         config=config or {},
-        plugin_release_pin=plugin_release_pin,
     )
 
 
@@ -683,7 +680,7 @@ def test_replace_and_move_annotations() -> None:
                 kind="rectangle",
                 position=GraphPoint(x=10, y=20),
                 layout=SavedGraphAnnotationLayout(width=120, height=80),
-                color="sky",
+                color="#0369A1",
             ),
             GraphPresentationAnnotation(
                 id="annotation-2",

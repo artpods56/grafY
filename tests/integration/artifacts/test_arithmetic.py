@@ -837,10 +837,12 @@ def test_conversion_path_errors_identify_the_exact_failing_step(
                     "from_port": "value",
                     "to_node": "target",
                     "to_port": "text",
-                    "conversion": {
-                        "id": "missing.integer_to_text",
-                        "version": 1,
-                    },
+                    "conversion_path": [
+                        {
+                            "id": "missing.integer_to_text",
+                            "version": 1,
+                        },
+                    ],
                 },
                 "requests undeclared conversion 'missing.integer_to_text'@1",
             ),
@@ -866,10 +868,12 @@ def test_conversion_path_errors_identify_the_exact_failing_step(
                     "from_port": "text",
                     "to_node": "target",
                     "to_port": "text",
-                    "conversion": {
-                        "id": "builtin.scalar.integer_to_text",
-                        "version": 1,
-                    },
+                    "conversion_path": [
+                        {
+                            "id": "builtin.scalar.integer_to_text",
+                            "version": 1,
+                        },
+                    ],
                 },
                 "expects scalar.integer@1, to scalar.text@1",
             ),
@@ -895,10 +899,12 @@ def test_conversion_path_errors_identify_the_exact_failing_step(
                     "from_port": "values",
                     "to_node": "target",
                     "to_port": "values",
-                    "conversion": {
-                        "id": "builtin.scalar.integer_to_text",
-                        "version": 1,
-                    },
+                    "conversion_path": [
+                        {
+                            "id": "builtin.scalar.integer_to_text",
+                            "version": 1,
+                        },
+                    ],
                 },
                 "as scalar.text@1, but target expects scalar.integer@1",
             ),
@@ -1838,40 +1844,13 @@ def test_edge_conversion_identity_is_narrow(
                 "from_port": "value",
                 "to_node": "target",
                 "to_port": "text",
-                "conversion": conversion,
+                "conversion_path": [conversion],
             }
         )
 
 
-def test_run_edge_normalizes_legacy_conversion_and_rejects_ambiguous_fields() -> None:
-    legacy = RunEdgeRequest.model_validate(
-        {
-            "from_node": "source",
-            "from_port": "value",
-            "to_node": "target",
-            "to_port": "text",
-            "conversion": {
-                "id": "builtin.scalar.integer_to_text",
-                "version": 1,
-            },
-        }
-    )
-
-    assert [step.model_dump() for step in legacy.conversion_path] == [
-        {"id": "builtin.scalar.integer_to_text", "version": 1}
-    ]
-    assert "conversion" not in legacy.model_dump(mode="json")
-
-    with pytest.raises(ValidationError, match="both conversion and conversion_path"):
-        RunEdgeRequest.model_validate(
-            {
-                **legacy.model_dump(mode="json"),
-                "conversion": {
-                    "id": "builtin.scalar.integer_to_text",
-                    "version": 1,
-                },
-            }
-        )
+def test_run_edge_has_no_singular_conversion_field() -> None:
+    assert "conversion" not in RunEdgeRequest.model_fields
 
 
 def test_run_edge_conversion_path_has_a_bounded_hop_count() -> None:

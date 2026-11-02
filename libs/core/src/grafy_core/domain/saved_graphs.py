@@ -20,7 +20,6 @@ from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeK
 from grafy_core.conversions import MAX_ARTIFACT_CONVERSION_HOPS
 from grafy_core.domain.errors import SavedGraphRevisionConflictError
 from grafy_core.domain.identity import WorkspaceKind
-from grafy_core.domain.plugin_identity import PluginReleaseScope
 
 GraphIdentifier = Annotated[
     str,
@@ -160,62 +159,6 @@ class SavedGraphArtifactTypeBinding(SavedGraphValue):
 SavedGraphNodeKind = Literal["builtin", "module"]
 
 
-class SavedGraphPluginReleasePin(SavedGraphValue):
-    """Exact scoped Plugin release identity pinned on one graph node.
-
-    The pin is independent from the operator identity: publishing revision
-    N+1 never moves a node pinned to revision N. Workspace membership for a
-    Workspace release comes from the owning graph.
-    """
-
-    scope: PluginReleaseScope
-    slug: GraphIdentifier
-    revision: int = Field(ge=1)
-
-    @field_validator("slug", mode="before")
-    @classmethod
-    def validate_slug(cls, value: object) -> object:
-        if not isinstance(value, str):
-            return value
-        if value.strip() == "":
-            raise ValueError("Saved graph Plugin release pin slug must not be empty")
-        if value != value.strip():
-            raise ValueError(
-                "Saved graph Plugin release pin slug must not have surrounding "
-                "whitespace"
-            )
-        if len(value) > 100:
-            raise ValueError(
-                "Saved graph Plugin release pin slug must be at most 100 characters"
-            )
-        return value.strip()
-
-
-class BuiltinNodeRef(SavedGraphValue):
-    kind: Literal["builtin"] = "builtin"
-    operator_id: GraphIdentifier
-    operator_version: int = Field(ge=1)
-
-
-class PluginNodeRef(SavedGraphValue):
-    kind: Literal["plugin"] = "plugin"
-    operator_id: GraphIdentifier
-    operator_version: int = Field(ge=1)
-    plugin_release_pin: SavedGraphPluginReleasePin
-
-
-class ModuleNodeRef(SavedGraphValue):
-    kind: Literal["module"] = "module"
-    operator_id: GraphIdentifier
-    operator_version: int = Field(ge=1)
-
-
-SavedGraphNodeRef = Annotated[
-    BuiltinNodeRef | ModuleNodeRef,
-    Field(discriminator="kind"),
-]
-
-
 class SavedGraphNode(SavedGraphValue):
     kind: SavedGraphNodeKind
     id: GraphIdentifier
@@ -226,17 +169,6 @@ class SavedGraphNode(SavedGraphValue):
     layout: SavedGraphNodeLayout | None = None
     input_plugs: tuple[SavedGraphInputPlug, ...] = ()
     artifact_type_bindings: tuple[SavedGraphArtifactTypeBinding, ...] = ()
-
-    @model_validator(mode="before")
-    @classmethod
-    def normalize_legacy_implementation(cls, value: object) -> object:
-        if not isinstance(value, Mapping):
-            return value
-        normalized = dict(cast(Mapping[object, object], value))
-        normalized.pop("plugin_release_pin", None)
-        if normalized.get("kind") == "plugin":
-            normalized["kind"] = "builtin"
-        return normalized
 
     @field_validator("config")
     @classmethod
@@ -287,23 +219,6 @@ class SavedGraphConversion(SavedGraphValue):
     version: int = Field(ge=1)
 
 
-def normalize_saved_graph_edge_conversion(value: object) -> object:
-    """Accept the legacy singular conversion without changing canonical output."""
-    if not isinstance(value, Mapping):
-        return value
-    raw = cast(Mapping[object, object], value)
-    if "conversion" not in raw:
-        return dict(raw)
-    if "conversion_path" in raw:
-        raise ValueError(
-            "Saved graph edge cannot declare both conversion and conversion_path"
-        )
-    migrated = dict(raw)
-    conversion = migrated.pop("conversion")
-    migrated["conversion_path"] = [] if conversion is None else [conversion]
-    return migrated
-
-
 class SavedGraphEdge(SavedGraphValue):
     id: GraphIdentifier
     enabled: bool = True
@@ -319,10 +234,6 @@ class SavedGraphEdge(SavedGraphValue):
         max_length=MAX_ARTIFACT_CONVERSION_HOPS,
     )
     route_offset: GraphPoint | None = None
-
-    migrate_singular_conversion = model_validator(mode="before")(
-        normalize_saved_graph_edge_conversion
-    )
 
 
 class SavedGraphOrigin(SavedGraphValue):
@@ -378,16 +289,6 @@ AnnotationColor = Annotated[
     StringConstraints(pattern=r"^#[0-9A-Fa-f]{6}$"),
 ]
 DEFAULT_ANNOTATION_COLOR = "#475569"
-_LEGACY_ANNOTATION_COLORS: Mapping[str, str] = MappingProxyType(
-    {
-        "slate": "#475569",
-        "amber": "#B45309",
-        "rose": "#BE123C",
-        "emerald": "#047857",
-        "sky": "#0369A1",
-        "violet": "#6D28D9",
-    }
-)
 
 
 class SavedGraphAnnotationLayout(SavedGraphValue):
@@ -416,13 +317,8 @@ class GraphPresentationAnnotation(SavedGraphValue):
 
     @field_validator("color", mode="before")
     @classmethod
-    def normalize_annotation_color(cls, value: object) -> object:
-        if not isinstance(value, str):
-            return value
-        legacy = _LEGACY_ANNOTATION_COLORS.get(value)
-        if legacy is not None:
-            return legacy
-        if len(value) == 7 and value.startswith("#"):
+    def canonicalize_annotation_color(cls, value: object) -> object:
+        if isinstance(value, str):
             return value.upper()
         return value
 
@@ -577,10 +473,6 @@ def empty_presentation() -> GraphPresentationDocument:
 
 SAVED_GRAPH_SCHEMA_VERSION = 7
 
-# Version 6 documents stay readable; moving to 7 only added the optional
-# `origins` collection, which an absent field reads as empty.
-ACCEPTED_SAVED_GRAPH_SCHEMA_VERSIONS = (6, SAVED_GRAPH_SCHEMA_VERSION)
-
 
 class SavedGraphDocument(SavedGraphValue):
     schema_version: Literal[7] = SAVED_GRAPH_SCHEMA_VERSION
@@ -588,27 +480,6 @@ class SavedGraphDocument(SavedGraphValue):
     edges: tuple[SavedGraphEdge, ...] = ()
     origins: tuple[SavedGraphOrigin, ...] = ()
     presentation: GraphPresentationDocument = Field(default_factory=empty_presentation)
-
-    @model_validator(mode="before")
-    @classmethod
-    def migrate_document_schema_version(cls, value: object) -> object:
-        if not isinstance(value, Mapping):
-            return value
-        raw = cast(Mapping[object, object], value)
-        version = raw.get("schema_version")
-        if version is None:
-            return value
-        if version not in ACCEPTED_SAVED_GRAPH_SCHEMA_VERSIONS:
-            raise ValueError(
-                "Saved graph document schema_version "
-                f"{version!r} is not supported; expected "
-                f"{SAVED_GRAPH_SCHEMA_VERSION}"
-            )
-        if version == SAVED_GRAPH_SCHEMA_VERSION:
-            return value
-        migrated = dict(raw)
-        migrated["schema_version"] = SAVED_GRAPH_SCHEMA_VERSION
-        return migrated
 
     @model_validator(mode="after")
     def validate_structure(self) -> Self:

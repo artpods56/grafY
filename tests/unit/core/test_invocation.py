@@ -14,13 +14,8 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
-from grafy_core.domain.implementation import (
-    BuiltinImplementationIdentity,
-    PluginImplementationIdentity,
-)
+from grafy_core.domain.implementation import BuiltinImplementationIdentity
 from grafy_core.domain.invocation_cache import InvocationCacheEntry
-from grafy_core.domain.plugin_identity import PluginReleaseScope
-from grafy_core.domain.saved_graphs import SavedGraphPluginReleasePin
 from grafy_core.nodes import (
     InPort,
     Node,
@@ -807,18 +802,6 @@ async def test_exact_cache_bypasses_inputs_without_content_hashes() -> None:
     assert cache.entries == {}
 
 
-def _plugin_identity(revision: int) -> PluginImplementationIdentity:
-    return PluginImplementationIdentity(
-        plugin_release_pin=SavedGraphPluginReleasePin(
-            scope=PluginReleaseScope.WORKSPACE,
-            slug="notes",
-            revision=revision,
-        ),
-        manifest_digest="d" * 64,
-        image_digest="e" * 64,
-    )
-
-
 def _builtin_identity(digest: str) -> BuiltinImplementationIdentity:
     return BuiltinImplementationIdentity(build_digest=digest)
 
@@ -853,24 +836,18 @@ def test_invocation_cache_key_scopes_to_implementation_identity() -> None:
         **kwargs,
         implementation=_builtin_identity("b" * 64),
     )
-    plugin_one = invocation_cache_key(
+    builtin_three = invocation_cache_key(
         **kwargs,
-        implementation=_plugin_identity(1),
-    )
-    plugin_two = invocation_cache_key(
-        **kwargs,
-        implementation=_plugin_identity(2),
+        implementation=_builtin_identity("c" * 64),
     )
 
     assert missing is not None
     assert builtin_one is not None
     assert builtin_two is not None
-    assert plugin_one is not None
-    assert plugin_two is not None
+    assert builtin_three is not None
     assert missing != builtin_one
     assert builtin_one != builtin_two
-    assert plugin_one != plugin_two
-    assert builtin_one != plugin_one
+    assert builtin_one != builtin_three
 
 
 def test_invocation_fingerprint_version_covers_implementation_identity() -> None:

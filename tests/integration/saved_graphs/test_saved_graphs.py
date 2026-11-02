@@ -8,68 +8,65 @@ from grafy_api.graph_contracts import (
     CheckpointGraphRequest,
     CopyExactHeadRequest,
     CreateSavedGraphRequest,
-    GraphPointModel,
-    SavedGraphConversionModel,
-    SavedGraphEdgeModel,
-    SavedGraphInputPlugModel,
-    SavedGraphNodeLayoutModel,
-    SavedGraphNodeModel,
-    SavedGraphProjectionModel,
     SubmitGraphCommandRequest,
     UpdateSavedGraphRequest,
 )
 from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
-from grafy_api.v1.models import ArtifactTypeBindingModel, ArtifactTypeKeyResponse
 from grafy_core.domain.collaboration import RemoveNodesCommand, RenameGraphCommand
 from grafy_core.domain.identity import ActorContext
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     GraphPresentationDocument,
     GraphPresentationViewer,
+    SavedGraphArtifactTypeBinding,
+    SavedGraphConversion,
     SavedGraphDocument,
+    SavedGraphEdge,
+    SavedGraphInputPlug,
+    SavedGraphNode,
+    SavedGraphNodeLayout,
+    SavedGraphProjection,
 )
 
 from tests.support.clients import GrafyApi
 from tests.support.identity import TEST_USER_ID, WORKSPACE_ID
 
 
-def _graph_nodes() -> list[SavedGraphNodeModel]:
+def _graph_nodes() -> list[SavedGraphNode]:
     return [
-        SavedGraphNodeModel(
+        SavedGraphNode(
             kind="builtin",
             id="source",
             operator_id="plugin.source",
             operator_version=1,
             config={"text": "draft"},
-            position=GraphPointModel(x=10.0, y=20.0),
-            layout=SavedGraphNodeLayoutModel(width=420.0, body_height=180.0),
+            position=GraphPoint(x=10.0, y=20.0),
+            layout=SavedGraphNodeLayout(width=420.0, body_height=180.0),
         ),
-        SavedGraphNodeModel(
+        SavedGraphNode(
             kind="builtin",
             id="target",
             operator_id="plugin.target",
             operator_version=1,
             config={},
-            position=GraphPointModel(x=300.0, y=20.0),
-            layout=SavedGraphNodeLayoutModel(appendix_height=320.0),
+            position=GraphPoint(x=300.0, y=20.0),
+            layout=SavedGraphNodeLayout(appendix_height=320.0),
             input_plugs=[
-                SavedGraphInputPlugModel(id="primary-value", port="value"),
+                SavedGraphInputPlug(id="primary-value", port="value"),
             ],
             artifact_type_bindings=[
-                ArtifactTypeBindingModel(
+                SavedGraphArtifactTypeBinding(
                     variable="T",
-                    artifact_type=ArtifactTypeKeyResponse(
-                        id="image.raster", schema_version=1
-                    ),
+                    artifact_type=ArtifactTypeKey(id="image.raster", schema_version=1),
                 )
             ],
         ),
     ]
 
 
-def _graph_edges() -> list[SavedGraphEdgeModel]:
+def _graph_edges() -> list[SavedGraphEdge]:
     return [
-        SavedGraphEdgeModel(
+        SavedGraphEdge(
             id="source-to-target",
             from_node="source",
             from_port="result",
@@ -77,38 +74,24 @@ def _graph_edges() -> list[SavedGraphEdgeModel]:
             to_port="value",
             to_plug="primary-value",
             collection_mode="map",
-            projection=SavedGraphProjectionModel(path=["payload", "text"]),
+            projection=SavedGraphProjection(path=["payload", "text"]),
             conversion_path=[
-                SavedGraphConversionModel(id="example.text.normalize", version=2),
+                SavedGraphConversion(id="example.text.normalize", version=2),
             ],
-            route_offset=GraphPointModel(x=5.0, y=-3.0),
+            route_offset=GraphPoint(x=5.0, y=-3.0),
         ),
     ]
 
 
 def _graph_document(
     *,
-    nodes: list[SavedGraphNodeModel] | None = None,
-    edges: list[SavedGraphEdgeModel] | None = None,
+    nodes: list[SavedGraphNode] | None = None,
+    edges: list[SavedGraphEdge] | None = None,
 ) -> SavedGraphDocument:
     effective_nodes = nodes if nodes is not None else _graph_nodes()
     effective_edges = edges if edges is not None else _graph_edges()
-    serialized_nodes: list[dict[str, object]] = []
-    for node in effective_nodes:
-        serialized = node.model_dump(mode="json")
-        # A document written before ADR 0017 carries the retired pin key; reading it
-        # must not require a release that no longer exists.
-        serialized["plugin_release_pin"] = {
-            "scope": "system",
-            "slug": "builtin.text",
-            "revision": 1,
-        }
-        serialized_nodes.append(serialized)
-    return SavedGraphDocument.model_validate(
-        {
-            "nodes": serialized_nodes,
-            "edges": [edge.model_dump(mode="json") for edge in effective_edges],
-        }
+    return SavedGraphDocument(
+        nodes=tuple(effective_nodes), edges=tuple(effective_edges)
     )
 
 
@@ -216,13 +199,6 @@ def test_create_accepts_the_canonical_saved_graph_document(
 ) -> None:
     payload = _canonical_raw_graph_payload("Canonical graph")
     document = cast(dict[str, object], payload["document"])
-    for node in cast(list[dict[str, object]], document["nodes"]):
-        node["plugin_release_pin"] = {
-            "scope": "system",
-            "slug": "builtin.text",
-            "revision": 1,
-        }
-    payload["document"] = document
 
     response = builtin_client.post(
         "/v1/workspaces/00000000-0000-0000-0000-000000000007/graphs",
@@ -232,10 +208,6 @@ def test_create_accepts_the_canonical_saved_graph_document(
     assert response.status_code == 201
     body = response.json()
     assert body["name"] == "Canonical graph"
-    # The stored document is the one that was sent, minus the retired pin key the
-    # read path normalises away.
-    for node in cast(list[dict[str, object]], document["nodes"]):
-        node.pop("plugin_release_pin", None)
     assert body["document"] == document
     assert "nodes" not in body
     assert "edges" not in body
@@ -456,7 +428,8 @@ def test_create_rejects_ambiguous_conversion_fields(
     )
 
     assert response.status_code == 422
-    assert "both conversion and conversion_path" in str(response.json())
+    assert "conversion" in str(response.json())
+    assert "Extra inputs are not permitted" in str(response.json())
 
 
 def test_create_rejects_duplicate_artifact_type_binding_variables(
@@ -495,10 +468,14 @@ def test_saved_graph_preserves_conversion_path_order(
         {"id": "example.text.normalize", "version": 2},
         {"id": "example.text.finalize", "version": 7},
     ]
-    edges[0].conversion_path = [
-        SavedGraphConversionModel(id="example.text.normalize", version=2),
-        SavedGraphConversionModel(id="example.text.finalize", version=7),
-    ]
+    edges[0] = edges[0].model_copy(
+        update={
+            "conversion_path": (
+                SavedGraphConversion(id="example.text.normalize", version=2),
+                SavedGraphConversion(id="example.text.finalize", version=7),
+            )
+        }
+    )
 
     create_response = graphs.create(
         CreateSavedGraphRequest(
@@ -523,7 +500,7 @@ def test_saved_graph_preserves_disabled_edges(builtin_client: TestClient) -> Non
     api = GrafyApi(builtin_client)
     graphs = api.workspace(WORKSPACE_ID).graphs
     edges = _graph_edges()
-    edges[0].enabled = False
+    edges[0] = edges[0].model_copy(update={"enabled": False})
 
     create_response = graphs.create(
         CreateSavedGraphRequest(

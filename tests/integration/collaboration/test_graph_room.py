@@ -809,8 +809,6 @@ def test_http_command_publishes_to_room(room_client: RoomClient) -> None:
         assert accepted["command"]["name"] == "HTTP rename"
 
 
-
-
 def test_room_sends_application_heartbeat(heartbeat_room_client: RoomClient) -> None:
     api, _switcher, population = heartbeat_room_client
     workspace_api = api.workspace(population.workspace.id)
@@ -971,7 +969,7 @@ def test_presence_rate_limit_and_stale_sequence_drop() -> None:
             graph_id=graph_id,
             actor_id=UUID(int=12),
             display_name="Editor",
-            color="emerald",
+            color="#047857",
         )
         await hub.join(session)
         await hub.join(peer)

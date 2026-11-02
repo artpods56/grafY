@@ -38,8 +38,18 @@
     "checkpoint_revision": 1,
     "name": "Room graph",
     "updated_at": "2026-08-07T10:00:00Z",
-    "nodes": [],
-    "edges": []
+    "document": {
+      "schema_version": 7,
+      "nodes": [],
+      "edges": [],
+      "origins": [],
+      "presentation": {
+        "viewers": [],
+        "links": [],
+        "bindings": [],
+        "annotations": []
+      }
+    }
   },
   "participants": [
     {

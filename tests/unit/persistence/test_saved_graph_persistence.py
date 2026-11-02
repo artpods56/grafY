@@ -310,7 +310,7 @@ async def test_sql_json_loads_then_updates_current_documents_in_a_fresh_session(
     stored_time = datetime(2026, 7, 14, 8, 0, tzinfo=UTC)
     stored_storage_time = stored_time.replace(tzinfo=None).isoformat(" ")
     stored_document = {
-        "schema_version": 6,
+        "schema_version": 7,
         "nodes": [
             {
                 "kind": "builtin",
@@ -336,10 +336,12 @@ async def test_sql_json_loads_then_updates_current_documents_in_a_fresh_session(
                 "from_port": "text",
                 "to_node": "collect",
                 "to_port": "items",
-                "conversion": {
-                    "id": "example.text.normalize",
-                    "version": 2,
-                },
+                "conversion_path": [
+                    {
+                        "id": "example.text.normalize",
+                        "version": 2,
+                    }
+                ],
             }
         ],
     }

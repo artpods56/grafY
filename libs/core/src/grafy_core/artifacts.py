@@ -485,59 +485,6 @@ class ArtifactObject:
         )
 
 
-if TYPE_CHECKING:
-    from grafy_core.ports.artifacts import (
-        ArtifactRepositoryPort as ArtifactRepositoryPort,
-    )
-    from grafy_core.ports.artifacts import (
-        UnitOfWorkPort as UnitOfWorkPort,
-    )
-    from grafy_core.runtime.in_memory import (
-        InMemoryArtifactRepository as InMemoryArtifactRepository,
-    )
-    from grafy_core.runtime.in_memory import (
-        InMemoryDataStore as InMemoryDataStore,
-    )
-    from grafy_core.runtime.in_memory import (
-        InMemoryGraphExecutionHistoryRepository as InMemoryGraphExecutionHistoryRepository,
-    )
-    from grafy_core.runtime.in_memory import (
-        InMemoryInvocationCacheRepository as InMemoryInvocationCacheRepository,
-    )
-    from grafy_core.runtime.in_memory import (
-        InMemoryMaterializedNodeOutputsRepository as InMemoryMaterializedNodeOutputsRepository,
-    )
-    from grafy_core.runtime.in_memory import (
-        InMemoryUnitOfWork as InMemoryUnitOfWork,
-    )
-    from grafy_core.runtime.in_memory import (
-        InMemoryUploadRepository as InMemoryUploadRepository,
-    )
-
-
-# [TODO] Remove whatever this is, probably dead code
-def __getattr__(name: str) -> object:
-    # Legacy SDK exports must be lazy: importing ports or runtime while artifact
-    # models initialize re-enters the domain package through its public exports.
-    if name in {"ArtifactRepositoryPort", "UnitOfWorkPort"}:
-        from grafy_core.ports import artifacts
-
-        return getattr(artifacts, name)
-    if name in {
-        "InMemoryArtifactRepository",
-        "InMemoryDataStore",
-        "InMemoryGraphExecutionHistoryRepository",
-        "InMemoryInvocationCacheRepository",
-        "InMemoryMaterializedNodeOutputsRepository",
-        "InMemoryUploadRepository",
-        "InMemoryUnitOfWork",
-    }:
-        from grafy_core.runtime import in_memory
-
-        return getattr(in_memory, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
 __all__ = [
     "Artifact",
     "ArtifactBundleContract",
@@ -550,16 +497,8 @@ __all__ = [
     "ArtifactRefSequence",
     "ArtifactReferenceContract",
     "ArtifactReferenceShape",
-    "ArtifactRepositoryPort",
     "ArtifactTypeKey",
     "ArtifactTypeSpec",
-    "InMemoryArtifactRepository",
-    "InMemoryDataStore",
-    "InMemoryGraphExecutionHistoryRepository",
-    "InMemoryInvocationCacheRepository",
-    "InMemoryMaterializedNodeOutputsRepository",
-    "InMemoryUploadRepository",
-    "InMemoryUnitOfWork",
     "ConfirmationRule",
     "JsonObject",
     "MagicSegment",
@@ -569,7 +508,6 @@ __all__ = [
     "NodeConfig",
     "NodeInput",
     "NodeOutput",
-    "UnitOfWorkPort",
     "artifact_id",
     "sequence_id",
     "validate_extension_claims",

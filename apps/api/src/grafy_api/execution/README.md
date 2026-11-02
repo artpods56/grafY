@@ -32,9 +32,8 @@ portable persistent invocation-cache adapter lives in
 Application composition wires these owners together.
 
 Queued recovery stores request JSON. Moving a model must preserve field names,
-aliases, validation, and serialized values. The HTTP models module re-exports the
-same request and event classes for existing Python clients; internal execution
-code imports them directly from this package.
+validation, and serialized values. This package owns the request and event
+classes and every consumer, HTTP presentation included, imports them from here.
 
 Remaining dependencies are explicit. Edge projection reads through the core artifact
 unit-of-work port. Materialization uses the application-owned `ArtifactAvailability`;
@@ -71,9 +70,9 @@ flowchart LR
 Saved-graph and nested-module workflows select their own active nodes and edges.
 `RunNodeRequest.from_saved_node` and `RunEdgeRequest.from_saved_edge` own their
 shared conversions, including connected plugs, artifact bindings, projections,
-conversion paths, and collection modes. Reading a stored node or request that still
-carries a `plugin_release_pin` key drops it and reads `kind: "plugin"` as
-`kind: "builtin"`.
+conversion paths, and collection modes. A node carries no Plugin identity: a
+stored or submitted node with `kind: "plugin"`, a `plugin_release_pin`, or a
+`plugin_release` is rejected.
 
 ## Artifact availability lifetime
 
