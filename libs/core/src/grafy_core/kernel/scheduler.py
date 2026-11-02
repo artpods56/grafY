@@ -108,7 +108,6 @@ class _Computation:
     demanders: set[RunId] = field(default_factory=set)
     task: asyncio.Task[None] | None = None
     dependencies: list[_Computation] = field(default_factory=list)
-    dependents: list[_Computation] = field(default_factory=list)
     failure: str | None = None
 
 
@@ -244,7 +243,6 @@ class _Scheduler:
             if upstream is None or upstream in record.dependencies:
                 continue
             record.dependencies.append(upstream)
-            upstream.dependents.append(record)
 
     # Cancellation ---------------------------------------------------------
 
