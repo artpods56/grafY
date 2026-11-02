@@ -29,7 +29,6 @@ boundary.
 | `OidcLoginTransaction` | Short-lived, single-use Authorization Code + PKCE handshake state. |
 | `AuthSession` | Opaque, revocable browser session (raw secret never persisted). |
 | `PersonalAccessToken` (`PAT`) | Workspace-bound bearer credential for SDK, CLI, MCP, and other non-browser HTTP automation; effective permission is token scope ∩ current membership. |
-| `PlatformAccessToken` | Deployment-issued bearer credential for global Plugin operations. It names a platform principal and grants only explicit publish, promote, or revoke scopes. |
 | `SecurityAuditEvent` | Metadata-only security audit row; never stores credentials, provider payloads, or command/config bodies. |
 | `GraphRoomSession` | Ephemeral WebSocket participant identity inside one `(workspace_id, graph_id)` collaboration room. |
 | Capability | Fine-grained permission derived from role (and intersected with PAT scopes), such as `edit_graph`, `execute_graph`, or `join_graph_room`. |

@@ -14,7 +14,6 @@ from grafy_core.domain.identity import (
     AuthSession,
     OidcIdentity,
     OidcLoginTransaction,
-    PlatformAccessToken,
     PersonalAccessToken,
     User,
     Workspace,
@@ -303,37 +302,6 @@ class SqlIdentityRepository(IdentityRepositoryPort):
                 schema.personal_access_tokens.c.public_prefix == public_prefix
             )
         )
-
-    @override
-    async def add_platform_access_token(self, token: PlatformAccessToken) -> None:
-        self._session.add(token)
-
-    @override
-    async def get_platform_access_token(
-        self,
-        token_id: UUID,
-    ) -> PlatformAccessToken | None:
-        return await self._session.get(PlatformAccessToken, token_id)
-
-    @override
-    async def get_platform_access_token_by_prefix(
-        self,
-        public_prefix: str,
-    ) -> PlatformAccessToken | None:
-        return await self._session.scalar(
-            select(PlatformAccessToken).where(
-                schema.platform_access_tokens.c.public_prefix == public_prefix
-            )
-        )
-
-    @override
-    async def list_platform_access_tokens(self) -> list[PlatformAccessToken]:
-        result = await self._session.scalars(
-            select(PlatformAccessToken).order_by(
-                schema.platform_access_tokens.c.created_at.desc()
-            )
-        )
-        return list(result)
 
     @override
     async def list_personal_access_tokens_for_user(

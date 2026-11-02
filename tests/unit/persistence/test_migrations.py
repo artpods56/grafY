@@ -39,7 +39,6 @@ BASELINE_TABLES = {
     "oidc_identities",
     "oidc_login_transactions",
     "personal_access_tokens",
-    "platform_access_tokens",
     "saved_graph_revisions",
     "saved_graphs",
     "security_audit_events",

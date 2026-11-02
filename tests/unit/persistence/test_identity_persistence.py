@@ -10,8 +10,6 @@ from grafy_core.domain.identity import (
     OidcIdentity,
     OidcLoginTransaction,
     PersonalAccessToken,
-    PlatformAccessToken,
-    PlatformTokenScope,
     User,
     Workspace,
     WorkspaceCapability,
@@ -105,19 +103,6 @@ async def test_identity_records_round_trip_without_plain_credential_material(
         expires_at=now + timedelta(days=1),
         created_at=now,
     )
-    platform_token = PlatformAccessToken(
-        id=UUID(int=109),
-        principal_reference="release-bot",
-        public_prefix="gpat_test_109",
-        secret_digest=b"platform-token-digest",
-        label="global publication",
-        scopes=(
-            PlatformTokenScope.PUBLISH_GLOBAL,
-            PlatformTokenScope.PROMOTE_GLOBAL,
-        ),
-        expires_at=now + timedelta(days=1),
-        created_at=now,
-    )
     audit = SecurityAuditEvent(
         id=UUID(int=108),
         occurred_at=now,
@@ -139,7 +124,6 @@ async def test_identity_records_round_trip_without_plain_credential_material(
         await unit_of_work.identity.add_login_transaction(transaction)
         await unit_of_work.identity.add_auth_session(session)
         await unit_of_work.identity.add_personal_access_token(token)
-        await unit_of_work.identity.add_platform_access_token(platform_token)
         await unit_of_work.security_audit.add(audit)
         await unit_of_work.commit()
 
@@ -156,11 +140,6 @@ async def test_identity_records_round_trip_without_plain_credential_material(
         loaded_token = await unit_of_work.identity.get_personal_access_token_by_digest(
             token.secret_digest
         )
-        loaded_platform_token = (
-            await unit_of_work.identity.get_platform_access_token_by_prefix(
-                platform_token.public_prefix
-            )
-        )
         loaded_audit = (
             await unit_of_work.security_audit.list_for_workspace(
                 workspace.id,
@@ -175,9 +154,6 @@ async def test_identity_records_round_trip_without_plain_credential_material(
     assert loaded_session.secret_digest == session.secret_digest
     assert loaded_token is not None
     assert loaded_token.scopes == (WorkspaceCapability.VIEW_GRAPH,)
-    assert loaded_platform_token is not None
-    assert loaded_platform_token.principal_reference == "release-bot"
-    assert loaded_platform_token.scopes == platform_token.scopes
     assert loaded_audit.actor_kind is SecurityAuditActorKind.AUTHENTICATED
     assert loaded_audit.user_id == user.id
 

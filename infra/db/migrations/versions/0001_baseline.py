@@ -21,7 +21,6 @@ from grafy_persistence.column_types import (
     UTCDateTime,
 )
 from grafy_persistence.schema.identity import (
-    PlatformTokenScopeTupleType,
     SecurityAuditActorKindType,
     SecurityAuditOutcomeType,
     WorkspaceCapabilityTupleType,
@@ -62,42 +61,6 @@ def upgrade() -> None:
         "ix_oidc_login_transactions_expiry_consumed",
         "oidc_login_transactions",
         ["expires_at", "consumed_at"],
-        unique=False,
-    )
-    op.create_table(
-        "platform_access_tokens",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("principal_reference", sa.String(length=120), nullable=False),
-        sa.Column("public_prefix", sa.String(length=32), nullable=False),
-        sa.Column("secret_digest", sa.LargeBinary(length=64), nullable=False),
-        sa.Column("label", sa.String(length=160), nullable=False),
-        sa.Column(
-            "scopes",
-            PlatformTokenScopeTupleType(),
-            nullable=False,
-        ),
-        sa.Column("expires_at", UTCDateTime(), nullable=False),
-        sa.Column("created_at", UTCDateTime(), nullable=False),
-        sa.Column("last_used_at", UTCDateTime(), nullable=True),
-        sa.Column("revoked_at", UTCDateTime(), nullable=True),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_platform_access_tokens")),
-        sa.UniqueConstraint(
-            "public_prefix", name="uq_platform_access_tokens_public_prefix"
-        ),
-        sa.UniqueConstraint(
-            "secret_digest", name="uq_platform_access_tokens_secret_digest"
-        ),
-    )
-    op.create_index(
-        "ix_platform_access_tokens_expiry_revoked",
-        "platform_access_tokens",
-        ["expires_at", "revoked_at"],
-        unique=False,
-    )
-    op.create_index(
-        "ix_platform_access_tokens_principal_revoked",
-        "platform_access_tokens",
-        ["principal_reference", "revoked_at"],
         unique=False,
     )
     op.create_table(
@@ -1424,14 +1387,6 @@ def downgrade() -> None:
         "ix_security_audit_events_actor_occurred_at", table_name="security_audit_events"
     )
     op.drop_table("security_audit_events")
-    op.drop_index(
-        "ix_platform_access_tokens_principal_revoked",
-        table_name="platform_access_tokens",
-    )
-    op.drop_index(
-        "ix_platform_access_tokens_expiry_revoked", table_name="platform_access_tokens"
-    )
-    op.drop_table("platform_access_tokens")
     op.drop_index(
         "ix_oidc_login_transactions_expiry_consumed",
         table_name="oidc_login_transactions",

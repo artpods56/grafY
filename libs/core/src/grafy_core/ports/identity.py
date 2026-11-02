@@ -8,7 +8,6 @@ from grafy_core.domain.identity import (
     OidcIdentity,
     OidcLoginTransaction,
     PersonalAccessToken,
-    PlatformAccessToken,
     User,
     Workspace,
     WorkspaceInvitation,
@@ -134,20 +133,6 @@ class IdentityRepositoryPort(Protocol):
         self,
         public_prefix: str,
     ) -> PersonalAccessToken | None: ...
-
-    async def add_platform_access_token(self, token: PlatformAccessToken) -> None: ...
-
-    async def get_platform_access_token(
-        self,
-        token_id: UUID,
-    ) -> PlatformAccessToken | None: ...
-
-    async def get_platform_access_token_by_prefix(
-        self,
-        public_prefix: str,
-    ) -> PlatformAccessToken | None: ...
-
-    async def list_platform_access_tokens(self) -> list[PlatformAccessToken]: ...
 
     async def list_personal_access_tokens_for_user(
         self,
