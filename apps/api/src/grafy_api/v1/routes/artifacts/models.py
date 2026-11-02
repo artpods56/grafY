@@ -25,6 +25,9 @@ from grafy_core.spatial_contracts import (
     GeoFeatureCollectionMetadata,
     GeoVectorProjectionMetadata as GeoVectorProjectionMetadata,
     GeoRasterProjectionMetadata as GeoRasterProjectionMetadata,
+    validate_layer_source_and_style,
+    validate_point_category,
+    validate_point_category_set,
 )
 from grafy_core.table_contracts import TableColumn, TablePage, TableValueType
 
@@ -412,11 +415,11 @@ class GeoPointCategory(ApiResponse):
 
     @model_validator(mode="after")
     def validate_category(self) -> Self:
-        if self.min_zoom > self.max_zoom:
-            raise ValueError("min_zoom must not exceed max_zoom")
-        typed_values = [(type(value), value) for value in self.values]
-        if len(typed_values) != len(set(typed_values)):
-            raise ValueError("category values must be unique")
+        validate_point_category(
+            min_zoom=self.min_zoom,
+            max_zoom=self.max_zoom,
+            values=self.values,
+        )
         return self
 
 
@@ -462,18 +465,9 @@ class GeoCategorizedPointStyle(ApiResponse):
 
     @model_validator(mode="after")
     def validate_categories(self) -> Self:
-        category_ids = [category.id for category in self.categories]
-        if len(category_ids) != len(set(category_ids)):
-            raise ValueError("category ids must be unique")
-        observed_values: set[tuple[type[object], object]] = set()
-        for category in self.categories:
-            for value in category.values:
-                key = (type(value), value)
-                if key in observed_values:
-                    raise ValueError(
-                        "category values must not appear in multiple categories"
-                    )
-                observed_values.add(key)
+        validate_point_category_set(
+            [(category.id, category.values) for category in self.categories]
+        )
         return self
 
 
@@ -517,26 +511,22 @@ class GeoMapLayerPayload(StrictGeoModel):
 
     @model_validator(mode="after")
     def validate_source_and_style(self) -> Self:
-        if self.min_zoom > self.max_zoom:
-            raise ValueError("min_zoom must not exceed max_zoom")
-        if self.source.kind == "feature_collection" and self.style.kind not in {
-            "vector",
-            "categorized_points",
-        }:
-            raise ValueError("Feature collection sources require vector style")
-        if self.style.kind == "categorized_points":
-            for category in self.style.categories:
-                if max(self.min_zoom, category.min_zoom) > min(
-                    self.max_zoom,
-                    category.max_zoom,
-                ):
-                    raise ValueError(
-                        f"Category {category.id!r} zoom range does not overlap "
-                        "the layer zoom range"
-                    )
-        if self.source.kind in {"raster_scan", "wms"} and self.style.kind != "raster":
-            raise ValueError("Raster scan and WMS sources require raster style")
+        validate_layer_source_and_style(
+            min_zoom=self.min_zoom,
+            max_zoom=self.max_zoom,
+            source_kind=self.source.kind,
+            style_kind=self.style.kind,
+            category_zoom_ranges=self._category_zoom_ranges(),
+        )
         return self
+
+    def _category_zoom_ranges(self) -> tuple[tuple[str, int, int], ...]:
+        if self.style.kind != "categorized_points":
+            return ()
+        return tuple(
+            (category.id, category.min_zoom, category.max_zoom)
+            for category in self.style.categories
+        )
 
 
 class GeoMapDocumentPayload(StrictGeoModel):

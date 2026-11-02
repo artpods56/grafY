@@ -2,6 +2,7 @@
 
 import json
 import math
+from collections.abc import Sequence
 from typing import Annotated, Literal, Self, cast
 
 from pydantic import (
@@ -135,6 +136,76 @@ class GeoPointStyle(BaseModel):
 type GeoCategoryValue = StrictStr | StrictInt | StrictFloat | StrictBool
 
 
+def validate_point_category(
+    *,
+    min_zoom: int,
+    max_zoom: int,
+    values: Sequence[GeoCategoryValue],
+) -> None:
+    """Check one display category's own zoom order and value set.
+
+    Values are compared with their Python type attached, so `1`, `1.0` and `True`
+    stay the three distinct category values a JSON payload can carry.
+    """
+
+    if min_zoom > max_zoom:
+        raise ValueError("min_zoom must not exceed max_zoom")
+    typed_values = [(type(value), value) for value in values]
+    if len(typed_values) != len(set(typed_values)):
+        raise ValueError("category values must be unique")
+
+
+def validate_point_category_set(
+    categories: Sequence[tuple[str, Sequence[GeoCategoryValue]]],
+) -> None:
+    """Check a categorized style's category ids and their disjoint values."""
+
+    category_ids = [category_id for category_id, _values in categories]
+    if len(category_ids) != len(set(category_ids)):
+        raise ValueError("category ids must be unique")
+    observed_values: set[tuple[type[object], object]] = set()
+    for _category_id, values in categories:
+        for value in values:
+            key = (type(value), value)
+            if key in observed_values:
+                raise ValueError(
+                    "category values must not appear in multiple categories"
+                )
+            observed_values.add(key)
+
+
+def validate_layer_source_and_style(
+    *,
+    min_zoom: int,
+    max_zoom: int,
+    source_kind: str,
+    style_kind: str,
+    category_zoom_ranges: Sequence[tuple[str, int, int]],
+) -> None:
+    """Check the zoom range and source/style pairing one map layer declares.
+
+    `category_zoom_ranges` names each category's `(id, min_zoom, max_zoom)` and is
+    only consulted for a categorized style.
+    """
+
+    if min_zoom > max_zoom:
+        raise ValueError("min_zoom must not exceed max_zoom")
+    if source_kind == "feature_collection" and style_kind not in {
+        "vector",
+        "categorized_points",
+    }:
+        raise ValueError("Feature collection sources require vector style")
+    if style_kind == "categorized_points":
+        for category_id, category_min_zoom, category_max_zoom in category_zoom_ranges:
+            if max(min_zoom, category_min_zoom) > min(max_zoom, category_max_zoom):
+                raise ValueError(
+                    f"Category {category_id!r} zoom range does not overlap "
+                    "the layer zoom range"
+                )
+    if source_kind in {"raster_scan", "wms"} and style_kind != "raster":
+        raise ValueError("Raster scan and WMS sources require raster style")
+
+
 class GeoPointCategory(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -158,11 +229,11 @@ class GeoPointCategory(BaseModel):
 
     @model_validator(mode="after")
     def validate_category(self) -> Self:
-        if self.min_zoom > self.max_zoom:
-            raise ValueError("min_zoom must not exceed max_zoom")
-        typed_values = [(type(value), value) for value in self.values]
-        if len(typed_values) != len(set(typed_values)):
-            raise ValueError("category values must be unique")
+        validate_point_category(
+            min_zoom=self.min_zoom,
+            max_zoom=self.max_zoom,
+            values=self.values,
+        )
         return self
 
 
@@ -211,18 +282,9 @@ class GeoCategorizedPointStyle(BaseModel):
 
     @model_validator(mode="after")
     def validate_categories(self) -> Self:
-        category_ids = [category.id for category in self.categories]
-        if len(category_ids) != len(set(category_ids)):
-            raise ValueError("category ids must be unique")
-        observed_values: set[tuple[type[object], object]] = set()
-        for category in self.categories:
-            for value in category.values:
-                key = (type(value), value)
-                if key in observed_values:
-                    raise ValueError(
-                        "category values must not appear in multiple categories"
-                    )
-                observed_values.add(key)
+        validate_point_category_set(
+            [(category.id, category.values) for category in self.categories]
+        )
         return self
 
 
@@ -502,26 +564,22 @@ class GeoMapLayer(BaseModel):
 
     @model_validator(mode="after")
     def validate_source_and_style(self) -> Self:
-        if self.min_zoom > self.max_zoom:
-            raise ValueError("min_zoom must not exceed max_zoom")
-        if self.source.kind == "feature_collection" and self.style.kind not in {
-            "vector",
-            "categorized_points",
-        }:
-            raise ValueError("Feature collection sources require vector style")
-        if self.style.kind == "categorized_points":
-            for category in self.style.categories:
-                if max(self.min_zoom, category.min_zoom) > min(
-                    self.max_zoom,
-                    category.max_zoom,
-                ):
-                    raise ValueError(
-                        f"Category {category.id!r} zoom range does not overlap "
-                        "the layer zoom range"
-                    )
-        if self.source.kind in {"raster_scan", "wms"} and self.style.kind != "raster":
-            raise ValueError("Raster scan and WMS sources require raster style")
+        validate_layer_source_and_style(
+            min_zoom=self.min_zoom,
+            max_zoom=self.max_zoom,
+            source_kind=self.source.kind,
+            style_kind=self.style.kind,
+            category_zoom_ranges=self._category_zoom_ranges(),
+        )
         return self
+
+    def _category_zoom_ranges(self) -> tuple[tuple[str, int, int], ...]:
+        if self.style.kind != "categorized_points":
+            return ()
+        return tuple(
+            (category.id, category.min_zoom, category.max_zoom)
+            for category in self.style.categories
+        )
 
 
 class GeoMapDocument(BaseModel):
