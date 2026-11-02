@@ -22,7 +22,7 @@ from grafy_api.uploads import (
     UploadStateError,
     UploadTransportUnsupportedError,
 )
-from grafy_api.v1.routes.uploads.dependencies import upload_config, upload_service
+from grafy_api.v1.routes.uploads.dependencies import upload_service
 from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey
 from grafy_core.domain.uploads import Upload, UploadStatus
 from grafy_core.file_contracts import (
@@ -465,7 +465,6 @@ def test_upload_endpoint_rejects_an_oversize_reservation(
     )
     application = cast(FastAPI, builtin_client.app)
     application.dependency_overrides[upload_service] = lambda: service
-    application.dependency_overrides[upload_config] = lambda: config
 
     uploads = GrafyApi(builtin_client).workspace(WORKSPACE_ID).uploads
     response = uploads.create(
@@ -480,6 +479,24 @@ def test_upload_endpoint_rejects_an_oversize_reservation(
     }
     assert asyncio.run(_uploads(unit_of_work, WORKSPACE_ID)) == []
     assert asyncio.run(_stored_files(tmp_path / "objects")) == []
+
+
+def test_upload_endpoint_rejects_an_unparseable_content_length(
+    builtin_client: TestClient,
+) -> None:
+    uploads = GrafyApi(builtin_client).workspace(WORKSPACE_ID).uploads
+    target = uploads.create_ok("page.png", len(PNG_BYTES))
+
+    # A chunked body keeps the test client from recomputing the one header the
+    # route reads before it touches a single byte.
+    response = builtin_client.put(
+        target.url,
+        content=iter([PNG_BYTES]),
+        headers={"Content-Length": "not-a-number"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Content-Length must be an integer"}
 
 
 def test_upload_endpoint_reports_a_file_format_mismatch(
