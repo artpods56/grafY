@@ -39,6 +39,21 @@ TERMINAL_STATES: frozenset[ComputationState] = frozenset(
 )
 
 
+_TRANSITIONS: dict[tuple[ComputationState, ComputationEvent], ComputationState] = {
+    (
+        ComputationState.PENDING,
+        ComputationEvent.DEPENDENCIES_SATISFIED,
+    ): ComputationState.READY,
+    (ComputationState.READY, ComputationEvent.START): ComputationState.RUNNING,
+    (ComputationState.RUNNING, ComputationEvent.SUCCEED): ComputationState.SUCCEEDED,
+    (ComputationState.RUNNING, ComputationEvent.FAIL): ComputationState.FAILED,
+    (ComputationState.PENDING, ComputationEvent.SKIP): ComputationState.SKIPPED,
+    (ComputationState.PENDING, ComputationEvent.CANCEL): ComputationState.CANCELLED,
+    (ComputationState.READY, ComputationEvent.CANCEL): ComputationState.CANCELLED,
+    (ComputationState.RUNNING, ComputationEvent.CANCEL): ComputationState.CANCELLED,
+}
+
+
 def transition(state: ComputationState, event: ComputationEvent) -> ComputationState:
     """Return the next state or raise ``IllegalTransitionError``.
 
@@ -49,4 +64,7 @@ def transition(state: ComputationState, event: ComputationEvent) -> ComputationS
     Every other (state, event) pair, including any event from a terminal
     state, is illegal.
     """
-    raise NotImplementedError
+    try:
+        return _TRANSITIONS[(state, event)]
+    except KeyError:
+        raise IllegalTransitionError(state, event) from None
