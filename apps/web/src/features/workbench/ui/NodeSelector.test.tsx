@@ -780,11 +780,18 @@ describe("NodeSelector", () => {
         ],
         nodes: [
           ...catalog.nodes,
-          node("notes.summary.render", "Render summary", "unavailable", [], [], {
-            runnable: false,
-            description:
-              "Saved operator notes.summary.render@1 is not available in the live registry.",
-          }),
+          node(
+            "notes.summary.render",
+            "Render summary",
+            "unavailable",
+            [],
+            [],
+            {
+              runnable: false,
+              description:
+                "Saved operator notes.summary.render@1 is not available in the live registry.",
+            },
+          ),
         ],
       },
       onAddNode,

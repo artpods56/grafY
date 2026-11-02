@@ -262,12 +262,8 @@ save, configure, execute, and inspect a graph. See
 
 ### Install and run commit hooks
 
-After installing the repository dependencies, enable the local commit hook:
-
-```bash
-just install
-just hooks-install
-```
+`just install` installs the repository dependencies and enables the local commit
+hook. To enable the hook on its own, run `just hooks-install`.
 
 Git then runs the staged-file checks from `.pre-commit-config.yaml` before each
 commit. To run the checks manually on staged files, use `uv run prek run`. To

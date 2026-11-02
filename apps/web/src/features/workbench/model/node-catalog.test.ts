@@ -77,7 +77,8 @@ function nodeSpec(
     module_id: options.moduleId ?? null,
     is_current_library_release: options.isCurrentLibraryRelease ?? null,
     catalog_visible: catalogVisible,
-    origin: pluginSlug === "graph.module" || moduleGraphId ? "module" : "builtin",
+    origin:
+      pluginSlug === "graph.module" || moduleGraphId ? "module" : "builtin",
     runnable: true,
   };
 }

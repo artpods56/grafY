@@ -8,10 +8,11 @@ grafy_override := env_var_or_default("GRAFY_COMPOSE_OVERRIDE", "/etc/grafy/stora
 default:
     @just --list
 
-# Install the default Python and web workspaces.
+# Install the default Python and web workspaces and the Git commit hook.
 install:
     uv sync
     npm --prefix apps/web ci
+    uv run prek install
 
 # Start the API with installed application families and native GIS tools.
 api: db-upgrade
