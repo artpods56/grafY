@@ -102,11 +102,13 @@ export function NodeInspector({
   );
   const plugin = catalogPlugin(registry, spec.plugin_slug);
   const isModule = plugin.entry_kind === "module";
-  const catalogOnlyReason =
-    spec.non_runnable_detail ??
-    "This Plugin release is catalog-only until its isolated runtime is available.";
+  // The catalog lists only what this deployment executes, so the one entry that
+  // arrives not runnable is a canvas reconstruction of a saved operator that is
+  // no longer in the live registry.
   const insertable = canInsert && spec.runnable !== false;
-  const disabledReason = canInsert ? catalogOnlyReason : insertDisabledReason;
+  const unavailableReason =
+    "This saved operator is not in the live registry, so it cannot be inserted.";
+  const disabledReason = canInsert ? unavailableReason : insertDisabledReason;
   const description =
     spec.description || "No description is available for this node.";
   const selectPort = (port: Port) => setChosenPortKey(portKey(port));
@@ -144,9 +146,7 @@ export function NodeInspector({
             </h3>
             <p {...stylex.props(s.description)}>{description}</p>
             {spec.runnable === false ? (
-              <p {...stylex.props(s.note)}>
-                Catalog preview only. {catalogOnlyReason}
-              </p>
+              <p {...stylex.props(s.note)}>Catalog preview only.</p>
             ) : null}
             <PortChips spec={spec} registry={registry} />
             {isModule ? (

@@ -1,32 +1,13 @@
 """Explicit Plugin registry fixtures with no production discovery fallback."""
 
 from collections.abc import Iterable
-from dataclasses import dataclass
 
-from grafy_core.domain.plugin_catalog import PluginCatalogRelease
-from grafy_core.domain.plugin_installations import (
-    InstalledPluginRelease,
-    PluginInstallation,
-)
-from grafy_core.domain.plugin_identity import PluginExecutionPolicy
-from grafy_core.domain.plugin_releases import (
-    PluginCapabilityManifest,
-    PluginCatalogManifest,
-    PluginRelease,
-    PluginReleaseNamespace,
-    PluginRuntimeArtifact,
-    plugin_contract_digest,
-    plugin_profile_digest,
-    plugin_protocol_digest,
-)
-from grafy_core.domain.plugin_revocations import PluginReleaseRevocation
-from grafy_core.domain.plugin_selection import PluginReleaseSelection
 from grafy_core.domain.modules import (
     MODULE_INPUT_OPERATOR_ID,
     MODULE_OUTPUT_OPERATOR_ID,
 )
 from grafy_core.operators.modules import MODULE_BOUNDARY_REGISTRATIONS
-from grafy_core.plugins import Plugin, PluginRegistry, UnknownOperatorError
+from grafy_core.plugins import Plugin, PluginRegistry
 from grafy_workbench import BUILTIN_FAMILIES
 from grafy_plugin_image import IMAGES as IMAGE_OPERATORS
 from grafy_plugin_table import TABLES as TABLE_OPERATORS
@@ -55,7 +36,6 @@ TEST_FIXTURE_PLUGINS: tuple[Plugin, ...] = (
 TEST_SYSTEM_PLUGINS: tuple[Plugin, ...] = (*BUILTIN_FAMILIES, *TEST_FIXTURE_PLUGINS)
 TEST_BUILD_DIGEST = "a" * 64
 
-_REGISTRY_INSTALLED_SLUGS = {plugin.slug for plugin in TEST_SYSTEM_PLUGINS}
 
 
 def build_explicit_plugin_registry(
@@ -74,198 +54,54 @@ def build_explicit_plugin_registry(
     return registry
 
 
-class SelectedSystemReleaseLookup:
-    """Exact persisted-release view for a synthetic selected deployment."""
-
-    def __init__(
-        self,
-        releases: tuple[InstalledPluginRelease, ...],
-        selections: tuple[PluginReleaseSelection, ...],
-    ) -> None:
-        self._releases = {
-            (release.release.slug, release.release.revision): release
-            for release in releases
-        }
-        self._selections = {
-            selection.slug: selection for selection in selections
-        }
-        self.release_reads = 0
-
-    async def get_by_revision(
-        self,
-        slug: str,
-        revision: int,
-    ) -> InstalledPluginRelease | None:
-        self.release_reads += 1
-        return self._releases.get((slug, revision))
-
-    async def get_selection(self, slug: str) -> PluginReleaseSelection | None:
-        return self._selections.get(slug)
-
-    async def list_catalog(self) -> list[PluginCatalogRelease]:
-        return [
-            PluginCatalogRelease(
-                release=release,
-                selection=self._selections[release.release.slug],
-                revocation=None,
-            )
-            for release in self._releases.values()
-        ]
-
-    async def list_runtime_artifacts(self) -> list[PluginRuntimeArtifact]:
-        return [
-            release.release.runtime_artifact
-            for release in self._releases.values()
-            if release.release.runtime_artifact is not None
-        ]
-
-    async def get_system_revocation(
-        self,
-        *,
-        slug: str,
-        revision: int,
-    ) -> PluginReleaseRevocation | None:
-        del slug, revision
-        return None
-
-
-@dataclass(frozen=True, slots=True)
 class SelectedSystemPluginDeployment:
-    registry: PluginRegistry
-    releases: tuple[InstalledPluginRelease, ...]
-    selections: tuple[PluginReleaseSelection, ...]
-    release_lookup: SelectedSystemReleaseLookup
+    """Retired name kept as the registry-only view tests already pass around."""
+
+    def __init__(self, registry: PluginRegistry) -> None:
+        self.registry = registry
 
     def pin_node(self, node: RunNodeRequest) -> RunNodeRequest:
-        try:
-            registration = self.registry.node_registration(
-                node.operator_id,
-                node.operator_version,
-            )
-        except UnknownOperatorError:
-            if node.operator_id.startswith("graph.module."):
-                return node.model_copy(
-                    update={"kind": "module", "plugin_release": None}
-                )
-            return node
-        if registration.plugin_slug == "graph.module":
-            return node.model_copy(update={"kind": "module", "plugin_release": None})
-        return node.model_copy(
-            update={
-                "kind": "builtin",
-                "plugin_release": None,
-            }
-        )
-
-
-def synthetic_system_release(
-    plugin: Plugin,
-    *,
-    revision: int = 1,
-) -> InstalledPluginRelease:
-    catalog = PluginCatalogManifest.from_plugin(plugin)
-    capabilities = PluginCapabilityManifest(
-        capabilities=tuple(
-            dict.fromkeys(
-                (
-                    *plugin.capabilities,
-                    *(
-                        capability
-                        for registration in plugin.nodes
-                        for capability in registration.required_capabilities
-                    ),
-                )
-            )
-        )
-    )
-    runtime = PluginRuntimeArtifact(
-        object_key=f"plugin-releases/system/{plugin.slug}/runtime.oci.tar",
-        archive_digest="a" * 64,
-        manifest_digest="b" * 64,
-        config_digest="c" * 64,
-    )
-    release = PluginRelease(
-        slug=catalog.slug,
-        revision=revision,
-        catalog=catalog,
-        contract_digest=plugin_contract_digest(catalog),
-        capabilities=capabilities,
-        capability_digest=capabilities.digest,
-        protocol_digest=plugin_protocol_digest(),
-        profile_digest=plugin_profile_digest("python-uv"),
-        source_object_key=f"plugin-releases/system/{plugin.slug}/source.tar.gz",
-        source_digest="d" * 64,
-        lock_digest="e" * 64,
-        runtime_profile="python-uv",
-        loader_target="grafy_plugin:PLUGIN",
-        runtime_image_digest=runtime.manifest_digest,
-        runtime_artifact=runtime,
-        published_by_platform_actor="test:system",
-    )
-    return InstalledPluginRelease(
-        release=release,
-        installation=PluginInstallation.from_release(
-            release,
-            namespace=PluginReleaseNamespace(),
-            execution_policy=PluginExecutionPolicy.ISOLATED_ONLY,
-            installed_by_platform_actor="test:system",
-        ),
-    )
+        return pin_selected_system_nodes([node])[0]
 
 
 def build_selected_system_plugin_deployment(
     plugins: Iterable[Plugin] = TEST_SYSTEM_PLUGINS,
 ) -> SelectedSystemPluginDeployment:
-    registry = build_explicit_plugin_registry(plugins)
-    builtin_slugs = _REGISTRY_INSTALLED_SLUGS
-    releases = tuple(
-        synthetic_system_release(plugin)
-        for plugin in plugins
-        if plugin.slug not in builtin_slugs
-    )
-    selections = tuple(
-        PluginReleaseSelection.from_release(release) for release in releases
-    )
-    return SelectedSystemPluginDeployment(
-        registry=registry,
-        releases=releases,
-        selections=selections,
-        release_lookup=SelectedSystemReleaseLookup(releases, selections),
-    )
+    return SelectedSystemPluginDeployment(build_explicit_plugin_registry(plugins))
 
 
 def pin_selected_system_nodes(
     nodes: Iterable[RunNodeRequest],
     plugins: Iterable[Plugin] = TEST_SYSTEM_PLUGINS,
 ) -> list[RunNodeRequest]:
-    slugs_by_operator = {
-        registration.key: plugin.slug
+    """Label each node with the origin its operator resolves to in this build.
+
+    Operators come from installed families or from Graph Module boundaries; there is
+    no third source, so a node that names neither is left untouched and the request
+    model rejects it.
+    """
+
+    origin_by_operator = {
+        registration.key: (
+            "module" if plugin.slug == "graph.module" else "builtin"
+        )
         for plugin in plugins
         for registration in plugin.nodes
     }
-    pinned_nodes: list[RunNodeRequest] = []
+    pinned: list[RunNodeRequest] = []
     for node in nodes:
         if node.operator_id in {
             MODULE_INPUT_OPERATOR_ID,
             MODULE_OUTPUT_OPERATOR_ID,
         } or node.operator_id.startswith("graph.module."):
-            pinned_nodes.append(
-                node.model_copy(update={"kind": "module", "plugin_release": None})
-            )
+            pinned.append(node.model_copy(update={"kind": "module"}))
             continue
-        slug = slugs_by_operator.get((node.operator_id, node.operator_version))
-        if slug is None:
-            pinned_nodes.append(node)
+        origin = origin_by_operator.get((node.operator_id, node.operator_version))
+        if origin is None:
+            pinned.append(node)
             continue
-        pinned_nodes.append(
-            node.model_copy(
-                update={
-                    "kind": "builtin",
-                    "plugin_release": None,
-                }
-            )
-        )
-    return pinned_nodes
+        pinned.append(node.model_copy(update={"kind": origin}))
+    return pinned
 
 
 def selected_system_run_node(
@@ -278,9 +114,8 @@ def selected_system_run_node(
     artifact_type_bindings: list[ArtifactTypeBindingModel] | None = None,
     plugin_slug: str | None = None,
     kind: str | None = None,
-    plugin_release: object | None = None,
 ) -> RunNodeRequest:
-    del plugin_slug, kind, plugin_release
+    del plugin_slug, kind
     return RunNodeRequest(
         kind="builtin",
         id=id,
@@ -298,8 +133,6 @@ __all__ = [
     "TEST_BUILD_DIGEST",
     "TEST_FIXTURE_PLUGINS",
     "TEST_SYSTEM_PLUGINS",
-    "SelectedSystemPluginDeployment",
-    "SelectedSystemReleaseLookup",
     "build_explicit_plugin_registry",
     "build_selected_system_plugin_deployment",
     "pin_selected_system_nodes",

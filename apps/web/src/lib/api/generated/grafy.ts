@@ -2652,29 +2652,22 @@ export interface components {
             readonly module_graph_revision?: number | null;
             /** Module Id */
             readonly module_id?: string | null;
-            /** Non Runnable Detail */
-            readonly non_runnable_detail?: string | null;
-            /** Non Runnable Reason */
-            readonly non_runnable_reason?: ("revoked" | "missing_runtime_artifact" | "incompatible_protocol" | "unsupported_runtime_profile" | "unsupported_capabilities" | "unsupported_artifact_type" | "plugin_runtime_unavailable" | "host_binding_mismatch" | "network_profile_unassigned" | "network_profile_disabled" | "network_destination_undeclared" | "network_dynamic_destination_denied" | "network_destination_not_allowlisted" | "network_origin_limit_exceeded") | ("deprecated" | "withdrawn") | null;
             /** Operator Id */
             readonly operator_id: string;
             /** Operator Version */
             readonly operator_version: number;
             /**
              * Origin
-             * @default plugin
+             * @default builtin
              * @enum {string}
              */
-            readonly origin: "builtin" | "plugin" | "module";
+            readonly origin: "builtin" | "module";
             /** Output Schema */
             readonly output_schema: {
                 readonly [key: string]: unknown;
             };
             /** Outputs */
             readonly outputs: readonly components["schemas"]["PortResponse"][];
-            readonly plugin_release?: components["schemas"]["PluginReleasePinModel"] | null;
-            /** Plugin Revision */
-            readonly plugin_revision?: number | null;
             /** Plugin Slug */
             readonly plugin_slug: string;
             /**
@@ -2785,20 +2778,6 @@ export interface components {
             /** Value */
             readonly value: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"];
         };
-        /** PluginReleasePinModel */
-        readonly PluginReleasePinModel: {
-            /** Revision */
-            readonly revision: number;
-            readonly scope: components["schemas"]["PluginReleaseScope"];
-            /** Slug */
-            readonly slug: string;
-        };
-        /**
-         * PluginReleaseScope
-         * @description Durable release family scope carried by a Plugin release pin.
-         * @enum {string}
-         */
-        readonly PluginReleaseScope: "system" | "workspace";
         /** PluginSpecResponse */
         readonly PluginSpecResponse: {
             /**
@@ -2807,28 +2786,12 @@ export interface components {
              * @enum {string}
              */
             readonly entry_kind: "plugin" | "module";
-            readonly installation_scope?: components["schemas"]["PluginReleaseScope"] | null;
-            /** Non Runnable Detail */
-            readonly non_runnable_detail?: string | null;
-            /** Non Runnable Reason */
-            readonly non_runnable_reason?: ("revoked" | "missing_runtime_artifact" | "incompatible_protocol" | "unsupported_runtime_profile" | "unsupported_capabilities" | "unsupported_artifact_type" | "plugin_runtime_unavailable" | "host_binding_mismatch" | "network_profile_unassigned" | "network_profile_disabled" | "network_destination_undeclared" | "network_dynamic_destination_denied" | "network_destination_not_allowlisted" | "network_origin_limit_exceeded") | ("deprecated" | "withdrawn") | null;
             /**
              * Origin
-             * @default plugin
+             * @default builtin
              * @enum {string}
              */
-            readonly origin: "builtin" | "plugin" | "module";
-            readonly plugin_release?: components["schemas"]["PluginReleasePinModel"] | null;
-            /** Publisher */
-            readonly publisher?: string | null;
-            /** Revision */
-            readonly revision?: number | null;
-            /**
-             * Runnable
-             * @default true
-             */
-            readonly runnable: boolean;
-            readonly scope?: components["schemas"]["PluginReleaseScope"] | null;
+            readonly origin: "builtin" | "module";
             /** Slug */
             readonly slug: string;
             /** Title */

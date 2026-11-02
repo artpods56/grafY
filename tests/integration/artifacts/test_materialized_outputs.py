@@ -13,7 +13,6 @@ from pydantic import SecretStr
 from sqlalchemy import delete
 
 from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactRefSequence
-from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.domain.saved_graphs import SavedGraphDocument
@@ -107,6 +106,9 @@ async def _persist_partially_accessible_materialization(
         content_type="application/json",
         storage_backend="inline",
         inline_payload={"value": 13},
+        metadata={
+            "implementation": {"kind": "builtin", "build_digest": "a" * 64},
+        },
     )
     missing = ArtifactRef(
         artifact_id=UUID("00000000-0000-0000-0000-000000000999"),
@@ -140,15 +142,6 @@ def durable_api(tmp_path: Path) -> DurableApiFixture:
     async def prepare() -> None:
         async with db(database_url) as database:
             await seed_shared_workspace(database)
-            async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-                for release in deployment.releases:
-                    await unit_of_work.plugin_releases.add(release.release)
-                    await unit_of_work.plugin_releases.add_installation(
-                        release.installation
-                    )
-                for selection in deployment.selections:
-                    await unit_of_work.plugin_releases.add_selection(selection)
-                await unit_of_work.commit()
 
     asyncio.run(prepare())
     return DurableApiFixture(
@@ -171,11 +164,6 @@ def _durable_client(fixture: DurableApiFixture) -> Iterator[TestClient]:
         deployment.registry,
     )
     storage = LocalFileObjectStore(fixture.settings.app.workspace / "objects")
-    plugin_releases = PluginReleaseService(
-        lambda: SqlAlchemyUnitOfWork(database.sessions),
-        storage,
-        bucket=fixture.settings.storage.storage_bucket,
-    )
     components = build_workbench_components(
         plugin_registry=deployment.registry,
         workspace=fixture.settings.app.workspace,
@@ -184,7 +172,6 @@ def _durable_client(fixture: DurableApiFixture) -> Iterator[TestClient]:
         storage_backend=fixture.settings.storage.storage_backend,
         bucket=fixture.settings.storage.storage_bucket,
         saved_graphs=saved_graphs,
-        plugin_releases=plugin_releases,
     )
     overrides = {
         **_OVERRIDES,

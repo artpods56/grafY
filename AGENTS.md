@@ -28,18 +28,12 @@ Single-context: `CONTEXT.md` at the repo root, ADRs in `docs/adr/`. See `docs/ag
    and the `/etc/grafy/storage.override.yaml` override; `just minio` drives
    `/opt/minio/compose.yaml`. Those are the live host's files, not sandbox
    state.
-4. **A stale vendored SDK wheel.** Plugins resolve `grafy_core` from the
-   committed wheels under `plugins/*/wheels`, never from monorepo `libs/core`.
-   When `libs/core` changes a module a Plugin imports, run `just sdk-wheel`,
-   commit the rebuilt wheels, and update the sha256 pinned in
-   `tests/unit/architecture/test_import_boundaries.py` (see
-   `docs/design/plugin-development.md`). That test fails when you forget.
-5. **Hand-editing generated API types.**
+4. **Hand-editing generated API types.**
    `apps/web/src/lib/api/generated/grafy.ts` is regenerated from the FastAPI
    schema by `npm run generate:api` in `apps/web`; CI fails on drift via
    `npm --prefix apps/web run check:api`. Change the route or model and
    regenerate, don't edit.
-6. **A second API owner.** Collaboration assumes one API process. By default
+5. **A second API owner.** Collaboration assumes one API process. By default
    (`require_single_api_owner: true` in `libs/shared`) the API holds an
    exclusive workspace lock at startup (`apps/api/src/grafy_api/single_owner.py`).
    A second `just api` over the same workspace root fails by design; don't kill
@@ -57,8 +51,6 @@ elsewhere. Walk this list and say which entries applied:
   app-owned builtin families under `apps/api` and in one of `plugins/*` (gis,
   image, llm, mistral, python, sql, table, typesafe). Provider-shaped features
   need a decision per host, even if the decision is "not here".
-- **SDK wheel.** If the change touched a `libs/core` module a Plugin imports,
-  the vendored wheels and their pinned digest move with it.
 - **Tenancy and capabilities.** Every graph belongs to exactly one Workspace;
   effective permission is role ∩ PAT scope ∩ capability (`CONTEXT.md`). A new
   route needs a Workspace scoping and a capability decision, not just an id

@@ -308,7 +308,7 @@ jobs:
           path: output/playwright-real/
 
   deployment-images:
-    name: API and publisher deployment images
+    name: API deployment images
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -334,13 +334,6 @@ jobs:
           -c 'from grafy_plugin_gis.gdal import GdalCli; c = GdalCli().capabilities();
           assert c.pmtiles_write and c.cog_write and c.png_write, c;
           print(c.model_dump_json())'
-      - name: Build publisher and Plugin API image
-        run: docker build --file infra/docker/api.Dockerfile --target publisher --tag grafy-publisher-ci .
-      - name: Construct publisher CLI and verify tools
-        run: |
-          docker run --rm --entrypoint .venv/bin/grafy grafy-publisher-ci --help
-          docker run --rm --entrypoint docker grafy-publisher-ci buildx version
-
   publish-images:
     name: Publish ${{ matrix.image }} image
     # Images exist only for commits that passed every job above on main, so a
@@ -366,9 +359,6 @@ jobs:
           - image: grafy-api
             dockerfile: infra/docker/api.Dockerfile
             target: api-release
-          - image: grafy-publisher
-            dockerfile: infra/docker/api.Dockerfile
-            target: publisher
           - image: grafy-web
             dockerfile: infra/docker/web.Dockerfile
             target: runner

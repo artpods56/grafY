@@ -1,7 +1,6 @@
-# Grafy LLM Plugin
+# Grafy LLM family
 
-Self-contained System publication input for the existing `llm` entry point.
-The project vendors the exact Grafy SDK wheel referenced by `uv.lock`; it does
-not resolve dependencies through the monorepo Workspace.
-
-The published Plugin identity remains `external.llm`.
+Application-owned node family for OpenAI-compatible chat completion. Its stable
+identifier is `external.llm`, and it is registered in-process by
+`apps/api/src/grafy_api/services/families.py`, resolving `grafy_core` through the
+monorepo workspace.

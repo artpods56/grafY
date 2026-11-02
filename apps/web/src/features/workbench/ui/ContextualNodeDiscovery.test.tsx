@@ -98,7 +98,6 @@ function registry(): NodeRegistry {
         title: "Built-in",
         origin: "builtin",
         entry_kind: "plugin",
-        runnable: true,
       },
     ],
     artifact_types: [

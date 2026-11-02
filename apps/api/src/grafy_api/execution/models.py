@@ -9,11 +9,10 @@ from grafy_core.artifacts import ArtifactFieldProjection, ArtifactTypeKey
 from grafy_core.conversions import ArtifactConversion
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.implementation import ImplementationIdentity
-from grafy_core.domain.plugin_releases import PluginReleaseIdentity
 from grafy_core.nodes import Node, ResolvedNodeContracts
 from grafy_core.plugins import NodeRegistration
+from grafy_core.runtime.execution import PluginFailureCode
 from grafy_core.runtime.invocation import NodeInvocation
-from grafy_core.runtime.plugin_protocol import PluginFailureCode
 
 from grafy_api.execution.requests import (
     RunEdgeRequest,
@@ -41,7 +40,6 @@ class CompiledNode:
     resolved_contracts: ResolvedNodeContracts
     invocation: NodeInvocation
     artifact_type_bindings: Mapping[str, ArtifactTypeKey]
-    plugin_release: PluginReleaseIdentity | None = None
     implementation: ImplementationIdentity | None = None
 
     def __post_init__(self) -> None:
@@ -111,7 +109,6 @@ class NodeExecutionResult:
     status: Literal["succeeded", "failed", "skipped"]
     error: str | None
     outputs: Mapping[str, ArtifactOutputValue]
-    plugin_release: PluginReleaseIdentity | None = None
     failure_code: PluginFailureCode | None = None
 
     def __post_init__(self) -> None:

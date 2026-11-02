@@ -1,6 +1,5 @@
 from io import BytesIO
 from pathlib import Path
-from typing import cast
 from uuid import UUID
 
 import pytest
@@ -15,7 +14,6 @@ from grafy_core.artifact_collections import (
 from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactTypeKey
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.domain.invocation_cache import InvocationCacheEntry
-from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.table_contracts import (
     Table,
@@ -363,7 +361,6 @@ async def test_sql_cache_survives_fresh_workbench_components(tmp_path: Path) -> 
             plugin_registry=registry,
             workspace=tmp_path / "workbench",
             unit_of_work=SqlAlchemyUnitOfWork(database.sessions),
-            plugin_releases=cast(PluginReleaseService, deployment.release_lookup),
         )
         first_response = await first_components.presenter.run_response(
             WORKSPACE_ID,
@@ -376,7 +373,6 @@ async def test_sql_cache_survives_fresh_workbench_components(tmp_path: Path) -> 
             plugin_registry=registry,
             workspace=tmp_path / "workbench",
             unit_of_work=SqlAlchemyUnitOfWork(database.sessions),
-            plugin_releases=cast(PluginReleaseService, deployment.release_lookup),
         )
         repeated_response = await fresh_components.presenter.run_response(
             WORKSPACE_ID,

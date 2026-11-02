@@ -1,4 +1,3 @@
-from hashlib import sha256
 import json
 import asyncio
 from collections.abc import Mapping
@@ -66,27 +65,6 @@ from tests.support.egress import (
     no_grants,
     trusted_loopback_destination,
 )
-from grafy_core.domain.node_secrets import node_secret_dependency_sha256
-from grafy_core.domain.plugin_releases import (
-    PluginArtifactTypeKey,
-    PluginCatalogManifest,
-    plugin_contract_digest,
-    plugin_protocol_digest,
-)
-from grafy_core.runtime.plugin_guest import execute_plugin_invocation
-from grafy_core.runtime.plugin_loader import PluginGuestLoaderManifest
-from grafy_core.runtime.plugin_protocol import (
-    PluginInputArtifactBundle,
-    PluginInputArtifactGroup,
-    PluginInputBinding,
-    PluginInvocationEnvelope,
-    PluginInvocationLimits,
-    PluginInvocationRelease,
-    PluginInvocationResultEnvelope,
-    PluginOutputDeclaration,
-    PluginSecretBinding,
-)
-from grafy_core.runtime.table_bundle import load_table_bundle
 from grafy_core.table_contracts import TABLE_DATA, Table
 from mistralai.client.models.ocrresponse import OCRResponse
 from grafy_plugin_mistral.ocr import build_ocr_output
@@ -594,111 +572,6 @@ async def test_provider_preserves_cancellation(monkeypatch: pytest.MonkeyPatch) 
         )
 
 
-async def test_isolated_guest_persists_all_three_dependency_outputs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    body = cast(dict[str, object], ocr_response().json())
-    recorder = RequestRecorder(httpx.Response(200, json=body))
-    recorder.install(monkeypatch)
-    catalog = PluginCatalogManifest.from_plugin(MISTRAL)
-    contract = catalog.nodes[0]
-    payload = b'{"value":"https://files.example/report.pdf"}'
-    (tmp_path / "inputs").mkdir()
-    (tmp_path / "inputs/source.json").write_bytes(payload)
-    (tmp_path / "outputs").mkdir()
-    (tmp_path / "secrets").mkdir()
-    (tmp_path / "secrets/api_key").write_text("provider-secret")
-    manifest = tmp_path / "plugin-loader.json"
-    manifest.write_bytes(
-        PluginGuestLoaderManifest(
-            slug=MISTRAL.slug, loader_target="grafy_plugin_mistral.plugin:MISTRAL"
-        ).canonical_json_bytes()
-    )
-    request = PluginInvocationEnvelope(
-        invocation_id=uuid4(),
-        execution_scope_id=uuid4(),
-        workspace_id=WORKSPACE_ID,
-        node_id="ocr",
-        release=PluginInvocationRelease(
-            slug=MISTRAL.slug,
-            revision=1,
-            source_digest="a" * 64,
-            contract_digest=plugin_contract_digest(catalog),
-            protocol_digest=plugin_protocol_digest(),
-            descriptor_digest="b" * 64,
-        ),
-        operator_id=contract.operator_id,
-        operator_version=1,
-        required_capabilities=contract.required_capabilities,
-        config={},
-        inputs=(
-            PluginInputBinding(
-                port="document_url",
-                artifact_type=PluginArtifactTypeKey(
-                    id=TEXT_VALUE.key.id, schema_version=1
-                ),
-                groups=(
-                    PluginInputArtifactGroup(
-                        shape="one",
-                        artifacts=(
-                            PluginInputArtifactBundle(
-                                artifact_id=uuid4(),
-                                relative_path="inputs/source.json",
-                                byte_count=len(payload),
-                                content_sha256=sha256(payload).hexdigest(),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        ),
-        outputs=tuple(
-            PluginOutputDeclaration(
-                port=port.name,
-                artifact_type=spec.key,
-                bundle=spec.bundle,
-                shape=port.shape.value,
-            )
-            for port in contract.outputs
-            for spec in catalog.artifact_type_dependencies
-            if spec.key == port.artifact_type
-        ),
-        secrets=(
-            PluginSecretBinding(
-                name="api_key",
-                dependency_digest=node_secret_dependency_sha256({}),
-                relative_path="secrets/api_key",
-            ),
-        ),
-        limits=PluginInvocationLimits(),
-    )
-    (tmp_path / "invocation.json").write_bytes(request.canonical_json_bytes())
-    await execute_plugin_invocation(tmp_path, system_loader_manifest_path=manifest)
-    result = PluginInvocationResultEnvelope.from_json_bytes(
-        (tmp_path / "result.json").read_bytes()
-    )
-    assert result.status == "succeeded", result.failure
-    outputs = {binding.port: binding for binding in result.outputs}
-    assert set(outputs) == {"markdown", "blocks", "regions"}
-    assert json.loads(
-        (tmp_path / outputs["markdown"].artifacts[0].relative_path).read_bytes()
-    ) == {"markdown": "# Invoice\n\nTotal 10"}
-    table = load_table_bundle(
-        tmp_path / outputs["blocks"].artifacts[0].relative_path,
-        max_bytes=1_000_000,
-        max_files=10,
-        max_rows=10,
-        max_columns=20,
-        max_chunks=10,
-    )
-    assert table.rows[1]["text"] == "img-0.png"
-    regions = json.loads(
-        (tmp_path / outputs["regions"].artifacts[0].relative_path).read_bytes()
-    )
-    assert regions["pages"] == [{"index": 0, "width": 80, "height": 100}]
-    assert {region["page"] for region in regions["regions"]} == {0}
-
-
 @pytest.mark.parametrize("map_input", ["image", "document_url"])
 def test_registered_mistral_ocr_contract_supports_map(map_input: str) -> None:
     registration = next(
@@ -756,7 +629,6 @@ async def test_decode_images_maps_ocr_through_api_compile_and_execute(
         storage=storage,
         node_secrets=FakeNodeSecrets(SecretStr("provider-secret")),
         dedupe_artifact_handlers=True,
-        dev_plugin_slugs=frozenset((IMAGES.slug, MISTRAL.slug)),
         limits=ExecutionLimits(map_max_concurrency=1),
     )
     refs: list[ArtifactRef] = []

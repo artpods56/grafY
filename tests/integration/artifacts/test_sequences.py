@@ -438,7 +438,8 @@ def test_run_rejects_removed_local_upload_operator(
 
     assert response.status_code == 422
     assert response.json()["detail"] == (
-        "Unknown builtin operator source.local_upload.images@1"
+        "Node 'legacy-upload' references unavailable operator "
+        "source.local_upload.images@1"
     )
 
 

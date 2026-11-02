@@ -19,7 +19,6 @@ from grafy_core.plugins import NodeCachePolicy
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_core.runtime.execution import NodeRuntime
 from grafy_core.runtime.invocation import InvocationError, InvocationMode
-from grafy_core.runtime.plugin_invocation import PluginReleaseNode
 from grafy_core.runtime.persistence import PersistedNodeOutput
 
 from grafy_api.execution.control import RunExecutionControl
@@ -113,14 +112,13 @@ class NodeExecutionService:
             progress_reporter=execution.control,
         )
         registration = compiled_node.registration
-        # Both routes retain the exact release contract's cache semantics. The
-        # in-process route has additionally matched the loaded registration.
-        if registration is not None:
-            cache_policy = registration.cache_policy
-        elif isinstance(compiled_node.node, PluginReleaseNode):
-            cache_policy = compiled_node.node.cache_policy
-        else:
-            cache_policy = NodeCachePolicy.NEVER
+        # A registered node carries its own cache policy; a Module boundary or
+        # Module call has none, and its outputs are never reused blind.
+        cache_policy = (
+            registration.cache_policy
+            if registration is not None
+            else NodeCachePolicy.NEVER
+        )
         opaque_secret_revisions: dict[str, str] = {}
         if (
             cache_policy is NodeCachePolicy.EXACT
@@ -133,13 +131,6 @@ class NodeExecutionService:
                     node_request.config
                 ).model_dump(mode="json")
             )
-        elif (
-            cache_policy is NodeCachePolicy.EXACT
-            and isinstance(compiled_node.node, PluginReleaseNode)
-            and compiled_node.node.contract.secret_inputs
-        ):
-            secret_inputs = compiled_node.node.contract.secret_inputs
-            effective_config = node_request.config
         else:
             secret_inputs = ()
             effective_config = {}
@@ -186,7 +177,6 @@ class NodeExecutionService:
                 artifact_type_bindings=compiled_node.artifact_type_bindings,
                 cache_policy=cache_policy,
                 opaque_secret_revisions=opaque_secret_revisions,
-                plugin_release=compiled_node.plugin_release,
                 implementation=compiled_node.implementation,
             )
 
@@ -405,7 +395,6 @@ class NodeExecutionService:
                         artifact_type_bindings=compiled_node.artifact_type_bindings,
                         cache_policy=cache_policy,
                         opaque_secret_revisions=opaque_secret_revisions,
-                        plugin_release=compiled_node.plugin_release,
                         implementation=compiled_node.implementation,
                     ),
                 )

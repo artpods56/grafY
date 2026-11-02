@@ -9,9 +9,8 @@ response models, and `RunResultPresenter` stay in `v1/routes/executions`.
 | `events.py` | Execution status and progress event contracts. |
 | `models.py` | Compiled plans, prepared executions, and execution results. |
 | `preflight.py` | Check submitted inputs and saved context before compilation. |
-| `releases.py` | Resolve and index immutable exact-release contracts for one run. |
-| `compiler.py` | Resolve nodes, releases, contracts, and graph edges into a plan. |
-| `run_graph.py` | Coordinate preparation, nested runs, and sandbox cleanup. |
+| `compiler.py` | Resolve nodes, contracts, and graph edges into a plan. |
+| `run_graph.py` | Coordinate preparation, nested runs, and node scheduling. |
 | `coordinator.py`, `node_execution.py`, `edge_values.py` | Schedule nodes, execute them, and resolve edge values. |
 | `manager.py`, `admission.py`, `control.py` | Own run lifecycle, capacity, queue dispatch, events, and cancellation. |
 | `history.py` | Persist saved-graph history and transient activity, and recover queued work. |
@@ -21,16 +20,16 @@ response models, and `RunResultPresenter` stay in `v1/routes/executions`.
 ```mermaid
 flowchart LR
     HTTP[HTTP execution routes] --> Engine[execution]
-    Engine --> Hosting[plugins/runtime]
+    Engine --> Runtime[Core in-process node runtime]
     Composition[Application composition] --> Engine
-    Composition --> Hosting
+    Composition --> Runtime
     Composition --> Cache[Core persistent invocation cache]
 ```
 
-Plugin admission, Docker execution, artifact staging, and egress live in
-`grafy_api.plugins.runtime`. The portable persistent invocation-cache adapter
-lives in `grafy_core.runtime.persistent_invocation_cache`, beside its core cache
-contract. Application composition wires these owners together.
+Node families are invoked in-process through `grafy_core.runtime.execution`. The
+portable persistent invocation-cache adapter lives in
+`grafy_core.runtime.persistent_invocation_cache`, beside its core cache contract.
+Application composition wires these owners together.
 
 Queued recovery stores request JSON. Moving a model must preserve field names,
 aliases, validation, and serialized values. The HTTP models module re-exports the
@@ -52,30 +51,29 @@ Build both API and core wheels from clean generated build directories and inspec
 their contents. Setuptools can retain deleted modules in an old `build/` directory;
 a successful build alone does not prove that retired paths are absent.
 
-## Release preparation
+## Node preparation
 
-Preflight resolves exact release contracts before checking saved context and secret
-bindings. It returns a read-only, Workspace-keyed map to compilation. Compilation
-can also resolve contracts directly when used without preflight. Each run owns its
-map; nested runs and later submissions prepare their own contracts.
+Preflight resolves each node's contract, config, and secret bindings once and returns a
+read-only, Workspace-keyed map to compilation. Compilation can also resolve contracts
+directly when used without preflight. Each run owns its map; nested runs and later
+submissions prepare their own.
 
-Selection and revocation are mutable admission state. Compilation always reads
-them after preflight, once per exact release in that compilation. Do not add them
-to the shared preflight map. This preserves revocations arriving during preflight;
-it does not replace the execution/revocation fence tracked in the cleanup plan.
+There is no admission decision to read at execution time: an operator is either
+registered in this build or the request is rejected.
 
 ```mermaid
 flowchart LR
-    P[Preflight] --> R[Exact release contracts]
+    P[Preflight] --> R[Resolved node contracts]
     R --> C[Compiler]
-    S[Current selection and revocation] --> C
     C --> E[Execution plan]
 ```
 
 Saved-graph and nested-module workflows select their own active nodes and edges.
 `RunNodeRequest.from_saved_node` and `RunEdgeRequest.from_saved_edge` own their
-shared conversions, including connected plugs, release pins, artifact bindings,
-projections, conversion paths, and collection modes.
+shared conversions, including connected plugs, artifact bindings, projections,
+conversion paths, and collection modes. Reading a stored node or request that still
+carries a `plugin_release_pin` key drops it and reads `kind: "plugin"` as
+`kind: "builtin"`.
 
 ## Artifact availability lifetime
 
@@ -106,17 +104,15 @@ Saved runs register an activity marker after claiming their queued history row a
 before preparation. The existing `transient_executions` table tracks in-process
 activity for saved and unsaved runs; it does not replace saved history.
 
-`RunGraph` raises `PluginSandboxCleanupError` when cleanup cannot confirm that the
-scope is stopped. The manager reports the failed local result but retains the
-marker and any active saved history. Only guarded orphan recovery clears that
-uncertainty. An interrupted history row does not override an activity marker.
-Normal execution errors and cancellation still release activity once cleanup is
-confirmed. Caller cancellation and interruption of cleanup are distinct outcomes.
+Releasing the activity marker is retried, and a marker that cannot be released is
+retained and reported rather than the run pretending it finished. An interrupted history
+row does not override an activity marker. Normal execution errors and cancellation
+release activity.
 
 ```mermaid
 flowchart LR
-    Admission[Admission and activity registration] --> Run[Preparation and execution]
-    Run --> Cleanup[Sandbox cleanup]
+    Admission[Capacity admission and activity registration] --> Run[Preparation and execution]
+    Run --> Cleanup[Activity release]
     Cleanup --> Confirmed[Confirmed stopped]
     Cleanup --> Unconfirmed[Failed or interrupted]
     Confirmed --> Release[Release activity]

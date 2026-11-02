@@ -39,12 +39,6 @@ def _node(**overrides: Any) -> SavedGraphNode:
 
 def test_builtin_plugin_and_module_nodes_round_trip() -> None:
     builtin = _node()
-    plugin = _node(
-        id="n2",
-        kind="plugin",
-        operator_id="llm.openai_compatible.chat_completion",
-        plugin_release_pin=PIN,
-    )
     module = _node(
         id="n3",
         kind="module",
@@ -52,22 +46,48 @@ def test_builtin_plugin_and_module_nodes_round_trip() -> None:
         operator_version=2,
     )
 
-    document = SavedGraphDocument(nodes=(builtin, plugin, module))
-    restored = SavedGraphDocument.model_validate(document.model_dump(mode="json"))
+    payload = SavedGraphDocument(nodes=(builtin, module)).model_dump(mode="json")
+    legacy_plugin = dict(payload["nodes"][0])
+    legacy_plugin.update(
+        id="n2",
+        kind="plugin",
+        operator_id="llm.openai_compatible.chat_completion",
+        plugin_release_pin=PIN.model_dump(mode="json"),
+        config={"model": "example"},
+    )
+    payload["nodes"].insert(1, legacy_plugin)
+    restored = SavedGraphDocument.model_validate(payload)
     assert restored.schema_version == SAVED_GRAPH_SCHEMA_VERSION
     assert restored.nodes[0].kind == "builtin"
-    assert restored.nodes[1].plugin_release_pin == PIN
+    assert restored.nodes[1].kind == "builtin"
+    assert restored.nodes[1].operator_id == "llm.openai_compatible.chat_completion"
+    assert restored.nodes[1].config_dict() == {"model": "example"}
+    assert "plugin_release_pin" not in restored.model_dump(mode="json")["nodes"][1]
     assert restored.nodes[2].kind == "module"
+    assert (
+        SavedGraphDocument.model_validate(restored.model_dump(mode="json")) == restored
+    )
 
 
-def test_builtin_node_rejects_a_plugin_release_pin() -> None:
-    with pytest.raises(ValidationError, match="cannot carry a Plugin release pin"):
-        _node(plugin_release_pin=PIN)
+def test_builtin_node_discards_legacy_release_pin() -> None:
+    node = _node(plugin_release_pin=PIN)
+    assert node.kind == "builtin"
+    assert "plugin_release_pin" not in node.model_dump(mode="json")
 
 
-def test_plugin_node_requires_an_exact_release_pin() -> None:
-    with pytest.raises(ValidationError, match="must pin an exact Plugin release"):
-        _node(kind="plugin", operator_id="llm.openai_compatible.chat_completion")
+@pytest.mark.parametrize("pin", [None, {"revision": "invalid"}])
+def test_legacy_plugin_node_does_not_require_a_valid_release_pin(pin: object) -> None:
+    node = _node(kind="plugin", plugin_release_pin=pin)
+    assert node.kind == "builtin"
+    assert node.operator_id == "test.arithmetic.add"
+    assert "plugin_release_pin" not in node.model_dump(mode="json")
+
+
+def test_legacy_normalization_still_rejects_invalid_node_fields() -> None:
+    with pytest.raises(ValidationError, match="operator_version"):
+        _node(kind="plugin", plugin_release_pin=PIN, operator_version=0)
+    with pytest.raises(ValidationError, match="kind"):
+        _node(kind="unknown", plugin_release_pin=PIN)
 
 
 def test_saved_graph_document_rejects_legacy_schema_versions() -> None:

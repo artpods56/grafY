@@ -204,20 +204,22 @@ class MaterializationService:
         identity = {"kind": "builtin", "build_digest": self._build_digest}
         current: list[MaterializedNodeOutputs] = []
         for output in outputs:
-            refs = [
-                ref
+            # A deleted artifact leaves its siblings readable; only artifacts
+            # that still exist can show the output is from another build.
+            written = [
+                (ref, artifact)
                 for value in output.outputs.values()
                 for ref in (
                     value.item_refs
                     if isinstance(value, ArtifactRefSequence)
                     else (value,)
                 )
+                if (artifact := batch.artifacts.get(ref.artifact_id)) is not None
             ]
-            if refs and all(
-                (artifact := batch.artifacts.get(ref.artifact_id)) is not None
-                and artifact.ref() == ref
+            if written and all(
+                artifact.ref() == ref
                 and artifact.metadata.get("implementation") == identity
-                for ref in refs
+                for ref, artifact in written
             ):
                 current.append(output)
         return current

@@ -33,7 +33,6 @@ members = [
     "libs/workbench",
     "libs/shared",
     "apps/api",
-    "apps/plugin-egress-broker",
     "plugins/gis",
     "plugins/image",
     "plugins/llm",
@@ -43,11 +42,9 @@ members = [
     "plugins/typesafe",
 ]
 exclude = [
-    "tests/fixtures/plugin-notes",
 ]
 
 [tool.uv.sources]
-grafy-plugin-egress-broker = { workspace = true }
 grafy-api = { workspace = true }
 grafy-client = { workspace = true }
 grafy-core = { workspace = true }
@@ -65,7 +62,6 @@ grafy-plugin-typesafe = { workspace = true }
 
 [dependency-groups]
 dev = [
-    "grafy-plugin-egress-broker",
     "asgi-lifespan>=2.1.0",
     "httpx>=0.28.0",
     "polyfactory>=3.3.0",
@@ -97,7 +93,6 @@ include = [
     "plugins/sql/*",
     "plugins/typesafe/*",
     "apps/api/*",
-    "apps/plugin-egress-broker/*",
     "tests/*",
 ]
 exclude = [
@@ -124,6 +119,5 @@ executionEnvironments = [
         "plugins/sql/src",
         "plugins/typesafe/src",
         "apps/api/src",
-        "apps/plugin-egress-broker/src",
     ] },
 ]

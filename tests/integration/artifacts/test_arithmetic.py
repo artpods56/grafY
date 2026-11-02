@@ -1666,7 +1666,9 @@ def test_unknown_operator_version_is_rejected_before_execution(
     )
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "Unknown builtin operator value.integer@99"
+    assert response.json()["detail"] == (
+        "Node 'number' references unavailable operator value.integer@99"
+    )
 
 
 @pytest.mark.parametrize(

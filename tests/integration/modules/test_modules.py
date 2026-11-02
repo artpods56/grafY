@@ -253,7 +253,12 @@ def _saved_graph_document(
     serialized_nodes: list[dict[str, object]] = []
     for node in nodes:
         serialized = node.model_dump(mode="json")
-        serialized["plugin_release_pin"] = serialized.pop("plugin_release")
+        # A stored document written before ADR 0017 carries the retired pin key.
+        serialized["plugin_release_pin"] = {
+            "scope": "system",
+            "slug": "graph.module",
+            "revision": 1,
+        }
         serialized_nodes.append(serialized)
     effective_edges = [] if edges is None else edges
     return SavedGraphDocument.model_validate(
@@ -279,14 +284,14 @@ def _module_graph_payload(
     for node in nodes:
         if (node.operator_id, node.operator_version) in builtin_operators:
             pinned_nodes.append(
-                node.model_copy(update={"kind": "builtin", "plugin_release": None})
+                node.model_copy(update={"kind": "builtin"})
             )
             continue
         if node.operator_id in {"module.input", "module.output"} or (
             node.operator_id.startswith("graph.module.")
         ):
             pinned_nodes.append(
-                node.model_copy(update={"kind": "module", "plugin_release": None})
+                node.model_copy(update={"kind": "module"})
             )
             continue
         pinned_nodes.append(node)
@@ -727,20 +732,15 @@ def test_saved_graph_module_is_discoverable_and_executes_once(
     registry_response = catalog.list_nodes()
     assert registry_response.status_code == 200
     registry = registry_response.json()
-    assert {
+    module_family = next(
+        entry for entry in registry["plugins"] if entry["slug"] == "graph.module"
+    )
+    assert module_family == {
         "slug": "graph.module",
         "title": "Workspace library",
         "origin": "module",
         "entry_kind": "module",
-        "scope": None,
-        "plugin_release": None,
-        "revision": None,
-        "publisher": None,
-        "installation_scope": None,
-        "runnable": True,
-        "non_runnable_reason": None,
-        "non_runnable_detail": None,
-    } in registry["plugins"]
+    }
     module_spec = next(
         node for node in registry["nodes"] if node["module_graph_id"] == graph_id
     )

@@ -27,10 +27,6 @@ from grafy_core.domain.modules import (
     GraphModuleReference,
     GraphModuleReferenceError,
 )
-from grafy_core.domain.plugin_releases import (
-    PluginArtifactTypeContract,
-    PluginReleaseIdentity,
-)
 from grafy_core.nodes import (
     ArtifactTypeVariable,
     Node,
@@ -104,13 +100,6 @@ class GraphCompiler:
                 *plugin_registry.artifact_type_dependencies,
             )
         }
-        self._declared_artifact_contracts = {
-            artifact_type.key: PluginArtifactTypeContract.from_spec(artifact_type)
-            for artifact_type in (
-                *plugin_registry.declared_artifact_types,
-                *plugin_registry.artifact_type_dependencies,
-            )
-        }
         self._projectable_artifact_types = {
             artifact_type.key: artifact_type
             for artifact_type in plugin_registry.artifact_types
@@ -141,22 +130,15 @@ class GraphCompiler:
 
         nodes_by_id: dict[str, Node[Any, Any, Any]] = {}
         registrations_by_id: dict[str, NodeRegistration | None] = {}
-        releases_by_id: dict[str, PluginReleaseIdentity | None] = {}
         implementations_by_id: dict[str, ImplementationIdentity | None] = {}
         for node_request in ordered_requests:
-            (
-                node,
-                registration,
-                release_identity,
-                implementation,
-            ) = await self._build_node(
+            node, registration, implementation = await self._build_node(
                 node_request,
                 module_executor,
                 workspace_id=workspace_id,
             )
             nodes_by_id[node_request.id] = node
             registrations_by_id[node_request.id] = registration
-            releases_by_id[node_request.id] = release_identity
             implementations_by_id[node_request.id] = implementation
 
         artifact_types = set(self._artifact_types)
@@ -236,7 +218,6 @@ class GraphCompiler:
                     resolved_contracts=resolved_contracts_by_node[node_request.id],
                     invocation=invocations_by_id[node_request.id],
                     artifact_type_bindings=bindings_by_node[node_request.id],
-                    plugin_release=releases_by_id[node_request.id],
                     implementation=implementations_by_id[node_request.id],
                 )
                 for node_request in ordered_requests
@@ -254,7 +235,6 @@ class GraphCompiler:
     ) -> tuple[
         Node[Any, Any, Any],
         NodeRegistration | None,
-        PluginReleaseIdentity | None,
         ImplementationIdentity | None,
     ]:
         try:
@@ -294,7 +274,6 @@ class GraphCompiler:
     ) -> tuple[
         Node[Any, Any, Any],
         NodeRegistration | None,
-        PluginReleaseIdentity | None,
         ImplementationIdentity | None,
     ]:
         if module_reference is not None:
@@ -317,12 +296,7 @@ class GraphCompiler:
                     f"Saved graph {module_reference.graph_id} revision "
                     f"{module_reference.revision} is not a valid module: {exc}"
                 ) from exc
-            return (
-                GraphModuleNode(definition, module_executor),
-                None,
-                None,
-                None,
-            )
+            return GraphModuleNode(definition, module_executor), None, None
         if not is_module_boundary:
             raise GraphExecutionError(
                 f"Node {request.id!r} ({request.operator_id}@"
@@ -343,7 +317,7 @@ class GraphCompiler:
                 f"Node {request.id!r} references unavailable module boundary "
                 f"{request.operator_id}@{request.operator_version}: {exc}"
             ) from exc
-        return node, registration, None, None
+        return node, registration, None
 
     def _build_builtin_node(
         self,
@@ -354,7 +328,6 @@ class GraphCompiler:
     ) -> tuple[
         Node[Any, Any, Any],
         NodeRegistration | None,
-        PluginReleaseIdentity | None,
         ImplementationIdentity | None,
     ]:
         if request.operator_id.startswith("python."):
@@ -391,7 +364,6 @@ class GraphCompiler:
         return (
             node,
             registration,
-            None,
             BuiltinImplementationIdentity(build_digest=self._build_digest),
         )
 

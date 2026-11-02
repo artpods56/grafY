@@ -1,7 +1,7 @@
 # Grafy TypeSafe Plugin
 
-System plugin for [TypeSafe](https://docs.typesafe.ai) System One judgments.
-The published identity is `external.typesafe`. Calls go through `typesafe-sdk`
+Application-owned node family for [TypeSafe](https://docs.typesafe.ai) System One
+judgments. Its stable identifier is `external.typesafe`; calls go through `typesafe-sdk`
 (`AsyncTypeSafeClient`), not a hand-rolled HTTP client.
 
 Jev answers narrow questions. It does not write the workflow. Ask every
@@ -61,17 +61,16 @@ plugin.
 ## Develop and verify
 
 `uv sync` at the repository root installs this family into the workspace, because
-it is a workspace member.
-To test the publishable project independently, run these commands from the repository root:
+it is a workspace member. To exercise the project on its own, run this from the
+repository root:
 
 ```sh
 uv run --directory plugins/typesafe pytest -q
 ```
 
-The project carries its own lockfile and Grafy SDK wheel. The system inventory
-publishes it as an isolated plugin; installing the optional host extra alone
-does not promote a release into a deployment. Follow the repository's
-[plugin publication instructions](../../docs/design/plugin-development.md).
+The project resolves `grafy-core` from the monorepo workspace, and registering it
+in `apps/api/src/grafy_api/services/families.py` is what puts its nodes in a
+deployment. See [plugin development](../../docs/design/plugin-development.md).
 
 The adapter uses typed SDK questions and the SDK's response validation, retries,
 and asynchronous resource cleanup. SDK 0.7.2 declares recursive JSON types using

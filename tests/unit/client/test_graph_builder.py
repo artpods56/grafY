@@ -19,11 +19,9 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
-from grafy_core.domain.plugin_identity import PluginReleaseScope
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     SavedGraphConversion,
-    SavedGraphPluginReleasePin,
 )
 from grafy_core.nodes import (
     ArtifactTypeVariable,
@@ -214,7 +212,7 @@ def _catalog() -> NodeCatalog:
                 runnable=True,
             ),
             CatalogNode(
-                origin="plugin",
+                origin="builtin",
                 operator_id="markdown.consume",
                 operator_version=1,
                 plugin_slug="test.markdown",
@@ -233,11 +231,6 @@ def _catalog() -> NodeCatalog:
                     ),
                 ),
                 outputs=(),
-                plugin_release=SavedGraphPluginReleasePin(
-                    scope=PluginReleaseScope.WORKSPACE,
-                    slug="test.markdown",
-                    revision=7,
-                ),
                 runnable=True,
             ),
             CatalogNode(
@@ -342,7 +335,7 @@ def test_builder_validates_catalog_node_configuration() -> None:
         graph.add_catalog_node("text.input", {"text": 42})
 
 
-def test_builder_reads_legacy_plugin_catalog_as_builtin_without_pin() -> None:
+def test_builder_writes_a_family_node_as_builtin_without_a_pin() -> None:
     graph = GraphBuilder(_catalog())
     text = graph.add_catalog_node("text.input", {"text": "hello"})
     markdown = graph.add_catalog_node(

@@ -11,7 +11,6 @@ from pydantic import StrictInt, ValidationError
 from grafy_core.artifacts import NoConfig, NodeInput, NodeOutput
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.artifacts import JsonObject
-from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.domain.execution_history import (
     GraphExecution,
     GraphExecutionScope,
@@ -433,10 +432,6 @@ def _manager(
     components = build_workbench_components(
         plugin_registry=SYSTEM_DEPLOYMENT.registry,
         workspace=workspace,
-        plugin_releases=cast(
-            PluginReleaseService,
-            SYSTEM_DEPLOYMENT.release_lookup,
-        ),
     )
     return RunExecutionManager(
         components.run_graph,

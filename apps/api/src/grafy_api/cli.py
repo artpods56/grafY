@@ -5,16 +5,11 @@ import asyncio
 from datetime import UTC, datetime
 import getpass
 import hashlib
-from pathlib import Path
 from secrets import token_urlsafe
 import sys
-from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
-
 from grafy_core.application.identity import IdentityService
-from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.domain.errors import IdentityInvariantError
 from grafy_core.domain.identity import (
     PlatformAccessToken,
@@ -22,15 +17,9 @@ from grafy_core.domain.identity import (
     PlatformTokenScope,
     WorkspacePatPrincipal,
 )
-from grafy_core.domain.plugin_releases import PlatformPluginActor
-from grafy_core.domain.plugin_revocations import (
-    PluginReleaseRevocationError,
-    PluginReleaseRevocationReason,
-)
 from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
-from grafy_api.plugins.runtime.admission import isolated_release_admission
 from grafy_api.cli_credentials import (
     CliCredentialError,
     CredentialDigest,
@@ -39,55 +28,9 @@ from grafy_api.cli_credentials import (
     parse_sensitive_bearer_token,
     store_sensitive_cli_token,
 )
-from grafy_api.plugins.publication.workflow import SystemPluginPublicationWorkflow
-from grafy_api.plugins.publication.sandbox import DockerPluginDirectoryPublisher
-from grafy_api.plugins.publication.source import (
-    PluginDirectoryPublisher,
-    PluginPublishingError,
-)
-from grafy_api.plugins.profiles import runtime_profile
-from grafy_api.plugins.publication.oci import PluginOciImageBuilder
-from grafy_api.plugins.runtime.egress import PluginEgressBrokerPolicy
-from grafy_api.plugins.runtime.network_policy import (
-    NetworkPolicy,
-    load_network_policy_manifest,
-)
 from grafy_api.settings import get_settings
-from grafy_api.storage import configured_file_storage
-from grafy_api.system_plugin_inventory import (
-    CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH,
-    load_system_plugin_inventory,
-)
-from grafy_core.domain.system_plugin_inventory import (
-    SystemPluginInventoryError,
-)
 
 
-class PluginCheckReport(BaseModel):
-    """Read-only CLI summary of one verified Plugin working copy."""
-
-    status: Literal["valid"] = "valid"
-    slug: str
-    loader_target: str
-    node_count: int = Field(ge=0)
-    artifact_type_count: int = Field(ge=0)
-    capabilities: tuple[str, ...]
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    lock_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    runtime_profile: str
-
-
-def _parse_release_reference(value: str) -> tuple[str, int]:
-    slug, separator, revision_text = value.rpartition("@")
-    if not separator or slug == "":
-        raise argparse.ArgumentTypeError("release must use SLUG@REVISION")
-    try:
-        revision = int(revision_text)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError("release revision must be an integer") from exc
-    if revision < 1:
-        raise argparse.ArgumentTypeError("release revision must be positive")
-    return slug, revision
 
 
 def _parse_aware_timestamp(value: str) -> datetime:
@@ -213,38 +156,6 @@ async def _run_admin(args: argparse.Namespace) -> None:
         await database.dispose()
 
 
-async def _run_network_policy(args: argparse.Namespace) -> None:
-    """Validate the deployment network policy without mutating anything."""
-
-    settings = get_settings()
-    manifest = args.manifest or settings.egress.resolved_network_policy_manifest
-    if manifest is None:
-        policy = NetworkPolicy.from_config(settings.egress)
-        source = "legacy GRAFY_PLUGIN_*_EGRESS_DESTINATIONS translation"
-    else:
-        policy = load_network_policy_manifest(manifest)
-        source = str(manifest)
-    print(f"network policy source: {source}")
-    for profile in policy.profiles:
-        print(
-            "profile plane="
-            f"{profile.plane.value} name={profile.name} "
-            f"mode={profile.mode.value} origins={len(profile.allowed_origins)} "
-            f"digest={profile.policy_digest}"
-        )
-    for assignment in policy.assignments:
-        target = "plane-default"
-        if assignment.slug is not None:
-            target += f" slug={assignment.slug}"
-        if assignment.revision is not None:
-            target += f" revision={assignment.revision}"
-        print(
-            f"assignment plane={assignment.plane.value} {target} -> "
-            f"{assignment.profile}"
-        )
-    print("network policy OK")
-
-
 async def _run(args: argparse.Namespace) -> None:
     if args.group == "auth":
         await _run_auth(args)
@@ -252,154 +163,7 @@ async def _run(args: argparse.Namespace) -> None:
     if args.group == "admin":
         await _run_admin(args)
         return
-    if args.group == "network-policy":
-        await _run_network_policy(args)
-        return
-    if args.group != "plugin":
-        raise ValueError("Unsupported Grafy command")
-    settings = get_settings()
-    if args.command == "check":
-        directory = Path(args.directory)
-        publisher = PluginDirectoryPublisher(
-            settings.plugins.resolved_plugin_roots,
-            runtime_profile=settings.plugins.plugin_runtime_profile,
-            wheelhouse=settings.plugins.resolved_plugin_wheelhouse,
-        )
-        try:
-            verified = await asyncio.to_thread(publisher.verify, directory)
-        except PluginPublishingError as exc:
-            print(f"Plugin check failed: {exc}", file=sys.stderr)
-            raise SystemExit(1) from exc
-        report = PluginCheckReport(
-            slug=verified.catalog.slug,
-            loader_target=verified.loader_target,
-            node_count=len(verified.catalog.nodes),
-            artifact_type_count=len(verified.catalog.artifact_types),
-            capabilities=tuple(
-                capability.value for capability in verified.capabilities.capabilities
-            ),
-            source_digest=verified.source_digest,
-            lock_digest=verified.lock_digest,
-            runtime_profile=verified.runtime_profile,
-        )
-        print(report.model_dump_json(indent=2))
-        return
-    database = create_database(settings.app.resolved_database_url)
-    try:
-        identity = IdentityService(lambda: SqlAlchemyUnitOfWork(database.sessions))
-        storage = configured_file_storage(settings.storage, settings.app.workspace)
-        releases = PluginReleaseService(
-            lambda: SqlAlchemyUnitOfWork(database.sessions),
-            storage,
-            bucket=settings.storage.storage_bucket,
-        )
-        if args.command == "revoke":
-            credential = _load_credential_digest(settings.app.resolved_database_url)
-            if credential.kind != "platform":
-                raise SystemExit("Global Plugin revocation requires a platform token")
-            principal = await identity.authenticate_platform_access_token(
-                public_prefix=credential.public_prefix,
-                secret_digest=credential.secret_digest,
-                required_scope=PlatformTokenScope.REVOKE_GLOBAL,
-            )
-            slug, revision = args.release
-            revocation = await releases.revoke_system(
-                slug=slug,
-                revision=revision,
-                reason=PluginReleaseRevocationReason(args.reason),
-                platform_actor=PlatformPluginActor(principal.principal_reference),
-            )
-            print(
-                f"Revoked System Plugin {revocation.slug} release "
-                f"{revocation.revision} for {revocation.reason.value}"
-            )
-            return
-        plugins = settings.plugins
-        profile = runtime_profile(
-            plugins.plugin_runtime_profile,
-            native_base_image=plugins.plugin_runtime_native_base_image,
-            native_base_image_digest=plugins.plugin_runtime_native_base_image_digest,
-        )
-        image_builder = PluginOciImageBuilder(
-            storage,
-            bucket=settings.storage.storage_bucket,
-            profile=profile,
-            docker_binary=settings.plugins.plugin_docker_binary,
-        )
-        system_inventory = load_system_plugin_inventory(
-            CHECKED_IN_SYSTEM_PLUGIN_INVENTORY_PATH
-        )
-        credential = _load_credential_digest(settings.app.resolved_database_url)
-        if credential.kind != "platform":
-            raise SystemExit("System Plugin operations require a platform token")
-        required_scope = (
-            PlatformTokenScope.PUBLISH_GLOBAL
-            if args.command == "publish"
-            else PlatformTokenScope.PROMOTE_GLOBAL
-        )
-        principal = await identity.authenticate_platform_access_token(
-            public_prefix=credential.public_prefix,
-            secret_digest=credential.secret_digest,
-            required_scope=required_scope,
-        )
-        system_publication = SystemPluginPublicationWorkflow(
-            image_builder,
-            releases,
-            isolated_release_admission(
-                profile=profile,
-                egress_policy=PluginEgressBrokerPolicy.from_config(settings.egress),
-                network_policy=NetworkPolicy.from_config(settings.egress),
-            ),
-            system_inventory,
-        )
-        platform_actor = PlatformPluginActor(principal.principal_reference)
-        if args.command == "publish":
-            inventory_entry = system_inventory.entry_for(args.slug)
-            if settings.plugins.resolved_plugin_wheelhouse is not None:
-                raise SystemExit(
-                    "System sandbox publication requires dependencies to be "
-                    "present in the frozen source or fetched from configured "
-                    "package indexes; host wheelhouse mounts are not supported"
-                )
-            publisher = DockerPluginDirectoryPublisher(
-                settings.plugins.resolved_plugin_roots,
-                runtime_profile=settings.plugins.plugin_runtime_profile,
-                image=args.sandbox_image,
-                docker_binary=settings.plugins.plugin_docker_binary,
-                scratch_root=(
-                    settings.plugins.resolved_plugin_publisher_scratch_root
-                ),
-            )
-            verified = await asyncio.to_thread(
-                publisher.verify,
-                Path(args.directory),
-                expected_slug=args.slug,
-                loader_target=inventory_entry.loader_target,
-            )
-            release = await system_publication.publish_verified(
-                verified,
-                platform_actor=platform_actor,
-            )
-            print(
-                f"Published System Plugin {release.release.slug} release "
-                f"{release.release.revision}; promote it explicitly to activate it"
-            )
-            return
-        slug, revision = args.release
-        selection = await system_publication.promote(
-            slug=slug,
-            revision=revision,
-            platform_actor=platform_actor,
-            expected_generation=args.if_generation,
-        )
-        print(
-            f"Promoted System Plugin {selection.slug} release "
-            f"{selection.selected_revision} at generation {selection.generation}"
-        )
-        return
-        raise ValueError("Unsupported Grafy Plugin command")
-    finally:
-        await database.dispose()
+    raise ValueError("Unsupported Grafy command")
 
 
 def main() -> None:
@@ -451,82 +215,10 @@ def main() -> None:
     revoke_platform_token = platform_token_commands.add_parser("revoke")
     revoke_platform_token.add_argument("token_id")
 
-    plugin = groups.add_parser("plugin")
-    commands = plugin.add_subparsers(dest="command", required=True)
-    check = commands.add_parser(
-        "check",
-        help="verify a Plugin directory without publishing it",
-    )
-    check.add_argument("directory")
-    publish = commands.add_parser(
-        "publish",
-        help="verify and publish a System Plugin release without activating it",
-    )
-    publish.add_argument(
-        "directory",
-        help="Plugin project to verify and freeze",
-    )
-    publish.add_argument(
-        "--slug",
-        required=True,
-        help="expected Plugin slug; must match the inspected declaration",
-    )
-    publish.add_argument(
-        "--sandbox-image",
-        required=True,
-        help="publisher image used to verify the candidate in isolation",
-    )
-
-    promote = commands.add_parser(
-        "promote",
-        help="activate one published global Plugin release",
-    )
-    promote.add_argument(
-        "release",
-        type=_parse_release_reference,
-        help="exact inactive global release as SLUG@REVISION",
-    )
-    promote.add_argument(
-        "--if-generation",
-        type=int,
-        help="optional compare-and-swap guard for concurrent automation",
-    )
-    revoke = commands.add_parser("revoke")
-    revoke.add_argument(
-        "release",
-        type=_parse_release_reference,
-        help="exact global release as SLUG@REVISION",
-    )
-    revoke.add_argument(
-        "--reason",
-        required=True,
-        choices=tuple(reason.value for reason in PluginReleaseRevocationReason),
-    )
-    network_policy_group = groups.add_parser("network-policy")
-    network_policy_commands = network_policy_group.add_subparsers(
-        dest="command",
-        required=True,
-    )
-    validate_policy = network_policy_commands.add_parser(
-        "validate",
-        help="Validate the deployment network policy (non-mutating)",
-    )
-    validate_policy.add_argument(
-        "--manifest",
-        type=Path,
-        help="Manifest to validate; defaults to GRAFY_NETWORK_POLICY_MANIFEST",
-    )
-
     args = parser.parse_args()
     try:
         asyncio.run(_run(args))
-    except (
-        CliCredentialError,
-        IdentityInvariantError,
-        PluginReleaseRevocationError,
-        PluginPublishingError,
-        SystemPluginInventoryError,
-    ) as exc:
+    except (CliCredentialError, IdentityInvariantError) as exc:
         parser.error(str(exc))
 
 

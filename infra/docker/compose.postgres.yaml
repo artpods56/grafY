@@ -39,10 +39,6 @@ services:
       GRAFY_DATABASE_URL: postgresql+asyncpg://${GRAFY_POSTGRES_USER:-grafy}:${GRAFY_POSTGRES_PASSWORD:?GRAFY_POSTGRES_PASSWORD must be set and non-empty}@postgres:5432/${GRAFY_POSTGRES_DB:-grafy}
       GRAFY_ENVIRONMENT: ${GRAFY_ENVIRONMENT:-production}
 
-  publisher:
-    environment:
-      GRAFY_DATABASE_URL: postgresql+asyncpg://${GRAFY_POSTGRES_USER:-grafy}:${GRAFY_POSTGRES_PASSWORD:?GRAFY_POSTGRES_PASSWORD must be set and non-empty}@postgres:5432/${GRAFY_POSTGRES_DB:-grafy}
-
 volumes:
   grafy-postgres:
     name: ${GRAFY_POSTGRES_VOLUME:-grafy-postgres}

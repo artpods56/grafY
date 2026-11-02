@@ -1,7 +1,9 @@
-# Grafy Image Plugin
+# Grafy Image family
 
-Independent publication input for `external.image`. The project vendors the
-Grafy SDK wheel pinned by `uv.lock`. It has no Workbench dependency.
+Application-owned node family for raster and document images. Its stable
+identifier is `external.image`, it is registered in-process by
+`apps/api/src/grafy_api/services/families.py`, and it resolves `grafy_core` from
+the monorepo workspace. It has no Workbench dependency.
 
 ## Draw regions
 

@@ -33,8 +33,8 @@ The registry supplies declarations and config dependencies, so a historical
 release does not need to exist to resolve a secret for a registered operator.
 Workspace and saved-revision checks still bind each run to its authorized graph.
 
-The first usable milestone retains release tables, publication helpers and
-historical descriptor types. They are outside catalog selection and graph
-execution. There is no destructive migration in this milestone. Remaining
-publication commands do not change which operators the API executes. Graph
-Modules retain their separate immutable publication model.
+The release tables and their historical descriptor types stay, with no destructive
+migration: stored rows remain readable and nothing serves or executes them. The
+publication service, the Docker sandbox, the guest protocol and the egress broker are
+gone, along with the `grafy plugin` and `network-policy` command groups that drove them.
+Graph Modules retain their separate immutable publication model.

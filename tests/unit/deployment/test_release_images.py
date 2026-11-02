@@ -9,7 +9,6 @@ PUBLISHED_SERVICES = {
     "api": "GRAFY_API_IMAGE",
     "web": "GRAFY_WEB_IMAGE",
     "gateway": "GRAFY_GATEWAY_IMAGE",
-    "publisher": "GRAFY_PUBLISHER_IMAGE",
 }
 
 
@@ -29,6 +28,20 @@ def test_every_built_service_names_an_overridable_image() -> None:
         assert "build" in services[name], f"{name} must stay buildable locally"
 
 
+def test_postgres_override_does_not_add_unbuildable_services() -> None:
+    base_services = cast(
+        dict[str, object], _load("infra/docker/compose.yaml")["services"]
+    )
+    override_services = cast(
+        dict[str, dict[str, object]],
+        _load("infra/docker/compose.postgres.yaml")["services"],
+    )
+
+    for name, service in override_services.items():
+        if name not in base_services:
+            assert "image" in service or "build" in service, name
+
+
 def test_ci_publishes_every_release_image_only_from_green_main() -> None:
     workflow = _load(".github/workflows/ci.yml")
     jobs = cast(dict[str, dict[str, object]], workflow["jobs"])
@@ -45,7 +58,6 @@ def test_ci_publishes_every_release_image_only_from_green_main() -> None:
     )
     assert {entry["image"] for entry in matrix} == {
         "grafy-api",
-        "grafy-publisher",
         "grafy-web",
         "grafy-gateway",
     }

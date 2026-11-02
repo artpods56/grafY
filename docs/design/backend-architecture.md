@@ -9,14 +9,13 @@ supersedes the historical host-eligible Plugin execution model.
 
 | Owner | Responsibility |
 | --- | --- |
-| `apps/api/src/grafy_api` | HTTP and room transport, application composition, graph execution, Plugin publication and isolated hosting. |
+| `apps/api/src/grafy_api` | HTTP and room transport, application composition, graph execution, and the catalog of operators this build registers. |
 | `apps/mcp/src/grafy_mcp` | MCP tools through an injected graph-workspace operations contract. |
-| `apps/plugin-egress-broker/src/grafy_plugin_egress_broker.py` | Standalone restricted HTTP egress broker executable. |
 | `libs/core/src/grafy_core` | Domain models, application workflows, ports, node runtime, artifact contracts, portable cache and storage readers. |
 | `libs/persistence/src/grafy_persistence` | SQL repositories, transaction adapters, table metadata, database setup, System cutover and baseline persistence operations. |
 | `libs/storage/src/grafy_storage` | Local and S3 object-store adapters. |
 | `libs/workbench/src/grafy_workbench` | Application-owned builtin families: image, sequence, value, text, schema, table, and file. |
-| `plugins/{gis,llm,mistral,sql}` | Independently published Plugin implementations and their provider-specific dependencies. |
+| `plugins/{gis,image,llm,mistral,sql,table,typesafe}` | Node families with their own packages and provider dependencies, installed into the API process and registered by `apps/api/src/grafy_api/services/families.py`. |
 | `libs/client/src/grafy_client` | Python HTTP client contracts and operations. |
 
 Core defines ports; persistence and storage implement them. Core does not import
@@ -95,40 +94,29 @@ used by the independent MCP package. MCP does not import API routes, persistence
 object storage, or Plugin implementations. Token scope and current workspace
 membership both constrain access.
 
-## Builtins, Plugin releases, and catalog
+## Node families and the catalog
 
-Builtins are application code. They execute in process and identify by builtin
-kind and deployment build digest. They have no Plugin release pin. Published
-Plugins execute in isolated workers; System and Workspace describe installation
-scope, not different execution mechanisms.
+Every operator in this build is application code loaded in-process (ADR 0017). A family
+is either a builtin under `libs/workbench` or a package under `plugins/`; both are
+installed into the API environment and registered into one static
+`grafy_core.plugins.PluginRegistry`, and a node identifies by family slug plus the
+deployment build digest. There is no release pin, no installation, no selection and no
+revocation to consult: a family that is not in `services/families.py` has no nodes, no
+artifact types and no catalog entry.
 
-`plugins/publication` owns source handling, authoring, verification sandboxing,
-OCI publication, and publication orchestration. `plugins/profiles.py` owns runtime
-profile definitions. `plugins/runtime` owns exact-release admission, Docker
-invocation, artifact staging, sandbox settings, and egress policy. The standalone
-egress broker is packaged separately from API.
+The publication and isolated-hosting modules that used to sit under
+`apps/api/src/grafy_api/plugins`, the guest protocol under `grafy_core.runtime`, and the
+standalone egress broker are removed. Reading historical data still normalises: a stored
+document or run request that carries a `plugin_release_pin` key has it dropped and
+`kind: "plugin"` is read as `kind: "builtin"`.
 
-`grafy_api.system_plugin_inventory` loads the checked-in System inventory for
-publication and promotion. Historical System cutover and host deployment
-manifest tooling have been retired under issue #117. Persisted `host-eligible`
-policy values remain readable, but System promotion rejects that policy.
-
-```mermaid
-flowchart LR
-    Source[Plugin source] --> Publication[Publication and sandbox verification]
-    Publication --> Release[Immutable release plus installation]
-    Release --> Catalog[Workspace catalog and selection]
-    Release --> Admission[Current admission and revocation]
-    Admission --> Guest[Isolated Plugin runtime]
-```
-
-`grafy_api.catalog.CatalogSnapshot` owns catalog assembly from builtin declarations,
-exact release facts, selection/revocation state, and Module library results.
-Release, installation, and selection remain separate concepts.
-`InstalledPluginRelease` exposes its release and installation explicitly.
+`grafy_api.catalog.CatalogSnapshot` owns catalog assembly from the installed family
+declarations and Module library results. An entry is what this build registered,
+so it carries no release identity and no readiness decision: a family that was
+not installed has no entry at all. The upload extension table is built from the
+same artifact declarations and refuses two owners for one extension.
 `PluginRegistry` retains immutable family declarations and lookup indexes.
-Canonical artifact conversions remain deployment-owned in core; release metadata
-must agree with those conversion contracts.
+Canonical artifact conversions remain deployment-owned in core.
 
 ## Graph execution
 
@@ -138,10 +126,9 @@ queue lifecycle, history, materialization, and node execution. HTTP endpoints an
 compatibility aliases for durable requests and events. See the
 [execution ownership reference](../../apps/api/src/grafy_api/execution/README.md).
 
-Preflight resolves immutable exact-release contracts for reuse during compilation.
-Selection and revocation are mutable: compilation reads current admission facts
-rather than caching them in that immutable preparation map. Saved-graph and
-nested-Module paths share request conversions while selecting their own topology.
+Preflight resolves each node's contract and secret requirements once, and the
+compiler reuses that preparation. Saved-graph and nested-Module paths share request
+conversions while selecting their own topology.
 
 `GraphExecutionCoordinator` schedules graph work; `NodeExecutionService` executes
 nodes; core `NodeRuntime` owns node-level materialization, invocation, and output
@@ -164,13 +151,11 @@ runtime. Queued recovery depends on stable request serialization. MAP ordering,
 cancellation, nested execution, and materialization each have behavioral tests.
 System revocation and cutover fence both durable queue rows and transient activity
 markers. Transient activity is registered before preparation and removed after task
-cleanup. Startup only clears stale markers with exclusive ownership and confirmed
-Plugin orphan cleanup; otherwise it retains them and refuses startup. Without the
-owner lease, global orphan cleanup is skipped. Startup recovery has lifespan tests;
+cleanup. Startup only clears stale markers when it holds the exclusive API owner lease;
+otherwise it retains them and refuses startup. Startup recovery has lifespan tests;
 background and synchronous execution races have SQLite and PostgreSQL coverage.
 Synchronous routes use manager-owned activity while retaining HTTP capacity through
-presentation. Unconfirmed sandbox cleanup retains activity and active saved history until
-guarded orphan recovery. Saved runs also register activity before preparation, so
+presentation. Saved runs also register activity before preparation, so
 marking saved history interrupted cannot bypass recovery authority.
 
 ## Artifact contracts, reads, and infrastructure

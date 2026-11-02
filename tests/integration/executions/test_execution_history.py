@@ -59,7 +59,12 @@ def _saved_text_graph_nodes(text: str) -> list[SavedGraphNodeModel]:
 
 def _create_text_graph_request(name: str, text: str) -> CreateSavedGraphRequest:
     node = _saved_text_graph_nodes(text)[0].model_dump(mode="json")
-    node["plugin_release_pin"] = node.pop("plugin_release")
+    # Reading a pre-ADR-0017 node must not need the release it pinned.
+    node["plugin_release_pin"] = {
+        "scope": "system",
+        "slug": "builtin.text",
+        "revision": 1,
+    }
     return CreateSavedGraphRequest(
         name=name,
         document=SavedGraphDocument.model_validate({"nodes": [node]}),
@@ -70,7 +75,12 @@ def _update_text_graph_request(
     name: str, text: str, *, expected_revision: int
 ) -> UpdateSavedGraphRequest:
     node = _saved_text_graph_nodes(text)[0].model_dump(mode="json")
-    node["plugin_release_pin"] = node.pop("plugin_release")
+    # Reading a pre-ADR-0017 node must not need the release it pinned.
+    node["plugin_release_pin"] = {
+        "scope": "system",
+        "slug": "builtin.text",
+        "revision": 1,
+    }
     return UpdateSavedGraphRequest(
         name=name,
         expected_revision=expected_revision,

@@ -2,7 +2,6 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from grafy_core.application.plugin_releases import PluginReleaseService
 from grafy_core.plugins import PluginRegistry
 from grafy_core.ports.modules import GraphModuleExecutorPort
 
@@ -19,16 +18,6 @@ PluginRegistryDependency = Annotated[
 ]
 
 
-def plugin_release_service(request: Request) -> PluginReleaseService | None:
-    return get_resources(request.app).workbench.plugin_releases
-
-
-PluginReleaseServiceDependency = Annotated[
-    PluginReleaseService | None,
-    Depends(plugin_release_service),
-]
-
-
 def graph_module_executor(request: Request) -> GraphModuleExecutorPort:
     return get_resources(request.app).workbench.run_graph
 
@@ -42,8 +31,6 @@ GraphModuleExecutorDependency = Annotated[
 __all__ = [
     "GraphModuleExecutorDependency",
     "PluginRegistryDependency",
-    "PluginReleaseServiceDependency",
     "graph_module_executor",
     "plugin_registry",
-    "plugin_release_service",
 ]

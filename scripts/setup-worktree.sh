@@ -37,11 +37,12 @@ link_env_file "${project_root}/.env" "${worktree}/.env"
 
 # Mirror the Justfile `install` recipe. `just install` keeps one source of
 # truth when just is on PATH (the first run in a fresh worktree may not have
-# it yet, so fall back to the two raw commands).
+# it yet, so fall back to the raw commands).
 cd "${worktree}"
 if command -v just >/dev/null 2>&1; then
     just install
 else
     uv sync
     npm --prefix apps/web ci
+    uv run prek install
 fi

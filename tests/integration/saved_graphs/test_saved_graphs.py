@@ -96,7 +96,13 @@ def _graph_document(
     serialized_nodes: list[dict[str, object]] = []
     for node in effective_nodes:
         serialized = node.model_dump(mode="json")
-        serialized["plugin_release_pin"] = serialized.pop("plugin_release")
+        # A document written before ADR 0017 carries the retired pin key; reading it
+        # must not require a release that no longer exists.
+        serialized["plugin_release_pin"] = {
+            "scope": "system",
+            "slug": "builtin.text",
+            "revision": 1,
+        }
         serialized_nodes.append(serialized)
     return SavedGraphDocument.model_validate(
         {
@@ -211,7 +217,11 @@ def test_create_accepts_the_canonical_saved_graph_document(
     payload = _canonical_raw_graph_payload("Canonical graph")
     document = cast(dict[str, object], payload["document"])
     for node in cast(list[dict[str, object]], document["nodes"]):
-        node["plugin_release_pin"] = None
+        node["plugin_release_pin"] = {
+            "scope": "system",
+            "slug": "builtin.text",
+            "revision": 1,
+        }
     payload["document"] = document
 
     response = builtin_client.post(
@@ -222,6 +232,10 @@ def test_create_accepts_the_canonical_saved_graph_document(
     assert response.status_code == 201
     body = response.json()
     assert body["name"] == "Canonical graph"
+    # The stored document is the one that was sent, minus the retired pin key the
+    # read path normalises away.
+    for node in cast(list[dict[str, object]], document["nodes"]):
+        node.pop("plugin_release_pin", None)
     assert body["document"] == document
     assert "nodes" not in body
     assert "edges" not in body
@@ -822,7 +836,7 @@ def test_canonical_head_endpoint_returns_exact_document(
     assert body["checkpoint_sequence"] == 1
     assert body["checkpoint_revision"] == graph.revision
     for node in body["document"]["nodes"]:
-        assert "plugin_release_pin" in node
+        assert "plugin_release_pin" not in node
         assert "plugin_release" not in node
 
 

@@ -5,8 +5,7 @@ from uuid import uuid4
 
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.nodes import UserFacingNodeError
-from grafy_core.runtime.execution import NodeRunError
-from grafy_core.runtime.plugin_protocol import PluginFailureCode
+from grafy_core.runtime.execution import NodeRunError, PluginFailureCode
 
 from grafy_api.execution.errors import (
     NestedGraphExecutionError,
@@ -75,7 +74,6 @@ class GraphExecutionCoordinator:
                         status="skipped",
                         error=None,
                         outputs={},
-                        plugin_release=compiled_node.plugin_release,
                     )
                 )
                 if execution.control is not None:
@@ -119,7 +117,6 @@ class GraphExecutionCoordinator:
                     if isinstance(exc, NodeRunError)
                     else PluginFailureCode.INTERNAL_ADAPTER_FAILURE
                 )
-                plugin_release = compiled_node.plugin_release
                 logger.error(
                     "node_execution_failed",
                     extra={
@@ -135,12 +132,6 @@ class GraphExecutionCoordinator:
                         "node_run_id": str(node_run_id),
                         "operator_id": node_request.operator_id,
                         "operator_version": node_request.operator_version,
-                        "plugin_slug": (
-                            None if plugin_release is None else plugin_release.slug
-                        ),
-                        "plugin_revision": (
-                            None if plugin_release is None else plugin_release.revision
-                        ),
                         "failure_code": failure_code.value,
                     },
                     exc_info=(type(exc), exc, exc.__traceback__),
@@ -176,7 +167,6 @@ class GraphExecutionCoordinator:
                         status="failed",
                         error=render_execution_error(exc),
                         outputs={},
-                        plugin_release=compiled_node.plugin_release,
                         failure_code=failure_code,
                     )
                 )
@@ -195,7 +185,6 @@ class GraphExecutionCoordinator:
                     status="succeeded",
                     error=None,
                     outputs=copied_node_outputs,
-                    plugin_release=compiled_node.plugin_release,
                 )
             )
             if control is not None:

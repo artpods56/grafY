@@ -78,11 +78,7 @@ function nodeSpec(
     is_current_library_release: options.isCurrentLibraryRelease ?? null,
     catalog_visible: catalogVisible,
     origin:
-      pluginSlug === "graph.module" || moduleGraphId
-        ? "module"
-        : pluginSlug === "external"
-          ? "plugin"
-          : "builtin",
+      pluginSlug === "graph.module" || moduleGraphId ? "module" : "builtin",
     runnable: true,
   };
 }
@@ -95,24 +91,18 @@ function registry(): NodeRegistry {
         title: "Built-in",
         origin: "builtin",
         entry_kind: "plugin",
-        runnable: true,
       },
       {
         slug: "graph.module",
         title: "Workspace library",
         origin: "module",
         entry_kind: "module",
-        runnable: true,
       },
       {
         slug: "external",
         title: "External",
-        origin: "plugin",
+        origin: "builtin",
         entry_kind: "plugin",
-        scope: "system",
-        revision: 1,
-        plugin_release: { scope: "system", slug: "external", revision: 1 },
-        runnable: true,
       },
     ],
     artifact_types: [

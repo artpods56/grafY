@@ -277,7 +277,6 @@ export function nodeCatalogSearchText(
     plugin.title,
     plugin.entry_kind,
     plugin.origin,
-    plugin.scope ?? "",
     ...spec.inputs.flatMap((port) => portSearchTerms(port, registry)),
     ...spec.outputs.flatMap((port) => portSearchTerms(port, registry)),
     ...fields.flatMap((field) => [

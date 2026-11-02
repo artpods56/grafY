@@ -5,11 +5,10 @@ Each section of :mod:`grafy_shared.config` is its own ``BaseSettings`` over the 
 moves between sections. This parent is a plain ``BaseModel``: it reads no environment
 itself, which is what keeps it out of the way of everything that needs one section.
 
-This module is the only reader of the whole configuration object, and it never imports
-``grafy_api.plugins.runtime``. Runtime policy objects are built by the runtime from an
-``EgressConfig`` (``NetworkPolicy.from_config`` and
-``PluginEgressBrokerPolicy.from_config``), so configuration configures the runtime
-instead of importing it. See
+This module is the only reader of the whole configuration object. The one runtime
+policy it composes is the egress authority: ``grafy_core.egress`` decides, from
+``EgressConfig.egress_trusted_destinations``, whether the API may dial a destination a
+node named. Configuration stays a leaf and never imports the application. See
 ``docs/adr/0011-shared-configuration-is-a-leaf-package.md``.
 """
 
@@ -27,7 +26,6 @@ from grafy_shared.config import (
     EgressConfig,
     ExecutionConfig,
     KeysConfig,
-    PluginsConfig,
     RealtimeConfig,
     StorageConfig,
     UploadConfig,
@@ -63,7 +61,6 @@ class Settings(BaseModel):
     realtime: RealtimeConfig = Field(default_factory=RealtimeConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     uploads: UploadConfig = Field(default_factory=UploadConfig)
-    plugins: PluginsConfig = Field(default_factory=PluginsConfig)
     egress: EgressConfig = Field(default_factory=EgressConfig)
 
     def model_copy(
@@ -110,7 +107,6 @@ class Settings(BaseModel):
             realtime=read_section(RealtimeConfig, env_file=env_file),
             storage=read_section(StorageConfig, env_file=env_file),
             uploads=read_section(UploadConfig, env_file=env_file),
-            plugins=read_section(PluginsConfig, env_file=env_file),
             egress=read_section(EgressConfig, env_file=env_file),
         )
 

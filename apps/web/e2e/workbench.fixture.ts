@@ -122,7 +122,6 @@ export const nodeRegistry = {
       title: "Built-in",
       origin: "builtin",
       entry_kind: "plugin",
-      runnable: true,
     },
   ],
   unavailable_modules: [],

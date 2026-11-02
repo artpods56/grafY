@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import replace
+from enum import StrEnum
 from typing import Any, cast
 
 from pydantic import BaseModel
@@ -16,7 +17,6 @@ from grafy_core.artifacts import (
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.invocation_cache import InvocationCacheEntry
 from grafy_core.domain.implementation import ImplementationIdentity
-from grafy_core.domain.plugin_releases import PluginReleaseIdentity
 from grafy_core.nodes import (
     InputContract,
     Node,
@@ -34,8 +34,18 @@ from grafy_core.runtime.invocation_cache import (
 )
 from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import OutputPersister, PersistedNodeOutput
-from grafy_core.runtime.plugin_invocation import PluginInvocationError
-from grafy_core.runtime.plugin_protocol import PluginFailureCode
+
+
+class PluginFailureCode(StrEnum):
+    """How one node execution failed, independent of which family ran it."""
+
+    CONTRACT_FAILURE = "contract_failure"
+    MATERIALIZATION_FAILURE = "materialization_failure"
+    OPERATOR_FAILURE = "operator_failure"
+    OUTPUT_VALIDATION = "output_validation"
+    TIMEOUT = "timeout"
+    CANCELLATION = "cancellation"
+    INTERNAL_ADAPTER_FAILURE = "internal_adapter_failure"
 
 
 class NodeRunError(RuntimeError):
@@ -76,7 +86,6 @@ class NodeRuntime:
         artifact_type_bindings: Mapping[str, ArtifactTypeKey] | None = None,
         cache_policy: NodeCachePolicy = NodeCachePolicy.NEVER,
         opaque_secret_revisions: Mapping[str, str] | None = None,
-        plugin_release: PluginReleaseIdentity | None = None,
         implementation: ImplementationIdentity | None = None,
     ) -> PersistedNodeOutput | BaseModel:
         effective_bindings = artifact_type_bindings or {}
@@ -138,19 +147,6 @@ class NodeRuntime:
                 cast(ConfigT, validated_config),
                 materialized_inputs,
             )
-        except PluginInvocationError as exc:
-            failure_code = (
-                exc.failure_code
-                if exc.failure_code is not None
-                else PluginFailureCode.INTERNAL_ADAPTER_FAILURE
-            )
-            public_context = f": {exc}" if exc.user_facing else ""
-            raise NodeRunError(
-                f"Node {context.node_id!r} operator {node.operator_id}@"
-                f"{node.operator_version} failed ({failure_code.value})"
-                f"{public_context}",
-                failure_code=failure_code,
-            ) from exc
         except UserFacingNodeError as exc:
             raise NodeRunError(
                 f"Node {context.node_id!r} operator {node.operator_id}@"
@@ -158,6 +154,10 @@ class NodeRuntime:
                 f"({PluginFailureCode.OPERATOR_FAILURE.value}): {exc}",
                 failure_code=PluginFailureCode.OPERATOR_FAILURE,
             ) from exc
+        except NodeRunError:
+            # An operator that classified its own failure keeps that classification;
+            # re-wrapping it here would report every typed failure as operator_failure.
+            raise
         except Exception as exc:
             raise NodeRunError(
                 f"Node {context.node_id!r} operator {node.operator_id}@"

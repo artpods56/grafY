@@ -8,9 +8,9 @@ from grafy_shared.config import AppConfig, AuthConfig
 from grafy_api.settings import Settings
 from tests.support.identity import TEST_COMMAND_HMAC_KEY
 
-# The freeze tests publish this Plugin project; its own tests import the
-# project's package and run in that project's environment, not this one.
-collect_ignore = ["fixtures/plugin-notes"]
+# Builtin families are installed by the application; no test discovers a Plugin
+# from disk, so there is nothing to isolate here.
+collect_ignore: list[str] = []
 
 
 @pytest.fixture(autouse=True)
@@ -29,15 +29,6 @@ def _disable_single_api_owner_by_default(
 def _configure_command_hmac_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GRAFY_COMMAND_HMAC_KEY", TEST_COMMAND_HMAC_KEY)
     monkeypatch.setenv("GRAFY_COMMAND_HMAC_KEY_VERSION", "1")
-
-
-@pytest.fixture(autouse=True)
-def _disable_external_plugin_runtime_by_default(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Tests opt into the host Docker runtime instead of inheriting local .env."""
-
-    monkeypatch.setenv("GRAFY_PLUGIN_RUNTIME_ENABLED", "false")
 
 
 DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///"

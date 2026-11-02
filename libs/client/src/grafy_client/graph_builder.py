@@ -282,20 +282,9 @@ class GraphBuilder:
         position: GraphPoint | None,
     ) -> NodeHandle:
         if not catalog_node.runnable:
-            reason = catalog_node.non_runnable_reason or "unknown"
-            detail = (
-                ""
-                if catalog_node.non_runnable_detail is None
-                else f": {catalog_node.non_runnable_detail}"
-            )
-            raise GraphBuilderError(
-                f"Plugin node {catalog_node.operator_id}@"
-                f"{catalog_node.operator_version} is not runnable ({reason}){detail}"
-            )
-        if catalog_node.origin == "plugin" and catalog_node.plugin_release is None:
             raise GraphBuilderError(
                 f"Catalog node {catalog_node.operator_id}@"
-                f"{catalog_node.operator_version} has no exact Plugin release pin"
+                f"{catalog_node.operator_version} is in a catalog this build cannot run"
             )
 
         node_number = len(self._nodes) + 1

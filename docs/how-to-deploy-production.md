@@ -33,14 +33,13 @@ images and pushes them to GitHub Container Registry, tagged with the full
 | `ghcr.io/artpods56/grafy-api` | `api.Dockerfile`, `api-release` target | `migrate`, `api` |
 | `ghcr.io/artpods56/grafy-web` | `web.Dockerfile` | `web` |
 | `ghcr.io/artpods56/grafy-gateway` | `gateway.Dockerfile` (nginx config baked in) | `gateway` |
-| `ghcr.io/artpods56/grafy-publisher` | `api.Dockerfile`, `publisher` target | `publisher` profile |
 
 Because images are pushed only after green CI on `main`, a SHA that has images
 is an approved commit. `GRAFY_BUILD_DIGEST` is the SHA-256 digest of
 `git archive <sha>`, computed by CI and baked into the API image. Do not set it
 on the host: Compose would override or remove the baked value.
 
-The first publish creates each package as private. Either make the four
+The first publish creates each package as private. Either make the three
 packages public in the GitHub package settings, or run `docker login ghcr.io`
 on the host with a token that has `read:packages`.
 
@@ -90,7 +89,7 @@ the Compose override uses the same value as both a PostgreSQL password and a
 URL password.
 
 The PostgreSQL override constructs the database URL and supplies it to
-`migrate`, `api`, and `publisher`. Pin `GRAFY_POSTGRES_IMAGE` to the digest that
+`migrate` and `api`. Pin `GRAFY_POSTGRES_IMAGE` to the digest that
 you approved for the release. If the variable is absent, Compose uses the
 current `postgres:17-alpine` image. A `GRAFY_DOCKER_DATABASE_URL` value affects
 the base Compose file only; the PostgreSQL override ignores it.
@@ -119,8 +118,7 @@ Run the deployment script:
 The script downloads that commit's `compose.yaml` and `compose.postgres.yaml`
 into `/opt/graphy/.deployment/releases/<sha>/`, renders the merged Compose
 configuration, and pulls the active services' SHA-tagged images before stopping
-API traffic. The legacy publisher profile stays inactive. Do not publish or
-promote Plugins for an ADR 0017 application deployment.
+API traffic. Plugins run as application code and are included in the API image.
 A SHA without published images fails at the pull, while the previous release is
 still serving. The script then creates a PostgreSQL dump and removes the previous one-shot `migrate`
 container. Compose runs Alembic once before it starts the API, waits for every
@@ -144,7 +142,7 @@ gh run list --branch main --workflow CI --limit 10
 gh run view <run-id>
 ```
 
-For the newest published image, select the newest `main` run whose four
+For the newest published image, select the newest `main` run whose three
 `Publish grafy-* image` jobs succeeded. A newer merge can still be queued or
 building. If the request names the newest `main` commit, wait for that commit's
 images instead. Record the full SHA and keep the target fixed during deployment.

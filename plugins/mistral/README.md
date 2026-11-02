@@ -1,13 +1,13 @@
-# Grafy Mistral Plugin
+# Grafy Mistral family
 
-Independent publication input for `external.mistral`. The project vendors the
-Grafy SDK wheel pinned by `uv.lock` and uses the official `mistralai` 3.1 client.
+Application-owned node family for the Mistral OCR API. Its stable identifier is
+`external.mistral`, it is registered in-process by
+`apps/api/src/grafy_api/services/families.py`, and it uses the official
+`mistralai` 3.1 client.
 
 ## Using OCR
 
-Publish and promote this directory using the [Plugin publication workflow](../../docs/how-to-publish-plugins.md).
-The System inventory selects isolated execution with the configured-public
-network profile. `mistral.ocr.process@1`, titled Mistral OCR, calls
+`mistral.ocr.process@1`, titled Mistral OCR, calls
 `https://api.mistral.ai/v1/ocr` with model `mistral-ocr-latest`. The API key is a
 write-only node secret named `api_key`.
 
