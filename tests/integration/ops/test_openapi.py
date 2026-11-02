@@ -29,7 +29,6 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
 
     assert set(schema["paths"]) == {
         "/v1/me/graphs",
-        "/v1/workspaces/{workspace_id}/python/apply",
         "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/content",
         "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/download",
         "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/geo/query",
@@ -355,30 +354,19 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "title": "Runnable",
         "type": "boolean",
     }
-    plugin_release_update_schema = schema["components"]["schemas"][
-        "UpdateNodePluginReleaseCommand"
-    ]
-    assert set(plugin_release_update_schema["required"]) == {
-        "node_id",
-        "plugin_release_pin",
-        "expected_plugin_release_pin",
-    }
-    assert plugin_release_update_schema["properties"]["kind"]["const"] == (
-        "update_node_plugin_release"
-    )
-    assert plugin_release_update_schema["properties"]["plugin_release_pin"] == {
-        "$ref": "#/components/schemas/SavedGraphPluginReleasePin"
-    }
+    assert "UpdateNodePluginReleaseCommand" not in schema["components"]["schemas"]
     command_schema = schema["components"]["schemas"]["SubmitGraphCommandRequest"][
         "properties"
     ]["command"]
     assert (
-        command_schema["discriminator"]["mapping"]["update_node_plugin_release"]
-        == "#/components/schemas/UpdateNodePluginReleaseCommand"
+        "update_node_plugin_release" not in command_schema["discriminator"]["mapping"]
     )
     assert {
         "$ref": "#/components/schemas/UpdateNodePluginReleaseCommand"
-    } in command_schema["oneOf"]
+    } not in command_schema["oneOf"]
+    assert command_schema["discriminator"]["mapping"]["add_node"] == (
+        "#/components/schemas/AddNodeCommand"
+    )
     # TODO: Revisit this exact schema assertion; it duplicates the response model by hand.
     assert schema["components"]["schemas"]["ImageUploadItemResponse"] == {
         "properties": {
