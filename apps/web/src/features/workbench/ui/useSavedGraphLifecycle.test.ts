@@ -146,8 +146,10 @@ function projectHead(
     checkpoint_sequence: checkpointSequence,
     checkpoint_revision: checkpointSequence,
     updated_at: overrides.updatedAt ?? graph.updated_at,
+    // A Project document is a list of Graphs; the route names the Project and
+    // this fixture keeps its one Graph on the same id.
     document: {
-      projects: [
+      graphs: [
         {
           id: graph.id,
           name: overrides.graphName ?? graph.name,
@@ -829,7 +831,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
     });
 
     expect(router.push).toHaveBeenCalledWith(
-      `/workspaces/team/graphs/${GRAPH_B_ID}`,
+      `/workspaces/team/projects/${GRAPH_B_ID}`,
       { scroll: false },
     );
     expect(hook.result.current.openingGraphId).toBe(GRAPH_B_ID);
@@ -999,7 +1001,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
     expect(hook.result.current.graphName).toBe("Newer local name");
     expect(hook.result.current.isDirty).toBe(true);
     expect(router.replace).toHaveBeenCalledWith(
-      `/workspaces/team/graphs/${GRAPH_A_ID}`,
+      `/workspaces/team/projects/${GRAPH_A_ID}`,
       { scroll: false },
     );
   });
@@ -1024,7 +1026,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
 
     expect(hook.result.current.activeGraph?.id).toBe(GRAPH_A_ID);
     expect(router.replace).toHaveBeenCalledWith(
-      `/workspaces/team/graphs/${GRAPH_A_ID}`,
+      `/workspaces/team/projects/${GRAPH_A_ID}`,
       { scroll: false },
     );
     expect(callbacks.replaceDocument).not.toHaveBeenCalled();
@@ -1128,6 +1130,239 @@ describe("useSavedGraphLifecycle document ownership", () => {
 
       expect(fireBeforeUnload()).toBe(false);
     });
+  });
+});
+
+describe("useSavedGraphLifecycle Graphs inside one Project", () => {
+  // Every other case here puts a Project and its Graph on the same id, which is
+  // the shape a single-Graph Project really has. These cases keep the two apart,
+  // because "which Graph of this Project is the canvas showing?" is a question
+  // the Project model newly asks and a shared fixture cannot answer.
+  const SHARED_PROJECT_ID = "00000000-0000-4000-8000-00000000000d";
+
+  function graphDefinition(id: string, name: string) {
+    return { id, name, document: savedGraph(id, name).document };
+  }
+
+  function headWithGraphs(
+    graphs: readonly {
+      id: string;
+      name: string;
+      document: SavedGraphDocument;
+    }[],
+    sequences: { collaboration: number; checkpoint?: number },
+  ): CollaborativeHead {
+    const checkpoint = sequences.checkpoint ?? sequences.collaboration;
+    return {
+      project_id: SHARED_PROJECT_ID,
+      name: "Two graphs, one project",
+      room_epoch: ROOM_EPOCH,
+      collaboration_sequence: sequences.collaboration,
+      checkpoint_sequence: checkpoint,
+      checkpoint_revision: checkpoint,
+      updated_at: "2026-08-14T12:00:00Z",
+      document: { graphs },
+    };
+  }
+
+  it("opens a Project's first Graph and keeps the Project's own address", async () => {
+    api.getCollaborativeHead.mockResolvedValue(
+      headWithGraphs(
+        [
+          graphDefinition(GRAPH_A_ID, "First"),
+          graphDefinition(GRAPH_B_ID, "Second"),
+        ],
+        { collaboration: 6 },
+      ),
+    );
+    const { options } = lifecycleOptions(SHARED_PROJECT_ID);
+    const hook = await renderHook(useSavedGraphLifecycle, options);
+    await waitFor(() => hook.result.current.activeGraph !== null);
+
+    // The route names the Project and the canvas shows one Graph of it, so the
+    // caller needs both ids to say which. The revision is the head's: no Graph
+    // of a Project has a counter of its own to disagree with.
+    expect(hook.result.current.activeGraph).toMatchObject({
+      id: SHARED_PROJECT_ID,
+      graphId: GRAPH_A_ID,
+      revision: 6,
+    });
+    expect(hook.result.current.graphName).toBe("First");
+    // Stored results belong to a Graph's node instances, addressed inside the
+    // Project. Asking with the Project id as the Graph would open the first
+    // Graph's cards onto whichever Graph the canvas ended up showing.
+    const instanceRead = api.listGraphInstances.mock.calls.at(0);
+    if (instanceRead === undefined)
+      throw new Error("Expected the open to read the Graph's instances");
+    expect(instanceRead.slice(0, 3)).toEqual([
+      "workspace-1",
+      SHARED_PROJECT_ID,
+      GRAPH_A_ID,
+    ]);
+  });
+
+  it("keeps the Graph the canvas opened when a newer head lists it second", async () => {
+    api.getCollaborativeHead.mockResolvedValue(
+      headWithGraphs(
+        [
+          graphDefinition(GRAPH_A_ID, "First"),
+          graphDefinition(GRAPH_B_ID, "Second"),
+        ],
+        { collaboration: 6 },
+      ),
+    );
+    const { options, callbacks } = lifecycleOptions(SHARED_PROJECT_ID);
+    const hook = await renderHook(useSavedGraphLifecycle, options);
+    await waitFor(
+      () => hook.result.current.activeGraph?.graphId === GRAPH_A_ID,
+    );
+
+    // A checkpoint that happens to list the Graphs in the other order is not a
+    // request to change what the author is looking at: the canvas keeps its
+    // Graph and the document it was given.
+    React.act(() => {
+      hook.result.current.syncFromCollaborativeHead(
+        headWithGraphs(
+          [
+            graphDefinition(GRAPH_B_ID, "Second"),
+            graphDefinition(GRAPH_A_ID, "First"),
+          ],
+          { collaboration: 7 },
+        ),
+      );
+    });
+
+    expect(hook.result.current.activeGraph).toMatchObject({
+      id: SHARED_PROJECT_ID,
+      graphId: GRAPH_A_ID,
+      revision: 7,
+    });
+    expect(callbacks.replaceDocument).toHaveBeenLastCalledWith(
+      expect.objectContaining({ name: "First" }),
+    );
+  });
+
+  it("writes a save into the Graph the canvas shows, not the Project's first", async () => {
+    const opened = headWithGraphs(
+      [
+        graphDefinition(GRAPH_A_ID, "First"),
+        graphDefinition(GRAPH_B_ID, "Second"),
+      ],
+      { collaboration: 6 },
+    );
+    // The head a save reads and checkpoints lists the canvas's Graph second, so
+    // a write that picked "the first Graph" would land on the other Graph.
+    const reordered = headWithGraphs(
+      [
+        graphDefinition(GRAPH_B_ID, "Second"),
+        graphDefinition(GRAPH_A_ID, "First"),
+      ],
+      { collaboration: 7 },
+    );
+    api.getCollaborativeHead.mockResolvedValueOnce(opened);
+    api.getCollaborativeHead.mockResolvedValue(reordered);
+    api.submitProjectCommand.mockResolvedValue({
+      head: reordered,
+      receipt: {
+        accepted_sequence: 7,
+        command_id: "00000000-0000-4000-8000-0000000000cc",
+        deduplicated: false,
+        outcome: "applied",
+        room_epoch: ROOM_EPOCH,
+      },
+    });
+    api.checkpointProject.mockResolvedValue({
+      head: reordered,
+      checkpoint_revision: 7,
+    });
+    const { options } = lifecycleOptions(SHARED_PROJECT_ID);
+    const hook = await renderHook(useSavedGraphLifecycle, options);
+    await waitFor(
+      () => hook.result.current.activeGraph?.graphId === GRAPH_A_ID,
+    );
+
+    await React.act(async () => {
+      await hook.result.current.saveCurrentGraph();
+    });
+
+    // The command is addressed to the Project, and the Graph it edits is the one
+    // on the canvas.
+    expect(api.submitProjectCommand).toHaveBeenCalledWith(
+      "workspace-1",
+      SHARED_PROJECT_ID,
+      expect.objectContaining({
+        observed_sequence: 7,
+        commands: [
+          expect.objectContaining({
+            kind: "in_graph",
+            graph_id: GRAPH_A_ID,
+            command: expect.objectContaining({ kind: "replace_document" }),
+          }),
+        ],
+      }),
+    );
+    expect(api.checkpointProject).toHaveBeenCalledWith(
+      "workspace-1",
+      SHARED_PROJECT_ID,
+      { expected_room_epoch: ROOM_EPOCH, expected_sequence: 7 },
+    );
+    // The head the save read back lists the other Graph first; that is still not
+    // a reason to move the canvas off the one it was editing.
+    expect(hook.result.current.activeGraph).toMatchObject({
+      id: SHARED_PROJECT_ID,
+      graphId: GRAPH_A_ID,
+      revision: 7,
+    });
+  });
+
+  it("pairs a room save with the Graph it writes", async () => {
+    const head = headWithGraphs(
+      [
+        graphDefinition(GRAPH_A_ID, "First"),
+        graphDefinition(GRAPH_B_ID, "Second"),
+      ],
+      { collaboration: 6 },
+    );
+    const persistDocument = vi.fn().mockResolvedValue({
+      checkpointHead: head,
+      currentHead: head,
+    });
+    api.getCollaborativeHead.mockResolvedValue(head);
+    const { options } = lifecycleOptions(SHARED_PROJECT_ID);
+    options.roomPersistence = { canPersist: true, persistDocument };
+    const hook = await renderHook(useSavedGraphLifecycle, options);
+    await waitFor(
+      () => hook.result.current.activeGraph?.graphId === GRAPH_A_ID,
+    );
+
+    await React.act(async () => {
+      await hook.result.current.saveCurrentGraph();
+    });
+
+    // A draft on its own cannot say which Graph of the Project to replace: the
+    // bridge needs the id beside it.
+    expect(persistDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "First" }),
+      GRAPH_A_ID,
+    );
+  });
+
+  it("says so when a Project holds no Graph to open", async () => {
+    api.getCollaborativeHead.mockResolvedValue(
+      headWithGraphs([], { collaboration: 1 }),
+    );
+    const { options, callbacks } = lifecycleOptions(SHARED_PROJECT_ID);
+    const hook = await renderHook(useSavedGraphLifecycle, options);
+    await waitFor(() => hook.result.current.persistenceError !== null);
+
+    // An empty Project is a state the browser can genuinely link to. The canvas
+    // stays where it was and the person is told, rather than being shown a blank
+    // canvas under the address of somebody else's work.
+    expect(hook.result.current.persistenceError).toBe(
+      "This project holds no graph to open.",
+    );
+    expect(hook.result.current.activeGraph).toBeNull();
+    expect(callbacks.replaceDocument).not.toHaveBeenCalled();
   });
 });
 
@@ -1253,7 +1488,7 @@ describe("useSavedGraphLifecycle presentation ownership", () => {
     await React.act(async () => {
       hook.result.current.requestNewGraph();
     });
-    expect(router.push).toHaveBeenCalledWith("/workspaces/team/graphs/new", {
+    expect(router.push).toHaveBeenCalledWith("/workspaces/team/projects/new", {
       scroll: false,
     });
     await React.act(async () => {
