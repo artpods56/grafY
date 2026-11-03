@@ -11,8 +11,12 @@ from grafy_core.domain.errors import (
 )
 from grafy_core.domain.identity import WorkspaceCapability
 
+from grafy_api.realtime.publish import rederive_instances
 from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
-from grafy_api.v1.routes.node_secrets.dependencies import NodeSecretDependency
+from grafy_api.v1.routes.node_secrets.dependencies import (
+    NodeSecretDependency,
+    RunDependency,
+)
 from grafy_api.v1.routes.node_secrets.models import (
     ConfigureNodeSecretRequest,
     NodeSecretStatusResponse,
@@ -65,6 +69,7 @@ async def configure_node_secret(
     name: str,
     request: ConfigureNodeSecretRequest,
     service: NodeSecretDependency,
+    runs: RunDependency,
     access: require_workspace_capability(WorkspaceCapability.MANAGE_SECRETS),
 ) -> NodeSecretStatusResponse:
     try:
@@ -85,6 +90,14 @@ async def configure_node_secret(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except NodeSecretConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    # A stored fingerprint folds in the secret revisions the node ran under, so rotating a
+    # credential moves what every peer reads as fresh: CONTEXT.md says instance state is
+    # recomputed after secret changes, and this is that recompute. It follows the write
+    # rather than gating it, because a peer left looking at a stale view is a degraded
+    # view, while a failure answered here would report a rotated secret as a failed one.
+    await rederive_instances(
+        runs, workspace_id=access.workspace_id, project_id=project_id
+    )
     return NodeSecretStatusResponse.from_state(state)
 
 
@@ -98,6 +111,7 @@ async def delete_node_secret(
     node_id: str,
     name: str,
     service: NodeSecretDependency,
+    runs: RunDependency,
     access: require_workspace_capability(WorkspaceCapability.MANAGE_SECRETS),
     expected_head_sequence: Annotated[int, Query(ge=0)],
 ) -> Response:
@@ -116,4 +130,9 @@ async def delete_node_secret(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CollaborationHeadConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # Removing a secret moves the fingerprint of the node that held it exactly as setting
+    # one does, so the Project's instances are re-derived on the way out too.
+    await rederive_instances(
+        runs, workspace_id=access.workspace_id, project_id=project_id
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

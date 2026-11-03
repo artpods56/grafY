@@ -1,5 +1,6 @@
 """Post-commit publication helpers for HTTP and room command paths."""
 
+import logging
 from collections.abc import Callable
 from uuid import UUID
 
@@ -25,6 +26,44 @@ from grafy_api.realtime.protocol import (
     actor_display_color,
     bounded_display_name,
 )
+from grafy_api.runs.service import RunService
+
+
+logger = logging.getLogger(__name__)
+
+
+async def rederive_instances(
+    runs: RunService,
+    *,
+    workspace_id: UUID,
+    project_id: UUID,
+) -> None:
+    """Re-derive a Project's instances after a durable change, never at that change's cost.
+
+    Every HTTP write that moves what an instance reads — an accepted batch, a restore, a
+    secret rotated under a node — owes peers the recomputed state, because a fingerprint
+    folds in the secret revisions of the node that ran. But by the time this runs the write
+    has committed and its outcome is already owed to the caller: a derivation this build
+    cannot make, or a room nobody will read, cannot honestly turn a rotated credential into
+    a failure of the credential dialog. A peer that misses a freshness push has a stale view
+    until the next read; a 500 on a write that worked loses the secret.
+
+    So the failure is logged and left to the next Run, which is what the room path does for
+    the same call, and this is the one place every HTTP path reports it: one event name for
+    an operator to watch, whatever moved the document.
+    """
+
+    try:
+        await runs.project_changed(
+            workspace_id=workspace_id,
+            project_id=project_id,
+        )
+    except Exception:
+        logger.exception(
+            "project_http_instance_publish_failed workspace_id=%s project_id=%s",
+            workspace_id,
+            project_id,
+        )
 
 
 async def actor_presentation_for(

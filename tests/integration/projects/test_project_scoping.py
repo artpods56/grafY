@@ -806,7 +806,43 @@ def test_a_token_that_may_create_but_not_checkpoint_cannot_create(
         ] == [stage.project_a]
 
 
-def test_a_token_scoped_for_checkpointing_is_served_both_routes(
+def test_a_token_that_may_create_but_not_checkpoint_cannot_copy(
+    tmp_path: Path,
+) -> None:
+    """A copy is an opening: it stages the copied document with its checkpoint 1."""
+
+    with stage_for(tmp_path, "pat-copy.sqlite3") as stage:
+        source = stage.projects(stage.a).get_head_ok(
+            stage.project_a, headers=stage.as_("owner_a")
+        )
+        headers = stage.scoped_token(
+            "creator-only",
+            PersonalAccessTokenScope.VIEW_PROJECT,
+            PersonalAccessTokenScope.CREATE_PROJECT,
+        )
+
+        refused = stage.projects(stage.a).copy(
+            CopyExactHeadRequest(
+                source_workspace_id=stage.a,
+                source_project_id=stage.project_a,
+                project_id=uuid4(),
+                command_id=uuid4(),
+                expected_room_epoch=source.room_epoch,
+                expected_sequence=source.collaboration_sequence,
+            ),
+            headers=headers,
+        )
+
+        _assert_status(refused, 403, "copy with a create-only token")
+        assert refused.json()["code"] == "identity.capability_denied"
+        # Refused before staging anything, so no second Project was opened to undo.
+        assert [
+            item.id
+            for item in stage.projects(stage.a).list_ok(headers=headers).projects
+        ] == [stage.project_a]
+
+
+def test_a_token_scoped_for_checkpointing_is_served_the_routes_that_need_it(
     tmp_path: Path,
 ) -> None:
     """The refusals above are about scope, not about tokens: the routes do answer."""
@@ -846,7 +882,21 @@ def test_a_token_scoped_for_checkpointing_is_served_both_routes(
             CreateProjectRequest(name="Checkpointed at birth"), headers=headers
         )
         assert created.name == "Checkpointed at birth"
+        copied = projects.copy_ok(
+            CopyExactHeadRequest(
+                source_workspace_id=stage.a,
+                source_project_id=stage.project_a,
+                project_id=uuid4(),
+                command_id=uuid4(),
+                name="Opened by a copy",
+                expected_room_epoch=restored.head.room_epoch,
+                expected_sequence=restored.head.collaboration_sequence,
+            ),
+            headers=headers,
+        )
+        assert copied.name == "Opened by a copy"
         assert {item.name for item in projects.list_ok(headers=headers).projects} == {
             "Project in A",
             "Checkpointed at birth",
+            "Opened by a copy",
         }

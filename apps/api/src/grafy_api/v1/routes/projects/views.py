@@ -20,7 +20,6 @@ Four rules hold on every route here:
   neither outcome is renegotiated once the write committed.
 """
 
-import logging
 from typing import Annotated
 from uuid import UUID
 
@@ -39,7 +38,7 @@ from grafy_core.domain.errors import (
 )
 from grafy_core.domain.identity import ActorContext, WorkspaceCapability
 
-from grafy_api.app_state import AppResources, get_resources
+from grafy_api.app_state import get_resources
 from grafy_api.project_contracts import (
     AssignProjectFolderRequest,
     CheckpointProjectRequest,
@@ -65,6 +64,7 @@ from grafy_api.realtime.publish import (
     close_project_room,
     publish_accepted_command,
     publish_epoch_reset,
+    rederive_instances,
 )
 from grafy_api.v1.routes.auth.dependencies import (
     IdentityUnitOfWorkFactoryDependency,
@@ -76,43 +76,12 @@ from grafy_api.v1.routes.projects.dependencies import (
     ProjectDependency,
 )
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/workspaces/{workspace_id}/projects", tags=["projects"])
 browser_router = APIRouter(prefix="/me/projects", tags=["project browser"])
 folder_router = APIRouter(
     prefix="/workspaces/{workspace_id}/project-folders",
     tags=["project folders"],
 )
-
-
-async def _rederive_instances(
-    resources: AppResources,
-    *,
-    workspace_id: UUID,
-    project_id: UUID,
-) -> None:
-    """Re-derive a Project's instances after an accepted change, never at its cost.
-
-    By the time this runs the write has committed, its receipt is in the response body and
-    its peers have been told, so a derivation this build cannot make — a stored document
-    naming an operator no Plugin release registers — cannot honestly turn the caller's
-    answer into a rejection. It is logged and left to the next Run, which is exactly what
-    the room path does for the same call. A failure an operator cannot see is a bug that
-    reports itself as success, so this is the one place both HTTP paths report it.
-    """
-
-    try:
-        await resources.runs.project_changed(
-            workspace_id=workspace_id,
-            project_id=project_id,
-        )
-    except Exception:
-        logger.exception(
-            "project_http_instance_publish_failed workspace_id=%s project_id=%s",
-            workspace_id,
-            project_id,
-        )
 
 
 @browser_router.get("", response_model=ProjectBrowserListResponse)
@@ -243,6 +212,11 @@ async def create_project(
     return ProjectResponse.from_project(creation.project)
 
 
+# A copy is an opening, not a pointer: it stages the copied document as a new Project with
+# checkpoint 1 and its own head, exactly as creation does, so it needs the checkpointing
+# capability the creating scope alone used to be served without. The service asks for
+# `view_project` on the source and `create_project` on the target and never for
+# checkpointing at all, and below the routes a token's scope is invisible anyway.
 @router.post(
     "/copies",
     response_model=ProjectResponse,
@@ -252,6 +226,9 @@ async def copy_exact_head(
     request: CopyExactHeadRequest,
     collaboration: CollaborationDependency,
     access: require_workspace_capability(WorkspaceCapability.CREATE_PROJECT),
+    checkpoint_access: require_workspace_capability(
+        WorkspaceCapability.CHECKPOINT_PROJECT
+    ),
 ) -> ProjectResponse:
     try:
         copy = await collaboration.copy_project(
@@ -396,8 +373,8 @@ async def submit_project_commands(
         )
         # The document moved, so every instance of this Project reads against new
         # fingerprints. What is in flight keeps running; this only re-derives state.
-        await _rederive_instances(
-            resources, workspace_id=access.workspace_id, project_id=project_id
+        await rederive_instances(
+            resources.runs, workspace_id=access.workspace_id, project_id=project_id
         )
     return SubmitProjectCommandResponse(
         head=ProjectHeadResponse.from_head(submission.head),
@@ -527,8 +504,8 @@ async def restore_project_checkpoint(
         project_id=project_id,
         head=outcome.head,
     )
-    await _rederive_instances(
-        resources, workspace_id=access.workspace_id, project_id=project_id
+    await rederive_instances(
+        resources.runs, workspace_id=access.workspace_id, project_id=project_id
     )
     return CheckpointProjectResponse(
         head=ProjectHeadResponse.from_head(outcome.head),
