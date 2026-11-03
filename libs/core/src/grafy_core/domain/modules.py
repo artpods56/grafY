@@ -7,11 +7,9 @@ from pydantic import Field, StrictStr, field_validator
 
 from grafy_core.artifacts import ArtifactTypeKey, NodeConfig
 from grafy_core.domain.graph_documents import (
-    SavedGraph,
     GraphDocument,
     GraphEdge,
     GraphNode,
-    SavedGraphRevision,
 )
 
 
@@ -198,31 +196,6 @@ class GraphModuleDefinition:
         return (
             f"Saved graph module {self.name!r}, pinned to revision "
             f"{self.reference.revision}."
-        )
-
-    @classmethod
-    def from_saved_graph(cls, graph: SavedGraph) -> Self:
-        return cls(
-            reference=GraphModuleReference(
-                graph_id=graph.id,
-                revision=graph.revision,
-            ),
-            name=graph.name,
-            document=graph.document,
-        )
-
-    @classmethod
-    def from_saved_graph_revision(
-        cls,
-        revision: SavedGraphRevision,
-    ) -> Self:
-        return cls(
-            reference=GraphModuleReference(
-                graph_id=revision.graph_id,
-                revision=revision.revision,
-            ),
-            name=revision.name,
-            document=revision.document,
         )
 
     def input_port(self, name: str) -> GraphModulePort:

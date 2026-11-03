@@ -99,6 +99,7 @@ class NotFoundError(GrafyCoreError):
     def diagnostic_context(self) -> Mapping[str, object]:
         return {"resource": self.resource}
 
+
 class ValidationError(GrafyCoreError):
     "Raised during validation."
 
@@ -187,55 +188,58 @@ class CapabilityDeniedError(IdentityInvariantError):
         }
 
 
-class SavedGraphRevisionConflictError(GrafyCoreError):
+class ProjectCheckpointConflictError(GrafyCoreError):
+    """Raised when a checkpoint was written against a stale Project revision."""
+
     failure_spec = FailureSpec(
-        code="graph.revision_conflict",
+        code="project.checkpoint_conflict",
         kind=FailureKind.CONFLICT,
-        public_message="The graph changed while it was being saved",
+        public_message="The project changed while it was being saved",
     )
 
     def __init__(
         self,
         *,
-        graph_id: UUID,
+        project_id: UUID,
         expected_revision: int,
         actual_revision: int | None,
     ) -> None:
-        self.graph_id = graph_id
+        self.project_id = project_id
         self.expected_revision = expected_revision
         self.actual_revision = actual_revision
         if actual_revision is None:
-            detail = "the graph changed while it was being saved"
+            detail = "the project changed while it was being saved"
         else:
             detail = f"the current revision is {actual_revision}"
         super().__init__(
-            f"Saved graph {graph_id} revision conflict: expected "
+            f"Project {project_id} checkpoint conflict: expected "
             f"{expected_revision}, but {detail}"
         )
 
     @property
     def diagnostic_context(self) -> Mapping[str, object]:
         return {
-            "graph_id": self.graph_id,
+            "project_id": self.project_id,
             "expected_revision": self.expected_revision,
             "actual_revision": self.actual_revision,
         }
 
 
-class GraphFolderNameConflictError(GrafyCoreError):
-    """Raised when one workspace already has a folder with the requested name."""
+class ProjectFolderNameConflictError(GrafyCoreError):
+    """Raised when one workspace already has a project folder with the name."""
 
     failure_spec = FailureSpec(
-        code="graph.folder_name_conflict",
+        code="project.folder_name_conflict",
         kind=FailureKind.CONFLICT,
-        public_message="A graph folder with this name already exists",
+        public_message="A project folder with this name already exists",
     )
 
     def __init__(self, *, workspace_id: UUID, name: str) -> None:
         self.workspace_id = workspace_id
         self.name = name
         super().__init__(
-            f"Graph folder name {name!r} is already in use in workspace {workspace_id}"
+            f"Project folder name {name!r} is already in use in workspace "
+            f"{workspace_id}"
         )
 
 
@@ -400,14 +404,14 @@ class CollaborationError(GrafyCoreError):
     error_code: str = "collaboration_error"
 
 
-class MissingCollaborativeHeadError(CollaborationError):
-    error_code = "missing_collaborative_head"
+class MissingProjectHeadError(CollaborationError):
+    error_code = "missing_project_head"
 
-    def __init__(self, *, workspace_id: UUID, graph_id: UUID) -> None:
+    def __init__(self, *, workspace_id: UUID, project_id: UUID) -> None:
         self.workspace_id = workspace_id
-        self.graph_id = graph_id
+        self.project_id = project_id
         super().__init__(
-            f"Collaborative head missing for graph {graph_id} in workspace "
+            f"Collaborative head missing for project {project_id} in workspace "
             f"{workspace_id}"
         )
 
@@ -475,23 +479,4 @@ class CollaborationUncheckpointedError(CollaborationError):
             f"Collaborative head for graph {graph_id} has uncheckpointed "
             f"commands at sequence {head_sequence} "
             f"(checkpointed through {checkpoint_sequence})"
-        )
-
-
-class CollaborationActiveExecutionError(CollaborationError):
-    error_code = "active_execution"
-
-    def __init__(
-        self,
-        *,
-        workspace_id: UUID,
-        graph_id: UUID,
-        execution_id: UUID,
-    ) -> None:
-        self.workspace_id = workspace_id
-        self.graph_id = graph_id
-        self.execution_id = execution_id
-        super().__init__(
-            f"Graph {graph_id} in workspace {workspace_id} has active execution "
-            f"{execution_id}"
         )
