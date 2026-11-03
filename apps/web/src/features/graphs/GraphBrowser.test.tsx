@@ -67,7 +67,7 @@ vi.mock("@/hooks/use-api", () => ({
     error: browserState.workspacesError,
     mutate: browserState.retryWorkspaces,
   }),
-  useAllWorkspacesGraphs: () => ({
+  useAllWorkspacesProjects: () => ({
     graphs: browserState.graphs,
     error: browserState.graphsError,
     isLoading: browserState.isLoading,
@@ -215,7 +215,7 @@ describe("graph-first browser", () => {
       'a[aria-label="Open Quarterly plan in Atlas"]',
     );
     expect(link?.getAttribute("href")).toBe(
-      "/workspaces/secret-team-slug/graphs/graph-team",
+      "/workspaces/secret-team-slug/projects/graph-team",
     );
   });
 
@@ -282,7 +282,7 @@ describe("graph-first browser", () => {
     expect(document.body.textContent).toContain("Choose a location");
     await click(button(document.body, "Atlas"));
     expect(browserState.push).toHaveBeenCalledWith(
-      "/workspaces/secret-team-slug/graphs/new",
+      "/workspaces/secret-team-slug/projects/new",
     );
 
     browserState.push.mockReset();
@@ -291,7 +291,7 @@ describe("graph-first browser", () => {
     const single = await renderBrowser();
     await click(button(single, "New graph"));
     expect(browserState.push).toHaveBeenCalledWith(
-      "/workspaces/private-slug/graphs/new",
+      "/workspaces/private-slug/projects/new",
     );
     expect(single.textContent).not.toContain("Choose a location");
   });

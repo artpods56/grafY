@@ -13,7 +13,7 @@ const browserState = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
   mutate: vi.fn(async () => undefined),
-  data: { graphs: [] as SavedGraphSummary[] } as
+  data: { projects: [] as SavedGraphSummary[] } as
     { graphs: SavedGraphSummary[] } | undefined,
   error: undefined as Error | undefined,
   isLoading: false,
@@ -26,14 +26,14 @@ const browserState = vi.hoisted(() => ({
     capabilities: ["view_project", "create_project"],
   } satisfies Workspace,
   /** The address the page is mounted on, as the browser would report it. */
-  pathname: "/workspaces/atlas/graphs",
+  pathname: "/workspaces/atlas/projects",
   search: "",
   /** False holds the address still, so a write that has not landed can be seen. */
   landWrites: true,
 }));
 
 const apiMocks = vi.hoisted(() => ({
-  useSavedGraphs: vi.fn(),
+  useWorkspaceProjects: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -55,7 +55,7 @@ vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
 }));
 
 vi.mock("@/hooks/use-api", () => ({
-  useSavedGraphs: apiMocks.useSavedGraphs,
+  useWorkspaceProjects: apiMocks.useWorkspaceProjects,
 }));
 
 import { WorkspaceGraphBrowser } from "./WorkspaceGraphBrowser";
@@ -180,7 +180,7 @@ beforeEach(() => {
   browserState.error = undefined;
   browserState.isLoading = false;
   browserState.landWrites = true;
-  browserState.pathname = "/workspaces/atlas/graphs";
+  browserState.pathname = "/workspaces/atlas/projects";
   browserState.search = "";
   browserState.workspace = {
     id: "workspace-atlas",
@@ -190,7 +190,7 @@ beforeEach(() => {
     role: "editor",
     capabilities: ["view_project", "create_project"],
   };
-  apiMocks.useSavedGraphs.mockImplementation(() => ({
+  apiMocks.useWorkspaceProjects.mockImplementation(() => ({
     data: browserState.data,
     error: browserState.error,
     isLoading: browserState.isLoading,
@@ -219,7 +219,7 @@ describe("workspace graph browser", () => {
     };
     const container = await renderBrowser();
 
-    expect(apiMocks.useSavedGraphs).toHaveBeenCalledWith("workspace-atlas");
+    expect(apiMocks.useWorkspaceProjects).toHaveBeenCalledWith("workspace-atlas");
     expect(container.textContent).toContain("Atlas");
     expect(
       container.querySelector('[aria-label="Filter by location"]'),
@@ -234,7 +234,7 @@ describe("workspace graph browser", () => {
           '[aria-label="Open Graph 8 in Atlas"]',
         )
         ?.getAttribute("href"),
-    ).toBe("/workspaces/atlas/graphs/graph-8");
+    ).toBe("/workspaces/atlas/projects/graph-8");
   });
 
   it("searches graph names and distinguishes no results from an empty workspace", async () => {
@@ -255,7 +255,7 @@ describe("workspace graph browser", () => {
     await click(button(container, "New graph"));
 
     expect(browserState.push).toHaveBeenCalledWith(
-      "/workspaces/atlas/graphs/new",
+      "/workspaces/atlas/projects/new",
     );
     expect(container.textContent).not.toContain("Choose a location");
   });
@@ -330,7 +330,7 @@ describe("workspace graph browser address filters", () => {
 
     await change(input, "nightly");
 
-    expect(lastWrite()).toBe("/workspaces/atlas/graphs?q=nightly");
+    expect(lastWrite()).toBe("/workspaces/atlas/projects?q=nightly");
     expect(input.value).toBe("nightly");
     expect(rowTitles(container)).toEqual(["Nightly sync"]);
   });
@@ -341,11 +341,11 @@ describe("workspace graph browser address filters", () => {
 
     await change(input, "invoice");
     expect(lastWrite()).toBe(
-      "/workspaces/atlas/graphs?utm_source=email&q=invoice",
+      "/workspaces/atlas/projects?utm_source=email&q=invoice",
     );
 
     await change(input, "");
-    expect(lastWrite()).toBe("/workspaces/atlas/graphs?utm_source=email");
+    expect(lastWrite()).toBe("/workspaces/atlas/projects?utm_source=email");
     expect(rowTitles(container)).toHaveLength(3);
   });
 
@@ -358,11 +358,11 @@ describe("workspace graph browser address filters", () => {
     const container = await renderBrowser();
 
     await click(button(container, "All"));
-    expect(lastWrite()).toBe("/workspaces/atlas/graphs?view=all");
+    expect(lastWrite()).toBe("/workspaces/atlas/projects?view=all");
     expect(pressed(container, "All")).toBe("true");
 
     await click(button(container, "Recent"));
-    expect(lastWrite()).toBe("/workspaces/atlas/graphs");
+    expect(lastWrite()).toBe("/workspaces/atlas/projects");
     expect(pressed(container, "Recent")).toBe("true");
   });
 
@@ -372,7 +372,7 @@ describe("workspace graph browser address filters", () => {
 
     await click(button(container, "Clear search"));
 
-    expect(lastWrite()).toBe("/workspaces/atlas/graphs");
+    expect(lastWrite()).toBe("/workspaces/atlas/projects");
     expect(searchInput(container).value).toBe("");
     expect(rowTitles(container)).toHaveLength(3);
   });
@@ -383,9 +383,9 @@ describe("workspace graph browser address filters", () => {
     const input = searchInput(container);
 
     await change(input, "in");
-    expect(lastWrite()).toBe("/workspaces/atlas/graphs?q=in");
+    expect(lastWrite()).toBe("/workspaces/atlas/projects?q=in");
     await change(input, "inv");
-    expect(lastWrite()).toBe("/workspaces/atlas/graphs?q=inv");
+    expect(lastWrite()).toBe("/workspaces/atlas/projects?q=inv");
 
     // The first write is the one that finally reaches the address. The field
     // holds the second keystroke and the list describes the address, and
@@ -397,8 +397,8 @@ describe("workspace graph browser address filters", () => {
       "Invoice archive audit",
     ]);
     expect(replaceCalls()).toEqual([
-      "/workspaces/atlas/graphs?q=in",
-      "/workspaces/atlas/graphs?q=inv",
+      "/workspaces/atlas/projects?q=in",
+      "/workspaces/atlas/projects?q=inv",
     ]);
 
     await setUrl("?q=inv");
@@ -420,7 +420,7 @@ describe("workspace graph browser address filters", () => {
 
     // A view change carries the search this page asked for, not the one the
     // address has reached, and the field keeps what the person typed.
-    expect(lastWrite()).toBe("/workspaces/atlas/graphs?q=nightly&view=all");
+    expect(lastWrite()).toBe("/workspaces/atlas/projects?q=nightly&view=all");
     expect(input.value).toBe("nightly");
   });
 

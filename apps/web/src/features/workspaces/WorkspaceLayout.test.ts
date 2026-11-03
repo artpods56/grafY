@@ -88,7 +88,7 @@ vi.mock("@/features/workbench/ui/WorkbenchChromeContext", () => ({
 }));
 
 vi.mock("@/hooks/use-api", () => ({
-  useSavedGraphs: () => ({
+  useWorkspaceProjects: () => ({
     data: { graphs: testState.savedGraphs },
     mutate: vi.fn(),
   }),

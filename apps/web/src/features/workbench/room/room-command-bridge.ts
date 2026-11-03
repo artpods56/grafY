@@ -5,6 +5,7 @@ import type {
   InGraphCommand,
   ProjectCommand,
   SavedGraph,
+  GraphDraft,
   SavedGraphDocument,
 } from "@/lib/api";
 
@@ -21,7 +22,6 @@ import {
   projectSavedGraphEdge,
   projectSavedGraphOrigin,
   type AuthoredGraphDocument,
-  type GraphDraft,
   type GraphCommand,
 } from "../model/graph-document";
 
@@ -54,7 +54,7 @@ export function toInGraphCommand(
  */
 export function toRoomReplaceDocumentCommand(
   draft: GraphDraft,
-  graphId?: string,
+  graphId: string,
 ): RoomProjectCommand {
   const document = authoredGraphDocument(draft);
   const presentation = draft.document.presentation ?? emptyGraphPresentation();
@@ -73,9 +73,7 @@ export function toRoomReplaceDocumentCommand(
       },
     },
   };
-  return graphId === undefined
-    ? command
-    : toInGraphCommand(graphId, command);
+  return toInGraphCommand(graphId, command);
 }
 
 /** Rename the Graph itself. Graphs are named by the Project that holds them. */
@@ -84,7 +82,12 @@ export function toRoomRenameGraphCommand(
   name: string,
   expectedName: string,
 ): RoomProjectCommand {
-  return { kind: "rename_graph", graph_id: graphId, name, expected_name: expectedName };
+  return {
+    kind: "rename_graph",
+    graph_id: graphId,
+    name,
+    expected_name: expectedName,
+  };
 }
 
 /** Rename the Project. Its name is what a person opens from the browser. */
@@ -104,15 +107,15 @@ export function toRoomRenameProjectCommand(
 export function toRoomGraphCommand(
   command: GraphCommand,
   document: AuthoredGraphDocument,
-  graphId?: string,
+  graphId: string,
 ): RoomProjectCommand | null {
+  if (command.kind === "rename_graph") {
+    // A Graph is named by the Project that holds it, so this one is not
+    // addressed into a Graph document even though it names one.
+    return toRoomRenameGraphCommand(graphId, command.name, document.name);
+  }
   const body = toRoomGraphBodyCommand(command, document);
   if (body === null) return null;
-  if (body.kind === "rename_graph") {
-    if (graphId === undefined) return null;
-    return toRoomRenameGraphCommand(graphId, body.name, document.name);
-  }
-  if (graphId === undefined) return body;
   return toInGraphCommand(graphId, body);
 }
 
@@ -155,8 +158,6 @@ export function toRoomGraphBodyCommand(
         kind: "remove_origins",
         origin_ids: [...command.origin_ids],
       });
-    case "rename_graph":
-      return asRoomBody({ kind: "rename_graph", name: command.name });
     case "update_node_configuration": {
       const node = document.nodes.find(
         (candidate) => candidate.id === command.node_id,
@@ -252,22 +253,15 @@ export function toRoomGraphBodyCommand(
       };
     }
     case "replace_document": {
-      const draft = createGraphDraft(command.document);
-      const presentation =
-        command.document.presentation ?? emptyGraphPresentation();
-      return {
-        kind: "replace_document",
-        document: {
-          ...draft.document,
-          presentation: {
-            annotations: [...presentation.annotations],
-            bindings: [...presentation.bindings],
-            links: [...presentation.links],
-            viewers: [...presentation.viewers],
-          },
-        },
-      };
+      const draft = createGraphDraft(
+        command.document,
+        emptyGraphPresentation(),
+      );
+      return { kind: "replace_document", document: draft.document };
     }
+    case "rename_graph":
+      // Named by the Project, not by the Graph document; see toRoomGraphCommand.
+      return null;
     case "add_input_plug":
     case "remove_input_plug":
     case "reorder_input_plug": {
@@ -322,8 +316,6 @@ export function toLocalGraphCommand(
       return { kind: "add_edge", edge: body.edge };
     case "remove_edges":
       return { kind: "remove_edges", edge_ids: body.edge_ids };
-    case "rename_graph":
-      return { kind: "rename_graph", name: body.name };
     case "update_node_configuration":
       return {
         kind: "update_node_configuration",
@@ -572,22 +564,19 @@ export function applyRoomCommandToHead(
   }
 
   if (command.kind === "add_call_node") {
-    return mapGraphDocument(head, command.graph_id, (graph, presentation) => {
-      const nodes = graph.document.nodes.map((node) =>
-        node.id === command.node_id
-          ? {
-              ...node,
-              kind: "call" as const,
-              position: command.position,
-            }
-          : node,
-      );
-      return withGraphDocument(graph, {
-        ...graph.document,
-        nodes,
-        presentation,
-      });
-    }, sequence);
+    return mapGraphDocument(
+      head,
+      command.graph_id,
+      (graph) => {
+        const nodes = graph.document.nodes.map((node) =>
+          node.id === command.node_id
+            ? { ...node, kind: "call" as const, position: command.position }
+            : node,
+        );
+        return withGraphDocument(graph, { ...graph.document, nodes });
+      },
+      sequence,
+    );
   }
 
   if (command.kind !== "in_graph") {
@@ -635,13 +624,16 @@ export function applyRoomCommandToHead(
           ]),
         );
         const presentation = presentationFromGraphDocument(graph.document);
-        return withGraphDocument(graph, presentationIntoDocument(graph.document, {
-          ...presentation,
-          viewers: presentation.viewers.map((viewer) => {
-            const position = positions.get(viewer.id);
-            return position ? { ...viewer, position } : viewer;
+        return withGraphDocument(
+          graph,
+          presentationIntoDocument(graph.document, {
+            ...presentation,
+            viewers: presentation.viewers.map((viewer) => {
+              const position = positions.get(viewer.id);
+              return position ? { ...viewer, position } : viewer;
+            }),
           }),
-        }));
+        );
       },
       sequence,
     );
@@ -659,13 +651,16 @@ export function applyRoomCommandToHead(
           ]),
         );
         const presentation = presentationFromGraphDocument(graph.document);
-        return withGraphDocument(graph, presentationIntoDocument(graph.document, {
-          ...presentation,
-          annotations: presentation.annotations.map((annotation) => {
-            const position = positions.get(annotation.id);
-            return position ? { ...annotation, position } : annotation;
+        return withGraphDocument(
+          graph,
+          presentationIntoDocument(graph.document, {
+            ...presentation,
+            annotations: presentation.annotations.map((annotation) => {
+              const position = positions.get(annotation.id);
+              return position ? { ...annotation, position } : annotation;
+            }),
           }),
-        }));
+        );
       },
       sequence,
     );

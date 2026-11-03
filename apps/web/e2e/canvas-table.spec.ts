@@ -24,7 +24,6 @@ const library: LibraryList = {
         saved_at: "2026-10-07T12:00:00Z",
         original_filename: "Field survey",
       },
-      run: null,
     },
   ],
 };

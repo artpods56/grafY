@@ -1,8 +1,8 @@
 import { expect, test as base, type Page } from "@playwright/test";
 
 import type {
-  SavedGraphList,
-  SavedGraphSummary,
+  ProjectList,
+  ProjectSummary,
   Workspace,
 } from "../src/lib/api/contract";
 import { mockGrafyApi } from "./workbench.fixture";
@@ -39,32 +39,33 @@ const atlas = {
   capabilities: ["view_project", "create_project"],
 } satisfies Workspace;
 
-function graph(id: string, name: string, updatedAt: string): SavedGraphSummary {
+function graph(id: string, name: string, updatedAt: string): ProjectSummary {
   return {
     id,
     name,
     node_count: 3,
     edge_count: 2,
+    graph_count: 1,
     revision: 4,
     updated_at: `${updatedAt}T10:00:00Z`,
     draft_pending: false,
   };
 }
 
-const atlasGraphs = {
-  graphs: [
+const atlasProjects = {
+  projects: [
     graph("atlas-invoice-intake", "Invoice intake", "2026-08-12"),
     graph("atlas-invoice-audit", "Invoice archive audit", "2026-08-11"),
     graph("atlas-nightly-sync", "Nightly sync", "2026-08-10"),
   ],
-} satisfies SavedGraphList;
+} satisfies ProjectList;
 
-const personalGraphs = {
-  graphs: [
+const personalProjects = {
+  projects: [
     graph("personal-palette", "Personal palette", "2026-08-09"),
     graph("personal-ledger", "Personal ledger", "2026-08-08"),
   ],
-} satisfies SavedGraphList;
+} satisfies ProjectList;
 
 const test = base.extend<{ graphApiFixtures: void }>({
   // Automatic: every test here gets the mocked endpoints, plus the guarantee
@@ -73,9 +74,9 @@ const test = base.extend<{ graphApiFixtures: void }>({
     async ({ page }, runFixture) => {
       const unhandled = await mockGrafyApi(page, {
         workspaces: [personal, atlas],
-        graphsByWorkspace: {
-          [PERSONAL_ID]: personalGraphs,
-          [ATLAS_ID]: atlasGraphs,
+        projectsByWorkspace: {
+          [PERSONAL_ID]: personalProjects,
+          [ATLAS_ID]: atlasProjects,
         },
       });
       await runFixture(undefined);

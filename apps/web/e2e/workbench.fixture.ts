@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 import { libraryStub } from "./library-folders-stub";
 import type {
   NodeRegistry,
-  SavedGraphList,
+  ProjectList,
   Session,
   Workspace,
   WorkspaceInvitationForRecipient,
@@ -52,7 +52,7 @@ const workspace = {
   ],
 } satisfies Workspace;
 
-const savedGraphs = { graphs: [] } satisfies SavedGraphList;
+const savedProjects = { projects: [] } satisfies ProjectList;
 export const nodeRegistry = {
   artifact_conversions: [],
   artifact_types: [],
@@ -138,7 +138,7 @@ const WORKSPACE_SCOPED = /^\/api\/v1\/workspaces\/([^/]+)\/([^/]+)$/;
 export interface GrafyApiFixtures {
   readonly workspaces: readonly Workspace[];
   /** Saved-graph lists keyed by workspace id, the way the API addresses them. */
-  readonly graphsByWorkspace: Readonly<Record<string, SavedGraphList>>;
+  readonly projectsByWorkspace: Readonly<Record<string, ProjectList>>;
   readonly registry?: NodeRegistry;
   readonly invitations?: readonly WorkspaceInvitationForRecipient[];
 }
@@ -146,14 +146,14 @@ export interface GrafyApiFixtures {
 /** The one-person, one-workspace world every workbench spec already expects. */
 export const workbenchApiFixtures: GrafyApiFixtures = {
   workspaces: [workspace],
-  graphsByWorkspace: { [WORKSPACE_ID]: savedGraphs },
+  projectsByWorkspace: { [WORKSPACE_ID]: savedProjects },
   registry: nodeRegistry,
 };
 
 type FixtureBody =
   | Session
   | readonly Workspace[]
-  | SavedGraphList
+  | ProjectList
   | NodeRegistry
   | readonly WorkspaceInvitationForRecipient[];
 
@@ -179,7 +179,7 @@ function fixtureBody(
   // here: these specs author drafts, and a spec that starts opening one should
   // see a 501 rather than a blank canvas it mistakes for the app being broken.
   if (tail === "nodes") return fixtures.registry;
-  if (tail === "graphs") return fixtures.graphsByWorkspace[workspaceId];
+  if (tail === "graphs") return fixtures.projectsByWorkspace[workspaceId];
   return undefined;
 }
 

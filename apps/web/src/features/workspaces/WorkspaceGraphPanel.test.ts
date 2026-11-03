@@ -256,7 +256,7 @@ describe("workspace graph panel interactions", () => {
     expect(onClose).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledWith("graph-selected");
     expect(testState.push).toHaveBeenCalledWith(
-      "/workspaces/operations/graphs/graph-invoice",
+      "/workspaces/operations/projects/graph-invoice",
     );
   });
 

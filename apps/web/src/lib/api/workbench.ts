@@ -1,4 +1,4 @@
-import { API_BASE, ApiError, putUploadBytes, request } from "./client";
+import { API_BASE, putUploadBytes, request } from "./client";
 import type {
   GeoFeatureQuery,
   GeoRenderDescriptor,
@@ -170,4 +170,51 @@ export function getArtifactTableCell(
     `/v1/workspaces/${encodeURIComponent(workspaceId)}/artifacts/${encodeURIComponent(artifactId)}/table/cell?${query}`,
     { signal },
   );
+}
+
+/**
+ * Upload a file the person picked or dropped, and return what it became.
+ *
+ * Three calls, because the API decides who holds the bytes: reserve a target,
+ * send the file to that target (this API, or object storage behind a signed URL),
+ * then complete, which is where the file turns into an artifact. The caller then
+ * decides whether the artifact joins the Library — an upload that lands in
+ * storage is not yet something anyone else can see.
+ */
+export async function uploadFile(
+  workspaceId: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<UploadResponse> {
+  const path = `/v1/workspaces/${encodeURIComponent(workspaceId)}/uploads`;
+  const target = await request<UploadTarget>("POST", path, {
+    body: {
+      filename: file.name,
+      byte_size: file.size,
+      content_type: file.type || null,
+    },
+    signal,
+  });
+  await putUploadBytes(
+    { ...target, url: uploadTargetUrl(target) },
+    file,
+    file.type || "application/octet-stream",
+    signal,
+  );
+  return request<UploadResponse>(
+    "POST",
+    `${path}/${encodeURIComponent(target.upload_id)}/complete`,
+    { body: {}, signal },
+  );
+}
+
+/**
+ * Where the bytes actually go. A storage target is a signed absolute URL; an
+ * API-owned target is a path relative to the API base, and the base is this
+ * client's business, not the server's.
+ */
+function uploadTargetUrl(target: UploadTarget): string {
+  const url = target.url;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
+  return url.startsWith(API_BASE) ? url : `${API_BASE}${url}`;
 }
