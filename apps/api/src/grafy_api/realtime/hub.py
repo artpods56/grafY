@@ -374,6 +374,22 @@ class ProjectRoomHub:
         for session in await self._sessions_for(workspace_id, project_id):
             await self._enqueue(session, message)
 
+    async def publish_transient(
+        self, *, workspace_id: UUID, project_id: UUID, message: BaseModel
+    ) -> None:
+        """Fan out a frame a reader may be without: presence delivery, not command delivery.
+
+        A streamed partial is worth exactly one frame and no more, so a subscriber that has
+        stopped draining its queue loses this one and keeps its room. The alternative — the
+        ``_enqueue`` path above — closes a slow consumer, which is how one unread answer
+        would turn into everyone on the Project being disconnected every time a model talks
+        quickly. What a reader missed is readable: the durable message event follows, and the
+        conversation route has the whole text.
+        """
+
+        for session in await self._sessions_for(workspace_id, project_id):
+            self._offer(session, message)
+
     async def close_project(
         self,
         *,

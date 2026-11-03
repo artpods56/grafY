@@ -35,6 +35,15 @@ from grafy_core.kernel.project import ProjectDocumentError
 from grafy_core.ports.agent_conversations import AgentConversationUnitOfWorkPort
 
 
+class AgentConversationForkRangeError(ValueError):
+    """The sequence asked for is not an event of the conversation being forked.
+
+    A route cannot tell a caller "fork where you meant" from "that thread has four events",
+    and the domain already knows which of the two happened, so the distinction is carried out
+    here rather than arriving as an unexplained 500.
+    """
+
+
 class AgentConversationService:
     def __init__(
         self,
@@ -96,12 +105,15 @@ class AgentConversationService:
             source = await store.lock(workspace_id, conversation_id)
             if source is None:
                 raise NotFoundError("Agent conversation", str(conversation_id))
-            fork = source.fork(
-                at_sequence=at_sequence,
-                author_user_id=author_user_id,
-                title=title,
-                conversation_id=fork_id or uuid4(),
-            )
+            try:
+                fork = source.fork(
+                    at_sequence=at_sequence,
+                    author_user_id=author_user_id,
+                    title=title,
+                    conversation_id=fork_id or uuid4(),
+                )
+            except ValueError as exc:
+                raise AgentConversationForkRangeError(str(exc)) from exc
             await store.add(fork)
             copied = await store.list_events(
                 workspace_id, source.id, after_sequence=0, limit=at_sequence
@@ -120,6 +132,40 @@ class AgentConversationService:
                 fork = fork.appended(at=event.created_at)
             await unit_of_work.commit()
         return fork
+
+    async def require_scoped(
+        self,
+        *,
+        workspace_id: UUID,
+        project_id: UUID,
+        graph_id: str,
+        agent_id: str,
+        conversation_id: UUID,
+    ) -> AgentConversation:
+        """The conversation at exactly this path, or the absence the path claims.
+
+        An id that resolves somewhere inside the caller's Workspace is not yet an answer about
+        *this* Agent: one Workspace holds many Projects, one Project many Graphs and one Graph
+        many Agents, so the stored Project, Graph and Agent must match the path that named
+        them. A mismatch is answered exactly as another Workspace's conversation is, because
+        both are the same non-fact to a caller and the second would confirm where the thread
+        really lives.
+
+        This is safe to do as a read above the write: a conversation's scope is fixed when it
+        is created and nothing rewrites it — history is append-only and its rows never move
+        between Agents (ADR 0021).
+        """
+
+        conversation = await self.get(
+            workspace_id=workspace_id, conversation_id=conversation_id
+        )
+        if (
+            conversation.project_id != project_id
+            or conversation.graph_id != graph_id
+            or conversation.agent_id != agent_id
+        ):
+            raise NotFoundError("Agent conversation", str(conversation_id))
+        return conversation
 
     async def append(
         self,
@@ -218,4 +264,7 @@ def _agent_on_graph(head: ProjectHead, graph_id: str, agent_id: str) -> None:
         raise NotFoundError("Agent", agent_id)
 
 
-__all__ = ["AgentConversationService"]
+__all__ = [
+    "AgentConversationForkRangeError",
+    "AgentConversationService",
+]

@@ -57,6 +57,7 @@ from grafy_api.agents.models import (
 )
 from grafy_api.agents.publishing import (
     AGENT_TEXT_PARTIAL_INTERVAL_SECONDS,
+    AgentConversationNotice,
     AgentTextPartial,
     AgentTextPartialCoalescer,
     AgentTurnPublisher,
@@ -133,6 +134,31 @@ class AgentTurnConflictError(AgentTurnRequestError):
 
 class AgentTurnStoppingError(RuntimeError):
     """This API owner is shutting down and will not take a new turn."""
+
+
+@dataclass(frozen=True, slots=True)
+class AgentTurnScope:
+    """The Project, Graph and Agent a request addressed its conversation to.
+
+    A Workspace holds many Projects, so the Workspace a receipt was read under answers
+    nothing on its own: the conversation the caller's id found also has to sit in the Project
+    named in the path, on the Graph named there, and next to the Agent named there. The route
+    checks this before it calls down and the runtime checks it again on the row it loaded, so
+    the rule is a property of the owner rather than a convention each new caller has to
+    remember. Anything outside the scope reads as absent, which is how the rest of the
+    tenancy rules answer a guess.
+    """
+
+    project_id: UUID
+    graph_id: str
+    agent_id: str
+
+    def covers(self, scope: "AgentTurnScope") -> bool:
+        return (
+            self.project_id == scope.project_id
+            and self.graph_id == scope.graph_id
+            and self.agent_id == scope.agent_id
+        )
 
 
 def redact_agent_turn_error(detail: str, secrets: Sequence[str] = ()) -> str:
@@ -218,6 +244,22 @@ class _RunningTurn:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _Admission:
+    """What one admitted send decided.
+
+    The user message is part of the answer rather than a detail of the transaction: a reader
+    of the thread has to be told the question was stored, and `turn_started` on its own looks
+    like an answer with nothing behind it.
+    """
+
+    turn: AgentTurn
+    resolved: ResolvedAgentModel
+    history: Sequence[AgentConversationEvent]
+    user_message: AgentConversationEvent
+    user_text: str
+
+
 class AgentService:
     """Turns: their durable receipts, their streaming, their ending."""
 
@@ -272,6 +314,7 @@ class AgentService:
         conversation_id: UUID,
         client_turn_id: str,
         text: str,
+        scope: AgentTurnScope | None = None,
     ) -> AgentTurn:
         """Admit one turn and run it, or answer with the turn this send already made.
 
@@ -281,6 +324,10 @@ class AgentService:
         still on the canvas, because its instructions and model are what the turn is built
         from: history outlives the canvas, a fresh question addressed to a removed Agent does
         not.
+
+        `scope` is what the caller addressed rather than what it hoped for: a conversation
+        that turns out to live in another Project of the same Workspace, or under another
+        Agent, is answered as the absence the path claims.
         """
 
         access.require(WorkspaceCapability.START_RUN)
@@ -294,15 +341,18 @@ class AgentService:
             conversation_id=conversation_id,
             client_turn_id=client_turn_id,
             text=text,
+            scope=scope,
         )
         if admitted is None:
             # A send this conversation already has. The receipt was read inside `_admit`,
             # which is also where it decided replay from conflict.
             replay = await self._replay(access, conversation_id, client_turn_id, text)
             return replay
-        turn, resolved, history = admitted
-        self._start(turn, resolved, user_text=text, history=history)
-        return turn
+        self._start(admitted)
+        # The question is durable now, so the thread is told about it: a reader that only
+        # saw `turn_started` would be watching an answer arrive for a question it cannot see.
+        self._publish(_announce(admitted.turn, admitted.user_message))
+        return admitted.turn
 
     async def _admit(
         self,
@@ -311,7 +361,8 @@ class AgentService:
         conversation_id: UUID,
         client_turn_id: str,
         text: str,
-    ) -> tuple[AgentTurn, ResolvedAgentModel, Sequence[AgentConversationEvent]] | None:
+        scope: AgentTurnScope | None,
+    ) -> _Admission | None:
         """Write the receipt and the user message together, or write nothing.
 
         The conversation row is locked first: it is the row whose sequence the message
@@ -324,6 +375,8 @@ class AgentService:
             turns = unit_of_work.agent_turns
             conversation = await store.lock(access.workspace_id, conversation_id)
             if conversation is None:
+                raise NotFoundError("Agent conversation", str(conversation_id))
+            if scope is not None and not scope.covers(_conversation_scope(conversation)):
                 raise NotFoundError("Agent conversation", str(conversation_id))
             already = await turns.get_by_client_turn_id(
                 access.workspace_id, conversation_id, client_turn_id
@@ -387,7 +440,13 @@ class AgentService:
                     text=text,
                 )
             await unit_of_work.commit()
-            return turn, resolved, history
+            return _Admission(
+                turn=turn,
+                resolved=resolved,
+                history=history,
+                user_message=event,
+                user_text=text,
+            )
 
     async def _lose_admission_race(
         self,
@@ -396,7 +455,7 @@ class AgentService:
         conversation_id: UUID,
         client_turn_id: str,
         text: str,
-    ) -> tuple[AgentTurn, ResolvedAgentModel, Sequence[AgentConversationEvent]] | None:
+    ) -> None:
         raced = await self._receipt_by_client_turn_id(
             access.workspace_id, conversation_id, client_turn_id
         )
@@ -438,16 +497,10 @@ class AgentService:
             )
         return already
 
-    def _start(
-        self,
-        turn: AgentTurn,
-        resolved: ResolvedAgentModel,
-        *,
-        user_text: str,
-        history: Sequence[AgentConversationEvent],
-    ) -> None:
+    def _start(self, admission: _Admission) -> None:
         """Hand an admitted turn to a task this service owns until it ends."""
 
+        turn = admission.turn
         message_id = uuid4()
         partial = AgentTextPartial(
             workspace_id=turn.workspace_id,
@@ -462,9 +515,9 @@ class AgentService:
         )
         entry = _RunningTurn(
             turn=turn,
-            user_text=user_text,
-            history=history_messages(list(history)),
-            model=self._turn_model_factory(resolved),
+            user_text=admission.user_text,
+            history=history_messages(list(admission.history)),
+            model=self._turn_model_factory(admission.resolved),
             partial=partial,
             coalescer=AgentTextPartialCoalescer(
                 publish=self._publish_partial,
@@ -472,7 +525,7 @@ class AgentService:
                 clock=self._clock,
             ),
             message_id=message_id,
-            secrets=_dial_secrets(resolved),
+            secrets=_dial_secrets(admission.resolved),
         )
         self._active[turn.conversation_id] = entry
         entry.task = asyncio.create_task(self._run(entry), name=f"agent-turn-{turn.id}")
@@ -604,19 +657,25 @@ class AgentService:
 
         try:
             await self._publish_final(entry)
-            wrote = await self._record_outcome(
+            recorded = await self._record_outcome(
                 entry.turn, status, text=text, detail=detail
             )
         finally:
             with suppress(Exception):
                 await entry.model.aclose()
-        if wrote is None:
+        if recorded is None:
             logger.info(
                 "agent_turn_outcome_already_recorded turn_id=%s attempted_status=%s",
                 entry.turn.id,
                 status.value,
             )
             return
+        wrote, events = recorded
+        # The stored answer and its ending are told before the turn is called finished, so a
+        # reader that stops on `turn_finished` has been told everything the conversation now
+        # holds. The buffered text went out ahead of both, in `_publish_final`.
+        for event in events:
+            self._publish(_announce(wrote, event))
         self._publish(
             lambda publisher: publisher.turn_finished(
                 wrote,
@@ -643,16 +702,19 @@ class AgentService:
         *,
         text: str,
         detail: str | None,
-    ) -> AgentTurn | None:
+    ) -> tuple[AgentTurn, list[AgentConversationEvent]] | None:
         """Claim the turn's terminal state and append its events in one transaction.
 
         The claim is the first write, so a turn someone else already finished costs this
         transaction nothing at all rather than a rolled-back pair of events. The events are
         written against the locked conversation, so the sequence they take is the one that
-        row is waiting for even if another turn was admitted in the meantime.
+        row is waiting for even if another turn was admitted in the meantime. The appended
+        events come back with the claim because the room is told about each one, in order,
+        once the transaction that wrote them has committed.
         """
 
         at = datetime.now(UTC)
+        appended: list[AgentConversationEvent] = []
         async with self._unit_of_work_factory() as unit_of_work:
             claimed = await unit_of_work.agent_turns.finish(
                 turn.workspace_id, turn.id, status=status, at=at, detail=detail
@@ -664,25 +726,25 @@ class AgentService:
             conversation = await store.lock(turn.workspace_id, turn.conversation_id)
             if conversation is not None:
                 if text:
-                    await store.append(
-                        conversation.event(
-                            turn_id=turn.id,
-                            payload=AssistantMessagePayload(text=text),
-                            at=at,
-                        )
-                    )
-                    conversation = conversation.appended(at=at)
-                await store.append(
-                    conversation.event(
+                    event = conversation.event(
                         turn_id=turn.id,
-                        payload=TurnOutcomePayload(
-                            outcome=_OUTCOME_EVENTS[status], detail=detail
-                        ),
+                        payload=AssistantMessagePayload(text=text),
                         at=at,
                     )
+                    await store.append(event)
+                    appended.append(event)
+                    conversation = conversation.appended(at=at)
+                outcome_event = conversation.event(
+                    turn_id=turn.id,
+                    payload=TurnOutcomePayload(
+                        outcome=_OUTCOME_EVENTS[status], detail=detail
+                    ),
+                    at=at,
                 )
+                await store.append(outcome_event)
+                appended.append(outcome_event)
             await unit_of_work.commit()
-        return claimed
+        return claimed, appended
 
     # Cancel ----------------------------------------------------------------
 
@@ -692,6 +754,7 @@ class AgentService:
         access: WorkspaceAccess,
         conversation_id: UUID,
         turn_id: UUID | None = None,
+        scope: AgentTurnScope | None = None,
     ) -> AgentTurn:
         """Stop a turn, and answer the same way however often it is asked.
 
@@ -703,6 +766,10 @@ class AgentService:
         nothing running it here is an orphan of an earlier owner, and this call is the one
         allowed to close it: leaving it running would hold the conversation busy with
         nothing left to stop.
+
+        `scope` is the caller's address, not a hint: a `turn_id` that belongs to another
+        Project, Graph or Agent is refused as the absence it is, because a Workspace holds
+        many Projects and a Stop pressed on one card must not stop a turn on another.
         """
 
         access.require(WorkspaceCapability.START_RUN)
@@ -720,6 +787,13 @@ class AgentService:
             turn = await self._latest(access.workspace_id, conversation_id)
             if turn is None:
                 raise NotFoundError("Agent turn for conversation", str(conversation_id))
+        elif turn.conversation_id != conversation_id:
+            # A Stop sent to one thread cannot stop another's turn, and the ids are the only
+            # thing a body carries: the receipt has to belong to the conversation in the path
+            # before its conversation's capability means anything about it.
+            raise NotFoundError("Agent turn", str(turn.id))
+        if scope is not None and not scope.covers(_turn_scope(turn)):
+            raise NotFoundError("Agent turn", str(turn.id))
         if not turn.is_running:
             return turn
         entry = self._active.get(turn.conversation_id)
@@ -1065,6 +1139,48 @@ class AgentService:
                 self._notifications.task_done()
 
 
+def _announce(
+    turn: AgentTurn, event: AgentConversationEvent
+) -> Callable[[AgentTurnPublisher], Awaitable[None]]:
+    """One queued telling that a conversation grew by one stored event.
+
+    The notice is built here instead of at delivery, and the notification closes over it
+    rather than over a loop variable: a turn appends its answer and its ending back to back,
+    and a reader told about the same sequence twice would conclude the other one never
+    landed. The room it reaches is the turn's, which is the scope the conversation was read
+    under in the first place.
+    """
+
+    notice = AgentConversationNotice(
+        workspace_id=turn.workspace_id,
+        project_id=turn.project_id,
+        graph_id=turn.graph_id,
+        agent_id=turn.agent_id,
+        event=event,
+    )
+
+    async def notify(publisher: AgentTurnPublisher) -> None:
+        await publisher.event_appended(notice)
+
+    return notify
+
+
+def _conversation_scope(conversation: AgentConversation) -> AgentTurnScope:
+    return AgentTurnScope(
+        project_id=conversation.project_id,
+        graph_id=conversation.graph_id,
+        agent_id=conversation.agent_id,
+    )
+
+
+def _turn_scope(turn: AgentTurn) -> AgentTurnScope:
+    return AgentTurnScope(
+        project_id=turn.project_id,
+        graph_id=turn.graph_id,
+        agent_id=turn.agent_id,
+    )
+
+
 def _agent_on_graph(head: ProjectHead, conversation: AgentConversation) -> GraphAgent:
     try:
         graph = head.document.get_graph(conversation.graph_id)
@@ -1103,6 +1219,7 @@ __all__ = [
     "AgentTurnConflictError",
     "AgentTurnModel",
     "AgentTurnRequestError",
+    "AgentTurnScope",
     "AgentTurnStoppingError",
     "redact_agent_turn_error",
     "resolved_agent_model_turn_model",

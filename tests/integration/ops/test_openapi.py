@@ -74,6 +74,15 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "/v1/workspaces/{workspace_id}/projects/{project_id}/commands",
         "/v1/workspaces/{workspace_id}/projects/{project_id}/folder",
         "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/instances",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/active-turn",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/cancel",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/events",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/fork",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/turns",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/key",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/model",
         "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}",
         "/v1/workspaces/{workspace_id}/projects/{project_id}/head",
         "/v1/workspaces/{workspace_id}/projects/{project_id}/instance-result",
@@ -94,6 +103,23 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
     assert set(
         schema["paths"]["/v1/workspaces/{workspace_id}/projects/{project_id}/runs"]
     ) == {"get", "post"}
+    # An Agent's key has one way in and no way out: the request takes a write-only string and
+    # nothing in the schema answers with one, so no generated client can print it by accident.
+    agent_key_request = schema["components"]["schemas"]["SetAgentKeyRequest"]
+    assert set(agent_key_request["required"]) == {"value"}
+    assert agent_key_request["properties"]["value"]["format"] == "password"
+    agent_key_path = schema["paths"][
+        "/v1/workspaces/{workspace_id}/projects/{project_id}"
+        "/graphs/{graph_id}/agents/{agent_id}/key"
+    ]
+    assert set(agent_key_path) == {"delete", "put"}
+    assert "204" in agent_key_path["delete"]["responses"]
+    secret_shapes = [
+        name
+        for name, definition in schema["components"]["schemas"].items()
+        if name.startswith("Agent") and "value" in definition.get("properties", {})
+    ]
+    assert secret_shapes == []
     commands = schema["components"]["schemas"]["SubmitProjectCommandRequest"]
     assert "commands" in commands["required"]
     start_run = schema["components"]["schemas"]["StartRunRequest"]

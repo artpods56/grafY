@@ -24,10 +24,10 @@ from grafy_api.app_state import AppIdentity, AppResources
 from grafy_api.agents.conversations import AgentConversationService
 from grafy_api.agents.keys import AgentKeyService
 from grafy_api.agents.models import AgentModelResolver
-from grafy_api.agents.publishing import NullAgentTurnPublisher
 from grafy_api.agents.turns import AgentService
 from grafy_api.services.families import build_application_registry
 from grafy_api.node_secrets import NodeSecretService
+from grafy_api.realtime.agent_events import ProjectAgentEvents
 from grafy_api.realtime.hub import ProjectRoomHub
 from grafy_api.realtime.run_events import ProjectRunEvents
 from grafy_api.runs.service import RunService
@@ -148,14 +148,14 @@ async def build_app_resources(
         keys=agent_keys,
         egress_policy=workbench_egress_policy(settings.egress),
     )
-    # The turn runtime gets a publisher that counts what it discards. The Project room's
-    # `agent.*` frames are the next unit of issue #202, and until they exist a streamed
-    # partial has nowhere to go — which is a dropped notification, never a lost turn: the
-    # durable message a turn writes is what the reader will be shown either way.
+    # A turn's frames travel on the same hub the Project room reads, so the tab that sent is
+    # served by the same delivery as every other tab watching the Project. The runtime keeps
+    # its own bounded, lossy queue in front of this, so a reader that stops draining loses
+    # frames and never slows a turn or leaves a receipt unwritten.
     agent_turns = AgentService(
         unit_of_work_factory=new_unit_of_work,
         models=agent_models,
-        publisher=NullAgentTurnPublisher(),
+        publisher=ProjectAgentEvents(hub=project_room_hub),
     )
     workbench = build_workbench_components(
         plugin_registry=registry,

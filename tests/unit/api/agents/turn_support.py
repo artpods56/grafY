@@ -31,7 +31,7 @@ from pydantic_ai.messages import ModelMessage
 
 from grafy_api.agents.conversations import AgentConversationService
 from grafy_api.agents.models import ResolvedAgentModel
-from grafy_api.agents.publishing import AgentTextPartial
+from grafy_api.agents.publishing import AgentConversationNotice, AgentTextPartial
 from grafy_api.agents.turns import AgentService, AgentTurnModel
 from grafy_core.domain.agent_conversations import (
     AgentConversation,
@@ -291,26 +291,48 @@ class RecordingPublisher:
     `wait_for_*` is how a test knows a notification has landed rather than merely been
     started: a turn's start and finish are told on tasks of their own so a wedged room
     cannot slow a turn, and that separation is only worth having if a test can prove it.
+
+    `order` is the same telling as one flat list, because the contract a reader depends on is
+    an order: the buffered text goes out, then the stored answer, then the stored ending,
+    then the finish. Asserting on four separate lists could not say that.
     """
 
     started: list[AgentTurn] = field(default_factory=list)
+    events: list[AgentConversationNotice] = field(default_factory=list)
     partials: list[AgentTextPartial] = field(default_factory=list)
     finished: list[tuple[AgentTurn, AgentConversationTurnOutcome, str | None]] = field(
         default_factory=list
     )
+    order: list[str] = field(default_factory=list)
     fail_partials: bool = False
     block: asyncio.Event | None = None
     _partial_arrived: asyncio.Event = field(default_factory=asyncio.Event)
     _finished_arrived: asyncio.Event = field(default_factory=asyncio.Event)
+    _event_arrived: asyncio.Event = field(default_factory=asyncio.Event)
 
     @property
     def streamed_text(self) -> str:
         return "".join(partial.text for partial in self.partials)
 
+    @property
+    def stored_text(self) -> str:
+        """The assistant message the room was told about, from the durable events."""
+
+        return "".join(
+            notice.event.payload.text
+            for notice in self.events
+            if isinstance(notice.event.payload, AssistantMessagePayload)
+        )
+
     async def wait_for_partials(self, count: int = 1) -> None:
         while len(self.partials) < count:
             self._partial_arrived.clear()
             await self._partial_arrived.wait()
+
+    async def wait_for_events(self, count: int = 1) -> None:
+        while len(self.events) < count:
+            self._event_arrived.clear()
+            await self._event_arrived.wait()
 
     async def wait_for_finished(self) -> None:
         while not self.finished:
@@ -320,12 +342,20 @@ class RecordingPublisher:
     async def turn_started(self, turn: AgentTurn) -> None:
         await self._gate()
         self.started.append(turn)
+        self.order.append("turn.started")
+
+    async def event_appended(self, notice: AgentConversationNotice) -> None:
+        await self._gate()
+        self.events.append(notice)
+        self.order.append(f"event.appended:{notice.event.payload.kind}")
+        self._event_arrived.set()
 
     async def text_partial(self, partial: AgentTextPartial) -> None:
         await self._gate()
         if self.fail_partials:
             raise RuntimeError("the room connection is gone")
         self.partials.append(partial)
+        self.order.append("delta")
         self._partial_arrived.set()
 
     async def turn_finished(
@@ -337,6 +367,7 @@ class RecordingPublisher:
     ) -> None:
         await self._gate()
         self.finished.append((turn, outcome, detail))
+        self.order.append("turn.finished")
         self._finished_arrived.set()
 
     async def _gate(self) -> None:

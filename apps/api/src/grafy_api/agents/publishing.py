@@ -1,15 +1,19 @@
 """Outbound Agent turn notifications, and the coalescing in front of them (issue #202).
 
-The Project room is the delivery mechanism and the next unit wires it; nothing in this
-module knows what a socket is. What the turn runtime does need is a typed port it can
-publish through and a rule about how often, and both are here because they are the parts
-that must be right whatever carries the frames:
+This module is the port; `grafy_api.realtime.agent_events` is the Project room adapter that
+carries it. Nothing here knows what a socket is, because what the turn runtime needs is a
+typed port it can publish through and a rule about how often, and those are the parts that
+must be right whatever carries the frames:
 
 * **A partial is transient and addressable, never authoritative.** It carries the turn id,
   the id of the assistant message being streamed, the character offset it starts at, and
   the text since the last one. A room that drops it costs a reader a stutter: the durable
   assistant message replaces whatever was streamed, and the offsets say where a dropped
   frame left the text.
+* **A stored event is told, not inferred.** `event_appended` announces an event the runtime
+  has just committed — the question, the answer, the ending — carrying the conversation
+  sequence it took. Without it a reader would have to poll to learn that its own question
+  was stored, and a second tab would show a turn waiting for an answer nobody can see.
 * **Text is coalesced on a clock the runtime owns.** One frame per streamed token would
   turn a model's 200 chunks into 200 room frames and make the fastest subscriber the one
   that closes the room. The coalescer publishes at most once per interval *and only when
@@ -20,9 +24,9 @@ that must be right whatever carries the frames:
   anyway, because the alternative is a dropped room connection rolling back a turn that had
   already written its final message.
 
-`NullAgentTurnPublisher` is what the composition root passes until the room adapter
-exists. It counts what it discarded so a deployment that forgot to wire delivery has a
-number to find rather than silence.
+`NullAgentTurnPublisher` exists for a composition that has no room to publish to — it counts
+what it discarded, so a deployment that forgot to wire delivery has a number to find rather
+than silence. The API composition root passes the Project room adapter.
 """
 
 import logging
@@ -31,7 +35,10 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 from uuid import UUID
 
-from grafy_core.domain.agent_conversations import AgentConversationTurnOutcome
+from grafy_core.domain.agent_conversations import (
+    AgentConversationEvent,
+    AgentConversationTurnOutcome,
+)
 from grafy_core.domain.agent_turns import AgentTurn
 
 logger = logging.getLogger(__name__)
@@ -73,15 +80,39 @@ class AgentTurnSnapshot:
     partial_message_id: UUID | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class AgentConversationNotice:
+    """One event that has just become durable, with the room it belongs to.
+
+    The event names its conversation and nothing above it, so the scope travels alongside:
+    a Project room is addressed by ``(workspace_id, project_id)``, and a reader inside it
+    needs the Graph and the Agent to know which card this thread is answering.
+    """
+
+    workspace_id: UUID
+    project_id: UUID
+    graph_id: str
+    agent_id: str
+    event: AgentConversationEvent
+
+
 class AgentTurnPublisher(Protocol):
     """Fan-out for one conversation's turns. The Project room adapter implements this.
 
     Implementations must not raise into the turn: a failed publication is logged here and
     never reaches the run, and a turn's durable events are written whatever a subscriber
     does with them.
+
+    The order the runtime calls these in is part of the contract: `turn_started`, the
+    question's `event_appended`, the streamed `text_partial`s, the answer's and the ending's
+    `event_appended`s, then `turn_finished`. A reader that has seen `turn_finished` has been
+    told every durable event of that turn, and a reader that missed one of them recovers the
+    same content from the conversation events the route serves.
     """
 
     async def turn_started(self, turn: AgentTurn) -> None: ...
+
+    async def event_appended(self, notice: AgentConversationNotice) -> None: ...
 
     async def text_partial(self, partial: AgentTextPartial) -> None: ...
 
@@ -102,6 +133,10 @@ class NullAgentTurnPublisher:
 
     async def turn_started(self, turn: AgentTurn) -> None:
         del turn
+        self.dropped += 1
+
+    async def event_appended(self, notice: AgentConversationNotice) -> None:
+        del notice
         self.dropped += 1
 
     async def text_partial(self, partial: AgentTextPartial) -> None:
