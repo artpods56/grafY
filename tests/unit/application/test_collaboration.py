@@ -137,13 +137,19 @@ class Harness:
         workspace: Workspace,
         *,
         name: str = "Field survey",
-        **kwargs: object,
+        graph_id: str = "main",
+        graph_name: str = "Main",
+        project_id: UUID | None = None,
+        command_id: UUID | None = None,
     ):
         return self.service.create_project(
             actor=actor,
             workspace_id=workspace.id,
             name=name,
-            **kwargs,
+            graph_id=graph_id,
+            graph_name=graph_name,
+            project_id=project_id,
+            command_id=command_id,
         )
 
     def submit(
@@ -340,6 +346,7 @@ async def test_create_project_replays_the_same_command_id(harness: Harness) -> N
     assert created.receipt.accepted_sequence == 0
     assert created.receipt.actor_user_id == owner.user_id
     assert created.receipt.actor_kind is CollaborationActorKind.USER
+    assert replayed.receipt is not None
     assert replayed.project.id == created.project.id
     assert replayed.head.collaboration_sequence == 0
     assert replayed.receipt.outcome is CommandReceiptOutcome.IDEMPOTENT_REPLAY
@@ -386,7 +393,7 @@ async def test_command_id_without_a_project_id_is_refused(harness: Harness) -> N
 
 
 async def test_viewer_and_stranger_cannot_open_a_project(harness: Harness) -> None:
-    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    workspace, _ = harness.workspace(name="Owner", slug="owner")
     viewer = harness.add_member(workspace, name="Viewer", role=WorkspaceRole.VIEWER)
     _, stranger = harness.workspace(name="Stranger", slug="stranger")
 
@@ -575,14 +582,25 @@ async def test_retry_of_an_accepted_batch_replays_the_receipt(harness: Harness) 
     project, head, _ = await harness.create(owner, workspace)
     command_id = uuid4()
     commands = [add_node("node-1"), AddGraphCommand(graph_id="branch", name="Branch")]
-    promise = {
-        "observed_sequence": 0,
-        "observed_room_epoch": head.room_epoch,
-        "command_id": command_id,
-    }
 
-    accepted = await harness.submit(owner, workspace, project.id, commands, **promise)
-    replayed = await harness.submit(owner, workspace, project.id, commands, **promise)
+    accepted = await harness.submit(
+        owner,
+        workspace,
+        project.id,
+        commands,
+        command_id=command_id,
+        observed_sequence=0,
+        observed_room_epoch=head.room_epoch,
+    )
+    replayed = await harness.submit(
+        owner,
+        workspace,
+        project.id,
+        commands,
+        command_id=command_id,
+        observed_sequence=0,
+        observed_room_epoch=head.room_epoch,
+    )
 
     assert accepted.receipt.outcome is CommandReceiptOutcome.ACCEPTED
     assert replayed.receipt.outcome is CommandReceiptOutcome.IDEMPOTENT_REPLAY
@@ -590,6 +608,40 @@ async def test_retry_of_an_accepted_batch_replays_the_receipt(harness: Harness) 
     assert replayed.receipt.accepted_sequence == 1
     assert replayed.head.collaboration_sequence == 1
     assert replayed.head.room_epoch == head.room_epoch
+    committed = harness.store.head_for(workspace.id, project.id)
+    assert committed.collaboration_sequence == 1
+    assert len(harness.store.receipts) == 1
+
+
+async def test_the_same_command_id_arriving_twice_is_accepted_once_and_replayed(
+    harness: Harness,
+) -> None:
+    # A client that retries without waiting sends one command id twice at once. Both
+    # read "no receipt" before either holds the head, so only the re-read taken under
+    # the row lock can tell the loser that the batch is already in.
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, head, _ = await harness.create(owner, workspace)
+    command_id = uuid4()
+    batch = [add_node("node-1")]
+    harness.store.gate("lock_head", parties=2)
+
+    def send():
+        return harness.submit(
+            owner,
+            workspace,
+            project.id,
+            list(batch),
+            command_id=command_id,
+            observed_sequence=0,
+            observed_room_epoch=head.room_epoch,
+        )
+
+    first, second = await asyncio.gather(send(), send())
+
+    assert {first.receipt.outcome, second.receipt.outcome} == {
+        CommandReceiptOutcome.ACCEPTED,
+        CommandReceiptOutcome.IDEMPOTENT_REPLAY,
+    }
     committed = harness.store.head_for(workspace.id, project.id)
     assert committed.collaboration_sequence == 1
     assert len(harness.store.receipts) == 1
@@ -677,7 +729,7 @@ async def test_whole_document_replace_is_refused_behind_the_head(
     harness: Harness,
 ) -> None:
     workspace, owner = harness.workspace(name="Owner", slug="owner")
-    project, head, _ = await harness.create(owner, workspace)
+    project, _, _ = await harness.create(owner, workspace)
     await harness.submit(owner, workspace, project.id, [add_node("node-1")])
     stale_graph = GraphDocument()
 
@@ -1101,7 +1153,7 @@ async def test_copy_needs_view_in_source_and_create_in_target(harness: Harness) 
     project, head, _ = await harness.create(source_owner, source)
     # The copier may see the source but may not create in the target.
     harness.join(target, source_owner, role=WorkspaceRole.VIEWER)
-    stranger_workspace, stranger = harness.workspace(name="Stranger", slug="stranger")
+    _, stranger = harness.workspace(name="Stranger", slug="stranger")
 
     def copy(actor: ActorContext):
         return harness.service.copy_project(
@@ -1171,6 +1223,7 @@ async def test_copy_replays_the_same_command_id(harness: Harness) -> None:
     assert created.receipt.outcome is CommandReceiptOutcome.ACCEPTED
     assert created.project.id == target_project_id
     assert replayed.project.id == target_project_id
+    assert replayed.receipt is not None
     assert replayed.receipt.outcome is CommandReceiptOutcome.IDEMPOTENT_REPLAY
     assert replayed.receipt.command_hmac == created.receipt.command_hmac
     assert replayed.head.room_epoch == created.head.room_epoch

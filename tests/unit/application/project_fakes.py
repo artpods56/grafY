@@ -56,6 +56,11 @@ from grafy_core.domain.projects import (
 )
 from grafy_core.domain.security_audit import SecurityAuditEvent
 from grafy_core.kernel.project import ProjectDocument
+from grafy_core.ports.identity import (
+    IdentityRepositoryPort,
+    SecurityAuditRepositoryPort,
+)
+from grafy_core.ports.node_secrets import NodeSecretRepositoryPort
 
 COLLECTIONS: tuple[str, ...] = (
     "projects",
@@ -372,6 +377,28 @@ class ProjectTransaction:
         self.deleted[name].add(key)
         self.written[name].discard(key)
 
+    def read(self, name: str, key: object) -> object | None:
+        """One row as a fresh statement would see it.
+
+        A write this transaction made wins; anything else is re-read from the
+        committed store. That is what a new statement reads under read committed after
+        this transaction waited for a row lock, and it is how a retry comes to see the
+        receipt the first submission committed while it was blocked.
+        """
+
+        table = self.table(name)
+        if key in self.written[name]:
+            return table.get(key)
+        if key in self.deleted[name]:
+            return None
+        committed = cast("dict[object, object]", getattr(self.store, name)).get(key)
+        if committed is None:
+            table.pop(key, None)
+            return None
+        fresh = _clone(committed)
+        table[key] = fresh
+        return fresh
+
     def commit(self) -> None:
         store = self.store
         for key, premise in self.head_premises.items():
@@ -411,7 +438,7 @@ class FakeProjectRepository:
         self._transaction.put("projects", project.id, project)
 
     async def get(self, workspace_id: UUID, project_id: UUID) -> Project | None:
-        project = self._transaction.projects.get(project_id)
+        project = cast("Project | None", self._transaction.read("projects", project_id))
         if project is None or project.workspace_id != workspace_id:
             return None
         return project
@@ -535,7 +562,10 @@ class FakeProjectRepository:
         project_id: UUID,
         revision: int,
     ) -> ProjectCheckpoint | None:
-        checkpoint = self._transaction.checkpoints.get((project_id, revision))
+        checkpoint = cast(
+            "ProjectCheckpoint | None",
+            self._transaction.read("checkpoints", (project_id, revision)),
+        )
         if checkpoint is None or checkpoint.workspace_id != workspace_id:
             return None
         return checkpoint
@@ -561,7 +591,9 @@ class FakeProjectRepository:
         workspace_id: UUID,
         folder_id: UUID,
     ) -> ProjectFolder | None:
-        folder = self._transaction.folders.get(folder_id)
+        folder = cast(
+            "ProjectFolder | None", self._transaction.read("folders", folder_id)
+        )
         if folder is None or folder.workspace_id != workspace_id:
             return None
         return folder
@@ -611,7 +643,10 @@ class FakeProjectRepository:
         workspace_id: UUID,
         project_id: UUID,
     ) -> ProjectOrganization | None:
-        return self._transaction.organizations.get((workspace_id, project_id))
+        return cast(
+            "ProjectOrganization | None",
+            self._transaction.read("organizations", (workspace_id, project_id)),
+        )
 
     async def save_organization(self, organization: ProjectOrganization) -> None:
         key = (organization.workspace_id, organization.project_id)
@@ -624,7 +659,10 @@ class FakeProjectRepository:
         project_id: UUID,
         user_id: UUID,
     ) -> UserProjectState | None:
-        return self._transaction.user_states.get((workspace_id, project_id, user_id))
+        return cast(
+            "UserProjectState | None",
+            self._transaction.read("user_states", (workspace_id, project_id, user_id)),
+        )
 
     async def save_user_state(self, state: UserProjectState) -> None:
         key = (state.workspace_id, state.project_id, state.user_id)
@@ -690,7 +728,7 @@ class FakeCollaborationRepository:
         transaction = self._transaction
         if key not in transaction.head_premises:
             transaction.head_premises[key] = _head_version(self._store.heads.get(key))
-        return transaction.heads.get(key)
+        return cast("ProjectHead | None", transaction.read("heads", key))
 
     async def lock_head(
         self, workspace_id: UUID, project_id: UUID
@@ -701,16 +739,12 @@ class FakeCollaborationRepository:
         lock = self._store.row_lock(key)
         await lock.acquire()
         transaction.held_locks.append(lock)
-        if key not in transaction.written["heads"]:
-            # What SELECT ... FOR UPDATE returns is the row as it stands now, not
-            # the row this transaction read before it waited for the lock.
-            committed = self._store.heads.get(key)
-            if committed is None:
-                transaction.heads.pop(key, None)
-            else:
-                transaction.heads[key] = _clone(committed)
-            transaction.head_premises[key] = _head_version(self._store.heads.get(key))
-        return transaction.heads.get(key)
+        # What SELECT ... FOR UPDATE returns is the row as it stands now, not the row
+        # this transaction read before it waited for the lock, and the premise the
+        # commit is checked against is that row too.
+        head = cast("ProjectHead | None", transaction.read("heads", key))
+        transaction.head_premises[key] = _head_version(self._store.heads.get(key))
+        return head
 
     async def save_head(self, head: ProjectHead) -> None:
         self._transaction.put("heads", (head.workspace_id, head.project_id), head)
@@ -724,7 +758,10 @@ class FakeCollaborationRepository:
         project_id: UUID,
         command_id: UUID,
     ) -> ProjectCommandReceipt | None:
-        return self._transaction.receipts.get((workspace_id, project_id, command_id))
+        return cast(
+            "ProjectCommandReceipt | None",
+            self._transaction.read("receipts", (workspace_id, project_id, command_id)),
+        )
 
     async def add_receipt(self, receipt: ProjectCommandReceipt) -> None:
         key = (receipt.workspace_id, receipt.project_id, receipt.command_id)
@@ -741,8 +778,12 @@ class FakeCollaborationRepository:
         room_epoch: UUID,
         collaboration_sequence: int,
     ) -> ProjectCheckpointMapping | None:
-        return self._transaction.mappings.get(
-            (workspace_id, project_id, room_epoch, collaboration_sequence)
+        return cast(
+            "ProjectCheckpointMapping | None",
+            self._transaction.read(
+                "mappings",
+                (workspace_id, project_id, room_epoch, collaboration_sequence),
+            ),
         )
 
     async def add_checkpoint_mapping(self, mapping: ProjectCheckpointMapping) -> None:
@@ -764,18 +805,42 @@ class FakeSecurityAuditRepository:
 
 
 class ProjectTestUnitOfWork:
-    """One transaction that satisfies the Project and the Collaboration port both."""
+    """One transaction that satisfies the Project and the Collaboration port both.
+
+    The three repositories a Project service has no business calling are carried behind
+    their port types as partial doubles: each implements only the one method a service
+    would reach if it strayed into that owner's table, and ``secret_calls`` reports
+    whether any of them was reached at all.
+    """
 
     def __init__(self, store: ProjectStore) -> None:
         self.transaction = ProjectTransaction(store)
         self.projects = FakeProjectRepository(self.transaction)
         self.collaboration = FakeCollaborationRepository(self.transaction)
-        self.node_secrets = FakeNodeSecretRepository()
-        self.identity = FakeIdentityRepository(store.directory)
-        self.security_audit = FakeSecurityAuditRepository(self.transaction)
+        self._node_secrets = FakeNodeSecretRepository()
+        self._identity = FakeIdentityRepository(store.directory)
+        self._security_audit = FakeSecurityAuditRepository(self.transaction)
         self.commit_count = 0
         self.rollback_count = 0
         self.committed = False
+
+    @property
+    def node_secrets(self) -> NodeSecretRepositoryPort:
+        return cast("NodeSecretRepositoryPort", self._node_secrets)
+
+    @property
+    def identity(self) -> IdentityRepositoryPort:
+        return cast("IdentityRepositoryPort", self._identity)
+
+    @property
+    def security_audit(self) -> SecurityAuditRepositoryPort:
+        return cast("SecurityAuditRepositoryPort", self._security_audit)
+
+    @property
+    def secret_calls(self) -> list[str]:
+        """Every call the secret double recorded - empty for any correct Project flow."""
+
+        return self._node_secrets.calls
 
     async def __aenter__(self) -> Self:
         return self
@@ -827,7 +892,7 @@ class ProjectUnitOfWorkFactory:
 
     @property
     def secrets_touched(self) -> bool:
-        return any(unit_of_work.node_secrets.calls for unit_of_work in self.opened)
+        return any(unit_of_work.secret_calls for unit_of_work in self.opened)
 
 
 def new_member(

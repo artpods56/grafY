@@ -309,8 +309,41 @@ class CollaborationService:
                 project_id,
                 command_id,
             )
-            if existing is not None:
-                if not hmac.compare_digest(existing.command_hmac, digest):
+            if existing is not None and existing.command_hmac != digest:
+                # Cheap pre-check before anything is locked: a reused id whose payload
+                # differs is a client bug, whatever the head says. An identical
+                # payload still has to be read again under the head lock below.
+                await self._reject(
+                    unit_of_work,
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    operation="collaboration.command.submit",
+                    error_code="idempotency_mismatch",
+                    resource_id=str(project_id),
+                )
+                raise CollaborationIdempotencyMismatchError(
+                    workspace_id=workspace_id,
+                    graph_id=project_id,
+                    command_id=command_id,
+                )
+
+            head = await unit_of_work.collaboration.lock_head(workspace_id, project_id)
+            if head is None:
+                raise MissingProjectHeadError(
+                    workspace_id=workspace_id, project_id=project_id
+                )
+            # The receipt is re-read with the head row held. Two submissions of one
+            # command id arrive together, both see no receipt before the lock, and the
+            # one that waits would otherwise insert a second receipt and be refused by
+            # the primary key. Holding the head makes the first acceptance visible to
+            # the second, so a concurrent retry replays instead of failing.
+            accepted_already = await unit_of_work.collaboration.get_receipt(
+                workspace_id,
+                project_id,
+                command_id,
+            )
+            if accepted_already is not None:
+                if not hmac.compare_digest(accepted_already.command_hmac, digest):
                     await self._reject(
                         unit_of_work,
                         actor=actor,
@@ -324,25 +357,11 @@ class CollaborationService:
                         graph_id=project_id,
                         command_id=command_id,
                     )
-                head = await unit_of_work.collaboration.get_head(
-                    workspace_id,
-                    project_id,
-                )
-                if head is None:
-                    raise MissingProjectHeadError(
-                        workspace_id=workspace_id, project_id=project_id
-                    )
                 return CommandSubmission(
                     head=head,
-                    receipt=existing.model_copy(
+                    receipt=accepted_already.model_copy(
                         update={"outcome": CommandReceiptOutcome.IDEMPOTENT_REPLAY}
                     ),
-                )
-
-            head = await unit_of_work.collaboration.lock_head(workspace_id, project_id)
-            if head is None:
-                raise MissingProjectHeadError(
-                    workspace_id=workspace_id, project_id=project_id
                 )
             if head.room_epoch != observed_room_epoch or (
                 head.collaboration_sequence < observed_sequence
