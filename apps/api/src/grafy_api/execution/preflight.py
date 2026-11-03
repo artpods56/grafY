@@ -19,9 +19,9 @@ from grafy_core.domain.modules import (
 )
 from grafy_core.domain.saved_graphs import (
     SavedGraph,
-    SavedGraphEdge,
-    SavedGraphNode,
-    SavedGraphOrigin,
+    GraphEdge,
+    GraphNode,
+    GraphOrigin,
     SavedGraphRevision,
 )
 from grafy_core.plugins import NodeRegistration, PluginRegistry
@@ -355,7 +355,7 @@ def _expected_incoming_edges(
     graph: SavedGraph | SavedGraphRevision,
     executed_node_ids: set[str],
     pinned_endpoints: set[tuple[str, str]],
-) -> tuple[SavedGraphEdge, ...]:
+) -> tuple[GraphEdge, ...]:
     """Enabled saved edges into executed nodes, minus omitted optional inputs.
 
     An optional module input the run supplies as a pinned output instead of an edge
@@ -396,7 +396,7 @@ def _expected_incoming_edges(
 
 def _active_plug_ids_by_node(
     graph: SavedGraph | SavedGraphRevision,
-    expected_edges: Iterable[SavedGraphEdge],
+    expected_edges: Iterable[GraphEdge],
     executed_node_ids: set[str],
 ) -> dict[str, set[str]]:
     """Input plugs the saved fragment actually feeds, by edge or by origin."""
@@ -432,7 +432,7 @@ def _first_node_mismatch(
 
 def _node_matches_saved(
     node: RunNodeRequest,
-    saved_node: SavedGraphNode,
+    saved_node: GraphNode,
     active_plug_ids: set[str],
 ) -> bool:
     submitted_plugs = tuple((plug.id, plug.port) for plug in node.input_plugs)
@@ -460,7 +460,7 @@ def _node_matches_saved(
 
 
 def _edge_mismatch(
-    expected_edges: Iterable[SavedGraphEdge],
+    expected_edges: Iterable[GraphEdge],
     submitted_edges: Iterable[RunEdgeRequest],
 ) -> _MultisetMismatch | None:
     return _multiset_mismatch(
@@ -470,7 +470,7 @@ def _edge_mismatch(
 
 
 def _origin_mismatch(
-    saved_origins: Iterable[SavedGraphOrigin],
+    saved_origins: Iterable[GraphOrigin],
     executed_node_ids: set[str],
     submitted_origins: Iterable[RunOriginRequest],
 ) -> _MultisetMismatch | None:
@@ -500,7 +500,7 @@ def _multiset_mismatch(
     )
 
 
-def _edge_key(edge: SavedGraphEdge | RunEdgeRequest) -> tuple[object, ...]:
+def _edge_key(edge: GraphEdge | RunEdgeRequest) -> tuple[object, ...]:
     return (
         edge.from_node,
         edge.from_port,
@@ -513,7 +513,7 @@ def _edge_key(edge: SavedGraphEdge | RunEdgeRequest) -> tuple[object, ...]:
     )
 
 
-def _origin_key(origin: SavedGraphOrigin | RunOriginRequest) -> tuple[object, ...]:
+def _origin_key(origin: GraphOrigin | RunOriginRequest) -> tuple[object, ...]:
     return (
         origin.to_node,
         origin.to_port,
@@ -526,7 +526,7 @@ def _origin_key(origin: SavedGraphOrigin | RunOriginRequest) -> tuple[object, ..
 
 def _secret_node_mismatch(
     node: RunNodeRequest,
-    saved_node: SavedGraphNode | None,
+    saved_node: GraphNode | None,
     registration: NodeRegistration,
 ) -> _SecretMismatch | None:
     if saved_node is None:

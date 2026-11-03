@@ -20,7 +20,7 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Final, cast
 
-from grafy_core.domain.saved_graphs import SavedGraphNode
+from grafy_core.domain.saved_graphs import GraphNode
 from grafy_core.plugins import PluginRegistry
 
 #: Deployment-wide epoch. Bump it by hand to invalidate every stored result.
@@ -353,7 +353,7 @@ class RegistryImplementationDigests:
         }
         return cls(modules, uv_lock=uv_lock, execution_epoch=execution_epoch)
 
-    def implementation_digest(self, node: SavedGraphNode) -> str:
+    def implementation_digest(self, node: GraphNode) -> str:
         key = (node.operator_id, node.operator_version)
         if key not in self._digests:
             raise KeyError(

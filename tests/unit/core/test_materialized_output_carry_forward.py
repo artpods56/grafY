@@ -9,14 +9,14 @@ from grafy_core.domain.materialized_outputs import (
 )
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
-    SavedGraphConversion,
-    SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphInputPlug,
-    SavedGraphNode,
-    SavedGraphNodeLayout,
-    SavedGraphOrigin,
-    SavedGraphProjection,
+    GraphConversion,
+    GraphDocument,
+    GraphEdge,
+    GraphInputPlug,
+    GraphNode,
+    GraphNodeLayout,
+    GraphOrigin,
+    GraphProjection,
 )
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")
@@ -28,8 +28,8 @@ def _node(
     *,
     config: dict[str, object] | None = None,
     x: float = 0,
-) -> SavedGraphNode:
-    return SavedGraphNode(
+) -> GraphNode:
+    return GraphNode(
         kind="builtin",
         id=node_id,
         operator_id="value.integer",
@@ -39,8 +39,8 @@ def _node(
     )
 
 
-def _edge(edge_id: str, source: str, target: str) -> SavedGraphEdge:
-    return SavedGraphEdge(
+def _edge(edge_id: str, source: str, target: str) -> GraphEdge:
+    return GraphEdge(
         id=edge_id,
         from_node=source,
         from_port="result",
@@ -53,8 +53,8 @@ def _origin(
     origin_id: str = "origin",
     *,
     artifact_id: str = "00000000-0000-0000-0000-000000000401",
-) -> SavedGraphOrigin:
-    return SavedGraphOrigin(
+) -> GraphOrigin:
+    return GraphOrigin(
         id=origin_id,
         to_node="target",
         to_port="value",
@@ -85,14 +85,14 @@ def _materialization(node_id: str, revision: int = 1) -> MaterializedNodeOutputs
 
 
 def test_carry_forward_keeps_unchanged_nodes_across_position_edits() -> None:
-    previous = SavedGraphDocument(
+    previous = GraphDocument(
         nodes=(_node("source"), _node("target", x=120)),
         edges=(_edge("e1", "source", "target"),),
     )
-    next_document = SavedGraphDocument(
+    next_document = GraphDocument(
         nodes=(
             _node("source", x=40).model_copy(
-                update={"layout": SavedGraphNodeLayout(width=300, body_height=120)}
+                update={"layout": GraphNodeLayout(width=300, body_height=120)}
             ),
             _node("target", x=200),
         ),
@@ -121,7 +121,7 @@ def test_carry_forward_keeps_unchanged_nodes_across_position_edits() -> None:
 def test_carry_forward_drops_changed_node_and_all_descendants(
     has_source_materialization: bool,
 ) -> None:
-    previous = SavedGraphDocument(
+    previous = GraphDocument(
         nodes=(
             _node("source"),
             _node("target"),
@@ -133,7 +133,7 @@ def test_carry_forward_drops_changed_node_and_all_descendants(
             _edge("e2", "target", "downstream"),
         ),
     )
-    next_document = SavedGraphDocument(
+    next_document = GraphDocument(
         nodes=(
             _node("source", config={"value": 9}),
             _node("target"),
@@ -181,7 +181,7 @@ def test_configuration_json_type_change_invalidates_descendants(
     previous_config: dict[str, object],
     next_config: dict[str, object],
 ) -> None:
-    previous = SavedGraphDocument(
+    previous = GraphDocument(
         nodes=(
             _node("source", config=previous_config),
             _node("target"),
@@ -192,7 +192,7 @@ def test_configuration_json_type_change_invalidates_descendants(
             _edge("e2", "target", "downstream"),
         ),
     )
-    next_document = SavedGraphDocument(
+    next_document = GraphDocument(
         nodes=(
             _node("source", config=next_config),
             previous.nodes[1],
@@ -214,11 +214,11 @@ def test_configuration_json_type_change_invalidates_descendants(
 
 
 def test_configuration_key_order_preserves_materializations() -> None:
-    previous = SavedGraphDocument(
+    previous = GraphDocument(
         nodes=(_node("source", config={"value": 1, "options": {"a": 2, "b": 3}}),),
         edges=(),
     )
-    next_document = SavedGraphDocument(
+    next_document = GraphDocument(
         nodes=(_node("source", config={"options": {"b": 3, "a": 2}, "value": 1}),),
         edges=(),
     )
@@ -247,15 +247,13 @@ def test_configuration_key_order_preserves_materializations() -> None:
         ),
         pytest.param(
             _edge("e1", "source", "target").model_copy(
-                update={"projection": SavedGraphProjection(path=("value",))}
+                update={"projection": GraphProjection(path=("value",))}
             ),
             id="projection",
         ),
         pytest.param(
             _edge("e1", "source", "target").model_copy(
-                update={
-                    "conversion_path": (SavedGraphConversion(id="as-text", version=1),)
-                }
+                update={"conversion_path": (GraphConversion(id="as-text", version=1),)}
             ),
             id="conversion",
         ),
@@ -268,18 +266,18 @@ def test_configuration_key_order_preserves_materializations() -> None:
     ],
 )
 def test_changed_input_invalidates_target_and_descendants(
-    changed_edge: SavedGraphEdge | None,
+    changed_edge: GraphEdge | None,
 ) -> None:
     nodes = (_node("source"), _node("target"), _node("downstream"), _node("other"))
     downstream_edge = _edge("e2", "target", "downstream")
-    previous = SavedGraphDocument(
+    previous = GraphDocument(
         nodes=nodes,
         edges=(_edge("e1", "source", "target"), downstream_edge),
     )
     next_edges = [downstream_edge]
     if changed_edge is not None:
         next_edges.append(changed_edge)
-    next_document = SavedGraphDocument(nodes=nodes, edges=tuple(next_edges))
+    next_document = GraphDocument(nodes=nodes, edges=tuple(next_edges))
 
     carried = materializations_for_compatible_nodes(
         previous_document=previous,
@@ -294,8 +292,8 @@ def test_changed_input_invalidates_target_and_descendants(
 def test_placing_an_origin_invalidates_target_and_descendants() -> None:
     nodes = (_node("target"), _node("downstream"), _node("unrelated"))
     downstream_edge = _edge("e2", "target", "downstream")
-    previous = SavedGraphDocument(nodes=nodes, edges=(downstream_edge,))
-    next_document = SavedGraphDocument(
+    previous = GraphDocument(nodes=nodes, edges=(downstream_edge,))
+    next_document = GraphDocument(
         nodes=nodes,
         edges=(downstream_edge,),
         origins=(_origin(),),
@@ -321,25 +319,23 @@ def test_placing_an_origin_invalidates_target_and_descendants() -> None:
         ),
         pytest.param(
             _origin().model_copy(
-                update={
-                    "conversion_path": (SavedGraphConversion(id="as-text", version=1),)
-                }
+                update={"conversion_path": (GraphConversion(id="as-text", version=1),)}
             ),
             id="conversion",
         ),
     ],
 )
 def test_changing_an_origin_invalidates_target_and_descendants(
-    changed_origin: SavedGraphOrigin | None,
+    changed_origin: GraphOrigin | None,
 ) -> None:
     nodes = (_node("target"), _node("downstream"), _node("unrelated"))
     downstream_edge = _edge("e2", "target", "downstream")
-    previous = SavedGraphDocument(
+    previous = GraphDocument(
         nodes=nodes,
         edges=(downstream_edge,),
         origins=(_origin(),),
     )
-    next_document = SavedGraphDocument(
+    next_document = GraphDocument(
         nodes=nodes,
         edges=(downstream_edge,),
         origins=() if changed_origin is None else (changed_origin,),
@@ -360,11 +356,11 @@ def test_disabled_edge_does_not_propagate_invalidation() -> None:
         _edge("e1", "source", "target").model_copy(update={"enabled": False}),
         _edge("e2", "target", "downstream"),
     )
-    previous = SavedGraphDocument(
+    previous = GraphDocument(
         nodes=(_node("source"), _node("target"), _node("downstream")),
         edges=edges,
     )
-    next_document = SavedGraphDocument(
+    next_document = GraphDocument(
         nodes=(
             _node("source", config={"value": 9}),
             _node("target"),
@@ -389,11 +385,11 @@ def test_enabling_edge_invalidates_target_and_descendants() -> None:
     nodes = (_node("source"), _node("target"), _node("downstream"))
     edge = _edge("e1", "source", "target")
     downstream_edge = _edge("e2", "target", "downstream")
-    previous = SavedGraphDocument(
+    previous = GraphDocument(
         nodes=nodes,
         edges=(edge.model_copy(update={"enabled": False}), downstream_edge),
     )
-    next_document = SavedGraphDocument(nodes=nodes, edges=(edge, downstream_edge))
+    next_document = GraphDocument(nodes=nodes, edges=(edge, downstream_edge))
 
     carried = materializations_for_compatible_nodes(
         previous_document=previous,
@@ -410,10 +406,10 @@ def test_reordering_variadic_edges_invalidates_target_and_descendants() -> None:
     first_edge = _edge("e1", "first", "target")
     second_edge = _edge("e2", "second", "target")
     downstream_edge = _edge("e3", "target", "downstream")
-    previous = SavedGraphDocument(
+    previous = GraphDocument(
         nodes=nodes, edges=(first_edge, second_edge, downstream_edge)
     )
-    next_document = SavedGraphDocument(
+    next_document = GraphDocument(
         nodes=nodes, edges=(second_edge, first_edge, downstream_edge)
     )
 
@@ -428,8 +424,8 @@ def test_reordering_variadic_edges_invalidates_target_and_descendants() -> None:
 
 
 def test_explicit_plug_order_controls_freshness_instead_of_edge_order() -> None:
-    first_plug = SavedGraphInputPlug(id="first-plug", port="value")
-    second_plug = SavedGraphInputPlug(id="second-plug", port="value")
+    first_plug = GraphInputPlug(id="first-plug", port="value")
+    second_plug = GraphInputPlug(id="second-plug", port="value")
     target = _node("target").model_copy(
         update={"input_plugs": (first_plug, second_plug)}
     )
@@ -441,10 +437,10 @@ def test_explicit_plug_order_controls_freshness_instead_of_edge_order() -> None:
         update={"to_plug": second_plug.id}
     )
     downstream_edge = _edge("e3", "target", "downstream")
-    previous = SavedGraphDocument(
+    previous = GraphDocument(
         nodes=nodes, edges=(first_edge, second_edge, downstream_edge)
     )
-    reordered_edges = SavedGraphDocument(
+    reordered_edges = GraphDocument(
         nodes=nodes, edges=(second_edge, first_edge, downstream_edge)
     )
     previous_materializations = [_materialization(node.id) for node in nodes]
@@ -458,7 +454,7 @@ def test_explicit_plug_order_controls_freshness_instead_of_edge_order() -> None:
 
     assert {item.node_id for item in carried} == {node.id for node in nodes}
 
-    reordered_plugs = SavedGraphDocument(
+    reordered_plugs = GraphDocument(
         nodes=(
             nodes[0],
             nodes[1],
@@ -479,11 +475,11 @@ def test_explicit_plug_order_controls_freshness_instead_of_edge_order() -> None:
 
 def test_cyclic_draft_invalidates_reachable_nodes_without_requiring_execution() -> None:
     nodes = (_node("source"), _node("target"), _node("unrelated"))
-    previous = SavedGraphDocument(
+    previous = GraphDocument(
         nodes=nodes,
         edges=(_edge("e1", "source", "target"), _edge("e2", "target", "source")),
     )
-    next_document = SavedGraphDocument(
+    next_document = GraphDocument(
         nodes=(_node("source", config={"value": 9}), nodes[1], nodes[2]),
         edges=previous.edges,
     )

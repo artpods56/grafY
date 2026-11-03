@@ -26,7 +26,7 @@ from grafy_core.domain.saved_graphs import (
     GraphFolder,
     GraphOrganization,
     SavedGraph,
-    SavedGraphDocument,
+    GraphDocument,
     SavedGraphRevision,
     UserGraphState,
 )
@@ -461,7 +461,7 @@ class SavedGraphService:
         graph: SavedGraph,
         *,
         name: str,
-        document: SavedGraphDocument,
+        document: GraphDocument,
         expected_revision: int,
         physically_remove_orphaned_secrets: bool,
     ) -> SavedGraph:
@@ -505,8 +505,8 @@ class SavedGraphService:
         workspace_id: UUID,
         graph_id: UUID,
         previous_revision: int,
-        previous_document: SavedGraphDocument,
-        next_document: SavedGraphDocument,
+        previous_document: GraphDocument,
+        next_document: GraphDocument,
         next_revision: int,
     ) -> None:
         materialized_outputs = unit_of_work.materialized_outputs
@@ -531,7 +531,7 @@ class SavedGraphService:
         *,
         workspace_id: UUID,
         graph_id: UUID,
-        document: SavedGraphDocument,
+        document: GraphDocument,
         physically_remove_orphaned_secrets: bool,
     ) -> None:
         if not physically_remove_orphaned_secrets:

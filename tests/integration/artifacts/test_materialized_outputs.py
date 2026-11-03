@@ -23,11 +23,11 @@ from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
-    SavedGraphArtifactTypeBinding,
-    SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphInputPlug,
-    SavedGraphNode,
+    GraphArtifactTypeBinding,
+    GraphDocument,
+    GraphEdge,
+    GraphInputPlug,
+    GraphNode,
 )
 from grafy_persistence import schema
 from grafy_persistence.database import create_database
@@ -204,7 +204,7 @@ def _graph_payload(expected_revision: int | None = None) -> dict[str, object]:
     ]
     edges = _edges()
     node_models = [
-        SavedGraphNode(
+        GraphNode(
             kind="builtin",
             id=node_id,
             operator_id=operator_id,
@@ -215,13 +215,13 @@ def _graph_payload(expected_revision: int | None = None) -> dict[str, object]:
         for index, (node_id, operator_id, config) in enumerate(nodes)
     ]
     edge_models = [
-        SavedGraphEdge.model_validate({"id": f"edge-{index}", **edge})
+        GraphEdge.model_validate({"id": f"edge-{index}", **edge})
         for index, edge in enumerate(edges, start=1)
     ]
     serialized_nodes: list[dict[str, object]] = [
         node.model_dump(mode="json") for node in node_models
     ]
-    document = SavedGraphDocument.model_validate(
+    document = GraphDocument.model_validate(
         {
             "nodes": serialized_nodes,
             "edges": [edge.model_dump(mode="json") for edge in edge_models],
@@ -270,7 +270,7 @@ def _edges() -> list[dict[str, object]]:
 
 def _collect_graph_payload() -> dict[str, object]:
     nodes = [
-        SavedGraphNode(
+        GraphNode(
             kind="builtin",
             id="first",
             operator_id="text.input",
@@ -278,7 +278,7 @@ def _collect_graph_payload() -> dict[str, object]:
             config={"text": "first"},
             position=GraphPoint(x=0.0, y=0.0),
         ),
-        SavedGraphNode(
+        GraphNode(
             kind="builtin",
             id="sequence-input",
             operator_id="text.input",
@@ -286,7 +286,7 @@ def _collect_graph_payload() -> dict[str, object]:
             config={"text": "second|third"},
             position=GraphPoint(x=200.0, y=0.0),
         ),
-        SavedGraphNode(
+        GraphNode(
             kind="builtin",
             id="split",
             operator_id="test.text.split",
@@ -294,7 +294,7 @@ def _collect_graph_payload() -> dict[str, object]:
             config={"separator": "|"},
             position=GraphPoint(x=400.0, y=0.0),
         ),
-        SavedGraphNode(
+        GraphNode(
             kind="builtin",
             id="collect",
             operator_id="test.sequence.collect",
@@ -302,7 +302,7 @@ def _collect_graph_payload() -> dict[str, object]:
             config={},
             position=GraphPoint(x=600.0, y=0.0),
             artifact_type_bindings=[
-                SavedGraphArtifactTypeBinding(
+                GraphArtifactTypeBinding(
                     variable="T",
                     artifact_type=ArtifactTypeKey(
                         id="scalar.text",
@@ -311,13 +311,13 @@ def _collect_graph_payload() -> dict[str, object]:
                 )
             ],
             input_plugs=[
-                SavedGraphInputPlug(id="sequence-plug", port="items"),
-                SavedGraphInputPlug(id="first-plug", port="items"),
+                GraphInputPlug(id="sequence-plug", port="items"),
+                GraphInputPlug(id="first-plug", port="items"),
             ],
         ),
     ]
     edges = [
-        SavedGraphEdge(
+        GraphEdge(
             id="first-edge",
             from_node="first",
             from_port="text",
@@ -325,14 +325,14 @@ def _collect_graph_payload() -> dict[str, object]:
             to_port="items",
             to_plug="first-plug",
         ),
-        SavedGraphEdge(
+        GraphEdge(
             id="sequence-input-edge",
             from_node="sequence-input",
             from_port="text",
             to_node="split",
             to_port="text",
         ),
-        SavedGraphEdge(
+        GraphEdge(
             id="sequence-edge",
             from_node="split",
             from_port="parts",
@@ -346,7 +346,7 @@ def _collect_graph_payload() -> dict[str, object]:
     ]
     return CreateSavedGraphRequest(
         name="Durable collect graph",
-        document=SavedGraphDocument.model_validate(
+        document=GraphDocument.model_validate(
             {
                 "nodes": serialized_nodes,
                 "edges": [edge.model_dump(mode="json") for edge in edges],

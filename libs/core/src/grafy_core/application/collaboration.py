@@ -38,7 +38,7 @@ from grafy_core.domain.identity import (
     WorkspaceAccess,
     WorkspaceCapability,
 )
-from grafy_core.domain.saved_graphs import SavedGraph, SavedGraphDocument
+from grafy_core.domain.saved_graphs import SavedGraph, GraphDocument
 from grafy_core.domain.security_audit import (
     SecurityAuditActorKind,
     SecurityAuditEvent,
@@ -336,7 +336,7 @@ class CollaborationService:
                 document=head.document,
                 command=command,
             )
-            SavedGraphDocument.model_validate(next_document.model_dump(mode="json"))
+            GraphDocument.model_validate(next_document.model_dump(mode="json"))
             head.apply_accepted_command(name=next_name, document=next_document)
             receipt = GraphCommandReceipt(
                 workspace_id=workspace_id,
@@ -483,7 +483,7 @@ class CollaborationService:
         workspace_id: UUID,
         graph_id: UUID,
         name: str,
-        document: SavedGraphDocument,
+        document: GraphDocument,
         expected_revision: int,
     ) -> tuple[SavedGraph, CollaborativeGraphHead]:
         async with self._unit_of_work_factory() as unit_of_work:

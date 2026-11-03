@@ -5,7 +5,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_core.domain.saved_graphs import GraphDocument
 
 from grafy_client import ExecutionTimeoutError, GrafyClient, GrafyClientError
 
@@ -113,7 +113,7 @@ async def test_catalog_uses_bearer_pat_and_returns_typed_snapshot() -> None:
 @pytest.mark.asyncio
 async def test_graph_create_sends_canonical_document_and_returns_saved_graph() -> None:
     graph_id = UUID("22222222-2222-4222-8222-222222222222")
-    document = SavedGraphDocument()
+    document = GraphDocument()
 
     def respond(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"
@@ -153,7 +153,7 @@ async def test_graph_create_sends_canonical_document_and_returns_saved_graph() -
 @pytest.mark.asyncio
 async def test_graph_get_and_update_use_typed_saved_graph_contract() -> None:
     graph_id = UUID("22222222-2222-4222-8222-222222222222")
-    document = SavedGraphDocument()
+    document = GraphDocument()
 
     def respond(request: httpx.Request) -> httpx.Response:
         if request.method == "GET":

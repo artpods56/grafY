@@ -12,7 +12,7 @@ from grafy_core.runtime.in_memory import InMemoryDataStore, InMemoryUnitOfWork
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.domain.saved_graphs import (
     SavedGraph,
-    SavedGraphDocument,
+    GraphDocument,
     SavedGraphRevision,
 )
 
@@ -58,7 +58,7 @@ async def _persist_graph(
                 workspace_id=WORKSPACE_ID,
                 id=graph_id,
                 name="Materialized graph",
-                document=SavedGraphDocument(),
+                document=GraphDocument(),
             )
         )
         await entered.graphs.add_revision(
@@ -67,7 +67,7 @@ async def _persist_graph(
                 graph_id=graph_id,
                 revision=1,
                 name="Materialized graph",
-                document=SavedGraphDocument(),
+                document=GraphDocument(),
                 created_at=datetime(2026, 7, 1, tzinfo=UTC),
             )
         )
@@ -77,7 +77,7 @@ async def _persist_graph(
                 graph_id=graph_id,
                 revision=2,
                 name="Materialized graph",
-                document=SavedGraphDocument(),
+                document=GraphDocument(),
                 created_at=datetime(2026, 7, 1, tzinfo=UTC),
             )
         )

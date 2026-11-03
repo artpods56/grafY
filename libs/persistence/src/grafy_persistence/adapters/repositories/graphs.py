@@ -35,7 +35,7 @@ from grafy_core.domain.saved_graphs import (
     GraphFolder,
     GraphOrganization,
     SavedGraph,
-    SavedGraphDocument,
+    GraphDocument,
     SavedGraphRevision,
     UserGraphState,
 )
@@ -182,58 +182,58 @@ class SqlSavedGraphRepository(SavedGraphRepositoryPort):
                 creator.c.display_name.label("creator_display_name"),
             )
             .select_from(
-                    graphs.join(
-                        memberships,
-                        and_(
-                            memberships.c.workspace_id == graphs.c.workspace_id,
-                            memberships.c.user_id == user_id,
-                            memberships.c.revoked_at.is_(None),
-                            memberships.c.role.in_(
-                                (
-                                    WorkspaceRole.VIEWER.value,
-                                    WorkspaceRole.EDITOR.value,
-                                    WorkspaceRole.OWNER.value,
-                                )
-                            ),
+                graphs.join(
+                    memberships,
+                    and_(
+                        memberships.c.workspace_id == graphs.c.workspace_id,
+                        memberships.c.user_id == user_id,
+                        memberships.c.revoked_at.is_(None),
+                        memberships.c.role.in_(
+                            (
+                                WorkspaceRole.VIEWER.value,
+                                WorkspaceRole.EDITOR.value,
+                                WorkspaceRole.OWNER.value,
+                            )
                         ),
-                    )
-                    .join(
-                        active_user,
-                        and_(
-                            active_user.c.id == user_id,
-                            active_user.c.active.is_(True),
-                        ),
-                    )
-                    .join(workspaces, workspaces.c.id == graphs.c.workspace_id)
-                    .join(
-                        heads,
-                        and_(
-                            heads.c.workspace_id == graphs.c.workspace_id,
-                            heads.c.graph_id == graphs.c.id,
-                        ),
-                    )
-                    .outerjoin(
-                        organizations,
-                        and_(
-                            organizations.c.workspace_id == graphs.c.workspace_id,
-                            organizations.c.graph_id == graphs.c.id,
-                        ),
-                    )
-                    .outerjoin(
-                        folders,
-                        and_(
-                            folders.c.workspace_id == graphs.c.workspace_id,
-                            folders.c.id == organizations.c.folder_id,
-                        ),
-                    )
-                    .outerjoin(
-                        states,
-                        and_(
-                            states.c.workspace_id == graphs.c.workspace_id,
-                            states.c.graph_id == graphs.c.id,
-                            states.c.user_id == user_id,
-                        ),
-                    )
+                    ),
+                )
+                .join(
+                    active_user,
+                    and_(
+                        active_user.c.id == user_id,
+                        active_user.c.active.is_(True),
+                    ),
+                )
+                .join(workspaces, workspaces.c.id == graphs.c.workspace_id)
+                .join(
+                    heads,
+                    and_(
+                        heads.c.workspace_id == graphs.c.workspace_id,
+                        heads.c.graph_id == graphs.c.id,
+                    ),
+                )
+                .outerjoin(
+                    organizations,
+                    and_(
+                        organizations.c.workspace_id == graphs.c.workspace_id,
+                        organizations.c.graph_id == graphs.c.id,
+                    ),
+                )
+                .outerjoin(
+                    folders,
+                    and_(
+                        folders.c.workspace_id == graphs.c.workspace_id,
+                        folders.c.id == organizations.c.folder_id,
+                    ),
+                )
+                .outerjoin(
+                    states,
+                    and_(
+                        states.c.workspace_id == graphs.c.workspace_id,
+                        states.c.graph_id == graphs.c.id,
+                        states.c.user_id == user_id,
+                    ),
+                )
                 .outerjoin(creator, creator.c.id == graphs.c.created_by_user_id)
             )
             .order_by(
@@ -246,7 +246,7 @@ class SqlSavedGraphRepository(SavedGraphRepositoryPort):
         rows = (await self._session.execute(query)).mappings()
         items: list[GraphBrowserItem] = []
         for row in rows:
-            document = cast(SavedGraphDocument, row["head_document"])
+            document = cast(GraphDocument, row["head_document"])
             folder_id = cast(UUID | None, row["folder_id"])
             creator_id = cast(UUID | None, row["creator_id"])
             items.append(

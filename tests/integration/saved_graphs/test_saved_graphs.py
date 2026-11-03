@@ -18,44 +18,44 @@ from grafy_core.domain.saved_graphs import (
     GraphPoint,
     GraphPresentationDocument,
     GraphPresentationViewer,
-    SavedGraphArtifactTypeBinding,
-    SavedGraphConversion,
-    SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphInputPlug,
-    SavedGraphNode,
-    SavedGraphNodeLayout,
-    SavedGraphProjection,
+    GraphArtifactTypeBinding,
+    GraphConversion,
+    GraphDocument,
+    GraphEdge,
+    GraphInputPlug,
+    GraphNode,
+    GraphNodeLayout,
+    GraphProjection,
 )
 
 from tests.support.clients import GrafyApi
 from tests.support.identity import TEST_USER_ID, WORKSPACE_ID
 
 
-def _graph_nodes() -> list[SavedGraphNode]:
+def _graph_nodes() -> list[GraphNode]:
     return [
-        SavedGraphNode(
+        GraphNode(
             kind="builtin",
             id="source",
             operator_id="plugin.source",
             operator_version=1,
             config={"text": "draft"},
             position=GraphPoint(x=10.0, y=20.0),
-            layout=SavedGraphNodeLayout(width=420.0, body_height=180.0),
+            layout=GraphNodeLayout(width=420.0, body_height=180.0),
         ),
-        SavedGraphNode(
+        GraphNode(
             kind="builtin",
             id="target",
             operator_id="plugin.target",
             operator_version=1,
             config={},
             position=GraphPoint(x=300.0, y=20.0),
-            layout=SavedGraphNodeLayout(appendix_height=320.0),
+            layout=GraphNodeLayout(appendix_height=320.0),
             input_plugs=[
-                SavedGraphInputPlug(id="primary-value", port="value"),
+                GraphInputPlug(id="primary-value", port="value"),
             ],
             artifact_type_bindings=[
-                SavedGraphArtifactTypeBinding(
+                GraphArtifactTypeBinding(
                     variable="T",
                     artifact_type=ArtifactTypeKey(id="image.raster", schema_version=1),
                 )
@@ -64,9 +64,9 @@ def _graph_nodes() -> list[SavedGraphNode]:
     ]
 
 
-def _graph_edges() -> list[SavedGraphEdge]:
+def _graph_edges() -> list[GraphEdge]:
     return [
-        SavedGraphEdge(
+        GraphEdge(
             id="source-to-target",
             from_node="source",
             from_port="result",
@@ -74,9 +74,9 @@ def _graph_edges() -> list[SavedGraphEdge]:
             to_port="value",
             to_plug="primary-value",
             collection_mode="map",
-            projection=SavedGraphProjection(path=["payload", "text"]),
+            projection=GraphProjection(path=["payload", "text"]),
             conversion_path=[
-                SavedGraphConversion(id="example.text.normalize", version=2),
+                GraphConversion(id="example.text.normalize", version=2),
             ],
             route_offset=GraphPoint(x=5.0, y=-3.0),
         ),
@@ -85,14 +85,12 @@ def _graph_edges() -> list[SavedGraphEdge]:
 
 def _graph_document(
     *,
-    nodes: list[SavedGraphNode] | None = None,
-    edges: list[SavedGraphEdge] | None = None,
-) -> SavedGraphDocument:
+    nodes: list[GraphNode] | None = None,
+    edges: list[GraphEdge] | None = None,
+) -> GraphDocument:
     effective_nodes = nodes if nodes is not None else _graph_nodes()
     effective_edges = edges if edges is not None else _graph_edges()
-    return SavedGraphDocument(
-        nodes=tuple(effective_nodes), edges=tuple(effective_edges)
-    )
+    return GraphDocument(nodes=tuple(effective_nodes), edges=tuple(effective_edges))
 
 
 def _graph_request(name: str = "Draft graph") -> CreateSavedGraphRequest:
@@ -471,8 +469,8 @@ def test_saved_graph_preserves_conversion_path_order(
     edges[0] = edges[0].model_copy(
         update={
             "conversion_path": (
-                SavedGraphConversion(id="example.text.normalize", version=2),
-                SavedGraphConversion(id="example.text.finalize", version=7),
+                GraphConversion(id="example.text.normalize", version=2),
+                GraphConversion(id="example.text.finalize", version=7),
             )
         }
     )

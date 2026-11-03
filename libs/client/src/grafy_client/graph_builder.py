@@ -10,12 +10,12 @@ from pydantic import ValidationError
 from grafy_core.artifacts import ArtifactTypeKey, NodeConfig, NodeInput, NodeOutput
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
-    SavedGraphArtifactTypeBinding,
-    SavedGraphConversion,
-    SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphInputPlug,
-    SavedGraphNode,
+    GraphArtifactTypeBinding,
+    GraphConversion,
+    GraphDocument,
+    GraphEdge,
+    GraphInputPlug,
+    GraphNode,
 )
 from grafy_core.nodes import ArtifactTypeVariable, Node
 from grafy_core.schema_contracts import validate_json_schema_value
@@ -67,7 +67,7 @@ class _AuthoredNode:
     catalog_node: CatalogNode
     config: dict[str, object]
     bindings: dict[str, ArtifactTypeKey]
-    input_plugs: list[SavedGraphInputPlug]
+    input_plugs: list[GraphInputPlug]
     position: GraphPoint | None
 
 
@@ -95,7 +95,7 @@ class GraphBuilder:
         self._catalog = catalog
         self._identity = object()
         self._nodes: list[_AuthoredNode] = []
-        self._edges: list[SavedGraphEdge] = []
+        self._edges: list[GraphEdge] = []
 
     def add[
         ConfigT: NodeConfig,
@@ -324,7 +324,7 @@ class GraphBuilder:
         source: OutputHandle,
         target: InputHandle,
         *,
-        conversion_path: Sequence[SavedGraphConversion] = (),
+        conversion_path: Sequence[GraphConversion] = (),
         collection_mode: Literal["direct", "map"] = "direct",
     ) -> None:
         if (
@@ -408,9 +408,7 @@ class GraphBuilder:
                 "variable when adding one of the nodes"
             )
 
-        catalog_conversion_path: list[
-            tuple[SavedGraphConversion, CatalogConversion]
-        ] = []
+        catalog_conversion_path: list[tuple[GraphConversion, CatalogConversion]] = []
         for requested in conversion_path:
             matching_conversions = [
                 conversion
@@ -471,14 +469,14 @@ class GraphBuilder:
                 f"Input {target.node_id}.{target.port} accepts at most one edge"
             )
 
-        input_plug: SavedGraphInputPlug | None = None
+        input_plug: GraphInputPlug | None = None
         if target_port.instance_plugs:
-            input_plug = SavedGraphInputPlug(
+            input_plug = GraphInputPlug(
                 id=f"plug-{len(target_node.input_plugs) + 1:04d}",
                 port=target.port,
             )
         edge_number = len(self._edges) + 1
-        edge = SavedGraphEdge(
+        edge = GraphEdge(
             id=f"edge-{edge_number:04d}",
             from_node=source.node_id,
             from_port=source.port,
@@ -496,7 +494,7 @@ class GraphBuilder:
             target_node.input_plugs.append(input_plug)
         self._edges.append(edge)
 
-    def build(self) -> SavedGraphDocument:
+    def build(self) -> GraphDocument:
         for authored in self._nodes:
             missing_bindings = sorted(
                 _artifact_type_variables(authored.catalog_node) - set(authored.bindings)
@@ -542,7 +540,7 @@ class GraphBuilder:
             raise GraphBuilderError("Graph contains a cycle")
 
         nodes = tuple(
-            SavedGraphNode(
+            GraphNode(
                 kind=_node_kind(authored.catalog_node),
                 id=authored.handle.node_id,
                 operator_id=authored.catalog_node.operator_id,
@@ -558,7 +556,7 @@ class GraphBuilder:
                 ),
                 input_plugs=tuple(authored.input_plugs),
                 artifact_type_bindings=tuple(
-                    SavedGraphArtifactTypeBinding(
+                    GraphArtifactTypeBinding(
                         variable=variable,
                         artifact_type=artifact_type,
                     )
@@ -567,7 +565,7 @@ class GraphBuilder:
             )
             for index, authored in enumerate(self._nodes)
         )
-        return SavedGraphDocument(nodes=nodes, edges=tuple(self._edges))
+        return GraphDocument(nodes=nodes, edges=tuple(self._edges))
 
 
 __all__ = [

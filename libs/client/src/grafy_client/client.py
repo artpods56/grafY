@@ -5,7 +5,7 @@ from uuid import UUID
 import httpx
 from pydantic import SecretStr
 
-from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_core.domain.saved_graphs import GraphDocument
 
 from .execution import ExecutionHandle
 from .models import (
@@ -40,7 +40,7 @@ class GraphClient:
         workspace_id: UUID,
         *,
         name: str,
-        document: SavedGraphDocument,
+        document: GraphDocument,
     ) -> SavedGraph:
         payload = await self._transport.request_json(
             operation="create saved graph",
@@ -67,7 +67,7 @@ class GraphClient:
         graph_id: UUID,
         *,
         name: str,
-        document: SavedGraphDocument,
+        document: GraphDocument,
         expected_revision: int,
     ) -> SavedGraph:
         payload = await self._transport.request_json(

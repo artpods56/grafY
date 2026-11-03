@@ -6,8 +6,8 @@ from grafy_core.domain.implementation import (
 )
 from grafy_core.domain.saved_graphs import (
     SAVED_GRAPH_SCHEMA_VERSION,
-    SavedGraphDocument,
-    SavedGraphNode,
+    GraphDocument,
+    GraphNode,
 )
 
 
@@ -24,8 +24,8 @@ def _node_payload(**overrides: object) -> dict[str, object]:
     return payload
 
 
-def _node(**overrides: object) -> SavedGraphNode:
-    return SavedGraphNode.model_validate(_node_payload(**overrides))
+def _node(**overrides: object) -> GraphNode:
+    return GraphNode.model_validate(_node_payload(**overrides))
 
 
 def test_builtin_and_module_nodes_round_trip() -> None:
@@ -37,9 +37,9 @@ def test_builtin_and_module_nodes_round_trip() -> None:
         operator_version=2,
     )
 
-    document = SavedGraphDocument(nodes=(builtin, module))
+    document = GraphDocument(nodes=(builtin, module))
     payload = document.model_dump(mode="json")
-    assert SavedGraphDocument.model_validate(payload) == document
+    assert GraphDocument.model_validate(payload) == document
     assert payload["schema_version"] == SAVED_GRAPH_SCHEMA_VERSION
     assert [node["kind"] for node in payload["nodes"]] == ["builtin", "module"]
 
@@ -72,11 +72,11 @@ def test_invalid_node_fields_are_rejected() -> None:
 
 
 def test_saved_graph_document_rejects_other_schema_versions() -> None:
-    payload = SavedGraphDocument(nodes=(_node(),)).model_dump(mode="json")
+    payload = GraphDocument(nodes=(_node(),)).model_dump(mode="json")
     for version in (1, 2, 3, 4, 5, 6):
         payload["schema_version"] = version
         with pytest.raises(ValidationError, match="schema_version"):
-            SavedGraphDocument.model_validate(payload)
+            GraphDocument.model_validate(payload)
 
 
 def test_implementation_identity_is_the_build_digest() -> None:

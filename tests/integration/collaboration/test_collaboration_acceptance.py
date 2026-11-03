@@ -26,7 +26,7 @@ from grafy_core.domain.identity import (
     WorkspaceKind,
     WorkspaceRole,
 )
-from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_core.domain.saved_graphs import GraphDocument
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 from tests.support.clients import GrafyApi
@@ -117,7 +117,7 @@ def test_phase7_two_session_collaboration_acceptance_journey(
 
         switcher.as_user(owner.id)
         personal_graph = personal_api.graphs.create_ok(
-            CreateSavedGraphRequest(name="Private draft", document=SavedGraphDocument())
+            CreateSavedGraphRequest(name="Private draft", document=GraphDocument())
         )
 
         switcher.as_user(editor.id)
@@ -127,7 +127,7 @@ def test_phase7_two_session_collaboration_acceptance_journey(
         switcher.as_user(owner.id)
         shared_graph = shared_api.graphs.create_ok(
             CreateSavedGraphRequest(
-                name="Shared acceptance graph", document=SavedGraphDocument()
+                name="Shared acceptance graph", document=GraphDocument()
             )
         )
         editor_invitation = shared_api.create_invitation_ok(

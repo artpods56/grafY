@@ -24,7 +24,7 @@ from grafy_core.domain.node_secrets import (
 )
 from grafy_core.domain.saved_graphs import (
     SavedGraph,
-    SavedGraphNode,
+    GraphNode,
     SavedGraphRevision,
 )
 from grafy_core.plugins import NodeRegistration, NodeSecretInput, PluginRegistry
@@ -447,7 +447,7 @@ class NodeSecretService(NodeSecretResolverPort):
 
     async def _resolved_node_secret_contract(
         self,
-        node: SavedGraphNode,
+        node: GraphNode,
     ) -> _ResolvedNodeSecretContract | None:
         registration = self._registration(node.operator_id, node.operator_version)
         if registration is None:

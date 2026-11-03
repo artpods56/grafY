@@ -16,10 +16,10 @@ from grafy_core.domain.execution_history import (
 from grafy_core.domain.saved_graphs import (
     SavedGraph,
     SavedGraphRevision,
-    SavedGraphNodeKind,
-    SavedGraphNode,
-    SavedGraphEdge,
-    SavedGraphOrigin,
+    GraphNodeKind,
+    GraphNode,
+    GraphEdge,
+    GraphOrigin,
 )
 
 from grafy_api.v1.models import (
@@ -46,7 +46,7 @@ class RunInputPlugRequest(BaseModel):
 
 
 class RunNodeRequest(BaseModel):
-    kind: SavedGraphNodeKind
+    kind: GraphNodeKind
     id: ExecutionIdentifier
     operator_id: str
     operator_version: int
@@ -59,7 +59,7 @@ class RunNodeRequest(BaseModel):
     @classmethod
     def from_saved_node(
         cls,
-        node: SavedGraphNode,
+        node: GraphNode,
         *,
         connected_plug_ids: set[str],
     ) -> "RunNodeRequest":
@@ -119,7 +119,7 @@ class RunEdgeRequest(BaseModel):
     collection_mode: Literal["direct", "map"] = "direct"
 
     @classmethod
-    def from_saved_edge(cls, edge: SavedGraphEdge) -> "RunEdgeRequest":
+    def from_saved_edge(cls, edge: GraphEdge) -> "RunEdgeRequest":
         return cls(
             from_node=edge.from_node,
             from_port=edge.from_port,
@@ -168,7 +168,7 @@ class RunOriginRequest(BaseModel):
         return "value"
 
     @classmethod
-    def from_saved_origin(cls, origin: SavedGraphOrigin) -> "RunOriginRequest":
+    def from_saved_origin(cls, origin: GraphOrigin) -> "RunOriginRequest":
         return cls(
             to_node=origin.to_node,
             to_port=origin.to_port,

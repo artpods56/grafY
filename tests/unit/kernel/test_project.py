@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from grafy_core.domain.saved_graphs import SavedGraphDocument, SavedGraphNode
+from grafy_core.domain.saved_graphs import GraphDocument, GraphNode
 from grafy_core.kernel.project import (
     CALL_NODE_KIND,
     GRAPH_ARTIFACT_TYPE_VARIABLE,
@@ -46,7 +46,7 @@ def input_node(
     description: str | None = None,
     bound_type: tuple[str, int] | None = None,
     config: Mapping[str, object] | None = None,
-) -> SavedGraphNode:
+) -> GraphNode:
     node_config: dict[str, object] = {"public_name": public_name}
     if required is not None:
         node_config["required"] = required
@@ -73,7 +73,7 @@ def output_node(
     description: str | None = None,
     bound_type: tuple[str, int] | None = None,
     config: Mapping[str, object] | None = None,
-) -> SavedGraphNode:
+) -> GraphNode:
     node_config: dict[str, object] = {"public_name": public_name}
     if description is not None:
         node_config["description"] = description
@@ -97,7 +97,7 @@ def call_node(
     *,
     operator_version: int = 1,
     position: tuple[float, float] = (0.0, 100.0),
-) -> SavedGraphNode:
+) -> GraphNode:
     return make_node(
         node_id,
         kind=CALL_NODE_KIND,
@@ -107,23 +107,21 @@ def call_node(
     )
 
 
-def leaf(node_id: str = "leaf") -> SavedGraphNode:
+def leaf(node_id: str = "leaf") -> GraphNode:
     return make_node(node_id)
 
 
 def make_document(
-    *nodes: SavedGraphNode,
+    *nodes: GraphNode,
     edges: Sequence[Any] = (),
     origins: Sequence[Any] = (),
-) -> SavedGraphDocument:
-    return SavedGraphDocument(
-        nodes=tuple(nodes), edges=tuple(edges), origins=tuple(origins)
-    )
+) -> GraphDocument:
+    return GraphDocument(nodes=tuple(nodes), edges=tuple(edges), origins=tuple(origins))
 
 
 def make_graph(
     graph_id: str = "g1",
-    *nodes: SavedGraphNode,
+    *nodes: GraphNode,
     name: str | None = None,
     edges: Sequence[Any] = (),
     origins: Sequence[Any] = (),
@@ -717,7 +715,7 @@ def test_project_round_trips_through_json() -> None:
 
 
 def test_a_call_node_is_an_ordinary_saved_graph_node() -> None:
-    node = SavedGraphNode.model_validate(
+    node = GraphNode.model_validate(
         {
             "kind": CALL_NODE_KIND,
             "id": "call",

@@ -14,14 +14,14 @@ from grafy_core.artifacts import (
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     SavedGraph,
-    SavedGraphArtifactTypeBinding,
-    SavedGraphConversion,
-    SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphInputPlug,
-    SavedGraphNode,
-    SavedGraphOrigin,
-    SavedGraphProjection,
+    GraphArtifactTypeBinding,
+    GraphConversion,
+    GraphDocument,
+    GraphEdge,
+    GraphInputPlug,
+    GraphNode,
+    GraphOrigin,
+    GraphProjection,
     SavedGraphRevision,
 )
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
@@ -137,7 +137,7 @@ class _RecordingSavedGraphs(SavedGraphService):
 
 def _fragment_case() -> tuple[SavedGraphRevision, RunRequest]:
     bound_type = ArtifactTypeKey("test.graph-preflight.value", 1)
-    saved_input = SavedGraphEdge(
+    saved_input = GraphEdge(
         id="source-to-target",
         from_node="source",
         from_port="response",
@@ -145,15 +145,15 @@ def _fragment_case() -> tuple[SavedGraphRevision, RunRequest]:
         to_port="items",
         to_plug="payload",
         collection_mode="map",
-        projection=SavedGraphProjection(path=("payload",)),
-        conversion_path=(SavedGraphConversion(id="test.convert", version=2),),
+        projection=GraphProjection(path=("payload",)),
+        conversion_path=(GraphConversion(id="test.convert", version=2),),
     )
     graph = SavedGraph(
         workspace_id=WORKSPACE_ID,
         name="Saved fragment",
-        document=SavedGraphDocument(
+        document=GraphDocument(
             nodes=(
-                SavedGraphNode(
+                GraphNode(
                     kind="builtin",
                     id="source",
                     operator_id="test.graph-preflight.plain",
@@ -161,22 +161,22 @@ def _fragment_case() -> tuple[SavedGraphRevision, RunRequest]:
                     config={},
                     position=GraphPoint(x=0, y=0),
                 ),
-                SavedGraphNode(
+                GraphNode(
                     kind="builtin",
                     id="target",
                     operator_id="test.graph-preflight.plain",
                     operator_version=1,
                     config={"nested": {"strict": True}},
                     position=GraphPoint(x=100, y=0),
-                    input_plugs=(SavedGraphInputPlug(id="payload", port="items"),),
+                    input_plugs=(GraphInputPlug(id="payload", port="items"),),
                     artifact_type_bindings=(
-                        SavedGraphArtifactTypeBinding(
+                        GraphArtifactTypeBinding(
                             variable="T",
                             artifact_type=bound_type,
                         ),
                     ),
                 ),
-                SavedGraphNode(
+                GraphNode(
                     kind="builtin",
                     id="downstream",
                     operator_id="test.graph-preflight.plain",
@@ -187,7 +187,7 @@ def _fragment_case() -> tuple[SavedGraphRevision, RunRequest]:
             ),
             edges=(
                 saved_input,
-                SavedGraphEdge(
+                GraphEdge(
                     id="target-to-downstream",
                     from_node="target",
                     from_port="result",
@@ -241,9 +241,9 @@ def _secret_revision() -> SavedGraphRevision:
     return SavedGraph(
         workspace_id=WORKSPACE_ID,
         name="Saved secret binding",
-        document=SavedGraphDocument(
+        document=GraphDocument(
             nodes=(
-                SavedGraphNode(
+                GraphNode(
                     kind="builtin",
                     id="secret",
                     operator_id="test.graph-preflight.secret",
@@ -263,9 +263,9 @@ def _module_input_fragment(*, required: bool) -> tuple[SavedGraphRevision, RunRe
     graph = SavedGraph(
         workspace_id=WORKSPACE_ID,
         name="Module input fragment",
-        document=SavedGraphDocument(
+        document=GraphDocument(
             nodes=(
-                SavedGraphNode(
+                GraphNode(
                     kind="module",
                     id="module-input",
                     operator_id="module.input",
@@ -273,7 +273,7 @@ def _module_input_fragment(*, required: bool) -> tuple[SavedGraphRevision, RunRe
                     config={"public_name": "value", "required": required},
                     position=GraphPoint(x=0, y=0),
                 ),
-                SavedGraphNode(
+                GraphNode(
                     kind="builtin",
                     id="target",
                     operator_id="test.graph-preflight.plain",
@@ -283,7 +283,7 @@ def _module_input_fragment(*, required: bool) -> tuple[SavedGraphRevision, RunRe
                 ),
             ),
             edges=(
-                SavedGraphEdge(
+                GraphEdge(
                     id="input-to-target",
                     from_node="module-input",
                     from_port="value",
@@ -392,29 +392,29 @@ def _origin_fragment_case() -> tuple[SavedGraphRevision, RunRequest]:
         artifact_type="test.graph-preflight.value",
         schema_version=1,
     )
-    target_origin = SavedGraphOrigin(
+    target_origin = GraphOrigin(
         id="library-origin",
         to_node="target",
         to_port="items",
         to_plug="payload",
         value=origin_value,
-        conversion_path=(SavedGraphConversion(id="test.convert", version=2),),
+        conversion_path=(GraphConversion(id="test.convert", version=2),),
     )
     graph = SavedGraph(
         workspace_id=WORKSPACE_ID,
         name="Saved origin fragment",
-        document=SavedGraphDocument(
+        document=GraphDocument(
             nodes=(
-                SavedGraphNode(
+                GraphNode(
                     kind="builtin",
                     id="target",
                     operator_id="test.graph-preflight.plain",
                     operator_version=1,
                     config={"nested": {"strict": True}},
                     position=GraphPoint(x=100, y=0),
-                    input_plugs=(SavedGraphInputPlug(id="payload", port="items"),),
+                    input_plugs=(GraphInputPlug(id="payload", port="items"),),
                 ),
-                SavedGraphNode(
+                GraphNode(
                     kind="builtin",
                     id="downstream",
                     operator_id="test.graph-preflight.plain",
@@ -425,7 +425,7 @@ def _origin_fragment_case() -> tuple[SavedGraphRevision, RunRequest]:
             ),
             origins=(
                 target_origin,
-                SavedGraphOrigin(
+                GraphOrigin(
                     id="other-origin",
                     to_node="downstream",
                     to_port="value",

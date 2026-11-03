@@ -20,8 +20,8 @@ from grafy_core.file_contracts import PNG_FILE
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.saved_graphs import (
     SavedGraph,
-    SavedGraphDocument,
-    SavedGraphNode,
+    GraphDocument,
+    GraphNode,
     SavedGraphRevision,
     GraphPoint,
 )
@@ -616,9 +616,9 @@ async def test_decode_images_maps_ocr_through_api_compile_and_execute(
     secret_graph = SavedGraph(
         workspace_id=WORKSPACE_ID,
         name="Mapped OCR",
-        document=SavedGraphDocument(
+        document=GraphDocument(
             nodes=(
-                SavedGraphNode(
+                GraphNode(
                     kind="builtin",
                     id="ocr",
                     operator_id="mistral.ocr.process",

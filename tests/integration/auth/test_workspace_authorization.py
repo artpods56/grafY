@@ -30,7 +30,7 @@ from grafy_core.application.identity import IdentityService
 from grafy_core.artifacts import ArtifactObject
 from grafy_core.domain.collaboration import RenameGraphCommand
 from grafy_core.domain.identity import User, Workspace, WorkspaceKind, WorkspaceRole
-from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_core.domain.saved_graphs import GraphDocument
 from grafy_core.domain.security_audit import SecurityAuditEvent, SecurityAuditOutcome
 from grafy_persistence import schema
 from grafy_persistence.database import Database
@@ -158,14 +158,14 @@ async def test_global_graph_browser_is_authorized_and_keeps_user_state_private(
             workspace_b = api.workspace(matrix.workspace_b.id)
             graph_a = workspace_a.graphs.create_ok(
                 CreateSavedGraphRequest(
-                    name="Workspace A draft", document=SavedGraphDocument()
+                    name="Workspace A draft", document=GraphDocument()
                 ),
                 headers=_csrf_headers(owner_a_issued),
             )
             api.authenticate(owner_b_issued)
             graph_b = workspace_b.graphs.create_ok(
                 CreateSavedGraphRequest(
-                    name="Workspace B private", document=SavedGraphDocument()
+                    name="Workspace B private", document=GraphDocument()
                 ),
                 headers=_csrf_headers(owner_b_issued),
             )
@@ -320,7 +320,7 @@ async def test_folder_assignment_cannot_cross_workspace_and_delete_unfiles_graph
             workspace_a = api.workspace(matrix.workspace_a.id)
             graph_a = workspace_a.graphs.create_ok(
                 CreateSavedGraphRequest(
-                    name="Folder boundary", document=SavedGraphDocument()
+                    name="Folder boundary", document=GraphDocument()
                 ),
                 headers=_csrf_headers(owner_a_issued),
             )
@@ -408,7 +408,7 @@ async def test_non_member_cannot_read_or_write_other_workspace_by_uuid(
             workspace_b = api.workspace(matrix.workspace_b.id)
             graph_b = workspace_b.graphs.create_ok(
                 CreateSavedGraphRequest(
-                    name="B private graph", document=SavedGraphDocument()
+                    name="B private graph", document=GraphDocument()
                 ),
                 headers=_csrf_headers(owner_b_issued),
             )
@@ -424,7 +424,7 @@ async def test_non_member_cannot_read_or_write_other_workspace_by_uuid(
             _assert_not_found(
                 workspace_b.graphs.create(
                     CreateSavedGraphRequest(
-                        name="Authz graph", document=SavedGraphDocument()
+                        name="Authz graph", document=GraphDocument()
                     ),
                     headers=_csrf_headers(owner_a_issued),
                 ),
@@ -435,7 +435,7 @@ async def test_non_member_cannot_read_or_write_other_workspace_by_uuid(
                     graph_b.id,
                     UpdateSavedGraphRequest(
                         name="Authz graph",
-                        document=SavedGraphDocument(),
+                        document=GraphDocument(),
                         expected_revision=graph_b.revision,
                     ),
                     headers=_csrf_headers(owner_a_issued),
@@ -557,7 +557,7 @@ async def test_viewer_can_read_but_cannot_mutate_execute_or_manage_secrets(
             workspace_a = api.workspace(matrix.workspace_a.id)
             graph_a = workspace_a.graphs.create_ok(
                 CreateSavedGraphRequest(
-                    name="Shared readable graph", document=SavedGraphDocument()
+                    name="Shared readable graph", document=GraphDocument()
                 ),
                 headers=_csrf_headers(owner_a_issued),
             )
@@ -591,9 +591,7 @@ async def test_viewer_can_read_but_cannot_mutate_execute_or_manage_secrets(
 
             _assert_forbidden(
                 workspace_a.graphs.create(
-                    CreateSavedGraphRequest(
-                        name="viewer", document=SavedGraphDocument()
-                    ),
+                    CreateSavedGraphRequest(name="viewer", document=GraphDocument()),
                     headers=_csrf_headers(viewer_a_issued),
                 ),
                 context="viewer create graph",
@@ -603,7 +601,7 @@ async def test_viewer_can_read_but_cannot_mutate_execute_or_manage_secrets(
                     graph_a.id,
                     UpdateSavedGraphRequest(
                         name="viewer edit",
-                        document=SavedGraphDocument(),
+                        document=GraphDocument(),
                         expected_revision=graph_a.revision,
                     ),
                     headers=_csrf_headers(viewer_a_issued),
@@ -702,16 +700,14 @@ async def test_editor_can_edit_and_execute_but_not_manage_secrets_delete_or_memb
             api.authenticate(editor_a_issued)
             workspace_a = api.workspace(matrix.workspace_a.id)
             graph_a = workspace_a.graphs.create_ok(
-                CreateSavedGraphRequest(
-                    name="Editor draft", document=SavedGraphDocument()
-                ),
+                CreateSavedGraphRequest(name="Editor draft", document=GraphDocument()),
                 headers=_csrf_headers(editor_a_issued),
             )
             updated = workspace_a.graphs.update_ok(
                 graph_a.id,
                 UpdateSavedGraphRequest(
                     name="Editor updated",
-                    document=SavedGraphDocument(),
+                    document=GraphDocument(),
                     expected_revision=graph_a.revision,
                 ),
                 headers=_csrf_headers(editor_a_issued),
@@ -813,7 +809,7 @@ async def test_owner_can_manage_secrets_delete_graph_and_members(
             workspace_a = api.workspace(matrix.workspace_a.id)
             graph_a = workspace_a.graphs.create_ok(
                 CreateSavedGraphRequest(
-                    name="Owner managed graph", document=SavedGraphDocument()
+                    name="Owner managed graph", document=GraphDocument()
                 ),
                 headers=_csrf_headers(owner_a_issued),
             )
@@ -868,9 +864,7 @@ async def test_cross_workspace_resource_ids_do_not_authorize_via_wrong_path(
             api.authenticate(owner_a_issued)
             workspace_a = api.workspace(matrix.workspace_a.id)
             graph_a = workspace_a.graphs.create_ok(
-                CreateSavedGraphRequest(
-                    name="Graph in A", document=SavedGraphDocument()
-                ),
+                CreateSavedGraphRequest(name="Graph in A", document=GraphDocument()),
                 headers=_csrf_headers(owner_a_issued),
             )
             execution_a = workspace_a.executions.start_execution_ok(
@@ -880,9 +874,7 @@ async def test_cross_workspace_resource_ids_do_not_authorize_via_wrong_path(
             api.authenticate(owner_b_issued)
             workspace_b = api.workspace(matrix.workspace_b.id)
             graph_b = workspace_b.graphs.create_ok(
-                CreateSavedGraphRequest(
-                    name="Graph in B", document=SavedGraphDocument()
-                ),
+                CreateSavedGraphRequest(name="Graph in B", document=GraphDocument()),
                 headers=_csrf_headers(owner_b_issued),
             )
 
@@ -966,7 +958,7 @@ async def test_target_bound_pat_cannot_copy_graph_from_another_workspace(
             source = api.workspace(matrix.workspace_a.id).graphs
             target = api.workspace(matrix.workspace_b.id)
             graph = source.create_ok(
-                CreateSavedGraphRequest(name="Source", document=SavedGraphDocument()),
+                CreateSavedGraphRequest(name="Source", document=GraphDocument()),
                 headers=_csrf_headers(issued),
             )
             head = source.get_head_ok(graph.id)

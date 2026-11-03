@@ -40,7 +40,7 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 
-from grafy_core.domain.saved_graphs import SavedGraphConversion
+from grafy_core.domain.saved_graphs import GraphConversion
 from grafy_core.kernel.facts import FingerprintFacts
 from grafy_core.kernel.instances import (
     ExpandedGraph,
@@ -121,7 +121,7 @@ def _identity(
 
 
 def _conversion_path(
-    path: Sequence[SavedGraphConversion],
+    path: Sequence[GraphConversion],
 ) -> list[list[str | int]]:
     return [[step.id, step.version] for step in path]
 

@@ -16,8 +16,8 @@ from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     SavedGraph,
-    SavedGraphDocument,
-    SavedGraphNode,
+    GraphDocument,
+    GraphNode,
 )
 from grafy_core.domain.errors import SavedGraphRevisionConflictError
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
@@ -175,7 +175,7 @@ async def _saved_secret_graph(
     database: Database,
     *,
     name: str = "Shared extraction",
-    document: SavedGraphDocument | None = None,
+    document: GraphDocument | None = None,
 ) -> SavedGraph:
     graph = SavedGraph(
         workspace_id=WORKSPACE_ID,
@@ -199,7 +199,7 @@ async def _replace_secret_graph(
     *,
     workspace_id: UUID,
     name: str,
-    document: SavedGraphDocument,
+    document: GraphDocument,
     expected_revision: int,
 ) -> SavedGraph:
     collaboration = CollaborationService(
@@ -228,10 +228,10 @@ def _secret_document(
     model: str = "default-model",
     temperature: float = 0.0,
     position: GraphPoint | None = None,
-) -> SavedGraphDocument:
-    return SavedGraphDocument(
+) -> GraphDocument:
+    return GraphDocument(
         nodes=(
-            SavedGraphNode(
+            GraphNode(
                 kind="builtin",
                 id="llm",
                 operator_id="test.secret-node",
@@ -640,7 +640,7 @@ async def test_removing_and_readding_node_id_does_not_revive_secret(
         graph.id,
         workspace_id=WORKSPACE_ID,
         name=graph.name,
-        document=SavedGraphDocument(),
+        document=GraphDocument(),
         expected_revision=1,
     )
     async with database.engine.connect() as connection:
@@ -1012,9 +1012,9 @@ async def test_dirty_run_rejects_invalid_saved_secret_binding(
         graph = await _saved_secret_graph(
             database,
             name="Different operator",
-            document=SavedGraphDocument(
+            document=GraphDocument(
                 nodes=(
-                    SavedGraphNode(
+                    GraphNode(
                         kind="builtin",
                         id="llm",
                         operator_id="test.plain-node",
@@ -1081,10 +1081,10 @@ def test_node_secret_status_preserves_valid_nodes_when_saved_config_is_invalid(
         graph = SavedGraph(
             workspace_id=WORKSPACE_ID,
             name="Shared extraction",
-            document=SavedGraphDocument(
+            document=GraphDocument(
                 nodes=(
                     *_secret_document().nodes,
-                    SavedGraphNode(
+                    GraphNode(
                         kind="builtin",
                         id="invalid-text",
                         operator_id="text.input",

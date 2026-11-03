@@ -266,7 +266,7 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
     assert set(create_graph_schema["required"]) == {"name", "document"}
     assert set(create_graph_schema["properties"]) == {"name", "document"}
     assert create_graph_schema["properties"]["document"] == {
-        "$ref": "#/components/schemas/SavedGraphDocument"
+        "$ref": "#/components/schemas/GraphDocument"
     }
     update_graph_schema = schema["components"]["schemas"]["UpdateSavedGraphRequest"]
     assert set(update_graph_schema["required"]) == {
@@ -284,11 +284,9 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "document",
     }
     assert saved_graph_schema["properties"]["document"] == {
-        "$ref": "#/components/schemas/SavedGraphDocument"
+        "$ref": "#/components/schemas/GraphDocument"
     }
-    saved_binding_schema = schema["components"]["schemas"][
-        "SavedGraphArtifactTypeBinding"
-    ]
+    saved_binding_schema = schema["components"]["schemas"]["GraphArtifactTypeBinding"]
     assert saved_binding_schema["properties"]["artifact_type"] == {
         "$ref": "#/components/schemas/ArtifactTypeKey"
     }
@@ -435,14 +433,14 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         {"type": "null"},
     ]
 
-    saved_node_schema = schema["components"]["schemas"]["SavedGraphNode"]
+    saved_node_schema = schema["components"]["schemas"]["GraphNode"]
     assert saved_node_schema["properties"]["input_plugs"]["items"] == {
-        "$ref": "#/components/schemas/SavedGraphInputPlug"
+        "$ref": "#/components/schemas/GraphInputPlug"
     }
     assert saved_node_schema["properties"]["artifact_type_bindings"]["items"] == {
-        "$ref": "#/components/schemas/SavedGraphArtifactTypeBinding"
+        "$ref": "#/components/schemas/GraphArtifactTypeBinding"
     }
-    saved_edge_schema = schema["components"]["schemas"]["SavedGraphEdge"]
+    saved_edge_schema = schema["components"]["schemas"]["GraphEdge"]
     assert "to_plug" in saved_edge_schema["properties"]
     assert saved_edge_schema["properties"]["enabled"]["default"] is True
 

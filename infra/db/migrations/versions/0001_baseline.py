@@ -17,7 +17,7 @@ from alembic import op
 from grafy_persistence.column_types import (
     ArtifactOutputsType,
     LibraryProvenanceType,
-    SavedGraphDocumentType,
+    GraphDocumentType,
     UTCDateTime,
 )
 from grafy_persistence.schema.identity import (
@@ -441,7 +441,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=160), nullable=False),
         sa.Column(
             "document",
-            SavedGraphDocumentType(),
+            GraphDocumentType(),
             nullable=False,
         ),
         sa.Column("revision", sa.Integer(), nullable=False),
@@ -702,7 +702,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=160), nullable=False),
         sa.Column(
             "document",
-            SavedGraphDocumentType(),
+            GraphDocumentType(),
             nullable=False,
         ),
         sa.Column("updated_at", UTCDateTime(), nullable=False),
@@ -897,7 +897,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=160), nullable=False),
         sa.Column(
             "document",
-            SavedGraphDocumentType(),
+            GraphDocumentType(),
             nullable=False,
         ),
         sa.Column("created_at", UTCDateTime(), nullable=False),

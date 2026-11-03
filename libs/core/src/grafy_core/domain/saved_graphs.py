@@ -27,7 +27,7 @@ GraphIdentifier = Annotated[
 ]
 
 
-class SavedGraphValue(BaseModel):
+class GraphValue(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(
         extra="forbid",
         frozen=True,
@@ -35,7 +35,7 @@ class SavedGraphValue(BaseModel):
     )
 
 
-class GraphPoint(SavedGraphValue):
+class GraphPoint(GraphValue):
     x: float
     y: float
 
@@ -57,7 +57,7 @@ def validate_graph_layout_dimensions(
         )
 
 
-class SavedGraphNodeLayout(SavedGraphValue):
+class GraphNodeLayout(GraphValue):
     """Canvas chrome sizes for a node shell and its artifact appendix."""
 
     width: float | None = Field(default=None, ge=260, le=GRAPH_LAYOUT_DIMENSION_MAX)
@@ -109,12 +109,12 @@ def _thaw_json(value: object) -> object:
     return value
 
 
-class SavedGraphInputPlug(SavedGraphValue):
+class GraphInputPlug(GraphValue):
     id: GraphIdentifier
     port: GraphIdentifier
 
 
-class SavedGraphArtifactTypeBinding(SavedGraphValue):
+class GraphArtifactTypeBinding(GraphValue):
     variable: GraphIdentifier
     artifact_type: ArtifactTypeKey
 
@@ -156,19 +156,19 @@ class SavedGraphArtifactTypeBinding(SavedGraphValue):
         return value
 
 
-SavedGraphNodeKind = Literal["builtin", "module", "call"]
+GraphNodeKind = Literal["builtin", "module", "call"]
 
 
-class SavedGraphNode(SavedGraphValue):
-    kind: SavedGraphNodeKind
+class GraphNode(GraphValue):
+    kind: GraphNodeKind
     id: GraphIdentifier
     operator_id: GraphIdentifier
     operator_version: int = Field(ge=1)
     config: Mapping[str, object] = Field(default_factory=dict)
     position: GraphPoint
-    layout: SavedGraphNodeLayout | None = None
-    input_plugs: tuple[SavedGraphInputPlug, ...] = ()
-    artifact_type_bindings: tuple[SavedGraphArtifactTypeBinding, ...] = ()
+    layout: GraphNodeLayout | None = None
+    input_plugs: tuple[GraphInputPlug, ...] = ()
+    artifact_type_bindings: tuple[GraphArtifactTypeBinding, ...] = ()
 
     @field_validator("config")
     @classmethod
@@ -210,16 +210,16 @@ class SavedGraphNode(SavedGraphValue):
         }
 
 
-class SavedGraphProjection(SavedGraphValue):
+class GraphProjection(GraphValue):
     path: tuple[GraphIdentifier, ...] = Field(min_length=1)
 
 
-class SavedGraphConversion(SavedGraphValue):
+class GraphConversion(GraphValue):
     id: GraphIdentifier
     version: int = Field(ge=1)
 
 
-class SavedGraphEdge(SavedGraphValue):
+class GraphEdge(GraphValue):
     id: GraphIdentifier
     enabled: bool = True
     from_node: GraphIdentifier
@@ -228,15 +228,15 @@ class SavedGraphEdge(SavedGraphValue):
     to_port: GraphIdentifier
     to_plug: GraphIdentifier | None = None
     collection_mode: Literal["direct", "map"] = "direct"
-    projection: SavedGraphProjection | None = None
-    conversion_path: tuple[SavedGraphConversion, ...] = Field(
+    projection: GraphProjection | None = None
+    conversion_path: tuple[GraphConversion, ...] = Field(
         default=(),
         max_length=MAX_ARTIFACT_CONVERSION_HOPS,
     )
     route_offset: GraphPoint | None = None
 
 
-class SavedGraphOrigin(SavedGraphValue):
+class GraphOrigin(GraphValue):
     """Exact artifact value held on one node input with no incoming edge."""
 
     id: GraphIdentifier
@@ -245,13 +245,13 @@ class SavedGraphOrigin(SavedGraphValue):
     to_plug: GraphIdentifier | None = None
     value: ArtifactRef | ArtifactRefSequence
     collection_mode: Literal["direct", "map"] = "direct"
-    conversion_path: tuple[SavedGraphConversion, ...] = Field(
+    conversion_path: tuple[GraphConversion, ...] = Field(
         default=(),
         max_length=MAX_ARTIFACT_CONVERSION_HOPS,
     )
 
 
-def saved_graph_input_slot(
+def graph_input_slot(
     *,
     to_node: str,
     to_port: str,
@@ -261,10 +261,10 @@ def saved_graph_input_slot(
     return (to_node, to_plug if to_plug is not None else to_port)
 
 
-class GraphPresentationViewer(SavedGraphValue):
+class GraphPresentationViewer(GraphValue):
     id: GraphIdentifier
     position: GraphPoint
-    layout: SavedGraphNodeLayout | None = None
+    layout: GraphNodeLayout | None = None
     mode: str | None = Field(default=None, max_length=255)
     # A node-less card: it presents persisted artifacts and executes nothing.
     # One reference shows one artifact; a sequence shows them in the order the
@@ -291,20 +291,20 @@ AnnotationColor = Annotated[
 DEFAULT_ANNOTATION_COLOR = "#475569"
 
 
-class SavedGraphAnnotationLayout(SavedGraphValue):
+class GraphAnnotationLayout(GraphValue):
     """Axis-aligned size for a presentation annotation on the canvas."""
 
     width: float = Field(ge=24, le=GRAPH_LAYOUT_DIMENSION_MAX)
     height: float = Field(ge=24, le=GRAPH_LAYOUT_DIMENSION_MAX)
 
 
-class GraphPresentationAnnotation(SavedGraphValue):
+class GraphPresentationAnnotation(GraphValue):
     """Non-executable canvas decoration used to document a graph (Miro-like)."""
 
     id: GraphIdentifier
     kind: AnnotationKind
     position: GraphPoint
-    layout: SavedGraphAnnotationLayout
+    layout: GraphAnnotationLayout
     text: str = Field(default="", max_length=8_000)
     color: AnnotationColor = DEFAULT_ANNOTATION_COLOR
 
@@ -333,13 +333,13 @@ class GraphPresentationAnnotation(SavedGraphValue):
         return self
 
 
-class GraphPresentationLink(SavedGraphValue):
+class GraphPresentationLink(GraphValue):
     id: GraphIdentifier
     source_node_id: GraphIdentifier
     source_port_name: GraphIdentifier
     target_viewer_id: GraphIdentifier
     # Optional field projection applied when previewing the linked output.
-    projection: SavedGraphProjection | None = None
+    projection: GraphProjection | None = None
     # Visual routing adjustment from the link's natural midpoint.
     route_offset: GraphPoint | None = None
 
@@ -353,7 +353,7 @@ class GraphPresentationLink(SavedGraphValue):
         return value
 
 
-class GraphPresentationBindingMapping(SavedGraphValue):
+class GraphPresentationBindingMapping(GraphValue):
     source_field: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
     ]
@@ -362,7 +362,7 @@ class GraphPresentationBindingMapping(SavedGraphValue):
     ]
 
 
-class GraphPresentationBinding(SavedGraphValue):
+class GraphPresentationBinding(GraphValue):
     id: GraphIdentifier
     source_viewer_id: GraphIdentifier
     target_viewer_id: GraphIdentifier
@@ -391,7 +391,7 @@ class GraphPresentationBinding(SavedGraphValue):
         return self
 
 
-class GraphPresentationDocument(SavedGraphValue):
+class GraphPresentationDocument(GraphValue):
     viewers: tuple[GraphPresentationViewer, ...] = ()
     links: tuple[GraphPresentationLink, ...] = ()
     bindings: tuple[GraphPresentationBinding, ...] = ()
@@ -474,11 +474,11 @@ def empty_presentation() -> GraphPresentationDocument:
 SAVED_GRAPH_SCHEMA_VERSION = 7
 
 
-class SavedGraphDocument(SavedGraphValue):
+class GraphDocument(GraphValue):
     schema_version: Literal[7] = SAVED_GRAPH_SCHEMA_VERSION
-    nodes: tuple[SavedGraphNode, ...] = ()
-    edges: tuple[SavedGraphEdge, ...] = ()
-    origins: tuple[SavedGraphOrigin, ...] = ()
+    nodes: tuple[GraphNode, ...] = ()
+    edges: tuple[GraphEdge, ...] = ()
+    origins: tuple[GraphOrigin, ...] = ()
     presentation: GraphPresentationDocument = Field(default_factory=empty_presentation)
 
     @model_validator(mode="after")
@@ -496,7 +496,7 @@ class SavedGraphDocument(SavedGraphValue):
             raise ValueError("Saved graph origin ids must be unique")
 
         known_nodes = set(node_ids)
-        plugs_by_node: dict[str, dict[str, SavedGraphInputPlug]] = {}
+        plugs_by_node: dict[str, dict[str, GraphInputPlug]] = {}
         for node in self.nodes:
             plug_ids = [plug.id for plug in node.input_plugs]
             if len(plug_ids) != len(set(plug_ids)):
@@ -510,7 +510,7 @@ class SavedGraphDocument(SavedGraphValue):
         for edge in self.edges:
             if edge.enabled:
                 enabled_slots.setdefault(
-                    saved_graph_input_slot(
+                    graph_input_slot(
                         to_node=edge.to_node,
                         to_port=edge.to_port,
                         to_plug=edge.to_plug,
@@ -567,7 +567,7 @@ class SavedGraphDocument(SavedGraphValue):
                         f"{origin.to_port}, but input plug {origin.to_plug} belongs "
                         f"to port {target_plug.port}"
                     )
-            slot = saved_graph_input_slot(
+            slot = graph_input_slot(
                 to_node=origin.to_node,
                 to_port=origin.to_port,
                 to_plug=origin.to_plug,
@@ -591,12 +591,12 @@ class SavedGraphDocument(SavedGraphValue):
     def with_topology(
         self,
         *,
-        nodes: tuple[SavedGraphNode, ...] | None = None,
-        edges: tuple[SavedGraphEdge, ...] | None = None,
-        origins: tuple[SavedGraphOrigin, ...] | None = None,
+        nodes: tuple[GraphNode, ...] | None = None,
+        edges: tuple[GraphEdge, ...] | None = None,
+        origins: tuple[GraphOrigin, ...] | None = None,
         presentation: GraphPresentationDocument | None = None,
-    ) -> "SavedGraphDocument":
-        return SavedGraphDocument(
+    ) -> "GraphDocument":
+        return GraphDocument(
             nodes=self.nodes if nodes is None else nodes,
             edges=self.edges if edges is None else edges,
             origins=self.origins if origins is None else origins,
@@ -721,7 +721,7 @@ class GraphOrganization:
 class SavedGraph:
     workspace_id: UUID
     name: str
-    document: SavedGraphDocument
+    document: GraphDocument
     created_by_user_id: UUID | None = None
     id: UUID = field(default_factory=uuid4)
     revision: int = 1
@@ -739,7 +739,7 @@ class SavedGraph:
         self,
         *,
         name: str,
-        document: SavedGraphDocument,
+        document: GraphDocument,
         expected_revision: int,
         updated_at: datetime | None = None,
     ) -> None:
@@ -779,7 +779,7 @@ class SavedGraphRevision:
     graph_id: UUID
     revision: int
     name: str
-    document: SavedGraphDocument
+    document: GraphDocument
     created_at: datetime
 
     @property

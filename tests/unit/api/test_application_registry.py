@@ -13,7 +13,7 @@ from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
 from grafy_core.artifacts import ArtifactObject
 from grafy_core.domain.collaboration import GraphCommand
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
-from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_core.domain.saved_graphs import GraphDocument
 from grafy_core.ports.storage import SaveFileCommand
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_plugin_gis.gdal import GdalCli, RasterCogCompilation, RasterTileCompilation
@@ -85,7 +85,7 @@ def test_stored_checkpoint_rejects_plugin_node_identity(
     node: dict[str, object],
 ) -> None:
     with pytest.raises(ValidationError):
-        SavedGraphDocument.model_validate({"schema_version": 7, "nodes": [node]})
+        GraphDocument.model_validate({"schema_version": 7, "nodes": [node]})
 
 
 def test_recovered_run_request_rejects_the_plugin_node_kind() -> None:

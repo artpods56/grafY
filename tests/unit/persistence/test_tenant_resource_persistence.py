@@ -11,7 +11,7 @@ from grafy_core.domain.execution_history import GraphExecution
 from grafy_core.domain.invocation_cache import InvocationCacheEntry
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.domain.node_secrets import EncryptedNodeSecret
-from grafy_core.domain.saved_graphs import SavedGraph, SavedGraphDocument
+from grafy_core.domain.saved_graphs import SavedGraph, GraphDocument
 from grafy_core.domain.uploads import Upload
 from grafy_persistence.database import Database, create_database
 from grafy_persistence.orm import metadata
@@ -91,7 +91,7 @@ async def test_sql_repositories_require_workspace_for_artifact_cache_and_upload(
         workspace_id=WORKSPACE_ONE,
         id=UUID("00000000-0000-0000-0000-000000000204"),
         name="Tenant graph",
-        document=SavedGraphDocument(),
+        document=GraphDocument(),
     )
     revision = graph.snapshot()
     secret = EncryptedNodeSecret(

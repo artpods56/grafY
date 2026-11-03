@@ -34,11 +34,11 @@ from grafy_core.domain.modules import GraphModuleDefinition
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     SavedGraph,
-    SavedGraphConversion,
-    SavedGraphDocument,
-    SavedGraphInputPlug,
-    SavedGraphNode,
-    SavedGraphOrigin,
+    GraphConversion,
+    GraphDocument,
+    GraphInputPlug,
+    GraphNode,
+    GraphOrigin,
 )
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.plugins import Plugin, PluginRegistry, PluginRuntimeContext
@@ -566,29 +566,29 @@ def _replace_node(node_id: str = "replace") -> RunNodeRequest:
 
 def test_from_saved_graph_copies_origins_and_origin_plugs() -> None:
     origin_value = _text_ref()
-    origin = SavedGraphOrigin(
+    origin = GraphOrigin(
         id="library-origin",
         to_node="collect",
         to_port="items",
         to_plug="item",
         value=origin_value,
         conversion_path=(
-            SavedGraphConversion(id="builtin.scalar.integer_to_text", version=1),
+            GraphConversion(id="builtin.scalar.integer_to_text", version=1),
         ),
     )
     graph = SavedGraph(
         workspace_id=WORKSPACE_ID,
         name="Origin graph",
-        document=SavedGraphDocument(
+        document=GraphDocument(
             nodes=(
-                SavedGraphNode(
+                GraphNode(
                     kind="builtin",
                     id="collect",
                     operator_id="test.sequence.collect",
                     operator_version=1,
                     config={},
                     position=GraphPoint(x=0, y=0),
-                    input_plugs=(SavedGraphInputPlug(id="item", port="items"),),
+                    input_plugs=(GraphInputPlug(id="item", port="items"),),
                     artifact_type_bindings=(),
                 ),
             ),

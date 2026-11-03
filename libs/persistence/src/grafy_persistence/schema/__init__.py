@@ -4,7 +4,7 @@ from grafy_persistence.column_types import (
     ArtifactOutputsType as ArtifactOutputsType,
 )
 from grafy_persistence.column_types import (
-    SavedGraphDocumentType as SavedGraphDocumentType,
+    GraphDocumentType as GraphDocumentType,
 )
 from grafy_persistence.column_types import (
     UTCDateTime as UTCDateTime,

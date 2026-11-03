@@ -15,10 +15,10 @@ import pytest
 
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.saved_graphs import (
-    SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphNode,
-    SavedGraphOrigin,
+    GraphDocument,
+    GraphEdge,
+    GraphNode,
+    GraphOrigin,
 )
 from grafy_core.kernel.expansion import ExpansionError, expand_graph
 from grafy_core.kernel.fingerprints import compute_fingerprints
@@ -55,7 +55,7 @@ def key(
     return InstanceKey(PROJECT, graph_id, tuple(call_path), node_id)
 
 
-def input_node(node_id: str, public_name: str) -> SavedGraphNode:
+def input_node(node_id: str, public_name: str) -> GraphNode:
     return make_node(
         node_id,
         operator_id=GRAPH_INPUT_OPERATOR_ID,
@@ -63,7 +63,7 @@ def input_node(node_id: str, public_name: str) -> SavedGraphNode:
     )
 
 
-def output_node(node_id: str, public_name: str) -> SavedGraphNode:
+def output_node(node_id: str, public_name: str) -> GraphNode:
     return make_node(
         node_id,
         operator_id=GRAPH_OUTPUT_OPERATOR_ID,
@@ -71,21 +71,21 @@ def output_node(node_id: str, public_name: str) -> SavedGraphNode:
     )
 
 
-def call_node(node_id: str, callee: str) -> SavedGraphNode:
+def call_node(node_id: str, callee: str) -> GraphNode:
     return make_node(node_id, kind=CALL_NODE_KIND, operator_id=callee)
 
 
 def graph(
     graph_id: str,
-    nodes: Sequence[SavedGraphNode],
-    edges: Sequence[SavedGraphEdge] = (),
-    origins: Sequence[SavedGraphOrigin] = (),
+    nodes: Sequence[GraphNode],
+    edges: Sequence[GraphEdge] = (),
+    origins: Sequence[GraphOrigin] = (),
     refresh: Mapping[str, int] | None = None,
 ) -> GraphDefinition:
     return GraphDefinition(
         id=graph_id,
         name=f"Graph {graph_id}",
-        document=SavedGraphDocument(
+        document=GraphDocument(
             nodes=tuple(nodes),
             edges=tuple(edges),
             origins=tuple(origins),

@@ -24,7 +24,7 @@ from grafy_core.domain.execution_history import (
 )
 from grafy_core.domain.saved_graphs import (
     SavedGraph,
-    SavedGraphDocument,
+    GraphDocument,
     SavedGraphRevision,
 )
 
@@ -104,7 +104,7 @@ async def _persist_graph_revisions(
     graph_id: UUID,
     workspace_id: UUID,
 ) -> None:
-    document = SavedGraphDocument()
+    document = GraphDocument()
     created_at = datetime(2026, 7, 18, 7, 0, tzinfo=UTC)
     async with unit_of_work as entered:
         await entered.graphs.add(

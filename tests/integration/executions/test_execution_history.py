@@ -12,8 +12,8 @@ from grafy_core.domain.execution_history import GraphExecution
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     SavedGraph,
-    SavedGraphDocument,
-    SavedGraphNode,
+    GraphDocument,
+    GraphNode,
 )
 from grafy_persistence.unit_of_work import (
     SqlAlchemyUnitOfWork,
@@ -47,9 +47,9 @@ from tests.testkit import (
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")
 
 
-def _saved_text_graph_nodes(text: str) -> list[SavedGraphNode]:
+def _saved_text_graph_nodes(text: str) -> list[GraphNode]:
     return [
-        SavedGraphNode(
+        GraphNode(
             kind="builtin",
             id="text",
             operator_id="text.input",
@@ -63,7 +63,7 @@ def _saved_text_graph_nodes(text: str) -> list[SavedGraphNode]:
 def _create_text_graph_request(name: str, text: str) -> CreateSavedGraphRequest:
     return CreateSavedGraphRequest(
         name=name,
-        document=SavedGraphDocument(nodes=tuple(_saved_text_graph_nodes(text))),
+        document=GraphDocument(nodes=tuple(_saved_text_graph_nodes(text))),
     )
 
 
@@ -73,7 +73,7 @@ def _update_text_graph_request(
     return UpdateSavedGraphRequest(
         name=name,
         expected_revision=expected_revision,
-        document=SavedGraphDocument(nodes=tuple(_saved_text_graph_nodes(text))),
+        document=GraphDocument(nodes=tuple(_saved_text_graph_nodes(text))),
     )
 
 
@@ -435,7 +435,7 @@ async def _seed_active_execution(database_url: str) -> tuple[UUID, UUID]:
             workspace_id=WORKSPACE_ID,
             created_by_user_id=None,
             name="Interrupted",
-            document=SavedGraphDocument(),
+            document=GraphDocument(),
         )
         execution_id = uuid4()
         started_at = datetime.now(UTC)

@@ -4,7 +4,7 @@ from uuid import UUID
 
 from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.domain.saved_graphs import (
-    SavedGraphDocument,
+    GraphDocument,
 )
 from grafy_core.nodes import PortShape
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -102,7 +102,7 @@ class SavedGraph(ClientModel):
     revision: int
     created_at: datetime
     updated_at: datetime
-    document: SavedGraphDocument
+    document: GraphDocument
 
 
 class UploadItem(ClientModel):

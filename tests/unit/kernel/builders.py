@@ -1,7 +1,7 @@
 """Hand-built expanded graphs for the kernel fingerprint tests.
 
-Builders here construct the pinned kernel types directly (``SavedGraphNode``,
-``SavedGraphEdge``, ``SavedGraphOrigin`` folded into ``ExpandedInstance`` and
+Builders here construct the pinned kernel types directly (``GraphNode``,
+``GraphEdge``, ``GraphOrigin`` folded into ``ExpandedInstance`` and
 ``ExpandedGraph``) so a test can move one input at a time and nothing else
 moves. No I/O, no clocks, no sleeps.
 """
@@ -15,15 +15,15 @@ from uuid import UUID
 from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
-    SavedGraphArtifactTypeBinding,
-    SavedGraphConversion,
-    SavedGraphEdge,
-    SavedGraphInputPlug,
-    SavedGraphNode,
-    SavedGraphNodeKind,
-    SavedGraphNodeLayout,
-    SavedGraphOrigin,
-    SavedGraphProjection,
+    GraphArtifactTypeBinding,
+    GraphConversion,
+    GraphEdge,
+    GraphInputPlug,
+    GraphNode,
+    GraphNodeKind,
+    GraphNodeLayout,
+    GraphOrigin,
+    GraphProjection,
 )
 from grafy_core.kernel.facts import FingerprintFacts
 from grafy_core.kernel.instances import (
@@ -58,15 +58,15 @@ def make_artifact(
     )
 
 
-def make_plugs(*slots: tuple[str, str]) -> tuple[SavedGraphInputPlug, ...]:
-    return tuple(SavedGraphInputPlug(id=plug_id, port=port) for plug_id, port in slots)
+def make_plugs(*slots: tuple[str, str]) -> tuple[GraphInputPlug, ...]:
+    return tuple(GraphInputPlug(id=plug_id, port=port) for plug_id, port in slots)
 
 
 def make_bindings(
     *bindings: tuple[str, str, int],
-) -> tuple[SavedGraphArtifactTypeBinding, ...]:
+) -> tuple[GraphArtifactTypeBinding, ...]:
     return tuple(
-        SavedGraphArtifactTypeBinding(
+        GraphArtifactTypeBinding(
             variable=variable,
             artifact_type=ArtifactTypeKey(
                 id=type_id,
@@ -79,9 +79,9 @@ def make_bindings(
 
 def make_conversions(
     *steps: tuple[str, int],
-) -> tuple[SavedGraphConversion, ...]:
+) -> tuple[GraphConversion, ...]:
     return tuple(
-        SavedGraphConversion(id=step_id, version=version) for step_id, version in steps
+        GraphConversion(id=step_id, version=version) for step_id, version in steps
     )
 
 
@@ -89,18 +89,18 @@ def make_point(x: float, y: float) -> GraphPoint:
     return GraphPoint(x=x, y=y)
 
 
-def make_layout(width: float) -> SavedGraphNodeLayout:
-    return SavedGraphNodeLayout(width=width)
+def make_layout(width: float) -> GraphNodeLayout:
+    return GraphNodeLayout(width=width)
 
 
-def make_projection(path: Sequence[str]) -> SavedGraphProjection:
-    return SavedGraphProjection(path=tuple(path))
+def make_projection(path: Sequence[str]) -> GraphProjection:
+    return GraphProjection(path=tuple(path))
 
 
 def make_node(
     node_id: str,
     *,
-    kind: SavedGraphNodeKind = "builtin",
+    kind: GraphNodeKind = "builtin",
     operator_id: str = "value.integer",
     operator_version: int = 1,
     config: Mapping[str, object] | None = None,
@@ -108,15 +108,15 @@ def make_node(
     bindings: Sequence[tuple[str, str, int]] = (),
     position: tuple[float, float] = (0.0, 0.0),
     width: float | None = None,
-) -> SavedGraphNode:
-    return SavedGraphNode(
+) -> GraphNode:
+    return GraphNode(
         kind=kind,
         id=node_id,
         operator_id=operator_id,
         operator_version=operator_version,
         config={} if config is None else dict(config),
         position=make_point(position[0], position[1]),
-        layout=None if width is None else SavedGraphNodeLayout(width=width),
+        layout=None if width is None else GraphNodeLayout(width=width),
         input_plugs=make_plugs(*plugs),
         artifact_type_bindings=make_bindings(*bindings),
     )
@@ -135,8 +135,8 @@ def make_edge(
     conversion: Sequence[tuple[str, int]] = (),
     enabled: bool = True,
     route_offset: tuple[float, float] | None = None,
-) -> SavedGraphEdge:
-    return SavedGraphEdge(
+) -> GraphEdge:
+    return GraphEdge(
         id=edge_id,
         from_node=from_node,
         from_port=from_port,
@@ -145,7 +145,7 @@ def make_edge(
         to_plug=to_plug,
         collection_mode=collection_mode,
         projection=(
-            None if projection is None else SavedGraphProjection(path=tuple(projection))
+            None if projection is None else GraphProjection(path=tuple(projection))
         ),
         conversion_path=make_conversions(*conversion),
         enabled=enabled,
@@ -162,8 +162,8 @@ def make_origin(
     value: ArtifactRef | None = None,
     collection_mode: CollectionMode = "direct",
     conversion: Sequence[tuple[str, int]] = (),
-) -> SavedGraphOrigin:
-    return SavedGraphOrigin(
+) -> GraphOrigin:
+    return GraphOrigin(
         id=origin_id,
         to_node=to_node,
         to_port=to_port,
@@ -192,7 +192,7 @@ def make_key(
 
 
 def incoming_order(
-    edge: SavedGraphEdge,
+    edge: GraphEdge,
 ) -> tuple[str, str]:
     """The stable per-target order the kernel expands connections in."""
     return (edge.to_port, edge.to_plug or "")
@@ -239,7 +239,7 @@ class ExpandedGraphBuilder:
 
     def add_instance(
         self,
-        node: SavedGraphNode,
+        node: GraphNode,
         *,
         node_id: str | None = None,
         call_path: tuple[str, ...] = (),
@@ -302,7 +302,7 @@ class ExpandedGraphBuilder:
         self.add_connection(target, connection)
         return connection
 
-    def attach_origin(self, target: InstanceKey, origin: SavedGraphOrigin) -> None:
+    def attach_origin(self, target: InstanceKey, origin: GraphOrigin) -> None:
         instance = self.instances[target]
         self.instances[target] = replace(instance, origins=(*instance.origins, origin))
 
@@ -332,9 +332,9 @@ class ExpandedGraphBuilder:
 
 
 def expand_document(
-    nodes: Sequence[SavedGraphNode],
-    edges: Sequence[SavedGraphEdge] = (),
-    origins: Sequence[SavedGraphOrigin] = (),
+    nodes: Sequence[GraphNode],
+    edges: Sequence[GraphEdge] = (),
+    origins: Sequence[GraphOrigin] = (),
     *,
     project_id: str = DEFAULT_PROJECT_ID,
     graph_id: str = DEFAULT_GRAPH_ID,
@@ -379,10 +379,10 @@ class FakeFacts:
     cache_policies: Mapping[str, NodeCachePolicy] = MappingProxyType({})
     secrets: Mapping[str, Mapping[str, str]] = MappingProxyType({})
 
-    def implementation_digest(self, node: SavedGraphNode) -> str:
+    def implementation_digest(self, node: GraphNode) -> str:
         return self.implementations.get(node.operator_id, self.default_implementation)
 
-    def cache_policy(self, node: SavedGraphNode) -> NodeCachePolicy:
+    def cache_policy(self, node: GraphNode) -> NodeCachePolicy:
         return self.cache_policies.get(node.id, NodeCachePolicy.EXACT)
 
     def secret_revisions(self, key: InstanceKey) -> Mapping[str, str]:

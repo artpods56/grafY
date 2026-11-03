@@ -19,10 +19,10 @@ from grafy_core.domain.modules import (
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     SavedGraph,
-    SavedGraphArtifactTypeBinding,
-    SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphNode,
+    GraphArtifactTypeBinding,
+    GraphDocument,
+    GraphEdge,
+    GraphNode,
 )
 from grafy_core.nodes import ArtifactTypeVariable, NodeExecutionContext, PortShape
 from grafy_core.operators.modules import (
@@ -59,8 +59,8 @@ def _binding(
     artifact_type: ArtifactTypeKey = VALUE_TYPE,
     *,
     variable: str = "T",
-) -> SavedGraphArtifactTypeBinding:
-    return SavedGraphArtifactTypeBinding(
+) -> GraphArtifactTypeBinding:
+    return GraphArtifactTypeBinding(
         variable=variable,
         artifact_type=artifact_type,
     )
@@ -74,14 +74,14 @@ def _boundary(
     description: str | None = None,
     required: bool | None = None,
     version: int = 1,
-    bindings: tuple[SavedGraphArtifactTypeBinding, ...] | None = None,
-) -> SavedGraphNode:
+    bindings: tuple[GraphArtifactTypeBinding, ...] | None = None,
+) -> GraphNode:
     config: dict[str, object] = {"public_name": public_name}
     if description is not None:
         config["description"] = description
     if required is not None:
         config["required"] = required
-    return SavedGraphNode(
+    return GraphNode(
         kind="builtin",
         id=node_id,
         operator_id=operator_id,
@@ -99,8 +99,8 @@ def _edge(
     *,
     collection_mode: str = "direct",
     enabled: bool = True,
-) -> SavedGraphEdge:
-    return SavedGraphEdge.model_validate(
+) -> GraphEdge:
+    return GraphEdge.model_validate(
         {
             "id": edge_id,
             "from_node": from_node,
@@ -117,8 +117,8 @@ def _document(
     *,
     input_name: str = "source",
     output_name: str = "result",
-) -> SavedGraphDocument:
-    return SavedGraphDocument(
+) -> GraphDocument:
+    return GraphDocument(
         nodes=(
             _boundary("input", "module.input", input_name),
             _boundary("output", "module.output", output_name),
@@ -146,7 +146,7 @@ def _optional_definition() -> GraphModuleDefinition:
             id=GRAPH_ID,
             revision=4,
             name="Optional input module",
-            document=SavedGraphDocument(
+            document=GraphDocument(
                 nodes=(
                     _boundary(
                         "required-input",
@@ -159,7 +159,7 @@ def _optional_definition() -> GraphModuleDefinition:
                         "optional_context",
                         required=False,
                     ),
-                    SavedGraphNode(
+                    GraphNode(
                         kind="builtin",
                         id="optional-consumer",
                         operator_id="example.optional-consumer",
@@ -336,7 +336,7 @@ def test_graph_module_definition_derives_ordered_typed_public_ports() -> None:
         id=GRAPH_ID,
         revision=3,
         name="  Example module  ",
-        document=SavedGraphDocument(
+        document=GraphDocument(
             nodes=(
                 _boundary(
                     "first-input",
@@ -378,7 +378,7 @@ def test_graph_module_definition_derives_ordered_typed_public_ports() -> None:
 
 
 def test_graph_module_definition_requires_unique_public_names_per_direction() -> None:
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(
             _boundary("input-a", "module.input", "duplicate"),
             _boundary("output-a", "module.output", "result_a"),
@@ -403,7 +403,7 @@ def test_graph_module_definition_requires_unique_public_names_per_direction() ->
 
 
 def test_graph_module_definition_requires_unique_public_output_names() -> None:
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(
             _boundary("input-a", "module.input", "source_a"),
             _boundary("output-a", "module.output", "duplicate"),
@@ -428,7 +428,7 @@ def test_graph_module_definition_requires_unique_public_output_names() -> None:
 
 
 def test_graph_module_definition_rejects_unknown_boundary_versions() -> None:
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(
             _boundary("input", "module.input", "source", version=2),
             _boundary("output", "module.output", "result"),
@@ -458,10 +458,10 @@ def test_graph_module_definition_rejects_unknown_boundary_versions() -> None:
     ],
 )
 def test_graph_module_definition_requires_one_concrete_boundary_binding(
-    bindings: tuple[SavedGraphArtifactTypeBinding, ...],
+    bindings: tuple[GraphArtifactTypeBinding, ...],
     message: str,
 ) -> None:
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(
             _boundary("input", "module.input", "source", bindings=bindings),
             _boundary("output", "module.output", "result"),
@@ -481,7 +481,7 @@ def test_graph_module_definition_requires_one_concrete_boundary_binding(
 
 
 def test_graph_module_definition_requires_connected_boundaries() -> None:
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(
             _boundary("unused", "module.input", "unused"),
             _boundary("input", "module.input", "source"),
@@ -502,7 +502,7 @@ def test_graph_module_definition_requires_connected_boundaries() -> None:
 
 
 def test_graph_module_definition_does_not_treat_disabled_edges_as_connections() -> None:
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(
             _boundary("input", "module.input", "source"),
             _boundary("output", "module.output", "result"),
@@ -522,7 +522,7 @@ def test_graph_module_definition_does_not_treat_disabled_edges_as_connections() 
 
 
 def test_graph_module_definition_requires_scalar_direct_outputs() -> None:
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(
             _boundary("input", "module.input", "source"),
             _boundary("output", "module.output", "result"),
@@ -549,7 +549,7 @@ def test_graph_module_definition_requires_at_least_one_output_boundary() -> None
         GraphModuleDefinition(
             reference=GraphModuleReference(GRAPH_ID, 1),
             name="Not a module",
-            document=SavedGraphDocument(),
+            document=GraphDocument(),
         )
 
 

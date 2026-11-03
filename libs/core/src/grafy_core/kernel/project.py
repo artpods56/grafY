@@ -35,9 +35,9 @@ from pydantic import (
 from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.domain.saved_graphs import (
     GraphIdentifier,
-    SavedGraphDocument,
-    SavedGraphNode,
-    SavedGraphValue,
+    GraphDocument,
+    GraphNode,
+    GraphValue,
 )
 
 #: The operator a boundary input node runs. It contributes the Graph's own input.
@@ -50,7 +50,7 @@ GRAPH_BOUNDARY_OPERATOR_VERSION = 1
 GRAPH_BOUNDARY_PORT = "value"
 #: The artifact type binding variable that types a boundary node.
 GRAPH_ARTIFACT_TYPE_VARIABLE = "T"
-#: The ``SavedGraphNode.kind`` of a node that calls a sibling Graph.
+#: The ``GraphNode.kind`` of a node that calls a sibling Graph.
 CALL_NODE_KIND = "call"
 #: The only operator version a call node may name; it is the callee Graph itself.
 CALL_NODE_OPERATOR_VERSION = 1
@@ -181,28 +181,28 @@ def _thaw_generations(value: Mapping[str, int]) -> dict[str, int]:
     return dict(value)
 
 
-def _config_text(node: SavedGraphNode, key: str) -> str | None:
+def _config_text(node: GraphNode, key: str) -> str | None:
     value = node.config.get(key)
     return value if isinstance(value, str) else None
 
 
-def _is_boundary(node: SavedGraphNode) -> bool:
+def _is_boundary(node: GraphNode) -> bool:
     return node.operator_id in _BOUNDARY_OPERATORS
 
 
-def _public_name(node: SavedGraphNode) -> str:
+def _public_name(node: GraphNode) -> str:
     """The public name a boundary node contributes to its Graph's interface."""
     return _config_text(node, "public_name") or ""
 
 
-def _is_call(node: SavedGraphNode) -> bool:
+def _is_call(node: GraphNode) -> bool:
     return node.kind == CALL_NODE_KIND
 
 
-class GraphDefinition(SavedGraphValue):
+class GraphDefinition(GraphValue):
     """One Graph of a Project: its interface, its nodes, its layout.
 
-    A call node is a ``SavedGraphNode`` with ``kind == "call"``, ``operator_id``
+    A call node is a ``GraphNode`` with ``kind == "call"``, ``operator_id``
     set to the callee Graph's id and ``operator_version == 1``. Boundary nodes
     declare the interface: a builtin running ``graph.input`` or ``graph.output``
     whose config carries ``public_name`` and, for inputs only, ``required``.
@@ -210,7 +210,7 @@ class GraphDefinition(SavedGraphValue):
 
     id: GraphIdentifier
     name: GraphName
-    document: SavedGraphDocument
+    document: GraphDocument
     refresh_generations: Mapping[str, RefreshGeneration] = Field(default_factory=dict)
 
     @field_validator("refresh_generations")
@@ -410,7 +410,7 @@ def _check_project(graphs: Sequence[GraphDefinition]) -> None:
         raise GraphCallCycleError("Graph call cycle: " + " -> ".join(cycle))
 
 
-class ProjectDocument(SavedGraphValue):
+class ProjectDocument(GraphValue):
     """The document of a Project: its Graphs and the calls between them."""
 
     graphs: tuple[GraphDefinition, ...] = ()
@@ -463,7 +463,7 @@ class ProjectDocument(SavedGraphValue):
     def replace_graph_document(
         self,
         graph_id: str,
-        document: SavedGraphDocument,
+        document: GraphDocument,
     ) -> "ProjectDocument":
         """Swap one Graph's document, dropping generations for nodes it removed."""
         self.get_graph(graph_id)

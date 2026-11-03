@@ -9,7 +9,7 @@ from sqlalchemy.engine import Dialect
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_core.domain.saved_graphs import GraphDocument
 from grafy_core.domain.identity import (
     WorkspaceCapability,
     WorkspaceKind,
@@ -25,7 +25,7 @@ from grafy_persistence import schema
 
 
 MODEL_CASES = [
-    (schema.SavedGraphDocumentType, SavedGraphDocument()),
+    (schema.GraphDocumentType, GraphDocument()),
 ]
 ENUM_CASES = [
     (schema.WorkspaceKindType, WorkspaceKind, 16),

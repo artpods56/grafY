@@ -17,9 +17,9 @@ import pytest
 
 from grafy_core.artifacts import ArtifactRef
 from grafy_core.domain.saved_graphs import (
-    SavedGraphEdge,
-    SavedGraphNode,
-    SavedGraphOrigin,
+    GraphEdge,
+    GraphNode,
+    GraphOrigin,
 )
 from grafy_core.kernel.fingerprints import compute_fingerprints
 from grafy_core.kernel.instances import Connection, ExpandedGraph, InstanceKey
@@ -65,9 +65,9 @@ TARGET_PLUGS = (("in", "value"), ("alt", "value"), ("spare", "value"))
 class Scenario:
     """One hand-built graph plus the deployment facts it is fingerprinted under."""
 
-    nodes: tuple[SavedGraphNode, ...]
-    edges: tuple[SavedGraphEdge, ...] = ()
-    origins: tuple[SavedGraphOrigin, ...] = ()
+    nodes: tuple[GraphNode, ...]
+    edges: tuple[GraphEdge, ...] = ()
+    origins: tuple[GraphOrigin, ...] = ()
     facts: FakeFacts = field(default_factory=FakeFacts)
     refresh: Mapping[str, int] = MappingProxyType({})
     project_id: str = "project-1"
@@ -93,13 +93,13 @@ class Scenario:
             ).items()
         }
 
-    def node(self, node_id: str) -> SavedGraphNode:
+    def node(self, node_id: str) -> GraphNode:
         return next(node for node in self.nodes if node.id == node_id)
 
-    def edge(self, edge_id: str) -> SavedGraphEdge:
+    def edge(self, edge_id: str) -> GraphEdge:
         return next(edge for edge in self.edges if edge.id == edge_id)
 
-    def origin(self, origin_id: str) -> SavedGraphOrigin:
+    def origin(self, origin_id: str) -> GraphOrigin:
         return next(origin for origin in self.origins if origin.id == origin_id)
 
     def with_node(self, node_id: str, **changes: object) -> "Scenario":
@@ -1300,19 +1300,19 @@ def test_the_digest_scheme_has_a_known_answer() -> None:
 
 def test_the_builder_vocabulary_matches_the_pinned_models() -> None:
     """The builders hand the pinned types values of the pinned shape."""
-    node: SavedGraphNode = make_node(
+    node: GraphNode = make_node(
         SOURCE,
         plugs=TARGET_PLUGS,
         bindings=(("payload", "table.row", 1),),
     )
-    edge: SavedGraphEdge = make_edge(
+    edge: GraphEdge = make_edge(
         "e-shape",
         SOURCE,
         TARGET,
         projection=("payload",),
         conversion=(("text.to.lower", 1),),
     )
-    origin: SavedGraphOrigin = make_origin(
+    origin: GraphOrigin = make_origin(
         "o-shape",
         TARGET,
         value=make_artifact(ARTIFACT_ID_ONE),

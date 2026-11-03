@@ -13,10 +13,10 @@ from grafy_core.domain.saved_graphs import (
     GraphPoint,
     GraphPresentationDocument,
     GraphPresentationViewer,
-    SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphNode,
-    SavedGraphOrigin,
+    GraphDocument,
+    GraphEdge,
+    GraphNode,
+    GraphOrigin,
 )
 from pydantic import ValidationError
 
@@ -32,9 +32,9 @@ def head() -> CollaborativeGraphHead:
         checkpoint_revision=2,
         name="Uncheckpointed changes",
         updated_at=datetime(2026, 9, 9, tzinfo=UTC),
-        document=SavedGraphDocument(
+        document=GraphDocument(
             nodes=tuple(
-                SavedGraphNode.model_validate(
+                GraphNode.model_validate(
                     {
                         "id": node_id,
                         "kind": "builtin",
@@ -53,7 +53,7 @@ def head() -> CollaborativeGraphHead:
 def test_head_serializes_metadata_and_the_document_only(
     head: CollaborativeGraphHead,
 ) -> None:
-    head.document = SavedGraphDocument()
+    head.document = GraphDocument()
     payload = CollaborativeHeadResponse.from_head(head).model_dump(mode="json")
 
     assert payload["graph_id"] == str(UUID(int=2))
@@ -90,7 +90,7 @@ def test_head_round_trips_the_document(head: CollaborativeGraphHead) -> None:
 def test_head_node_config_is_a_copy_the_document_does_not_share(
     head: CollaborativeGraphHead,
 ) -> None:
-    node = SavedGraphNode.model_validate(
+    node = GraphNode.model_validate(
         {
             "kind": "builtin",
             "id": "node",
@@ -108,7 +108,7 @@ def test_head_node_config_is_a_copy_the_document_does_not_share(
             ],
         }
     )
-    head.document = SavedGraphDocument(nodes=(node,))
+    head.document = GraphDocument(nodes=(node,))
 
     payload = CollaborativeHeadResponse.from_head(head).document.nodes[0]
 
@@ -137,9 +137,9 @@ def test_head_keeps_edge_projection_conversion_order_and_routing(
         "conversion_path": [{"id": "one", "version": 1}, {"id": "two", "version": 2}],
         "route_offset": {"x": -5, "y": 10},
     }
-    edge = SavedGraphEdge.model_validate(MappingProxyType(payload))
+    edge = GraphEdge.model_validate(MappingProxyType(payload))
     assert edge.model_dump(mode="json") == payload
-    assert SavedGraphEdge.model_validate_json(edge.model_dump_json()) == edge
+    assert GraphEdge.model_validate_json(edge.model_dump_json()) == edge
 
 
 @pytest.mark.parametrize(
@@ -154,7 +154,7 @@ def test_edge_rejects_the_singular_conversion_key(
     conversion_fields: dict[str, object],
 ) -> None:
     with pytest.raises(ValidationError, match="conversion"):
-        SavedGraphEdge.model_validate(
+        GraphEdge.model_validate(
             {
                 "id": "edge",
                 "from_node": "source",
@@ -183,8 +183,8 @@ def test_head_keeps_an_origin_reference_and_conversion_path(
         "collection_mode": "direct",
         "conversion_path": [{"id": "one", "version": 1}, {"id": "two", "version": 2}],
     }
-    origin = SavedGraphOrigin.model_validate(payload)
-    head.document = SavedGraphDocument(
+    origin = GraphOrigin.model_validate(payload)
+    head.document = GraphDocument(
         nodes=head.document.nodes,
         origins=(origin,),
     )
@@ -215,7 +215,7 @@ def test_head_keeps_an_artifact_ref_sequence_on_an_origin(
     )
     head.document = head.document.with_topology(
         origins=(
-            SavedGraphOrigin(
+            GraphOrigin(
                 id="origin",
                 to_node="target",
                 to_port="input",
@@ -274,7 +274,7 @@ def test_head_rejects_a_document_with_plugin_node_identity(
     node_fields: dict[str, object],
 ) -> None:
     with pytest.raises(ValidationError):
-        SavedGraphDocument.model_validate(
+        GraphDocument.model_validate(
             {
                 "schema_version": SAVED_GRAPH_SCHEMA_VERSION,
                 "nodes": [

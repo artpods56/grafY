@@ -30,7 +30,7 @@ from grafy_core.domain.saved_graphs import (
     GraphFolder,
     GraphOrganization,
     SavedGraph,
-    SavedGraphDocument,
+    GraphDocument,
     UserGraphState,
 )
 from grafy_core.domain.security_audit import SecurityAuditEvent
@@ -49,7 +49,7 @@ class SavedGraphRevisionRecord:
     graph_id: UUID
     revision: int
     name: str
-    document: SavedGraphDocument
+    document: GraphDocument
     created_at: datetime
 
 

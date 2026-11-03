@@ -32,8 +32,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from grafy_core.domain.saved_graphs import (
-    SavedGraphNode,
-    SavedGraphOrigin,
+    GraphNode,
+    GraphOrigin,
 )
 from grafy_core.kernel.instances import (
     Connection,
@@ -62,11 +62,11 @@ def _describe(key: InstanceKey) -> str:
     return f"instance node={key.node_id!r} graph={key.graph_id!r} call_path={call_path}"
 
 
-def _is_call(node: SavedGraphNode) -> bool:
+def _is_call(node: GraphNode) -> bool:
     return node.kind == CALL_NODE_KIND
 
 
-def _public_name(node: SavedGraphNode) -> str:
+def _public_name(node: GraphNode) -> str:
     value = node.config.get("public_name")
     return value if isinstance(value, str) else ""
 
@@ -76,15 +76,15 @@ class _GraphIndex:
     """One visited Graph with its node and interface lookups precomputed."""
 
     graph: GraphDefinition
-    nodes: dict[str, SavedGraphNode]
-    inputs: dict[str, SavedGraphNode]
-    outputs: dict[str, SavedGraphNode]
+    nodes: dict[str, GraphNode]
+    inputs: dict[str, GraphNode]
+    outputs: dict[str, GraphNode]
 
 
 def _index(graph: GraphDefinition) -> _GraphIndex:
-    nodes: dict[str, SavedGraphNode] = {}
-    inputs: dict[str, SavedGraphNode] = {}
-    outputs: dict[str, SavedGraphNode] = {}
+    nodes: dict[str, GraphNode] = {}
+    inputs: dict[str, GraphNode] = {}
+    outputs: dict[str, GraphNode] = {}
     for node in graph.document.nodes:
         nodes[node.id] = node
         if node.operator_id == GRAPH_INPUT_OPERATOR_ID:
@@ -98,11 +98,11 @@ def _index(graph: GraphDefinition) -> _GraphIndex:
 class _Pending:
     """One instance while its edges and origins are being rewritten."""
 
-    node: SavedGraphNode
+    node: GraphNode
     refresh_generation: int
     connections: list[Connection] = field(default_factory=list)
-    own_origins: list[SavedGraphOrigin] = field(default_factory=list)
-    caller_origins: list[SavedGraphOrigin] = field(default_factory=list)
+    own_origins: list[GraphOrigin] = field(default_factory=list)
+    caller_origins: list[GraphOrigin] = field(default_factory=list)
     caller_supplied: bool = False
 
 

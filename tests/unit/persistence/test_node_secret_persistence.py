@@ -6,7 +6,7 @@ from uuid import UUID
 import pytest
 
 from grafy_core.domain.node_secrets import EncryptedNodeSecret
-from grafy_core.domain.saved_graphs import SavedGraph, SavedGraphDocument
+from grafy_core.domain.saved_graphs import SavedGraph, GraphDocument
 from grafy_core.domain.identity import Workspace
 
 from grafy_persistence.database import Database, create_database
@@ -71,7 +71,7 @@ async def test_node_secret_round_trips_and_upserts_without_replacing_created_at(
     graph = SavedGraph(
         workspace_id=WORKSPACE_ID,
         name="Encrypted graph",
-        document=SavedGraphDocument(),
+        document=GraphDocument(),
     )
     original = _encrypted_secret(graph.id, workspace_id=graph.workspace_id)
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
@@ -115,7 +115,7 @@ async def test_deleting_saved_graph_cascades_to_node_secrets(
     graph = SavedGraph(
         workspace_id=WORKSPACE_ID,
         name="Disposable secret",
-        document=SavedGraphDocument(),
+        document=GraphDocument(),
     )
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         await unit_of_work.graphs.add(graph)
@@ -146,7 +146,7 @@ async def test_node_secret_can_be_removed_without_reading_ciphertext(
     graph = SavedGraph(
         workspace_id=WORKSPACE_ID,
         name="Clear secret",
-        document=SavedGraphDocument(),
+        document=GraphDocument(),
     )
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         await unit_of_work.graphs.add(graph)
@@ -175,7 +175,7 @@ async def test_saved_graph_revision_lock_is_a_no_op_for_the_graph_row(
     graph = SavedGraph(
         workspace_id=WORKSPACE_ID,
         name="Lock target",
-        document=SavedGraphDocument(),
+        document=GraphDocument(),
     )
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         await unit_of_work.graphs.add(graph)

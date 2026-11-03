@@ -19,11 +19,11 @@ from grafy_core.domain.identity import ActorContext
 from grafy_core.domain.modules import GraphModuleReference
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
-    SavedGraphArtifactTypeBinding,
-    SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphInputPlug,
-    SavedGraphNode,
+    GraphArtifactTypeBinding,
+    GraphDocument,
+    GraphEdge,
+    GraphInputPlug,
+    GraphNode,
 )
 from grafy_core.artifacts import (
     ArtifactTypeKey,
@@ -241,9 +241,9 @@ def module_client(tmp_path: Path) -> Iterator[TestClient]:
     asyncio.run(database.dispose())
 
 
-def _artifact_binding() -> list[SavedGraphArtifactTypeBinding]:
+def _artifact_binding() -> list[GraphArtifactTypeBinding]:
     return [
-        SavedGraphArtifactTypeBinding(
+        GraphArtifactTypeBinding(
             variable="T",
             artifact_type=ArtifactTypeKey(id="scalar.text", schema_version=1),
         )
@@ -251,17 +251,17 @@ def _artifact_binding() -> list[SavedGraphArtifactTypeBinding]:
 
 
 def _saved_graph_document(
-    nodes: list[SavedGraphNode],
-    edges: list[SavedGraphEdge] | None = None,
-) -> SavedGraphDocument:
+    nodes: list[GraphNode],
+    edges: list[GraphEdge] | None = None,
+) -> GraphDocument:
     effective_edges = [] if edges is None else edges
-    return SavedGraphDocument(nodes=tuple(nodes), edges=tuple(effective_edges))
+    return GraphDocument(nodes=tuple(nodes), edges=tuple(effective_edges))
 
 
 def _module_graph_payload(
     name: str,
-    nodes: list[SavedGraphNode],
-    edges: list[SavedGraphEdge],
+    nodes: list[GraphNode],
+    edges: list[GraphEdge],
     expected_revision: int | None = None,
 ) -> dict[str, object]:
     builtin_operators = {
@@ -269,7 +269,7 @@ def _module_graph_payload(
         for plugin in (*TEST_SYSTEM_PLUGINS, SECRET_MODULE_PLUGIN)
         for registration in plugin.nodes
     }
-    pinned_nodes: list[SavedGraphNode] = []
+    pinned_nodes: list[GraphNode] = []
     for node in nodes:
         if (node.operator_id, node.operator_version) in builtin_operators:
             pinned_nodes.append(node.model_copy(update={"kind": "builtin"}))
@@ -316,7 +316,7 @@ def _text_module_payload(
         name=name,
         expected_revision=expected_revision,
         nodes=[
-            SavedGraphNode(
+            GraphNode(
                 kind="module",
                 id="module-input",
                 operator_id="module.input",
@@ -329,7 +329,7 @@ def _text_module_payload(
                 position=GraphPoint(x=0, y=0),
                 artifact_type_bindings=_artifact_binding(),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="builtin",
                 id="replace",
                 operator_id=(
@@ -341,7 +341,7 @@ def _text_module_payload(
                 ),
                 position=GraphPoint(x=240, y=0),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="module",
                 id="module-output",
                 operator_id="module.output",
@@ -355,14 +355,14 @@ def _text_module_payload(
             ),
         ],
         edges=[
-            SavedGraphEdge(
+            GraphEdge(
                 id="input-to-replace",
                 from_node="module-input",
                 from_port="value",
                 to_node="replace",
                 to_port="text",
             ),
-            SavedGraphEdge(
+            GraphEdge(
                 id="replace-to-output",
                 from_node="replace",
                 from_port="text",
@@ -377,7 +377,7 @@ def _nested_map_progress_module_payload() -> dict[str, object]:
     return _module_graph_payload(
         name="Nested map progress",
         nodes=[
-            SavedGraphNode(
+            GraphNode(
                 kind="module",
                 id="module-input",
                 operator_id="module.input",
@@ -386,7 +386,7 @@ def _nested_map_progress_module_payload() -> dict[str, object]:
                 position=GraphPoint(x=0, y=0),
                 artifact_type_bindings=_artifact_binding(),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="builtin",
                 id="split",
                 operator_id="test.text.split",
@@ -394,7 +394,7 @@ def _nested_map_progress_module_payload() -> dict[str, object]:
                 config={"separator": ","},
                 position=GraphPoint(x=240, y=120),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="builtin",
                 id="progress",
                 operator_id="test.module_progress",
@@ -402,7 +402,7 @@ def _nested_map_progress_module_payload() -> dict[str, object]:
                 config={},
                 position=GraphPoint(x=480, y=120),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="module",
                 id="module-output",
                 operator_id="module.output",
@@ -413,14 +413,14 @@ def _nested_map_progress_module_payload() -> dict[str, object]:
             ),
         ],
         edges=[
-            SavedGraphEdge(
+            GraphEdge(
                 id="input-to-split",
                 from_node="module-input",
                 from_port="value",
                 to_node="split",
                 to_port="text",
             ),
-            SavedGraphEdge(
+            GraphEdge(
                 id="split-to-progress",
                 from_node="split",
                 from_port="parts",
@@ -428,7 +428,7 @@ def _nested_map_progress_module_payload() -> dict[str, object]:
                 to_port="text",
                 collection_mode="map",
             ),
-            SavedGraphEdge(
+            GraphEdge(
                 id="input-to-output",
                 from_node="module-input",
                 from_port="value",
@@ -448,7 +448,7 @@ def _secret_module_payload(
         name=name,
         expected_revision=expected_revision,
         nodes=[
-            SavedGraphNode(
+            GraphNode(
                 kind="module",
                 id="module-input",
                 operator_id="module.input",
@@ -457,7 +457,7 @@ def _secret_module_payload(
                 position=GraphPoint(x=0, y=0),
                 artifact_type_bindings=_artifact_binding(),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="builtin",
                 id="secret-gate",
                 operator_id="test.module_secret_gate",
@@ -465,7 +465,7 @@ def _secret_module_payload(
                 config={"base_url": "https://provider.example/v1"},
                 position=GraphPoint(x=240, y=0),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="module",
                 id="module-output",
                 operator_id="module.output",
@@ -476,14 +476,14 @@ def _secret_module_payload(
             ),
         ],
         edges=[
-            SavedGraphEdge(
+            GraphEdge(
                 id="input-to-gate",
                 from_node="module-input",
                 from_port="value",
                 to_node="secret-gate",
                 to_port="text",
             ),
-            SavedGraphEdge(
+            GraphEdge(
                 id="gate-to-output",
                 from_node="secret-gate",
                 from_port="text",
@@ -498,7 +498,7 @@ def _optional_input_module_payload() -> dict[str, object]:
     return _module_graph_payload(
         name="Optional suffix module",
         nodes=[
-            SavedGraphNode(
+            GraphNode(
                 kind="module",
                 id="text-input",
                 operator_id="module.input",
@@ -507,7 +507,7 @@ def _optional_input_module_payload() -> dict[str, object]:
                 position=GraphPoint(x=0, y=0),
                 artifact_type_bindings=_artifact_binding(),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="module",
                 id="suffix-input",
                 operator_id="module.input",
@@ -516,7 +516,7 @@ def _optional_input_module_payload() -> dict[str, object]:
                 position=GraphPoint(x=0, y=120),
                 artifact_type_bindings=_artifact_binding(),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="builtin",
                 id="append",
                 operator_id="test.module_optional_suffix",
@@ -524,7 +524,7 @@ def _optional_input_module_payload() -> dict[str, object]:
                 config={},
                 position=GraphPoint(x=240, y=0),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="builtin",
                 id="collect",
                 operator_id="test.sequence.collect",
@@ -532,12 +532,12 @@ def _optional_input_module_payload() -> dict[str, object]:
                 config={},
                 position=GraphPoint(x=240, y=160),
                 input_plugs=[
-                    SavedGraphInputPlug(id="active-copy", port="items"),
-                    SavedGraphInputPlug(id="disabled-copy", port="items"),
+                    GraphInputPlug(id="active-copy", port="items"),
+                    GraphInputPlug(id="disabled-copy", port="items"),
                 ],
                 artifact_type_bindings=_artifact_binding(),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="builtin",
                 id="pick",
                 operator_id="test.sequence.item_at",
@@ -546,7 +546,7 @@ def _optional_input_module_payload() -> dict[str, object]:
                 position=GraphPoint(x=480, y=160),
                 artifact_type_bindings=_artifact_binding(),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="module",
                 id="module-output",
                 operator_id="module.output",
@@ -557,21 +557,21 @@ def _optional_input_module_payload() -> dict[str, object]:
             ),
         ],
         edges=[
-            SavedGraphEdge(
+            GraphEdge(
                 id="text-to-append",
                 from_node="text-input",
                 from_port="value",
                 to_node="append",
                 to_port="text",
             ),
-            SavedGraphEdge(
+            GraphEdge(
                 id="suffix-to-append",
                 from_node="suffix-input",
                 from_port="value",
                 to_node="append",
                 to_port="suffix",
             ),
-            SavedGraphEdge(
+            GraphEdge(
                 id="text-to-collect",
                 from_node="text-input",
                 from_port="value",
@@ -579,7 +579,7 @@ def _optional_input_module_payload() -> dict[str, object]:
                 to_port="items",
                 to_plug="active-copy",
             ),
-            SavedGraphEdge(
+            GraphEdge(
                 id="disabled-text-to-collect",
                 enabled=False,
                 from_node="text-input",
@@ -588,14 +588,14 @@ def _optional_input_module_payload() -> dict[str, object]:
                 to_port="items",
                 to_plug="disabled-copy",
             ),
-            SavedGraphEdge(
+            GraphEdge(
                 id="collect-to-pick",
                 from_node="collect",
                 from_port="items",
                 to_node="pick",
                 to_port="items",
             ),
-            SavedGraphEdge(
+            GraphEdge(
                 id="append-to-output",
                 from_node="append",
                 from_port="text",
@@ -617,7 +617,7 @@ def _delegating_module_payload(
         name=name,
         expected_revision=expected_revision,
         nodes=[
-            SavedGraphNode(
+            GraphNode(
                 kind="module",
                 id="module-input",
                 operator_id="module.input",
@@ -626,7 +626,7 @@ def _delegating_module_payload(
                 position=GraphPoint(x=0, y=0),
                 artifact_type_bindings=_artifact_binding(),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="module",
                 id="delegate",
                 operator_id=f"graph.module.{target_graph_id}",
@@ -634,7 +634,7 @@ def _delegating_module_payload(
                 config={},
                 position=GraphPoint(x=240, y=0),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="module",
                 id="module-output",
                 operator_id="module.output",
@@ -645,14 +645,14 @@ def _delegating_module_payload(
             ),
         ],
         edges=[
-            SavedGraphEdge(
+            GraphEdge(
                 id="input-to-delegate",
                 from_node="module-input",
                 from_port="value",
                 to_node="delegate",
                 to_port="text",
             ),
-            SavedGraphEdge(
+            GraphEdge(
                 id="delegate-to-output",
                 from_node="delegate",
                 from_port="result",
@@ -1343,7 +1343,7 @@ def test_module_catalog_reports_invalid_boundary_wiring(
             name="Input without output",
             document=_saved_graph_document(
                 [
-                    SavedGraphNode(
+                    GraphNode(
                         kind="module",
                         id="module-input",
                         operator_id="module.input",
@@ -1384,7 +1384,7 @@ def test_module_catalog_ignores_graphs_without_module_boundaries(
             name="Ordinary workflow",
             document=_saved_graph_document(
                 [
-                    SavedGraphNode(
+                    GraphNode(
                         kind="builtin",
                         id="source",
                         operator_id="text.input",

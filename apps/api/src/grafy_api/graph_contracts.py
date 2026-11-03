@@ -14,7 +14,7 @@ from grafy_core.domain.saved_graphs import (
     GraphFolder,
     GraphOrganization,
     SavedGraph,
-    SavedGraphDocument,
+    GraphDocument,
     UserGraphState,
 )
 from pydantic import (
@@ -34,7 +34,7 @@ class SavedGraphApiModel(BaseModel):
 
 class SavedGraphWriteRequest(SavedGraphApiModel):
     name: str = Field(min_length=1, max_length=160)
-    document: SavedGraphDocument
+    document: GraphDocument
 
     @field_validator("name", mode="before")
     @classmethod
@@ -58,7 +58,7 @@ class SavedGraphResponse(SavedGraphApiModel):
     revision: int
     created_at: datetime
     updated_at: datetime
-    document: SavedGraphDocument
+    document: GraphDocument
 
     @classmethod
     def from_graph(cls, graph: SavedGraph) -> "SavedGraphResponse":
@@ -276,7 +276,7 @@ class CollaborativeHeadResponse(SavedGraphApiModel):
     checkpoint_revision: int
     name: str
     updated_at: datetime
-    document: SavedGraphDocument
+    document: GraphDocument
 
     @classmethod
     def from_head(cls, head: CollaborativeGraphHead) -> "CollaborativeHeadResponse":

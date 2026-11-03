@@ -12,8 +12,8 @@ from grafy_core.domain.errors import (
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     SavedGraph,
-    SavedGraphDocument,
-    SavedGraphNode,
+    GraphDocument,
+    GraphNode,
     SavedGraphRevision,
 )
 from grafy_core.domain.node_secrets import EncryptedNodeSecret
@@ -209,10 +209,10 @@ class FakeSavedGraphUnitOfWorkFactory:
         return unit_of_work
 
 
-def _document(node_id: str = "draft-node") -> SavedGraphDocument:
-    return SavedGraphDocument(
+def _document(node_id: str = "draft-node") -> GraphDocument:
+    return GraphDocument(
         nodes=(
-            SavedGraphNode(
+            GraphNode(
                 kind="builtin",
                 id=node_id,
                 operator_id="example.operator",
@@ -358,10 +358,10 @@ async def test_replace_preserves_secret_for_unchanged_unavailable_operator() -> 
 @pytest.mark.parametrize(
     "replacement",
     [
-        SavedGraphDocument(),
-        SavedGraphDocument(
+        GraphDocument(),
+        GraphDocument(
             nodes=(
-                SavedGraphNode(
+                GraphNode(
                     kind="builtin",
                     id="draft-node",
                     operator_id="different.operator",
@@ -371,9 +371,9 @@ async def test_replace_preserves_secret_for_unchanged_unavailable_operator() -> 
                 ),
             )
         ),
-        SavedGraphDocument(
+        GraphDocument(
             nodes=(
-                SavedGraphNode(
+                GraphNode(
                     kind="builtin",
                     id="draft-node",
                     operator_id="example.operator",
@@ -387,7 +387,7 @@ async def test_replace_preserves_secret_for_unchanged_unavailable_operator() -> 
     ids=("node-removed", "operator-changed", "version-changed"),
 )
 async def test_replace_deletes_dormant_secret_when_node_identity_changes(
-    replacement: SavedGraphDocument,
+    replacement: GraphDocument,
 ) -> None:
     factory = FakeSavedGraphUnitOfWorkFactory()
     graph = SavedGraph(workspace_id=WORKSPACE_ID, name="Dormant", document=_document())

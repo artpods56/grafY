@@ -17,14 +17,14 @@ from grafy_core.domain.saved_graphs import (
     GraphPresentationDocument,
     GraphPresentationViewer,
     SavedGraph,
-    SavedGraphArtifactTypeBinding,
-    SavedGraphConversion,
-    SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphInputPlug,
-    SavedGraphNode,
-    SavedGraphOrigin,
-    SavedGraphProjection,
+    GraphArtifactTypeBinding,
+    GraphConversion,
+    GraphDocument,
+    GraphEdge,
+    GraphInputPlug,
+    GraphNode,
+    GraphOrigin,
+    GraphProjection,
     SavedGraphRevision,
     UserGraphState,
 )
@@ -73,10 +73,10 @@ async def database(tmp_path: Path) -> AsyncIterator[Database]:
         await created.dispose()
 
 
-def _document(label: str = "draft") -> SavedGraphDocument:
-    return SavedGraphDocument(
+def _document(label: str = "draft") -> GraphDocument:
+    return GraphDocument(
         nodes=(
-            SavedGraphNode(
+            GraphNode(
                 kind="builtin",
                 id="source",
                 operator_id="text.source",
@@ -84,18 +84,18 @@ def _document(label: str = "draft") -> SavedGraphDocument:
                 config={"text": label},
                 position=GraphPoint(x=12.5, y=24.75),
             ),
-            SavedGraphNode(
+            GraphNode(
                 kind="builtin",
                 id="target",
                 operator_id="text.target",
                 operator_version=2,
                 config={"optional": True},
                 position=GraphPoint(x=310.0, y=24.75),
-                input_plugs=(SavedGraphInputPlug(id="primary-value", port="value"),),
+                input_plugs=(GraphInputPlug(id="primary-value", port="value"),),
             ),
         ),
         edges=(
-            SavedGraphEdge(
+            GraphEdge(
                 id="source-to-target",
                 from_node="source",
                 from_port="result",
@@ -103,9 +103,9 @@ def _document(label: str = "draft") -> SavedGraphDocument:
                 to_port="value",
                 to_plug="primary-value",
                 collection_mode="map",
-                projection=SavedGraphProjection(path=("payload", "text")),
+                projection=GraphProjection(path=("payload", "text")),
                 conversion_path=(
-                    SavedGraphConversion(
+                    GraphConversion(
                         id="example.text.normalize",
                         version=2,
                     ),
@@ -114,7 +114,7 @@ def _document(label: str = "draft") -> SavedGraphDocument:
             ),
         ),
         origins=(
-            SavedGraphOrigin(
+            GraphOrigin(
                 id="target-fallback",
                 to_node="target",
                 to_port="fallback",
@@ -124,7 +124,7 @@ def _document(label: str = "draft") -> SavedGraphDocument:
                     schema_version=1,
                 ),
                 conversion_path=(
-                    SavedGraphConversion(id="example.text.normalize", version=2),
+                    GraphConversion(id="example.text.normalize", version=2),
                 ),
             ),
         ),
@@ -206,7 +206,7 @@ async def test_database_rejects_cross_workspace_folder_assignment(
     graph = SavedGraph(
         workspace_id=WORKSPACE_ID,
         name="Tenant-scoped graph",
-        document=SavedGraphDocument(),
+        document=GraphDocument(),
     )
     foreign_folder = GraphFolder(
         workspace_id=OTHER_WORKSPACE_ID,
@@ -275,7 +275,7 @@ async def test_file_backed_sqlite_round_trips_an_artifact_card_reference(
         workspace_id=WORKSPACE_ID,
         id=UUID("00000000-0000-0000-0000-000000000103"),
         name="Card graph",
-        document=SavedGraphDocument(
+        document=GraphDocument(
             presentation=GraphPresentationDocument(
                 viewers=(
                     GraphPresentationViewer(
@@ -368,14 +368,14 @@ async def test_sql_json_loads_then_updates_current_documents_in_a_fresh_session(
         assert loaded is not None
         assert loaded.document.schema_version == 7
         assert loaded.document.edges[0].conversion_path == (
-            SavedGraphConversion(id="example.text.normalize", version=2),
+            GraphConversion(id="example.text.normalize", version=2),
         )
 
         source, collect = loaded.document.nodes
         bound_collect = collect.model_copy(
             update={
                 "artifact_type_bindings": (
-                    SavedGraphArtifactTypeBinding(
+                    GraphArtifactTypeBinding(
                         variable="T",
                         artifact_type=ArtifactTypeKey("scalar.text", 1),
                     ),
@@ -384,7 +384,7 @@ async def test_sql_json_loads_then_updates_current_documents_in_a_fresh_session(
         )
         loaded.replace(
             name="Updated graph",
-            document=SavedGraphDocument(
+            document=GraphDocument(
                 nodes=(source, bound_collect),
                 edges=loaded.document.edges,
             ),
@@ -420,7 +420,7 @@ async def test_sql_json_loads_then_updates_current_documents_in_a_fresh_session(
 @pytest.mark.asyncio
 async def test_update_persists_new_document_and_revision(database: Database) -> None:
     graph = SavedGraph(
-        workspace_id=WORKSPACE_ID, name="Original", document=SavedGraphDocument()
+        workspace_id=WORKSPACE_ID, name="Original", document=GraphDocument()
     )
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         await unit_of_work.graphs.add(graph)
@@ -507,7 +507,7 @@ async def test_revision_snapshots_round_trip_and_preserve_old_documents(
 @pytest.mark.asyncio
 async def test_delete_removes_saved_graph(database: Database) -> None:
     graph = SavedGraph(
-        workspace_id=WORKSPACE_ID, name="Disposable", document=SavedGraphDocument()
+        workspace_id=WORKSPACE_ID, name="Disposable", document=GraphDocument()
     )
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         await unit_of_work.graphs.add(graph)
@@ -528,7 +528,7 @@ async def test_delete_removes_saved_graph(database: Database) -> None:
 @pytest.mark.asyncio
 async def test_rollback_discards_pending_insert(database: Database) -> None:
     graph = SavedGraph(
-        workspace_id=WORKSPACE_ID, name="Rolled back", document=SavedGraphDocument()
+        workspace_id=WORKSPACE_ID, name="Rolled back", document=GraphDocument()
     )
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
@@ -582,7 +582,7 @@ async def test_concurrent_session_update_raises_concurrent_write_error(
     database: Database,
 ) -> None:
     graph = SavedGraph(
-        workspace_id=WORKSPACE_ID, name="Original", document=SavedGraphDocument()
+        workspace_id=WORKSPACE_ID, name="Original", document=GraphDocument()
     )
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         await unit_of_work.graphs.add(graph)
@@ -597,12 +597,12 @@ async def test_concurrent_session_update_raises_concurrent_write_error(
         assert second_graph is not None
         first_graph.replace(
             name="First",
-            document=SavedGraphDocument(),
+            document=GraphDocument(),
             expected_revision=1,
         )
         second_graph.replace(
             name="Second",
-            document=SavedGraphDocument(),
+            document=GraphDocument(),
             expected_revision=1,
         )
 

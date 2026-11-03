@@ -8,7 +8,7 @@ from uuid import UUID
 
 import pytest
 
-from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_core.domain.saved_graphs import GraphDocument
 from grafy_persistence import schema
 from grafy_persistence.database import Database, create_database
 from grafy_persistence.orm import metadata
@@ -25,8 +25,8 @@ ARTIFACT_ID = UUID("00000000-0000-0000-0000-000000001208")
 NOW = datetime(2026, 8, 24, 10, 0, tzinfo=UTC)
 
 
-def _graph_document() -> SavedGraphDocument:
-    return SavedGraphDocument.model_validate(
+def _graph_document() -> GraphDocument:
+    return GraphDocument.model_validate(
         {
             "nodes": [
                 {

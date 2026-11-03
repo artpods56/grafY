@@ -45,14 +45,14 @@ from grafy_core.domain.saved_graphs import (
     GraphPresentationDocument,
     GraphPresentationLink,
     GraphPresentationViewer,
-    SavedGraphAnnotationLayout,
-    SavedGraphArtifactTypeBinding,
-    SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphInputPlug,
-    SavedGraphNode,
-    SavedGraphNodeLayout,
-    SavedGraphOrigin,
+    GraphAnnotationLayout,
+    GraphArtifactTypeBinding,
+    GraphDocument,
+    GraphEdge,
+    GraphInputPlug,
+    GraphNode,
+    GraphNodeLayout,
+    GraphOrigin,
 )
 
 
@@ -62,8 +62,8 @@ def _node(
     x: float = 0,
     y: float = 0,
     config: dict[str, object] | None = None,
-) -> SavedGraphNode:
-    return SavedGraphNode(
+) -> GraphNode:
+    return GraphNode(
         kind="builtin",
         id=node_id,
         operator_id="example.operator",
@@ -92,7 +92,7 @@ def test_apply_rename_and_add_node() -> None:
 
 def test_apply_rejects_duplicate_node() -> None:
     node = _node()
-    document = SavedGraphDocument(nodes=(node,))
+    document = GraphDocument(nodes=(node,))
     with pytest.raises(CollaborationCommandRejectedError) as exc:
         apply_graph_command(
             name="Graph",
@@ -106,7 +106,7 @@ def test_rename_field_conflict() -> None:
     with pytest.raises(CollaborationCommandRejectedError) as exc:
         apply_graph_command(
             name="Current",
-            document=SavedGraphDocument(),
+            document=GraphDocument(),
             command=RenameGraphCommand(name="Next", expected_name="Stale"),
         )
     assert exc.value.error_code == "field_conflict"
@@ -114,21 +114,21 @@ def test_rename_field_conflict() -> None:
 
 def test_move_remove_update_edge_and_plugs() -> None:
     source = _node("source", x=1, y=2)
-    target = SavedGraphNode(
+    target = GraphNode(
         kind="builtin",
         id="target",
         operator_id="example.operator",
         operator_version=1,
         position=GraphPoint(x=10, y=20),
-        input_plugs=(SavedGraphInputPlug(id="plug-a", port="value"),),
+        input_plugs=(GraphInputPlug(id="plug-a", port="value"),),
         artifact_type_bindings=(
-            SavedGraphArtifactTypeBinding(
+            GraphArtifactTypeBinding(
                 variable="T",
                 artifact_type=ArtifactTypeKey(id="image.raster", schema_version=1),
             ),
         ),
     )
-    edge = SavedGraphEdge(
+    edge = GraphEdge(
         id="e1",
         from_node="source",
         from_port="result",
@@ -137,7 +137,7 @@ def test_move_remove_update_edge_and_plugs() -> None:
         to_plug="plug-a",
         enabled=True,
     )
-    document = SavedGraphDocument(nodes=(source, target), edges=(edge,))
+    document = GraphDocument(nodes=(source, target), edges=(edge,))
 
     _, document = apply_graph_command(
         name="Graph",
@@ -160,7 +160,7 @@ def test_move_remove_update_edge_and_plugs() -> None:
     )
     assert document.nodes[0].config_dict()["text"] == "hello"
 
-    layout = SavedGraphNodeLayout(width=400, body_height=200)
+    layout = GraphNodeLayout(width=400, body_height=200)
     _, document = apply_graph_command(
         name="Graph",
         document=document,
@@ -178,15 +178,15 @@ def test_move_remove_update_edge_and_plugs() -> None:
         command=SetNodeInputPlugsCommand(
             node_id="target",
             input_plugs=(
-                SavedGraphInputPlug(id="plug-a", port="value"),
-                SavedGraphInputPlug(id="plug-b", port="value"),
+                GraphInputPlug(id="plug-a", port="value"),
+                GraphInputPlug(id="plug-b", port="value"),
             ),
             expected_plug_ids=("plug-a",),
         ),
     )
     assert [plug.id for plug in document.nodes[1].input_plugs] == ["plug-a", "plug-b"]
 
-    binding = SavedGraphArtifactTypeBinding(
+    binding = GraphArtifactTypeBinding(
         variable="T",
         artifact_type=ArtifactTypeKey(id="text.value", schema_version=1),
     )
@@ -196,7 +196,7 @@ def test_move_remove_update_edge_and_plugs() -> None:
         command=SetNodeArtifactTypeBindingCommand(
             node_id="target",
             binding=binding,
-            expected_binding=SavedGraphArtifactTypeBinding(
+            expected_binding=GraphArtifactTypeBinding(
                 variable="T",
                 artifact_type=ArtifactTypeKey(id="image.raster", schema_version=1),
             ),
@@ -250,19 +250,19 @@ def test_move_remove_update_edge_and_plugs() -> None:
 
 def test_replacing_input_plugs_drops_wiring_to_removed_plugs() -> None:
     source = _node("source")
-    collect = SavedGraphNode(
+    collect = GraphNode(
         kind="builtin",
         id="collect",
         operator_id="test.sequence.collect",
         operator_version=1,
         position=GraphPoint(x=10, y=20),
         input_plugs=(
-            SavedGraphInputPlug(id="plug-a", port="items"),
-            SavedGraphInputPlug(id="plug-b", port="items"),
-            SavedGraphInputPlug(id="plug-c", port="items"),
+            GraphInputPlug(id="plug-a", port="items"),
+            GraphInputPlug(id="plug-b", port="items"),
+            GraphInputPlug(id="plug-c", port="items"),
         ),
     )
-    edge = SavedGraphEdge(
+    edge = GraphEdge(
         id="e1",
         from_node="source",
         from_port="result",
@@ -277,7 +277,7 @@ def test_replacing_input_plugs_drops_wiring_to_removed_plugs() -> None:
     dropped_origin = _origin("o-dropped", to_node="collect").model_copy(
         update={"to_port": "items", "to_plug": "plug-c"}
     )
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(source, collect),
         edges=(edge,),
         origins=(kept_origin, dropped_origin),
@@ -288,7 +288,7 @@ def test_replacing_input_plugs_drops_wiring_to_removed_plugs() -> None:
         document=document,
         command=SetNodeInputPlugsCommand(
             node_id="collect",
-            input_plugs=(SavedGraphInputPlug(id="plug-a", port="items"),),
+            input_plugs=(GraphInputPlug(id="plug-a", port="items"),),
             expected_plug_ids=("plug-a", "plug-b", "plug-c"),
         ),
     )
@@ -298,8 +298,8 @@ def test_replacing_input_plugs_drops_wiring_to_removed_plugs() -> None:
     assert updated.origins == (kept_origin,)
 
 
-def _origin(origin_id: str = "o1", *, to_node: str = "n1") -> SavedGraphOrigin:
-    return SavedGraphOrigin(
+def _origin(origin_id: str = "o1", *, to_node: str = "n1") -> GraphOrigin:
+    return GraphOrigin(
         id=origin_id,
         to_node=to_node,
         to_port="value",
@@ -312,7 +312,7 @@ def _origin(origin_id: str = "o1", *, to_node: str = "n1") -> SavedGraphOrigin:
 
 
 def test_add_update_and_remove_origins() -> None:
-    document = SavedGraphDocument(nodes=(_node("n1"),))
+    document = GraphDocument(nodes=(_node("n1"),))
     origin = _origin()
 
     _, with_origin = apply_graph_command(
@@ -360,7 +360,7 @@ def test_add_update_and_remove_origins() -> None:
 
 
 def test_remove_nodes_prunes_origins_targeting_removed_nodes() -> None:
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(_node("n1"), _node("n2")),
         origins=(_origin(), _origin("o2", to_node="n2")),
     )
@@ -375,16 +375,16 @@ def test_remove_nodes_prunes_origins_targeting_removed_nodes() -> None:
 
 
 def test_plug_edit_prunes_origins_on_removed_plugs() -> None:
-    target = SavedGraphNode(
+    target = GraphNode(
         kind="builtin",
         id="target",
         operator_id="example.operator",
         operator_version=1,
         position=GraphPoint(x=0, y=0),
-        input_plugs=(SavedGraphInputPlug(id="plug-a", port="value"),),
+        input_plugs=(GraphInputPlug(id="plug-a", port="value"),),
     )
     origin = _origin(to_node="target").model_copy(update={"to_plug": "plug-a"})
-    document = SavedGraphDocument(nodes=(target,), origins=(origin,))
+    document = GraphDocument(nodes=(target,), origins=(origin,))
 
     _, remaining = apply_graph_command(
         name="Graph",
@@ -408,8 +408,8 @@ def test_add_edge_and_sanitize_copy_document() -> None:
             "nested": {"artifact_id": str(uuid4()), "keep": True},
         }
     )
-    document = SavedGraphDocument(nodes=(node,))
-    edge = SavedGraphEdge(
+    document = GraphDocument(nodes=(node,))
+    edge = GraphEdge(
         id="e1",
         from_node="n1",
         from_port="result",
@@ -427,9 +427,9 @@ def test_add_edge_and_sanitize_copy_document() -> None:
     assert "uploads" not in sanitized.nodes[0].config_dict()
     assert sanitized.nodes[0].config_dict()["nested"] == {"keep": True}
 
-    module_document = SavedGraphDocument(
+    module_document = GraphDocument(
         nodes=(
-            SavedGraphNode(
+            GraphNode(
                 kind="module",
                 id="mod",
                 operator_id="graph.module." + str(uuid4()),
@@ -448,7 +448,7 @@ def test_cross_workspace_copy_keeps_an_unsatisfied_artifact_card_reference() -> 
         artifact_id=uuid4(),
         key=ArtifactTypeKey("table.data", 1),
     )
-    document = SavedGraphDocument(
+    document = GraphDocument(
         presentation=GraphPresentationDocument(
             viewers=(
                 GraphPresentationViewer(
@@ -466,7 +466,7 @@ def test_cross_workspace_copy_keeps_an_unsatisfied_artifact_card_reference() -> 
 
 
 def test_command_hmac_digest_is_stable_and_keyed() -> None:
-    command = ReplaceDocumentCommand(name="A", document=SavedGraphDocument())
+    command = ReplaceDocumentCommand(name="A", document=GraphDocument())
     workspace_id = UUID("00000000-0000-0000-0000-000000000001")
     graph_id = UUID("00000000-0000-0000-0000-000000000002")
     actor_id = UUID("00000000-0000-0000-0000-000000000003")
@@ -510,7 +510,7 @@ def test_existing_graph_head_starts_at_sequence_zero() -> None:
         workspace_id=uuid4(),
         graph_id=uuid4(),
         name="Legacy",
-        document=SavedGraphDocument(),
+        document=GraphDocument(),
         checkpoint_revision=4,
     )
     assert head.collaboration_sequence == 0
@@ -520,7 +520,7 @@ def test_existing_graph_head_starts_at_sequence_zero() -> None:
 
 
 def test_schema_builder_compound_updates_config_plugs_and_drops_orphan_edges() -> None:
-    builder = SavedGraphNode(
+    builder = GraphNode(
         kind="builtin",
         id="builder",
         operator_id="schema.builder",
@@ -533,12 +533,12 @@ def test_schema_builder_compound_updates_config_plugs_and_drops_orphan_edges() -
             ]
         },
         input_plugs=(
-            SavedGraphInputPlug(id="title", port="schemas"),
-            SavedGraphInputPlug(id="body", port="schemas"),
+            GraphInputPlug(id="title", port="schemas"),
+            GraphInputPlug(id="body", port="schemas"),
         ),
     )
     source = _node("source")
-    keep_edge = SavedGraphEdge(
+    keep_edge = GraphEdge(
         id="e-keep",
         from_node="source",
         from_port="result",
@@ -546,7 +546,7 @@ def test_schema_builder_compound_updates_config_plugs_and_drops_orphan_edges() -
         to_port="schemas",
         to_plug="title",
     )
-    drop_edge = SavedGraphEdge(
+    drop_edge = GraphEdge(
         id="e-drop",
         from_node="source",
         from_port="result",
@@ -554,7 +554,7 @@ def test_schema_builder_compound_updates_config_plugs_and_drops_orphan_edges() -
         to_port="schemas",
         to_plug="body",
     )
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(source, builder),
         edges=(keep_edge, drop_edge),
     )
@@ -565,8 +565,8 @@ def test_schema_builder_compound_updates_config_plugs_and_drops_orphan_edges() -
         ]
     }
     next_plugs = (
-        SavedGraphInputPlug(id="title", port="schemas"),
-        SavedGraphInputPlug(id="extra", port="schemas"),
+        GraphInputPlug(id="title", port="schemas"),
+        GraphInputPlug(id="extra", port="schemas"),
     )
 
     _, updated = apply_graph_command(
@@ -587,16 +587,16 @@ def test_schema_builder_compound_updates_config_plugs_and_drops_orphan_edges() -
 
 
 def test_schema_builder_compound_rejects_partial_field_conflict() -> None:
-    builder = SavedGraphNode(
+    builder = GraphNode(
         kind="builtin",
         id="builder",
         operator_id="schema.builder",
         operator_version=1,
         position=GraphPoint(x=0, y=0),
         config={"fields": [{"id": "a", "name": "a", "kind": "string"}]},
-        input_plugs=(SavedGraphInputPlug(id="a", port="schemas"),),
+        input_plugs=(GraphInputPlug(id="a", port="schemas"),),
     )
-    document = SavedGraphDocument(nodes=(builder,))
+    document = GraphDocument(nodes=(builder,))
     with pytest.raises(CollaborationCommandRejectedError) as exc:
         apply_graph_command(
             name="Graph",
@@ -617,7 +617,7 @@ def test_schema_builder_compound_rejects_partial_field_conflict() -> None:
 
 
 def test_replace_and_move_artifact_viewers() -> None:
-    document = SavedGraphDocument(nodes=(_node("n1"),))
+    document = GraphDocument(nodes=(_node("n1"),))
     presentation = GraphPresentationDocument(
         viewers=(
             GraphPresentationViewer(
@@ -638,7 +638,7 @@ def test_replace_and_move_artifact_viewers() -> None:
                 id="annotation-1",
                 kind="text",
                 position=GraphPoint(x=1, y=2),
-                layout=SavedGraphAnnotationLayout(width=200, height=100),
+                layout=GraphAnnotationLayout(width=200, height=100),
                 text="hello",
                 color="#B45309",
             ),
@@ -672,21 +672,21 @@ def test_replace_and_move_artifact_viewers() -> None:
 
 
 def test_replace_and_move_annotations() -> None:
-    document = SavedGraphDocument()
+    document = GraphDocument()
     presentation = GraphPresentationDocument(
         annotations=(
             GraphPresentationAnnotation(
                 id="annotation-1",
                 kind="rectangle",
                 position=GraphPoint(x=10, y=20),
-                layout=SavedGraphAnnotationLayout(width=120, height=80),
+                layout=GraphAnnotationLayout(width=120, height=80),
                 color="#0369A1",
             ),
             GraphPresentationAnnotation(
                 id="annotation-2",
                 kind="ellipse",
                 position=GraphPoint(x=40, y=60),
-                layout=SavedGraphAnnotationLayout(width=160, height=160),
+                layout=GraphAnnotationLayout(width=160, height=160),
             ),
         ),
     )
@@ -713,7 +713,7 @@ def test_replace_and_move_annotations() -> None:
 
 
 def test_remove_nodes_prunes_presentation_links() -> None:
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(_node("n1"), _node("n2")),
         presentation=GraphPresentationDocument(
             viewers=(
@@ -742,7 +742,7 @@ def test_remove_nodes_prunes_presentation_links() -> None:
 
 
 def test_duplicate_node_rejects_existing_target_id() -> None:
-    document = SavedGraphDocument(nodes=(_node("source"), _node("copy")))
+    document = GraphDocument(nodes=(_node("source"), _node("copy")))
     with pytest.raises(
         CollaborationCommandRejectedError,
         match="Graph command adds duplicate node copy",
@@ -759,7 +759,7 @@ def test_duplicate_node_rejects_existing_target_id() -> None:
 
 
 def test_update_node_configuration_rejects_stale_field_value() -> None:
-    document = SavedGraphDocument(nodes=(_node("n1", config={"text": "actual"}),))
+    document = GraphDocument(nodes=(_node("n1", config={"text": "actual"}),))
     with pytest.raises(
         CollaborationCommandRejectedError,
         match=r"Configuration field 'text' on node n1 changed",
@@ -778,9 +778,9 @@ def test_update_node_configuration_rejects_stale_field_value() -> None:
 
 
 def test_update_node_layout_rejects_stale_layout() -> None:
-    current = SavedGraphNodeLayout(width=400, body_height=200)
-    stale = SavedGraphNodeLayout(width=300, body_height=200)
-    document = SavedGraphDocument(
+    current = GraphNodeLayout(width=400, body_height=200)
+    stale = GraphNodeLayout(width=300, body_height=200)
+    document = GraphDocument(
         nodes=(_node("n1").model_copy(update={"layout": current}),)
     )
     with pytest.raises(
@@ -792,7 +792,7 @@ def test_update_node_layout_rejects_stale_layout() -> None:
             document=document,
             command=UpdateNodeLayoutCommand(
                 node_id="n1",
-                layout=SavedGraphNodeLayout(width=500, body_height=200),
+                layout=GraphNodeLayout(width=500, body_height=200),
                 expected_layout=stale,
             ),
         )
@@ -801,9 +801,9 @@ def test_update_node_layout_rejects_stale_layout() -> None:
 
 def test_set_node_input_plugs_rejects_stale_plug_ids() -> None:
     node = _node("n1").model_copy(
-        update={"input_plugs": (SavedGraphInputPlug(id="plug-a", port="value"),)}
+        update={"input_plugs": (GraphInputPlug(id="plug-a", port="value"),)}
     )
-    document = SavedGraphDocument(nodes=(node,))
+    document = GraphDocument(nodes=(node,))
     with pytest.raises(
         CollaborationCommandRejectedError,
         match="Input plugs on node n1 changed",
@@ -813,7 +813,7 @@ def test_set_node_input_plugs_rejects_stale_plug_ids() -> None:
             document=document,
             command=SetNodeInputPlugsCommand(
                 node_id="n1",
-                input_plugs=(SavedGraphInputPlug(id="plug-a", port="value"),),
+                input_plugs=(GraphInputPlug(id="plug-a", port="value"),),
                 expected_plug_ids=("plug-stale",),
             ),
         )
@@ -822,9 +822,9 @@ def test_set_node_input_plugs_rejects_stale_plug_ids() -> None:
 
 def test_update_node_configuration_and_input_plugs_rejects_stale_plug_ids() -> None:
     node = _node("n1", config={"text": "keep"}).model_copy(
-        update={"input_plugs": (SavedGraphInputPlug(id="plug-a", port="value"),)}
+        update={"input_plugs": (GraphInputPlug(id="plug-a", port="value"),)}
     )
-    document = SavedGraphDocument(nodes=(node,))
+    document = GraphDocument(nodes=(node,))
     with pytest.raises(
         CollaborationCommandRejectedError,
         match="Input plugs on node n1 changed",
@@ -835,7 +835,7 @@ def test_update_node_configuration_and_input_plugs_rejects_stale_plug_ids() -> N
             command=UpdateNodeConfigurationAndInputPlugsCommand(
                 node_id="n1",
                 config={"text": "next"},
-                input_plugs=(SavedGraphInputPlug(id="plug-a", port="value"),),
+                input_plugs=(GraphInputPlug(id="plug-a", port="value"),),
                 expected_config={"text": "keep"},
                 expected_plug_ids=("plug-stale",),
             ),
@@ -845,12 +845,12 @@ def test_update_node_configuration_and_input_plugs_rejects_stale_plug_ids() -> N
 
 
 def test_set_node_artifact_type_binding_rejects_stale_binding() -> None:
-    bound = SavedGraphArtifactTypeBinding(
+    bound = GraphArtifactTypeBinding(
         variable="T",
         artifact_type=ArtifactTypeKey(id="image.raster", schema_version=1),
     )
     node = _node("n1").model_copy(update={"artifact_type_bindings": (bound,)})
-    document = SavedGraphDocument(nodes=(node,))
+    document = GraphDocument(nodes=(node,))
     with pytest.raises(
         CollaborationCommandRejectedError,
         match=r"Artifact type binding 'T' on node n1 changed",
@@ -860,11 +860,11 @@ def test_set_node_artifact_type_binding_rejects_stale_binding() -> None:
             document=document,
             command=SetNodeArtifactTypeBindingCommand(
                 node_id="n1",
-                binding=SavedGraphArtifactTypeBinding(
+                binding=GraphArtifactTypeBinding(
                     variable="T",
                     artifact_type=ArtifactTypeKey(id="text.value", schema_version=1),
                 ),
-                expected_binding=SavedGraphArtifactTypeBinding(
+                expected_binding=GraphArtifactTypeBinding(
                     variable="T",
                     artifact_type=ArtifactTypeKey(id="text.value", schema_version=1),
                 ),
@@ -875,7 +875,7 @@ def test_set_node_artifact_type_binding_rejects_stale_binding() -> None:
 
 
 def test_clear_node_artifact_type_binding_rejects_stale_binding() -> None:
-    document = SavedGraphDocument(nodes=(_node("n1"),))
+    document = GraphDocument(nodes=(_node("n1"),))
     with pytest.raises(
         CollaborationCommandRejectedError,
         match=r"Artifact type binding 'T' on node n1 changed",
@@ -886,7 +886,7 @@ def test_clear_node_artifact_type_binding_rejects_stale_binding() -> None:
             command=ClearNodeArtifactTypeBindingCommand(
                 node_id="n1",
                 variable="T",
-                expected_binding=SavedGraphArtifactTypeBinding(
+                expected_binding=GraphArtifactTypeBinding(
                     variable="T",
                     artifact_type=ArtifactTypeKey(id="image.raster", schema_version=1),
                 ),
@@ -896,7 +896,7 @@ def test_clear_node_artifact_type_binding_rejects_stale_binding() -> None:
 
 
 def test_add_edge_rejects_duplicate_edge_id() -> None:
-    edge = SavedGraphEdge(
+    edge = GraphEdge(
         id="e1",
         from_node="source",
         from_port="result",
@@ -905,13 +905,11 @@ def test_add_edge_rejects_duplicate_edge_id() -> None:
         to_plug="plug-a",
         enabled=True,
     )
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(
             _node("source"),
             _node("target").model_copy(
-                update={
-                    "input_plugs": (SavedGraphInputPlug(id="plug-a", port="value"),)
-                }
+                update={"input_plugs": (GraphInputPlug(id="plug-a", port="value"),)}
             ),
         ),
         edges=(edge,),
@@ -930,7 +928,7 @@ def test_add_edge_rejects_duplicate_edge_id() -> None:
 
 
 def test_update_edge_rejects_stale_edge() -> None:
-    edge = SavedGraphEdge(
+    edge = GraphEdge(
         id="e1",
         from_node="source",
         from_port="result",
@@ -939,13 +937,11 @@ def test_update_edge_rejects_stale_edge() -> None:
         to_plug="plug-a",
         enabled=True,
     )
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(
             _node("source"),
             _node("target").model_copy(
-                update={
-                    "input_plugs": (SavedGraphInputPlug(id="plug-a", port="value"),)
-                }
+                update={"input_plugs": (GraphInputPlug(id="plug-a", port="value"),)}
             ),
         ),
         edges=(edge,),
@@ -976,7 +972,7 @@ def test_unknown_command_rejects_unsupported_kind() -> None:
     ) as exc:
         apply_graph_command(
             name="Graph",
-            document=SavedGraphDocument(),
+            document=GraphDocument(),
             command=unknown,
         )
     assert exc.value.error_code == "unsupported_command"

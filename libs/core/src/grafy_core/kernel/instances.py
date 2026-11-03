@@ -4,9 +4,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from grafy_core.domain.saved_graphs import (
-    SavedGraphEdge,
-    SavedGraphNode,
-    SavedGraphOrigin,
+    GraphEdge,
+    GraphNode,
+    GraphOrigin,
 )
 
 
@@ -47,7 +47,7 @@ class Connection:
     """
 
     source: InstanceKey
-    edge: SavedGraphEdge
+    edge: GraphEdge
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,9 +61,9 @@ class ExpandedInstance:
     """
 
     key: InstanceKey
-    node: SavedGraphNode
+    node: GraphNode
     connections: tuple[Connection, ...]
-    origins: tuple[SavedGraphOrigin, ...]
+    origins: tuple[GraphOrigin, ...]
     refresh_generation: int = 0
 
 

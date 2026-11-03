@@ -8,9 +8,9 @@ from pydantic import Field, StrictStr, field_validator
 from grafy_core.artifacts import ArtifactTypeKey, NodeConfig
 from grafy_core.domain.saved_graphs import (
     SavedGraph,
-    SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphNode,
+    GraphDocument,
+    GraphEdge,
+    GraphNode,
     SavedGraphRevision,
 )
 
@@ -156,7 +156,7 @@ class GraphModulePort:
 class GraphModuleDefinition:
     reference: GraphModuleReference
     name: str
-    document: SavedGraphDocument
+    document: GraphDocument
     input_ports: tuple[GraphModulePort, ...] = field(init=False)
     output_ports: tuple[GraphModulePort, ...] = field(init=False)
 
@@ -248,8 +248,8 @@ class GraphModuleDefinition:
     ) -> tuple[tuple[GraphModulePort, ...], tuple[GraphModulePort, ...]]:
         input_ports: list[GraphModulePort] = []
         output_ports: list[GraphModulePort] = []
-        incoming_edges: dict[str, list[SavedGraphEdge]] = {}
-        outgoing_edges: dict[str, list[SavedGraphEdge]] = {}
+        incoming_edges: dict[str, list[GraphEdge]] = {}
+        outgoing_edges: dict[str, list[GraphEdge]] = {}
         for edge in self.document.edges:
             if not edge.enabled:
                 continue
@@ -347,7 +347,7 @@ class GraphModuleDefinition:
         self._validate_unique_names("output", output_ports)
         return tuple(input_ports), tuple(output_ports)
 
-    def _validate_boundary_version(self, node: SavedGraphNode) -> None:
+    def _validate_boundary_version(self, node: GraphNode) -> None:
         if node.operator_version != MODULE_BOUNDARY_OPERATOR_VERSION:
             raise self._node_error(
                 node,
@@ -362,7 +362,7 @@ class GraphModuleDefinition:
 
     def _validated_boundary_config[ConfigT: ModuleBoundaryConfig](
         self,
-        node: SavedGraphNode,
+        node: GraphNode,
         config_model: type[ConfigT],
     ) -> ConfigT:
         try:
@@ -370,7 +370,7 @@ class GraphModuleDefinition:
         except ValueError as exc:
             raise self._node_error(node, "has invalid boundary configuration") from exc
 
-    def _bound_artifact_type(self, node: SavedGraphNode) -> ArtifactTypeKey:
+    def _bound_artifact_type(self, node: GraphNode) -> ArtifactTypeKey:
         bindings = node.artifact_type_binding_map()
         binding_names = set(bindings)
         expected_names = {MODULE_ARTIFACT_TYPE_VARIABLE}
@@ -407,7 +407,7 @@ class GraphModuleDefinition:
 
     def _node_error(
         self,
-        node: SavedGraphNode,
+        node: GraphNode,
         message: str,
     ) -> GraphModuleDefinitionError:
         return GraphModuleDefinitionError(

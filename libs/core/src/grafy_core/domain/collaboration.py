@@ -25,13 +25,13 @@ from grafy_core.domain.saved_graphs import (
     GraphPresentationAnnotation,
     GraphPresentationDocument,
     GraphPresentationViewer,
-    SavedGraphArtifactTypeBinding,
-    SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphInputPlug,
-    SavedGraphNode,
-    SavedGraphNodeLayout,
-    SavedGraphOrigin,
+    GraphArtifactTypeBinding,
+    GraphDocument,
+    GraphEdge,
+    GraphInputPlug,
+    GraphNode,
+    GraphNodeLayout,
+    GraphOrigin,
 )
 
 
@@ -108,13 +108,13 @@ class RenameGraphCommand(CollaborationValue):
 
 class AddNodeCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.ADD_NODE] = GraphCommandKind.ADD_NODE
-    node: SavedGraphNode
+    node: GraphNode
 
 
 class DuplicateNodeCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.DUPLICATE_NODE] = GraphCommandKind.DUPLICATE_NODE
     source_node_id: str
-    node: SavedGraphNode
+    node: GraphNode
 
 
 class RemoveNodesCommand(CollaborationValue):
@@ -148,8 +148,8 @@ class UpdateNodeLayoutCommand(CollaborationValue):
         GraphCommandKind.UPDATE_NODE_LAYOUT
     )
     node_id: str
-    layout: SavedGraphNodeLayout | None
-    expected_layout: SavedGraphNodeLayout | None = None
+    layout: GraphNodeLayout | None
+    expected_layout: GraphNodeLayout | None = None
 
 
 class SetNodeInputPlugsCommand(CollaborationValue):
@@ -157,7 +157,7 @@ class SetNodeInputPlugsCommand(CollaborationValue):
         GraphCommandKind.SET_NODE_INPUT_PLUGS
     )
     node_id: str
-    input_plugs: tuple[SavedGraphInputPlug, ...]
+    input_plugs: tuple[GraphInputPlug, ...]
     expected_plug_ids: tuple[str, ...]
 
 
@@ -169,7 +169,7 @@ class UpdateNodeConfigurationAndInputPlugsCommand(CollaborationValue):
     )
     node_id: str
     config: dict[str, object]
-    input_plugs: tuple[SavedGraphInputPlug, ...]
+    input_plugs: tuple[GraphInputPlug, ...]
     expected_config: dict[str, object]
     expected_plug_ids: tuple[str, ...]
 
@@ -179,8 +179,8 @@ class SetNodeArtifactTypeBindingCommand(CollaborationValue):
         GraphCommandKind.SET_NODE_ARTIFACT_TYPE_BINDING
     )
     node_id: str
-    binding: SavedGraphArtifactTypeBinding
-    expected_binding: SavedGraphArtifactTypeBinding | None = None
+    binding: GraphArtifactTypeBinding
+    expected_binding: GraphArtifactTypeBinding | None = None
 
 
 class ClearNodeArtifactTypeBindingCommand(CollaborationValue):
@@ -189,18 +189,18 @@ class ClearNodeArtifactTypeBindingCommand(CollaborationValue):
     )
     node_id: str
     variable: str
-    expected_binding: SavedGraphArtifactTypeBinding
+    expected_binding: GraphArtifactTypeBinding
 
 
 class AddEdgeCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.ADD_EDGE] = GraphCommandKind.ADD_EDGE
-    edge: SavedGraphEdge
+    edge: GraphEdge
 
 
 class UpdateEdgeCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.UPDATE_EDGE] = GraphCommandKind.UPDATE_EDGE
-    edge: SavedGraphEdge
-    expected_edge: SavedGraphEdge
+    edge: GraphEdge
+    expected_edge: GraphEdge
 
 
 class RemoveEdgesCommand(CollaborationValue):
@@ -210,13 +210,13 @@ class RemoveEdgesCommand(CollaborationValue):
 
 class AddOriginCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.ADD_ORIGIN] = GraphCommandKind.ADD_ORIGIN
-    origin: SavedGraphOrigin
+    origin: GraphOrigin
 
 
 class UpdateOriginCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.UPDATE_ORIGIN] = GraphCommandKind.UPDATE_ORIGIN
-    origin: SavedGraphOrigin
-    expected_origin: SavedGraphOrigin
+    origin: GraphOrigin
+    expected_origin: GraphOrigin
 
 
 class RemoveOriginsCommand(CollaborationValue):
@@ -227,7 +227,7 @@ class RemoveOriginsCommand(CollaborationValue):
 class ReplaceDocumentCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.REPLACE_DOCUMENT] = GraphCommandKind.REPLACE_DOCUMENT
     name: str
-    document: SavedGraphDocument
+    document: GraphDocument
 
     @field_validator("name")
     @classmethod
@@ -294,8 +294,8 @@ GraphCommand = Annotated[
 GRAPH_COMMAND_ADAPTER: TypeAdapter[GraphCommand] = TypeAdapter(GraphCommand)
 
 
-def empty_collaborative_document() -> SavedGraphDocument:
-    return SavedGraphDocument()
+def empty_collaborative_document() -> GraphDocument:
+    return GraphDocument()
 
 
 def canonical_command_payload(command: GraphCommand) -> bytes:
@@ -351,7 +351,7 @@ def _field_conflict(message: str) -> CollaborationCommandRejectedError:
     return CollaborationCommandRejectedError(code="field_conflict", message=message)
 
 
-def _node_or_raise(document: SavedGraphDocument, node_id: str) -> SavedGraphNode:
+def _node_or_raise(document: GraphDocument, node_id: str) -> GraphNode:
     for node in document.nodes:
         if node.id == node_id:
             return node
@@ -361,7 +361,7 @@ def _node_or_raise(document: SavedGraphDocument, node_id: str) -> SavedGraphNode
     )
 
 
-def _edge_or_raise(document: SavedGraphDocument, edge_id: str) -> SavedGraphEdge:
+def _edge_or_raise(document: GraphDocument, edge_id: str) -> GraphEdge:
     for edge in document.edges:
         if edge.id == edge_id:
             return edge
@@ -372,9 +372,9 @@ def _edge_or_raise(document: SavedGraphDocument, edge_id: str) -> SavedGraphEdge
 
 
 def _origin_or_raise(
-    document: SavedGraphDocument,
+    document: GraphDocument,
     origin_id: str,
-) -> SavedGraphOrigin:
+) -> GraphOrigin:
     for origin in document.origins:
         if origin.id == origin_id:
             return origin
@@ -385,9 +385,9 @@ def _origin_or_raise(
 
 
 def _binding_for_variable(
-    node: SavedGraphNode,
+    node: GraphNode,
     variable: str,
-) -> SavedGraphArtifactTypeBinding | None:
+) -> GraphArtifactTypeBinding | None:
     for binding in node.artifact_type_bindings:
         if binding.variable == variable:
             return binding
@@ -410,8 +410,8 @@ def _sanitize_config_value(value: object) -> object:
 
 
 def sanitize_document_for_cross_workspace_copy(
-    document: SavedGraphDocument,
-) -> SavedGraphDocument:
+    document: GraphDocument,
+) -> GraphDocument:
     for node in document.nodes:
         if node.operator_id.startswith(GRAPH_MODULE_OPERATOR_PREFIX):
             raise CollaborationCommandRejectedError(
@@ -436,7 +436,7 @@ def sanitize_document_for_cross_workspace_copy(
         bindings=document.presentation.bindings,
         annotations=document.presentation.annotations,
     )
-    return SavedGraphDocument(
+    return GraphDocument(
         nodes=sanitized_nodes,
         edges=document.edges,
         presentation=presentation,
@@ -444,7 +444,7 @@ def sanitize_document_for_cross_workspace_copy(
 
 
 def _viewer_or_raise(
-    document: SavedGraphDocument,
+    document: GraphDocument,
     viewer_id: str,
 ) -> GraphPresentationViewer:
     for viewer in document.presentation.viewers:
@@ -457,7 +457,7 @@ def _viewer_or_raise(
 
 
 def _annotation_or_raise(
-    document: SavedGraphDocument,
+    document: GraphDocument,
     annotation_id: str,
 ) -> GraphPresentationAnnotation:
     for annotation in document.presentation.annotations:
@@ -470,11 +470,11 @@ def _annotation_or_raise(
 
 
 def _surviving_edges_and_origins(
-    document: SavedGraphDocument,
+    document: GraphDocument,
     *,
     node_id: str,
     retained_plug_ids: set[str],
-) -> tuple[tuple[SavedGraphEdge, ...], tuple[SavedGraphOrigin, ...]]:
+) -> tuple[tuple[GraphEdge, ...], tuple[GraphOrigin, ...]]:
     """Return the edges and origins left after a node's input plugs are replaced.
 
     Replacing a node's input plugs is a topology change: edges and origins that
@@ -503,9 +503,9 @@ def _surviving_edges_and_origins(
 def apply_graph_command(
     *,
     name: str,
-    document: SavedGraphDocument,
+    document: GraphDocument,
     command: GraphCommand,
-) -> tuple[str, SavedGraphDocument]:
+) -> tuple[str, GraphDocument]:
     """Apply one authoring command, or reject it with the rule it would break.
 
     Every command leaves the document self-consistent. A command that would
@@ -531,9 +531,9 @@ def apply_graph_command(
 def _apply_graph_command(
     *,
     name: str,
-    document: SavedGraphDocument,
+    document: GraphDocument,
     command: GraphCommand,
-) -> tuple[str, SavedGraphDocument]:
+) -> tuple[str, GraphDocument]:
     if isinstance(command, RenameGraphCommand):
         if name != command.expected_name:
             raise _field_conflict(
@@ -602,7 +602,7 @@ def _apply_graph_command(
                 f"Configuration field {command.field!r} on node "
                 f"{command.node_id} changed"
             )
-        updated_nodes: list[SavedGraphNode] = []
+        updated_nodes: list[GraphNode] = []
         for candidate in document.nodes:
             if candidate.id != command.node_id:
                 updated_nodes.append(candidate)
@@ -869,7 +869,7 @@ class CollaborativeGraphHead:
     checkpoint_sequence: int
     checkpoint_revision: int
     name: str
-    document: SavedGraphDocument
+    document: GraphDocument
     updated_at: datetime = field(default_factory=_utc_now)
 
     def __post_init__(self) -> None:
@@ -897,7 +897,7 @@ class CollaborativeGraphHead:
         self,
         *,
         name: str,
-        document: SavedGraphDocument,
+        document: GraphDocument,
         updated_at: datetime | None = None,
     ) -> None:
         stamp = updated_at or _utc_now()
@@ -938,7 +938,7 @@ class CollaborativeGraphHead:
         workspace_id: UUID,
         graph_id: UUID,
         name: str,
-        document: SavedGraphDocument,
+        document: GraphDocument,
         checkpoint_revision: int,
         room_epoch: UUID | None = None,
         updated_at: datetime | None = None,

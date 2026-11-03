@@ -5,9 +5,9 @@ import sys
 
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
-    SavedGraphDocument,
-    SavedGraphEdge,
-    SavedGraphNode,
+    GraphDocument,
+    GraphEdge,
+    GraphNode,
 )
 
 
@@ -16,9 +16,9 @@ SCRIPT = Path(__file__).resolve().parents[3] / "scripts/audit_builtin_cleanup.py
 
 def test_cleanup_audit_reports_removed_text_operators(tmp_path: Path) -> None:
     path = tmp_path / "graph.json"
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(
-            SavedGraphNode(
+            GraphNode(
                 id="split",
                 kind="builtin",
                 operator_id="text.split",
@@ -26,7 +26,7 @@ def test_cleanup_audit_reports_removed_text_operators(tmp_path: Path) -> None:
                 position=GraphPoint(x=0, y=0),
                 config={"separator": "|"},
             ),
-            SavedGraphNode(
+            GraphNode(
                 id="replace",
                 kind="builtin",
                 operator_id="text.replace",
@@ -36,7 +36,7 @@ def test_cleanup_audit_reports_removed_text_operators(tmp_path: Path) -> None:
             ),
         ),
         edges=(
-            SavedGraphEdge(
+            GraphEdge(
                 id="edge",
                 from_node="split",
                 from_port="parts",
@@ -81,9 +81,9 @@ def test_cleanup_audit_reports_live_collect_dependencies_without_configuration(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "graph.json"
-    document = SavedGraphDocument(
+    document = GraphDocument(
         nodes=(
-            SavedGraphNode(
+            GraphNode(
                 id="input",
                 kind="builtin",
                 operator_id="text.input",
@@ -91,7 +91,7 @@ def test_cleanup_audit_reports_live_collect_dependencies_without_configuration(
                 position=GraphPoint(x=0, y=0),
                 config={"text": "do-not-print"},
             ),
-            SavedGraphNode(
+            GraphNode(
                 id="collect",
                 kind="builtin",
                 operator_id="sequence.collect",
@@ -100,7 +100,7 @@ def test_cleanup_audit_reports_live_collect_dependencies_without_configuration(
             ),
         ),
         edges=(
-            SavedGraphEdge(
+            GraphEdge(
                 id="edge",
                 from_node="input",
                 from_port="text",

@@ -13,10 +13,10 @@ from grafy_core.domain.artifact_outputs import (
 
 if TYPE_CHECKING:
     from grafy_core.domain.saved_graphs import (
-        SavedGraphDocument,
-        SavedGraphEdge,
-        SavedGraphNode,
-        SavedGraphOrigin,
+        GraphDocument,
+        GraphEdge,
+        GraphNode,
+        GraphOrigin,
     )
 
 
@@ -24,7 +24,7 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def _node_execution_signature(node: "SavedGraphNode") -> tuple[object, ...]:
+def _node_execution_signature(node: "GraphNode") -> tuple[object, ...]:
     # JSON keeps booleans, integers, and floats distinct unlike Python equality.
     config = json.dumps(node.config_dict(), sort_keys=True, separators=(",", ":"))
     return (
@@ -44,7 +44,7 @@ def _node_execution_signature(node: "SavedGraphNode") -> tuple[object, ...]:
     )
 
 
-def _incoming_edge_signature(edge: "SavedGraphEdge") -> tuple[object, ...]:
+def _incoming_edge_signature(edge: "GraphEdge") -> tuple[object, ...]:
     projection = None
     if edge.projection is not None:
         projection = tuple(edge.projection.path)
@@ -60,7 +60,7 @@ def _incoming_edge_signature(edge: "SavedGraphEdge") -> tuple[object, ...]:
     )
 
 
-def _incoming_origin_signature(origin: "SavedGraphOrigin") -> tuple[object, ...]:
+def _incoming_origin_signature(origin: "GraphOrigin") -> tuple[object, ...]:
     # The value union carries no discriminator, so compare its exact JSON shape.
     value = json.dumps(
         origin.value.model_dump(mode="json"),
@@ -80,7 +80,7 @@ def _incoming_origin_signature(origin: "SavedGraphOrigin") -> tuple[object, ...]
 
 
 def _incoming_edges_by_target(
-    document: "SavedGraphDocument",
+    document: "GraphDocument",
 ) -> dict[str, tuple[tuple[object, ...], ...]]:
     grouped: dict[str, list[tuple[object, ...]]] = {}
     # Unplugged variadic inputs use saved edge order; explicit plugs own their order.
@@ -101,8 +101,8 @@ def _incoming_edges_by_target(
 
 def materializations_for_compatible_nodes(
     *,
-    previous_document: "SavedGraphDocument",
-    next_document: "SavedGraphDocument",
+    previous_document: "GraphDocument",
+    next_document: "GraphDocument",
     previous_materializations: Sequence["MaterializedNodeOutputs"],
     next_revision: int,
 ) -> list["MaterializedNodeOutputs"]:

@@ -21,7 +21,7 @@ from grafy_core.artifacts import (
 )
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
-    SavedGraphConversion,
+    GraphConversion,
 )
 from grafy_core.nodes import (
     ArtifactTypeVariable,
@@ -347,7 +347,7 @@ def test_builder_writes_a_family_node_as_builtin_without_a_pin() -> None:
     graph.connect(
         text.output("text"),
         markdown.input("markdown"),
-        conversion_path=(SavedGraphConversion(id="text.to_markdown", version=1),),
+        conversion_path=(GraphConversion(id="text.to_markdown", version=1),),
     )
 
     document = graph.build()
@@ -409,12 +409,12 @@ def test_builder_persists_only_an_explicit_catalog_conversion_path() -> None:
     graph.connect(
         text.output("text"),
         markdown.input("markdown"),
-        conversion_path=(SavedGraphConversion(id="text.to_markdown", version=1),),
+        conversion_path=(GraphConversion(id="text.to_markdown", version=1),),
     )
 
     document = graph.build()
     assert document.edges[0].conversion_path == (
-        SavedGraphConversion(id="text.to_markdown", version=1),
+        GraphConversion(id="text.to_markdown", version=1),
     )
 
 
@@ -426,13 +426,13 @@ def test_builder_infers_variable_from_explicit_conversion_result() -> None:
     graph.connect(
         text.output("text"),
         collect.input("items"),
-        conversion_path=(SavedGraphConversion(id="text.to_markdown", version=1),),
+        conversion_path=(GraphConversion(id="text.to_markdown", version=1),),
     )
 
     document = graph.build()
     assert document.nodes[1].artifact_type_binding_map() == {"T": MARKDOWN}
     assert document.edges[0].conversion_path == (
-        SavedGraphConversion(id="text.to_markdown", version=1),
+        GraphConversion(id="text.to_markdown", version=1),
     )
 
 
@@ -445,13 +445,13 @@ def test_builder_rejected_connection_does_not_mutate_graph() -> None:
         graph.connect(
             text.output("text"),
             collect.input("items"),
-            conversion_path=(SavedGraphConversion(id="does.not.exist", version=1),),
+            conversion_path=(GraphConversion(id="does.not.exist", version=1),),
         )
 
     graph.connect(
         text.output("text"),
         collect.input("items"),
-        conversion_path=(SavedGraphConversion(id="text.to_markdown", version=1),),
+        conversion_path=(GraphConversion(id="text.to_markdown", version=1),),
     )
     document = graph.build()
 
@@ -471,7 +471,7 @@ def test_builder_requires_an_explicit_binding_when_both_variables_are_unresolved
         graph.connect(
             source.output("items"),
             target.input("items"),
-            conversion_path=(SavedGraphConversion(id="text.to_markdown", version=1),),
+            conversion_path=(GraphConversion(id="text.to_markdown", version=1),),
         )
 
 

@@ -14,7 +14,7 @@ from sqlalchemy import (
 from sqlalchemy import Uuid as SaUuid
 
 from grafy_persistence.column_types import (
-    SavedGraphDocumentType,
+    GraphDocumentType,
     UTCDateTime,
 )
 
@@ -60,7 +60,7 @@ saved_graphs = Table(
         nullable=True,
     ),
     Column("name", String(160), nullable=False),
-    Column("document", SavedGraphDocumentType(), nullable=False),
+    Column("document", GraphDocumentType(), nullable=False),
     Column("revision", Integer, nullable=False, default=1),
     Column("created_at", UTCDateTime(), nullable=False),
     Column("updated_at", UTCDateTime(), nullable=False),
@@ -85,7 +85,7 @@ saved_graph_revisions = Table(
     ),
     Column("revision", Integer, primary_key=True),
     Column("name", String(160), nullable=False),
-    Column("document", SavedGraphDocumentType(), nullable=False),
+    Column("document", GraphDocumentType(), nullable=False),
     Column("created_at", UTCDateTime(), nullable=False),
     ForeignKeyConstraint(
         ("workspace_id", "graph_id"),
@@ -203,7 +203,7 @@ collaborative_graph_heads = Table(
     Column("checkpoint_sequence", Integer, nullable=False),
     Column("checkpoint_revision", Integer, nullable=False),
     Column("name", String(160), nullable=False),
-    Column("document", SavedGraphDocumentType(), nullable=False),
+    Column("document", GraphDocumentType(), nullable=False),
     Column("updated_at", UTCDateTime(), nullable=False),
     CheckConstraint(
         "collaboration_sequence >= 0",

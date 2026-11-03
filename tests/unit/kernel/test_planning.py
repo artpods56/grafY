@@ -28,7 +28,7 @@ from grafy_core.kernel.scheduler import (
     Scheduler,
     build_scheduler,
 )
-from grafy_core.domain.saved_graphs import SavedGraphNode
+from grafy_core.domain.saved_graphs import GraphNode
 from tests.unit.kernel.builders import (
     ExpandedGraphBuilder,
     FakeFacts,
@@ -55,7 +55,7 @@ def _fingerprints(graph: ExpandedGraph) -> dict[InstanceKey, str]:
     return compute_fingerprints(graph, FakeFacts())
 
 
-def _value_node(node_id: str, value: int) -> SavedGraphNode:
+def _value_node(node_id: str, value: int) -> GraphNode:
     # Distinct config per node: unconnected nodes must not share a fingerprint.
     return make_node(node_id, config={"value": value})
 

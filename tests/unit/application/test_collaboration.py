@@ -40,9 +40,9 @@ from grafy_core.domain.identity import (
 from grafy_core.domain.saved_graphs import (
     GraphPoint,
     SavedGraph,
-    SavedGraphDocument,
-    SavedGraphInputPlug,
-    SavedGraphNode,
+    GraphDocument,
+    GraphInputPlug,
+    GraphNode,
     SavedGraphRevision,
 )
 from grafy_core.domain.security_audit import (
@@ -361,9 +361,7 @@ def _clone_head(head: CollaborativeGraphHead) -> CollaborativeGraphHead:
         checkpoint_sequence=head.checkpoint_sequence,
         checkpoint_revision=head.checkpoint_revision,
         name=head.name,
-        document=SavedGraphDocument.model_validate(
-            head.document.model_dump(mode="json")
-        ),
+        document=GraphDocument.model_validate(head.document.model_dump(mode="json")),
         updated_at=head.updated_at,
     )
 
@@ -374,9 +372,7 @@ def _clone_graph(graph: SavedGraph) -> SavedGraph:
         created_by_user_id=graph.created_by_user_id,
         id=graph.id,
         name=graph.name,
-        document=SavedGraphDocument.model_validate(
-            graph.document.model_dump(mode="json")
-        ),
+        document=GraphDocument.model_validate(graph.document.model_dump(mode="json")),
         revision=graph.revision,
         created_at=graph.created_at,
         updated_at=graph.updated_at,
@@ -389,7 +385,7 @@ def _clone_revision(revision: SavedGraphRevision) -> SavedGraphRevision:
         graph_id=revision.graph_id,
         revision=revision.revision,
         name=revision.name,
-        document=SavedGraphDocument.model_validate(
+        document=GraphDocument.model_validate(
             revision.document.model_dump(mode="json")
         ),
         created_at=revision.created_at,
@@ -458,7 +454,7 @@ async def test_reading_canonical_head_does_not_reinitialize_it() -> None:
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Canonical", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Canonical", document=GraphDocument()),
     )
     first = await service.get_head(
         actor=ActorContext(user_id=USER_ID),
@@ -483,9 +479,9 @@ async def test_bootstrap_graph_commits_head_checkpoint_and_receipt() -> None:
     graph_id = uuid4()
     command = ReplaceDocumentCommand(
         name="  Bootstrapped  ",
-        document=SavedGraphDocument(
+        document=GraphDocument(
             nodes=(
-                SavedGraphNode(
+                GraphNode(
                     kind="builtin",
                     id="n1",
                     operator_id="example.operator",
@@ -538,7 +534,7 @@ async def test_accept_command_advances_sequence_without_checkpoint() -> None:
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
         graph_id=graph_id,
     )
 
@@ -569,7 +565,7 @@ async def test_accept_command_idempotent_replay_and_mismatch() -> None:
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
         graph_id=graph_id,
     )
     command = RenameGraphCommand(name="Once", expected_name="Draft")
@@ -619,7 +615,7 @@ async def test_checkpoint_advances_saved_revision_and_preserves_secrets() -> Non
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
         graph_id=graph_id,
     )
     head, _ = await service.accept_command(
@@ -672,7 +668,7 @@ async def test_replace_complete_document_resets_epoch_when_checkpointed() -> Non
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Original", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Original", document=GraphDocument()),
         graph_id=graph_id,
     )
     prior_epoch = head.room_epoch
@@ -682,9 +678,9 @@ async def test_replace_complete_document_resets_epoch_when_checkpointed() -> Non
         workspace_id=WORKSPACE_ID,
         graph_id=graph_id,
         name="Replaced",
-        document=SavedGraphDocument(
+        document=GraphDocument(
             nodes=(
-                SavedGraphNode(
+                GraphNode(
                     kind="builtin",
                     id="n1",
                     operator_id="example.operator",
@@ -729,7 +725,7 @@ async def test_replace_complete_document_rejects_uncheckpointed_head() -> None:
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
         graph_id=graph_id,
     )
     await service.accept_command(
@@ -748,7 +744,7 @@ async def test_replace_complete_document_rejects_uncheckpointed_head() -> None:
             workspace_id=WORKSPACE_ID,
             graph_id=graph_id,
             name="Nope",
-            document=SavedGraphDocument(),
+            document=GraphDocument(),
             expected_revision=graph.revision,
         )
 
@@ -762,7 +758,7 @@ async def test_delete_graph_removes_head_and_graph() -> None:
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Delete me", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Delete me", document=GraphDocument()),
         graph_id=graph_id,
     )
 
@@ -786,7 +782,7 @@ async def test_delete_graph_rejects_uncheckpointed_legacy_delete() -> None:
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
         graph_id=graph_id,
     )
     await service.accept_command(
@@ -817,7 +813,7 @@ async def test_delete_graph_rejects_active_execution() -> None:
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Busy", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Busy", document=GraphDocument()),
         graph_id=graph_id,
     )
     execution_id = uuid4()
@@ -843,7 +839,7 @@ async def test_get_head_returns_live_document() -> None:
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Live", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Live", document=GraphDocument()),
         graph_id=graph_id,
     )
 
@@ -863,7 +859,7 @@ async def test_accept_command_rebases_move_against_newer_head() -> None:
     factory = FakeFactory()
     service = _service(factory)
     graph_id = uuid4()
-    node = SavedGraphNode(
+    node = GraphNode(
         kind="builtin",
         id="n1",
         operator_id="example.operator",
@@ -876,7 +872,7 @@ async def test_accept_command_rebases_move_against_newer_head() -> None:
         command_id=uuid4(),
         command=ReplaceDocumentCommand(
             name="Draft",
-            document=SavedGraphDocument(nodes=(node,)),
+            document=GraphDocument(nodes=(node,)),
         ),
         graph_id=graph_id,
     )
@@ -916,7 +912,7 @@ async def test_accept_command_rejects_stale_rename_with_field_conflict() -> None
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
         graph_id=graph_id,
     )
     observed_sequence = head.collaboration_sequence
@@ -955,9 +951,9 @@ async def test_copy_exact_head_bootstraps_target_without_source_secrets() -> Non
         command_id=uuid4(),
         command=ReplaceDocumentCommand(
             name="Source",
-            document=SavedGraphDocument(
+            document=GraphDocument(
                 nodes=(
-                    SavedGraphNode(
+                    GraphNode(
                         kind="builtin",
                         id="n1",
                         operator_id="example.operator",
@@ -1010,7 +1006,7 @@ async def test_copy_exact_head_rejects_moved_source() -> None:
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Source", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Source", document=GraphDocument()),
         graph_id=source_graph_id,
     )
     expected_room_epoch = source_head.room_epoch
@@ -1046,7 +1042,7 @@ async def test_delete_graph_collaboration_aware_discards_uncheckpointed() -> Non
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
         graph_id=graph_id,
     )
     head, _ = await service.accept_command(
@@ -1084,7 +1080,7 @@ async def test_accept_command_audits_capability_denied_and_idempotency_mismatch(
         created_by_user_id=USER_ID,
         id=graph_id,
         name="View only",
-        document=SavedGraphDocument(),
+        document=GraphDocument(),
         revision=1,
     )
     viewer_factory.collaboration.heads[(WORKSPACE_ID, graph_id)] = (
@@ -1092,7 +1088,7 @@ async def test_accept_command_audits_capability_denied_and_idempotency_mismatch(
             workspace_id=WORKSPACE_ID,
             graph_id=graph_id,
             name="View only",
-            document=SavedGraphDocument(),
+            document=GraphDocument(),
             checkpoint_revision=1,
         )
     )
@@ -1127,7 +1123,7 @@ async def test_accept_command_audits_capability_denied_and_idempotency_mismatch(
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
         graph_id=graph_id,
     )
     command_id = uuid4()
@@ -1168,7 +1164,7 @@ async def test_verify_every_graph_has_head_fails_closed_on_gap() -> None:
         workspace_id=WORKSPACE_ID,
         created_by_user_id=USER_ID,
         name="Orphan",
-        document=SavedGraphDocument(),
+        document=GraphDocument(),
         revision=1,
     )
     factory.graphs.graphs[graph.id] = graph
@@ -1188,7 +1184,7 @@ async def test_verify_every_graph_has_head_accepts_canonical_creation() -> None:
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Canonical", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Canonical", document=GraphDocument()),
     )
     await service.verify_every_graph_has_head()
     assert factory.created[-1].commit_count == 0
@@ -1205,9 +1201,9 @@ async def test_checkpoint_commit_failure_rolls_back_partial_state() -> None:
         command_id=uuid4(),
         command=ReplaceDocumentCommand(
             name="Draft",
-            document=SavedGraphDocument(
+            document=GraphDocument(
                 nodes=(
-                    SavedGraphNode(
+                    GraphNode(
                         kind="builtin",
                         id="node",
                         operator_id="example.operator",
@@ -1295,7 +1291,7 @@ async def test_checkpoint_versus_replace_serializes_without_partial_state() -> N
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
         graph_id=graph_id,
     )
     head, _ = await service.accept_command(
@@ -1314,7 +1310,7 @@ async def test_checkpoint_versus_replace_serializes_without_partial_state() -> N
             workspace_id=WORKSPACE_ID,
             graph_id=graph_id,
             name="Replace while dirty",
-            document=SavedGraphDocument(),
+            document=GraphDocument(),
             expected_revision=graph.revision,
         )
 
@@ -1337,7 +1333,7 @@ async def test_checkpoint_versus_replace_serializes_without_partial_state() -> N
         workspace_id=WORKSPACE_ID,
         graph_id=graph_id,
         name="Safe replace",
-        document=SavedGraphDocument(),
+        document=GraphDocument(),
         expected_revision=revision,
     )
 
@@ -1358,16 +1354,16 @@ async def test_workspace_qualified_mutations_leave_no_cross_workspace_state() ->
         command_id=uuid4(),
         command=ReplaceDocumentCommand(
             name="Source",
-            document=SavedGraphDocument(
+            document=GraphDocument(
                 nodes=(
-                    SavedGraphNode(
+                    GraphNode(
                         kind="builtin",
                         id="n1",
                         operator_id="example.operator",
                         operator_version=1,
                         position=GraphPoint(x=1, y=1),
                         config={"fields": [{"id": "a", "name": "a", "kind": "string"}]},
-                        input_plugs=(SavedGraphInputPlug(id="a", port="schemas"),),
+                        input_plugs=(GraphInputPlug(id="a", port="schemas"),),
                     ),
                 )
             ),
@@ -1442,7 +1438,7 @@ async def test_copy_locks_workspaces_in_global_order(reverse: bool) -> None:
         actor=ActorContext(user_id=USER_ID),
         workspace_id=source_id,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Source", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Source", document=GraphDocument()),
     )
     factory.identity.locked_workspaces.clear()
     copied, _, _ = await service.copy_exact_head(
@@ -1470,7 +1466,7 @@ async def test_collaboration_rechecks_identity_before_mutating_and_audits_denial
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Original", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Original", document=GraphDocument()),
     )
     if disabled_user:
         factory.user.active = False
@@ -1512,7 +1508,7 @@ async def test_graph_creation_rolls_back_when_initial_checkpoint_cannot_be_stage
             workspace_id=WORKSPACE_ID,
             command_id=uuid4(),
             command=ReplaceDocumentCommand(
-                name="Rolled back", document=SavedGraphDocument()
+                name="Rolled back", document=GraphDocument()
             ),
         )
     assert factory.graphs.graphs == {}
@@ -1533,14 +1529,14 @@ async def test_complete_graph_mutation_commits_graph_and_head_together(
         actor=ActorContext(user_id=USER_ID),
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Original", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Original", document=GraphDocument()),
         graph_id=uuid4(),
     )
     original_snapshot = factory.graphs.revisions[(graph.id, 1)]
     original_epoch = original_head.room_epoch
-    replacement = SavedGraphDocument(
+    replacement = GraphDocument(
         nodes=(
-            SavedGraphNode(
+            GraphNode(
                 kind="builtin",
                 id="replacement",
                 operator_id="example.operator",
@@ -1602,7 +1598,7 @@ async def test_complete_graph_mutation_conflict_restores_graph_and_checkpoint(
         workspace_id=WORKSPACE_ID,
         command_id=uuid4(),
         graph_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Original", document=SavedGraphDocument()),
+        command=ReplaceDocumentCommand(name="Original", document=GraphDocument()),
     )
     original_snapshot = graph.snapshot()
     original_head = _clone_head(head)
@@ -1621,7 +1617,7 @@ async def test_complete_graph_mutation_conflict_restores_graph_and_checkpoint(
                 workspace_id=WORKSPACE_ID,
                 graph_id=graph.id,
                 name="Changed",
-                document=SavedGraphDocument(),
+                document=GraphDocument(),
                 expected_revision=expected_revision,
             )
         else:
@@ -1664,7 +1660,7 @@ async def test_complete_graph_mutation_rejects_missing_graph_without_committing(
                 workspace_id=WORKSPACE_ID,
                 graph_id=graph_id,
                 name="Missing",
-                document=SavedGraphDocument(),
+                document=GraphDocument(),
                 expected_revision=1,
             )
         else:
