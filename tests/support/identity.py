@@ -18,10 +18,13 @@ from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 
+from tests.support.identity_constants import (
+    TEST_COMMAND_HMAC_KEY as TEST_COMMAND_HMAC_KEY,
+)
+
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")
 TEST_USER_ID = UUID(int=1)
-TEST_COMMAND_HMAC_KEY = "test-api-command-hmac-key"
 
 
 def workspace_api_path(suffix: str) -> str:

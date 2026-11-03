@@ -12,8 +12,6 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import ConnectionPoolEntry
 
-from grafy_persistence.orm import start_mappers
-
 
 def _configure_sqlite_connection(
     connection: DBAPIConnection,
@@ -53,6 +51,8 @@ def prepare_database_url(database_url: str) -> str:
 
 
 def create_database(database_url: str) -> Database:
+    from grafy_persistence.orm import start_mappers
+
     start_mappers()
     prepared_database_url = prepare_database_url(database_url)
     url = make_url(prepared_database_url)

@@ -6,7 +6,7 @@ from pydantic import SecretStr
 from grafy_shared.config import AppConfig, AuthConfig
 
 from grafy_api.settings import Settings
-from tests.support.identity import TEST_COMMAND_HMAC_KEY
+from tests.support.identity_constants import TEST_COMMAND_HMAC_KEY
 
 # Builtin families are installed by the application; no test discovers a Plugin
 # from disk, so there is nothing to isolate here.

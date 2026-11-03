@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from grafy_api.settings import get_settings
 from grafy_persistence.database import prepare_database_url
-from grafy_persistence.orm import metadata, start_mappers
+from grafy_persistence.schema import metadata
 
 
 config = context.config
@@ -16,7 +16,6 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-start_mappers()
 target_metadata = metadata
 
 
