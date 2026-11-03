@@ -8,7 +8,7 @@ from starlette.testclient import TestClient
 
 from grafy_api.v1.routes.auth.services import IssuedSession
 from tests.support.clients.auth import AuthApi
-from tests.support.clients.saved_graphs import GraphBrowserApi
+from tests.support.clients.projects import ProjectBrowserApi
 from tests.support.clients.workspaces import WorkspaceApi, WorkspacesApi
 
 
@@ -20,13 +20,13 @@ class GrafyApi:
     headers, or routes the facade does not cover yet.
     """
 
-    __slots__ = ("raw", "auth", "workspaces", "graph_browser")
+    __slots__ = ("raw", "auth", "workspaces", "project_browser")
 
     def __init__(self, client: TestClient) -> None:
         self.raw = client
         self.auth = AuthApi(client)
         self.workspaces = WorkspacesApi(client)
-        self.graph_browser = GraphBrowserApi(client)
+        self.project_browser = ProjectBrowserApi(client)
 
     def authenticate(self, issued: IssuedSession) -> None:
         """Install browser session cookies obtained from ``issue_session``."""

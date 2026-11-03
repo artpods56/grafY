@@ -53,7 +53,9 @@ class NodeSecretResolutionResponse(NodeSecretApiModel):
         )
 
 
-class GraphNodeSecretsResponse(NodeSecretApiModel):
+class ProjectNodeSecretsResponse(NodeSecretApiModel):
+    """Secret status for one Graph of a Project's live head."""
+
     project_id: UUID
     graph_id: str
     head_sequence: int

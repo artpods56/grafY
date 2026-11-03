@@ -22,10 +22,8 @@ from grafy_api.v1.routes.workspaces.models import (
 from tests.support.clients._http import _expect, _parse, _parse_list, _request
 from tests.support.clients.artifacts import ArtifactsApi
 from tests.support.clients.catalog import CatalogApi
-from tests.support.clients.executions import ExecutionsApi
-from tests.support.clients.modules import ModulesApi
 from tests.support.clients.node_secrets import NodeSecretsApi
-from tests.support.clients.saved_graphs import GraphFoldersApi, SavedGraphsApi
+from tests.support.clients.projects import ProjectFoldersApi, ProjectsApi
 from tests.support.clients.uploads import UploadsApi
 
 
@@ -41,24 +39,16 @@ class WorkspaceApi:
     # -- scoped clients ------------------------------------------------------
 
     @property
-    def graphs(self) -> SavedGraphsApi:
-        return SavedGraphsApi(self._client, self._workspace_id)
+    def projects(self) -> ProjectsApi:
+        return ProjectsApi(self._client, self._workspace_id)
 
     @property
-    def graph_folders(self) -> GraphFoldersApi:
-        return GraphFoldersApi(self._client, self._workspace_id)
-
-    @property
-    def executions(self) -> ExecutionsApi:
-        return ExecutionsApi(self._client, self._workspace_id)
+    def project_folders(self) -> ProjectFoldersApi:
+        return ProjectFoldersApi(self._client, self._workspace_id)
 
     @property
     def artifacts(self) -> ArtifactsApi:
         return ArtifactsApi(self._client, self._workspace_id)
-
-    @property
-    def modules(self) -> ModulesApi:
-        return ModulesApi(self._client, self._workspace_id)
 
     @property
     def catalog(self) -> CatalogApi:

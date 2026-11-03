@@ -9,11 +9,8 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
-from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY
 from grafy_workbench.table.persistence import TableArtifactWriter
-from grafy_persistence.database import create_database
-from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 from grafy_shared.config import AppConfig
 
@@ -43,30 +40,21 @@ def builtin_client(tmp_path: Path) -> Iterator[TestClient]:
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'api.sqlite3'}"
     asyncio.run(create_schema(database_url))
     deployment = build_selected_system_plugin_deployment()
-    registry = deployment.registry
-    saved_graph_database = create_database(database_url)
-    saved_graphs = SavedGraphService(
-        lambda: SqlAlchemyUnitOfWork(saved_graph_database.sessions),
-        registry,
-    )
     components = build_workbench_components(
-        plugin_registry=registry,
+        plugin_registry=deployment.registry,
         workspace=tmp_path / "workbench",
-        saved_graphs=saved_graphs,
+        unit_of_work=InMemoryUnitOfWork(),
     )
-    try:
-        with client_with_overrides(
-            settings=Settings(
-                app=AppConfig(
-                    workspace=tmp_path / "workbench",
-                    database_url=SecretStr(database_url),
-                )
-            ),
-            overrides=workbench_dependency_overrides(components),
-        ) as client:
-            yield client
-    finally:
-        asyncio.run(saved_graph_database.dispose())
+    with client_with_overrides(
+        settings=Settings(
+            app=AppConfig(
+                workspace=tmp_path / "workbench",
+                database_url=SecretStr(database_url),
+            )
+        ),
+        overrides=workbench_dependency_overrides(components),
+    ) as client:
+        yield client
 
 
 @pytest.fixture
@@ -142,6 +130,7 @@ def structural_projection_client(tmp_path: Path) -> Iterator[TestClient]:
     components = build_workbench_components(
         plugin_registry=registry,
         workspace=tmp_path / "workbench",
+        unit_of_work=InMemoryUnitOfWork(),
     )
     with client_with_overrides(
         settings=Settings(

@@ -10,10 +10,11 @@ from grafy_core.domain.collaboration import (
 )
 from grafy_core.domain.identity import WorkspaceKind
 from grafy_core.domain.projects import (
+    Project,
     ProjectBrowserItem,
+    ProjectCheckpoint,
     ProjectFolder,
     ProjectOrganization,
-    Project,
     UserProjectState,
 )
 from grafy_core.kernel.project import ProjectDocument
@@ -22,6 +23,7 @@ from pydantic import (
     ConfigDict,
     Field,
     field_validator,
+    model_validator,
 )
 
 
@@ -43,6 +45,16 @@ class CreateProjectRequest(ProjectApiModel):
     @classmethod
     def normalize_name(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def require_replay_pair(self) -> "CreateProjectRequest":
+        """A replayable creation needs the id a retry would find the receipt under."""
+
+        if self.command_id is not None and self.project_id is None:
+            raise ValueError(
+                "command_id is only accepted together with an explicit project_id"
+            )
+        return self
 
 
 class ProjectResponse(ProjectApiModel):
@@ -314,6 +326,58 @@ class CheckpointProjectRequest(ProjectApiModel):
 class CheckpointProjectResponse(ProjectApiModel):
     head: ProjectHeadResponse
     checkpoint_revision: int
+
+
+class ProjectCheckpointSummaryResponse(ProjectApiModel):
+    """One retained checkpoint without its document."""
+
+    revision: int
+    name: str
+    created_at: datetime
+
+    @classmethod
+    def from_checkpoint(
+        cls,
+        checkpoint: ProjectCheckpoint,
+    ) -> "ProjectCheckpointSummaryResponse":
+        return cls(
+            revision=checkpoint.revision,
+            name=checkpoint.name,
+            created_at=checkpoint.created_at,
+        )
+
+
+class ProjectCheckpointListResponse(ProjectApiModel):
+    checkpoints: list[ProjectCheckpointSummaryResponse]
+
+    @classmethod
+    def from_checkpoints(
+        cls, checkpoints: list[ProjectCheckpoint]
+    ) -> "ProjectCheckpointListResponse":
+        return cls(
+            checkpoints=[
+                ProjectCheckpointSummaryResponse.from_checkpoint(checkpoint)
+                for checkpoint in checkpoints
+            ]
+        )
+
+
+class ProjectCheckpointResponse(ProjectCheckpointSummaryResponse):
+    """One retained checkpoint with the exact document it froze."""
+
+    document: ProjectDocument
+
+    @classmethod
+    def from_checkpoint(  # type: ignore[override]
+        cls,
+        checkpoint: ProjectCheckpoint,
+    ) -> "ProjectCheckpointResponse":
+        return cls(
+            revision=checkpoint.revision,
+            name=checkpoint.name,
+            created_at=checkpoint.created_at,
+            document=checkpoint.document,
+        )
 
 
 class CopyExactHeadRequest(ProjectApiModel):
