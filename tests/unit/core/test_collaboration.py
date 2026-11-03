@@ -39,7 +39,7 @@ from grafy_core.domain.collaboration import (
     sanitize_document_for_cross_workspace_copy,
 )
 from grafy_core.domain.errors import CollaborationCommandRejectedError
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphPoint,
     GraphPresentationAnnotation,
     GraphPresentationDocument,

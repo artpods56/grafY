@@ -26,7 +26,7 @@ from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.domain.module_library import Module, ModuleRelease
 from grafy_core.domain.node_secrets import EncryptedNodeSecret
 from grafy_core.domain.collaboration import CollaborativeGraphHead
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphFolder,
     GraphOrganization,
     SavedGraph,

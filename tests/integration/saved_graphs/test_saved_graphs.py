@@ -14,7 +14,7 @@ from grafy_api.graph_contracts import (
 from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.collaboration import RemoveNodesCommand, RenameGraphCommand
 from grafy_core.domain.identity import ActorContext
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphPoint,
     GraphPresentationDocument,
     GraphPresentationViewer,

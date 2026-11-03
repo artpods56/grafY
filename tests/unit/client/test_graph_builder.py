@@ -19,7 +19,7 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphPoint,
     GraphConversion,
 )

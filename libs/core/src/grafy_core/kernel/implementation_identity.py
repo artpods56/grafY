@@ -20,7 +20,7 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Final, cast
 
-from grafy_core.domain.saved_graphs import GraphNode
+from grafy_core.domain.graph_documents import GraphNode
 from grafy_core.plugins import PluginRegistry
 
 #: Deployment-wide epoch. Bump it by hand to invalidate every stored result.

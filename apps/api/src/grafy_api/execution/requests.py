@@ -13,7 +13,7 @@ from grafy_core.conversions import MAX_ARTIFACT_CONVERSION_HOPS
 from grafy_core.domain.execution_history import (
     GraphExecutionScope,
 )
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     SavedGraph,
     SavedGraphRevision,
     GraphNodeKind,

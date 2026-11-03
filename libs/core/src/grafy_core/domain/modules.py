@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import Field, StrictStr, field_validator
 
 from grafy_core.artifacts import ArtifactTypeKey, NodeConfig
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     SavedGraph,
     GraphDocument,
     GraphEdge,

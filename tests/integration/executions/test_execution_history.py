@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, text
 
 from grafy_core.application.graph_creation import stage_checkpointed_graph
 from grafy_core.domain.execution_history import GraphExecution
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphPoint,
     SavedGraph,
     GraphDocument,

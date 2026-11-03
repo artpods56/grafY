@@ -7,7 +7,7 @@ from grafy_core.domain.artifact_outputs import (
     artifact_outputs_from_storage,
     artifact_outputs_to_storage,
 )
-from grafy_core.domain.saved_graphs import GraphDocument
+from grafy_core.domain.graph_documents import GraphDocument
 from pydantic import BaseModel
 from sqlalchemy import (
     JSON,

@@ -22,7 +22,7 @@ from grafy_core.domain.node_secrets import (
     canonical_node_secret_dependencies,
     node_secret_dependency_sha256,
 )
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     SavedGraph,
     GraphNode,
     SavedGraphRevision,

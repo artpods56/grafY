@@ -21,7 +21,7 @@ from grafy_core.artifacts import (
 
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphPoint,
     GraphArtifactTypeBinding,
     GraphDocument,

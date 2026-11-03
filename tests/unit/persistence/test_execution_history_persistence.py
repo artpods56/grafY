@@ -22,7 +22,7 @@ from grafy_core.domain.execution_history import (
     GraphExecutionNodeResult,
     GraphExecutionStatus,
 )
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     SavedGraph,
     GraphDocument,
     SavedGraphRevision,

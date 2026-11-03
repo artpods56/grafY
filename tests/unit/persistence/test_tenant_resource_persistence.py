@@ -11,7 +11,7 @@ from grafy_core.domain.execution_history import GraphExecution
 from grafy_core.domain.invocation_cache import InvocationCacheEntry
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
 from grafy_core.domain.node_secrets import EncryptedNodeSecret
-from grafy_core.domain.saved_graphs import SavedGraph, GraphDocument
+from grafy_core.domain.graph_documents import SavedGraph, GraphDocument
 from grafy_core.domain.uploads import Upload
 from grafy_persistence.database import Database, create_database
 from grafy_persistence.orm import metadata

@@ -28,7 +28,7 @@ from grafy_core.kernel.scheduler import (
     Scheduler,
     build_scheduler,
 )
-from grafy_core.domain.saved_graphs import GraphNode
+from grafy_core.domain.graph_documents import GraphNode
 from tests.unit.kernel.builders import (
     ExpandedGraphBuilder,
     FakeFacts,

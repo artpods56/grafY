@@ -14,7 +14,7 @@ from collections.abc import Mapping, Sequence
 import pytest
 
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphDocument,
     GraphEdge,
     GraphNode,

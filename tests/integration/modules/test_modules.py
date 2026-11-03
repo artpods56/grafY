@@ -17,7 +17,7 @@ from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.domain.errors import NotFoundError, UserDisabledError
 from grafy_core.domain.identity import ActorContext
 from grafy_core.domain.modules import GraphModuleReference
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphPoint,
     GraphArtifactTypeBinding,
     GraphDocument,

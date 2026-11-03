@@ -13,7 +13,7 @@ from grafy_core.application.collaboration import CollaborationService
 from grafy_core.application.graph_creation import stage_checkpointed_graph
 from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphPoint,
     SavedGraph,
     GraphDocument,

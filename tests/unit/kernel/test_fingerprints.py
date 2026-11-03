@@ -16,7 +16,7 @@ from types import MappingProxyType
 import pytest
 
 from grafy_core.artifacts import ArtifactRef
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphEdge,
     GraphNode,
     GraphOrigin,

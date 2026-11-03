@@ -4,7 +4,7 @@ from pydantic import ValidationError
 from grafy_core.domain.implementation import (
     BuiltinImplementationIdentity,
 )
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     SAVED_GRAPH_SCHEMA_VERSION,
     GraphDocument,
     GraphNode,

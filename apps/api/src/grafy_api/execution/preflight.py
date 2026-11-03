@@ -17,7 +17,7 @@ from grafy_core.domain.modules import (
     MODULE_INPUT_OPERATOR_ID,
     ModuleInputConfig,
 )
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     SavedGraph,
     GraphEdge,
     GraphNode,

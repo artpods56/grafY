@@ -18,7 +18,7 @@ from grafy_api.execution.requests import (
 from grafy_api.services.composition import build_workbench_components, ExecutionLimits
 from grafy_core.file_contracts import PNG_FILE
 from grafy_core.application.saved_graphs import SavedGraphService
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     SavedGraph,
     GraphDocument,
     GraphNode,

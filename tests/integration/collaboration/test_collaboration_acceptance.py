@@ -26,7 +26,7 @@ from grafy_core.domain.identity import (
     WorkspaceKind,
     WorkspaceRole,
 )
-from grafy_core.domain.saved_graphs import GraphDocument
+from grafy_core.domain.graph_documents import GraphDocument
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 from tests.support.clients import GrafyApi

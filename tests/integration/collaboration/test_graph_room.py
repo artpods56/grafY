@@ -43,7 +43,7 @@ from grafy_core.domain.collaboration import (
     RenameGraphCommand,
 )
 from grafy_core.domain.identity import ActorContext, User, Workspace, WorkspaceRole
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphPoint,
     GraphDocument,
     GraphEdge,

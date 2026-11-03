@@ -12,7 +12,7 @@ from grafy_core.domain.artifact_outputs import (
 )
 
 if TYPE_CHECKING:
-    from grafy_core.domain.saved_graphs import (
+    from grafy_core.domain.graph_documents import (
         GraphDocument,
         GraphEdge,
         GraphNode,

@@ -7,7 +7,7 @@ from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.artifacts import ArtifactRefSequence
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
-from grafy_core.domain.saved_graphs import SavedGraphRevision
+from grafy_core.domain.graph_documents import SavedGraphRevision
 from grafy_core.ports.materialized_outputs import WorkbenchUnitOfWorkPort
 
 from grafy_api.artifact_availability import ArtifactAvailability

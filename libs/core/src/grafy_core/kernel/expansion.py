@@ -31,7 +31,7 @@ import heapq
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphNode,
     GraphOrigin,
 )

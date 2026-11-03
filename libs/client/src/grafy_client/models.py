@@ -3,7 +3,7 @@ from typing import ClassVar, Literal, Self
 from uuid import UUID
 
 from grafy_core.artifacts import ArtifactTypeKey
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphDocument,
 )
 from grafy_core.nodes import PortShape

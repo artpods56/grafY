@@ -7,7 +7,7 @@ from grafy_core.domain.materialized_outputs import (
     MaterializedNodeOutputs,
     materializations_for_compatible_nodes,
 )
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphPoint,
     GraphConversion,
     GraphDocument,

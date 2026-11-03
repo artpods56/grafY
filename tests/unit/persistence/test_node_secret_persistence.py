@@ -6,7 +6,7 @@ from uuid import UUID
 import pytest
 
 from grafy_core.domain.node_secrets import EncryptedNodeSecret
-from grafy_core.domain.saved_graphs import SavedGraph, GraphDocument
+from grafy_core.domain.graph_documents import SavedGraph, GraphDocument
 from grafy_core.domain.identity import Workspace
 
 from grafy_persistence.database import Database, create_database

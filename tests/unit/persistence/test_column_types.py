@@ -9,7 +9,7 @@ from sqlalchemy.engine import Dialect
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from grafy_core.domain.saved_graphs import GraphDocument
+from grafy_core.domain.graph_documents import GraphDocument
 from grafy_core.domain.identity import (
     WorkspaceCapability,
     WorkspaceKind,

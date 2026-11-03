@@ -3,7 +3,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphPoint,
     GraphDocument,
     GraphEdge,

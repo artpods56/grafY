@@ -40,7 +40,7 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 
-from grafy_core.domain.saved_graphs import GraphConversion
+from grafy_core.domain.graph_documents import GraphConversion
 from grafy_core.kernel.facts import FingerprintFacts
 from grafy_core.kernel.instances import (
     ExpandedGraph,

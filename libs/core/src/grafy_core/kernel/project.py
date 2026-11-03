@@ -13,7 +13,7 @@ The document is a value: every mutation returns a new one, so a command is a
 pure function of the previous checkpoint.
 
 Node and edge storage reuses the ``SavedGraph*`` value types from
-``grafy_core.domain.saved_graphs`` for now. That reuse is temporary: issue #195
+``grafy_core.domain.graph_documents`` for now. That reuse is temporary: issue #195
 renames them to the Project/Graph vocabulary and this module will import the
 renamed types instead.
 """
@@ -33,7 +33,7 @@ from pydantic import (
 )
 
 from grafy_core.artifacts import ArtifactTypeKey
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphIdentifier,
     GraphDocument,
     GraphNode,

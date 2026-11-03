@@ -30,7 +30,7 @@ from grafy_core.application.identity import IdentityService
 from grafy_core.artifacts import ArtifactObject
 from grafy_core.domain.collaboration import RenameGraphCommand
 from grafy_core.domain.identity import User, Workspace, WorkspaceKind, WorkspaceRole
-from grafy_core.domain.saved_graphs import GraphDocument
+from grafy_core.domain.graph_documents import GraphDocument
 from grafy_core.domain.security_audit import SecurityAuditEvent, SecurityAuditOutcome
 from grafy_persistence import schema
 from grafy_persistence.database import Database

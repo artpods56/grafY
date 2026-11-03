@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.errors import ConcurrentWriteError
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphFolder,
     GraphOrganization,
     GraphPoint,

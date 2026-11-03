@@ -8,7 +8,7 @@ import pytest
 from grafy_api.graph_contracts import CollaborativeHeadResponse
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
 from grafy_core.domain.collaboration import CollaborativeGraphHead
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     SAVED_GRAPH_SCHEMA_VERSION,
     GraphPoint,
     GraphPresentationDocument,

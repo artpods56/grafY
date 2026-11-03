@@ -31,7 +31,7 @@ from grafy_core.canonical_conversions import (
 )
 from grafy_core.conversions import ArtifactConversion, ArtifactConversionKey
 from grafy_core.domain.modules import GraphModuleDefinition
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphPoint,
     SavedGraph,
     GraphConversion,

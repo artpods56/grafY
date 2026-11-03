@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphBrowserItem,
     GraphFolder,
     GraphOrganization,

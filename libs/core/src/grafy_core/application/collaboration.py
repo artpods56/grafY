@@ -38,7 +38,7 @@ from grafy_core.domain.identity import (
     WorkspaceAccess,
     WorkspaceCapability,
 )
-from grafy_core.domain.saved_graphs import SavedGraph, GraphDocument
+from grafy_core.domain.graph_documents import SavedGraph, GraphDocument
 from grafy_core.domain.security_audit import (
     SecurityAuditActorKind,
     SecurityAuditEvent,

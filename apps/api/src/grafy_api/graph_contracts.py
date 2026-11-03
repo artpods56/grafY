@@ -9,7 +9,7 @@ from grafy_core.domain.collaboration import (
     GraphCommandReceipt,
 )
 from grafy_core.domain.identity import WorkspaceKind
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphBrowserItem,
     GraphFolder,
     GraphOrganization,

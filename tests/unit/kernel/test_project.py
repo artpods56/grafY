@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from grafy_core.domain.saved_graphs import GraphDocument, GraphNode
+from grafy_core.domain.graph_documents import GraphDocument, GraphNode
 from grafy_core.kernel.project import (
     CALL_NODE_KIND,
     GRAPH_ARTIFACT_TYPE_VARIABLE,

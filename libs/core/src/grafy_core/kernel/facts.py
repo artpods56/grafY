@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from typing import Protocol
 
-from grafy_core.domain.saved_graphs import GraphNode
+from grafy_core.domain.graph_documents import GraphNode
 from grafy_core.kernel.instances import InstanceKey
 from grafy_core.plugins import NodeCachePolicy
 

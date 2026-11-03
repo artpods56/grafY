@@ -3,7 +3,7 @@
 from uuid import UUID, uuid4
 
 from grafy_core.domain.collaboration import CollaborativeGraphHead, GraphCheckpointMapping
-from grafy_core.domain.saved_graphs import SavedGraph
+from grafy_core.domain.graph_documents import SavedGraph
 from grafy_core.ports.collaboration import CollaborationRepositoryPort
 from grafy_core.ports.saved_graphs import SavedGraphRepositoryPort
 

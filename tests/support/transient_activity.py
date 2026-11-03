@@ -8,7 +8,7 @@ from uuid import UUID
 
 import pytest
 
-from grafy_core.domain.saved_graphs import GraphDocument
+from grafy_core.domain.graph_documents import GraphDocument
 from grafy_persistence import schema
 from grafy_persistence.database import Database, create_database
 from grafy_persistence.orm import metadata

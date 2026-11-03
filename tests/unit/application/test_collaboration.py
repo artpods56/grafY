@@ -37,7 +37,7 @@ from grafy_core.domain.identity import (
     WorkspaceMembership,
     WorkspaceRole,
 )
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphPoint,
     SavedGraph,
     GraphDocument,

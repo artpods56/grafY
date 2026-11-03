@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphEdge,
     GraphNode,
     GraphOrigin,

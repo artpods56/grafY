@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import ValidationError
 
 from grafy_core.artifacts import ArtifactTypeKey, NodeConfig, NodeInput, NodeOutput
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphPoint,
     GraphArtifactTypeBinding,
     GraphConversion,

@@ -5,7 +5,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from grafy_core.domain.saved_graphs import GraphDocument
+from grafy_core.domain.graph_documents import GraphDocument
 
 from grafy_client import ExecutionTimeoutError, GrafyClient, GrafyClientError
 

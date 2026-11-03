@@ -9,7 +9,7 @@ from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.errors import (
     NotFoundError,
 )
-from grafy_core.domain.saved_graphs import (
+from grafy_core.domain.graph_documents import (
     GraphPoint,
     SavedGraph,
     GraphDocument,
