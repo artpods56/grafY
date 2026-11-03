@@ -2,7 +2,11 @@
 
 import * as React from "react";
 
-import type { ActiveRunSummary, CollaborativeHead } from "@/lib/api";
+import type {
+  ActiveRunSummary,
+  CollaborativeHead,
+  WorkspaceCapability,
+} from "@/lib/api";
 
 import {
   ProjectRoomSession,
@@ -39,7 +43,9 @@ export interface UseProjectRoomSessionResult {
   readonly terminalReason: ProjectRoomTerminalReason | null;
   readonly failure: ProjectRoomFailure | null;
   readonly head: CollaborativeHead | null;
-  readonly capabilities: readonly string[];
+  /** What the room says this caller may do, in the API's own words — the type
+   * is the point: a made-up capability name must not compile. */
+  readonly capabilities: readonly WorkspaceCapability[];
   readonly authorizationVersion: number | null;
   readonly canSubmitCommands: boolean;
   readonly canPublishPresence: boolean;
@@ -116,7 +122,9 @@ export function useProjectRoomSession({
     React.useState<ProjectRoomTerminalReason | null>(null);
   const [failure, setFailure] = React.useState<ProjectRoomFailure | null>(null);
   const [head, setHead] = React.useState<CollaborativeHead | null>(null);
-  const [capabilities, setCapabilities] = React.useState<readonly string[]>([]);
+  const [capabilities, setCapabilities] = React.useState<
+    readonly WorkspaceCapability[]
+  >([]);
   const [authorizationVersion, setAuthorizationVersion] = React.useState<
     number | null
   >(null);
@@ -287,7 +295,7 @@ export function useProjectRoomSession({
         sessionRef.current = null;
       }
     };
-  }, [workspaceId, projectId]);
+  }, [projectId, setActiveRuns, setInstances, workspaceId]);
 
   const stateIsCurrent = projectId !== null && stateProjectId === projectId;
   const currentStatus = stateIsCurrent ? status : "idle";

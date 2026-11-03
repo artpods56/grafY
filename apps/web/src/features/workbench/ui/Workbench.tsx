@@ -4758,6 +4758,11 @@ function WorkbenchBody({
         <ExecutionHistoryDrawer
           key={`${projectId ?? "unsaved"}:${executionHistoryTarget.nodeId ?? "all"}:${executionHistoryTarget.executionId ?? "latest"}`}
           workspaceId={workspaceId}
+          // A Run is a demand inside a Project: without this the drawer's read key
+          // never resolves and it can only ever say "open a saved project", which
+          // made the way to see Runs unreachable from the product while its own
+          // tests kept passing a projectId the caller never sent.
+          projectId={projectId}
           graphId={openGraphId}
           graphName={graphName}
           nodeId={executionHistoryTarget.nodeId}
