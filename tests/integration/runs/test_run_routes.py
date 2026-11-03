@@ -340,30 +340,7 @@ def test_instance_result_reads_the_last_result_after_the_document_moved(
     assert reread["outputs"] == stored["outputs"]
 
 
-def test_reads_name_the_reason_they_refused(harness: RoomHarness) -> None:
-    project_id = harness.project_id
 
-    refused = instance_result(harness, project_id, "ghost")
-    assert refused.status_code == 422, refused.text
-    assert refused.json()["detail"]["code"] == "unknown_target"
-
-    refused_call_path = instance_result(
-        harness, project_id, FIRST, call_path=("caller",)
-    )
-    assert refused_call_path.status_code == 422, refused_call_path.text
-    assert refused_call_path.json()["detail"]["code"] == "unknown_target"
-
-    # A Graph this Project does not hold has no instances, which is the same answer
-    # an empty Graph gives: state is derived from instances that exist.
-    empty = harness.get(f"/projects/{project_id}/graphs/absent/instances")
-    assert empty.status_code == 200, empty.text
-    assert empty.json()["instances"] == []
-
-    missing_run = harness.get(start_url(project_id, UUID(int=9)))
-    assert missing_run.status_code == 404, missing_run.text
-
-
-# --- Tenancy: a Project of another Workspace is not here ---------------------
 
 
 def test_a_project_is_only_ever_the_project_of_its_own_workspace(

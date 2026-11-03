@@ -107,8 +107,8 @@ async def test_create_app_startup_acquires_owner_lease(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["recovered", "owner_disabled", "lease_contended"])
-async def test_startup_interrupts_unfinished_runs_only_with_exclusive_owner(
+@pytest.mark.parametrize("mode", ["recovered", "lease_contended"])
+async def test_startup_interrupts_unfinished_runs_only_with_the_owner_lease(
     tmp_path: Path, mode: str
 ) -> None:
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'recovery.sqlite3'}"
@@ -137,7 +137,7 @@ async def test_startup_interrupts_unfinished_runs_only_with_exclusive_owner(
         created_at=datetime.now(UTC),
     )
     app = create_app(
-        _settings(tmp_path, database_url, single_owner=mode != "owner_disabled")
+        _settings(tmp_path, database_url, single_owner=True)
     )
     lock = ApiOwnerLease(tmp_path / "workbench" / ".grafy-api-owner.lock")
     if mode == "lease_contended":
@@ -151,11 +151,7 @@ async def test_startup_interrupts_unfinished_runs_only_with_exclusive_owner(
                 get_resources(app)
             expected = RunStatus.INTERRUPTED
         else:
-            message = {
-                "owner_disabled": "exclusive API ownership",
-                "lease_contended": "Another Grafy API owner",
-            }[mode]
-            with pytest.raises(RuntimeError, match=message):
+            with pytest.raises(RuntimeError, match="Another Grafy API owner"):
                 async with LifespanManager(app):
                     pytest.fail("Unsafe recovery must not serve requests")
             expected = RunStatus.RUNNING

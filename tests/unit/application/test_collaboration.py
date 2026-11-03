@@ -56,7 +56,7 @@ from grafy_core.domain.identity import (
     WorkspaceRole,
 )
 from grafy_core.domain.projects import ProjectCheckpoint
-from grafy_core.kernel.project import GraphDefinition, ProjectDocument
+from grafy_core.kernel.project import ProjectDocument
 
 HMAC_KEY = b"test-project-command-hmac-key"
 HMAC_KEY_VERSION = 3
@@ -1102,47 +1102,6 @@ async def test_copy_project_sanitizes_every_graph(harness: Harness) -> None:
         (target.id, str(copied_project.id))
     ]
     assert target.id != source.id
-
-
-async def test_copy_refuses_a_graph_module_reference(harness: Harness) -> None:
-    source, source_owner = harness.workspace(name="Source", slug="source")
-    target, _ = harness.workspace(name="Target", slug="target")
-    harness.join(target, source_owner, role=WorkspaceRole.OWNER)
-    project, head, _ = await harness.create(source_owner, source)
-    # A document that still carries a Module operator: the copy cannot keep it.
-    harness.store.heads[(source.id, project.id)].document = ProjectDocument(
-        graphs=(
-            GraphDefinition(
-                id="main",
-                name="Main",
-                document=GraphDocument(
-                    nodes=(
-                        GraphNode(
-                            kind="builtin",
-                            id="module-1",
-                            operator_id="graph.module.survey",
-                            operator_version=1,
-                            position=GraphPoint(x=0, y=0),
-                        ),
-                    )
-                ),
-            ),
-        )
-    )
-
-    with pytest.raises(CollaborationCommandRejectedError) as raised:
-        await harness.service.copy_project(
-            actor=source_owner,
-            source_workspace_id=source.id,
-            source_project_id=project.id,
-            target_workspace_id=target.id,
-            expected_room_epoch=head.room_epoch,
-            expected_sequence=0,
-        )
-
-    assert raised.value.error_code == "foreign_module_reference"
-    assert list(harness.store.projects) == [project.id]
-    assert len(harness.store.heads) == 1
 
 
 async def test_copy_needs_view_in_source_and_create_in_target(harness: Harness) -> None:

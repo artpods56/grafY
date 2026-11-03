@@ -188,10 +188,10 @@ async def _recover(
 ) -> None:
     del orphan_cleanup_confirmed
     if owner_lease is None:
-        raise RuntimeError(
-            "Interrupting unfinished Runs requires exclusive API ownership; "
-            "enable require_single_api_owner"
-        )
+        # Another process may still own those Runs; only the exclusive owner can
+        # tell an orphan from a live computation.
+        logger.warning("unfinished_runs_not_interrupted reason=no_exclusive_owner")
+        return
     interrupted = await resources.runs.recover_after_restart()
     logger.info("unfinished_runs_interrupted count=%s", len(interrupted))
 
