@@ -1,9 +1,12 @@
 import { expect, test as base } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import type { Page, WebSocketRoute } from "@playwright/test";
 
-import { libraryStub } from "./library-folders-stub";
+import { applyRoomCommandsToHead } from "../src/features/workbench/room/room-command-bridge";
+import type { RoomProjectCommand } from "../src/features/workbench/room/protocol";
 import type {
+  ActiveRunSummary,
   ArtifactOutputValue,
+  CollaborativeHead,
   InstanceResult,
   InstanceState,
   NodeRegistry,
@@ -14,6 +17,7 @@ import type {
   Workspace,
   WorkspaceInvitationForRecipient,
 } from "../src/lib/api/contract";
+import { libraryStub } from "./library-folders-stub";
 
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 const WORKBENCH_PATH = "/workspaces/mobile-test/projects/new";
@@ -40,8 +44,6 @@ const workspace = {
     "view_project",
     "view_artifacts",
     "view_runs",
-    "view_runs",
-    "view_runs",
     "join_project_room",
     "publish_presence",
     "create_project",
@@ -49,7 +51,6 @@ const workspace = {
     "checkpoint_project",
     "start_run",
     "cancel_run",
-    "edit_project",
     "manage_secrets",
     "delete_project",
     "manage_members",
@@ -157,11 +158,22 @@ const WORKSPACE_SCOPED = /^\/api\/v1\/workspaces\/([^/]+)\/([^/]+)$/;
 /** `/api/v1/workspaces/{workspace_id}/projects/{project_id}[/tail…]` */
 const PROJECT_SCOPED =
   /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)(\/.*)?$/;
+/** The same Project address as the Project room holds it, on the WebSocket. */
+const PROJECT_ROOM =
+  /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/room$/;
 /** The per-node secret write the Project owns. */
 const NODE_SECRET =
   /^\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/graphs\/([^/]+)\/nodes\/([^/]+)\/secrets\/([^/]+)$/;
 
 const FIXED_TIMESTAMP = "2026-10-07T12:00:00Z";
+
+/** The identity the room hands this browser: one session, one actor. */
+const ROOM_SESSION_ID = "44444444-4444-4444-8444-444444444444";
+const ROOM_ACTOR = {
+  actor_id: session.user_id,
+  display_name: session.display_name,
+  color: "#7c3aed",
+};
 
 type JsonObject = Record<string, unknown>;
 
@@ -178,29 +190,25 @@ interface StoredResult {
 interface StoredCheckpoint {
   readonly revision: number;
   readonly name: string;
-  readonly document: JsonObject;
+  readonly head: CollaborativeHead;
 }
 
 /**
  * One Project the page created during this test, as the fixture keeps it.
  *
- * The Project document is stored verbatim from the `replace_document` command
- * the app sent, and every read — head, instances, a restored checkpoint — is
- * projected from this one value. A save that the fixture echoed wrongly would
- * make the canvas dirty against its own saved fingerprint, and the spec would
- * then be testing the fixture instead of the app.
+ * The Project head is the one stored value: a command batch advances it
+ * through the app's own replay (`applyRoomCommandsToHead`), and every read —
+ * head, instances, a restored checkpoint — is projected from it. Because
+ * client and fixture run the same reducer over the same batch, a save the
+ * page made cannot come back from the fixture disagreeing with the canvas,
+ * which is how a wrongly-echoed save once made a spec test the fixture
+ * instead of the app.
  */
 interface MockProject {
   readonly workspaceId: string;
   readonly id: string;
-  name: string;
-  graphId: string;
-  graphName: string;
-  document: JsonObject;
-  collaborationSequence: number;
-  checkpointSequence: number;
+  head: CollaborativeHead;
   readonly checkpoints: StoredCheckpoint[];
-  readonly roomEpoch: string;
   readonly runs: Run[];
   /** Stored results keyed by node id — root instances only, as the canvas reads. */
   readonly results: Map<string, StoredResult>;
@@ -209,14 +217,17 @@ interface MockProject {
 /**
  * A synthetic UUID. Every id the fixture invents (project, run, artifact) comes
  * from this one counter, so a failing spec names an id that no other source in
- * the test could have produced.
+ * the test could have produced. The variant nibble stays inside `[89ab]` like
+ * a real UUID's, because the Workbench answers an address that is not a
+ * well-formed UUID with a 404 — a malformed fixture id would have the page
+ * under test reject the Project the fixture itself just created.
  */
 function makeIdFactory() {
   let counter = 0;
   return (prefix: "p" | "r" | "a"): string => {
     counter += 1;
     const tail = counter.toString(16).padStart(12, "0");
-    const head = prefix === "p" ? "5000" : prefix === "r" ? "6000" : "7000";
+    const head = prefix === "p" ? "8000" : prefix === "r" ? "9000" : "b000";
     return `00000000-0000-4000-${head}-${tail}`;
   };
 }
@@ -242,6 +253,31 @@ function documentNodes(document: JsonObject): DocumentNode[] {
     });
   }
   return readable;
+}
+
+/** The Graph a one-Graph Project holds: the first, which is what the canvas opens. */
+function graphOf(project: MockProject): {
+  readonly id: string;
+  readonly name: string;
+  readonly document: JsonObject;
+} | null {
+  const graphs = project.head.document.graphs;
+  const first = graphs.length > 0 ? graphs[0] : undefined;
+  if (first === undefined) return null;
+  return {
+    id: first.id,
+    name: first.name,
+    document: first.document as unknown as JsonObject,
+  };
+}
+
+function graphIdOf(project: MockProject): string {
+  return graphOf(project)?.id ?? "";
+}
+
+function nodesOf(project: MockProject): DocumentNode[] {
+  const graph = graphOf(project);
+  return graph === null ? [] : documentNodes(graph.document);
 }
 
 /**
@@ -271,41 +307,46 @@ function outputsForOperator(
   return outputs;
 }
 
-function headOf(project: MockProject): JsonObject {
+function initialHead(
+  projectId: string,
+  name: string,
+  graphId: string,
+  graphName: string,
+  roomEpoch: string,
+): CollaborativeHead {
   return {
-    project_id: project.id,
-    name: project.name,
-    room_epoch: project.roomEpoch,
-    collaboration_sequence: project.collaborationSequence,
-    checkpoint_sequence: project.checkpointSequence,
-    checkpoint_revision: project.checkpoints.length,
+    project_id: projectId,
+    name,
+    room_epoch: roomEpoch,
+    collaboration_sequence: 0,
+    checkpoint_sequence: 0,
+    checkpoint_revision: 0,
     updated_at: FIXED_TIMESTAMP,
     document: {
       graphs: [
-        {
-          id: project.graphId,
-          name: project.graphName,
-          document: project.document,
-        },
+        { id: graphId, name: graphName, document: emptyGraphDocument() },
       ],
     },
-  };
+  } as unknown as CollaborativeHead;
 }
 
 function summaryOf(project: MockProject): ProjectSummary {
-  const nodes = documentNodes(project.document);
-  const edges = Array.isArray(project.document.edges)
-    ? project.document.edges
-    : [];
+  const graph = graphOf(project);
+  const nodes = graph === null ? [] : documentNodes(graph.document);
+  const edges =
+    graph === null || !Array.isArray(graph.document.edges)
+      ? []
+      : graph.document.edges;
   return {
     id: project.id,
-    name: project.name,
+    name: project.head.name,
     node_count: nodes.length,
     edge_count: edges.length,
-    graph_count: 1,
-    revision: project.checkpoints.length,
+    graph_count: project.head.document.graphs.length,
+    revision: project.head.checkpoint_revision,
     updated_at: FIXED_TIMESTAMP,
-    draft_pending: project.collaborationSequence !== project.checkpointSequence,
+    draft_pending:
+      project.head.collaboration_sequence !== project.head.checkpoint_sequence,
   };
 }
 
@@ -317,16 +358,43 @@ function instanceStateOf(
   return {
     key: {
       project_id: project.id,
-      graph_id: project.graphId,
+      graph_id: graphIdOf(project),
       node_id: node.id,
       call_path: [],
     },
     // Derived the way the server derives it: an instance holds a result only
     // after a Run made it fresh, and an instance with no result is stale.
     state: stored === undefined ? "stale" : "fresh",
-    fingerprint: `doc-${project.collaborationSequence}`,
+    fingerprint: `doc-${project.head.collaboration_sequence}`,
     last_result_fingerprint: stored?.fingerprint ?? null,
     error: null,
+  };
+}
+
+/** The room's shape of the same instance state the HTTP read publishes. */
+function roomInstanceOf(project: MockProject, node: DocumentNode): JsonObject {
+  const stored = project.results.get(node.id);
+  return {
+    project_id: project.id,
+    graph_id: graphIdOf(project),
+    call_path: [],
+    node_id: node.id,
+    map_index: null,
+    state: stored === undefined ? "stale" : "fresh",
+    fingerprint: `doc-${project.head.collaboration_sequence}`,
+    last_result_fingerprint: stored?.fingerprint ?? null,
+    error: null,
+  };
+}
+
+function activeRunOf(run: Run): ActiveRunSummary {
+  return {
+    run_id: run.id,
+    graph_id: run.graph_id,
+    targets: run.targets,
+    starter: null,
+    started_at: run.created_at,
+    cancellable: true,
   };
 }
 
@@ -338,13 +406,45 @@ interface Answer {
 const ok = (json: unknown): Answer => ({ status: 200, json });
 
 /**
- * The fixture's Project surface, one per mocked page: created Projects and what
- * Runs stored on their instances live only as long as the page does.
+ * The fixture's Project surface, one per mocked page: created Projects, what
+ * Runs stored on their instances, and the open Project-room sockets all live
+ * only as long as the page does.
  */
 function projectWorld(fixtures: GrafyApiFixtures) {
   const projects = new Map<string, MockProject>();
   const nextId = makeIdFactory();
   const registry = fixtures.registry;
+  /** Open room sockets by Project id: the browser keeps exactly one per page. */
+  const roomSockets = new Map<string, Set<(message: JsonObject) => void>>();
+
+  function sendToRoom(projectId: string, message: JsonObject): void {
+    for (const send of roomSockets.get(projectId) ?? []) send(message);
+  }
+
+  /**
+   * Advance one Project by one accepted command batch.
+   *
+   * The replay is the app's own: the same reducer the room session runs when a
+   * batch comes back accepted. Client and fixture therefore land on the same
+   * head from the same batch, which is the only way a mocked server can let a
+   * spec assert that a draft saved cleanly.
+   */
+  function applyCommandBatch(
+    record: MockProject,
+    body: unknown,
+  ): { readonly sequence: number; readonly commandId: string } | null {
+    if (!isJsonObject(body) || !Array.isArray(body.commands)) return null;
+    const sequence = record.head.collaboration_sequence + 1;
+    record.head = applyRoomCommandsToHead(
+      record.head,
+      body.commands as readonly RoomProjectCommand[],
+      sequence,
+    );
+    return {
+      sequence,
+      commandId: typeof body.command_id === "string" ? body.command_id : "",
+    };
+  }
 
   function handleGet(
     path: string,
@@ -402,12 +502,12 @@ function projectWorld(fixtures: GrafyApiFixtures) {
     if (route === "" || route === "/") {
       return ok({
         id: project.record.id,
-        name: project.record.name,
+        name: project.record.head.name,
         created_at: FIXED_TIMESTAMP,
         updated_at: FIXED_TIMESTAMP,
       });
     }
-    if (route === "/head") return ok(headOf(project.record));
+    if (route === "/head") return ok(project.record.head);
     if (route === "/checkpoints") {
       return ok({
         checkpoints: project.record.checkpoints.map((checkpoint) => ({
@@ -427,15 +527,7 @@ function projectWorld(fixtures: GrafyApiFixtures) {
         revision: wanted.revision,
         name: wanted.name,
         created_at: FIXED_TIMESTAMP,
-        document: {
-          graphs: [
-            {
-              id: project.record.graphId,
-              name: wanted.name,
-              document: wanted.document,
-            },
-          ],
-        },
+        document: wanted.head.document,
       });
     }
     if (route === "/runs") {
@@ -460,9 +552,9 @@ function projectWorld(fixtures: GrafyApiFixtures) {
       return run ? ok(run) : undefined;
     }
     const instances = route.match(/^\/graphs\/([^/]+)\/instances$/);
-    if (instances?.[1] === project.record.graphId) {
+    if (instances?.[1] === graphIdOf(project.record)) {
       return ok({
-        instances: documentNodes(project.record.document).map((node) =>
+        instances: nodesOf(project.record).map((node) =>
           instanceStateOf(project.record, node),
         ),
       });
@@ -472,8 +564,8 @@ function projectWorld(fixtures: GrafyApiFixtures) {
     }
     if (route === "/node-secrets") {
       return ok({
-        graph_id: params.get("graph_id") ?? project.record.graphId,
-        head_sequence: project.record.collaborationSequence,
+        graph_id: params.get("graph_id") ?? graphIdOf(project.record),
+        head_sequence: project.record.head.collaboration_sequence,
         project_id: project.record.id,
         secrets: [],
         unresolved_nodes: [],
@@ -498,13 +590,11 @@ function projectWorld(fixtures: GrafyApiFixtures) {
   ): InstanceResult | undefined {
     const nodeId = params.get("node_id");
     const graphId = params.get("graph_id");
-    if (nodeId === null || graphId !== project.graphId) return undefined;
+    if (nodeId === null || graphId !== graphIdOf(project)) return undefined;
     // A result travels with its instance; the call path only addresses nested
     // instances, and the canvas never reads those here.
     if (params.getAll("call_path").length > 0) return undefined;
-    const node = documentNodes(project.document).find(
-      (candidate) => candidate.id === nodeId,
-    );
+    const node = nodesOf(project).find((candidate) => candidate.id === nodeId);
     if (node === undefined) return undefined;
     const instance = instanceStateOf(project, node);
     const stored = project.results.get(nodeId);
@@ -525,27 +615,28 @@ function projectWorld(fixtures: GrafyApiFixtures) {
       }
       if (!isJsonObject(body)) return null;
       const graphId = typeof body.graph_id === "string" ? body.graph_id : "";
+      const projectId =
+        typeof body.project_id === "string" && body.project_id
+          ? body.project_id
+          : nextId("p");
       const record: MockProject = {
         workspaceId,
-        id:
-          typeof body.project_id === "string" && body.project_id
-            ? body.project_id
-            : nextId("p"),
-        name: typeof body.name === "string" ? body.name : "Untitled",
-        graphId,
-        graphName: typeof body.graph_name === "string" ? body.graph_name : "",
-        document: emptyGraphDocument(),
-        collaborationSequence: 0,
-        checkpointSequence: 0,
+        id: projectId,
+        head: initialHead(
+          projectId,
+          typeof body.name === "string" ? body.name : "Untitled",
+          graphId,
+          typeof body.graph_name === "string" ? body.graph_name : "",
+          "11111111-0000-4000-8000-000000000001",
+        ),
         checkpoints: [],
-        roomEpoch: "11111111-0000-4000-8000-000000000001",
         runs: [],
         results: new Map(),
       };
       projects.set(record.id, record);
       return ok({
         id: record.id,
-        name: record.name,
+        name: record.head.name,
         created_at: FIXED_TIMESTAMP,
         updated_at: FIXED_TIMESTAMP,
       });
@@ -556,37 +647,16 @@ function projectWorld(fixtures: GrafyApiFixtures) {
     const { record, route } = project;
 
     if (route === "/commands") {
-      if (!isJsonObject(body) || !Array.isArray(body.commands)) return null;
-      for (const raw of body.commands) {
-        if (!isJsonObject(raw)) continue;
-        if (raw.kind === "rename_project" && typeof raw.name === "string") {
-          record.name = raw.name;
-          continue;
-        }
-        if (raw.kind !== "in_graph" || !isJsonObject(raw.command)) continue;
-        if (raw.command.kind === "replace_document") {
-          record.document = isJsonObject(raw.command.document)
-            ? raw.command.document
-            : emptyGraphDocument();
-        }
-        if (raw.command.kind === "rename_graph") {
-          if (typeof raw.command.name === "string") {
-            record.graphName = raw.command.name;
-          }
-        }
-      }
-      record.collaborationSequence += 1;
+      const applied = applyCommandBatch(record, body);
+      if (applied === null) return null;
       return ok({
-        head: headOf(record),
+        head: record.head,
         receipt: {
-          accepted_sequence: record.collaborationSequence,
-          command_id:
-            isJsonObject(body) && typeof body.command_id === "string"
-              ? body.command_id
-              : "",
+          accepted_sequence: applied.sequence,
+          command_id: applied.commandId,
           deduplicated: false,
           outcome: "accepted",
-          room_epoch: record.roomEpoch,
+          room_epoch: record.head.room_epoch,
         },
       });
     }
@@ -599,7 +669,7 @@ function projectWorld(fixtures: GrafyApiFixtures) {
       );
       if (wanted === undefined) return undefined;
       // Bringing a checkpoint forward appends a newer one; history never rewinds.
-      record.document = { ...wanted.document };
+      record.head = wanted.head;
       return ok(checkpoint(record));
     }
     if (route === "/opened") return ok(null);
@@ -615,7 +685,7 @@ function projectWorld(fixtures: GrafyApiFixtures) {
           : [],
       }));
       const graphId =
-        typeof body.graph_id === "string" ? body.graph_id : record.graphId;
+        typeof body.graph_id === "string" ? body.graph_id : graphIdOf(record);
       const run: Run = {
         id: nextId("r"),
         project_id: record.id,
@@ -631,11 +701,9 @@ function projectWorld(fixtures: GrafyApiFixtures) {
       record.runs.push(run);
       // The Run's demand is settled the moment it is made here: every target
       // instance becomes fresh and stores the result its operator produces.
-      // That is the whole of what the fixture answers; the room's
-      // `instances.changed` is a WebSocket message no HTTP fixture can send,
-      // and the run surface falls back to reading this state directly.
+      const freshNodes: DocumentNode[] = [];
       for (const target of targets) {
-        const node = documentNodes(record.document).find(
+        const node = nodesOf(record).find(
           (candidate) => candidate.id === target.node_id,
         );
         if (node === undefined) continue;
@@ -644,6 +712,31 @@ function projectWorld(fixtures: GrafyApiFixtures) {
           outputs: outputsForOperator(registry, node.operatorId, () =>
             nextId("a"),
           ),
+        });
+        freshNodes.push(node);
+      }
+      // What a real room would push for a Run that finishes this fast. The
+      // run surface reads either way — the pushes are what make a spec prove
+      // the room's signal, rather than only its fallback.
+      if (roomSockets.has(record.id)) {
+        sendToRoom(record.id, {
+          protocol_version: 1,
+          type: "run.started",
+          run: activeRunOf(run),
+        });
+        sendToRoom(record.id, {
+          protocol_version: 1,
+          type: "run.finished",
+          run_id: run.id,
+          status: "succeeded",
+          error: null,
+        });
+        sendToRoom(record.id, {
+          protocol_version: 1,
+          type: "instances.changed",
+          changed: freshNodes.map((node) => roomInstanceOf(record, node)),
+          removed: [],
+          head_sequence: record.head.collaboration_sequence,
         });
       }
       return ok(run);
@@ -658,15 +751,19 @@ function projectWorld(fixtures: GrafyApiFixtures) {
   }
 
   function checkpoint(record: MockProject): JsonObject {
-    record.checkpointSequence = record.collaborationSequence;
+    record.head = {
+      ...record.head,
+      checkpoint_sequence: record.head.collaboration_sequence,
+      checkpoint_revision: record.head.checkpoint_revision + 1,
+    };
     record.checkpoints.push({
-      revision: record.checkpoints.length + 1,
-      name: record.name,
-      document: { ...record.document },
+      revision: record.head.checkpoint_revision,
+      name: record.head.name,
+      head: record.head,
     });
     return {
-      checkpoint_revision: record.checkpoints.length,
-      head: headOf(record),
+      checkpoint_revision: record.head.checkpoint_revision,
+      head: record.head,
     };
   }
 
@@ -688,10 +785,8 @@ function projectWorld(fixtures: GrafyApiFixtures) {
     if (secret && project) {
       const [, graphId, nodeId, name] = secret;
       if (
-        graphId !== project.record.graphId ||
-        !documentNodes(project.record.document).some(
-          (node) => node.id === nodeId,
-        )
+        graphId !== graphIdOf(project.record) ||
+        !nodesOf(project.record).some((node) => node.id === nodeId)
       ) {
         return undefined;
       }
@@ -736,6 +831,116 @@ function projectWorld(fixtures: GrafyApiFixtures) {
     return undefined;
   }
 
+  /**
+   * Answer one browser connection to a Project room.
+   *
+   * `room.ready` carries the head, the capabilities, and the instance states as
+   * the world holds them at that moment, so a page that connects after a save
+   * reads its own saved document back, exactly as it would from the real
+   * server. Command batches run through the same `applyCommandBatch` the HTTP
+   * fallback uses and are answered with the `accepted` + `receipt` pair the
+   * client's outbox waits for. Presence traffic is accepted and ignored: one
+   * browser is the whole room here.
+   */
+  function routeProjectRoom(connection: WebSocketRoute): void {
+    const url = new URL(connection.url());
+    const match = url.pathname.match(PROJECT_ROOM);
+    const workspaceId = match?.[1];
+    const projectId = match?.[2];
+    const record =
+      projectId === undefined ? undefined : projects.get(projectId);
+    if (
+      record === undefined ||
+      workspaceId === undefined ||
+      record.workspaceId !== workspaceId
+    ) {
+      // A room for a Project this world does not hold is the same fact the
+      // HTTP surface reports about such an id: it is not here. 4004 is the
+      // protocol's access-revoked close, which stops the client retrying.
+      void connection.close({ code: 4004, reason: "project_unknown" });
+      return;
+    }
+
+    const send = (message: JsonObject): void => {
+      // A page can navigate away between one world event and its delivery;
+      // a dead socket is not an error, it is a room nobody is listening to.
+      void Promise.resolve(connection.send(JSON.stringify(message))).catch(
+        () => undefined,
+      );
+    };
+    let sockets = roomSockets.get(record.id);
+    if (sockets === undefined) {
+      sockets = new Set();
+      roomSockets.set(record.id, sockets);
+    }
+    sockets.add(send);
+    connection.onClose(() => sockets.delete(send));
+
+    send({
+      protocol_version: 1,
+      type: "room.ready",
+      workspace_id: record.workspaceId,
+      project_id: record.id,
+      project_room_session_id: ROOM_SESSION_ID,
+      actor: ROOM_ACTOR,
+      capabilities: {
+        capabilities:
+          fixtures.workspaces.find(
+            (candidate) => candidate.id === record.workspaceId,
+          )?.capabilities ?? [],
+        authorization_version: 1,
+      },
+      head: record.head,
+      participants: [],
+      active_runs: record.runs
+        .filter(
+          (run) =>
+            run.status !== "succeeded" &&
+            run.status !== "failed" &&
+            run.status !== "cancelled" &&
+            run.status !== "interrupted",
+        )
+        .map(activeRunOf),
+      instances: nodesOf(record).map((node) => roomInstanceOf(record, node)),
+      registry_marker: "playwright-fixture",
+    });
+
+    connection.onMessage((raw) => {
+      let message: unknown;
+      try {
+        message = JSON.parse(String(raw));
+      } catch {
+        return;
+      }
+      if (!isJsonObject(message)) return;
+      if (message.type !== "project.command.submit") return;
+      const applied = applyCommandBatch(record, message);
+      if (applied === null) return;
+      send({
+        protocol_version: 1,
+        type: "project.command.accepted",
+        command_id: applied.commandId,
+        room_epoch: record.head.room_epoch,
+        sequence: applied.sequence,
+        actor: ROOM_ACTOR,
+        project_room_session_id: ROOM_SESSION_ID,
+        commands: message.commands,
+      });
+      send({
+        protocol_version: 1,
+        type: "project.command.receipt",
+        command_id: applied.commandId,
+        outcome: "accepted",
+        accepted_room_epoch: record.head.room_epoch,
+        accepted_sequence: applied.sequence,
+        current_room_epoch: record.head.room_epoch,
+        current_sequence: applied.sequence,
+        deduplicated: false,
+        requires_head_rehydration: false,
+      });
+    });
+  }
+
   return {
     answer(
       method: string,
@@ -752,6 +957,7 @@ function projectWorld(fixtures: GrafyApiFixtures) {
       // `null` means the route matched but the request had no usable body.
       return result === null ? ok(null) : result;
     },
+    routeProjectRoom,
   };
 }
 
@@ -760,11 +966,13 @@ function projectWorld(fixtures: GrafyApiFixtures) {
  * this fixture did not cover. A spec that starts asking for an endpoint it was
  * not given sees a 501 and a non-empty list instead of a silent hole.
  *
- * Project reads and writes are answered by a per-page world: a saved graph is
- * head, commands, and checkpoints on the wire, so the fixture has to remember
- * what it was told. Live Run state arrives on this world's HTTP reads — the
- * Project room is a WebSocket, and `page.route` does not intercept it; a spec
- * that needs a room push cannot get one through here.
+ * Project reads and writes and the Project room are answered by one per-page
+ * world: a saved graph is head, commands, and checkpoints on the wire, so the
+ * fixture has to remember what it was told. The room arrives on a WebSocket,
+ * which `page.route` does not intercept — `page.routeWebSocket` does — and the
+ * world above answers it with the same head the HTTP reads return, so a
+ * room-driven Run, `instances.changed`, and command round trip are all in
+ * scope for a spec here.
  */
 export async function mockGrafyApi(
   page: Page,
@@ -772,6 +980,13 @@ export async function mockGrafyApi(
 ): Promise<() => readonly string[]> {
   const unhandledApiRequests: string[] = [];
   const world = projectWorld(fixtures);
+
+  // Registered before any navigation: a routed WebSocket only covers
+  // connections opened after the route was in place.
+  await page.routeWebSocket(
+    /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/room$/,
+    (route) => world.routeProjectRoom(route),
+  );
 
   await page.route("**/api/**", async (route) => {
     const request = route.request();
