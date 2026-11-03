@@ -3,13 +3,13 @@ import os
 from typing import Final, cast, final, override
 from uuid import UUID
 
+import httpx
 from openai import (
     APIConnectionError,
     APIResponseValidationError,
     APIStatusError,
     APITimeoutError,
     AsyncOpenAI,
-    DefaultAsyncHttpxClient,
     Omit,
     OpenAIError,
 )
@@ -221,7 +221,9 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
         safe_default_headers["Authorization"] = f"Bearer {api_key_value}"
 
         try:
-            async with DefaultAsyncHttpxClient(
+            async with httpx.AsyncClient(
+                timeout=config.timeout_ms / 1_000,
+                limits=httpx.Limits(max_connections=1000, max_keepalive_connections=100),
                 follow_redirects=False,
                 transport=PinnedPublicAddressTransport(policy=self._egress_policy),
             ) as http_client:
@@ -279,9 +281,8 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
                 f"Chat Completions request to {endpoint!r} returned HTTP "
                 f"{exc.status_code} for model {config.model!r}. {guidance}"
             ) from None
-        except APIConnectionError as exc:
-            # The SDK wraps anything its transport raises, and the wrapped error
-            # is not shown to graph users, so the distinction is made here: a
+        except (APIConnectionError, EgressRejectedError) as exc:
+            # SDK versions may wrap transport refusals in connection errors. A
             # refusal this deployment made is about the author's own configuration
             # and belongs in the message, while a provider that will not answer
             # does not get to put its text in front of them.
