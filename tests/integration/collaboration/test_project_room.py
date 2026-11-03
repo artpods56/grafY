@@ -17,7 +17,9 @@ room never sends fails the test naming itself instead of blocking forever.
 """
 
 import asyncio
+import contextlib
 import json
+import logging
 import threading
 from pathlib import Path
 from queue import Queue
@@ -31,6 +33,7 @@ from pydantic import ValidationError
 from starlette.testclient import WebSocketDenialResponse
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
+from grafy_api.realtime import hub as hub_module
 from grafy_api.realtime.hub import (
     CLOSE_SLOW_CONSUMER,
     OUTBOUND_QUEUE_MAXSIZE,
@@ -809,6 +812,117 @@ def test_an_accepted_batch_reaches_a_participant_that_did_not_send_it(
             }
 
 
+# --- Whoever ends the room, it leaves ---------------------------------------
+
+
+def _registered_room_sessions(harness: RoomHarness) -> list[ProjectRoomSession]:
+    hub = harness.resources.project_room_hub
+    return [
+        member.session
+        for room in hub._rooms.values()
+        for member in room.values()  # noqa: SLF001 - the claim is about the registry
+    ]
+
+
+def _registered_room_sessions(harness: RoomHarness) -> list[ProjectRoomSession]:
+    hub = harness.resources.project_room_hub
+    return [
+        member.session
+        for room in hub._rooms.values()
+        for member in room.values()  # noqa: SLF001 - the claim is about the registry
+    ]
+
+
+def test_a_room_cancelled_while_it_was_working_still_leaves(
+    harness: RoomHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A room cancelled mid-command still leaves, and still tells the peer.
+
+    This is the CI race itself. ``WebSocketTestSession.__exit__`` sends the disconnect and
+    then cancels the session's task group, and when the endpoint is parked in work — here,
+    a committed command — the cancellation, not the disconnect, is what ends it. A
+    ``CancelledError`` is neither a ``WebSocketDisconnect`` nor an ``Exception``, so the
+    departure written in those two arms never ran: the session stayed registered, its
+    sender task outlived its socket, and the peer went on believing it was there.
+    """
+
+    project_id = harness.project_id
+    collaboration = harness.resources.collaboration
+    pool = harness.resources.database.engine.pool
+    inside_a_command = asyncio.Event()
+
+    async def stuck_submit(*_args: object, **_kwargs: object) -> object:
+        inside_a_command.set()
+        await asyncio.sleep(3600)  # only the cancellation ends this
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(collaboration, "submit_commands", stuck_submit)
+
+    with harness.open_room(project_id) as owner_room:
+        owner_room.expect("room.ready")
+        harness.as_user(harness.cast.editor.id)
+        editor = harness.connect_room(project_id)
+        editor.__enter__()
+        ready = editor.receive_json()
+        assert ready["type"] == "room.ready"
+        owner_room.until("presence.join")
+
+        editor.send_json(rename(ready, "Busy"))
+        harness.client.portal.call(inside_a_command.wait)
+
+        # The way a client leaves in practice: the session is abandoned from the client
+        # thread, which cancels the task the room is running on.
+        failures: list[BaseException] = []
+
+        def abandon() -> None:
+            try:
+                editor.__exit__(None, None, None)
+            except BaseException as exc:  # noqa: BLE001 - reported below
+                failures.append(exc)
+
+        thread = threading.Thread(target=abandon, name="abandon-the-room")
+        thread.start()
+        thread.join(timeout=20)
+        assert not thread.is_alive(), "abandoning the room never returned"
+        assert failures == []
+
+        leave = owner_room.until("presence.leave")
+        assert leave["project_room_session_id"] == ready["project_room_session_id"]
+
+    assert _registered_room_sessions(harness) == []
+    # The connection the cancelled command was holding came back. A task cancelled inside
+    # `greenlet_spawn` abandons it: the terminate fails with the same CancelledError, the
+    # aiosqlite worker sits at `tx.get()` for ever, and the next checkout in that pool is
+    # the request that never returns — which is where CI stalled at 11:25:51.
+    assert pool.checkedout() == 0
+
+
+@pytest.mark.timeout(60)
+def test_a_room_the_test_forgot_to_close_cannot_outlive_the_harness(
+    tmp_path: Path, settings: Settings
+) -> None:
+    """A session left open is the one thing that makes teardown never return.
+
+    ``TestClient.__exit__`` joins the thread running the app, and an open room session is a
+    task on that loop which only the session's own ``__exit__`` will cancel. The CI job died
+    exactly there: the test thread in ``thread.join()``, the app loop idle, 45 minutes gone
+    and nothing printed. The cap is the point of the marker — if this regresses it names
+    itself in a minute instead of eating the job.
+    """
+
+    with room_harness(tmp_path, settings, concurrency=4) as harness:
+        session = harness.connect_room(harness.project_id)
+        session.__enter__()
+        assert session.receive_json()["type"] == "room.ready"
+        # The test forgets it: no ``with``, no ``__exit__``. The harness owns what it
+        # handed out, so it closes the room on the way out.
+        assert harness.open_sessions == [session]
+
+    # Reaching this line is the claim: leaving the harness returned.
+    assert harness.open_sessions == []
+
+
 # --- The hub by itself -------------------------------------------------------
 
 
@@ -840,6 +954,37 @@ def _mock_socket() -> AsyncMock:
     websocket = AsyncMock()
     websocket.application_state = WebSocketState.CONNECTED
     return websocket
+
+
+def _raising_socket(
+    *, error: BaseException | None = None, disconnected: bool = False
+) -> AsyncMock:
+    """A socket the moment it is written to proves it is gone.
+
+    ``disconnected`` is the quiet one: the peer closed its side, so the socket reports a
+    disconnect instead of an error, and the sender has nothing to complain about.
+    """
+
+    websocket = _mock_socket()
+    if disconnected:
+        websocket.application_state = WebSocketState.DISCONNECTED
+        return websocket
+
+    async def _dead(_payload: dict) -> None:
+        raise error or RuntimeError("stream is closed")
+
+    websocket.send_json.side_effect = _dead
+    return websocket
+
+
+def _drain(session: ProjectRoomSession) -> list[dict]:
+    """Everything a session's queue still holds, as the frames its peer would see."""
+    frames: list[dict] = []
+    while not session.outbound.empty():
+        message = session.outbound.get_nowait()
+        if message is not None:
+            frames.append(message.model_dump(mode="json"))
+    return frames
 
 
 def test_presence_rate_limit_and_stale_sequence_are_dropped() -> None:
@@ -999,6 +1144,148 @@ def test_closing_a_project_room_closes_every_participant() -> None:
             == []
         )
         await hub.shutdown()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    ("socket", "label"),
+    [
+        (_raising_socket(), "a socket that raised"),
+        (_raising_socket(disconnected=True), "a socket already closed"),
+        (
+            _raising_socket(error=WebSocketDisconnect(code=1000, reason="gone")),
+            "a client that disconnected",
+        ),
+    ],
+    ids=lambda value: value if isinstance(value, str) else "",
+)
+def test_a_sender_that_stops_takes_its_session_out_of_the_room(
+    socket: AsyncMock, label: str
+) -> None:
+    """However the single writer stops, that participant is finished with the room.
+
+    The three quiet exits used to `return` and leave the session registered: still in
+    presence, still fanned out to, its queue filling with frames no one will ever send —
+    and its peers never told. An error path already closed the session; the quiet ones
+    ({label}) did not.
+    """
+
+    async def exercise() -> None:
+        hub = ProjectRoomHub()
+        project_id = uuid4()
+        dying = _session(socket, project_id=project_id)
+        peer = _session(_mock_socket(), project_id=project_id, actor_id=UUID(int=12))
+        for participant in (dying, peer):
+            await hub.join(participant)
+            await hub.register_presence(participant)
+            await hub.activate(participant)
+
+        await hub.publish_model(
+            workspace_id=dying.workspace_id,
+            project_id=project_id,
+            message=RoomHeartbeatMessage(authorization_version=1),
+        )
+        for _ in range(100):
+            if dying.closed:
+                break
+            await asyncio.sleep(0.01)
+
+        assert dying.closed is True, label
+        assert dying.sender_task is not None and dying.sender_task.done(), label
+        remaining = await hub.participants_for(
+            workspace_id=dying.workspace_id, project_id=project_id
+        )
+        assert [item.project_room_session_id for item in remaining] == [
+            peer.project_room_session_id
+        ], label
+        delivered = [call.args[0] for call in peer.websocket.send_json.await_args_list]
+        assert "presence.leave" in [frame["type"] for frame in delivered], (
+            label,
+            delivered,
+        )
+        await hub.shutdown()
+
+    asyncio.run(exercise())
+
+
+def test_hub_shutdown_waits_for_the_sender_it_cancelled() -> None:
+    """Shutdown returns with the sender finished, not merely asked to stop.
+
+    A sender that was only cancelled is still a live task when the hub is done with it,
+    and the code that closes the event loop afterwards waits for every task on it without
+    a deadline of its own. That is how a room becomes a process that cannot be stopped.
+    """
+
+    async def exercise() -> None:
+        hub = ProjectRoomHub()
+        blocked = asyncio.Event()
+        websocket = _mock_socket()
+        websocket.send_json.side_effect = lambda _payload: blocked.wait()
+        session = _session(websocket, project_id=uuid4())
+        await hub.join(session)
+        await hub.activate(session)
+        await hub.deliver_private(
+            session, RoomHeartbeatMessage(authorization_version=1)
+        )
+        await asyncio.sleep(0.02)
+
+        await asyncio.wait_for(hub.shutdown(), timeout=2)
+
+        assert session.sender_task is not None
+        assert session.sender_task.done()
+
+    asyncio.run(exercise())
+
+
+def test_hub_shutdown_does_not_wait_forever_on_a_sender_that_ignores_cancellation(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The deadline is the last resort, and it is loud.
+
+    A sender that swallows its cancellation must cost a bounded wait and a log line, not
+    the process. Silence here is a container that gets SIGKILLed with no explanation.
+    """
+
+    async def exercise() -> None:
+        monkeypatch.setattr(hub_module, "SENDER_STOP_TIMEOUT_SECONDS", 0.05)
+        hub = ProjectRoomHub()
+        let_go = asyncio.Event()
+
+        async def unstoppable(_payload: dict) -> None:
+            while not let_go.is_set():
+                with contextlib.suppress(asyncio.CancelledError):
+                    await asyncio.sleep(0.01)
+
+        websocket = _mock_socket()
+        websocket.send_json.side_effect = unstoppable
+        session = _session(websocket, project_id=uuid4())
+        await hub.join(session)
+        await hub.activate(session)
+        await hub.deliver_private(
+            session, RoomHeartbeatMessage(authorization_version=1)
+        )
+        await asyncio.sleep(0.02)
+        runaway = session.sender_task
+        assert runaway is not None
+        caplog.set_level(logging.ERROR, logger="grafy_api.realtime.hub")
+        try:
+            await asyncio.wait_for(hub.shutdown(), timeout=2)
+
+            reported = [
+                record.getMessage()
+                for record in caplog.records
+                if record.getMessage().startswith("graph_room_sender_failed")
+            ]
+            assert len(reported) == 1, reported
+            assert "sender_did_not_stop" in reported[0]
+        finally:
+            # Nothing here outlives the test. A sender this hub gave up on is exactly the
+            # task that makes a loop's final cleanup wait forever, so it is released and
+            # reaped whether the assertions held or not.
+            let_go.set()
+            runaway.cancel()
+            await asyncio.wait({runaway}, timeout=2)
 
     asyncio.run(exercise())
 

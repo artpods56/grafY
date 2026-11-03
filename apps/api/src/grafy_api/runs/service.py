@@ -153,6 +153,7 @@ class RunService:
         self._concurrency = concurrency
         self._runtimes: dict[tuple[UUID, UUID], _ProjectRuntime] = {}
         self._watchers: dict[UUID, _WatchedRun] = {}
+        self._closing = False
 
     # Runs ------------------------------------------------------------------
 
@@ -302,7 +303,16 @@ class RunService:
         Runs left running stay running in the store: nobody watched their
         computations, and the next startup marks them interrupted, which is the
         honest record of what happened.
+
+        Nothing this call does may start further work. Withdrawing a Run moves
+        computation states, and every moved state announces itself, so the withdrawals
+        below would otherwise spawn a fresh publish task *after* the gather meant to
+        collect them — a task no one holds, deriving instance state over a database the
+        lifespan disposes next, and one more live task for whoever closes the event loop to
+        wait for. Losing those publishes costs nobody: `AppResources.cleanup` shuts the room
+        hub down before it reaches this service, so there is no participant left to tell.
         """
+        self._closing = True
         watched = list(self._watchers.items())
         self._watchers.clear()
         publishes = [
@@ -326,6 +336,17 @@ class RunService:
         for run_id, entry in watched:
             if entry.runtime.scheduler is not None:
                 await entry.runtime.scheduler.cancel(str(run_id))
+        # A publish started before the closing flag landed is still this service's to
+        # reap: the withdrawals above are exactly the transition that spawns one.
+        late = [
+            runtime.publish_task
+            for runtime in self._runtimes.values()
+            if runtime.publish_task is not None and not runtime.publish_task.done()
+        ]
+        for task in late:
+            task.cancel()
+        if late:
+            await asyncio.gather(*late, return_exceptions=True)
         self._runtimes.clear()
 
     # Instance state --------------------------------------------------------
@@ -481,7 +502,14 @@ class RunService:
         Called by the scheduler listener with no await point of its own: it sets a
         flag and makes sure something will drain it, which is all a synchronous
         announcement can ask for.
+
+        Once the service is closing it asks for nothing. A transition announced during
+        shutdown would spawn a publish task no one holds any more — `close()` has already
+        collected them — and that task would do its SQL over a database the lifespan is on
+        its way to disposing, on a loop somebody is waiting to close.
         """
+        if self._closing:
+            return
         runtime.dirty = True
         if runtime.publish_task is None or runtime.publish_task.done():
             runtime.publish_task = asyncio.create_task(self._drain_publishes(runtime))

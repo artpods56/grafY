@@ -215,6 +215,7 @@ async def join_project_room(
             workspace_id=workspace_id,
             project_id=project_id,
         )
+
         ready = RoomReadyMessage(
             workspace_id=workspace_id,
             project_id=project_id,
@@ -286,7 +287,8 @@ async def join_project_room(
                 with contextlib.suppress(asyncio.CancelledError):
                     await heartbeat_task
     except WebSocketDisconnect:
-        await hub.leave(session)
+        # The departure itself is the finally's job; this arm only says why.
+        pass
     except Exception:
         logger.exception(
             "project_room_failed workspace_id=%s project_id=%s "
@@ -295,7 +297,36 @@ async def join_project_room(
             project_id,
             session.project_room_session_id,
         )
-        await hub.leave(session)
+    finally:
+        await _depart_room(hub, session)
+
+
+async def _depart_room(hub: ProjectRoomHub, session: ProjectRoomSession) -> None:
+    """Leave the room, whatever ended it — including a cancelled room task.
+
+    Cancellation is the normal way a WebSocket handler ends: an ASGI server cancels it
+    when the peer goes away, and the test client cancels its session scope on exit. A
+    departure written only in the `except` arms is therefore a leak with a schedule: the
+    session stays registered, so its peers never receive ``presence.leave``, keep fanning
+    out to a socket that is gone, and its sender task outlives that socket. The hub's
+    shutdown is then the only thing that cleans up, and it inherits the wait.
+
+    The bookkeeping therefore happens with no await in it at all, and only then does this
+    await the part that needs to — the sender's stop and the close frame — shielded, so a
+    cancellation that is already in flight cannot interrupt it halfway.
+    """
+
+    hub.leave_now(session)
+    try:
+        await asyncio.shield(hub.leave(session))
+    except asyncio.CancelledError:
+        logger.debug(
+            "project_room_departure_cancelled workspace_id=%s project_id=%s "
+            "project_room_session_id=%s",
+            session.workspace_id,
+            session.project_id,
+            session.project_room_session_id,
+        )
 
 
 async def _authorize_room(

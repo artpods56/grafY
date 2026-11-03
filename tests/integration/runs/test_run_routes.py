@@ -16,6 +16,7 @@ Nothing here sleeps: the moments a test waits for are a gate the runner opens, o
 frame the room sends once the row behind it is already written.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -592,3 +593,88 @@ def test_an_added_graph_adds_an_instance_and_its_removal_removes_it(
     emptied = harness.get(f"/projects/{project_id}/graphs/extra/instances")
     assert emptied.status_code == 200, emptied.text
     assert emptied.json()["instances"] == []
+
+
+# --- The harness cannot outlive its own gates --------------------------------
+
+
+def test_a_computation_dispatched_after_the_release_sweep_still_finishes(
+    harness: RoomHarness,
+) -> None:
+    """No gate is ever handed out shut once the harness is on its way out.
+
+    ``room_harness`` opens every gate before it leaves, but the scheduler can still
+    dispatch a queued computation during shutdown — withdrawing one Run frees a slot in
+    ``concurrency`` for the next ready one — and a gate created at that moment used to be
+    opened by nobody. A shut gate is a worker thread parked in ``Event.wait``, which no
+    cancellation reaches, and the loop that owns it pays for it on the way out.
+    """
+
+    project_id = harness.project_id
+    harness.runner.release_everything()
+
+    with harness.open_room(project_id) as websocket:
+        websocket.expect("room.ready")
+        started = start_run(harness, project_id, FIRST)
+        assert started.status_code == 201, started.text
+        run_id = str(started.json()["id"])
+
+        assert wait_for_finished(websocket, run_id) == "succeeded"
+
+    assert harness.runner.released == [FIRST]
+
+
+def test_closing_the_run_service_leaves_no_publish_task_running(
+    harness: RoomHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A shutdown that spawns work leaves the loop a task nobody holds.
+
+    Withdrawing a Run moves computation states and every moved state announces itself,
+    which used to start a fresh publish *after* `close()` had collected the tasks it was
+    meant to collect. That task then derived instance state over a database the lifespan
+    disposes next — the `Exception terminating connection` at teardown — and stayed live
+    for the loop's final cleanup to wait on.
+
+    The derivation is held open so the question is asked while a late publish would still
+    be running, rather than after it had come and gone.
+    """
+
+    project_id = harness.project_id
+    started = start_run(harness, project_id)
+    assert started.status_code == 201, started.text
+    assert harness.runner.started(FIRST).wait(10)
+
+    async def test_it() -> None:
+        service = harness.resources.runs
+        deriving = asyncio.Event()
+
+        async def slow_derive(_runtime: object) -> None:
+            await deriving.wait()
+
+        monkeypatch.setattr(service, "_publish", slow_derive)
+
+        async def report() -> list[asyncio.Task]:
+            await service.close()
+            here = asyncio.current_task()
+            return [
+                task
+                for task in asyncio.all_tasks()
+                if task is not here
+                and not task.done()
+                and task.get_coro().__qualname__ in {"_drain_publishes", "_watch"}
+            ]
+
+        # Let the publish this Run owes get as far as the derivation before closing.
+        await asyncio.sleep(0)
+        late = await report()
+        try:
+            assert [task.get_coro().__qualname__ for task in late] == []
+        finally:
+            # The test must not itself leave a task the loop has to wait for.
+            deriving.set()
+            for task in late:
+                task.cancel()
+            await asyncio.gather(*late, return_exceptions=True)
+
+    harness.client.portal.call(test_it)
