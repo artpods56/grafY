@@ -2,7 +2,7 @@ import { ApiError, request } from "./client";
 import type {
   LibraryItem,
   LibraryList,
-  SaveRunArtifactRequest,
+  SaveInstanceArtifactRequest,
   SaveUploadedArtifactRequest,
 } from "./contract";
 
@@ -10,15 +10,15 @@ function libraryPath(workspaceId: string, suffix = ""): string {
   return `/v1/workspaces/${encodeURIComponent(workspaceId)}/library/artifacts${suffix}`;
 }
 
-/** The refusal code for an artifact a saved revision or run history still uses. */
+/** The refusal code for an artifact a saved checkpoint still uses. */
 const ARTIFACT_IN_USE = "library.artifact_in_use";
 
 /**
  * A Library artifact another object still references.
  *
  * The server names the referencing graphs in `detail` and the panel shows that
- * text: only the server knows which saved revisions and which run history hold
- * the reference, and the panel holds neither.
+ * text: only the server knows which saved checkpoints hold the reference, and
+ * the panel holds neither.
  */
 export class LibraryArtifactInUseError extends Error {
   readonly artifactId: string;
@@ -37,13 +37,22 @@ export function listLibraryArtifacts(workspaceId: string) {
   return request<LibraryList>("GET", libraryPath(workspaceId));
 }
 
-export function saveRunArtifactToLibrary(
+/**
+ * Put one stored result's output in the Library.
+ *
+ * The Library keeps the instance's identity — Graph, node, call path and the
+ * result fingerprint — so a later refresh that produces a new result never
+ * rewrites what a person filed here.
+ */
+export function saveInstanceArtifactToLibrary(
   workspaceId: string,
-  body: SaveRunArtifactRequest,
+  body: SaveInstanceArtifactRequest,
 ) {
-  return request<LibraryItem>("POST", libraryPath(workspaceId, "/from-run"), {
-    body,
-  });
+  return request<LibraryItem>(
+    "POST",
+    libraryPath(workspaceId, "/from-instance"),
+    { body },
+  );
 }
 
 export function saveUploadedArtifactToLibrary(
@@ -62,8 +71,8 @@ export function saveUploadedArtifactToLibrary(
 /**
  * Remove an artifact from the Workspace Library.
  *
- * Rejects with `LibraryArtifactInUseError` while a saved graph revision or
- * execution history references it, and with the plain `ApiError` for anything
+ * Rejects with `LibraryArtifactInUseError` while a saved checkpoint references
+ * it, and with the plain `ApiError` for anything
  * else, including an artifact this Library does not have.
  */
 export async function deleteLibraryArtifact(
