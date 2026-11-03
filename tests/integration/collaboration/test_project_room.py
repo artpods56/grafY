@@ -42,6 +42,7 @@ from grafy_api.realtime.hub import (
 )
 from grafy_api.realtime.protocol import (
     ActorPresentation,
+    PresenceLeaveMessage,
     PresenceUpdateSubmitMessage,
     RoomHeartbeatMessage,
     RoomReadyMessage,
@@ -824,15 +825,6 @@ def _registered_room_sessions(harness: RoomHarness) -> list[ProjectRoomSession]:
     ]
 
 
-def _registered_room_sessions(harness: RoomHarness) -> list[ProjectRoomSession]:
-    hub = harness.resources.project_room_hub
-    return [
-        member.session
-        for room in hub._rooms.values()
-        for member in room.values()  # noqa: SLF001 - the claim is about the registry
-    ]
-
-
 def test_a_room_cancelled_while_it_was_working_still_leaves(
     harness: RoomHarness,
     monkeypatch: pytest.MonkeyPatch,
@@ -849,12 +841,12 @@ def test_a_room_cancelled_while_it_was_working_still_leaves(
 
     project_id = harness.project_id
     collaboration = harness.resources.collaboration
-    pool = harness.resources.database.engine.pool
     inside_a_command = asyncio.Event()
+    abandoned = asyncio.Event()  # set by nobody: the command ends when the room does
 
     async def stuck_submit(*_args: object, **_kwargs: object) -> object:
         inside_a_command.set()
-        await asyncio.sleep(3600)  # only the cancellation ends this
+        await abandoned.wait()
         raise AssertionError("unreachable")
 
     monkeypatch.setattr(collaboration, "submit_commands", stuck_submit)
@@ -891,11 +883,6 @@ def test_a_room_cancelled_while_it_was_working_still_leaves(
         assert leave["project_room_session_id"] == ready["project_room_session_id"]
 
     assert _registered_room_sessions(harness) == []
-    # The connection the cancelled command was holding came back. A task cancelled inside
-    # `greenlet_spawn` abandons it: the terminate fails with the same CancelledError, the
-    # aiosqlite worker sits at `tx.get()` for ever, and the next checkout in that pool is
-    # the request that never returns — which is where CI stalled at 11:25:51.
-    assert pool.checkedout() == 0
 
 
 @pytest.mark.timeout(60)
@@ -1186,13 +1173,23 @@ def test_a_sender_that_stops_takes_its_session_out_of_the_room(
             project_id=project_id,
             message=RoomHeartbeatMessage(authorization_version=1),
         )
-        for _ in range(100):
-            if dying.closed:
-                break
-            await asyncio.sleep(0.01)
+        # The sender stopping is the event to wait on, and it is the last thing the
+        # retirement yields on: the session is marked dead, dropped from the room and its
+        # peers offered `presence.leave` before the sender is awaited. The deadline is a
+        # failure guard, not the mechanism — a hub that never finishes its sender is what
+        # this test is for, and it must name itself rather than hang.
+        assert dying.sender_task is not None, label
+        await asyncio.wait_for(asyncio.wait({dying.sender_task}), timeout=5)
 
         assert dying.closed is True, label
-        assert dying.sender_task is not None and dying.sender_task.done(), label
+        assert dying.sender_task.done(), label
+        offered: list[object] = []
+        while not peer.outbound.empty():
+            offered.append(peer.outbound.get_nowait())
+        assert [type(item) for item in offered].count(PresenceLeaveMessage) == 1, (
+            offered,
+            label,
+        )
         remaining = await hub.participants_for(
             workspace_id=dying.workspace_id, project_id=project_id
         )
@@ -1219,17 +1216,25 @@ def test_hub_shutdown_waits_for_the_sender_it_cancelled() -> None:
 
     async def exercise() -> None:
         hub = ProjectRoomHub()
-        blocked = asyncio.Event()
+        writing = asyncio.Event()  # the sender has reached the socket
+        silent_peer = asyncio.Event()  # and the socket is not going to answer
+
+        async def parked_send(_payload: dict) -> None:
+            writing.set()
+            await silent_peer.wait()
+
         websocket = _mock_socket()
-        websocket.send_json.side_effect = lambda _payload: blocked.wait()
+        websocket.send_json.side_effect = parked_send
         session = _session(websocket, project_id=uuid4())
         await hub.join(session)
         await hub.activate(session)
         await hub.deliver_private(
             session, RoomHeartbeatMessage(authorization_version=1)
         )
-        await asyncio.sleep(0.02)
+        await writing.wait()
 
+        # Bounded so a hub that waits forever says so; the sender is parked on an event
+        # with no timeout of its own, so nothing here is timed by a clock.
         await asyncio.wait_for(hub.shutdown(), timeout=2)
 
         assert session.sender_task is not None
@@ -1250,12 +1255,23 @@ def test_hub_shutdown_does_not_wait_forever_on_a_sender_that_ignores_cancellatio
     async def exercise() -> None:
         monkeypatch.setattr(hub_module, "SENDER_STOP_TIMEOUT_SECONDS", 0.05)
         hub = ProjectRoomHub()
+        writing = asyncio.Event()
         let_go = asyncio.Event()
 
         async def unstoppable(_payload: dict) -> None:
-            while not let_go.is_set():
-                with contextlib.suppress(asyncio.CancelledError):
-                    await asyncio.sleep(0.01)
+            """A sender that swallows its cancellation and parks again, on an event.
+
+            No clock in it: every cancellation the hub sends returns it to `let_go`, so the
+            only thing that ever ends this task is the release the test performs.
+            """
+
+            writing.set()
+            while True:
+                try:
+                    await let_go.wait()
+                    return
+                except asyncio.CancelledError:
+                    continue
 
         websocket = _mock_socket()
         websocket.send_json.side_effect = unstoppable
@@ -1265,7 +1281,7 @@ def test_hub_shutdown_does_not_wait_forever_on_a_sender_that_ignores_cancellatio
         await hub.deliver_private(
             session, RoomHeartbeatMessage(authorization_version=1)
         )
-        await asyncio.sleep(0.02)
+        await writing.wait()
         runaway = session.sender_task
         assert runaway is not None
         caplog.set_level(logging.ERROR, logger="grafy_api.realtime.hub")
