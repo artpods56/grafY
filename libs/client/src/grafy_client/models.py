@@ -3,11 +3,9 @@ from typing import ClassVar, Literal, Self
 from uuid import UUID
 
 from grafy_core.artifacts import ArtifactTypeKey
-from grafy_core.domain.graph_documents import (
-    GraphDocument,
-)
+from grafy_core.kernel.project import ProjectDocument
 from grafy_core.nodes import PortShape
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class ClientModel(BaseModel):
@@ -48,7 +46,7 @@ class CatalogPort(ClientModel):
 
 
 class CatalogNode(ClientModel):
-    origin: Literal["builtin", "module"] = "builtin"
+    origin: Literal["builtin"] = "builtin"
     operator_id: str
     operator_version: int
     plugin_slug: str
@@ -60,10 +58,6 @@ class CatalogNode(ClientModel):
     inputs: tuple[CatalogPort, ...]
     outputs: tuple[CatalogPort, ...]
     secret_inputs: tuple[dict[str, object], ...] = ()
-    module_graph_id: UUID | None = None
-    module_graph_revision: int | None = None
-    module_id: UUID | None = None
-    is_current_library_release: bool | None = None
     catalog_visible: bool = True
     runnable: bool = True
 
@@ -93,16 +87,39 @@ class NodeCatalog(ClientModel):
     artifact_types: tuple[dict[str, object], ...]
     nodes: tuple[CatalogNode, ...]
     artifact_conversions: tuple[CatalogConversion, ...]
-    unavailable_modules: tuple[dict[str, object], ...] = ()
 
 
-class SavedGraph(ClientModel):
+class Project(ClientModel):
     id: UUID
     name: str
-    revision: int
     created_at: datetime
     updated_at: datetime
-    document: GraphDocument
+
+
+class ProjectHead(ClientModel):
+    """Collaboration metadata paired with the Project document."""
+
+    project_id: UUID
+    room_epoch: UUID
+    collaboration_sequence: int
+    checkpoint_sequence: int
+    checkpoint_revision: int
+    name: str
+    updated_at: datetime
+    document: ProjectDocument
+
+
+class CommandReceipt(ClientModel):
+    command_id: UUID
+    outcome: Literal["accepted", "idempotent_replay"]
+    accepted_sequence: int
+    room_epoch: UUID
+    deduplicated: bool
+
+
+class SubmittedCommands(ClientModel):
+    head: ProjectHead
+    receipt: CommandReceipt
 
 
 class UploadItem(ClientModel):
@@ -120,88 +137,51 @@ class NodeSecretStatus(ClientModel):
     configured: bool
 
 
-class ExecutionArtifact(ClientModel):
-    artifact_id: UUID
-    artifact_type: str
-    schema_version: int
-    content_type: str
-    byte_size: int | None = None
-    sha256: str | None = None
-    text: str | None = None
-    content_url: str | None = None
-    download_formats: tuple[dict[str, object], ...] = ()
-    metadata: dict[str, object] = Field(default_factory=dict)
-
-
-class ExecutionOutput(ClientModel):
-    port: str
-    kind: Literal["single", "sequence"]
-    value: object
-    artifacts: tuple[ExecutionArtifact, ...]
-
-    @property
-    def artifact_id(self) -> UUID:
-        if len(self.artifacts) != 1:
-            raise ValueError(
-                f"Execution output {self.port!r} contains {len(self.artifacts)} "
-                "artifacts, not one"
-            )
-        return self.artifacts[0].artifact_id
-
-    @property
-    def artifact_type(self) -> str:
-        if len(self.artifacts) != 1:
-            raise ValueError(
-                f"Execution output {self.port!r} contains {len(self.artifacts)} "
-                "artifacts, not one"
-            )
-        return self.artifacts[0].artifact_type
-
-
-class ExecutionNodeResult(ClientModel):
+class RunTarget(ClientModel):
     node_id: str
-    status: Literal["succeeded", "failed", "skipped"]
+    call_path: tuple[str, ...] = ()
+
+
+class Run(ClientModel):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    graph_id: str
+    targets: tuple[RunTarget, ...]
+    started_by_user_id: UUID | None
+    status: Literal["running", "succeeded", "failed", "cancelled", "interrupted"]
+    created_at: datetime
+    finished_at: datetime | None
     error: str | None
-    outputs: tuple[ExecutionOutput, ...]
-
-    def output(self, port: str) -> ExecutionOutput:
-        matching = [output for output in self.outputs if output.port == port]
-        if len(matching) != 1:
-            raise KeyError(
-                f"Node {self.node_id!r} has {len(matching)} outputs named {port!r}"
-            )
-        return matching[0]
-
-
-class ExecutionResult(ClientModel):
-    status: Literal["succeeded", "failed"]
-    node_runs: tuple[ExecutionNodeResult, ...]
-
-    def node(self, node_id: str) -> ExecutionNodeResult:
-        matching = [node for node in self.node_runs if node.node_id == node_id]
-        if len(matching) != 1:
-            raise KeyError(f"Execution has {len(matching)} nodes named {node_id!r}")
-        return matching[0]
-
-
-class ExecutionState(ClientModel):
-    execution_id: UUID
-    status: Literal[
-        "queued",
-        "running",
-        "cancelling",
-        "cancelled",
-        "succeeded",
-        "failed",
-    ]
-    active_node_id: str | None
-    result: ExecutionResult | None
-    error: str | None
-    queue_position: int | None = None
 
     @property
     def terminal(self) -> bool:
-        return self.status in {"cancelled", "succeeded", "failed"}
+        return self.status != "running"
+
+
+class InstanceKey(ClientModel):
+    project_id: UUID
+    graph_id: str
+    call_path: tuple[str, ...]
+    node_id: str
+    map_index: int | None = None
+
+
+class InstanceState(ClientModel):
+    key: InstanceKey
+    state: Literal["fresh", "stale", "queued", "running", "failed"]
+    fingerprint: str
+    last_result_fingerprint: str | None
+    error: str | None
+
+
+class InstanceResult(ClientModel):
+    """The last result of one node instance; it may be stale."""
+
+    instance: InstanceState
+    result_fingerprint: str | None
+    outputs: dict[str, object] | None
+    created_at: datetime | None
 
 
 __all__ = [
@@ -209,13 +189,16 @@ __all__ = [
     "CatalogConversionKey",
     "CatalogNode",
     "CatalogPort",
-    "ExecutionArtifact",
-    "ExecutionNodeResult",
-    "ExecutionOutput",
-    "ExecutionResult",
-    "ExecutionState",
+    "CommandReceipt",
+    "InstanceKey",
+    "InstanceResult",
+    "InstanceState",
     "NodeCatalog",
     "NodeSecretStatus",
-    "SavedGraph",
+    "Project",
+    "ProjectHead",
+    "Run",
+    "RunTarget",
+    "SubmittedCommands",
     "UploadItem",
 ]

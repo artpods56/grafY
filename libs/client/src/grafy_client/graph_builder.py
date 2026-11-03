@@ -71,16 +71,6 @@ class _AuthoredNode:
     position: GraphPoint | None
 
 
-def _node_kind(catalog_node: CatalogNode) -> Literal["builtin", "module"]:
-    if (
-        catalog_node.origin == "module"
-        or catalog_node.module_graph_id is not None
-        or catalog_node.plugin_slug == "graph.module"
-    ):
-        return "module"
-    return "builtin"
-
-
 def _artifact_type_variables(catalog_node: CatalogNode) -> set[str]:
     variables = {
         port.artifact_type_variable
@@ -541,7 +531,7 @@ class GraphBuilder:
 
         nodes = tuple(
             GraphNode(
-                kind=_node_kind(authored.catalog_node),
+                kind="builtin",
                 id=authored.handle.node_id,
                 operator_id=authored.catalog_node.operator_id,
                 operator_version=authored.catalog_node.operator_version,

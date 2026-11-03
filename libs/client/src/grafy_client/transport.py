@@ -66,6 +66,7 @@ class HttpTransport:
         json_payload: object | None = None,
         files: Mapping[str, tuple[str, bytes, str]] | None = None,
         headers: Mapping[str, str] | None = None,
+        params: Mapping[str, str | list[str]] | None = None,
         sensitive_values: tuple[str, ...] = (),
     ) -> object:
         request_headers = dict(headers or {})
@@ -78,6 +79,7 @@ class HttpTransport:
                 headers=request_headers,
                 json=json_payload,
                 files=files,
+                params=params,
             )
         except httpx.RequestError as exc:
             raise GrafyClientError(
