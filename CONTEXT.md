@@ -146,67 +146,117 @@ not runnable when any required bundle adapter is unavailable.
 A lightweight reference to a persisted artifact. Graph execution moves
 references between nodes and materializes Python values only at a node input.
 
-### Upstream output pin
-
-An exact `ArtifactRef` or `ArtifactRefSequence` copied from a materialized output
-binding when a selected run begins. The incoming crossing edge remains in the
-selected-subgraph request and keeps owning its projection, conversion, and
-`direct`/`map` collection mode; the pin supplies that edge's source value
-without executing its source node. The server consumes the submitted reference
-and never performs a fuzzy "latest artifact" lookup.
-
 ### Origin
 
 A node input satisfied by a direct reference to a Library artifact instead of by
 an edge from an upstream node. An origin holds the exact `ArtifactRef` or
 `ArtifactRefSequence` the user placed there, plus a declared artifact conversion
 path when the artifact's type is not already one the input accepts, and it adds
-no node to the saved graph; on a `many` port, several artifacts group into one
-sequence. It is the same reference kind a selected-subgraph pin carries, and it
-names an artifact by identity rather than searching for one. An origin and an
+no node to the Graph; on a `many` port, several artifacts group into one
+sequence. It names an artifact by identity rather than searching for one. An origin and an
 enabled edge never satisfy the same input, though a disabled edge may wait beside
-one. An origin whose artifact can no longer be read stays in the saved document
+one. An origin whose artifact can no longer be read stays in the Graph document
 exactly as written and leaves its input unsatisfied. An origin therefore belongs
 to the Workspace that owns its artifact: copying a graph into another Workspace
 drops the origin and leaves that input unsatisfied, rather than moving bytes
 across the tenancy boundary.
 _Avoid_: source node, source operator, input node
 
-### Materialized output binding
+### Project
 
-The durable record of a successful output for one exact saved graph revision,
-node, and output port. In this workbench, **latest** means the binding identified
-by `(graph id, graph revision, node id, output port)`; it never means the newest
-artifact with a matching type or producer. A binding is reusable only when all
-of its artifact references are accessible through the active runtime.
-Inaccessible references are not advertised as available outputs.
+The Workspace-owned collaborative document and the unit of append-only
+checkpoints. A Project is the collaboration room and the object folders,
+archive, starring and last-opened state attach to. It holds named **Graphs** and
+the results its nodes have produced. Every Project belongs to exactly one
+Workspace; effective permission is role ∩ PAT scope ∩ capability. There is no
+per-Project ACL. A Project's name is separate from its Graphs' names.
+_Avoid_: saved graph, workspace document, canvas
 
-A binding can carry forward to a new graph revision only while its node and
-all upstream dependencies retain the same execution meaning. Changing a node's
-execution settings or enabled inputs invalidates its outputs and those of every
-downstream node reached through enabled edges. This holds even when the changed
-node has no materialized output of its own. Layout-only edits preserve reusable
-bindings. Invalidation leaves earlier revision bindings and execution history
-available for inspection.
+### Graph
+
+A named definition inside a Project: a typed interface (inputs and outputs
+declared by `graph.input` / `graph.output` boundary nodes), nodes, edges, origins
+and its own canvas layout. Any Graph can be run directly or called from a sibling
+Graph. Graph ids are unique within their Project.
+_Avoid_: workflow, module
+
+### Call node
+
+A node that places a sibling Graph of the same Project. Its ports are that Graph's
+interface. The reference is live: caller and callee are checkpointed together, so
+there is no release or pin. The call relation is acyclic and a Graph that still has
+callers cannot be removed. Changing a Graph's interface surfaces the broken
+connections at its call sites as connection issues instead of rejecting the edit.
+A call node never becomes an instance; expansion inlines the callee.
+
+### Node instance
+
+`(project, graph, call path, node id[, map index])`: the unit that owns a
+fingerprint and a derived state. A node called twice has two instances.
+
+### Fingerprint
+
+A digest over a node instance's operator id and version, implementation identity,
+config, secret state, artifact type bindings, ordered input plugs and, for each
+incoming connection, the upstream fingerprint, projection and conversion path.
+Origins contribute their artifact identity. Node ids, positions and the instance
+key never enter it, so identical content with identical upstream shares one
+fingerprint. A `NEVER`-cache node also carries its refresh generation. An operator
+the build does not register is an error, never a default policy.
+
+### Result store
+
+Append-only map from fingerprint to the successful outputs of a computation,
+scoped by Workspace. Entries are never mutated. Failures are recorded on the
+instance, not in the store. The only mutable per-instance record is its pointer to
+the last result and last failure, so a stale node keeps showing what it last
+produced. The store subsumes the invocation cache and the materialized output
+binding. It has no garbage collection yet.
+
+### Instance state
+
+Derived, never stored: **fresh** when the current fingerprint has a result,
+**queued** or **running** while a computation for it is in flight, **failed** when
+the last attempt at this fingerprint failed, otherwise **stale**. An edit during a
+Run leaves the instance stale; the Run's result is stored under the fingerprint it
+started with.
+
+### Refresh generation
+
+The counter a `NEVER`-cache node carries in its fingerprint. Refreshing is a
+Project command (`refresh_node`), so every participant sees it and a checkpoint
+records it.
+
+### Run
+
+A demand for a set of target node instances to become fresh. It schedules only the
+stale part of their upstream closure. Any number of Runs are active in one Project,
+started by any member with `start_run`. Computations are single-flight per
+fingerprint; cancelling a Run withdraws its demand and cancels a computation only
+when no active Run still needs it. A Run record holds who started it, its targets
+and its status (`running`, `succeeded`, `failed`, `cancelled`, `interrupted`); it
+holds no outputs. On API restart unfinished Runs are marked `interrupted` and stored
+results stay fresh.
+_Avoid_: execution, workflow run
 
 ### Library artifact
 
 The artifact a Workspace owns, shown in the Library drawer. There is one Library
-per Workspace and every member sees it. Uploaded bytes and Run artifacts are
+per Workspace and every member sees it. Uploaded bytes and node results are
 both eligible. A Library artifact is Workspace-owned and independent of any
-graph: graphs reference it, and deleting a graph, a revision, or its execution
-history never deletes it. It is a retention root in its own right, so nothing
+Project: Projects reference it, and deleting a Project or a checkpoint
+never deletes it. It is a retention root in its own right, so nothing
 collects it while it sits in the Library. Saving into the Library is promotion
 rather than first persist, because the artifact already exists as an upload or a
-materialized output binding before anyone saves it. Identity is the exact
+stored node result before anyone saves it. Identity is the exact
 artifact reference, so saving the same artifact twice yields one Library
 artifact, and picking one never means taking the newest artifact of a matching
 type. An artifact has one placement in the Library, and moving it never changes
 its reference. Removing an artifact from the Library clears its placement and
 leaves the row and its bytes alone. Deleting a Library artifact is refused while
-any saved revision or execution history references it, and the refusal names
-those graphs. A forced delete writes a new head revision for each referencing
-graph, removes the origin from that graph, and leaves the input unsatisfied.
+any Project head or checkpoint references it, and the refusal names those
+Projects. A forced delete removes the origin from each referencing Project head and
+leaves the input unsatisfied.
 _Avoid_: kept, saved asset, staged, library item, source
 
 ### Library folder
@@ -221,102 +271,21 @@ _Avoid_: directory, collection
 
 ### Run artifact
 
-An output one run of a graph produced, shown in the Runs drawer. Its workbench
-panel tab is titled `Generated`. The drawer is per canvas, newest first, grouped
-by run and then by the node that made the item, and each row names the revision
-it came from. Run artifacts are not a second persist: they exist as materialized
-output bindings the moment their node succeeds, which is what incremental
-execution, pins, and execution history read. The drawer is a view of those
-bindings, so an item stays visible after its run ends, and one reaches the
-Library only through an explicit save. Saving a Run artifact into the Library
-adds a reference to the same identity rather than moving or copying it, so the
-row stays in Runs and the artifact then appears in both views.
+An output a node instance's result holds, shown in the Generated drawer. The drawer
+is a view of the Project's stored results (the last result of each instance), so an
+item stays visible after the node goes stale and one reaches the Library only through
+an explicit save. Saving into the Library adds a reference to the same identity
+rather than moving or copying it.
 _Avoid_: produced, generated, result
 
-### Graph execution history
+### Room instance and Run events
 
-The durable, revision-scoped provenance record for one accepted asynchronous
-execution of a saved graph. It records the application execution id, exact graph
-revision, requested scope, ordered node closure, lifecycle timestamps and status,
-provider workflow id, terminal error, and ordered per-node results with their exact
-artifact output envelopes. Executions of unsaved or dirty graph documents remain
-ephemeral because they do not identify a durable graph revision.
-
-Execution identities are append-only, and each accepted node is one immutable
-`graph_execution_nodes` row with a monotonic lifecycle: requested (stable
-request-order position, no terminal result) then terminal (result recorded
-exactly once, carrying its own result position, outputs, artifact count,
-error, and completion timestamp). Nodes that never reach a terminal result
-keep their requested rows. Lifecycle fields on the execution row advance from
-queued/running (or cancelling) to one terminal state; a partial unique index
-on `(workspace_id, graph_id)` over the queued/running/cancelling statuses makes
-`graph_executions.status` the sole authority for one-active-execution per
-Workspace-owned Graph, and terminal transitions release that constraint.
-History is not the source used for incremental execution:
-`materialized_node_outputs` remains the mutable latest-successful-output
-projection used for pins, while history preserves every accepted execution across
-repeated runs and graph revisions. Historical inspection must never hydrate the
-canvas's current run state or make an old artifact eligible as a latest pin.
-
-Artifacts referenced by execution history are retention roots alongside current
-materializations and invocation-cache entries. Startup recovery currently marks
-unfinished executions as failed and assumes one owning API process; horizontal
-workers require an execution lease or heartbeat before they can safely share that
-recovery policy.
-
-### Live execution event
-
-A transient, user-visible observation emitted while one managed graph execution
-is active. The owning API process assigns every event a monotonic execution-local
-sequence and retains a bounded replay window so a browser can subscribe after the
-run starts or reconnect without silently missing recent progress. The stream
-carries lightweight execution and node lifecycle changes plus explicit progress
-reported by a node; the ordinary execution response remains the source of truth
-for terminal results and artifact outputs.
-
-Node progress is plain, bounded display text, not a diagnostic dump. A node may
-report a current and total count, but it must never include credentials, secret
-values, complete input payloads, or other sensitive runtime state. Progress
-publication is best-effort observation: a missing or slow subscriber never blocks,
-fails, or cancels the node. Live events are not persisted in saved-graph history.
-
-Node events carry an instance path whose first item is the visible node in the
-submitted top-level graph and whose remaining items identify nested module call
-sites and the emitting leaf node. This instance path is separate from the module
-definition path used for cycle detection and invocation caching. The distinction
-lets two nodes that invoke the same saved module revision aggregate their child
-events under the correct outer canvas node.
-
-Mapped node events also carry an invocation path: the ordered, zero-based item
-indices accumulated as execution enters mapped module instances. The separate
-local invocation index identifies the emitting node's own MAP item when it has
-one. Together they distinguish progress from nested mapped modules without
-encoding runtime item identity into the stable canvas node path.
-
-The current Server-Sent Events adapter and its replay window share the existing
-single-process execution ownership boundary. Supporting multiple API owners would
-also require shared execution state, event replay, cancellation routing, and an
-owner lease; adding more HTTP stream endpoints alone would not make execution
-multi-worker safe.
-
-### Invocation cache entry
-
-A global, content-addressed reuse record for one node invocation. It is not a
-saved-graph output binding and is not keyed by graph revision. Its versioned
-digest covers the operator id/version, validated configuration, stable node and
-module identity, invocation mode and mapped item index, resolved artifact-type
-bindings, exact ordered input containers and artifact SHA-256 values, and opaque
-secret revisions. The digest preimage and secret material are never persisted.
-
-Node registrations are fail-closed: the default policy is `never`, while a
-deterministic node may declare `exact`. Pure deterministic System nodes use
-`exact`; uploads, graph-module wrappers, and provider-backed nodes remain
-uncached unless their exact declaration supplies every stable dependency.
-Mapping caches scalar item invocations independently and builds the
-current aggregate sequence from those item outputs. A hit is valid only while
-every referenced artifact row and stored object remains accessible; stale cache
-entries are removed generation-safely. Cache entries are artifact-retention
-roots, so future artifact garbage collection must include them.
+Transient room frames: `run.started` / `run.finished` announce the active-Runs list
+with who started each, and `instances.changed` carries instance-state deltas keyed by
+full instance key. Instance state is recomputed and diffed per Project after
+scheduler transitions, accepted command batches and secret changes. Frames are
+best-effort observation and never block or cancel a computation; the REST list of
+Runs and instance states is the source of truth. The room assumes one API owner.
 
 ### Field projection
 
@@ -436,7 +405,7 @@ the API and edited by the Workbench. A client resolves each local Node class
 against the deployment catalog, records the operator id and version, validates
 port shapes and artifact-type bindings, and submits the
 ordinary nested `{ name, document }` graph contract. There is no automation-only
-graph representation or execution path. Saved execution reloads the requested
+graph representation or execution path. A Run reloads the requested
 revision on the server and derives the runtime request from that canonical
 document; the client cannot replace its topology at execution time.
 
@@ -495,24 +464,10 @@ unreachable from a graph. A trusted private destination comes from operator
 configuration only; a node, a graph and a Workspace can never widen it.
 _Avoid_: egress broker, network policy, sandbox network
 
-### Module (workspace library)
-
-A reusable workflow building block hosted by a workspace library. A Saved graph
-with Module Input/Output boundaries is only a candidate until someone
-**publishes a release**. Publishing takes a checkpoint of the source graph, so a
-release's contract and its source revision move together, and freezes a copy of
-the graph document: the source graph stays editable and editing it never changes
-an existing release. Call sites pin an immutable Module release
-(`graph.module.{source_graph_id}@{revision}`) and keep resolving that exact
-release. A published release is the only Module state; publishing again adds
-another release. There is no deprecate, withdraw, un-publish, or hard delete of
-releases, and no cross-workspace Module import: reuse a Module from another
-Workspace by duplicating the graph.
-
 ### Node catalog / Add node
 
 The catalog lists the builtin families, the Plugin families installed in this
-deployment, and published Modules as a separate entry kind. Every insertable node
+deployment, and, as a separate entry kind, the sibling Graphs of the open Project that can be placed as call nodes. Every insertable node
 carries its operator id and version plus the deployment's build digest; an
 operator that is not in the registry is a compile error, not a disabled entry
 waiting for a release.
@@ -565,10 +520,10 @@ nullability remain separate contract properties. A missing optional artifact is
 never represented by inventing a null artifact.
 
 Enabled state belongs to the edge that connects two ports. A disabled edge stays
-in the saved graph, retains its route, projection, conversion path, collection
+in the Graph document, retains its route, projection, conversion path, collection
 mode, and target-slot reservation, and remains structurally validated so it can
 be enabled again safely. It does not participate in execution ancestry, mapping,
-required-input satisfaction, pin resolution, or compiled input values. Runtime
+required-input satisfaction, or fingerprint inputs. Runtime
 edge requests therefore contain active edges only. Existing saved edges default
 to enabled when the field is absent.
 
@@ -592,8 +547,7 @@ Ordered sequence consumers that need cross-item context receive a `direct` MANY
 input and execute once. `map` is reserved for invocations whose items are
 independent; it never assembles items into one value, so mapping prompt messages
 into a completion runs one single-message conversation per message rather than
-building one conversation. Revision-scoped materialized outputs are whole-node bindings, not
-per-item checkpoints.
+building one conversation. Node results are whole-node entries in the result store, not per-item checkpoints.
 
 A node instance participating in concurrent MAP execution must be task-reentrant.
 Its `run` calls may overlap on the same event loop, so implementations must keep
@@ -604,33 +558,18 @@ Reusable runtime collaborators follow the same concurrency boundary: production
 SQL unit-of-work sessions are task-local, while the in-memory adapter serializes
 its transactions to preserve deterministic commits.
 
-The host keeps graph execution responsibilities separate. `RunGraph` coordinates
-run preflight, compilation, pin resolution, execution, and successful
-materialization binding. Preflight checks saved-revision and secret bindings;
-compilation resolves topology, contracts, projections, conversion paths, and
-invocation policy into an immutable plan. A graph execution port receives that
-prepared plan and executes it in-process: one coordinator visit per logical
-node, with scalar MAP items running concurrently inside the node executor,
-bounded by `GRAFY_MAP_MAX_CONCURRENCY` (default `4`). Their completion order is
-not observable: aggregation remains aligned to source position. When one item
-fails, unfinished sibling items are cancelled on a best-effort basis.
-
-The shared graph coordinator only propagates graph state, skips failed
-dependents, and assembles the run result. Node execution owns input assembly,
-opaque secret revisions, ONCE/MAP expansion, and source-position-aligned MAP
-aggregation. Edge value resolution applies the already compiled projection and
-conversion chain.
-`NodeRuntime` executes and persists exactly one scalar node invocation; it does
-not schedule graphs or implement collection mapping. Grafy remains the source
-of truth for artifacts, invocation caching, materialized outputs, and encrypted
-node secrets; decrypted secrets and live runtime collaborators never leave the
-process.
-
-Local execution visits logical nodes sequentially. Only the scalar items within
-one MAP invocation may overlap. If execution later moves to a remote single
-worker, the transport boundary belongs above `RunGraph`: submit a serializable
-run request, then perform preflight and compilation inside that worker. The
-current design does not define multi-worker or per-node remote scheduling.
+The host keeps Run responsibilities separate. The Run service plans a Run from the
+expanded Project Graph and its fingerprints and hands computations to the kernel
+scheduler (one concurrency budget per Project, single-flight per fingerprint). The
+node computation runner reads upstream results from the result store by fingerprint,
+applies each edge's projection and conversion chain, and executes ONCE/MAP semantics;
+scalar MAP items run concurrently inside the node executor, bounded by
+`GRAFY_MAP_MAX_CONCURRENCY` (default `4`), and aggregation stays aligned to source
+position. `NodeRuntime` executes and persists exactly one scalar node invocation; it
+does not schedule graphs or implement collection mapping. Grafy remains the source of
+truth for artifacts, stored results and encrypted node secrets; decrypted secrets and
+live runtime collaborators never leave the process. In-flight state lives in the single
+API owner; the current design defines no multi-worker or remote scheduling.
 
 ### Collect node
 
@@ -646,27 +585,24 @@ and `map` is not valid for a Collect input.
 
 ### Workflow graph
 
-A set of configured node instances and directed edges. The graph must be
+The set of configured node instances and directed edges of one Graph. It must be
 validated for operator identity and version, edge collection modes, port
 existence, required inputs, effective cardinality, compatibility, declared
 projections and conversions, and cycles before any node executes. Edge value
 handling has one fixed order: optional field projection, zero or more stored
 artifact conversions, then `direct` or `map` collection handling.
 
-### Saved graph
+### Graph document
 
-A durable workbench document containing a workflow graph plus user-authored
-canvas layout. It stores configured node identities, positions, semantic edge
+The durable content of one Graph: a workflow graph plus user-authored canvas layout. It stores configured node identities, positions, semantic edge
 endpoints, origins, ordered instance input plugs, node artifact-type bindings,
 projections, conversion paths, collection modes, and edge routing offsets. A generic binding
 survives even when its incident edges are temporarily removed; users reset it
 explicitly before binding the node to another artifact type. Registry metadata,
 callbacks, selection, viewport state, and execution results are derived or
 runtime state and are not part of the saved aggregate.
-Materialized output bindings are durable runtime records keyed to a saved
-revision, not fields inside the saved graph. Upstream output pins belong to an
-individual run request and remain transient. Drafts may be saved before they
-are executable.
+Results are durable records keyed by fingerprint in the result store, not
+fields inside the document. Drafts may be saved before they are executable.
 
 Artifacts render directly on the canvas as node-less artifact cards, either
 carrying artifact references or following a node output. The standalone Artifact
@@ -694,9 +630,9 @@ Image cards keep the filename and artifact contract above the image, dimmed
 when unselected. Info and action controls sit outside the image. Single values
 use one connector ring; sequences use two, including a sequence of one item.
 
-Saved graphs use optimistic revisions. Replacing a graph requires the revision
-last read by the caller so competing edits are reported instead of silently
-overwriting one another.
+Project commands are validated batches applied against the live head; a batch is
+accepted or rejected as a whole and a checkpoint restore is the way back from any
+accepted change.
 
 ### Workbench
 
@@ -706,17 +642,12 @@ dynamic graph structure, such as Schema Builder fields and their input plugs,
 use a dedicated node body. Nested artifact fields and collection
 mapping are selected on each edge. Compatible declared conversion paths are also
 stored and displayed on the edge; a unique route may be selected automatically
-when the user connects otherwise-incompatible ports. The complete
-graph or a selected subgraph can be executed. By default, selected execution
-includes internal and incoming crossing edges and reuses the exact materialized
-output binding for each unselected source port. If a required binding is
-missing, the run is blocked and the workbench directs the user to run the
-upstream node or run with dependencies. `Run with dependencies` is a separate
-action that expands the selection to its full upstream closure and executes that
-expanded graph. Pins and live running state remain transient; revision-scoped
-materialized outputs are restored when a saved graph is reopened.
+when the user connects otherwise-incompatible ports. Any Graph can be run directly, and any node can be a Run target: a Run schedules
+only the stale part of its upstream closure, so getting one value does not rerun
+the Graph. State is shared: every participant sees the same fresh, stale, queued,
+running and failed instances and the same active Runs.
 
-Every saved graph presented as a supported product workflow must be reproducible,
+Every Project presented as a supported product workflow must be reproducible,
 inspectable, and editable through the production Workbench UI. HTTP
 APIs, scripts, and direct graph-document manipulation may automate only authoring
 operations that the UI itself exposes; they must not populate hidden
