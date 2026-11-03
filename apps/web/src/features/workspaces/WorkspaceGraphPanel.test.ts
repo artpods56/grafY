@@ -37,13 +37,14 @@ const panelState = vi.hoisted(() => ({
       draft_pending: false,
     },
   ],
+  isLoading: false,
   isValidating: false,
 }));
 
 vi.mock("@/hooks/use-api", () => ({
   useWorkspaceProjects: () => ({
     data: { projects: panelState.projects },
-    isLoading: false,
+    isLoading: panelState.isLoading,
     isValidating: panelState.isValidating,
   }),
 }));
@@ -62,7 +63,7 @@ afterEach(async () => {
   document.body.replaceChildren();
   vi.unstubAllGlobals();
   testState.push.mockReset();
-  panelState.graphs = [
+  panelState.projects = [
     {
       id: "graph-invoice",
       name: "Invoice intake",
@@ -74,6 +75,7 @@ afterEach(async () => {
       draft_pending: false,
     },
   ];
+  panelState.isLoading = false;
   panelState.isValidating = false;
 });
 
@@ -214,13 +216,16 @@ describe("workspace graph panel interactions", () => {
     expect(status?.textContent).toBe("Refreshing…");
   });
 
-  it("labels a graph whose live draft is ahead of its saved checkpoint", async () => {
-    panelState.graphs = [
+  it("labels a project whose live draft is ahead of its saved checkpoint", async () => {
+    panelState.projects = [
       {
         id: "graph-draft",
         name: "Draft ahead",
         node_count: 0,
         edge_count: 0,
+        // Two Graphs in one Project: the row's counts describe the draft head of
+        // whichever Graph, never the number of Graphs the Project holds.
+        graph_count: 2,
         revision: 1,
         updated_at: "2026-08-10T12:00:00Z",
         draft_pending: true,
@@ -231,6 +236,18 @@ describe("workspace graph panel interactions", () => {
     expect(
       container.querySelector(".grafy-graph-panel__row-meta")?.textContent,
     ).toContain("0 nodes · 0 edges · unsaved draft");
+  });
+
+  it("names projects, not graphs, in the states that hold no row", async () => {
+    panelState.projects = [];
+    panelState.isLoading = true;
+    const { container: loading } = await renderPanel();
+    expect(loading.textContent).toContain("Loading projects…");
+
+    panelState.isLoading = false;
+    const { container: empty } = await renderPanel();
+    expect(empty.textContent).toContain("No projects in this location yet");
+    expect(empty.textContent).not.toContain("No graphs in this location yet");
   });
 
   it("reports an explicit close", async () => {
