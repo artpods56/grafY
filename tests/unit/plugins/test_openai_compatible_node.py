@@ -429,3 +429,29 @@ async def test_node_maps_secret_lookup_error_without_rendering_secret() -> None:
 
     assert "secret-provider-key" not in str(captured.value)
     assert captured.value.__cause__ is sensitive_lookup_error
+
+
+async def test_node_uses_sdk_egress_guard_for_private_destination() -> None:
+    from tests.unit.plugins.test_openai_compatible_provider import FakeStorage
+    from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+    from grafy_plugin_llm.openai_compatible_sdk import OpenAICompatibleSdkProvider
+    from tests.support.egress import loopback_http_listener, no_grants
+
+    async with loopback_http_listener() as listener:
+        node = OpenAICompatibleNode(
+            provider=OpenAICompatibleSdkProvider(
+                uow=InMemoryUnitOfWork(),
+                storage=FakeStorage(),
+                egress_policy=no_grants(),
+            ),
+            node_secrets=FakeNodeSecrets(SecretStr("graph-provider-key")),
+        )
+        with pytest.raises(OpenAICompatibleExecutionError, match="may not be dialed"):
+            await node.run(
+                NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="completion-1"),
+                OpenAICompatibleConfig(base_url=f"{listener.base_url}/v1"),
+                OpenAICompatibleInput(
+                    messages=[PromptMessage(role=PromptMessageRole.USER, text="Hello")]
+                ),
+            )
+        assert listener.requests == []
