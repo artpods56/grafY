@@ -1,1675 +1,1336 @@
-from dataclasses import FrozenInstanceError
-from types import TracebackType
-from typing import Literal, Self
+"""Focused tests for ``CollaborationService``: head, batches, checkpoints, copies.
+
+Run with ``--noconftest``: this file builds its own fakes from
+``tests/unit/application/project_fakes.py`` and expects nothing from shared fixtures.
+"""
+
+import asyncio
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+from tests.unit.application.project_fakes import (
+    IdentityDirectory,
+    ProjectStore,
+    ProjectUnitOfWorkFactory,
+    new_member,
+)
 
-from grafy_core.application.collaboration import CollaborationService
+from grafy_core.application.collaboration import (
+    CheckpointOutcome,
+    CollaborationService,
+    CommandSubmission,
+)
 from grafy_core.domain.collaboration import (
-    CollaborativeGraphHead,
+    AddGraphCommand,
+    AddNodeCommand,
+    CollaborationActorKind,
     CommandReceiptOutcome,
-    GraphCheckpointMapping,
-    GraphCommandReceipt,
-    MoveNodePosition,
-    MoveNodesCommand,
+    InGraphCommand,
+    ProjectCommand,
     RenameGraphCommand,
+    RenameProjectCommand,
     ReplaceDocumentCommand,
-    UpdateNodeConfigurationAndInputPlugsCommand,
 )
 from grafy_core.domain.errors import (
     CapabilityDeniedError,
-    CollaborationActiveExecutionError,
     CollaborationCommandRejectedError,
+    CollaborationError,
     CollaborationHeadConflictError,
     CollaborationIdempotencyMismatchError,
     CollaborationUncheckpointedError,
-    ConcurrentWriteError,
-    MissingCollaborativeHeadError,
+    MissingProjectHeadError,
     NotFoundError,
-    UserDisabledError,
-    SavedGraphRevisionConflictError,
+    ProjectCheckpointConflictError,
+)
+from grafy_core.domain.graph_documents import (
+    GraphDocument,
+    GraphNode,
+    GraphPoint,
 )
 from grafy_core.domain.identity import (
     ActorContext,
     User,
     Workspace,
-    WorkspaceMembership,
     WorkspaceRole,
 )
-from grafy_core.domain.graph_documents import (
-    GraphPoint,
-    SavedGraph,
-    GraphDocument,
-    GraphInputPlug,
-    GraphNode,
-    SavedGraphRevision,
-)
-from grafy_core.domain.security_audit import (
-    SecurityAuditEvent,
-    SecurityAuditOutcome,
-)
-from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
-from grafy_core.plugins import PluginRegistry
-from grafy_core.runtime.in_memory import (
-    InMemoryDataStore,
-    InMemoryMaterializedNodeOutputsRepository,
-)
+from grafy_core.domain.projects import ProjectCheckpoint
+from grafy_core.kernel.project import GraphDefinition, ProjectDocument
+
+HMAC_KEY = b"test-project-command-hmac-key"
+HMAC_KEY_VERSION = 3
 
 
-WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000201")
-USER_ID = UUID("00000000-0000-0000-0000-000000000202")
-HMAC_KEY = b"test-command-hmac-key-phase3"
+def actor_for(user: User) -> ActorContext:
+    return ActorContext(user_id=user.id, credential_reference="session:test")
 
 
-class FakeCollaborationRepository:
-    def __init__(self) -> None:
-        self.heads: dict[tuple[UUID, UUID], CollaborativeGraphHead] = {}
-        self.receipts: dict[tuple[UUID, UUID, UUID], GraphCommandReceipt] = {}
-        self.mappings: dict[tuple[UUID, UUID, UUID, int], GraphCheckpointMapping] = {}
-        self.locked: list[tuple[UUID, UUID]] = []
-        self.graphs_by_id: dict[UUID, SavedGraph] = {}
-
-    async def add_head(self, head: CollaborativeGraphHead) -> None:
-        key = (head.workspace_id, head.graph_id)
-        if key in self.heads:
-            raise ValueError("head exists")
-        self.heads[key] = head
-
-    async def get_head(
-        self,
-        workspace_id: UUID,
-        graph_id: UUID,
-    ) -> CollaborativeGraphHead | None:
-        return self.heads.get((workspace_id, graph_id))
-
-    async def lock_head(
-        self,
-        workspace_id: UUID,
-        graph_id: UUID,
-    ) -> CollaborativeGraphHead | None:
-        self.locked.append((workspace_id, graph_id))
-        return self.heads.get((workspace_id, graph_id))
-
-    async def save_head(self, head: CollaborativeGraphHead) -> None:
-        self.heads[(head.workspace_id, head.graph_id)] = head
-
-    async def remove_head(self, workspace_id: UUID, graph_id: UUID) -> None:
-        self.heads.pop((workspace_id, graph_id), None)
-
-    async def list_graphs_missing_heads(self) -> list[tuple[UUID, UUID]]:
-        return [
-            (graph.workspace_id, graph.id)
-            for graph in self.graphs_by_id.values()
-            if (graph.workspace_id, graph.id) not in self.heads
-        ]
-
-    async def get_receipt(
-        self,
-        workspace_id: UUID,
-        graph_id: UUID,
-        command_id: UUID,
-    ) -> GraphCommandReceipt | None:
-        return self.receipts.get((workspace_id, graph_id, command_id))
-
-    async def add_receipt(self, receipt: GraphCommandReceipt) -> None:
-        self.receipts[(receipt.workspace_id, receipt.graph_id, receipt.command_id)] = (
-            receipt
-        )
-
-    async def get_checkpoint_mapping(
-        self,
-        workspace_id: UUID,
-        graph_id: UUID,
-        *,
-        room_epoch: UUID,
-        collaboration_sequence: int,
-    ) -> GraphCheckpointMapping | None:
-        return self.mappings.get(
-            (workspace_id, graph_id, room_epoch, collaboration_sequence)
-        )
-
-    async def add_checkpoint_mapping(self, mapping: GraphCheckpointMapping) -> None:
-        self.mappings[
-            (
-                mapping.workspace_id,
-                mapping.graph_id,
-                mapping.room_epoch,
-                mapping.collaboration_sequence,
-            )
-        ] = mapping
-
-
-class FakeSavedGraphRepository:
-    def __init__(self) -> None:
-        self.graphs: dict[UUID, SavedGraph] = {}
-        self.revisions: dict[tuple[UUID, int], SavedGraphRevision] = {}
-        self.locked_revisions: list[tuple[UUID, UUID, int]] = []
-
-    async def add(self, graph: SavedGraph) -> None:
-        self.graphs[graph.id] = graph
-
-    async def add_revision(self, revision: SavedGraphRevision) -> None:
-        self.revisions[(revision.graph_id, revision.revision)] = revision
-
-    async def lock_revision(
-        self,
-        workspace_id: UUID,
-        graph_id: UUID,
-        expected_revision: int,
-    ) -> None:
-        self.locked_revisions.append((workspace_id, graph_id, expected_revision))
-
-    async def get(self, workspace_id: UUID, graph_id: UUID) -> SavedGraph | None:
-        graph = self.graphs.get(graph_id)
-        if graph is None or graph.workspace_id != workspace_id:
-            return None
-        return graph
-
-    async def get_revision(self, *args, **kwargs):
-        del args, kwargs
-        return None
-
-    async def list_revisions(self, *args, **kwargs):
-        del args, kwargs
-        return []
-
-    async def list(self, workspace_id: UUID) -> list[SavedGraph]:
-        return [
-            graph
-            for graph in self.graphs.values()
-            if graph.workspace_id == workspace_id
-        ]
-
-    async def remove(self, workspace_id: UUID, graph: SavedGraph) -> None:
-        if graph.workspace_id == workspace_id:
-            self.graphs.pop(graph.id, None)
-
-
-class FakeNodeSecretRepository:
-    async def list_for_graph(self, *args, **kwargs):
-        del args, kwargs
-        return []
-
-    async def remove(self, *args, **kwargs) -> None:
-        del args, kwargs
-
-
-class FakeIdentityRepository:
-    def __init__(
-        self,
-        user: User,
-        memberships: list[WorkspaceMembership],
-    ) -> None:
-        self.user = user
-        self.locked_workspaces: list[UUID] = []
-        self.memberships = {
-            (membership.workspace_id, membership.user_id): membership
-            for membership in memberships
-        }
-
-    async def lock_workspace_for_membership_mutation(
-        self, workspace_id: UUID
-    ) -> Workspace | None:
-        self.locked_workspaces.append(workspace_id)
-        if not any(key[0] == workspace_id for key in self.memberships):
-            return None
-        workspace = Workspace.shared(slug=f"workspace-{workspace_id}", name="Workspace")
-        workspace.id = workspace_id
-        return workspace
-
-    async def get_user(self, user_id: UUID) -> User | None:
-        if user_id != self.user.id:
-            return None
-        return self.user
-
-    async def get_membership(self, *, workspace_id: UUID, user_id: UUID):
-        return self.memberships.get((workspace_id, user_id))
-
-
-class FakeSecurityAuditRepository:
-    def __init__(self) -> None:
-        self.events: list[SecurityAuditEvent] = []
-
-    async def add(self, event: SecurityAuditEvent) -> None:
-        self.events.append(event)
-
-
-class FakeExecutionHistoryRepository:
-    def __init__(self) -> None:
-        self.active_execution_ids: dict[tuple[UUID, UUID], UUID] = {}
-
-    async def find_active_execution_id(
-        self,
-        workspace_id: UUID,
-        graph_id: UUID,
-    ) -> UUID | None:
-        return self.active_execution_ids.get((workspace_id, graph_id))
-
-
-class FakeCollaborationUnitOfWork:
-    def __init__(
-        self,
-        *,
-        collaboration: FakeCollaborationRepository,
-        graphs: FakeSavedGraphRepository,
-        identity: FakeIdentityRepository,
-        security_audit: FakeSecurityAuditRepository,
-        execution_history: FakeExecutionHistoryRepository,
-        materialization_store: InMemoryDataStore,
-        commit_error: ConcurrentWriteError | None = None,
-    ) -> None:
-        self.collaboration = collaboration
-        self.graphs = graphs
-        self.node_secrets = FakeNodeSecretRepository()
-        self.identity = identity
-        self.security_audit = security_audit
-        self.execution_history = execution_history
-        self._materialization_store = materialization_store
-        self.materialized_outputs = InMemoryMaterializedNodeOutputsRepository(
-            materialization_store
-        )
-        self._materialization_snapshot = materialization_store.clone()
-        self._commit_error = commit_error
-        self.commit_count = 0
-        self.rollback_count = 0
-        self._snapshot: dict[str, object] | None = None
-
-    async def __aenter__(self) -> Self:
-        self._snapshot = self._capture_state()
-        self.collaboration.graphs_by_id = self.graphs.graphs
-        return self
-
-    def _capture_state(self) -> dict[str, object]:
-        self._materialization_snapshot = self._materialization_store.clone()
-        return {
-            "heads": {
-                key: _clone_head(head) for key, head in self.collaboration.heads.items()
-            },
-            "receipts": {
-                key: receipt.model_copy(deep=True)
-                for key, receipt in self.collaboration.receipts.items()
-            },
-            "mappings": {
-                key: mapping.model_copy(deep=True)
-                for key, mapping in self.collaboration.mappings.items()
-            },
-            "graphs": {
-                key: _clone_graph(graph) for key, graph in self.graphs.graphs.items()
-            },
-            "revisions": {
-                key: _clone_revision(revision)
-                for key, revision in self.graphs.revisions.items()
-            },
-            "audit": list(self.security_audit.events),
-        }
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        del exc, traceback
-        if exc_type is not None:
-            await self.rollback()
-
-    async def commit(self) -> None:
-        self.commit_count += 1
-        if self._commit_error is not None:
-            raise self._commit_error
-        self._snapshot = self._capture_state()
-
-    async def rollback(self) -> None:
-        self.rollback_count += 1
-        if self._snapshot is None:
-            return
-        self._materialization_store.replace_with(self._materialization_snapshot)
-        heads = {
-            key: _clone_head(head)
-            for key, head in self._snapshot["heads"].items()  # type: ignore[union-attr]
-        }
-        self.collaboration.heads = heads
-        self.collaboration.receipts = {
-            key: receipt.model_copy(deep=True)
-            for key, receipt in self._snapshot["receipts"].items()  # type: ignore[union-attr]
-        }
-        self.collaboration.mappings = {
-            key: mapping.model_copy(deep=True)
-            for key, mapping in self._snapshot["mappings"].items()  # type: ignore[union-attr]
-        }
-        self.graphs.graphs = {
-            key: _clone_graph(graph)
-            for key, graph in self._snapshot["graphs"].items()  # type: ignore[union-attr]
-        }
-        self.graphs.revisions = {
-            key: _clone_revision(revision)
-            for key, revision in self._snapshot["revisions"].items()  # type: ignore[union-attr]
-        }
-        self.security_audit.events = list(
-            self._snapshot["audit"]  # type: ignore[arg-type]
-        )
-        self.collaboration.graphs_by_id = self.graphs.graphs
-
-
-def _clone_head(head: CollaborativeGraphHead) -> CollaborativeGraphHead:
-    return CollaborativeGraphHead(
-        workspace_id=head.workspace_id,
-        graph_id=head.graph_id,
-        room_epoch=head.room_epoch,
-        collaboration_sequence=head.collaboration_sequence,
-        checkpoint_sequence=head.checkpoint_sequence,
-        checkpoint_revision=head.checkpoint_revision,
-        name=head.name,
-        document=GraphDocument.model_validate(head.document.model_dump(mode="json")),
-        updated_at=head.updated_at,
+def node(node_id: str, **config: object) -> GraphNode:
+    return GraphNode(
+        kind="builtin",
+        id=node_id,
+        operator_id="demo.echo",
+        operator_version=1,
+        position=GraphPoint(x=8, y=12),
+        config=dict(config),
     )
 
 
-def _clone_graph(graph: SavedGraph) -> SavedGraph:
-    return SavedGraph(
-        workspace_id=graph.workspace_id,
-        created_by_user_id=graph.created_by_user_id,
-        id=graph.id,
-        name=graph.name,
-        document=GraphDocument.model_validate(graph.document.model_dump(mode="json")),
-        revision=graph.revision,
-        created_at=graph.created_at,
-        updated_at=graph.updated_at,
-    )
-
-
-def _clone_revision(revision: SavedGraphRevision) -> SavedGraphRevision:
-    return SavedGraphRevision(
-        workspace_id=revision.workspace_id,
-        graph_id=revision.graph_id,
-        revision=revision.revision,
-        name=revision.name,
-        document=GraphDocument.model_validate(
-            revision.document.model_dump(mode="json")
-        ),
-        created_at=revision.created_at,
-    )
-
-
-TARGET_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000301")
-
-
-class FakeFactory:
-    def __init__(self, role: WorkspaceRole = WorkspaceRole.OWNER) -> None:
-        self.user = User(id=USER_ID, email="editor@example.com", display_name="Editor")
-        self.workspace = Workspace.shared(slug="phase3", name="Phase 3")
-        self.workspace.id = WORKSPACE_ID
-        self.membership = WorkspaceMembership(
-            workspace_id=WORKSPACE_ID,
-            user_id=USER_ID,
-            role=role,
-        )
-        self.target_membership = WorkspaceMembership(
-            workspace_id=TARGET_WORKSPACE_ID,
-            user_id=USER_ID,
-            role=role,
-        )
-        self.collaboration = FakeCollaborationRepository()
-        self.graphs = FakeSavedGraphRepository()
-        self.collaboration.graphs_by_id = self.graphs.graphs
-        self.security_audit = FakeSecurityAuditRepository()
-        self.execution_history = FakeExecutionHistoryRepository()
-        self.materialization_store = InMemoryDataStore()
-        self.identity = FakeIdentityRepository(
-            self.user,
-            [self.membership, self.target_membership],
-        )
-        self.commit_error: ConcurrentWriteError | None = None
-        self.created: list[FakeCollaborationUnitOfWork] = []
-
-    def __call__(self) -> FakeCollaborationUnitOfWork:
-        unit = FakeCollaborationUnitOfWork(
-            collaboration=self.collaboration,
-            graphs=self.graphs,
-            identity=self.identity,
-            security_audit=self.security_audit,
-            execution_history=self.execution_history,
-            materialization_store=self.materialization_store,
-            commit_error=self.commit_error,
-        )
-        self.created.append(unit)
-        return unit
-
-
-def _service(factory: FakeFactory) -> CollaborationService:
-    return CollaborationService(
-        factory,
-        PluginRegistry(),
-        command_hmac_key=HMAC_KEY,
-        command_hmac_key_version=1,
-    )
-
-
-@pytest.mark.asyncio
-async def test_reading_canonical_head_does_not_reinitialize_it() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph, created_head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Canonical", document=GraphDocument()),
-    )
-    first = await service.get_head(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph.id,
-    )
-    second = await service.get_head(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph.id,
-    )
-    assert first.room_epoch == created_head.room_epoch == second.room_epoch
-    assert first.collaboration_sequence == second.collaboration_sequence == 1
-    assert [unit.commit_count for unit in factory.created] == [1, 0, 0]
-
-
-@pytest.mark.asyncio
-async def test_bootstrap_graph_commits_head_checkpoint_and_receipt() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    command_id = uuid4()
-    graph_id = uuid4()
-    command = ReplaceDocumentCommand(
-        name="  Bootstrapped  ",
-        document=GraphDocument(
-            nodes=(
-                GraphNode(
-                    kind="builtin",
-                    id="n1",
-                    operator_id="example.operator",
-                    operator_version=1,
-                    position=GraphPoint(x=1, y=2),
-                ),
-            )
-        ),
-    )
-
-    graph, head, receipt = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=command_id,
-        command=command,
+def add_node(
+    node_id: str, *, graph_id: str = "main", **config: object
+) -> ProjectCommand:
+    return InGraphCommand(
         graph_id=graph_id,
+        command=AddNodeCommand(node=node(node_id, **config)),
     )
 
-    assert graph.id == graph_id
-    assert graph.name == "Bootstrapped"
-    snapshot = factory.graphs.revisions[(graph.id, 1)]
-    assert snapshot.graph_id == graph.id
-    assert snapshot.name == graph.name
-    assert snapshot.document == graph.document
-    assert snapshot.created_at == graph.updated_at
-    with pytest.raises(FrozenInstanceError):
-        setattr(snapshot, "name", "Mutated")
-    assert factory.created[-1].rollback_count == 0
-    assert graph.revision == 1
-    assert head.collaboration_sequence == 1
-    assert head.checkpoint_sequence == 1
+
+@dataclass
+class Harness:
+    directory: IdentityDirectory
+    store: ProjectStore
+    factory: ProjectUnitOfWorkFactory
+    service: CollaborationService
+
+    def workspace(
+        self,
+        *,
+        name: str,
+        slug: str,
+        role: WorkspaceRole = WorkspaceRole.OWNER,
+    ) -> tuple[Workspace, ActorContext]:
+        workspace, user = new_member(
+            self.directory, display_name=name, slug=slug, role=role
+        )
+        self.store.seed_location(workspace)
+        return workspace, actor_for(user)
+
+    def add_member(
+        self,
+        workspace: Workspace,
+        *,
+        name: str,
+        role: WorkspaceRole,
+    ) -> ActorContext:
+        user = self.directory.add_user(User(display_name=name))
+        self.directory.grant(workspace_id=workspace.id, user_id=user.id, role=role)
+        return actor_for(user)
+
+    def join(
+        self,
+        workspace: Workspace,
+        actor: ActorContext,
+        *,
+        role: WorkspaceRole,
+    ) -> ActorContext:
+        """Give an existing member a role in another Workspace (a copy needs both)."""
+
+        self.directory.grant(
+            workspace_id=workspace.id, user_id=actor.user_id, role=role
+        )
+        return actor
+
+    def create(
+        self,
+        actor: ActorContext,
+        workspace: Workspace,
+        *,
+        name: str = "Field survey",
+        graph_id: str = "main",
+        graph_name: str = "Main",
+        project_id: UUID | None = None,
+        command_id: UUID | None = None,
+    ):
+        return self.service.create_project(
+            actor=actor,
+            workspace_id=workspace.id,
+            name=name,
+            graph_id=graph_id,
+            graph_name=graph_name,
+            project_id=project_id,
+            command_id=command_id,
+        )
+
+    def submit(
+        self,
+        actor: ActorContext,
+        workspace: Workspace,
+        project_id: UUID,
+        commands: list[ProjectCommand],
+        *,
+        observed_sequence: int | None = None,
+        observed_room_epoch: UUID | None = None,
+        command_id: UUID | None = None,
+    ):
+        head = self.store.head_for(workspace.id, project_id)
+        return self.service.submit_commands(
+            actor=actor,
+            workspace_id=workspace.id,
+            project_id=project_id,
+            command_id=uuid4() if command_id is None else command_id,
+            observed_sequence=(
+                head.collaboration_sequence
+                if observed_sequence is None
+                else observed_sequence
+            ),
+            observed_room_epoch=(
+                head.room_epoch if observed_room_epoch is None else observed_room_epoch
+            ),
+            commands=commands,
+        )
+
+    def checkpoint(
+        self,
+        actor: ActorContext,
+        workspace: Workspace,
+        project_id: UUID,
+        *,
+        expected_sequence: int | None = None,
+        expected_room_epoch: UUID | None = None,
+    ):
+        head = self.store.head_for(workspace.id, project_id)
+        return self.service.checkpoint(
+            actor=actor,
+            workspace_id=workspace.id,
+            project_id=project_id,
+            expected_sequence=(
+                head.collaboration_sequence
+                if expected_sequence is None
+                else expected_sequence
+            ),
+            expected_room_epoch=(
+                head.room_epoch if expected_room_epoch is None else expected_room_epoch
+            ),
+        )
+
+    def restore(
+        self,
+        self_actor: ActorContext,
+        workspace: Workspace,
+        project_id: UUID,
+        revision: int,
+        *,
+        expected_sequence: int | None = None,
+        expected_room_epoch: UUID | None = None,
+    ):
+        head = self.store.head_for(workspace.id, project_id)
+        return self.service.restore_checkpoint(
+            actor=self_actor,
+            workspace_id=workspace.id,
+            project_id=project_id,
+            revision=revision,
+            expected_sequence=(
+                head.collaboration_sequence
+                if expected_sequence is None
+                else expected_sequence
+            ),
+            expected_room_epoch=(
+                head.room_epoch if expected_room_epoch is None else expected_room_epoch
+            ),
+        )
+
+    def revisions(self, project_id: UUID) -> list[int]:
+        return sorted(
+            revision
+            for (owned_project, revision) in self.store.checkpoints
+            if owned_project == project_id
+        )
+
+    def checkpoint_document(self, project_id: UUID, revision: int) -> ProjectDocument:
+        return self.store.checkpoints[(project_id, revision)].document
+
+    @property
+    def audits(self):
+        return self.store.audit
+
+
+@pytest.fixture
+def harness() -> Harness:
+    directory = IdentityDirectory()
+    store = ProjectStore(directory)
+    factory = ProjectUnitOfWorkFactory(store)
+    return Harness(
+        directory=directory,
+        store=store,
+        factory=factory,
+        service=CollaborationService(
+            factory,
+            command_hmac_key=HMAC_KEY,
+            command_hmac_key_version=HMAC_KEY_VERSION,
+        ),
+    )
+
+
+async def test_service_requires_a_usable_hmac_key() -> None:
+    store = ProjectStore(IdentityDirectory())
+    factory = ProjectUnitOfWorkFactory(store)
+    with pytest.raises(ValueError):
+        CollaborationService(factory, command_hmac_key=b"", command_hmac_key_version=1)
+    with pytest.raises(ValueError):
+        CollaborationService(
+            factory, command_hmac_key=HMAC_KEY, command_hmac_key_version=0
+        )
+
+
+async def test_create_project_stages_identity_checkpoint_and_head(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+
+    project, head, receipt = await harness.create(owner, workspace, name="Field survey")
+
+    assert receipt is None
+    assert project.workspace_id == workspace.id
+    assert project.created_by_user_id == owner.user_id
+    assert head.project_id == project.id
+    assert head.name == "Field survey"
+    assert head.collaboration_sequence == 0
+    assert head.checkpoint_sequence == 0
     assert head.checkpoint_revision == 1
-    assert receipt.outcome is CommandReceiptOutcome.ACCEPTED
-    assert receipt.accepted_sequence == 1
-    assert (
-        WORKSPACE_ID,
-        graph_id,
-        head.room_epoch,
-        1,
-    ) in factory.collaboration.mappings
-    assert factory.created[-1].commit_count == 1
+    assert head.is_fully_checkpointed is True
+    assert [graph.id for graph in head.document.graphs] == ["main"]
+    assert [graph.name for graph in head.document.graphs] == ["Main"]
+
+    checkpoint = harness.store.checkpoints[(project.id, 1)]
+    assert checkpoint.name == "Field survey"
+    assert checkpoint.document == head.document
+    mapping = harness.store.mappings[(workspace.id, project.id, head.room_epoch, 0)]
+    assert mapping.checkpoint_revision == 1
+    assert harness.store.receipts == {}
+    assert [event.operation for event in harness.audits] == [
+        "collaboration.project.create"
+    ]
+    assert harness.factory.secrets_touched is False
 
 
-@pytest.mark.asyncio
-async def test_accept_command_advances_sequence_without_checkpoint() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    _, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
-        graph_id=graph_id,
+async def test_create_project_names_the_opening_graph_when_asked(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+
+    project, head, _ = await harness.create(
+        owner,
+        workspace,
+        name="Field survey",
+        graph_id="first",
+        graph_name="First transect",
     )
 
-    updated_head, receipt = await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        command_id=uuid4(),
-        observed_sequence=head.collaboration_sequence,
-        observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Renamed", expected_name="Draft"),
-    )
-
-    assert updated_head.collaboration_sequence == 2
-    assert updated_head.checkpoint_sequence == 1
-    assert updated_head.name == "Renamed"
-    assert receipt.accepted_sequence == 2
-    assert factory.graphs.graphs[graph_id].revision == 1
+    assert [graph.id for graph in head.document.graphs] == ["first"]
+    assert [graph.name for graph in head.document.graphs] == ["First transect"]
+    assert harness.checkpoint_document(project.id, 1) == head.document
 
 
-@pytest.mark.asyncio
-async def test_accept_command_idempotent_replay_and_mismatch() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    command_id = uuid4()
-    _, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
-        graph_id=graph_id,
-    )
-    command = RenameGraphCommand(name="Once", expected_name="Draft")
-    observed_sequence = head.collaboration_sequence
-    observed_room_epoch = head.room_epoch
-    first_head, first_receipt = await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
+async def test_create_project_replays_the_same_command_id(harness: Harness) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project_id, command_id = uuid4(), uuid4()
+
+    created = await harness.create(
+        owner,
+        workspace,
+        name="Field survey",
+        project_id=project_id,
         command_id=command_id,
-        observed_sequence=observed_sequence,
-        observed_room_epoch=observed_room_epoch,
-        command=command,
     )
-    replay_head, replay_receipt = await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
+    replayed = await harness.create(
+        owner,
+        workspace,
+        name="Field survey",
+        project_id=project_id,
         command_id=command_id,
-        observed_sequence=observed_sequence,
-        observed_room_epoch=observed_room_epoch,
-        command=command,
     )
 
-    assert first_head.collaboration_sequence == replay_head.collaboration_sequence == 2
-    assert replay_receipt.outcome is CommandReceiptOutcome.IDEMPOTENT_REPLAY
-    assert first_receipt.outcome is CommandReceiptOutcome.ACCEPTED
+    assert created.receipt is not None
+    assert created.receipt.outcome is CommandReceiptOutcome.ACCEPTED
+    assert created.receipt.accepted_sequence == 0
+    assert created.receipt.actor_user_id == owner.user_id
+    assert created.receipt.actor_kind is CollaborationActorKind.USER
+    assert replayed.receipt is not None
+    assert replayed.project.id == created.project.id
+    assert replayed.head.collaboration_sequence == 0
+    assert replayed.receipt.outcome is CommandReceiptOutcome.IDEMPOTENT_REPLAY
+    assert replayed.receipt.command_hmac == created.receipt.command_hmac
+    assert list(harness.store.projects) == [project_id]
+    assert harness.revisions(project_id) == [1]
+
+
+async def test_reused_command_id_with_another_name_is_refused(harness: Harness) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project_id, command_id = uuid4(), uuid4()
+    await harness.create(
+        owner,
+        workspace,
+        name="Field survey",
+        project_id=project_id,
+        command_id=command_id,
+    )
 
     with pytest.raises(CollaborationIdempotencyMismatchError):
-        await service.accept_command(
-            actor=ActorContext(user_id=USER_ID),
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph_id,
+        await harness.create(
+            owner,
+            workspace,
+            name="Something else",
+            project_id=project_id,
             command_id=command_id,
-            observed_sequence=observed_sequence,
-            observed_room_epoch=observed_room_epoch,
-            command=RenameGraphCommand(name="Different", expected_name="Draft"),
         )
 
-
-@pytest.mark.asyncio
-async def test_checkpoint_advances_saved_revision_and_preserves_secrets() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    _, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
-        graph_id=graph_id,
-    )
-    head, _ = await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        command_id=uuid4(),
-        observed_sequence=head.collaboration_sequence,
-        observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Checkpoint me", expected_name="Draft"),
-    )
-
-    checkpointed_head, revision = await service.checkpoint(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        expected_sequence=head.collaboration_sequence,
-        expected_room_epoch=head.room_epoch,
-    )
-
-    assert revision == 2
-    assert checkpointed_head.checkpoint_sequence == 2
-    assert checkpointed_head.checkpoint_revision == 2
-    assert factory.graphs.graphs[graph_id].name == "Checkpoint me"
-    assert factory.graphs.revisions[(graph_id, 2)].name == "Checkpoint me"
+    assert list(harness.store.projects) == [project_id]
+    assert harness.store.head_for(workspace.id, project_id).name == "Field survey"
+    failures = [event for event in harness.audits if event.error_code is not None]
+    assert [(event.operation, event.error_code) for event in failures] == [
+        ("collaboration.project.create", "idempotency_mismatch")
+    ]
 
 
-@pytest.mark.asyncio
-async def test_accept_command_requires_existing_head() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    with pytest.raises(MissingCollaborativeHeadError):
-        await service.accept_command(
-            actor=ActorContext(user_id=USER_ID),
-            workspace_id=WORKSPACE_ID,
-            graph_id=uuid4(),
-            command_id=uuid4(),
-            observed_sequence=0,
-            observed_room_epoch=uuid4(),
-            command=RenameGraphCommand(name="Nope", expected_name="Nope"),
-        )
+async def test_command_id_without_a_project_id_is_refused(harness: Harness) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+
+    with pytest.raises(ValueError):
+        await harness.create(owner, workspace, command_id=uuid4())
+
+    assert harness.factory.opened == []
 
 
-@pytest.mark.asyncio
-async def test_replace_complete_document_resets_epoch_when_checkpointed() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    graph, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Original", document=GraphDocument()),
-        graph_id=graph_id,
-    )
-    prior_epoch = head.room_epoch
-
-    replaced, new_head = await service.replace_complete_document(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        name="Replaced",
-        document=GraphDocument(
-            nodes=(
-                GraphNode(
-                    kind="builtin",
-                    id="n1",
-                    operator_id="example.operator",
-                    operator_version=1,
-                    position=GraphPoint(x=3, y=4),
-                ),
-            )
-        ),
-        expected_revision=graph.revision,
-    )
-
-    assert replaced.revision == 2
-    assert replaced.name == "Replaced"
-    assert new_head.room_epoch != prior_epoch
-    assert new_head.collaboration_sequence == 0
-    assert new_head.checkpoint_sequence == 0
-    assert new_head.checkpoint_revision == 2
-    assert (WORKSPACE_ID, graph_id, new_head.room_epoch, 0) in (
-        factory.collaboration.mappings
-    )
-
-    after_replace, receipt = await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        command_id=uuid4(),
-        observed_sequence=0,
-        observed_room_epoch=new_head.room_epoch,
-        command=RenameGraphCommand(name="After replace", expected_name="Replaced"),
-    )
-    assert receipt.outcome is CommandReceiptOutcome.ACCEPTED
-    assert after_replace.collaboration_sequence == 1
-    assert after_replace.name == "After replace"
-
-
-@pytest.mark.asyncio
-async def test_replace_complete_document_rejects_uncheckpointed_head() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    graph, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
-        graph_id=graph_id,
-    )
-    await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        command_id=uuid4(),
-        observed_sequence=head.collaboration_sequence,
-        observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Uncheckpointed", expected_name="Draft"),
-    )
-
-    with pytest.raises(CollaborationUncheckpointedError):
-        await service.replace_complete_document(
-            actor=ActorContext(user_id=USER_ID),
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph_id,
-            name="Nope",
-            document=GraphDocument(),
-            expected_revision=graph.revision,
-        )
-
-
-@pytest.mark.asyncio
-async def test_delete_graph_removes_head_and_graph() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    graph, _, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Delete me", document=GraphDocument()),
-        graph_id=graph_id,
-    )
-
-    await service.delete_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        expected_revision=graph.revision,
-    )
-
-    assert graph_id not in factory.graphs.graphs
-    assert (WORKSPACE_ID, graph_id) not in factory.collaboration.heads
-
-
-@pytest.mark.asyncio
-async def test_delete_graph_rejects_uncheckpointed_legacy_delete() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    graph, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
-        graph_id=graph_id,
-    )
-    await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        command_id=uuid4(),
-        observed_sequence=head.collaboration_sequence,
-        observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Pending", expected_name="Draft"),
-    )
-
-    with pytest.raises(CollaborationUncheckpointedError):
-        await service.delete_graph(
-            actor=ActorContext(user_id=USER_ID),
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph_id,
-            expected_revision=graph.revision,
-        )
-
-
-@pytest.mark.asyncio
-async def test_delete_graph_rejects_active_execution() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    graph, _, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Busy", document=GraphDocument()),
-        graph_id=graph_id,
-    )
-    execution_id = uuid4()
-    factory.execution_history.active_execution_ids[(WORKSPACE_ID, graph_id)] = (
-        execution_id
-    )
-
-    with pytest.raises(CollaborationActiveExecutionError):
-        await service.delete_graph(
-            actor=ActorContext(user_id=USER_ID),
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph_id,
-            expected_revision=graph.revision,
-        )
-
-
-@pytest.mark.asyncio
-async def test_get_head_returns_live_document() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    _, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Live", document=GraphDocument()),
-        graph_id=graph_id,
-    )
-
-    loaded = await service.get_head(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-    )
-
-    assert loaded.room_epoch == head.room_epoch
-    assert loaded.collaboration_sequence == 1
-    assert loaded.name == "Live"
-
-
-@pytest.mark.asyncio
-async def test_accept_command_rebases_move_against_newer_head() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    node = GraphNode(
-        kind="builtin",
-        id="n1",
-        operator_id="example.operator",
-        operator_version=1,
-        position=GraphPoint(x=0, y=0),
-    )
-    _, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(
-            name="Draft",
-            document=GraphDocument(nodes=(node,)),
-        ),
-        graph_id=graph_id,
-    )
-    observed_sequence = head.collaboration_sequence
-    observed_epoch = head.room_epoch
-    await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        command_id=uuid4(),
-        observed_sequence=observed_sequence,
-        observed_room_epoch=observed_epoch,
-        command=RenameGraphCommand(name="Moved ahead", expected_name="Draft"),
-    )
-
-    updated, receipt = await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        command_id=uuid4(),
-        observed_sequence=observed_sequence,
-        observed_room_epoch=observed_epoch,
-        command=MoveNodesCommand(positions=(MoveNodePosition(node_id="n1", x=9, y=8),)),
-    )
-
-    assert updated.collaboration_sequence == 3
-    assert updated.document.nodes[0].position == GraphPoint(x=9, y=8)
-    assert receipt.accepted_sequence == 3
-
-
-@pytest.mark.asyncio
-async def test_accept_command_rejects_stale_rename_with_field_conflict() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    _, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
-        graph_id=graph_id,
-    )
-    observed_sequence = head.collaboration_sequence
-    observed_epoch = head.room_epoch
-    await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        command_id=uuid4(),
-        observed_sequence=observed_sequence,
-        observed_room_epoch=observed_epoch,
-        command=RenameGraphCommand(name="Other", expected_name="Draft"),
-    )
-
-    with pytest.raises(CollaborationCommandRejectedError) as exc:
-        await service.accept_command(
-            actor=ActorContext(user_id=USER_ID),
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph_id,
-            command_id=uuid4(),
-            observed_sequence=observed_sequence,
-            observed_room_epoch=observed_epoch,
-            command=RenameGraphCommand(name="Mine", expected_name="Draft"),
-        )
-    assert exc.value.error_code == "field_conflict"
-
-
-@pytest.mark.asyncio
-async def test_copy_exact_head_bootstraps_target_without_source_secrets() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    source_graph_id = uuid4()
-    _, source_head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(
-            name="Source",
-            document=GraphDocument(
-                nodes=(
-                    GraphNode(
-                        kind="builtin",
-                        id="n1",
-                        operator_id="example.operator",
-                        operator_version=1,
-                        position=GraphPoint(x=1, y=2),
-                        config={
-                            "uploads": [
-                                {
-                                    "upload_key": "x.png",
-                                    "filename": "x.png",
-                                    "byte_size": 1,
-                                }
-                            ],
-                            "label": "keep",
-                        },
-                    ),
-                )
-            ),
-        ),
-        graph_id=source_graph_id,
-    )
-
-    graph, head, receipt = await service.copy_exact_head(
-        actor=ActorContext(user_id=USER_ID),
-        source_workspace_id=WORKSPACE_ID,
-        source_graph_id=source_graph_id,
-        target_workspace_id=TARGET_WORKSPACE_ID,
-        expected_room_epoch=source_head.room_epoch,
-        expected_sequence=source_head.collaboration_sequence,
-        command_id=uuid4(),
-    )
-
-    assert graph.workspace_id == TARGET_WORKSPACE_ID
-    assert graph.revision == 1
-    assert head.collaboration_sequence == 1
-    assert head.checkpoint_sequence == 1
-    assert head.checkpoint_revision == 1
-    assert receipt.accepted_sequence == 1
-    assert graph.document.nodes[0].config_dict() == {"label": "keep"}
-    assert source_graph_id in factory.graphs.graphs
-    assert factory.graphs.graphs[source_graph_id].workspace_id == WORKSPACE_ID
-
-
-@pytest.mark.asyncio
-async def test_copy_exact_head_rejects_moved_source() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    source_graph_id = uuid4()
-    _, source_head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Source", document=GraphDocument()),
-        graph_id=source_graph_id,
-    )
-    expected_room_epoch = source_head.room_epoch
-    expected_sequence = source_head.collaboration_sequence
-    await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=source_graph_id,
-        command_id=uuid4(),
-        observed_sequence=expected_sequence,
-        observed_room_epoch=expected_room_epoch,
-        command=RenameGraphCommand(name="Moved", expected_name="Source"),
-    )
-
-    with pytest.raises(CollaborationHeadConflictError):
-        await service.copy_exact_head(
-            actor=ActorContext(user_id=USER_ID),
-            source_workspace_id=WORKSPACE_ID,
-            source_graph_id=source_graph_id,
-            target_workspace_id=TARGET_WORKSPACE_ID,
-            expected_room_epoch=expected_room_epoch,
-            expected_sequence=expected_sequence,
-            command_id=uuid4(),
-        )
-
-
-@pytest.mark.asyncio
-async def test_delete_graph_collaboration_aware_discards_uncheckpointed() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    graph, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
-        graph_id=graph_id,
-    )
-    head, _ = await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        command_id=uuid4(),
-        observed_sequence=head.collaboration_sequence,
-        observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Discard", expected_name="Draft"),
-    )
-
-    await service.delete_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        expected_revision=graph.revision,
-        expected_room_epoch=head.room_epoch,
-        expected_sequence=head.collaboration_sequence,
-    )
-
-    assert graph_id not in factory.graphs.graphs
-    assert (WORKSPACE_ID, graph_id) not in factory.collaboration.heads
-
-
-@pytest.mark.asyncio
-async def test_accept_command_audits_capability_denied_and_idempotency_mismatch() -> (
-    None
-):
-    viewer_factory = FakeFactory(role=WorkspaceRole.VIEWER)
-    viewer_service = _service(viewer_factory)
-    graph_id = uuid4()
-    viewer_factory.graphs.graphs[graph_id] = SavedGraph(
-        workspace_id=WORKSPACE_ID,
-        created_by_user_id=USER_ID,
-        id=graph_id,
-        name="View only",
-        document=GraphDocument(),
-        revision=1,
-    )
-    viewer_factory.collaboration.heads[(WORKSPACE_ID, graph_id)] = (
-        CollaborativeGraphHead.for_existing_saved_graph(
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph_id,
-            name="View only",
-            document=GraphDocument(),
-            checkpoint_revision=1,
-        )
-    )
+async def test_viewer_and_stranger_cannot_open_a_project(harness: Harness) -> None:
+    workspace, _ = harness.workspace(name="Owner", slug="owner")
+    viewer = harness.add_member(workspace, name="Viewer", role=WorkspaceRole.VIEWER)
+    _, stranger = harness.workspace(name="Stranger", slug="stranger")
 
     with pytest.raises(CapabilityDeniedError):
-        await viewer_service.accept_command(
-            actor=ActorContext(user_id=USER_ID),
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph_id,
+        await harness.create(viewer, workspace)
+    with pytest.raises(NotFoundError):
+        await harness.create(stranger, workspace)
+
+    assert harness.store.projects == {}
+    assert harness.store.heads == {}
+    assert [(event.operation, event.error_code) for event in harness.audits] == [
+        ("collaboration.project.create", "capability_denied"),
+        ("collaboration.project.create", "not_found"),
+    ]
+
+
+async def test_get_head_reads_the_draft_in_the_owning_workspace(
+    harness: Harness,
+) -> None:
+    theirs, other = harness.workspace(name="Theirs", slug="theirs")
+    foreign_project, head, _ = await harness.create(other, theirs, name="Not yours")
+
+    await harness.submit(other, theirs, foreign_project.id, [add_node("node-1")])
+
+    draft = await harness.service.get_head(
+        actor=other, workspace_id=theirs.id, project_id=foreign_project.id
+    )
+    assert draft.collaboration_sequence == 1
+    assert draft.room_epoch == head.room_epoch
+    assert [node.id for node in draft.document.graphs[0].document.nodes] == ["node-1"]
+
+
+async def test_a_project_of_another_workspace_is_no_room_at_all(
+    harness: Harness,
+) -> None:
+    """Membership of a Workspace buys nothing in another one.
+
+    The Project id alone is not an address: the head is keyed by Workspace and Project,
+    so the same id in a Workspace that does not own it has no room and no draft.
+    """
+
+    mine, owner = harness.workspace(name="Mine", slug="mine")
+    theirs, other = harness.workspace(name="Theirs", slug="theirs")
+    foreign_project, foreign_head, _ = await harness.create(
+        other, theirs, name="Not yours"
+    )
+
+    with pytest.raises(NotFoundError):
+        await harness.service.submit_commands(
+            actor=owner,
+            workspace_id=mine.id,
+            project_id=foreign_project.id,
             command_id=uuid4(),
             observed_sequence=0,
-            observed_room_epoch=viewer_factory.collaboration.heads[
-                (WORKSPACE_ID, graph_id)
-            ].room_epoch,
-            command=RenameGraphCommand(name="Nope", expected_name="View only"),
+            observed_room_epoch=foreign_head.room_epoch,
+            commands=[add_node("node-1")],
+        )
+    with pytest.raises(NotFoundError):
+        await harness.service.get_head(
+            actor=owner, workspace_id=mine.id, project_id=foreign_project.id
         )
 
-    denied = [
-        event
-        for event in viewer_factory.security_audit.events
-        if event.outcome is SecurityAuditOutcome.FAILURE
-    ]
-    assert len(denied) == 1
-    assert denied[0].operation == "collaboration.command.accept"
-    assert denied[0].error_code == "capability_denied"
-    assert denied[0].resource_id == str(graph_id)
-    assert "Nope" not in repr(denied[0])
+    assert harness.store.heads == {(theirs.id, foreign_project.id): foreign_head}
+    assert harness.store.receipts == {}
 
-    editor_factory = FakeFactory()
-    editor_service = _service(editor_factory)
-    _, head, _ = await editor_service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
-        graph_id=graph_id,
-    )
+
+async def test_get_head_of_a_project_without_a_head_reports_missing(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, head, _ = await harness.create(owner, workspace)
+    harness.store.heads.pop((workspace.id, project.id))
+    del head
+
+    with pytest.raises(MissingProjectHeadError):
+        await harness.service.get_head(
+            actor=owner, workspace_id=workspace.id, project_id=project.id
+        )
+
+
+async def test_accepted_batch_advances_the_sequence_once(harness: Harness) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, head, _ = await harness.create(owner, workspace)
     command_id = uuid4()
-    await editor_service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        command_id=command_id,
-        observed_sequence=head.collaboration_sequence,
-        observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Once", expected_name="Draft"),
-    )
-    with pytest.raises(CollaborationIdempotencyMismatchError):
-        await editor_service.accept_command(
-            actor=ActorContext(user_id=USER_ID),
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph_id,
-            command_id=command_id,
-            observed_sequence=head.collaboration_sequence,
-            observed_room_epoch=head.room_epoch,
-            command=RenameGraphCommand(name="Different", expected_name="Draft"),
-        )
-    mismatch = [
-        event
-        for event in editor_factory.security_audit.events
-        if event.error_code == "idempotency_mismatch"
-    ]
-    assert len(mismatch) == 1
-    assert mismatch[0].outcome is SecurityAuditOutcome.FAILURE
-    assert mismatch[0].operation == "collaboration.command.accept"
 
-
-@pytest.mark.asyncio
-async def test_verify_every_graph_has_head_fails_closed_on_gap() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph = SavedGraph(
-        workspace_id=WORKSPACE_ID,
-        created_by_user_id=USER_ID,
-        name="Orphan",
-        document=GraphDocument(),
-        revision=1,
-    )
-    factory.graphs.graphs[graph.id] = graph
-
-    with pytest.raises(MissingCollaborativeHeadError):
-        await service.verify_every_graph_has_head()
-
-    assert factory.collaboration.heads == {}
-    assert factory.graphs.graphs == {graph.id: graph}
-    assert factory.created[-1].commit_count == 0
-
-
-async def test_verify_every_graph_has_head_accepts_canonical_creation() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Canonical", document=GraphDocument()),
-    )
-    await service.verify_every_graph_has_head()
-    assert factory.created[-1].commit_count == 0
-
-
-@pytest.mark.asyncio
-async def test_checkpoint_commit_failure_rolls_back_partial_state() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    _, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(
-            name="Draft",
-            document=GraphDocument(
-                nodes=(
-                    GraphNode(
-                        kind="builtin",
-                        id="node",
-                        operator_id="example.operator",
-                        position=GraphPoint(x=0, y=0),
-                        operator_version=1,
-                    ),
-                )
+    submission = await harness.submit(
+        owner,
+        workspace,
+        project.id,
+        [
+            AddGraphCommand(graph_id="branch", name="Branch"),
+            add_node("node-1"),
+            RenameGraphCommand(
+                graph_id="branch", name="Branch 2", expected_name="Branch"
             ),
-        ),
-        graph_id=graph_id,
+        ],
+        command_id=command_id,
     )
-    head, _ = await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        command_id=uuid4(),
-        observed_sequence=head.collaboration_sequence,
-        observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Pending", expected_name="Draft"),
-    )
-    original_materialization = MaterializedNodeOutputs(
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        graph_revision=1,
-        node_id="node",
-        workflow_run_id=uuid4(),
-        outputs={},
-    )
-    async with factory() as entered:
-        await entered.materialized_outputs.upsert(original_materialization)
-        await entered.commit()
-    factory.commit_error = ConcurrentWriteError("checkpoint race")
 
-    with pytest.raises(SavedGraphRevisionConflictError):
-        await service.checkpoint(
-            actor=ActorContext(user_id=USER_ID),
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph_id,
+    assert isinstance(submission, CommandSubmission)
+    assert submission.head.collaboration_sequence == 1
+    assert submission.head.checkpoint_sequence == 0
+    assert submission.head.checkpoint_revision == 1
+    assert submission.head.room_epoch == head.room_epoch
+    assert [graph.id for graph in submission.head.document.graphs] == ["main", "branch"]
+    assert [graph.name for graph in submission.head.document.graphs] == [
+        "Main",
+        "Branch 2",
+    ]
+    assert [node.id for node in submission.head.document.graphs[0].document.nodes] == [
+        "node-1"
+    ]
+    committed = harness.store.head_for(workspace.id, project.id)
+    assert committed.collaboration_sequence == 1
+    receipt = harness.store.receipts[(workspace.id, project.id, command_id)]
+    assert receipt.outcome is CommandReceiptOutcome.ACCEPTED
+    assert receipt.accepted_sequence == 1
+    assert receipt.hmac_key_version == HMAC_KEY_VERSION
+    assert [event.operation for event in harness.audits] == [
+        "collaboration.project.create",
+        "collaboration.command.submit",
+    ]
+
+
+async def test_rejected_batch_leaves_the_head_and_receipt_untouched(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, head, _ = await harness.create(owner, workspace)
+
+    with pytest.raises(CollaborationCommandRejectedError) as raised:
+        await harness.submit(
+            owner,
+            workspace,
+            project.id,
+            [
+                add_node("node-1"),
+                AddGraphCommand(graph_id="main", name="Clash"),
+            ],
+        )
+
+    assert raised.value.error_code == "duplicate_graph"
+    assert "index 1" in str(raised.value)
+    committed = harness.store.head_for(workspace.id, project.id)
+    assert committed.collaboration_sequence == head.collaboration_sequence == 0
+    assert committed.document == head.document
+    assert harness.store.receipts == {}
+    assert harness.factory.last.commit_count == 0
+    assert harness.revisions(project.id) == [1]
+
+
+async def test_compare_and_set_conflict_names_the_field_that_moved(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, _, _ = await harness.create(owner, workspace)
+
+    with pytest.raises(CollaborationCommandRejectedError) as raised:
+        await harness.submit(
+            owner,
+            workspace,
+            project.id,
+            [RenameProjectCommand(name="Renamed", expected_name="Stale name")],
+        )
+
+    assert raised.value.error_code == "field_conflict"
+    assert harness.store.head_for(workspace.id, project.id).name == "Field survey"
+
+
+async def test_empty_batch_is_refused_without_opening_a_transaction(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, _, _ = await harness.create(owner, workspace)
+    opened = len(harness.factory.opened)
+
+    with pytest.raises(CollaborationCommandRejectedError) as raised:
+        await harness.submit(owner, workspace, project.id, [])
+
+    assert raised.value.error_code == "empty_batch"
+    assert len(harness.factory.opened) == opened
+
+
+async def test_retry_of_an_accepted_batch_replays_the_receipt(harness: Harness) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, head, _ = await harness.create(owner, workspace)
+    command_id = uuid4()
+    commands = [add_node("node-1"), AddGraphCommand(graph_id="branch", name="Branch")]
+
+    accepted = await harness.submit(
+        owner,
+        workspace,
+        project.id,
+        commands,
+        command_id=command_id,
+        observed_sequence=0,
+        observed_room_epoch=head.room_epoch,
+    )
+    replayed = await harness.submit(
+        owner,
+        workspace,
+        project.id,
+        commands,
+        command_id=command_id,
+        observed_sequence=0,
+        observed_room_epoch=head.room_epoch,
+    )
+
+    assert accepted.receipt.outcome is CommandReceiptOutcome.ACCEPTED
+    assert replayed.receipt.outcome is CommandReceiptOutcome.IDEMPOTENT_REPLAY
+    assert replayed.receipt.command_id == command_id
+    assert replayed.receipt.accepted_sequence == 1
+    assert replayed.head.collaboration_sequence == 1
+    assert replayed.head.room_epoch == head.room_epoch
+    committed = harness.store.head_for(workspace.id, project.id)
+    assert committed.collaboration_sequence == 1
+    assert len(harness.store.receipts) == 1
+
+
+async def test_the_same_command_id_arriving_twice_is_accepted_once_and_replayed(
+    harness: Harness,
+) -> None:
+    # A client that retries without waiting sends one command id twice at once. Both
+    # read "no receipt" before either holds the head, so only the re-read taken under
+    # the row lock can tell the loser that the batch is already in.
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, head, _ = await harness.create(owner, workspace)
+    command_id = uuid4()
+    batch = [add_node("node-1")]
+    harness.store.gate("lock_head", parties=2)
+
+    def send():
+        return harness.submit(
+            owner,
+            workspace,
+            project.id,
+            list(batch),
+            command_id=command_id,
+            observed_sequence=0,
+            observed_room_epoch=head.room_epoch,
+        )
+
+    first, second = await asyncio.gather(send(), send())
+
+    assert {first.receipt.outcome, second.receipt.outcome} == {
+        CommandReceiptOutcome.ACCEPTED,
+        CommandReceiptOutcome.IDEMPOTENT_REPLAY,
+    }
+    committed = harness.store.head_for(workspace.id, project.id)
+    assert committed.collaboration_sequence == 1
+    assert len(harness.store.receipts) == 1
+
+
+async def test_reused_command_id_with_another_batch_is_refused(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, head, _ = await harness.create(owner, workspace)
+    command_id = uuid4()
+    await harness.submit(
+        owner,
+        workspace,
+        project.id,
+        [add_node("node-1")],
+        observed_sequence=0,
+        observed_room_epoch=head.room_epoch,
+        command_id=command_id,
+    )
+
+    with pytest.raises(CollaborationIdempotencyMismatchError):
+        await harness.submit(
+            owner,
+            workspace,
+            project.id,
+            [add_node("node-2")],
+            observed_sequence=0,
+            observed_room_epoch=head.room_epoch,
+            command_id=command_id,
+        )
+
+    committed = harness.store.head_for(workspace.id, project.id)
+    assert committed.collaboration_sequence == 1
+    assert [node.id for node in committed.document.graphs[0].document.nodes] == [
+        "node-1"
+    ]
+    failures = [event for event in harness.audits if event.error_code is not None]
+    assert [(event.operation, event.error_code) for event in failures] == [
+        ("collaboration.command.submit", "idempotency_mismatch")
+    ]
+
+
+async def test_a_stale_room_epoch_is_a_head_conflict(harness: Harness) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, head, _ = await harness.create(owner, workspace)
+
+    with pytest.raises(CollaborationHeadConflictError) as raised:
+        await harness.submit(
+            owner,
+            workspace,
+            project.id,
+            [add_node("node-1")],
+            observed_room_epoch=uuid4(),
+        )
+
+    assert raised.value.actual_sequence == head.collaboration_sequence == 0
+    assert raised.value.room_epoch == head.room_epoch
+    assert harness.store.receipts == {}
+    assert [(event.operation, event.error_code) for event in harness.audits] == [
+        ("collaboration.project.create", None),
+        ("collaboration.head.conflict", "head_moved"),
+    ]
+
+
+async def test_an_observed_sequence_ahead_of_the_head_is_a_conflict(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, _, _ = await harness.create(owner, workspace)
+
+    with pytest.raises(CollaborationHeadConflictError) as raised:
+        await harness.submit(
+            owner,
+            workspace,
+            project.id,
+            [add_node("node-1")],
+            observed_sequence=4,
+        )
+
+    assert (raised.value.expected_sequence, raised.value.actual_sequence) == (4, 0)
+
+
+async def test_whole_document_replace_is_refused_behind_the_head(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, _, _ = await harness.create(owner, workspace)
+    await harness.submit(owner, workspace, project.id, [add_node("node-1")])
+    stale_graph = GraphDocument()
+
+    with pytest.raises(CollaborationHeadConflictError):
+        await harness.submit(
+            owner,
+            workspace,
+            project.id,
+            [
+                InGraphCommand(
+                    graph_id="main",
+                    command=ReplaceDocumentCommand(document=stale_graph),
+                )
+            ],
+            observed_sequence=0,
+        )
+
+    committed = harness.store.head_for(workspace.id, project.id)
+    assert committed.collaboration_sequence == 1
+    assert [node.id for node in committed.document.graphs[0].document.nodes] == [
+        "node-1"
+    ]
+
+    # Read at the current sequence, the same wholesale replace is accepted.
+    accepted = await harness.submit(
+        owner,
+        workspace,
+        project.id,
+        [
+            InGraphCommand(
+                graph_id="main",
+                command=ReplaceDocumentCommand(document=stale_graph),
+            )
+        ],
+        observed_sequence=1,
+    )
+    assert accepted.head.collaboration_sequence == 2
+    assert accepted.head.document.graphs[0].document == stale_graph
+
+
+async def test_viewer_cannot_submit_commands(harness: Harness) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, _, _ = await harness.create(owner, workspace)
+    viewer = harness.add_member(workspace, name="Viewer", role=WorkspaceRole.VIEWER)
+
+    with pytest.raises(CapabilityDeniedError):
+        await harness.submit(viewer, workspace, project.id, [add_node("node-1")])
+
+    assert harness.store.head_for(workspace.id, project.id).collaboration_sequence == 0
+    assert harness.store.receipts == {}
+
+
+async def test_two_batches_on_one_head_take_one_sequence_step_each(
+    harness: Harness,
+) -> None:
+    """Two submissions race on one head: one lands, the other is refused."""
+
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, _, _ = await harness.create(owner, workspace)
+    # Both transactions reach the head before either is allowed to read it, so they
+    # really are concurrent and only the row lock can order them.
+    harness.store.gate("lock_head", parties=2)
+
+    first = asyncio.create_task(
+        harness.submit(
+            owner,
+            workspace,
+            project.id,
+            [RenameProjectCommand(name="Renamed by A", expected_name="Field survey")],
+            command_id=uuid4(),
+        )
+    )
+    second = asyncio.create_task(
+        harness.submit(
+            owner,
+            workspace,
+            project.id,
+            [RenameProjectCommand(name="Renamed by B", expected_name="Field survey")],
+            command_id=uuid4(),
+        )
+    )
+
+    results = await asyncio.gather(first, second, return_exceptions=True)
+    accepted = [
+        result
+        for result in results
+        if isinstance(result, CommandSubmission)
+        and result.receipt.outcome is CommandReceiptOutcome.ACCEPTED
+    ]
+    refused = [result for result in results if isinstance(result, CollaborationError)]
+
+    assert len(accepted) == 1
+    assert len(refused) == 1
+    committed = harness.store.head_for(workspace.id, project.id)
+    assert committed.collaboration_sequence == 1
+    assert committed.name == accepted[0].head.name
+    assert committed.name != (
+        "Renamed by A" if accepted[0].head.name == "Renamed by B" else "Renamed by B"
+    )
+    assert len(harness.store.receipts) == 1
+    assert harness.revisions(project.id) == [1]
+
+
+async def test_checkpoint_appends_the_next_immutable_revision(harness: Harness) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, head, _ = await harness.create(owner, workspace)
+    await harness.submit(
+        owner, workspace, project.id, [add_node("node-1", value="first")]
+    )
+
+    outcome = await harness.checkpoint(owner, workspace, project.id)
+
+    assert isinstance(outcome, CheckpointOutcome)
+    assert outcome.revision == 2
+    assert outcome.head.checkpoint_sequence == 1
+    assert outcome.head.checkpoint_revision == 2
+    assert outcome.head.is_fully_checkpointed is True
+    committed = harness.store.head_for(workspace.id, project.id)
+    assert committed.checkpoint_sequence == 1
+    checkpoint = harness.store.checkpoints[(project.id, 2)]
+    assert checkpoint.name == "Field survey"
+    assert checkpoint.document == committed.document
+    assert checkpoint.document.graphs[0].document.nodes[0].config_dict() == {
+        "value": "first"
+    }
+    mapping = harness.store.mappings[(workspace.id, project.id, head.room_epoch, 1)]
+    assert mapping.checkpoint_revision == 2
+    assert harness.revisions(project.id) == [1, 2]
+    assert [event.operation for event in harness.audits][-1] == (
+        "collaboration.checkpoint"
+    )
+
+
+async def test_checkpoint_is_idempotent_for_durable_state(harness: Harness) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, _, _ = await harness.create(owner, workspace)
+    await harness.submit(owner, workspace, project.id, [add_node("node-1")])
+    first = await harness.checkpoint(owner, workspace, project.id)
+
+    again = await harness.checkpoint(owner, workspace, project.id)
+
+    assert again.revision == first.revision == 2
+    assert harness.revisions(project.id) == [1, 2]
+    assert harness.factory.last.commit_count == 0
+
+
+async def test_checkpoint_of_a_moved_head_is_refused(harness: Harness) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, head, _ = await harness.create(owner, workspace)
+    await harness.submit(owner, workspace, project.id, [add_node("node-1")])
+
+    with pytest.raises(CollaborationHeadConflictError):
+        await harness.checkpoint(
+            owner,
+            workspace,
+            project.id,
+            expected_sequence=0,
+            expected_room_epoch=head.room_epoch,
+        )
+    with pytest.raises(CollaborationHeadConflictError):
+        await harness.checkpoint(
+            owner,
+            workspace,
+            project.id,
+            expected_sequence=1,
+            expected_room_epoch=uuid4(),
+        )
+
+    assert harness.revisions(project.id) == [1]
+    assert harness.store.head_for(workspace.id, project.id).checkpoint_sequence == 0
+
+
+async def test_checkpoint_of_a_project_without_a_head_reports_missing(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, head, _ = await harness.create(owner, workspace)
+    harness.store.heads.pop((workspace.id, project.id))
+
+    with pytest.raises(MissingProjectHeadError):
+        await harness.service.checkpoint(
+            actor=owner,
+            workspace_id=workspace.id,
+            project_id=project.id,
             expected_sequence=head.collaboration_sequence,
             expected_room_epoch=head.room_epoch,
         )
 
-    restored = factory.collaboration.heads[(WORKSPACE_ID, graph_id)]
-    assert restored.checkpoint_sequence == 1
-    assert restored.name == "Pending"
-    assert factory.graphs.graphs[graph_id].revision == 1
-    assert factory.graphs.graphs[graph_id].name == "Draft"
-    assert not any(
-        key[3] == 2 for key in factory.collaboration.mappings if key[1] == graph_id
+
+async def test_checkpoint_conflict_surfaces_as_a_revision_conflict(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, _, _ = await harness.create(owner, workspace)
+    await harness.submit(owner, workspace, project.id, [add_node("node-1")])
+    # A checkpoint for revision 2 landed from elsewhere while this transaction read
+    # the head, so the append is a duplicate revision.
+    harness.store.checkpoints[(project.id, 2)] = ProjectCheckpoint(
+        workspace_id=workspace.id,
+        project_id=project.id,
+        revision=2,
+        name="Checkpointed elsewhere",
+        document=harness.checkpoint_document(project.id, 1),
+        created_at=datetime(2026, 1, 4, tzinfo=UTC),
     )
 
-    async with factory() as entered:
-        assert await entered.materialized_outputs.list_for_graph(
-            WORKSPACE_ID, graph_id, 1
-        ) == [original_materialization]
-        assert (
-            await entered.materialized_outputs.list_for_graph(WORKSPACE_ID, graph_id, 2)
-            == []
+    with pytest.raises(ProjectCheckpointConflictError):
+        await harness.checkpoint(owner, workspace, project.id)
+
+    # The revision that landed elsewhere is still the one on disk, and this head has
+    # not pretended to be level with it.
+    assert harness.store.checkpoints[(project.id, 2)].name == "Checkpointed elsewhere"
+    committed = harness.store.head_for(workspace.id, project.id)
+    assert (committed.checkpoint_sequence, committed.checkpoint_revision) == (0, 1)
+
+
+async def test_checkpoint_requires_the_checkpoint_capability(harness: Harness) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, _, _ = await harness.create(owner, workspace)
+    await harness.submit(owner, workspace, project.id, [add_node("node-1")])
+    viewer = harness.add_member(workspace, name="Viewer", role=WorkspaceRole.VIEWER)
+
+    with pytest.raises(CapabilityDeniedError):
+        await harness.checkpoint(viewer, workspace, project.id)
+
+    assert harness.revisions(project.id) == [1]
+
+
+async def test_restore_replays_a_checkpoint_as_a_new_revision(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, old_head, _ = await harness.create(owner, workspace)
+    original_document = harness.checkpoint_document(project.id, 1)
+    await harness.submit(
+        owner,
+        workspace,
+        project.id,
+        [
+            add_node("node-1"),
+            RenameProjectCommand(name="Renamed", expected_name="Field survey"),
+        ],
+    )
+    await harness.checkpoint(owner, workspace, project.id)
+    old_revision_two = harness.checkpoint_document(project.id, 2)
+
+    outcome = await harness.restore(owner, workspace, project.id, 1)
+
+    assert outcome.revision == 3
+    assert outcome.head.collaboration_sequence == 0
+    assert outcome.head.checkpoint_sequence == 0
+    assert outcome.head.checkpoint_revision == 3
+    assert outcome.head.name == "Field survey"
+    assert outcome.head.room_epoch != old_head.room_epoch
+    assert outcome.head.document == original_document
+    assert harness.revisions(project.id) == [1, 2, 3]
+    assert harness.checkpoint_document(project.id, 1) == original_document
+    assert harness.checkpoint_document(project.id, 2) == old_revision_two
+    assert harness.store.checkpoints[(project.id, 3)].name == "Field survey"
+    mapping = harness.store.mappings[
+        (workspace.id, project.id, outcome.head.room_epoch, 0)
+    ]
+    assert mapping.checkpoint_revision == 3
+    assert [event.operation for event in harness.audits][-1] == (
+        "collaboration.checkpoint.restore"
+    )
+
+
+async def test_restore_refuses_to_discard_uncheckpointed_drafts(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, head, _ = await harness.create(owner, workspace)
+    await harness.submit(owner, workspace, project.id, [add_node("node-1")])
+
+    with pytest.raises(CollaborationUncheckpointedError) as raised:
+        await harness.restore(owner, workspace, project.id, 1)
+
+    assert (raised.value.head_sequence, raised.value.checkpoint_sequence) == (1, 0)
+    assert harness.revisions(project.id) == [1]
+    committed = harness.store.head_for(workspace.id, project.id)
+    assert committed.room_epoch == head.room_epoch
+    assert committed.collaboration_sequence == 1
+
+
+async def test_restore_of_a_moved_head_or_missing_revision_is_refused(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, head, _ = await harness.create(owner, workspace)
+
+    with pytest.raises(NotFoundError):
+        await harness.restore(owner, workspace, project.id, 7)
+    with pytest.raises(CollaborationHeadConflictError):
+        await harness.restore(
+            owner,
+            workspace,
+            project.id,
+            1,
+            expected_sequence=3,
+            expected_room_epoch=head.room_epoch,
         )
 
-    factory.commit_error = None
-    await service.checkpoint(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        expected_sequence=restored.collaboration_sequence,
-        expected_room_epoch=restored.room_epoch,
+    assert harness.revisions(project.id) == [1]
+    assert (
+        harness.store.head_for(workspace.id, project.id).room_epoch == head.room_epoch
     )
-    async with factory() as entered:
-        carried = await entered.materialized_outputs.list_for_graph(
-            WORKSPACE_ID, graph_id, 2
-        )
-    assert len(carried) == 1
-    assert carried[0].node_id == original_materialization.node_id
-    assert carried[0].workflow_run_id == original_materialization.workflow_run_id
-    assert carried[0].graph_revision == 2
 
 
-@pytest.mark.asyncio
-async def test_checkpoint_versus_replace_serializes_without_partial_state() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    graph, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Draft", document=GraphDocument()),
-        graph_id=graph_id,
-    )
-    head, _ = await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        command_id=uuid4(),
-        observed_sequence=head.collaboration_sequence,
+async def test_restore_requires_the_checkpoint_capability(harness: Harness) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, _, _ = await harness.create(owner, workspace)
+    viewer = harness.add_member(workspace, name="Viewer", role=WorkspaceRole.VIEWER)
+
+    with pytest.raises(CapabilityDeniedError):
+        await harness.restore(viewer, workspace, project.id, 1)
+
+    assert harness.revisions(project.id) == [1]
+
+
+async def test_copy_project_sanitizes_every_graph(harness: Harness) -> None:
+    source, source_owner = harness.workspace(name="Source", slug="source")
+    target, _ = harness.workspace(name="Target", slug="target")
+    harness.join(target, source_owner, role=WorkspaceRole.OWNER)
+    project, head, _ = await harness.create(source_owner, source, name="Field survey")
+    await harness.submit(
+        source_owner,
+        source,
+        project.id,
+        [
+            add_node("upload-1", upload_key="source-key", artifact_id="a", keep="yes"),
+            AddGraphCommand(graph_id="branch", name="Branch"),
+            add_node("upload-2", graph_id="branch", uploads=["one"], keep="also"),
+        ],
         observed_room_epoch=head.room_epoch,
-        command=RenameGraphCommand(name="Uncheckpointed", expected_name="Draft"),
     )
+
+    copied_project, copied_head, receipt = await harness.service.copy_project(
+        actor=source_owner,
+        source_workspace_id=source.id,
+        source_project_id=project.id,
+        target_workspace_id=target.id,
+        expected_room_epoch=head.room_epoch,
+        expected_sequence=1,
+        name="Field survey (copy)",
+    )
+
+    assert receipt is None
+    assert copied_project.workspace_id == target.id
+    assert copied_project.name == "Field survey (copy)"
+    assert copied_head.collaboration_sequence == 0
+    assert copied_head.checkpoint_sequence == 0
+    assert copied_head.checkpoint_revision == 1
+    assert [graph.id for graph in copied_head.document.graphs] == ["main", "branch"]
+    assert [graph.name for graph in copied_head.document.graphs] == ["Main", "Branch"]
+    copied_configs = [
+        graph.document.nodes[0].config_dict()
+        for graph in copied_head.document.graphs
+        if graph.document.nodes
+    ]
+    assert copied_configs == [{"keep": "yes"}, {"keep": "also"}]
+    assert harness.checkpoint_document(copied_project.id, 1) == copied_head.document
+    assert harness.store.head_for(source.id, project.id).collaboration_sequence == 1
+    audits = [
+        event
+        for event in harness.audits
+        if event.operation == "collaboration.project.copy"
+    ]
+    assert [(event.workspace_id, event.resource_id) for event in audits] == [
+        (target.id, str(copied_project.id))
+    ]
+    assert target.id != source.id
+
+
+async def test_copy_refuses_a_graph_module_reference(harness: Harness) -> None:
+    source, source_owner = harness.workspace(name="Source", slug="source")
+    target, _ = harness.workspace(name="Target", slug="target")
+    harness.join(target, source_owner, role=WorkspaceRole.OWNER)
+    project, head, _ = await harness.create(source_owner, source)
+    # A document that still carries a Module operator: the copy cannot keep it.
+    harness.store.heads[(source.id, project.id)].document = ProjectDocument(
+        graphs=(
+            GraphDefinition(
+                id="main",
+                name="Main",
+                document=GraphDocument(
+                    nodes=(
+                        GraphNode(
+                            kind="builtin",
+                            id="module-1",
+                            operator_id="graph.module.survey",
+                            operator_version=1,
+                            position=GraphPoint(x=0, y=0),
+                        ),
+                    )
+                ),
+            ),
+        )
+    )
+
+    with pytest.raises(CollaborationCommandRejectedError) as raised:
+        await harness.service.copy_project(
+            actor=source_owner,
+            source_workspace_id=source.id,
+            source_project_id=project.id,
+            target_workspace_id=target.id,
+            expected_room_epoch=head.room_epoch,
+            expected_sequence=0,
+        )
+
+    assert raised.value.error_code == "foreign_module_reference"
+    assert list(harness.store.projects) == [project.id]
+    assert len(harness.store.heads) == 1
+
+
+async def test_copy_needs_view_in_source_and_create_in_target(harness: Harness) -> None:
+    source, source_owner = harness.workspace(
+        name="Source", slug="source", role=WorkspaceRole.EDITOR
+    )
+    target, _ = harness.workspace(name="Target", slug="target")
+    project, head, _ = await harness.create(source_owner, source)
+    # The copier may see the source but may not create in the target.
+    harness.join(target, source_owner, role=WorkspaceRole.VIEWER)
+    _, stranger = harness.workspace(name="Stranger", slug="stranger")
+
+    def copy(actor: ActorContext):
+        return harness.service.copy_project(
+            actor=actor,
+            source_workspace_id=source.id,
+            source_project_id=project.id,
+            target_workspace_id=target.id,
+            expected_room_epoch=head.room_epoch,
+            expected_sequence=0,
+        )
+
+    with pytest.raises(CapabilityDeniedError):
+        await copy(source_owner)
+    with pytest.raises(NotFoundError):
+        await copy(stranger)
+
+    assert list(harness.store.projects) == [project.id]
+    assert len(harness.store.heads) == 1
+
+
+async def test_copy_of_a_moved_source_head_is_refused(harness: Harness) -> None:
+    source, source_owner = harness.workspace(name="Source", slug="source")
+    target, _ = harness.workspace(name="Target", slug="target")
+    harness.join(target, source_owner, role=WorkspaceRole.OWNER)
+    project, head, _ = await harness.create(source_owner, source)
+    await harness.submit(source_owner, source, project.id, [add_node("node-1")])
+
+    with pytest.raises(CollaborationHeadConflictError) as raised:
+        await harness.service.copy_project(
+            actor=source_owner,
+            source_workspace_id=source.id,
+            source_project_id=project.id,
+            target_workspace_id=target.id,
+            expected_room_epoch=head.room_epoch,
+            expected_sequence=0,
+        )
+
+    assert (raised.value.expected_sequence, raised.value.actual_sequence) == (0, 1)
+    assert list(harness.store.projects) == [project.id]
+
+
+async def test_copy_replays_the_same_command_id(harness: Harness) -> None:
+    source, source_owner = harness.workspace(name="Source", slug="source")
+    target, target_owner = harness.workspace(name="Target", slug="target")
+    harness.join(source, target_owner, role=WorkspaceRole.VIEWER)
+    project, head, _ = await harness.create(source_owner, source)
+    await harness.submit(source_owner, source, project.id, [add_node("node-1")])
+    target_project_id, command_id = uuid4(), uuid4()
+
+    def copy():
+        return harness.service.copy_project(
+            actor=target_owner,
+            source_workspace_id=source.id,
+            source_project_id=project.id,
+            target_workspace_id=target.id,
+            expected_room_epoch=head.room_epoch,
+            expected_sequence=1,
+            command_id=command_id,
+            project_id=target_project_id,
+            name="Field survey (copy)",
+        )
+
+    created = await copy()
+    replayed = await copy()
+
+    assert created.receipt is not None
+    assert created.receipt.outcome is CommandReceiptOutcome.ACCEPTED
+    assert created.project.id == target_project_id
+    assert replayed.project.id == target_project_id
+    assert replayed.receipt is not None
+    assert replayed.receipt.outcome is CommandReceiptOutcome.IDEMPOTENT_REPLAY
+    assert replayed.receipt.command_hmac == created.receipt.command_hmac
+    assert replayed.head.room_epoch == created.head.room_epoch
+    assert len(harness.store.projects) == 2
+    assert harness.revisions(target_project_id) == [1]
+
+    with pytest.raises(CollaborationIdempotencyMismatchError):
+        await harness.service.copy_project(
+            actor=target_owner,
+            source_workspace_id=source.id,
+            source_project_id=project.id,
+            target_workspace_id=target.id,
+            expected_room_epoch=head.room_epoch,
+            expected_sequence=1,
+            command_id=command_id,
+            project_id=target_project_id,
+            name="Renamed retry",
+        )
+
+    assert harness.store.head_for(target.id, target_project_id).name == (
+        "Field survey (copy)"
+    )
+
+
+async def test_delete_project_removes_the_head_and_the_project_rows(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, _, _ = await harness.create(owner, workspace)
+    await harness.submit(owner, workspace, project.id, [add_node("node-1")])
+    await harness.checkpoint(owner, workspace, project.id)
+
+    await harness.service.delete_project(
+        actor=owner, workspace_id=workspace.id, project_id=project.id
+    )
+
+    assert harness.store.projects == {}
+    assert harness.store.heads == {}
+    assert harness.revisions(project.id) == []
+    assert [event.operation for event in harness.audits][-1] == (
+        "collaboration.project.delete"
+    )
+
+
+async def test_delete_refuses_uncheckpointed_drafts_and_a_moved_head(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, head, _ = await harness.create(owner, workspace)
+    await harness.submit(owner, workspace, project.id, [add_node("node-1")])
 
     with pytest.raises(CollaborationUncheckpointedError):
-        await service.replace_complete_document(
-            actor=ActorContext(user_id=USER_ID),
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph_id,
-            name="Replace while dirty",
-            document=GraphDocument(),
-            expected_revision=graph.revision,
+        await harness.service.delete_project(
+            actor=owner, workspace_id=workspace.id, project_id=project.id
+        )
+    with pytest.raises(CollaborationHeadConflictError):
+        await harness.service.delete_project(
+            actor=owner,
+            workspace_id=workspace.id,
+            project_id=project.id,
+            expected_room_epoch=head.room_epoch,
+            expected_sequence=7,
         )
 
-    assert factory.graphs.graphs[graph_id].name == "Draft"
-    assert factory.collaboration.heads[(WORKSPACE_ID, graph_id)].name == (
-        "Uncheckpointed"
-    )
+    assert harness.store.projects != {}
+    assert harness.store.head_for(workspace.id, project.id).collaboration_sequence == 1
 
-    checkpointed, revision = await service.checkpoint(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        expected_sequence=head.collaboration_sequence,
+    # A caller that names the draft it is looking at may take it with the project.
+    await harness.service.delete_project(
+        actor=owner,
+        workspace_id=workspace.id,
+        project_id=project.id,
         expected_room_epoch=head.room_epoch,
+        expected_sequence=1,
     )
-    assert checkpointed.checkpoint_sequence == 2
-    assert revision == 2
-    replaced, new_head = await service.replace_complete_document(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=graph_id,
-        name="Safe replace",
-        document=GraphDocument(),
-        expected_revision=revision,
-    )
-
-    assert replaced.revision == 3
-    assert new_head.collaboration_sequence == 0
-    assert new_head.checkpoint_sequence == 0
-    assert new_head.name == "Safe replace"
+    assert harness.store.projects == {}
 
 
-@pytest.mark.asyncio
-async def test_workspace_qualified_mutations_leave_no_cross_workspace_state() -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    source_id = uuid4()
-    _, source_head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(
-            name="Source",
-            document=GraphDocument(
-                nodes=(
-                    GraphNode(
-                        kind="builtin",
-                        id="n1",
-                        operator_id="example.operator",
-                        operator_version=1,
-                        position=GraphPoint(x=1, y=1),
-                        config={"fields": [{"id": "a", "name": "a", "kind": "string"}]},
-                        input_plugs=(GraphInputPlug(id="a", port="schemas"),),
-                    ),
-                )
-            ),
-        ),
-        graph_id=source_id,
-    )
-    source_head, _ = await service.accept_command(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=source_id,
-        command_id=uuid4(),
-        observed_sequence=source_head.collaboration_sequence,
-        observed_room_epoch=source_head.room_epoch,
-        command=UpdateNodeConfigurationAndInputPlugsCommand(
-            node_id="n1",
-            config={"fields": []},
-            input_plugs=(),
-            expected_config={"fields": [{"id": "a", "name": "a", "kind": "string"}]},
-            expected_plug_ids=("a",),
-        ),
-    )
-    await service.checkpoint(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=source_id,
-        expected_sequence=source_head.collaboration_sequence,
-        expected_room_epoch=source_head.room_epoch,
-    )
-    source_head = factory.collaboration.heads[(WORKSPACE_ID, source_id)]
-
-    copied, copied_head, _ = await service.copy_exact_head(
-        actor=ActorContext(user_id=USER_ID),
-        source_workspace_id=WORKSPACE_ID,
-        source_graph_id=source_id,
-        target_workspace_id=TARGET_WORKSPACE_ID,
-        expected_room_epoch=source_head.room_epoch,
-        expected_sequence=source_head.collaboration_sequence,
-        command_id=uuid4(),
-    )
-    assert copied.workspace_id == TARGET_WORKSPACE_ID
-    assert (TARGET_WORKSPACE_ID, copied.id) in factory.collaboration.heads
-    assert factory.graphs.graphs[source_id].workspace_id == WORKSPACE_ID
-    assert factory.collaboration.heads[(WORKSPACE_ID, source_id)].name == "Source"
-
-    await service.delete_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        graph_id=source_id,
-        expected_revision=factory.graphs.graphs[source_id].revision,
-        expected_room_epoch=source_head.room_epoch,
-        expected_sequence=source_head.collaboration_sequence,
-    )
-    assert source_id not in factory.graphs.graphs
-    assert (WORKSPACE_ID, source_id) not in factory.collaboration.heads
-    assert copied.id in factory.graphs.graphs
-    assert factory.graphs.graphs[copied.id].workspace_id == TARGET_WORKSPACE_ID
-    assert factory.collaboration.heads[(TARGET_WORKSPACE_ID, copied.id)].room_epoch == (
-        copied_head.room_epoch
-    )
-
-
-@pytest.mark.parametrize("reverse", [False, True])
-async def test_copy_locks_workspaces_in_global_order(reverse: bool) -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    source_id, target_id = (
-        (TARGET_WORKSPACE_ID, WORKSPACE_ID)
-        if reverse
-        else (WORKSPACE_ID, TARGET_WORKSPACE_ID)
-    )
-    graph, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=source_id,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Source", document=GraphDocument()),
-    )
-    factory.identity.locked_workspaces.clear()
-    copied, _, _ = await service.copy_exact_head(
-        actor=ActorContext(user_id=USER_ID),
-        source_workspace_id=source_id,
-        source_graph_id=graph.id,
-        target_workspace_id=target_id,
-        expected_room_epoch=head.room_epoch,
-        expected_sequence=head.collaboration_sequence,
-        command_id=uuid4(),
-    )
-    assert copied.workspace_id == target_id
-    locks = factory.identity.locked_workspaces
-    assert set(locks) == {source_id, target_id}
-    assert locks == sorted(locks, key=str)
-
-
-@pytest.mark.parametrize("disabled_user", [False, True])
-async def test_collaboration_rechecks_identity_before_mutating_and_audits_denial(
-    disabled_user: bool,
+async def test_delete_requires_the_delete_capability_and_the_right_workspace(
+    harness: Harness,
 ) -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Original", document=GraphDocument()),
-    )
-    if disabled_user:
-        factory.user.active = False
-    else:
-        factory.membership.revoke()
-    expected_error = UserDisabledError if disabled_user else NotFoundError
-    with pytest.raises(expected_error):
-        await service.accept_command(
-            actor=ActorContext(user_id=USER_ID),
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph.id,
-            command_id=uuid4(),
-            observed_sequence=head.collaboration_sequence,
-            observed_room_epoch=head.room_epoch,
-            command=RenameGraphCommand(name="Denied", expected_name="Original"),
+    mine, owner = harness.workspace(name="Mine", slug="mine")
+    editor = harness.add_member(mine, name="Editor", role=WorkspaceRole.EDITOR)
+    project, _, _ = await harness.create(owner, mine)
+    other, _ = harness.workspace(name="Other", slug="other")
+
+    with pytest.raises(CapabilityDeniedError):
+        await harness.service.delete_project(
+            actor=editor, workspace_id=mine.id, project_id=project.id
         )
-    stored = factory.collaboration.heads[(WORKSPACE_ID, graph.id)]
-    assert stored.name == "Original"
-    failure = factory.security_audit.events[-1]
-    assert failure.outcome == SecurityAuditOutcome.FAILURE
-    assert failure.error_code == ("disabled_user" if disabled_user else "not_found")
-
-
-async def test_graph_creation_rolls_back_when_initial_checkpoint_cannot_be_staged(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-
-    async def reject_mapping(mapping: GraphCheckpointMapping) -> None:
-        raise ConcurrentWriteError(
-            f"Cannot stage initial checkpoint for {mapping.graph_id}"
+    with pytest.raises(NotFoundError):
+        await harness.service.delete_project(
+            actor=owner, workspace_id=other.id, project_id=project.id
         )
 
-    monkeypatch.setattr(factory.collaboration, "add_checkpoint_mapping", reject_mapping)
-    with pytest.raises(ConcurrentWriteError, match="Cannot stage initial checkpoint"):
-        await service.bootstrap_graph(
-            actor=ActorContext(user_id=USER_ID),
-            workspace_id=WORKSPACE_ID,
-            command_id=uuid4(),
-            command=ReplaceDocumentCommand(
-                name="Rolled back", document=GraphDocument()
-            ),
-        )
-    assert factory.graphs.graphs == {}
-    assert factory.graphs.revisions == {}
-    assert factory.collaboration.heads == {}
-    assert factory.collaboration.mappings == {}
-    assert factory.collaboration.receipts == {}
-    assert factory.security_audit.events == []
+    assert list(harness.store.projects) == [project.id]
+    assert harness.store.heads != {}
 
 
-@pytest.mark.parametrize("operation", ["replace", "delete"])
-async def test_complete_graph_mutation_commits_graph_and_head_together(
-    operation: Literal["replace", "delete"],
-) -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph, original_head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Original", document=GraphDocument()),
-        graph_id=uuid4(),
-    )
-    original_snapshot = factory.graphs.revisions[(graph.id, 1)]
-    original_epoch = original_head.room_epoch
-    replacement = GraphDocument(
-        nodes=(
-            GraphNode(
-                kind="builtin",
-                id="replacement",
-                operator_id="example.operator",
-                operator_version=1,
-                position=GraphPoint(x=1, y=2),
-            ),
-        )
+async def test_no_project_operation_touches_node_secrets(harness: Harness) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, _, _ = await harness.create(owner, workspace)
+    await harness.submit(owner, workspace, project.id, [add_node("node-1")])
+    await harness.checkpoint(owner, workspace, project.id)
+    await harness.restore(owner, workspace, project.id, 1)
+    await harness.service.delete_project(
+        actor=owner, workspace_id=workspace.id, project_id=project.id
     )
 
-    if operation == "replace":
-        replaced, head = await service.replace_complete_document(
-            actor=ActorContext(user_id=USER_ID),
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph.id,
-            name="Replacement",
-            document=replacement,
-            expected_revision=1,
-        )
-        assert replaced.name == head.name == "Replacement"
-        assert replaced.document == head.document == replacement
-        assert replaced.revision == head.checkpoint_revision == 2
-        assert head.room_epoch != original_epoch
-        assert head.is_fully_checkpointed
-        assert factory.graphs.revisions[(graph.id, 1)] == original_snapshot
-        assert factory.graphs.revisions[(graph.id, 2)] == replaced.snapshot()
-        mapping = factory.collaboration.mappings[
-            (WORKSPACE_ID, graph.id, head.room_epoch, 0)
-        ]
-        assert mapping.saved_revision == 2
-    else:
-        await service.delete_graph(
-            actor=ActorContext(user_id=USER_ID),
-            workspace_id=WORKSPACE_ID,
-            graph_id=graph.id,
-            expected_revision=1,
-        )
-        assert graph.id not in factory.graphs.graphs
-        assert (WORKSPACE_ID, graph.id) not in factory.collaboration.heads
-
-    assert factory.graphs.locked_revisions == [(WORKSPACE_ID, graph.id, 1)]
-    assert factory.created[-1].commit_count == 1
-    assert factory.created[-1].rollback_count == 0
-    assert (
-        factory.security_audit.events[-1].operation
-        == f"collaboration.graph.{operation}"
-    )
-
-
-@pytest.mark.parametrize("operation", ["replace", "delete"])
-@pytest.mark.parametrize("failure", ["stale", "commit"])
-async def test_complete_graph_mutation_conflict_restores_graph_and_checkpoint(
-    operation: Literal["replace", "delete"],
-    failure: Literal["stale", "commit"],
-) -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph, head, _ = await service.bootstrap_graph(
-        actor=ActorContext(user_id=USER_ID),
-        workspace_id=WORKSPACE_ID,
-        command_id=uuid4(),
-        graph_id=uuid4(),
-        command=ReplaceDocumentCommand(name="Original", document=GraphDocument()),
-    )
-    original_snapshot = graph.snapshot()
-    original_head = _clone_head(head)
-    original_mappings = dict(factory.collaboration.mappings)
-    original_receipts = dict(factory.collaboration.receipts)
-    original_audits = list(factory.security_audit.events)
-    expected_revision = 2 if failure == "stale" else 1
-    concurrent_error = ConcurrentWriteError("competing graph mutation")
-    if failure == "commit":
-        factory.commit_error = concurrent_error
-
-    with pytest.raises(SavedGraphRevisionConflictError) as raised:
-        if operation == "replace":
-            await service.replace_complete_document(
-                actor=ActorContext(user_id=USER_ID),
-                workspace_id=WORKSPACE_ID,
-                graph_id=graph.id,
-                name="Changed",
-                document=GraphDocument(),
-                expected_revision=expected_revision,
-            )
-        else:
-            await service.delete_graph(
-                actor=ActorContext(user_id=USER_ID),
-                workspace_id=WORKSPACE_ID,
-                graph_id=graph.id,
-                expected_revision=expected_revision,
-            )
-
-    assert raised.value.graph_id == graph.id
-    assert raised.value.expected_revision == expected_revision
-    assert raised.value.actual_revision == (1 if failure == "stale" else None)
-    if failure == "commit":
-        assert raised.value.__cause__ is concurrent_error
-    assert factory.graphs.graphs[graph.id].snapshot() == original_snapshot
-    assert factory.graphs.revisions == {(graph.id, 1): original_snapshot}
-    assert factory.collaboration.heads[(WORKSPACE_ID, graph.id)] == original_head
-    assert factory.collaboration.mappings == original_mappings
-    assert factory.collaboration.receipts == original_receipts
-    assert factory.security_audit.events == original_audits
-    assert factory.graphs.locked_revisions == [
-        (WORKSPACE_ID, graph.id, expected_revision)
-    ]
-    assert factory.created[-1].commit_count == (1 if failure == "commit" else 0)
-    assert factory.created[-1].rollback_count == 1
-
-
-@pytest.mark.parametrize("operation", ["replace", "delete"])
-async def test_complete_graph_mutation_rejects_missing_graph_without_committing(
-    operation: Literal["replace", "delete"],
-) -> None:
-    factory = FakeFactory()
-    service = _service(factory)
-    graph_id = uuid4()
-    with pytest.raises(NotFoundError, match=str(graph_id)):
-        if operation == "replace":
-            await service.replace_complete_document(
-                actor=ActorContext(user_id=USER_ID),
-                workspace_id=WORKSPACE_ID,
-                graph_id=graph_id,
-                name="Missing",
-                document=GraphDocument(),
-                expected_revision=1,
-            )
-        else:
-            await service.delete_graph(
-                actor=ActorContext(user_id=USER_ID),
-                workspace_id=WORKSPACE_ID,
-                graph_id=graph_id,
-                expected_revision=1,
-            )
-    assert factory.created[-1].commit_count == 0
-    assert factory.created[-1].rollback_count == 1
-    assert factory.security_audit.events == []
+    assert harness.factory.secrets_touched is False
