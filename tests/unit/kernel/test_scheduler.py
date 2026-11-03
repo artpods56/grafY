@@ -752,3 +752,160 @@ async def test_cancelling_a_finished_run_keeps_its_result() -> None:
     assert finished.status == "succeeded"
     assert after == finished
     assert runner.cancelled == []
+
+
+# 13. The listener hears every transition, and nothing else.
+
+
+class RecordingListener:
+    """``SchedulerListener`` stand-in: appends what it was told, nothing more."""
+
+    def __init__(self) -> None:
+        self.seen: list[tuple[str, ComputationState]] = []
+
+    def computation_changed(
+        self,
+        fingerprint: str,
+        state: ComputationState,
+    ) -> None:
+        self.seen.append((fingerprint, state))
+
+    def states(self, fingerprint: str) -> list[ComputationState]:
+        return [state for name, state in self.seen if name == fingerprint]
+
+
+async def test_the_listener_follows_one_computation_to_its_terminal_state() -> None:
+    listener = RecordingListener()
+    runner = FakeRunner()
+    scheduler = build_scheduler(
+        store=InMemoryResultStore(),
+        runner=runner,
+        concurrency=1,
+        listener=listener,
+    )
+
+    await scheduler.submit("run-1", plan_from({"A": []}))
+    await _started(runner, "A")
+    runner.release("A").set()
+    await _wait_run(scheduler, "run-1")
+
+    assert listener.states("A") == [
+        ComputationState.READY,
+        ComputationState.RUNNING,
+        ComputationState.SUCCEEDED,
+    ]
+
+
+async def test_the_listener_reports_a_shared_transition_once_not_once_per_run() -> None:
+    listener = RecordingListener()
+    runner = FakeRunner()
+    scheduler = build_scheduler(
+        store=InMemoryResultStore(),
+        runner=runner,
+        concurrency=1,
+        listener=listener,
+    )
+    plan = plan_from({"SHARED": []})
+
+    await scheduler.submit("run-1", plan)
+    await scheduler.submit("run-2", plan)
+    await _started(runner, "SHARED")
+    runner.release("SHARED").set()
+    await _wait_run(scheduler, "run-1")
+    await _wait_run(scheduler, "run-2")
+
+    # The second Run joined an attempt already running: one move, one report.
+    assert listener.states("SHARED") == [
+        ComputationState.READY,
+        ComputationState.RUNNING,
+        ComputationState.SUCCEEDED,
+    ]
+
+
+async def test_the_listener_names_the_fingerprint_that_moved() -> None:
+    listener = RecordingListener()
+    runner = FakeRunner()
+    scheduler = build_scheduler(
+        store=InMemoryResultStore(),
+        runner=runner,
+        concurrency=2,
+        listener=listener,
+    )
+
+    await scheduler.submit("run-1", plan_from({"A": [], "B": []}))
+    await _started(runner, "A")
+    await _started(runner, "B")
+    runner.release("A").set()
+    await _await_event(runner.started("A"))
+    runner.release("B").set()
+    await _wait_run(scheduler, "run-1")
+
+    assert {name for name, _ in listener.seen} == {"A", "B"}
+    assert listener.states("A")[-1] is ComputationState.SUCCEEDED
+    assert listener.states("B")[-1] is ComputationState.SUCCEEDED
+
+
+async def test_the_listener_hears_a_failure_and_a_cancellation() -> None:
+    listener = RecordingListener()
+    runner = FakeRunner(failing=["BAD"])
+    scheduler = build_scheduler(
+        store=InMemoryResultStore(),
+        runner=runner,
+        concurrency=1,
+        listener=listener,
+    )
+
+    await scheduler.submit("run-1", plan_from({"BAD": []}))
+    await _started(runner, "BAD")
+    runner.release("BAD").set()
+    failed = await _wait_run(scheduler, "run-1")
+
+    await scheduler.submit("run-2", plan_from({"HOLD": []}))
+    await _started(runner, "HOLD")
+    await _cancel(scheduler, "run-2")
+
+    assert failed.status == "failed"
+    assert listener.states("BAD") == [
+        ComputationState.READY,
+        ComputationState.RUNNING,
+        ComputationState.FAILED,
+    ]
+    assert listener.states("HOLD") == [
+        ComputationState.READY,
+        ComputationState.RUNNING,
+        ComputationState.CANCELLED,
+    ]
+
+
+async def test_a_fingerprint_the_store_already_has_is_never_announced() -> None:
+    listener = RecordingListener()
+    store = InMemoryResultStore()
+    await store.put_result("FRESH", _outputs("FRESH"))
+    runner = FakeRunner()
+    scheduler = build_scheduler(
+        store=store,
+        runner=runner,
+        concurrency=1,
+        listener=listener,
+    )
+
+    await scheduler.submit("run-1", plan_from({"FRESH": []}))
+    result = await _wait_run(scheduler, "run-1")
+
+    assert result.status == "succeeded"
+    # A stored fingerprint is reported as succeeded without ever being moved.
+    assert listener.seen == []
+    assert runner.calls == []
+
+
+async def test_a_scheduler_without_a_listener_still_runs() -> None:
+    runner = FakeRunner()
+    scheduler = build_scheduler(
+        store=InMemoryResultStore(), runner=runner, concurrency=1
+    )
+
+    await scheduler.submit("run-1", plan_from({"A": []}))
+    await _started(runner, "A")
+    runner.release("A").set()
+
+    assert (await _wait_run(scheduler, "run-1")).status == "succeeded"
