@@ -12,10 +12,8 @@ reads today.
 The document is a value: every mutation returns a new one, so a command is a
 pure function of the previous checkpoint.
 
-Node and edge storage reuses the ``SavedGraph*`` value types from
-``grafy_core.domain.graph_documents`` for now. That reuse is temporary: issue #195
-renames them to the Project/Graph vocabulary and this module will import the
-renamed types instead.
+Nodes and edges use the Graph value types in
+``grafy_core.domain.graph_documents``.
 """
 
 import re
