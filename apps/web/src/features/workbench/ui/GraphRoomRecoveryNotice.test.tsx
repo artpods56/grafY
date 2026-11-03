@@ -37,8 +37,8 @@ describe("GraphRoomRecoveryNotice", () => {
           status="stopped"
           failure={{
             workspaceId: "workspace-1",
-            graphId: "graph-1",
-            graphRoomSessionId: "session-1",
+            projectId: "project-1",
+            projectRoomSessionId: "session-1",
             reason: "reconnect_exhausted",
             retryable: true,
             side: "network",

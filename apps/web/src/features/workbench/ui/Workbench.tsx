@@ -932,8 +932,9 @@ function WorkbenchBody({
       get canPersist() {
         return roomPersistenceRef.current.canPersist;
       },
-      persistDocument: (draft) =>
-        roomPersistenceRef.current.persistDocument(draft),
+      // A Project holds several Graphs, so a save has to name the one it writes.
+      persistDocument: (draft, graphId) =>
+        roomPersistenceRef.current.persistDocument(draft, graphId),
     }),
     [],
   );
@@ -947,12 +948,10 @@ function WorkbenchBody({
     graphName,
     setGraphName,
     isDirty,
-    canMaterializeSavedGraph,
     saving,
     openingGraphId,
     deletingGraphId,
     persistenceError,
-    clearPersistenceError,
     dismissPersistenceError,
     persistenceOperationBusy,
     closeGraphBrowser,
@@ -1389,13 +1388,19 @@ function WorkbenchBody({
     nodes,
     edges,
     origins: authoredDocument.origins,
+    projectId,
     activeGraph,
     currentExecutionFingerprint,
-    canMaterializeSavedGraph,
+    // A Run demands freshness from the saved document, so it may only start from
+    // a canvas that is an authoritative view of it — not one with unsent edits.
+    canRunSavedGraph: canStartRun && projectEditsTrusted && !isDirty,
     nodeSecretStatuses,
+    roomConnected: projectRoom.status === "ready",
+    roomActiveRuns: projectRoom.activeRuns,
+    roomRunsRevision: projectRoom.runsRevision,
+    roomInstancesRevision: projectRoom.instancesRevision,
     setNodes,
     setRunError,
-    onMaterializationsLoaded: clearPersistenceError,
   });
   React.useEffect(() => {
     executionRunningRef.current = running;
@@ -4779,11 +4784,14 @@ function WorkbenchBody({
       <WorkbenchSidePanel
         workspaceId={workspaceId}
         sidePanel={sidePanel}
+        projectId={projectId}
         graphId={openGraphId}
         nodeTitles={nodeTitles}
         registry={registry ?? null}
         canSave={canEditProject}
-        executionRunning={runsInProgress}
+        // A stored result belongs to an instance, and the room is what says one
+        // landed; that push is the panel's cue to read the list again.
+        generatedRefreshToken={projectRoom.instancesRevision}
         onOpenInstance={(graphId) => {
           if (graphId !== openGraphId) {
             // A saved artifact can come from another Graph, and every Graph of

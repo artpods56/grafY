@@ -48,8 +48,12 @@ export interface UseProjectRoomSessionResult {
   readonly participants: readonly PresenceParticipant[];
   /** Every Run the room believes is open for this Project, newest last. */
   readonly activeRuns: readonly ActiveRunSummary[];
+  /** Bumped on every room push of active Runs: `room.ready`, `run.started`, `run.finished`. */
+  readonly runsRevision: number;
   /** Instance states the room carried in, keyed by instance key text. */
   readonly instances: ReadonlyMap<string, RoomInstanceState>;
+  /** Bumped on `instances.changed`, the room's only signal that a result landed. */
+  readonly instancesRevision: number;
   readonly submitCommands: (
     commands: readonly RoomProjectCommand[],
   ) => Promise<ProjectRoomSubmitResult>;
@@ -116,8 +120,29 @@ export function useProjectRoomSession({
   >([]);
   const [activeRuns, setActiveRuns] =
     React.useState<readonly ActiveRunSummary[]>(EMPTY_RUNS);
-  const [instances, setInstances] =
+  const [instances, setInstancesState] =
     React.useState<ReadonlyMap<string, RoomInstanceState>>(EMPTY_INSTANCES);
+  /**
+   * Revisions, not snapshots. A listener needs to know the room pushed again, and
+   * a list that happens to look identical still means "read the results again" —
+   * so a counter travels beside the state instead of identity standing in for it.
+   */
+  const [runsRevision, setRunsRevision] = React.useState(0);
+  const [instancesRevision, setInstancesRevision] = React.useState(0);
+  const setActiveRuns = React.useCallback(
+    (next: readonly ActiveRunSummary[]) => {
+      setActiveRunsState(next);
+      setRunsRevision((revision) => revision + 1);
+    },
+    [],
+  );
+  const setInstances = React.useCallback(
+    (next: ReadonlyMap<string, RoomInstanceState>) => {
+      setInstancesState(next);
+      setInstancesRevision((revision) => revision + 1);
+    },
+    [],
+  );
   const [localSessionId, setLocalSessionId] = React.useState<string | null>(
     null,
   );
@@ -369,6 +394,8 @@ export function useProjectRoomSession({
     participants: currentParticipants,
     activeRuns: currentActiveRuns,
     instances: currentInstances,
+    runsRevision,
+    instancesRevision,
     submitCommands,
     replaceHead,
     reconcileCheckpointHead,
