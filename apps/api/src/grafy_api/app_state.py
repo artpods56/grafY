@@ -1,41 +1,36 @@
 """Typed FastAPI application state for identity and workbench resources."""
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
-from grafy_core.application.collaboration import CollaborationService
 from grafy_core.application.identity import IdentityService
-from grafy_core.application.saved_graphs import SavedGraphService
-from grafy_persistence.database import Database
-from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
+from grafy_core.ports.identity import IdentityUnitOfWorkPort
 
-from grafy_api.execution.admission import ExecutionAdmissionDiagnostics
-from grafy_api.execution.manager import (
-    RunExecutionQueueDiagnostics,
-)
-from grafy_api.node_secrets import NodeSecretService
-from grafy_api.realtime.hub import GraphRoomHub
-from grafy_api.services.composition import WorkbenchComponents
-from grafy_api.v1.routes.auth.services import AuthService
+if TYPE_CHECKING:
+    from grafy_core.application.collaboration import CollaborationService
+    from grafy_core.application.projects import ProjectService
+    from grafy_persistence.database import Database
+    from grafy_api.node_secrets import NodeSecretService
+    from grafy_api.realtime.hub import GraphRoomHub
+    from grafy_api.runs.service import RunService
+    from grafy_api.services.composition import WorkbenchComponents
+    from grafy_api.v1.routes.auth.services import AuthService
 
 
 @dataclass(slots=True)
 class AppIdentity:
     """Auth and workspace-identity services attached for the app lifetime."""
 
-    identity_uow_factory: Callable[[], SqlAlchemyUnitOfWork]
+    identity_uow_factory: Callable[[], IdentityUnitOfWorkPort]
     identity_service: IdentityService
     auth_service: AuthService
     # The one AppConfig value a request handler needs: the Origin header of the
     # browser this deployment serves. Routes read this instead of app.state.settings.
     public_origin: str
-
-
-@dataclass(frozen=True, slots=True)
-class CapacityDiagnostics:
-    execution_admission: ExecutionAdmissionDiagnostics
-    execution_queue: RunExecutionQueueDiagnostics
 
 
 @dataclass(slots=True)
@@ -44,20 +39,15 @@ class AppResources:
 
     database: Database
     workbench: WorkbenchComponents
-    saved_graphs: SavedGraphService
+    projects: ProjectService
+    runs: RunService
     collaboration: CollaborationService
     node_secrets: NodeSecretService
     graph_room_hub: GraphRoomHub
 
-    async def capacity_diagnostics(self) -> CapacityDiagnostics:
-        return CapacityDiagnostics(
-            execution_admission=self.workbench.execution_admission.diagnostics(),
-            execution_queue=await self.workbench.execution_manager.diagnostics(),
-        )
-
     async def cleanup(self) -> None:
         await self.graph_room_hub.shutdown()
-        await self.workbench.execution_manager.shutdown()
+        await self.runs.close()
         await self.workbench.artifacts.close()
 
 

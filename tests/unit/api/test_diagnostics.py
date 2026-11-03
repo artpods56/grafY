@@ -96,8 +96,8 @@ def test_expected_failure_keeps_only_declared_diagnostic_context(
     configure_diagnostics(level="INFO", renderer="json")
     exception = LibraryArtifactInUseError(
         artifact_id=uuid4(),
-        graph_ids=[uuid4()],
-        graph_titles=["private-graph-title"],
+        project_ids=[uuid4()],
+        project_titles=["private-project-title"],
     )
 
     record_failure(exception, operation="library.artifact.delete")
@@ -105,9 +105,10 @@ def test_expected_failure_keeps_only_declared_diagnostic_context(
     event = json.loads(capsys.readouterr().err)
     assert event["failure_context"] == {
         "artifact_id": str(exception.artifact_id),
-        "graph_ids": [str(graph_id) for graph_id in exception.graph_ids],
+        "project_ids": [str(project_id) for project_id in exception.project_ids],
+        "retained_result": False,
     }
-    assert "private-graph-title" not in repr(event)
+    assert "private-project-title" not in repr(event)
     _remove_diagnostics_handler()
 
 
