@@ -21,6 +21,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from starlette.testclient import WebSocketDenialResponse
 
 from grafy_api.settings import Settings
 from grafy_core.domain.collaboration import (
@@ -380,10 +381,10 @@ def test_a_project_is_only_ever_the_project_of_its_own_workspace(
         )
         assert refused.status_code == 404, refused.text
 
-        with harness.client.websocket_connect(f"{project}/room") as socket:
-            denial = socket.receive()
-        assert denial["type"] == "http.response.start", denial
-        assert denial["status"] == 404, denial
+        with pytest.raises(WebSocketDenialResponse) as denial:
+            with harness.client.websocket_connect(f"{project}/room"):
+                pass
+        assert denial.value.status_code == 404
 
 
 def test_reads_name_the_reason_they_refused(harness: RoomHarness) -> None:
@@ -415,7 +416,7 @@ def test_reads_name_the_reason_they_refused(harness: RoomHarness) -> None:
 def test_a_project_of_another_workspace_is_not_here_for_any_run_route(
     harness: RoomHarness,
 ) -> None:
-    workspace = harness.foreign_workspace_id
+    workspace = harness.workspace_id
     project_id = harness.foreign_project_id
     # The actor belongs to both Workspaces, so this is a Project answer and not a
     # membership answer: the Project is real and lives somewhere else.
@@ -594,11 +595,9 @@ def test_an_added_graph_adds_an_instance_and_its_removal_removes_it(
         changed = receive_until(websocket, "instances.changed")
         # The first publish this API owner owes this Project publishes everything it
         # derives: state is a diff against what was published, and nothing had been.
-        assert sorted(item["node_id"] for item in changed["changed"]) == [
-            FIRST,
-            SECOND,
-            "only",
-        ]
+        assert sorted(item["node_id"] for item in changed["changed"]) == sorted(
+            [FIRST, SECOND, "only"]
+        )
         assert {item["graph_id"] for item in changed["changed"]} == {
             FLOW_GRAPH_ID,
             "extra",

@@ -124,7 +124,6 @@ export const nodeRegistry = {
       entry_kind: "plugin",
     },
   ],
-  unavailable_modules: [],
 } satisfies NodeRegistry;
 const invitations: readonly WorkspaceInvitationForRecipient[] = [];
 

@@ -803,7 +803,7 @@ async def test_workspace_pat_capability_failure_audit_uses_token_actor(
             client.cookies.clear()
 
             denied = client.post(
-                f"/v1/workspaces/{workspace.id}/graph-folders",
+                f"/v1/workspaces/{workspace.id}/project-folders",
                 headers={"Authorization": f"Bearer {raw_token}"},
                 json={"name": "Denied"},
             )
@@ -819,7 +819,7 @@ async def test_workspace_pat_capability_failure_audit_uses_token_actor(
         failure = next(
             event
             for event in events
-            if event.operation == "graph.folder.create"
+            if event.operation == "project.folder.create"
             and event.outcome is SecurityAuditOutcome.FAILURE
         )
         assert failure.actor_kind is SecurityAuditActorKind.AUTHENTICATED
