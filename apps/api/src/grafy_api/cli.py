@@ -35,7 +35,9 @@ async def _run_auth(args: argparse.Namespace) -> None:
 
     database = create_database(settings.app.resolved_database_url)
     try:
-        identity = IdentityService(lambda: SqlAlchemyUnitOfWork(database.sessions))
+        identity = IdentityService(
+            lambda: SqlAlchemyUnitOfWork(database.sessions, cleanups=database.cleanups)
+        )
         if args.command == "login":
             raw_token = getpass.getpass("Grafy token: ")
             credential = parse_sensitive_bearer_token(raw_token)
@@ -64,7 +66,9 @@ async def _run_admin(args: argparse.Namespace) -> None:
     settings = get_settings()
     database = create_database(settings.app.resolved_database_url)
     try:
-        identity = IdentityService(lambda: SqlAlchemyUnitOfWork(database.sessions))
+        identity = IdentityService(
+            lambda: SqlAlchemyUnitOfWork(database.sessions, cleanups=database.cleanups)
+        )
         if args.admin_command == "disable-user":
             await identity.disable_user(user_id=UUID(args.user_id))
             print(f"Disabled user {args.user_id}")

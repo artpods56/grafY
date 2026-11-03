@@ -18,7 +18,6 @@ room never sends fails the test naming itself instead of blocking forever.
 
 import asyncio
 import json
-import logging
 import threading
 from pathlib import Path
 from queue import Queue
@@ -47,6 +46,7 @@ from grafy_api.realtime.protocol import (
 )
 
 from grafy_api.settings import Settings
+from grafy_persistence.adapters.repositories.projects import SqlCollaborationRepository
 from grafy_core.domain.collaboration import (
     InGraphCommand,
     RenameProjectCommand,
@@ -883,6 +883,115 @@ def test_a_room_cancelled_while_it_was_working_still_leaves(
     assert _registered_room_sessions(harness) == []
 
 
+def _task_label(task: asyncio.Task[None]) -> str:
+    coro = task.get_coro()
+    return f"{task.get_name()}:{getattr(coro, '__qualname__', '?')}"
+
+
+# What a task is doing with a database, by the frames that say so: the close this service owns,
+# the same close inside SQLAlchemy, and the connection terminate that follows an abandoned one.
+_DB_DEBT_MARKS = ("unit-of-work-cleanup", "_close_session", "_terminate_graceful_close")
+
+
+def _owes_the_database(task: asyncio.Task[None]) -> bool:
+    label = _task_label(task)
+    return any(mark in label for mark in _DB_DEBT_MARKS)
+
+
+def test_a_room_abandoned_inside_a_transaction_returns_its_connection(
+    harness: RoomHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A room that dies mid-transaction gives its connection back, and dies on time.
+
+    The endpoint keeps working after it has answered the client — the head read behind
+    `instances.changed` — and the client can walk out in the middle of that. The cancellation
+    comes back at every await the session close performs, so the close cannot simply be awaited
+    there; dropping it is worse, because an async SQLAlchemy session is closed on its driver's
+    thread: the connection stays checked out, that thread stays parked, and the next request to
+    need a connection from the pool waits for one that never comes. CI lost its backend job that
+    way, forty minutes away from the room that caused it.
+
+    The read is held open on an event, so the transaction is open at the moment of abandonment by
+    construction rather than by luck. The abandonment happens on a second thread because that is
+    what a client leaving is, and its timely return is half the claim: a room must not have to
+    wait for its own database in order to die.
+    """
+
+    database = harness.resources.database
+    pool = database.engine.pool
+    real_get_head = SqlCollaborationRepository.get_head
+    transaction_open = asyncio.Event()
+    abandoned = asyncio.Event()  # nobody sets it: only the abandonment ends the read
+    holding = False
+
+    async def read_then_wait(
+        self: SqlCollaborationRepository, *args: object, **kwargs: object
+    ):
+        head = await real_get_head(self, *args, **kwargs)
+        if holding:
+            transaction_open.set()
+            await abandoned.wait()
+        return head
+
+    monkeypatch.setattr(SqlCollaborationRepository, "get_head", read_then_wait)
+
+    harness.as_user(harness.cast.owner.id)
+    session = harness.connect_room(harness.project_id)
+    session.__enter__()
+    ready = session.receive_json()
+    assert ready["type"] == "room.ready"
+
+    holding = True
+    session.send_json(rename(ready, "Abandoned mid-read"))
+    harness.client.portal.call(transaction_open.wait)
+
+    exits: list[BaseException] = []
+
+    def leave_without_saying_goodbye() -> None:
+        try:
+            session.__exit__(None, None, None)
+        except BaseException as exc:  # noqa: BLE001 - reported below
+            exits.append(exc)
+
+    thread = threading.Thread(
+        target=leave_without_saying_goodbye, name="abandon-the-room"
+    )
+    thread.start()
+    thread.join(timeout=20)
+    holding = False
+    assert not thread.is_alive(), (
+        "the room waited on its own database to be allowed to die"
+    )
+    assert exits == []
+
+    # The close was handed over rather than lost: settling the database's own list is what the
+    # application does before it disposes the engine, and the connection is expected back.
+    async def settle_and_look_around() -> tuple[int, list[str]]:
+        await database.cleanups.settle()
+        here = asyncio.current_task()
+        lingering = [
+            task.get_name()
+            for task in asyncio.all_tasks()
+            if task is not here
+            and not task.done()
+            and (
+                "unit-of-work-cleanup" in task.get_name()
+                or "terminate" in task.get_name()
+            )
+        ]
+        return database.cleanups.pending, lingering
+
+    pending, lingering = harness.client.portal.call(settle_and_look_around)
+    assert pool.checkedout() == 0, pool.status()
+    assert pending == 0
+    # The CI failure was not a wrong assertion: the test passed and its teardown never
+    # returned, because a close left on the loop was cancelled by whoever closed it and then
+    # waited for ever. Nothing that owes this database something may still be running here.
+    assert lingering == []
+    assert _registered_room_sessions(harness) == []
+
+
 @pytest.mark.timeout(60)
 def test_a_room_the_test_forgot_to_close_cannot_outlive_the_harness(
     tmp_path: Path, settings: Settings
@@ -1246,7 +1355,7 @@ def test_hub_shutdown_waits_for_the_sender_it_cancelled() -> None:
 
 
 def test_hub_shutdown_does_not_wait_forever_on_a_sender_that_ignores_cancellation(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The deadline is the last resort, and it is loud.
 
@@ -1286,17 +1395,29 @@ def test_hub_shutdown_does_not_wait_forever_on_a_sender_that_ignores_cancellatio
         await writing.wait()
         runaway = session.sender_task
         assert runaway is not None
-        caplog.set_level(logging.ERROR, logger="grafy_api.realtime.hub")
+
+        # The hub's own logger is what must speak. Reading it here rather than through the
+        # test session's log capture keeps this about the hub: which records a pytest run
+        # happens to collect into one process is not this test's subject, and it made the
+        # claim fail or pass on suite composition.
+        reported: list[str] = []
+
+        class Recorder:
+            def __getattr__(self, _level: str):
+                def record(message: str, *args: object) -> None:
+                    reported.append(message % args if args else str(message))
+
+                return record
+
+        monkeypatch.setattr(hub_module, "logger", Recorder())
         try:
             await asyncio.wait_for(hub.shutdown(), timeout=2)
 
-            reported = [
-                record.getMessage()
-                for record in caplog.records
-                if record.getMessage().startswith("graph_room_sender_failed")
+            giving_up = [
+                line for line in reported if line.startswith("graph_room_sender_failed")
             ]
-            assert len(reported) == 1, reported
-            assert "sender_did_not_stop" in reported[0]
+            assert len(giving_up) == 1, giving_up
+            assert "sender_did_not_stop" in giving_up[0]
         finally:
             # Nothing here outlives the test. A sender this hub gave up on is exactly the
             # task that makes a loop's final cleanup wait forever, so it is released and

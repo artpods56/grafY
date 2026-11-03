@@ -57,7 +57,7 @@ def build_app_identity(settings: Settings, database: Database) -> AppIdentity:
     """
 
     def identity_uow_factory() -> SqlAlchemyUnitOfWork:
-        return SqlAlchemyUnitOfWork(database.sessions)
+        return SqlAlchemyUnitOfWork(database.sessions, cleanups=database.cleanups)
 
     identity_service = IdentityService(
         identity_uow_factory,
@@ -114,7 +114,7 @@ async def build_app_resources(
     storage = configured_file_storage(settings.storage, app.workspace)
 
     def new_unit_of_work() -> SqlAlchemyUnitOfWork:
-        return SqlAlchemyUnitOfWork(database.sessions)
+        return SqlAlchemyUnitOfWork(database.sessions, cleanups=database.cleanups)
 
     from grafy_core.application.projects import ProjectService
     from grafy_core.application.collaboration import CollaborationService
@@ -135,7 +135,9 @@ async def build_app_resources(
         plugin_registry=registry,
         workspace=app.workspace,
         limits=ComputationLimits.from_config(settings.execution),
-        unit_of_work=SqlAlchemyUnitOfWork(database.sessions),
+        unit_of_work=SqlAlchemyUnitOfWork(
+            database.sessions, cleanups=database.cleanups
+        ),
         storage=storage,
         storage_backend=settings.storage.storage_backend,
         bucket=settings.storage.storage_bucket,
