@@ -120,20 +120,28 @@ export function WorkbenchSidePanel({
   workspaceId,
   sidePanel,
   onOpenRun,
+  projectId,
   graphId,
   nodeTitles,
   registry,
   canSave,
-  executionRunning,
+  generatedRefreshToken,
 }: {
   workspaceId: string;
   sidePanel: WorkbenchSidePanelState;
-  onOpenRun: (graphId: string, executionId: string) => void;
+  onOpenRun: (graphId: string, runId: string) => void;
+  /**
+   * The Project the canvas belongs to, and the Graph of it it shows. Generated
+   * output is stored per node instance, which is addressed by both: an unsaved
+   * canvas has neither yet, and then the Generated view has nothing to list.
+   */
+  projectId: string | null;
   graphId: string | null;
   nodeTitles: Readonly<Record<string, string>>;
   registry: NodeRegistry | null;
   canSave: boolean;
-  executionRunning: boolean;
+  /** Bumped when a Run finishes or an instance changes, to re-read the list. */
+  generatedRefreshToken?: number;
 }) {
   const collapse = (
     <button
@@ -147,15 +155,16 @@ export function WorkbenchSidePanel({
     </button>
   );
   const body =
-    sidePanel.view === "generated" ? (
+    sidePanel.view === "generated" && projectId !== null ? (
       <GeneratedDrawer
         workspaceId={workspaceId}
+        projectId={projectId}
         graphId={graphId}
         nodeTitles={nodeTitles}
         registry={registry}
         canSave={canSave}
-        executionRunning={executionRunning}
-        headerEnd={collapse}
+        refreshToken={generatedRefreshToken}
+        onClose={() => sidePanel.setOpen(false)}
       />
     ) : (
       <LibraryPanel

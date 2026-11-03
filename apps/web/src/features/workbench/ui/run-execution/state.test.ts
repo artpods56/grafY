@@ -1,19 +1,35 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { NodeSpec, RunExecution, RunNodeResult } from "@/lib/api";
+import type {
+  ArtifactRef,
+  ArtifactRefSequence,
+  InstanceResult,
+  InstanceState,
+  InstanceStateName,
+  NodeSpec,
+} from "@/lib/api";
 import type { WorkflowNode } from "../../model/execution-plan";
+import { WORKFLOW_NODE_TYPE, createWorkflowNodeData } from "../../canvas/types";
 import {
-  WORKFLOW_NODE_TYPE,
-  type NodeExecution,
-  createWorkflowNodeData,
-} from "../../canvas/types";
-import {
-  nodeExecutionIsTerminal,
-  withCurrentMaterializations,
-  withSharedExecutionTerminalNodes,
+  IDLE_OVERLAY,
+  instanceStateByNodeId,
+  instanceStateIsTerminal,
+  isRootInstance,
+  loadInstanceSnapshot,
+  overlayStatusForInstance,
+  runNodeResultFromInstance,
+  runPortOutputs,
+  withInstanceResults,
+  withInstanceStates,
 } from "./state";
 
-const executionId = "00000000-0000-4000-8000-000000000001";
+const listGraphInstances = vi.fn();
+const getInstanceResult = vi.fn();
+
+vi.mock("@/lib/api", () => ({
+  listGraphInstances: (...args: unknown[]) => listGraphInstances(...args),
+  getInstanceResult: (...args: unknown[]) => getInstanceResult(...args),
+}));
 
 function nodeSpec(): NodeSpec {
   return {
@@ -33,58 +49,88 @@ function nodeSpec(): NodeSpec {
   };
 }
 
-function workflowNode(
-  id: string,
-  overrides: { execution?: NodeExecution; run?: RunNodeResult } = {},
-): WorkflowNode {
-  const data = createWorkflowNodeData(nodeSpec());
+function workflowNode(id: string): WorkflowNode {
   return {
     id,
     type: WORKFLOW_NODE_TYPE,
     position: { x: 0, y: 0 },
-    data: {
-      ...data,
-      execution: overrides.execution ?? data.execution,
-      run: overrides.run ?? null,
-    },
+    data: { ...createWorkflowNodeData(nodeSpec()), run: null },
   };
 }
 
-function succeededRun(nodeId: string): RunNodeResult {
+function instance(
+  nodeId: string,
+  state: InstanceStateName = "fresh",
+  overrides: {
+    callPath?: readonly string[];
+    mapIndex?: number | null;
+    fingerprint?: string | null;
+    error?: string | null;
+  } = {},
+): InstanceState {
   return {
-    node_id: nodeId,
-    status: "succeeded",
-    error: null,
-    outputs: [
-      {
-        port: "output",
-        kind: "single",
-        value: {
-          artifact_id: `artifact-${nodeId}`,
-          artifact_type: "text.plain",
-          schema_version: 1,
-        },
-        artifacts: [],
-      },
+    key: {
+      project_id: "project-1",
+      graph_id: "graph-1",
+      node_id: nodeId,
+      call_path: overrides.callPath ?? [],
+      map_index: overrides.mapIndex ?? null,
+    },
+    state,
+    fingerprint: `document-${nodeId}`,
+    last_result_fingerprint:
+      overrides.fingerprint === undefined
+        ? `result-${nodeId}`
+        : overrides.fingerprint,
+    error: overrides.error ?? null,
+  };
+}
+
+function artifactValue(nodeId: string): ArtifactRef {
+  return {
+    artifact_id: `artifact-${nodeId}`,
+    artifact_type: "text.plain",
+    schema_version: 1,
+    content_hash: "hash-1",
+  };
+}
+
+function sequenceValue(nodeId: string): ArtifactRefSequence {
+  return {
+    artifact_type: "text.plain",
+    schema_version: 1,
+    index_key: "order_index",
+    ordered: true,
+    item_refs: [
+      { ...artifactValue(nodeId), content_hash: "hash-a" },
+      { ...artifactValue(nodeId), artifact_id: `second-${nodeId}` },
     ],
   };
 }
 
-function failedRun(nodeId: string, message: string): RunNodeResult {
-  return { node_id: nodeId, status: "failed", error: message, outputs: [] };
-}
-
-function executionResponse(
-  status: RunExecution["status"],
-  overrides: Partial<RunExecution> = {},
-): RunExecution {
+function instanceResult(
+  nodeId: string,
+  overrides: {
+    state?: InstanceStateName;
+    outputs?: InstanceResult["outputs"];
+    fingerprint?: string | null;
+    createdAt?: string | null;
+    error?: string | null;
+  } = {},
+): InstanceResult {
   return {
-    execution_id: executionId,
-    status,
-    active_node_id: null,
-    result: null,
-    error: null,
-    ...overrides,
+    instance: instance(nodeId, overrides.state ?? "fresh", {
+      error: overrides.error,
+    }),
+    outputs: overrides.outputs ?? { output: artifactValue(nodeId) },
+    result_fingerprint:
+      overrides.fingerprint === undefined
+        ? `result-${nodeId}`
+        : overrides.fingerprint,
+    created_at:
+      overrides.createdAt === undefined
+        ? "2026-07-20T08:00:00Z"
+        : overrides.createdAt,
   };
 }
 
@@ -94,281 +140,291 @@ function nodeById(nodes: readonly WorkflowNode[], id: string): WorkflowNode {
   return node;
 }
 
-describe("nodeExecutionIsTerminal", () => {
-  it("treats finished node statuses as terminal", () => {
-    expect(nodeExecutionIsTerminal("succeeded")).toBe(true);
-    expect(nodeExecutionIsTerminal("failed")).toBe(true);
-    expect(nodeExecutionIsTerminal("skipped")).toBe(true);
-    expect(nodeExecutionIsTerminal("cancelled")).toBe(true);
+describe("instance state overlays", () => {
+  it("paints each instance state with the overlay the card chrome speaks", () => {
+    expect(overlayStatusForInstance("fresh")).toBe("succeeded");
+    expect(overlayStatusForInstance("queued")).toBe("queued");
+    expect(overlayStatusForInstance("running")).toBe("running");
+    expect(overlayStatusForInstance("failed")).toBe("failed");
   });
 
-  it("treats idle and in-flight node statuses as not terminal", () => {
-    expect(nodeExecutionIsTerminal("idle")).toBe(false);
-    expect(nodeExecutionIsTerminal("queued")).toBe(false);
-    expect(nodeExecutionIsTerminal("running")).toBe(false);
-    expect(nodeExecutionIsTerminal("cancelling")).toBe(false);
+  it("paints a stale instance as idle, because its result is not this Run's", () => {
+    // Stale is not "nothing happened": the card keeps showing the stored
+    // result. The overlay only says no current Run produced it.
+    expect(overlayStatusForInstance("stale")).toBe("idle");
+  });
+
+  it("treats the three settled states as terminal, and the two in flight as not", () => {
+    expect(instanceStateIsTerminal("fresh")).toBe(true);
+    expect(instanceStateIsTerminal("stale")).toBe(true);
+    expect(instanceStateIsTerminal("failed")).toBe(true);
+    expect(instanceStateIsTerminal("queued")).toBe(false);
+    expect(instanceStateIsTerminal("running")).toBe(false);
+  });
+
+  it("names an instance of the Graph being looked at, and not one behind a call node", () => {
+    expect(isRootInstance(instance("a"))).toBe(true);
+    expect(isRootInstance(instance("a", "fresh", { callPath: ["call"] }))).toBe(
+      false,
+    );
+    // One item of a mapped collection belongs to the collection, not to a card.
+    expect(isRootInstance(instance("a", "fresh", { mapIndex: 2 }))).toBe(false);
+  });
+
+  it("keys state by node id and leaves addressed instances out", () => {
+    const byNodeId = instanceStateByNodeId([
+      instance("a", "fresh"),
+      instance("a", "running", { callPath: ["call"] }),
+      instance("b", "stale"),
+    ]);
+
+    expect([...byNodeId.keys()]).toEqual(["a", "b"]);
+    expect(byNodeId.get("a")?.state).toBe("fresh");
   });
 });
 
-describe("withCurrentMaterializations", () => {
-  it("attaches a materialized run to its node", () => {
-    const materialization = succeededRun("node-1");
-    const nodes = [
-      workflowNode("node-1"),
-      workflowNode("node-2", {
-        execution: { status: "running" },
-      }),
-    ];
+describe("stored results", () => {
+  it("reads a single artifact output as one port holding one reference", () => {
+    const ports = runPortOutputs({ output: artifactValue("a") });
 
-    const result = withCurrentMaterializations(nodes, [materialization]);
+    expect(ports).toEqual([
+      {
+        port: "output",
+        kind: "single",
+        value: artifactValue("a"),
+        artifacts: [
+          {
+            artifact_id: "artifact-a",
+            artifact_type: "text.plain",
+            schema_version: 1,
+            content_hash: "hash-1",
+          },
+        ],
+      },
+    ]);
+  });
 
-    expect(nodeById(result, "node-1").data.run).toEqual(materialization);
-    expect(nodeById(result, "node-1").data.execution).toEqual({
+  it("reads a sequence output as one port holding every item reference", () => {
+    const ports = runPortOutputs({ output: sequenceValue("a") });
+
+    expect(ports[0]?.kind).toBe("sequence");
+    expect(ports[0]?.artifacts.map((artifact) => artifact.artifact_id)).toEqual(
+      ["artifact-a", "second-a"],
+    );
+    // The sequence itself is the value, so a card can count its items without
+    // reading them one by one.
+    expect(ports[0]?.value).toEqual(sequenceValue("a"));
+  });
+
+  it("reads a result with no outputs, and a port with nothing on it, as nothing", () => {
+    expect(runPortOutputs(null)).toEqual([]);
+    // A port the server stored with nothing on it is not a result port.
+    expect(runPortOutputs({ output: null as unknown as ArtifactRef })).toEqual(
+      [],
+    );
+    expect(runPortOutputs({ output: "not-a-reference" as never })).toEqual([]);
+  });
+
+  it("refuses to invent a result for an instance that stored none", () => {
+    expect(
+      runNodeResultFromInstance(instanceResult("a", { fingerprint: null })),
+    ).toBe(null);
+  });
+
+  it("publishes a stored result with the fingerprint it was stored under", () => {
+    const result = runNodeResultFromInstance(instanceResult("a"));
+
+    expect(result).toEqual({
+      node_id: "a",
       status: "succeeded",
+      error: null,
+      outputs: runPortOutputs({ output: artifactValue("a") }),
+      result_fingerprint: "result-a",
+      created_at: "2026-07-20T08:00:00Z",
     });
   });
 
-  it("leaves a node without a materialized run unattached", () => {
-    const nodes = [
-      workflowNode("node-1"),
-      workflowNode("node-2", { execution: { status: "running" } }),
-    ];
+  it("publishes a failed instance as a failed result, with a sentence when the server gave none", () => {
+    const detailed = runNodeResultFromInstance(
+      instanceResult("a", { state: "failed", error: "boom", outputs: {} }),
+    );
+    expect(detailed?.status).toBe("failed");
+    expect(detailed?.error).toBe("boom");
 
-    const result = withCurrentMaterializations(nodes, [succeededRun("node-1")]);
-
-    const unattached = nodeById(result, "node-2");
-    expect(unattached.data.run).toBeNull();
-    expect(unattached.data.execution).toEqual({ status: "idle" });
-  });
-
-  it("restores the previous failure for a terminal node with no materialization", () => {
-    const previousRun = failedRun("node-1", "upstream exploded");
-    const nodes = [
-      workflowNode("node-1", {
-        execution: { status: "failed", error: "upstream exploded" },
-        run: previousRun,
+    const bare = runNodeResultFromInstance(
+      instanceResult("a", {
+        state: "failed",
+        error: null,
+        outputs: {},
+        fingerprint: null,
       }),
-    ];
-
-    const result = withCurrentMaterializations(nodes, []);
-
-    expect(nodeById(result, "node-1").data.run).toEqual(previousRun);
-    expect(nodeById(result, "node-1").data.execution).toEqual({
-      status: "failed",
-      error: "upstream exploded",
-    });
-  });
-
-  it("keeps a stale succeeded run out of a terminal node", () => {
-    const nodes = [
-      workflowNode("node-1", {
-        execution: { status: "cancelled" },
-        run: succeededRun("node-1"),
-      }),
-    ];
-
-    const result = withCurrentMaterializations(nodes, []);
-
-    expect(nodeById(result, "node-1").data.run).toBeNull();
-    expect(nodeById(result, "node-1").data.execution).toEqual({
-      status: "cancelled",
-    });
-  });
-
-  it("clears a previous success that is no longer materialized", () => {
-    const nodes = [
-      workflowNode("node-1", {
-        execution: { status: "succeeded" },
-        run: succeededRun("node-1"),
-      }),
-    ];
-
-    const result = withCurrentMaterializations(nodes, []);
-
-    expect(nodeById(result, "node-1").data.run).toBeNull();
-    expect(nodeById(result, "node-1").data.execution).toEqual({
-      status: "idle",
-    });
+    );
+    expect(bare?.error).toBe("This node failed without error details.");
   });
 });
 
-describe("withSharedExecutionTerminalNodes", () => {
-  it("marks every in-flight node of a cancelled shared execution cancelled", () => {
-    const unrelated = workflowNode("node-3", {
-      execution: { status: "running" },
-    });
-    const nodes = [
-      workflowNode("node-1", { execution: { status: "running" } }),
-      workflowNode("node-2"),
-      unrelated,
-    ];
+describe("publishing instances onto the canvas", () => {
+  it("moves only the nodes a snapshot names, and leaves the rest as they were", () => {
+    const nodes = [workflowNode("a"), workflowNode("b")];
+    const untouched = nodes[1];
 
-    const result = withSharedExecutionTerminalNodes(
+    const next = withInstanceStates(
       nodes,
-      new Set(["node-1", "node-2"]),
-      executionResponse("cancelled"),
+      instanceStateByNodeId([instance("a", "running")]),
     );
 
-    expect(nodeById(result, "node-1").data.execution).toEqual({
-      status: "cancelled",
-    });
-    expect(nodeById(result, "node-1").data.run).toBeNull();
-    expect(nodeById(result, "node-2").data.execution).toEqual({
-      status: "cancelled",
-    });
-    expect(nodeById(result, "node-3")).toBe(unrelated);
+    expect(nodeById(next, "a").data.execution.status).toBe("running");
+    // A node the snapshot does not name keeps its identity, so React Flow does
+    // not repaint a card whose state nobody reported.
+    expect(nodeById(next, "b")).toBe(untouched);
   });
 
-  it("leaves an already terminal shared node alone when cancelling", () => {
-    const finished = workflowNode("node-1", {
-      execution: { status: "succeeded" },
-      run: succeededRun("node-1"),
-    });
-    const nodes = [
-      finished,
-      workflowNode("node-2", { execution: { status: "queued" } }),
-    ];
-
-    const result = withSharedExecutionTerminalNodes(
-      nodes,
-      new Set(["node-1", "node-2"]),
-      executionResponse("cancelled"),
+  it("carries a failure's sentence onto the card", () => {
+    const next = withInstanceStates(
+      [workflowNode("a")],
+      instanceStateByNodeId([instance("a", "failed", { error: "boom" })]),
     );
 
-    expect(nodeById(result, "node-1")).toBe(finished);
-    expect(nodeById(result, "node-2").data.execution).toEqual({
-      status: "cancelled",
-    });
-  });
-
-  it("applies returned node runs and skips members the server omitted", () => {
-    const returned = succeededRun("node-1");
-    const unrelated = workflowNode("node-3");
-    const nodes = [
-      workflowNode("node-1", { execution: { status: "running" } }),
-      workflowNode("node-2", { execution: { status: "queued" } }),
-      unrelated,
-    ];
-
-    const result = withSharedExecutionTerminalNodes(
-      nodes,
-      new Set(["node-1", "node-2"]),
-      executionResponse("succeeded", {
-        result: { status: "succeeded", node_runs: [returned] },
-      }),
-    );
-
-    expect(nodeById(result, "node-1").data.run).toEqual(returned);
-    expect(nodeById(result, "node-1").data.execution).toEqual({
-      status: "succeeded",
-      error: undefined,
-    });
-    expect(nodeById(result, "node-2").data.run).toBeNull();
-    expect(nodeById(result, "node-2").data.execution).toEqual({
-      status: "skipped",
-      error: "The server did not return a result for this node.",
-    });
-    expect(nodeById(result, "node-3")).toBe(unrelated);
-  });
-
-  it("marks the active node failed when a shared result reports failure", () => {
-    const failure = failedRun("node-1", "boom");
-    const nodes = [
-      workflowNode("node-1", { execution: { status: "running" } }),
-      workflowNode("node-2", { execution: { status: "queued" } }),
-    ];
-
-    const result = withSharedExecutionTerminalNodes(
-      nodes,
-      new Set(["node-1", "node-2"]),
-      executionResponse("failed", {
-        result: { status: "failed", node_runs: [failure] },
-      }),
-    );
-
-    expect(nodeById(result, "node-1").data.execution).toEqual({
+    expect(nodeById(next, "a").data.execution).toEqual({
       status: "failed",
       error: "boom",
     });
-    expect(nodeById(result, "node-2").data.execution).toEqual({
-      status: "skipped",
-      error: "The server did not return a result for this node.",
-    });
   });
 
-  it("fills in an error for a failed node whose run carried none", () => {
-    const nodes = [workflowNode("node-1")];
+  it("publishes a stored result onto its node without touching the others", () => {
+    const nodes = [workflowNode("a"), workflowNode("b")];
+    const result = runNodeResultFromInstance(instanceResult("a"));
+    if (!result) throw new Error("Expected a stored result");
 
-    const result = withSharedExecutionTerminalNodes(
-      nodes,
-      new Set(["node-1"]),
-      executionResponse("failed", {
-        result: {
-          status: "failed",
-          node_runs: [{ ...failedRun("node-1", ""), error: null }],
-        },
-      }),
-    );
+    const next = withInstanceResults(nodes, new Map([["a", result]]));
 
-    expect(nodeById(result, "node-1").data.execution).toEqual({
-      status: "failed",
-      error: "This node failed without error details.",
-    });
+    expect(nodeById(next, "a").data.run).toBe(result);
+    expect(nodeById(next, "b").data.run).toBeNull();
   });
 
-  it("fails only the active node when a result-less execution failed", () => {
-    const unrelated = workflowNode("node-3", {
-      execution: { status: "running" },
-    });
+  it("keeps the node when the result it already shows is the one read again", () => {
+    const result = runNodeResultFromInstance(instanceResult("a"));
+    if (!result) throw new Error("Expected a stored result");
     const nodes = [
-      workflowNode("node-1", { execution: { status: "running" } }),
-      workflowNode("node-2", { execution: { status: "queued" } }),
-      unrelated,
+      {
+        ...workflowNode("a"),
+        data: { ...workflowNode("a").data, run: result },
+      },
     ];
 
-    const result = withSharedExecutionTerminalNodes(
-      nodes,
-      new Set(["node-1", "node-2"]),
-      executionResponse("failed", {
-        active_node_id: "node-1",
-        error: "The worker died.",
-      }),
+    expect(withInstanceResults(nodes, new Map([["a", result]]))[0]).toBe(
+      nodes[0],
     );
-
-    expect(nodeById(result, "node-1").data.execution).toEqual({
-      status: "failed",
-      error: "The worker died.",
-    });
-    expect(nodeById(result, "node-1").data.run).toBeNull();
-    expect(nodeById(result, "node-2").data.execution).toEqual({
-      status: "idle",
-    });
-    expect(nodeById(result, "node-3")).toBe(unrelated);
   });
 
-  it("fails every in-flight member when no active node is reported", () => {
-    const nodes = [
-      workflowNode("node-1", { execution: { status: "running" } }),
-      workflowNode("node-2", { execution: { status: "queued" } }),
-      workflowNode("node-3", { execution: { status: "failed" } }),
-    ];
+  it("shows nothing on a card before any instance state has been read for it", () => {
+    expect(IDLE_OVERLAY.status).toBe("idle");
+  });
+});
 
-    const result = withSharedExecutionTerminalNodes(
-      nodes,
-      new Set(["node-1", "node-2", "node-3"]),
-      executionResponse("failed"),
+describe("reading a Graph's instances", () => {
+  beforeEach(() => {
+    listGraphInstances.mockReset();
+    getInstanceResult.mockReset();
+  });
+
+  it("reads the list once and the results the list points at", async () => {
+    listGraphInstances.mockResolvedValue({
+      instances: [instance("a", "fresh"), instance("b", "stale")],
+    });
+    getInstanceResult.mockImplementation(
+      async (
+        _workspaceId: string,
+        _projectId: string,
+        key: { node_id: string },
+      ) => instanceResult(key.node_id),
     );
 
-    expect(nodeById(result, "node-1").data.execution).toEqual({
-      status: "failed",
-      error: "The execution ended without a workflow result.",
+    const snapshot = await loadInstanceSnapshot(
+      "workspace-1",
+      "project-1",
+      "graph-1",
+    );
+
+    expect(listGraphInstances).toHaveBeenCalledWith(
+      "workspace-1",
+      "project-1",
+      "graph-1",
+      undefined,
+    );
+    expect(snapshot.instances).toHaveLength(2);
+    expect(snapshot.results.map((result) => result.node_id).sort()).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(getInstanceResult).toHaveBeenCalledWith(
+      "workspace-1",
+      "project-1",
+      { graph_id: "graph-1", node_id: expect.any(String), call_path: [] },
+      undefined,
+    );
+  });
+
+  it("does not read an instance that stored no result, or one addressed through a call node", async () => {
+    listGraphInstances.mockResolvedValue({
+      instances: [
+        instance("a", "stale", { fingerprint: null }),
+        instance("b", "fresh", { callPath: ["call"] }),
+      ],
     });
-    expect(nodeById(result, "node-2").data.execution).toEqual({
-      status: "failed",
-      error: "The execution ended without a workflow result.",
+
+    const snapshot = await loadInstanceSnapshot(
+      "workspace-1",
+      "project-1",
+      "graph-1",
+    );
+
+    expect(getInstanceResult).not.toHaveBeenCalled();
+    expect(snapshot.results).toEqual([]);
+  });
+
+  it("reads only the nodes a caller named, and only the results that moved", async () => {
+    listGraphInstances.mockResolvedValue({
+      instances: [instance("a", "fresh"), instance("b", "fresh")],
     });
-    expect(nodeById(result, "node-3").data.execution).toEqual({
-      status: "failed",
+    getInstanceResult.mockImplementation(
+      async (
+        _workspaceId: string,
+        _projectId: string,
+        key: { node_id: string },
+      ) => instanceResult(key.node_id),
+    );
+
+    await loadInstanceSnapshot("workspace-1", "project-1", "graph-1", {
+      onlyNodeIds: new Set(["a"]),
+      loadedFingerprints: new Map([["b", "result-b"]]),
     });
+
+    expect(getInstanceResult).toHaveBeenCalledTimes(1);
+    expect(getInstanceResult.mock.calls[0]?.[2]?.node_id).toBe("a");
+  });
+
+  it("re-reads a result the moment its fingerprint moves", async () => {
+    listGraphInstances.mockResolvedValue({
+      instances: [instance("a", "stale", { fingerprint: "result-a-2" })],
+    });
+    getInstanceResult.mockImplementation(
+      async (
+        _workspaceId: string,
+        _projectId: string,
+        key: { node_id: string },
+      ) => instanceResult(key.node_id, { fingerprint: "result-a-2" }),
+    );
+
+    const snapshot = await loadInstanceSnapshot(
+      "workspace-1",
+      "project-1",
+      "graph-1",
+      {
+        loadedFingerprints: new Map([["a", "result-a"]]),
+      },
+    );
+
+    expect(snapshot.results[0]?.result_fingerprint).toBe("result-a-2");
   });
 });

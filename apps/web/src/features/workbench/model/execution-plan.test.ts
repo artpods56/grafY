@@ -15,7 +15,7 @@ import type {
   SavedGraphOrigin,
 } from "@/lib/api";
 import {
-  executionRequestPlan,
+  runTargetsFor,
   executionSubgraphFor,
   executionValidationIssue,
   missingRequiredInputsFor,
@@ -209,6 +209,8 @@ function succeededRun(
       artifacts: [],
     })),
     error: null,
+    result_fingerprint: `fp-${nodeId}`,
+    created_at: "2026-07-20T08:00:00Z",
   };
 }
 
@@ -454,340 +456,76 @@ describe("execution validation", () => {
   });
 });
 
-describe("execution request planning", () => {
-  it("pins each external source port once and derives edge and plug DTOs", () => {
-    const source = workflowNode("source", nodeSpec("source"), {
-      run: succeededRun("source", ["result"]),
-    });
-    const collectSpec = nodeSpec("collect", [
-      port("items", "input", { required: false, instancePlugs: true }),
-    ]);
-    const collect = workflowNode("collect", collectSpec, {
-      selected: true,
-      inputPlugs: [
-        { id: "active-plug", portName: "items" },
-        { id: "inactive-plug", portName: "items" },
-      ],
-    });
-    const target = workflowNode(
-      "target",
-      nodeSpec("target", [port("input", "input")]),
-      { selected: true },
-    );
-    const collectEdge = workflowEdge("source", "collect", {
-      id: "collect-edge",
-      targetPort: "items",
-      targetPlug: "active-plug",
-      collectionMode: "map",
-      projection: { path: ["content"] },
-      conversionPath: [{ id: "extract-text", version: 2 }],
-    });
-    const duplicateSourceEdge = workflowEdge("source", "target", {
-      id: "target-edge",
-    });
+describe("run targets", () => {
+  it("names every node of the Graph when the whole Graph is run", () => {
+    const source = workflowNode("source");
+    const target = workflowNode("target", nodeSpec("target"));
     const execution = executionSubgraphFor(
-      "selected",
-      [source, collect, target],
-      [collectEdge, duplicateSourceEdge],
+      "all",
+      [source, target],
+      [workflowEdge("source", "target")],
     );
 
-    const plan = executionRequestPlan(
-      "selected",
-      [source, collect, target],
-      execution,
-    );
-
-    expect(plan.status).toBe("ready");
-    if (plan.status !== "ready") return;
-    expect(plan.request.scope).toBe("selected");
-    expect(plan.request.pinned_outputs).toEqual([
-      {
-        from_node: "source",
-        from_port: "result",
-        value: artifactValue,
-      },
-    ]);
-    expect(plan.request.nodes.map((node) => node.id)).toEqual([
-      "collect",
-      "target",
-    ]);
-    expect(plan.request.nodes[0]?.input_plugs).toEqual([
-      { id: "active-plug", port: "items" },
-    ]);
-    expect(plan.request.edges).toEqual([
-      {
-        from_node: "source",
-        from_port: "result",
-        to_node: "collect",
-        to_port: "items",
-        to_plug: "active-plug",
-        collection_mode: "map",
-        projection: { path: ["content"] },
-        conversion_path: [{ id: "extract-text", version: 2 }],
-      },
-      {
-        from_node: "source",
-        from_port: "result",
-        to_node: "target",
-        to_port: "input",
-        to_plug: null,
-        collection_mode: "direct",
-        projection: null,
-        conversion_path: [],
-      },
+    expect(runTargetsFor(execution)).toEqual([
+      { node_id: "source", call_path: [] },
+      { node_id: "target", call_path: [] },
     ]);
   });
 
-  it("uses a materialized output from an unsupported node outside the selected scope", () => {
-    const unsupported = workflowNode("legacy", nodeSpec("legacy"), {
-      run: succeededRun("legacy", ["result"]),
-      compatibility: unsupportedCompatibility("legacy", "legacy"),
-    });
-    const target = workflowNode(
-      "target",
-      nodeSpec("target", [port("input", "input")]),
-      { selected: true },
-    );
-    const edge = workflowEdge("legacy", "target", {
-      sourceHandle: "$compatibility::output::result::",
-    });
-    edge.data = {
-      ...edge.data,
-      enabled: true,
-      collectionMode: "direct",
-      sourcePortName: "result",
-      targetPortName: "input",
-      targetPlugId: null,
-      compatibilityIssues: ["legacy: Operator legacy@1 is unavailable."],
-    };
-    const execution = executionSubgraphFor(
-      "selected",
-      [unsupported, target],
-      [edge],
-    );
-
-    expect(
-      executionValidationIssue("selected", execution.nodes, execution.edges),
-    ).toBeNull();
-    const plan = executionRequestPlan(
-      "selected",
-      [unsupported, target],
-      execution,
-    );
-
-    expect(plan.status).toBe("ready");
-    if (plan.status !== "ready") return;
-    expect(plan.request.pinned_outputs).toEqual([
-      {
-        from_node: "legacy",
-        from_port: "result",
-        value: artifactValue,
-      },
-    ]);
-    expect(plan.request.nodes.map((node) => node.id)).toEqual(["target"]);
-    expect(plan.request.edges).toEqual([
-      {
-        from_node: "legacy",
-        from_port: "result",
-        to_node: "target",
-        to_port: "input",
-        to_plug: null,
-        collection_mode: "direct",
-        projection: null,
-        conversion_path: [],
-      },
-    ]);
-  });
-
-  it("reports every unique external source port without materialized output", () => {
-    const source = workflowNode(
-      "source",
-      nodeSpec(
-        "source",
-        [],
-        [port("first", "output"), port("second", "output")],
-        "Source",
-      ),
-    );
-    const target = workflowNode("target", nodeSpec("target"), {
-      selected: true,
-    });
-    const edges = [
-      workflowEdge("source", "target", {
-        id: "first-edge",
-        sourcePort: "first",
-      }),
-      workflowEdge("source", "target", {
-        id: "duplicate-first-edge",
-        sourcePort: "first",
-      }),
-      workflowEdge("source", "target", {
-        id: "second-edge",
-        sourcePort: "second",
-      }),
-    ];
-    const execution = executionSubgraphFor("selected", [source, target], edges);
-
-    expect(
-      executionRequestPlan("selected", [source, target], execution),
-    ).toEqual({
-      status: "invalid",
-      message:
-        "Cannot run the selection because no accessible materialized output is available for Source.first, Source.second. Select the missing upstream nodes too, or choose “Run with dependencies”.",
-    });
-  });
-
-  it("rejects a selected incoming edge without both encoded handles", () => {
+  it("names only the selection, and leaves its upstream to the stored results", () => {
+    // The upstream is deliberately unselected and holds a stored result: a Run
+    // reads that result by fingerprint, so the browser ships no values at all.
     const source = workflowNode("source", nodeSpec("source"), {
       run: succeededRun("source", ["result"]),
     });
     const target = workflowNode("target", nodeSpec("target"), {
       selected: true,
-    });
-    const malformed = workflowEdge("source", "target", {
-      id: "malformed-edge",
-      sourceHandle: null,
     });
     const execution = executionSubgraphFor(
       "selected",
       [source, target],
-      [malformed],
+      [workflowEdge("source", "target")],
     );
 
-    expect(
-      executionRequestPlan("selected", [source, target], execution),
-    ).toEqual({
-      status: "invalid",
-      message:
-        "Cannot run the selection because edge malformed-edge does not identify both source and target ports.",
-    });
+    expect(runTargetsFor(execution)).toEqual([
+      { node_id: "target", call_path: [] },
+    ]);
   });
 
-  it("omits pins and malformed edges while retaining target plug activity for all", () => {
+  it("names the selection and its ancestors when dependencies were asked for", () => {
     const source = workflowNode("source");
     const collect = workflowNode(
       "collect",
-      nodeSpec("collect", [
-        port("items", "input", { required: false, instancePlugs: true }),
-      ]),
-      { inputPlugs: [{ id: "plug", portName: "items" }] },
+      nodeSpec("collect", [port("items", "input", { instancePlugs: true })]),
+      {
+        selected: true,
+        inputPlugs: [{ id: "active-plug", portName: "items" }],
+      },
     );
-    const malformed = workflowEdge("source", "collect", {
-      sourceHandle: null,
-      targetPort: "items",
-      targetPlug: "plug",
-    });
     const execution = executionSubgraphFor(
-      "all",
+      "selected-with-dependencies",
       [source, collect],
-      [malformed],
+      [
+        workflowEdge("source", "collect", {
+          targetPort: "items",
+          targetPlug: "active-plug",
+        }),
+      ],
     );
 
-    const plan = executionRequestPlan("all", [source, collect], execution);
-
-    expect(plan.status).toBe("ready");
-    if (plan.status !== "ready") return;
-    expect(plan.request.scope).toBe("all");
-    expect(plan.request).not.toHaveProperty("pinned_outputs");
-    expect(plan.request.edges).toEqual([]);
-    expect(plan.request.nodes[1]?.input_plugs).toEqual([
-      { id: "plug", port: "items" },
-    ]);
-  });
-
-  it("sends origins for executed nodes and treats them as satisfying required inputs", () => {
-    const target = workflowNode(
-      "target",
-      nodeSpec("target", [port("input", "input")]),
-      { selected: true },
-    );
-    const skipped = workflowNode(
-      "skipped",
-      nodeSpec("skipped", [port("input", "input")]),
-    );
-    const origin: SavedGraphOrigin = {
-      id: "library-origin",
-      to_node: "target",
-      to_port: "input",
-      to_plug: null,
-      value: artifactValue,
-      collection_mode: "direct",
-      conversion_path: [{ id: "builtin.scalar.integer_to_text", version: 1 }],
-    };
-    const unusedOrigin: SavedGraphOrigin = {
-      id: "other-origin",
-      to_node: "skipped",
-      to_port: "input",
-      to_plug: null,
-      value: artifactValue,
-      collection_mode: "direct",
-      conversion_path: [],
-    };
-
-    expect(missingRequiredInputsFor([target], [], [origin])).toEqual([]);
     expect(
-      executionValidationIssue("selected", [target], [], [origin]),
-    ).toBeNull();
-
-    const execution = executionSubgraphFor("selected", [target, skipped], []);
-    const plan = executionRequestPlan(
-      "selected",
-      [target, skipped],
-      execution,
-      [origin, unusedOrigin],
-    );
-
-    expect(plan.status).toBe("ready");
-    if (plan.status !== "ready") return;
-    expect(plan.request.origins).toEqual([
-      {
-        to_node: "target",
-        to_port: "input",
-        to_plug: null,
-        value: artifactValue,
-        collection_mode: "direct",
-        conversion_path: [{ id: "builtin.scalar.integer_to_text", version: 1 }],
-      },
-    ]);
-    expect(plan.request.nodes.map((node) => node.id)).toEqual(["target"]);
+      runTargetsFor(execution).map((candidate) => candidate.node_id),
+    ).toEqual(["source", "collect"]);
   });
 
-  it("keeps origin-connected plugs on executed nodes", () => {
-    const collect = workflowNode(
-      "collect",
-      nodeSpec("collect", [
-        port("items", "input", { required: false, instancePlugs: true }),
-      ]),
-      { inputPlugs: [{ id: "plug", portName: "items" }], selected: true },
-    );
-    const origin: SavedGraphOrigin = {
-      id: "library-origin",
-      to_node: "collect",
-      to_port: "items",
-      to_plug: "plug",
-      value: artifactValue,
-      collection_mode: "direct",
-      conversion_path: [],
-    };
-    const execution = executionSubgraphFor("selected", [collect], []);
-    const plan = executionRequestPlan("selected", [collect], execution, [
-      origin,
-    ]);
+  it("names an empty selection as an empty demand, which validation refuses first", () => {
+    const source = workflowNode("source");
+    const execution = executionSubgraphFor("selected", [source], []);
 
-    expect(plan.status).toBe("ready");
-    if (plan.status !== "ready") return;
-    expect(plan.request.nodes[0]?.input_plugs).toEqual([
-      { id: "plug", port: "items" },
-    ]);
-    expect(plan.request.origins).toEqual([
-      {
-        to_node: "collect",
-        to_port: "items",
-        to_plug: "plug",
-        value: artifactValue,
-        collection_mode: "direct",
-        conversion_path: [],
-      },
-    ]);
+    expect(runTargetsFor(execution)).toEqual([]);
+    expect(executionValidationIssue("selected", [], [], [])).toEqual({
+      nodeId: null,
+      message: "Select at least one node before running a selection.",
+    });
   });
 });

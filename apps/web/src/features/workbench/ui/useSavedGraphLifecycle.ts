@@ -5,18 +5,21 @@ import { useRouter } from "next/navigation";
 
 import { useGraphSummaryRefresh, useSavedGraphs } from "@/hooks/use-api";
 import {
-  createSavedGraph,
-  deleteSavedGraph,
-  getGraphMaterializations,
-  getSavedGraph,
-  updateSavedGraph,
+  checkpointProject,
+  createProject,
+  deleteProject,
+  getCollaborativeHead,
+  graphFromProjectHead,
+  submitProjectCommand,
   type CollaborativeHead,
-  type CreateSavedGraphRequest,
+  type SavedGraph,
   type NodeRegistry,
   type RunNodeResult,
   type SavedGraphNode,
   type SavedGraphSummary,
 } from "@/lib/api";
+import { createUuid } from "../model/uuid";
+import { loadInstanceSnapshot } from "./run-execution/state";
 import { ApiError } from "@/lib/api/client";
 import {
   hydrateAuthoredGraphDocument,
@@ -26,11 +29,9 @@ import {
 } from "../canvas/saved-graph";
 import {
   emptyGraphPresentation,
-  presentationFromCollaborativeHead,
   type GraphPresentation,
 } from "../canvas/artifact-viewer";
 import {
-  authoredGraphDocument,
   createSavedGraphRequest,
   type AuthoredGraphDocument,
 } from "../model/graph-document";
@@ -39,10 +40,151 @@ import type { WorkflowNode } from "../model/execution-plan";
 import { NEW_GRAPH_ROUTE_ID, workbenchGraphPath } from "../routes";
 import { NEW_GRAPH_NAME, savedGraphDirtiness } from "./saved-graph-dirtiness";
 
+/**
+ * The Graph a canvas shows inside a Project: the one it already had open, and
+ * otherwise the Project's first Graph. A canvas is one Graph, so the canvas
+ * chooses — but a Project opened cold has no earlier choice to honour.
+ */
+function openGraphOf(
+  head: CollaborativeHead,
+  preferred: string | null,
+): SavedGraph | null {
+  const graphs = head.document.graphs;
+  const preferredGraph =
+    preferred === null
+      ? undefined
+      : graphs.find((graph) => graph.id === preferred);
+  const chosen = preferredGraph ?? graphs[0];
+  return chosen === undefined ? null : graphFromProjectHead(head, chosen.id);
+}
+
+function activeGraphFrom(
+  head: CollaborativeHead,
+  graph: SavedGraph,
+): ActiveSavedGraph {
+  return {
+    id: head.project_id,
+    graphId: graph.id,
+    // The revision a save is compared against belongs to the Project head and
+    // is shared by every Graph of the Project; there is no per-Graph counter.
+    revision: head.collaboration_sequence,
+    nodes: graph.document.nodes,
+  };
+}
+
+/**
+ * The authored body of one Graph: its name, its document, and the canvas layout
+ * that sits beside it. The wire GraphDocument carries no name (a Graph's name
+ * lives on the Graph, not its document) and omits `origins` when empty, while
+ * the save draft and the dirtiness fingerprints expect both to be present — so
+ * the projection closes those gaps instead of carrying `undefined` to callers.
+ */
+interface DraftGraphDocument extends AuthoredGraphDocument {
+  readonly presentation?: GraphPresentation;
+}
+
+function documentOfGraph(graph: SavedGraph): DraftGraphDocument {
+  return {
+    name: graph.name,
+    nodes: graph.document.nodes.map((node) => ({ ...node })),
+    edges: graph.document.edges.map((edge) => ({ ...edge })),
+    origins: graph.document.origins
+      ? graph.document.origins.map((origin) => ({ ...origin }))
+      : [],
+    presentation: presentationOf(graph),
+  };
+}
+
+function presentationOf(graph: SavedGraph): GraphPresentation {
+  const presentation = graph.document.presentation;
+  return presentation === undefined
+    ? emptyGraphPresentation()
+    : {
+        viewers: [...presentation.viewers],
+        links: [...presentation.links],
+        bindings: [...presentation.bindings],
+        annotations: [...presentation.annotations],
+      };
+}
+
+/**
+ * Write one Graph's document into its Project without a room: read the head,
+ * submit the document as a command against it, then checkpoint the Project to
+ * make it durable. A save that raced another writer surfaces as the same 409
+ * the old expected-revision check raised.
+ */
+async function writeGraphDocument(
+  workspaceId: string,
+  projectId: string,
+  graphId: string,
+  draft: GraphSaveDraft,
+  signal?: AbortSignal,
+): Promise<CollaborativeHead> {
+  const head = await getCollaborativeHead(workspaceId, projectId, signal);
+  const submitted = await submitProjectCommand(workspaceId, projectId, {
+    command_id: createUuid(),
+    observed_sequence: head.collaboration_sequence,
+    room_epoch: head.room_epoch,
+    commands: [
+      {
+        kind: "in_graph",
+        graph_id: graphId,
+        // The authored draft carries no schema version: it is what the canvas
+        // holds. The wire document is versioned, and the server reads this
+        // command by that version.
+        command: {
+          kind: "replace_document",
+          document: { ...draft.document, schema_version: 7 as const },
+        },
+      },
+    ],
+  });
+  const checkpointed = await checkpointProject(workspaceId, projectId, {
+    expected_room_epoch: submitted.head.room_epoch,
+    expected_sequence: submitted.receipt.accepted_sequence,
+  });
+  return checkpointed.head;
+}
+
+/**
+ * A first save: a new Project holding one Graph, then that Graph's document.
+ * The Project is what the route names and the room binds to, so saving a new
+ * canvas gives the canvas the Project's address.
+ */
+async function createProjectWithGraph(
+  workspaceId: string,
+  draft: GraphSaveDraft,
+  signal?: AbortSignal,
+): Promise<CollaborativeHead> {
+  const graphId = createUuid();
+  const project = await createProject(workspaceId, {
+    name: draft.name,
+    graph_id: graphId,
+    graph_name: draft.name,
+  });
+  return writeGraphDocument(workspaceId, project.id, graphId, draft, signal);
+}
+
+/**
+ * The canvas' place in the server: one Graph, inside one Project.
+ *
+ * `id` is the Project the route names and the room is bound to; `graphId` is
+ * which Graph of that Project this canvas is showing. A Run is a demand inside
+ * the Project and against one Graph, so a caller needs both, and `revision` is
+ * the Project head's collaboration sequence — the number a save is compared
+ * against, shared by every Graph of the Project.
+ */
 export interface ActiveSavedGraph {
   id: string;
+  graphId: string;
   revision: number;
   nodes: readonly SavedGraphNode[];
+}
+
+/** The body a save sends for one Graph: its name and its whole document. */
+export interface GraphSaveDraft {
+  readonly name: string;
+  readonly document: DraftGraphDocument;
 }
 
 export interface GraphRoomPersistenceResult {
@@ -55,7 +197,7 @@ export interface GraphRoomPersistenceAdapter {
   readonly canPersist: boolean;
   /** Keep the exact checkpoint separate from a newer effective room head. */
   persistDocument: (
-    draft: CreateSavedGraphRequest,
+    draft: GraphSaveDraft,
   ) => Promise<GraphRoomPersistenceResult>;
 }
 
@@ -186,6 +328,9 @@ export function useSavedGraphLifecycle({
   );
   const [graphBrowserOpen, setGraphBrowserOpen] = React.useState(false);
   const approvedRouteGraphIdRef = React.useRef<string | null>(null);
+  // Which Graph of the Project the canvas is showing. The route names the
+  // Project, so an open has to carry the choice across a head refresh.
+  const openGraphIdRef = React.useRef<string | null>(null);
   const openRequestRef = React.useRef<AbortController | null>(null);
   const documentGenerationRef = React.useRef(0);
   const mountedRef = React.useRef(true);
@@ -204,13 +349,10 @@ export function useSavedGraphLifecycle({
     () => savedGraphExecutionFingerprint(currentDraft),
     [currentDraft],
   );
-  const rememberSavedDraft = React.useCallback(
-    (draft: CreateSavedGraphRequest) => {
-      setSavedFingerprint(savedGraphFingerprint(draft));
-      setSavedExecutionFingerprint(savedGraphExecutionFingerprint(draft));
-    },
-    [],
-  );
+  const rememberSavedDraft = React.useCallback((draft: GraphSaveDraft) => {
+    setSavedFingerprint(savedGraphFingerprint(draft));
+    setSavedExecutionFingerprint(savedGraphExecutionFingerprint(draft));
+  }, []);
 
   React.useEffect(() => {
     currentFingerprintRef.current = currentFingerprint;
@@ -308,16 +450,17 @@ export function useSavedGraphLifecycle({
 
   const syncFromCollaborativeHead = React.useCallback(
     (head: CollaborativeHead): void => {
-      const responseDocument = authoredGraphDocument(head);
-      const responsePresentation = presentationFromCollaborativeHead(head);
-      const nextActiveGraph = {
-        id: head.graph_id,
-        revision: head.checkpoint_revision,
-        nodes: responseDocument.nodes,
-      };
+      // The canvas shows one Graph of this Project: keep the one it had, and
+      // take the Project's first Graph when there was none.
+      const openedGraph = openGraphOf(head, openGraphIdRef.current);
+      if (openedGraph === null) return;
+      openGraphIdRef.current = openedGraph.id;
+      const responseDocument = documentOfGraph(openedGraph);
+      const responsePresentation = presentationOf(openedGraph);
+      const nextActiveGraph = activeGraphFrom(head, openedGraph);
       const headIsCheckpointed =
         head.collaboration_sequence === head.checkpoint_sequence;
-      approvedRouteGraphIdRef.current = head.graph_id;
+      approvedRouteGraphIdRef.current = head.project_id;
       if (headIsCheckpointed) {
         setActiveGraph(nextActiveGraph);
         rememberSavedDraft(
@@ -330,7 +473,9 @@ export function useSavedGraphLifecycle({
         setSavedExecutionFingerprint(null);
       }
       setPersistenceError(null);
-      // Preserve execution overlays: room sync must not clear materialized pins.
+      // Preserve the run overlays: a room sync is a document change, not a new
+      // result. Stored results belong to node instances and survive until the
+      // next run or Graph open says their fingerprint moved.
       replaceDocument(responseDocument);
       replacePresentation(responsePresentation);
       if (headIsCheckpointed) {
@@ -387,12 +532,18 @@ export function useSavedGraphLifecycle({
             }
           : {
               kind: "saved" as const,
-              graph: activeGraph
-                ? await updateSavedGraph(workspaceId, activeGraph.id, {
-                    ...submittedDraft,
-                    expected_revision: activeGraph.revision,
-                  })
-                : await createSavedGraph(workspaceId, submittedDraft),
+              // Outside a room there is no journal to accept the document, so
+              // the save writes it as a Project command and checkpoints the
+              // Project to make it durable. A new canvas becomes a new Project
+              // holding one Graph.
+              head: activeGraph
+                ? await writeGraphDocument(
+                    workspaceId,
+                    activeGraph.id,
+                    activeGraph.graphId,
+                    submittedDraft,
+                  )
+                : await createProjectWithGraph(workspaceId, submittedDraft),
             };
         if (!mountedRef.current) return;
         void refreshGraphSummaries(workspaceId);
@@ -418,18 +569,16 @@ export function useSavedGraphLifecycle({
           }
           return;
         }
-        const savedGraph = persistenceResult.graph;
-        const responseDocument = authoredGraphDocument(savedGraph);
-        const responsePresentation =
-          savedGraph.document.presentation ?? emptyGraphPresentation();
-        const nextActiveGraph = {
-          id: savedGraph.id,
-          revision: savedGraph.revision,
-          nodes: savedGraph.document.nodes,
-        };
+        const savedHead = persistenceResult.head;
+        const savedGraph = openGraphOf(savedHead, openGraphIdRef.current);
+        if (savedGraph === null) return;
+        openGraphIdRef.current = savedGraph.id;
+        const responseDocument = documentOfGraph(savedGraph);
+        const responsePresentation = presentationOf(savedGraph);
+        const nextActiveGraph = activeGraphFrom(savedHead, savedGraph);
         const createdGraph = activeGraph === null;
         if (createdGraph) {
-          approvedRouteGraphIdRef.current = savedGraph.id;
+          approvedRouteGraphIdRef.current = savedHead.project_id;
         }
         setActiveGraph(nextActiveGraph);
         rememberSavedDraft(
@@ -437,9 +586,12 @@ export function useSavedGraphLifecycle({
         );
         replacePresentation(responsePresentation);
         if (createdGraph) {
-          router.replace(workbenchGraphPath(workspaceSlug, savedGraph.id), {
-            scroll: false,
-          });
+          router.replace(
+            workbenchGraphPath(workspaceSlug, savedHead.project_id),
+            {
+              scroll: false,
+            },
+          );
         }
         await refreshNodeSecretStatuses(nextActiveGraph, nodes);
         if (
@@ -568,11 +720,18 @@ export function useSavedGraphLifecycle({
       setOpeningGraphId(graphId);
       setPersistenceError(null);
       try {
-        const savedGraph = await getSavedGraph(
+        // The route names a Project; the canvas shows one Graph of it.
+        const head = await getCollaborativeHead(
           workspaceId,
           graphId,
           controller.signal,
         );
+        const savedGraph = openGraphOf(head, openGraphIdRef.current);
+        if (savedGraph === null) {
+          setPersistenceError("This project holds no graph to open.");
+          return;
+        }
+        openGraphIdRef.current = savedGraph.id;
         if (
           controller.signal.aborted ||
           !mountedRef.current ||
@@ -580,29 +739,28 @@ export function useSavedGraphLifecycle({
         ) {
           return;
         }
-        let materializationWarning: string | null = null;
-        let materializedNodeRuns: RunNodeResult[] = [];
+        // The cards arrive with their Graph's node instances, not with a
+        // revision: an open shows what is stored now, and the fingerprints on
+        // those results are what say whether a card is still current.
+        let storedResultWarning: string | null = null;
+        let nodeRuns: RunNodeResult[] = [];
         try {
-          const materializations = await getGraphMaterializations(
+          const snapshot = await loadInstanceSnapshot(
             workspaceId,
             graphId,
-            savedGraph.revision,
-            controller.signal,
+            savedGraph.id,
+            { signal: controller.signal },
           );
-          materializedNodeRuns = [...materializations.node_runs];
+          nodeRuns = [...snapshot.results];
         } catch (error) {
           if (controller.signal.aborted) return;
           const message =
             error instanceof Error
               ? error.message
-              : "Latest materialized outputs could not be loaded.";
-          materializationWarning = `Graph opened without its latest materialized outputs: ${message}`;
+              : "Stored results could not be loaded.";
+          storedResultWarning = `Graph opened without its stored results: ${message}`;
         }
-        const hydrated = hydrateSavedGraph(
-          savedGraph,
-          registry,
-          materializedNodeRuns,
-        );
+        const hydrated = hydrateSavedGraph(savedGraph, registry, nodeRuns);
         if (controller.signal.aborted) return;
         if (
           !mountedRef.current ||
@@ -617,20 +775,15 @@ export function useSavedGraphLifecycle({
           return;
         }
 
-        const responseDocument = authoredGraphDocument(savedGraph);
-        const responsePresentation =
-          savedGraph.document.presentation ?? emptyGraphPresentation();
+        const responseDocument = documentOfGraph(savedGraph);
+        const responsePresentation = presentationOf(savedGraph);
         const openedNodes = hydrated.nodes.map((node) => ({
           ...node,
           data: attachNodeCallbacks(node.data),
         }));
         replaceDocument(responseDocument, openedNodes);
         replacePresentation(responsePresentation);
-        const nextActiveGraph = {
-          id: savedGraph.id,
-          revision: savedGraph.revision,
-          nodes: savedGraph.document.nodes,
-        };
+        const nextActiveGraph = activeGraphFrom(head, savedGraph);
         setActiveGraph(nextActiveGraph);
         rememberSavedDraft(
           createSavedGraphRequest(responseDocument, responsePresentation),
@@ -649,7 +802,7 @@ export function useSavedGraphLifecycle({
         }
         clearPendingConnectionRoute();
         clearRunError();
-        setPersistenceError(materializationWarning);
+        setPersistenceError(storedResultWarning);
         closeNodeLibrary();
         setGraphBrowserOpen(false);
         requestCanvasRefit();
@@ -753,15 +906,14 @@ export function useSavedGraphLifecycle({
           : `Delete “${graph.name}”? This cannot be undone.`;
       if (!window.confirm(warning)) return;
 
-      const expectedRevision = deletingActiveGraph
-        ? activeGraph.revision
-        : graph.revision;
       const deletingFingerprint = currentFingerprint;
       const documentGeneration = documentGenerationRef.current;
       setDeletingGraphId(graph.id);
       setPersistenceError(null);
       try {
-        await deleteSavedGraph(workspaceId, graph.id, expectedRevision);
+        // The whole Project goes: its Graphs, its node instances, and the Run
+        // history that produced them.
+        await deleteProject(workspaceId, graph.id);
         if (!mountedRef.current) return;
         void refreshGraphSummaries(workspaceId);
         void refreshNodeRegistry();

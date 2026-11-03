@@ -1,4 +1,7 @@
-import type { RunEdgeCollectionMode } from "@/lib/api";
+import type { SavedGraphEdge } from "@/lib/api";
+
+/** How an edge gathers its upstream: one value, or one per item. */
+export type EdgeCollectionMode = SavedGraphEdge["collection_mode"];
 
 import type { ConnectionRoute } from "../canvas/handles";
 import type {
@@ -23,7 +26,9 @@ export function projectionsEqual(
   if (!left || !right) return left === right;
   return (
     left.path.length === right.path.length &&
-    left.path.every((segment, index) => segment === right.path[index])
+    left.path.every(
+      (segment: string, index: number) => segment === right.path[index],
+    )
   );
 }
 
@@ -51,7 +56,9 @@ export function routesMatchingProjectionPath(
     }
     return (
       route.projection.path.length === path.length &&
-      route.projection.path.every((segment, index) => segment === path[index])
+      route.projection.path.every(
+        (segment: string, index: number) => segment === path[index],
+      )
     );
   });
 }
@@ -172,7 +179,7 @@ export function edgeTransportChipLabel(params: {
   projection: WorkflowEdgeData["projection"];
   projectionTitle?: string;
   conversionTitles?: readonly string[];
-  collectionMode: RunEdgeCollectionMode;
+  collectionMode: EdgeCollectionMode;
   enabled: boolean;
   compatible: boolean;
 }): string {

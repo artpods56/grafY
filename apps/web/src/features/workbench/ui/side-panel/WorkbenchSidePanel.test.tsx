@@ -63,7 +63,7 @@ async function renderPanel(sidePanel: WorkbenchSidePanelState): Promise<void> {
         nodeTitles={{}}
         registry={null}
         canSave={false}
-        executionRunning={false}
+        projectId="project-1"
         onOpenRun={vi.fn()}
       />,
     );
@@ -121,7 +121,7 @@ describe("WorkbenchSidePanel", () => {
             nodeTitles={{}}
             registry={null}
             canSave={false}
-            executionRunning={false}
+            projectId={null}
             onOpenRun={vi.fn()}
           />,
         );
@@ -156,7 +156,7 @@ describe("WorkbenchSidePanel", () => {
     await renderPanel(state({ view: "generated" }));
 
     expect(panel()).not.toBeNull();
-    expect(document.body.textContent).toContain("Run artifacts");
+    expect(document.body.textContent).toContain("Generated");
     expect(
       panel()?.querySelector('[aria-label="Generated artifacts"]'),
     ).not.toBeNull();
@@ -168,7 +168,7 @@ describe("WorkbenchSidePanel", () => {
 
     expect(panel()).toBeNull();
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(document.body.textContent).toContain("Run artifacts");
+    expect(document.body.textContent).toContain("Generated");
   });
 
   it("collapses the panel from its header", async () => {

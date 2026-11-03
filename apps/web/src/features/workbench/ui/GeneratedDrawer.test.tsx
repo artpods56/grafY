@@ -6,36 +6,45 @@ import { SWRConfig } from "swr";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
-  GraphExecutionDetail,
-  GraphExecutionList,
-  GraphExecutionSummary,
+  ArtifactOutputValue,
+  ArtifactRef,
+  InstanceResult,
+  InstanceState,
+  InstanceStateList,
   LibraryItem,
   LibraryList,
-  SaveRunArtifactRequest,
+  SaveInstanceArtifactRequest,
 } from "@/lib/api";
 import { ARTIFACT_DROP_DATA_TYPE } from "../model/artifact-drop";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const apiMocks = vi.hoisted(() => ({
-  getGraphExecution:
+  listGraphInstances:
     vi.fn<
       (
         workspaceId: string,
+        projectId: string,
         graphId: string,
-        executionId: string,
-      ) => Promise<GraphExecutionDetail>
+      ) => Promise<InstanceStateList>
     >(),
-  listGraphExecutions:
-    vi.fn<
-      (workspaceId: string, graphId: string) => Promise<GraphExecutionList>
-    >(),
+  getInstanceResult: vi.fn<
+    (
+      workspaceId: string,
+      projectId: string,
+      instance: {
+        graph_id: string;
+        node_id: string;
+        call_path?: readonly string[];
+      },
+    ) => Promise<InstanceResult>
+  >(),
   listLibraryArtifacts: vi.fn<(workspaceId: string) => Promise<LibraryList>>(),
-  saveRunArtifactToLibrary:
+  saveInstanceArtifactToLibrary:
     vi.fn<
       (
         workspaceId: string,
-        body: SaveRunArtifactRequest,
+        body: SaveInstanceArtifactRequest,
       ) => Promise<LibraryItem>
     >(),
 }));
@@ -47,10 +56,10 @@ vi.mock("@stylexjs/stylex", () => ({
 }));
 
 vi.mock("@/lib/api", () => ({
-  getGraphExecution: apiMocks.getGraphExecution,
-  listGraphExecutions: apiMocks.listGraphExecutions,
+  listGraphInstances: apiMocks.listGraphInstances,
+  getInstanceResult: apiMocks.getInstanceResult,
   listLibraryArtifacts: apiMocks.listLibraryArtifacts,
-  saveRunArtifactToLibrary: apiMocks.saveRunArtifactToLibrary,
+  saveInstanceArtifactToLibrary: apiMocks.saveInstanceArtifactToLibrary,
 }));
 
 import { GeneratedDrawer } from "./GeneratedDrawer";
@@ -99,77 +108,74 @@ const REGISTRY = {
   artifact_conversions: [],
 } satisfies React.ComponentProps<typeof GeneratedDrawer>["registry"];
 
-function summary(
-  executionId: string,
-  overrides: Partial<GraphExecutionSummary> = {},
-): GraphExecutionSummary {
-  return {
-    execution_id: executionId,
-    graph_id: "graph-1",
-    graph_revision: 4,
-    status: "succeeded",
-    scope: "all",
-    requested_node_ids: ["resize-1"],
-    created_at: "2026-07-18T08:00:00Z",
-    started_at: "2026-07-18T08:00:01Z",
-    finished_at: "2026-07-18T08:00:02Z",
-    workflow_run_id: "workflow-1",
-    error: null,
-    node_count: 1,
-    artifact_count: 1,
-    ...overrides,
-  };
-}
-
-function detail(
-  execution: GraphExecutionSummary,
-  nodeResults: GraphExecutionDetail["node_results"],
-): GraphExecutionDetail {
-  return { ...execution, node_results: nodeResults };
-}
-
-function tableOutput(
-  artifactId: string,
-  metadata: Readonly<Record<string, unknown>> = {},
-) {
-  return {
-    port: "tables",
-    kind: "single" as const,
-    value: {
-      artifact_id: artifactId,
-      artifact_type: "table.data",
-      schema_version: 1,
-    },
-    artifacts: [
-      {
-        artifact_id: artifactId,
-        artifact_type: "table.data",
-        schema_version: 1,
-        content_type: "application/json",
-        metadata,
-        sha256: `sha-${artifactId}`,
-      },
-    ],
-  };
-}
-
-const LATEST_RUN = summary("execution-2", { graph_revision: 4 });
-const OLDER_RUN = summary("execution-1", {
-  graph_revision: 3,
-  finished_at: "2026-07-17T08:00:02Z",
-});
-/** The run a finished execution adds, so `Latest run` points at a new record. */
-const NEWER_RUN = summary("execution-3", {
-  graph_revision: 5,
-  finished_at: "2026-07-19T08:00:02Z",
-});
+const PROJECT_ID = "project-1";
+const GRAPH_ID = "graph-1";
 
 const NODE_TITLES = {
   "resize-1": "Resize",
   "summarize-1": "Summarize",
+  "call-invoices": "Invoices",
 };
 
-function libraryItem(artifactId: string): LibraryItem {
+function instance(
+  nodeId: string,
+  overrides: Partial<InstanceState> = {},
+  key: Partial<InstanceState["key"]> = {},
+): InstanceState {
+  return {
+    key: {
+      project_id: PROJECT_ID,
+      graph_id: GRAPH_ID,
+      call_path: [],
+      node_id: nodeId,
+      map_index: null,
+      ...key,
+    },
+    state: "fresh",
+    fingerprint: `fingerprint-${nodeId}`,
+    last_result_fingerprint: `result-${nodeId}`,
+    error: null,
+    ...overrides,
+  };
+}
+
+/** An instance that is demanded but has nothing stored yet. */
+function pendingInstance(nodeId: string): InstanceState {
+  return instance(nodeId, {
+    state: "running",
+    last_result_fingerprint: null,
+  });
+}
+
+/** One stored artifact reference, as a result hands it back. */
+function refOf(artifactId: string): ArtifactRef {
+  return {
+    artifact_id: artifactId,
+    artifact_type: "table.data",
+    schema_version: 1,
+    content_hash: `sha-${artifactId}`,
+  };
+}
+
+function tableValue(artifactId: string): ArtifactOutputValue {
+  return refOf(artifactId);
+}
+
+function result(
+  owner: InstanceState,
+  outputs: Record<string, ArtifactOutputValue> | null,
+  overrides: Partial<InstanceResult> = {},
+): InstanceResult {
+  return {
+    instance: owner,
+    outputs,
+    result_fingerprint: owner.last_result_fingerprint,
+    created_at: "2026-07-18T08:00:02Z",
+    ...overrides,
+  };
+}
+
+function libraryItem(artifactId: string, name = "Table"): LibraryItem {
   return {
     artifact: {
       artifact_id: artifactId,
@@ -177,18 +183,22 @@ function libraryItem(artifactId: string): LibraryItem {
       schema_version: 1,
       content_type: "application/json",
     },
-    name: "Table",
+    name,
     provenance: {
-      source: "run",
+      source: "instance",
       saved_at: "2026-07-18T09:00:00Z",
-      graph_id: "graph-1",
+      project_id: PROJECT_ID,
+      project_title: "Invoices project",
+      graph_id: GRAPH_ID,
       graph_title: "Invoices",
       node_id: "resize-1",
       node_title: "Resize",
-      graph_revision: 4,
-      execution_id: "execution-2",
+      call_path: [],
+      result_fingerprint: "result-resize-1",
+      output_port: "tables",
+      item_index: null,
+      name: "Table",
     },
-    run: null,
   };
 }
 
@@ -227,11 +237,11 @@ async function renderDrawer(
   const swrConfig = { provider: () => cache, dedupingInterval: 0 };
   let currentProps: React.ComponentProps<typeof GeneratedDrawer> = {
     workspaceId: "workspace-1",
-    graphId: "graph-1",
+    projectId: PROJECT_ID,
+    graphId: GRAPH_ID,
     nodeTitles: NODE_TITLES,
     registry: REGISTRY,
     canSave: true,
-    executionRunning: false,
     ...props,
   };
   const render = async () => {
@@ -271,20 +281,6 @@ async function nextFrame() {
   });
 }
 
-/** One recorded run whose only output is `artifactId`, made by `resize-1`. */
-function runDetail(execution: GraphExecutionSummary, artifactId: string) {
-  return detail(execution, [
-    {
-      node_id: "resize-1",
-      position: 0,
-      status: "succeeded",
-      error: null,
-      completed_at: "2026-07-18T08:00:02Z",
-      outputs: [tableOutput(artifactId)],
-    },
-  ]);
-}
-
 function buttonNamed(container: HTMLElement, name: string): HTMLButtonElement {
   const button = [...container.querySelectorAll("button")].find(
     (candidate) =>
@@ -318,6 +314,16 @@ function rowFor(container: HTMLElement, artifactId: string): HTMLElement {
   return row;
 }
 
+function saveIn(row: HTMLElement): HTMLButtonElement {
+  const button = [...row.querySelectorAll("button")].find(
+    (candidate) => candidate.textContent?.trim() === "Save",
+  );
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error("Save button was not rendered");
+  }
+  return button;
+}
+
 /** A browser-style artifact drag: the row writes the payload the canvas reads. */
 function dragPayload(row: HTMLElement): unknown {
   const store = new Map<string, string>();
@@ -336,206 +342,289 @@ function dragPayload(row: HTMLElement): unknown {
   return JSON.parse(store.get(ARTIFACT_DROP_DATA_TYPE) ?? "null");
 }
 
+/** One Graph whose `resize-1` node stored `artifactId`, plus anything else. */
+function storedResults(
+  entries: readonly {
+    owner: InstanceState;
+    outputs: Record<string, ArtifactOutputValue> | null;
+    created_at?: string;
+  }[],
+) {
+  apiMocks.listGraphInstances.mockResolvedValue({
+    instances: entries.map((entry) => entry.owner),
+  });
+  apiMocks.getInstanceResult.mockImplementation(
+    async (_workspace, _project, key) => {
+      const entry = entries.find(
+        (candidate) =>
+          candidate.owner.key.node_id === key.node_id &&
+          candidate.owner.key.graph_id === key.graph_id &&
+          (candidate.owner.key.call_path ?? []).join(">") ===
+            (key.call_path ?? []).join(">"),
+      );
+      if (!entry) throw new Error(`No result for ${key.node_id}`);
+      return result(entry.owner, entry.outputs, {
+        ...(entry.created_at ? { created_at: entry.created_at } : {}),
+      });
+    },
+  );
+}
+
 describe("GeneratedDrawer", () => {
-  it("lists the newest run's artifacts grouped by the node that made them", async () => {
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [LATEST_RUN],
-      next_cursor: null,
-    });
+  it("lists each node instance that stored a result, with the state beside it", async () => {
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: { tables: tableValue("artifact-resized") },
+      },
+      {
+        owner: instance("summarize-1", {
+          state: "stale",
+          last_result_fingerprint: "result-summarize-old",
+        }),
+        outputs: { tables: tableValue("artifact-summary") },
+        created_at: "2026-07-17T08:00:02Z",
+      },
+    ]);
     apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.getGraphExecution.mockResolvedValue(
-      detail(LATEST_RUN, [
-        {
-          node_id: "resize-1",
-          position: 1,
-          status: "succeeded",
-          error: null,
-          completed_at: "2026-07-18T08:00:02Z",
-          outputs: [tableOutput("artifact-latest")],
-        },
-        {
-          node_id: "summarize-1",
-          position: 0,
-          status: "succeeded",
-          error: null,
-          completed_at: "2026-07-18T08:00:01Z",
-          outputs: [
-            tableOutput("artifact-summary", { download_name: "invoices.csv" }),
-          ],
-        },
-      ]),
-    );
 
     const { container } = await renderDrawer();
 
-    expect(container.textContent).toContain("Latest run");
     expect(container.textContent).toContain("Resize");
     expect(container.textContent).toContain("Summarize");
-    expect(container.textContent).toContain("rev 4");
-    expect(rowFor(container, "artifact-latest")).toBeDefined();
-    expect(rowFor(container, "artifact-summary")).toBeDefined();
-    // A row carries the name the Library would give the artifact.
-    expect(rowFor(container, "artifact-summary").textContent).toContain(
-      "invoices.csv",
+    // The first instance is open, so its rows are already on screen.
+    expect(rowFor(container, "artifact-resized")).toBeDefined();
+    expect(container.textContent).toContain("Fresh");
+    expect(container.textContent).toContain("Stale");
+    // The list is read for the open Graph, under its Project.
+    expect(apiMocks.listGraphInstances).toHaveBeenCalledWith(
+      "workspace-1",
+      PROJECT_ID,
+      GRAPH_ID,
     );
-    // Each group carries the time its node finished.
+    // A row is named by its artifact type and carries its port identity.
+    expect(rowFor(container, "artifact-resized").textContent).toContain(
+      "Table",
+    );
+    expect(rowFor(container, "artifact-resized").textContent).toContain(
+      "table.data@1",
+    );
+    // The stored time comes from the result itself.
+    expect(container.textContent).toContain("stored");
     expect(container.textContent).toContain("Jul 18, 2026");
   });
 
-  it("lists an older output under Previous runs with its revision, still draggable", async () => {
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [LATEST_RUN, OLDER_RUN],
-      next_cursor: null,
-    });
-    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.getGraphExecution.mockImplementation(
-      async (_workspaceId, _graphId, executionId) =>
-        executionId === LATEST_RUN.execution_id
-          ? detail(LATEST_RUN, [
-              {
-                node_id: "resize-1",
-                position: 0,
-                status: "succeeded",
-                error: null,
-                completed_at: "2026-07-18T08:00:02Z",
-                outputs: [tableOutput("artifact-latest")],
-              },
-            ])
-          : detail(OLDER_RUN, [
-              {
-                node_id: "resize-1",
-                position: 0,
-                status: "succeeded",
-                error: null,
-                completed_at: "2026-07-17T08:00:02Z",
-                outputs: [tableOutput("artifact-older")],
-              },
-            ]),
+  it("reads a callee's result by its call path and says how it is reached", async () => {
+    const callee = instance(
+      "resize-1",
+      {},
+      { graph_id: "graph-invoices", call_path: ["call-invoices"] },
     );
+    storedResults([
+      {
+        owner: callee,
+        outputs: { tables: tableValue("artifact-inside-call") },
+      },
+    ]);
+    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
 
     const { container } = await renderDrawer();
-    // The batch is closed, so an older run costs no detail request yet.
+
+    expect(apiMocks.getInstanceResult).toHaveBeenCalledWith(
+      "workspace-1",
+      PROJECT_ID,
+      {
+        graph_id: "graph-invoices",
+        node_id: "resize-1",
+        call_path: ["call-invoices"],
+      },
+    );
+    expect(rowFor(container, "artifact-inside-call")).toBeDefined();
+    // The call nodes that reach the instance are named.
+    expect(container.textContent).toContain("via Invoices");
+  });
+
+  it("reads nothing for a group until it is opened, and hides it again when closed", async () => {
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: { tables: tableValue("artifact-resized") },
+      },
+      {
+        owner: instance("summarize-1"),
+        outputs: { tables: tableValue("artifact-summary") },
+      },
+    ]);
+    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
+
+    const { container } = await renderDrawer();
+
+    // A closed group is a name and a state, not a read.
+    expect(apiMocks.getInstanceResult).toHaveBeenCalledTimes(1);
     expect(
-      container.querySelector('[data-artifact-row="artifact-older"]'),
+      container.querySelector('[data-artifact-row="artifact-summary"]'),
     ).toBeNull();
 
     await React.act(async () => {
-      buttonContaining(container, "Previous runs").click();
+      buttonContaining(container, "Summarize").click();
     });
 
-    const olderRow = rowFor(container, "artifact-older");
-    expect(olderRow.getAttribute("draggable")).toBe("true");
-    expect(olderRow.textContent).toContain("rev 3");
+    expect(apiMocks.getInstanceResult).toHaveBeenCalledTimes(2);
+    expect(rowFor(container, "artifact-summary")).toBeDefined();
+
+    await React.act(async () => {
+      buttonContaining(container, "Summarize").click();
+    });
+
+    expect(
+      container.querySelector('[data-artifact-row="artifact-summary"]'),
+    ).toBeNull();
   });
 
-  it("saves an artifact into the Library, keeps the run row, and marks it saved", async () => {
-    const saved: LibraryItem[] = [];
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [LATEST_RUN],
-      next_cursor: null,
+  it("passes over an instance with nothing stored, and says so when none stored", async () => {
+    apiMocks.listGraphInstances.mockResolvedValue({
+      instances: [pendingInstance("resize-1")],
     });
+    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
+
+    const { container } = await renderDrawer();
+
+    expect(container.textContent).toContain("No node of this Graph has stored");
+    expect(apiMocks.getInstanceResult).not.toHaveBeenCalled();
+  });
+
+  it("says an open Graph is needed before any result can be read", async () => {
+    const { container } = await renderDrawer({ graphId: null });
+
+    expect(container.textContent).toContain("Open a Graph to browse");
+    expect(apiMocks.listGraphInstances).not.toHaveBeenCalled();
+    // No Graph means no rows, so the Library is not read either.
+    expect(apiMocks.listLibraryArtifacts).not.toHaveBeenCalled();
+  });
+
+  it("saves a result by its instance identity and marks the row saved", async () => {
+    const saved: LibraryItem[] = [];
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: { tables: tableValue("artifact-resized") },
+      },
+    ]);
     apiMocks.listLibraryArtifacts.mockImplementation(async () => ({
       items: [...saved],
     }));
-    apiMocks.saveRunArtifactToLibrary.mockImplementation(
+    apiMocks.saveInstanceArtifactToLibrary.mockImplementation(
       async (_workspaceId, body) => {
         const existing = saved.find(
-          (item) => item.artifact.artifact_id === body.artifact_id,
+          (item) => item.artifact.artifact_id === "artifact-resized",
         );
         if (existing) return existing;
-        const item = libraryItem(body.artifact_id);
+        const item = libraryItem("artifact-resized", body.name);
         saved.push(item);
         return item;
       },
-    );
-    apiMocks.getGraphExecution.mockResolvedValue(
-      detail(LATEST_RUN, [
-        {
-          node_id: "resize-1",
-          position: 0,
-          status: "succeeded",
-          error: null,
-          completed_at: "2026-07-18T08:00:02Z",
-          outputs: [tableOutput("artifact-latest")],
-        },
-      ]),
     );
 
     const { container } = await renderDrawer();
-    const row = rowFor(container, "artifact-latest");
+    const row = rowFor(container, "artifact-resized");
     expect(row.textContent).not.toContain("saved");
 
     await React.act(async () => {
-      const save = [...row.querySelectorAll("button")].find(
-        (button) => button.textContent?.trim() === "Save",
-      );
-      save?.click();
+      saveIn(row).click();
     });
 
-    expect(apiMocks.saveRunArtifactToLibrary).toHaveBeenCalledWith(
+    expect(apiMocks.saveInstanceArtifactToLibrary).toHaveBeenCalledWith(
       "workspace-1",
       {
-        artifact_id: "artifact-latest",
-        execution_id: "execution-2",
+        project_id: PROJECT_ID,
+        graph_id: GRAPH_ID,
         node_id: "resize-1",
-        node_title: "Resize",
+        output_port: "tables",
         name: "Table",
+        result_fingerprint: "result-resize-1",
+        call_path: [],
       },
     );
-    // The row stays in Runs; the same artifact now also sits in the Library.
-    const keptRow = rowFor(container, "artifact-latest");
-    expect(keptRow.textContent).toContain("saved");
+    // The row stays in Generated; the same artifact now also sits in the Library.
+    expect(rowFor(container, "artifact-resized").textContent).toContain(
+      "saved",
+    );
   });
 
-  it("keeps one Library item and the saved badge when the same identity is saved twice", async () => {
-    const saved: LibraryItem[] = [];
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [LATEST_RUN],
-      next_cursor: null,
+  it("saves one item of a sequence output by its index", async () => {
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: {
+          tables: {
+            artifact_type: "table.data",
+            schema_version: 1,
+            index_key: "order_index",
+            ordered: true,
+            item_refs: [refOf("artifact-a"), refOf("artifact-b")],
+          },
+        },
+      },
+    ]);
+    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
+    apiMocks.saveInstanceArtifactToLibrary.mockResolvedValue(
+      libraryItem("artifact-b"),
+    );
+
+    const { container } = await renderDrawer();
+
+    expect(rowFor(container, "artifact-b").textContent).toContain("tables[1]");
+
+    await React.act(async () => {
+      saveIn(rowFor(container, "artifact-b")).click();
     });
+
+    expect(apiMocks.saveInstanceArtifactToLibrary).toHaveBeenCalledWith(
+      "workspace-1",
+      expect.objectContaining({
+        output_port: "tables",
+        item_index: 1,
+        result_fingerprint: "result-resize-1",
+      }),
+    );
+  });
+
+  it("keeps one Library item and the saved badge when the same result is saved twice", async () => {
+    const saved: LibraryItem[] = [];
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: { tables: tableValue("artifact-resized") },
+      },
+    ]);
     apiMocks.listLibraryArtifacts.mockImplementation(async () => ({
       items: [...saved],
     }));
-    apiMocks.saveRunArtifactToLibrary.mockImplementation(
+    apiMocks.saveInstanceArtifactToLibrary.mockImplementation(
       async (_workspaceId, body) => {
         const existing = saved.find(
-          (item) => item.artifact.artifact_id === body.artifact_id,
+          (item) => item.artifact.artifact_id === "artifact-resized",
         );
         if (existing) return existing;
-        const item = libraryItem(body.artifact_id);
+        const item = libraryItem("artifact-resized", body.name);
         saved.push(item);
         return item;
       },
-    );
-    apiMocks.getGraphExecution.mockResolvedValue(
-      detail(LATEST_RUN, [
-        {
-          node_id: "resize-1",
-          position: 0,
-          status: "succeeded",
-          error: null,
-          completed_at: "2026-07-18T08:00:02Z",
-          outputs: [tableOutput("artifact-latest")],
-        },
-      ]),
     );
 
     const { container } = await renderDrawer();
     const clickSave = async () => {
-      const row = rowFor(container, "artifact-latest");
       await React.act(async () => {
-        [...row.querySelectorAll("button")]
-          .find((button) => button.textContent?.trim() === "Save")
-          ?.click();
+        saveIn(rowFor(container, "artifact-resized")).click();
       });
     };
     await clickSave();
     await clickSave();
 
-    expect(apiMocks.saveRunArtifactToLibrary).toHaveBeenCalledTimes(2);
+    expect(apiMocks.saveInstanceArtifactToLibrary).toHaveBeenCalledTimes(2);
     expect(saved).toHaveLength(1);
     expect(
-      container.querySelectorAll('[data-artifact-row="artifact-latest"]'),
+      container.querySelectorAll('[data-artifact-row="artifact-resized"]'),
     ).toHaveLength(1);
     expect(
       [
@@ -545,217 +634,165 @@ describe("GeneratedDrawer", () => {
   });
 
   it("writes the same artifact drop payload a Library row writes", async () => {
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [LATEST_RUN],
-      next_cursor: null,
-    });
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: { tables: tableValue("artifact-resized") },
+      },
+    ]);
     apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.getGraphExecution.mockResolvedValue(
-      detail(LATEST_RUN, [
-        {
-          node_id: "resize-1",
-          position: 0,
-          status: "succeeded",
-          error: null,
-          completed_at: "2026-07-18T08:00:02Z",
-          outputs: [tableOutput("artifact-latest")],
-        },
-      ]),
-    );
 
     const { container } = await renderDrawer();
 
-    expect(dragPayload(rowFor(container, "artifact-latest"))).toEqual({
+    expect(dragPayload(rowFor(container, "artifact-resized"))).toEqual({
       value: {
-        artifact_id: "artifact-latest",
+        artifact_id: "artifact-resized",
         artifact_type: "table.data",
         schema_version: 1,
-        content_hash: "sha-artifact-latest",
+        content_hash: "sha-artifact-resized",
       },
       shape: "one",
     });
   });
 
   it("keeps the ingest notice on a blob row", async () => {
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [LATEST_RUN],
-      next_cursor: null,
-    });
-    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.getGraphExecution.mockResolvedValue(
-      detail(LATEST_RUN, [
-        {
-          node_id: "resize-1",
-          position: 0,
-          status: "succeeded",
-          error: null,
-          completed_at: "2026-07-18T08:00:02Z",
-          outputs: [
-            {
-              port: "file",
-              kind: "single",
-              value: {
-                artifact_id: "artifact-blob",
-                artifact_type: "file.blob",
-                schema_version: 1,
-              },
-              artifacts: [
-                {
-                  artifact_id: "artifact-blob",
-                  artifact_type: "file.blob",
-                  schema_version: 1,
-                  content_type: "application/octet-stream",
-                },
-              ],
-            },
-          ],
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: {
+          file: {
+            artifact_id: "artifact-blob",
+            artifact_type: "file.blob",
+            schema_version: 1,
+            content_hash: null,
+          },
         },
-      ]),
-    );
+      },
+    ]);
+    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
 
     const { container } = await renderDrawer();
 
     expect(container.textContent).toContain(
       "Format not recognized, stored as a blob.",
     );
+    expect(rowFor(container, "artifact-blob").textContent).toContain(
+      "Unrecognized file",
+    );
   });
 
-  it("re-reads the canvas runs once a run finishes", async () => {
+  it("says how far a stale result has fallen behind", async () => {
+    storedResults([
+      {
+        owner: instance("resize-1", {
+          state: "stale",
+          last_result_fingerprint: "result-old",
+        }),
+        outputs: { tables: tableValue("artifact-old") },
+      },
+    ]);
     apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.getGraphExecution.mockResolvedValue(
-      detail(LATEST_RUN, [
-        {
-          node_id: "resize-1",
-          position: 0,
-          status: "succeeded",
-          error: null,
-          completed_at: "2026-07-18T08:00:02Z",
-          outputs: [tableOutput("artifact-latest")],
-        },
-      ]),
-    );
-    apiMocks.listGraphExecutions.mockResolvedValueOnce({
-      items: [],
-      next_cursor: null,
-    });
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [LATEST_RUN],
-      next_cursor: null,
-    });
 
-    const { container, rerender } = await renderDrawer({
-      executionRunning: true,
-    });
+    const { container } = await renderDrawer();
+
+    expect(rowFor(container, "artifact-old")).toBeDefined();
     expect(container.textContent).toContain(
-      "No run of this canvas is recorded",
+      "The node changed after this result was stored",
     );
-
-    await rerender({ executionRunning: false });
-
-    expect(rowFor(container, "artifact-latest")).toBeDefined();
   });
 
-  it("says an unsaved canvas cannot record runs", async () => {
-    const { container } = await renderDrawer({ graphId: null });
-
-    expect(container.textContent).toContain(
-      "Save this graph before browsing the Run artifacts",
-    );
-    expect(apiMocks.listGraphExecutions).not.toHaveBeenCalled();
-    // No canvas means no rows, so the Library is not read either.
-    expect(apiMocks.listLibraryArtifacts).not.toHaveBeenCalled();
-  });
-
-  it("reports a refused save without dropping the run row", async () => {
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [LATEST_RUN],
-      next_cursor: null,
-    });
+  it("names the failure beside a result that a failed attempt left behind", async () => {
+    storedResults([
+      {
+        owner: instance("resize-1", {
+          state: "failed",
+          error: "the resize service refused the request",
+        }),
+        outputs: { tables: tableValue("artifact-old") },
+      },
+    ]);
     apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.saveRunArtifactToLibrary.mockRejectedValue(
-      new Error("Artifact is not an output of node 'resize-1'"),
-    );
-    apiMocks.getGraphExecution.mockResolvedValue(
-      detail(LATEST_RUN, [
-        {
-          node_id: "resize-1",
-          position: 0,
-          status: "succeeded",
-          error: null,
-          completed_at: "2026-07-18T08:00:02Z",
-          outputs: [tableOutput("artifact-latest")],
-        },
-      ]),
+
+    const { container } = await renderDrawer();
+
+    expect(container.textContent).toContain("Failed");
+    expect(container.textContent).toContain("the resize service refused");
+    // What it last produced is still readable.
+    expect(rowFor(container, "artifact-old")).toBeDefined();
+  });
+
+  it("re-reads the Graph's instances when the shell says a result may have changed", async () => {
+    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
+    apiMocks.listGraphInstances.mockResolvedValueOnce({ instances: [] });
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: { tables: tableValue("artifact-resized") },
+      },
+    ]);
+
+    const { container, rerender } = await renderDrawer({ refreshToken: 0 });
+    expect(container.textContent).toContain("No node of this Graph has stored");
+
+    await rerender({ refreshToken: 1 });
+
+    expect(rowFor(container, "artifact-resized")).toBeDefined();
+  });
+
+  it("reports a refused save without dropping the row", async () => {
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: { tables: tableValue("artifact-resized") },
+      },
+    ]);
+    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
+    apiMocks.saveInstanceArtifactToLibrary.mockRejectedValue(
+      new Error("Node result 'result-resize-1' does not have that output"),
     );
 
     const { container } = await renderDrawer();
-    const row = rowFor(container, "artifact-latest");
     await React.act(async () => {
-      [...row.querySelectorAll("button")]
-        .find((button) => button.textContent?.trim() === "Save")
-        ?.click();
+      saveIn(rowFor(container, "artifact-resized")).click();
     });
 
     expect(container.textContent).toContain(
-      "Artifact is not an output of node 'resize-1'",
+      "Node result 'result-resize-1' does not have that output",
     );
-    expect(rowFor(container, "artifact-latest").textContent).toContain("rev 4");
+    expect(rowFor(container, "artifact-resized")).toBeDefined();
   });
 
   it("offers no working Save without edit access", async () => {
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [LATEST_RUN],
-      next_cursor: null,
-    });
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: { tables: tableValue("artifact-resized") },
+      },
+    ]);
     apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.getGraphExecution.mockResolvedValue(
-      detail(LATEST_RUN, [
-        {
-          node_id: "resize-1",
-          position: 0,
-          status: "succeeded",
-          error: null,
-          completed_at: "2026-07-18T08:00:02Z",
-          outputs: [tableOutput("artifact-latest")],
-        },
-      ]),
-    );
 
     const { container } = await renderDrawer({ canSave: false });
-    const row = rowFor(container, "artifact-latest");
-    const save = [...row.querySelectorAll("button")].find(
-      (button) => button.textContent?.trim() === "Save",
-    );
-    if (!(save instanceof HTMLButtonElement)) {
-      throw new Error("Save button was not rendered");
-    }
+    const save = saveIn(rowFor(container, "artifact-resized"));
 
     expect(save.disabled).toBe(true);
     expect(save.title).toBe("Saving into the Library needs edit access");
     await React.act(async () => {
       save.click();
     });
-    expect(apiMocks.saveRunArtifactToLibrary).not.toHaveBeenCalled();
+    expect(apiMocks.saveInstanceArtifactToLibrary).not.toHaveBeenCalled();
   });
 
   it("prompts with the artifact label as the default name", async () => {
     vi.mocked(window.prompt).mockReturnValueOnce("  Report name  ");
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [LATEST_RUN],
-      next_cursor: null,
-    });
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: { tables: tableValue("artifact-resized") },
+      },
+    ]);
     apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.getGraphExecution.mockResolvedValue(
-      detail(LATEST_RUN, [
-        {
-          node_id: "resize-1",
-          position: 0,
-          status: "succeeded",
-          error: null,
-          completed_at: "2026-07-18T08:00:02Z",
-          outputs: [tableOutput("artifact-latest")],
-        },
-      ]),
+    apiMocks.saveInstanceArtifactToLibrary.mockResolvedValue(
+      libraryItem("artifact-resized"),
     );
     const { container } = await renderDrawer();
 
@@ -767,35 +804,25 @@ describe("GeneratedDrawer", () => {
       "Save Table into the Library",
       "Table",
     );
-    expect(apiMocks.saveRunArtifactToLibrary).toHaveBeenCalledWith(
+    expect(apiMocks.saveInstanceArtifactToLibrary).toHaveBeenCalledWith(
       "workspace-1",
       expect.objectContaining({ name: "Report name" }),
     );
   });
 
-  it("keeps the run row when naming is cancelled or outside the bound", async () => {
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [LATEST_RUN],
-      next_cursor: null,
-    });
+  it("keeps the row when naming is cancelled or outside the bound", async () => {
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: { tables: tableValue("artifact-resized") },
+      },
+    ]);
     apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.getGraphExecution.mockResolvedValue(
-      detail(LATEST_RUN, [
-        {
-          node_id: "resize-1",
-          position: 0,
-          status: "succeeded",
-          error: null,
-          completed_at: "2026-07-18T08:00:02Z",
-          outputs: [tableOutput("artifact-latest")],
-        },
-      ]),
-    );
     const { container } = await renderDrawer();
 
     vi.mocked(window.prompt).mockReturnValueOnce(null);
     await React.act(async () => buttonNamed(container, "Save").click());
-    expect(apiMocks.saveRunArtifactToLibrary).not.toHaveBeenCalled();
+    expect(apiMocks.saveInstanceArtifactToLibrary).not.toHaveBeenCalled();
 
     vi.mocked(window.prompt).mockReturnValueOnce("r".repeat(161));
     await React.act(async () => buttonNamed(container, "Save").click());
@@ -803,204 +830,155 @@ describe("GeneratedDrawer", () => {
     expect(container.textContent).toContain(
       "Library names must be between 1 and 160 characters.",
     );
-    expect(rowFor(container, "artifact-latest")).toBeDefined();
-    expect(apiMocks.saveRunArtifactToLibrary).not.toHaveBeenCalled();
+    expect(rowFor(container, "artifact-resized")).toBeDefined();
+    expect(apiMocks.saveInstanceArtifactToLibrary).not.toHaveBeenCalled();
   });
 
-  it("keeps the listed runs when refreshing the list fails, and reads again on request", async () => {
+  it("keeps the listed results when refreshing them fails, and reads again on request", async () => {
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: { tables: tableValue("artifact-resized") },
+      },
+    ]);
     apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.getGraphExecution.mockResolvedValue(
-      runDetail(LATEST_RUN, "artifact-latest"),
-    );
-    apiMocks.listGraphExecutions.mockResolvedValueOnce({
-      items: [LATEST_RUN],
-      next_cursor: null,
+    apiMocks.listGraphInstances.mockResolvedValueOnce({
+      instances: [instance("resize-1")],
     });
 
     const { container } = await renderDrawer();
-    expect(rowFor(container, "artifact-latest")).toBeDefined();
+    expect(rowFor(container, "artifact-resized")).toBeDefined();
 
-    apiMocks.listGraphExecutions.mockRejectedValueOnce(
-      new Error("the runs are offline"),
+    apiMocks.listGraphInstances.mockRejectedValueOnce(
+      new Error("the results are offline"),
     );
     await React.act(async () => {
-      buttonNamed(container, "Refresh Run artifacts").click();
+      buttonNamed(container, "Refresh Generated artifacts").click();
     });
 
     // The read failed, the rows did not: what was on screen is still there.
-    expect(rowFor(container, "artifact-latest")).toBeDefined();
-    const notice = alertMentioning(container, "the runs are offline");
+    expect(rowFor(container, "artifact-resized")).toBeDefined();
+    const notice = alertMentioning(container, "the results are offline");
     expect(notice.textContent).toContain("last successful read");
     // Asking again re-reads the list, and a good read clears the notice.
-    const before = apiMocks.listGraphExecutions.mock.calls.length;
-    apiMocks.listGraphExecutions.mockResolvedValueOnce({
-      items: [LATEST_RUN],
-      next_cursor: null,
+    const before = apiMocks.listGraphInstances.mock.calls.length;
+    apiMocks.listGraphInstances.mockResolvedValueOnce({
+      instances: [instance("resize-1")],
     });
     await React.act(async () => {
       buttonNamed(notice, "Try again").click();
     });
 
-    expect(apiMocks.listGraphExecutions.mock.calls.length).toBe(before + 1);
-    expect(rowFor(container, "artifact-latest")).toBeDefined();
+    expect(apiMocks.listGraphInstances.mock.calls.length).toBe(before + 1);
+    expect(rowFor(container, "artifact-resized")).toBeDefined();
     expect(alerts(container)).toHaveLength(0);
   });
 
-  it("keeps saying no run is recorded when the refresh of an empty list fails", async () => {
+  it("reads the instances again when the first read fails", async () => {
     apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.listGraphExecutions.mockResolvedValueOnce({
-      items: [],
-      next_cursor: null,
-    });
+    apiMocks.listGraphInstances.mockRejectedValueOnce(
+      new Error("the results are offline"),
+    );
 
     const { container } = await renderDrawer();
-    expect(container.textContent).toContain("No run of this canvas");
+    const notice = alertMentioning(container, "the results are offline");
 
-    apiMocks.listGraphExecutions.mockRejectedValueOnce(
-      new Error("the runs are offline"),
-    );
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: { tables: tableValue("artifact-resized") },
+      },
+    ]);
     await React.act(async () => {
-      buttonNamed(container, "Refresh Run artifacts").click();
+      buttonNamed(notice, "Try again").click();
     });
 
-    // The empty list is the answer that was read, so it stays on screen.
-    expect(container.textContent).toContain("No run of this canvas");
-    expect(alertMentioning(container, "the runs are offline")).toBeDefined();
+    expect(rowFor(container, "artifact-resized")).toBeDefined();
+    expect(alerts(container)).toHaveLength(0);
   });
 
-  it("reads the list again when the first read of the runs fails", async () => {
+  it("offers to read an instance again when its first read fails", async () => {
+    apiMocks.listGraphInstances.mockResolvedValue({
+      instances: [instance("resize-1")],
+    });
     apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.listGraphExecutions.mockRejectedValueOnce(
-      new Error("the runs are offline"),
+    apiMocks.getInstanceResult.mockRejectedValueOnce(
+      new Error("this result is offline"),
     );
 
     const { container } = await renderDrawer();
-    const notice = alertMentioning(container, "the runs are offline");
+    // Nothing was ever shown for this instance, so only the failure is on screen.
+    expect(container.querySelector("[data-artifact-row]")).toBeNull();
+    const notice = alertMentioning(container, "this result is offline");
+    expect(notice.textContent).not.toContain("last successful read");
 
-    apiMocks.listGraphExecutions.mockResolvedValueOnce({
-      items: [LATEST_RUN],
-      next_cursor: null,
-    });
-    apiMocks.getGraphExecution.mockResolvedValue(
-      runDetail(LATEST_RUN, "artifact-latest"),
+    apiMocks.getInstanceResult.mockResolvedValueOnce(
+      result(instance("resize-1"), {
+        tables: tableValue("artifact-resized"),
+      }),
     );
     await React.act(async () => {
       buttonNamed(notice, "Try again").click();
     });
 
-    expect(rowFor(container, "artifact-latest")).toBeDefined();
+    expect(rowFor(container, "artifact-resized")).toBeDefined();
     expect(alerts(container)).toHaveLength(0);
   });
 
-  it("keeps the run rows already shown when reopening the drawer cannot read them", async () => {
+  it("keeps the rows already shown when reopening the panel cannot read them", async () => {
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: { tables: tableValue("artifact-resized") },
+      },
+    ]);
     apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.getGraphExecution.mockResolvedValue(
-      runDetail(LATEST_RUN, "artifact-latest"),
-    );
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [LATEST_RUN],
-      next_cursor: null,
-    });
 
     const cache = createSwrCache();
     const first = await renderDrawer({}, { cache });
-    expect(rowFor(first.container, "artifact-latest")).toBeDefined();
+    expect(rowFor(first.container, "artifact-resized")).toBeDefined();
     await first.unmount();
 
-    apiMocks.getGraphExecution.mockRejectedValueOnce(
-      new Error("this run is offline"),
+    apiMocks.getInstanceResult.mockRejectedValueOnce(
+      new Error("this result is offline"),
     );
     const { container } = await renderDrawer({}, { cache });
     await nextFrame();
 
-    expect(rowFor(container, "artifact-latest")).toBeDefined();
-    const notice = alertMentioning(container, "this run is offline");
+    expect(rowFor(container, "artifact-resized")).toBeDefined();
+    const notice = alertMentioning(container, "this result is offline");
     expect(notice.textContent).toContain("last successful read");
 
-    apiMocks.getGraphExecution.mockResolvedValueOnce(
-      runDetail(LATEST_RUN, "artifact-latest"),
+    apiMocks.getInstanceResult.mockResolvedValueOnce(
+      result(instance("resize-1"), {
+        tables: tableValue("artifact-resized"),
+      }),
     );
-    const before = apiMocks.getGraphExecution.mock.calls.length;
+    const before = apiMocks.getInstanceResult.mock.calls.length;
     await React.act(async () => {
       buttonNamed(notice, "Try again").click();
     });
 
-    expect(apiMocks.getGraphExecution.mock.calls.length).toBe(before + 1);
+    expect(apiMocks.getInstanceResult.mock.calls.length).toBe(before + 1);
     expect(alerts(container)).toHaveLength(0);
   });
 
-  it("keeps the run on screen when a finished run cannot be read, and recovers on retry", async () => {
-    apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.listGraphExecutions.mockResolvedValueOnce({
-      items: [LATEST_RUN],
-      next_cursor: null,
-    });
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [NEWER_RUN, LATEST_RUN],
-      next_cursor: null,
-    });
-    const detailAttempts: Record<string, number> = {};
-    apiMocks.getGraphExecution.mockImplementation(
-      async (_workspaceId, _graphId, executionId) => {
-        detailAttempts[executionId] = (detailAttempts[executionId] ?? 0) + 1;
-        if (executionId !== LATEST_RUN.execution_id) {
-          if (detailAttempts[executionId] === 1) {
-            throw new Error("the new run is offline");
-          }
-          return runDetail(NEWER_RUN, "artifact-new");
-        }
-        return runDetail(LATEST_RUN, "artifact-latest");
+  it("closes the panel through its own control", async () => {
+    storedResults([
+      {
+        owner: instance("resize-1"),
+        outputs: { tables: tableValue("artifact-resized") },
       },
-    );
-
-    const { container, rerender } = await renderDrawer({
-      executionRunning: true,
-    });
-    expect(rowFor(container, "artifact-latest")).toBeDefined();
-
-    // The run finishes, so the drawer reads the run it just recorded — and fails.
-    await rerender({ executionRunning: false });
-
-    expect(rowFor(container, "artifact-latest")).toBeDefined();
-    const notice = alertMentioning(container, "the new run is offline");
-    expect(notice.textContent).toContain("last successful read");
-
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [NEWER_RUN, LATEST_RUN],
-      next_cursor: null,
-    });
-    await React.act(async () => {
-      buttonNamed(notice, "Try again").click();
-    });
-
-    expect(rowFor(container, "artifact-new")).toBeDefined();
-    expect(alerts(container)).toHaveLength(0);
-  });
-
-  it("offers to read a run again when its first read fails", async () => {
+    ]);
     apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [LATEST_RUN],
-      next_cursor: null,
-    });
-    apiMocks.getGraphExecution.mockRejectedValueOnce(
-      new Error("this run is offline"),
-    );
+    const onClose = vi.fn();
 
-    const { container } = await renderDrawer();
-    // Nothing was ever shown for this run, so only the failure is on screen.
-    expect(container.querySelector("[data-artifact-row]")).toBeNull();
-    const notice = alertMentioning(container, "this run is offline");
-    expect(notice.textContent).not.toContain("last successful read");
+    const { container } = await renderDrawer({ onClose });
 
-    apiMocks.getGraphExecution.mockResolvedValueOnce(
-      runDetail(LATEST_RUN, "artifact-latest"),
-    );
     await React.act(async () => {
-      buttonNamed(notice, "Try again").click();
+      buttonNamed(container, "Close Generated artifacts").click();
     });
 
-    expect(rowFor(container, "artifact-latest")).toBeDefined();
-    expect(alerts(container)).toHaveLength(0);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

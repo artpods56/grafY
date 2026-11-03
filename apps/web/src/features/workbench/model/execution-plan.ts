@@ -7,41 +7,20 @@ import { validateConfig } from "../canvas/config-schema";
 import {
   WORKFLOW_NODE_TYPE,
   portHasInstancePlugs,
-  serializeRunNode,
-  serializeWorkflowEdgeTransport,
   type WorkflowEdge,
   type WorkflowNodeData,
   workflowNodeIsSupported,
 } from "../canvas/types";
-import type {
-  PinnedOutputInput,
-  RunEdgeInput,
-  RunOriginInput,
-  RunRequest,
-  RunScopeInput,
-  SavedGraphOrigin,
-} from "@/lib/api";
+import type { RunTargetInput, SavedGraphOrigin } from "@/lib/api";
 
 export type WorkflowNode = Node<WorkflowNodeData, typeof WORKFLOW_NODE_TYPE>;
 
-export type RunScope = RunScopeInput;
-
-function workflowEdgeEndpoints(edge: WorkflowEdge): {
-  sourcePortName: string;
-  targetPortName: string;
-  targetPlugId: string | null;
-} | null {
-  const source = decodeHandleId(edge.sourceHandle);
-  const target = decodeHandleId(edge.targetHandle);
-  const sourcePortName = edge.data?.sourcePortName ?? source?.portName;
-  const targetPortName = edge.data?.targetPortName ?? target?.portName;
-  if (!sourcePortName || !targetPortName) return null;
-  const targetPlugId =
-    edge.data?.targetPlugId !== undefined
-      ? edge.data.targetPlugId
-      : (target?.plugId ?? null);
-  return { sourcePortName, targetPortName, targetPlugId };
-}
+/**
+ * Which nodes a person is asking to become fresh. Every Run demands the same
+ * thing — the named instances and the stale part of what they read — so the
+ * scope only chooses the names; it never changes what is sent to the server.
+ */
+export type RunScope = "all" | "selected" | "selected-with-dependencies";
 
 export interface ExecutionSubgraph {
   nodeIds: ReadonlySet<string>;
@@ -60,16 +39,6 @@ export interface ExecutionValidationIssue {
   message: string;
 }
 
-export type ExecutionRequestPlanResult =
-  | {
-      status: "ready";
-      request: RunRequest;
-    }
-  | {
-      status: "invalid";
-      message: string;
-    };
-
 function originSatisfiesSlot(
   origin: SavedGraphOrigin,
   nodeId: string,
@@ -81,20 +50,6 @@ function originSatisfiesSlot(
     origin.to_port === portName &&
     (origin.to_plug ?? null) === plugId
   );
-}
-
-function serializeRunOrigin(origin: SavedGraphOrigin): RunOriginInput {
-  return {
-    to_node: origin.to_node,
-    to_port: origin.to_port,
-    to_plug: origin.to_plug ?? null,
-    value: structuredClone(origin.value),
-    collection_mode: origin.collection_mode,
-    conversion_path: origin.conversion_path.map((step) => ({
-      id: step.id,
-      version: step.version,
-    })),
-  };
 }
 
 export function selectedNodeAndAncestorIds(
@@ -316,115 +271,17 @@ export function executionValidationIssue(
   };
 }
 
-export function executionRequestPlan(
-  scope: RunScope,
-  planningNodes: readonly WorkflowNode[],
+/**
+ * The demand a Run carries: the instances the person named, in canvas order.
+ *
+ * A Run never travels with a copy of the graph or with upstream values pinned
+ * into the request. The server reads the live Project head, fingerprints these
+ * instances and their upstream, and schedules only the part that is not fresh,
+ * so naming the nodes is the whole ask and a selection reads whatever its
+ * upstream already stored.
+ */
+export function runTargetsFor(
   execution: ExecutionSubgraph,
-  origins: readonly SavedGraphOrigin[] = [],
-): ExecutionRequestPlanResult {
-  const pinnedOutputs: PinnedOutputInput[] = [];
-
-  if (scope === "selected") {
-    const nodesById = new Map(planningNodes.map((node) => [node.id, node]));
-    const pinnedSourcePorts = new Map<string, Set<string>>();
-    const missingPinnedOutputs: string[] = [];
-
-    for (const edge of execution.edges) {
-      if (execution.nodeIds.has(edge.source)) continue;
-
-      const endpoints = workflowEdgeEndpoints(edge);
-      if (!endpoints) {
-        return {
-          status: "invalid",
-          message: `Cannot run the selection because edge ${edge.id} does not identify both source and target ports.`,
-        };
-      }
-
-      const sourcePorts =
-        pinnedSourcePorts.get(edge.source) ?? new Set<string>();
-      if (sourcePorts.has(endpoints.sourcePortName)) continue;
-      sourcePorts.add(endpoints.sourcePortName);
-      pinnedSourcePorts.set(edge.source, sourcePorts);
-
-      const sourceNode = nodesById.get(edge.source);
-      const output =
-        sourceNode?.data.run?.status === "succeeded"
-          ? sourceNode.data.run.outputs.find(
-              (candidate) => candidate.port === endpoints.sourcePortName,
-            )
-          : undefined;
-      if (!output) {
-        const sourceName = sourceNode?.data.spec.title ?? edge.source;
-        missingPinnedOutputs.push(`${sourceName}.${endpoints.sourcePortName}`);
-        continue;
-      }
-
-      pinnedOutputs.push({
-        from_node: edge.source,
-        from_port: endpoints.sourcePortName,
-        value: output.value,
-      });
-    }
-
-    if (missingPinnedOutputs.length) {
-      const endpoints = missingPinnedOutputs.join(", ");
-      return {
-        status: "invalid",
-        message: `Cannot run the selection because no accessible materialized output is available for ${endpoints}. Select the missing upstream nodes too, or choose “Run with dependencies”.`,
-      };
-    }
-  }
-
-  const runEdges = execution.edges.flatMap<RunEdgeInput>((edge) => {
-    const endpoints = workflowEdgeEndpoints(edge);
-    if (!endpoints) return [];
-    return [
-      {
-        from_node: edge.source,
-        from_port: endpoints.sourcePortName,
-        to_node: edge.target,
-        to_port: endpoints.targetPortName,
-        to_plug: endpoints.targetPlugId,
-        ...serializeWorkflowEdgeTransport(edge.data),
-      },
-    ];
-  });
-
-  const runOrigins = origins
-    .filter((origin) => execution.nodeIds.has(origin.to_node))
-    .map(serializeRunOrigin);
-
-  const activeInputPlugIdsByNode = new Map<string, Set<string>>();
-  for (const edge of execution.edges) {
-    const target = decodeHandleId(edge.targetHandle);
-    const targetPlugId =
-      edge.data?.targetPlugId !== undefined
-        ? edge.data.targetPlugId
-        : target?.plugId;
-    if (!targetPlugId) continue;
-    const plugIds = activeInputPlugIdsByNode.get(edge.target) ?? new Set();
-    plugIds.add(targetPlugId);
-    activeInputPlugIdsByNode.set(edge.target, plugIds);
-  }
-  for (const origin of runOrigins) {
-    if (!origin.to_plug) continue;
-    const plugIds = activeInputPlugIdsByNode.get(origin.to_node) ?? new Set();
-    plugIds.add(origin.to_plug);
-    activeInputPlugIdsByNode.set(origin.to_node, plugIds);
-  }
-
-  const runNodes = execution.nodes.map((node) => {
-    const activeInputPlugIds =
-      activeInputPlugIdsByNode.get(node.id) ?? new Set<string>();
-    return serializeRunNode(node.id, node.data, activeInputPlugIds);
-  });
-
-  const request: RunRequest = {
-    nodes: runNodes,
-    edges: runEdges,
-    origins: runOrigins,
-    scope,
-    ...(scope === "selected" ? { pinned_outputs: pinnedOutputs } : {}),
-  };
-  return { status: "ready", request };
+): readonly RunTargetInput[] {
+  return execution.nodes.map((node) => ({ node_id: node.id, call_path: [] }));
 }
