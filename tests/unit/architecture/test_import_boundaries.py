@@ -328,6 +328,87 @@ def test_plugin_families_do_not_import_http_or_api_modules() -> None:
     assert offenders == []
 
 
+FORBIDDEN_FAMILY_CONFIG_IMPORTS = ("grafy_shared",)
+
+
+def test_system_plugin_implementations_do_not_import_shared_configuration() -> None:
+    """A node family is configured by its host and never reads host configuration itself.
+
+    `grafy_shared` is the operator's `GRAFY_*` surface, and only the composition root
+    reads the composed `Settings` (ADR 0011, "Families share workspace dependencies":
+    the composition root reads configuration and supplies the values runtime services
+    need). A family that imported it would decide its own operator values instead of
+    receiving them, which is the coupling ADR 0011 removed from `grafy_api/settings.py`,
+    and it would act on values its host never passed it.
+
+    The deleted version of this guard justified itself with the vendored wheels a Plugin
+    sandbox resolved at runtime; those wheels are gone (ADR 0017), so the reason stated
+    here is the one that still holds.
+    """
+
+    offenders: list[str] = []
+
+    for family in SYSTEM_PLUGIN_FAMILIES:
+        source_root = REPO_ROOT / "plugins" / family / "src"
+        assert any((source_root / f"grafy_plugin_{family}").rglob("*.py"))
+        for path in source_root.rglob("*.py"):
+            package = ".".join(path.parent.relative_to(source_root).parts)
+            for module in _imported_modules(path.read_text(), package):
+                if any(
+                    module == forbidden or module.startswith(f"{forbidden}.")
+                    for forbidden in FORBIDDEN_FAMILY_CONFIG_IMPORTS
+                ):
+                    offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+
+    assert offenders == []
+
+
+def test_system_plugins_do_not_import_other_plugin_implementations() -> None:
+    """One node family never reaches into another family's implementation (ADR 0017).
+
+    The composition root installs each family into the `PluginRegistry` from one static
+    tuple, and every family keeps its own package and its own third-party dependencies
+    (ADR 0017). A `grafy_plugin_x` module importing `grafy_plugin_y` installs a
+    dependency the host was never told about, drags y's dependency set into x's image,
+    and lets a deployment that installs one family silently acquire another's behaviour.
+    """
+
+    offenders: list[str] = []
+
+    for family in SYSTEM_PLUGIN_FAMILIES:
+        source_root = REPO_ROOT / "plugins" / family / "src"
+        forbidden_imports = sorted(
+            set(SYSTEM_PLUGIN_IMPORTS) - {f"grafy_plugin_{family}"}
+        )
+        for path in source_root.rglob("*.py"):
+            package = ".".join(path.parent.relative_to(source_root).parts)
+            for module in _imported_modules(path.read_text(), package):
+                if any(
+                    module == forbidden or module.startswith(f"{forbidden}.")
+                    for forbidden in forbidden_imports
+                ):
+                    offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+
+    assert offenders == []
+
+
+# Deliberately NOT restored: `test_system_plugins_depend_on_core_not_outer_layers`,
+# deleted by 93063148 alongside the guards this file has been recovering, forbade a
+# family importing `grafy_api`, `grafy_mcp`, `grafy_persistence`, `grafy_storage` or
+# `grafy_workbench`. It fails today on exactly one module, and that module is a defect
+# rather than a boundary worth reopening. `plugins/gis/src/grafy_plugin_gis/smoke.py`
+# imports `grafy_storage.LocalFileObjectStore`, and it is not family code: its docstring
+# says it exercises the installed family "without an API", and it plays the host itself —
+# it builds `InMemoryUnitOfWork()` and `LocalFileObjectStore(root / "objects")` and
+# injects both into the family's own ports (`RasterScanOutputWriter(storage=..., uow=...)`,
+# `RasterScanResolver(storage=..., uow=...)`), and CI plus `docs/how-to-run-gis.md` run it
+# as `-m grafy_plugin_gis.smoke`. Constructing an object store is composition-root work
+# (ADR 0011), so the repair is to move that harness out of the family package to sit next
+# to `scripts/smoke_workbench.py`, not to let families import storage. No guard ships for
+# this boundary in the meantime and no exemption names that file: an exemption would turn
+# a defect into policy, and the suite must not read as covering what it does not cover.
+
+
 def test_run_runtime_does_not_import_http_or_route_modules() -> None:
     api_root = REPO_ROOT / "apps/api/src/grafy_api"
     offenders: list[str] = []
