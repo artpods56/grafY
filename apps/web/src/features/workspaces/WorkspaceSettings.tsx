@@ -6,7 +6,6 @@ import {
   Clipboard,
   Clock3,
   KeyRound,
-  Library,
   Trash2,
   Users,
   Workflow,
@@ -26,7 +25,6 @@ import {
   workspaceCanManageMembers,
   workspaceDisplayName,
 } from "./WorkspaceLayout";
-import { WorkspaceLibraryDialog } from "./WorkspaceLibraryDialog";
 import { WorkspaceMembersDialog } from "./WorkspaceMembersDialog";
 
 type ExpiryDays = "1" | "7" | "30";
@@ -427,26 +425,6 @@ export function WorkspaceSettings() {
               No personal access tokens for this workspace.
             </p>
           )}
-        </div>
-      </section>
-
-      <section
-        className="grafy-workspace-settings__section"
-        aria-labelledby="workspace-library-heading"
-      >
-        <div className="grafy-workspace-settings__section-heading">
-          <div>
-            <h2 id="workspace-library-heading">Module library</h2>
-            <p>Review reusable graph modules available in this workspace.</p>
-          </div>
-          <Library size={18} aria-hidden="true" />
-        </div>
-        <div className="grafy-workspace-settings__section-action">
-          <span>Manage modules published for this workspace.</span>
-          <WorkspaceLibraryDialog
-            workspace={workspace}
-            triggerLabel="Open library"
-          />
         </div>
       </section>
     </main>

@@ -142,7 +142,7 @@ function unavailableNodeSpec(savedNode: SavedGraphNode): NodeSpec {
     operator_id: savedNode.operator_id,
     operator_version: savedNode.operator_version,
     plugin_slug: "unavailable",
-    origin: savedNode.kind === "module" ? "module" : "builtin",
+    origin: "builtin",
     title: savedNode.operator_id,
     description: `Saved operator ${identity} is not available in the live registry.`,
     catalog_visible: false,
@@ -399,7 +399,7 @@ export function hydrateSavedGraph(
   );
   const nodeIds = new Set<string>();
   const nodes: SavedGraphWorkflowNode[] = savedGraph.document.nodes.map(
-    (savedNode) => {
+    (savedNode: SavedGraphNode) => {
       if (nodeIds.has(savedNode.id)) {
         throw new SavedGraphHydrationError(
           `Cannot open “${savedGraph.name}”: duplicate node id ${savedNode.id}`,
@@ -412,7 +412,13 @@ export function hydrateSavedGraph(
       );
       const spec = specs.get(operatorIdentity);
       let data: WorkflowNodeData;
-      if (!spec) {
+      if (savedNode.kind === "module") {
+        // Modules left the product (ADR 0020). The node stays in the document so
+        // it remains openable; it just has nothing left to execute.
+        data = incompatibleNodeData(savedNode, savedEdges, "unsupported", [
+          `Operator ${operatorIdentity} is a Module, a node type that is no longer supported. This saved node is preserved but cannot run.`,
+        ]);
+      } else if (!spec) {
         data = incompatibleNodeData(savedNode, savedEdges, "unsupported", [
           `Operator ${operatorIdentity} is unavailable. This saved node is preserved but cannot run.`,
         ]);
@@ -458,8 +464,11 @@ export function hydrateSavedGraph(
     },
   );
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const savedNodeById = new Map(
-    savedGraph.document.nodes.map((savedNode) => [savedNode.id, savedNode]),
+  const savedNodeById = new Map<string, SavedGraphNode>(
+    savedGraph.document.nodes.map((savedNode: SavedGraphNode) => [
+      savedNode.id,
+      savedNode,
+    ]),
   );
 
   for (const savedEdge of savedEdges) {
@@ -525,7 +534,7 @@ export function hydrateSavedGraph(
   const edgeIds = new Set<string>();
   const occupiedTargetPlugIds = new Set<string>();
 
-  const edges = savedEdges.map((savedEdge) => {
+  const edges = savedEdges.map((savedEdge: SavedGraphEdge) => {
     if (edgeIds.has(savedEdge.id)) {
       throw new SavedGraphHydrationError(
         `Cannot open “${savedGraph.name}”: duplicate edge id ${savedEdge.id}`,

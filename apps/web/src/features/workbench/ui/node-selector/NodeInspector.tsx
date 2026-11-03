@@ -9,7 +9,6 @@ import {
   Cable,
   ChevronRight,
   CornerDownLeft,
-  ExternalLink,
   Plus,
   Settings2,
   Workflow,
@@ -55,23 +54,19 @@ export function NodeInspector({
   spec,
   registry,
   catalogRegistry,
-  moduleReleases,
   detailsOpen,
   canInsert,
   insertDisabledReason,
   showEnterHint,
   leading,
   onDetailsOpenChange,
-  onSelectRelease,
   onInspect,
   onInsert,
-  onOpenGraph,
 }: {
   spec: NodeSpec;
   registry: NodeRegistry;
   /** The registry narrowed to what the picker lists; "Works with" suggests from it. */
   catalogRegistry: NodeRegistry;
-  moduleReleases: readonly NodeSpec[];
   /** Settings, ports and what the node works with, folded away by default. */
   detailsOpen: boolean;
   canInsert: boolean;
@@ -80,10 +75,8 @@ export function NodeInspector({
   /** Placed above the preview: the phone layout's way back to the results. */
   leading?: React.ReactNode;
   onDetailsOpenChange: (open: boolean) => void;
-  onSelectRelease: (releaseKey: string) => void;
   onInspect: (spec: NodeSpec) => void;
   onInsert: () => void;
-  onOpenGraph?: (graphId: string) => void;
 }) {
   const fields = React.useMemo(() => schemaFields(spec.config_schema), [spec]);
   const ports = React.useMemo(
@@ -100,8 +93,6 @@ export function NodeInspector({
         : [],
     [activePort, catalogRegistry, spec],
   );
-  const plugin = catalogPlugin(registry, spec.plugin_slug);
-  const isModule = plugin.entry_kind === "module";
   // The catalog lists only what this deployment executes, so the one entry that
   // arrives not runnable is a canvas reconstruction of a saved operator that is
   // no longer in the live registry.
@@ -134,13 +125,6 @@ export function NodeInspector({
         </div>
         <div {...stylex.props(s.scroll)}>
           <header {...stylex.props(s.header)}>
-            {isModule ? (
-              <div {...stylex.props(s.provenance)}>
-                <span {...stylex.props(s.eyebrow)}>
-                  Module · release {spec.module_graph_revision}
-                </span>
-              </div>
-            ) : null}
             <h3 id={INSPECTOR_TITLE_ID} {...stylex.props(s.title)}>
               {spec.title}
             </h3>
@@ -149,14 +133,6 @@ export function NodeInspector({
               <p {...stylex.props(s.note)}>Catalog preview only.</p>
             ) : null}
             <PortChips spec={spec} registry={registry} />
-            {isModule ? (
-              <ModuleFacts
-                spec={spec}
-                releases={moduleReleases}
-                onSelectRelease={onSelectRelease}
-                onOpenGraph={onOpenGraph}
-              />
-            ) : null}
           </header>
 
           <button
@@ -188,14 +164,10 @@ export function NodeInspector({
                 </section>
               ) : null}
               <section {...stylex.props(s.section)}>
-                <SectionTitle icon={Workflow}>
-                  {isModule ? "Module contract" : "Ports"}
-                </SectionTitle>
-                {isModule ? null : (
-                  <p {...stylex.props(s.mono)}>
-                    {spec.operator_id}@{spec.operator_version}
-                  </p>
-                )}
+                <SectionTitle icon={Workflow}>Ports</SectionTitle>
+                <p {...stylex.props(s.mono)}>
+                  {spec.operator_id}@{spec.operator_version}
+                </p>
                 <div {...stylex.props(s.portGrid)}>
                   <PortList
                     direction="input"
@@ -238,11 +210,7 @@ export function NodeInspector({
           disabled={!insertable}
           aria-describedby={insertable ? undefined : INSERT_DISABLED_REASON_ID}
           title={
-            insertable
-              ? isModule
-                ? `Insert module call for ${spec.title}`
-                : `Add ${spec.title} to the canvas`
-              : disabledReason
+            insertable ? `Add ${spec.title} to the canvas` : disabledReason
           }
           onClick={onInsert}
           {...stylex.props(
@@ -251,7 +219,7 @@ export function NodeInspector({
           )}
         >
           <Plus size={14} aria-hidden="true" />
-          {isModule ? "Insert module call" : "Add to canvas"}
+          Add to canvas
           {showEnterHint && insertable ? (
             <kbd aria-hidden="true" {...stylex.props(s.kbd)}>
               <CornerDownLeft size={11} />
@@ -280,58 +248,6 @@ function SectionTitle({
       <Icon size={13} aria-hidden="true" {...stylex.props(s.sectionIcon)} />
       <h3 {...stylex.props(s.sectionTitle)}>{children}</h3>
     </div>
-  );
-}
-
-function ModuleFacts({
-  spec,
-  releases,
-  onSelectRelease,
-  onOpenGraph,
-}: {
-  spec: NodeSpec;
-  releases: readonly NodeSpec[];
-  onSelectRelease: (releaseKey: string) => void;
-  onOpenGraph?: (graphId: string) => void;
-}) {
-  const graphId = spec.module_graph_id;
-  return (
-    <>
-      <div {...stylex.props(s.mono)}>
-        Module contract · release {spec.module_graph_revision}
-      </div>
-      {releases.length > 1 ? (
-        <label {...stylex.props(s.mono)}>
-          Release{" "}
-          <select
-            aria-label="Module release"
-            value={catalogNodeKey(spec)}
-            onChange={(event) => onSelectRelease(event.currentTarget.value)}
-          >
-            {releases.map((release) => (
-              <option
-                key={catalogNodeKey(release)}
-                value={catalogNodeKey(release)}
-              >
-                Release {release.module_graph_revision}
-                {release.is_current_library_release ? " (current)" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-      {graphId && onOpenGraph ? (
-        <button
-          type="button"
-          title="Open the saved graph that defines this module"
-          onClick={() => onOpenGraph(graphId)}
-          {...stylex.props(s.smallButton)}
-        >
-          <ExternalLink size={10} aria-hidden="true" />
-          Open source graph
-        </button>
-      ) : null}
-    </>
   );
 }
 
@@ -683,14 +599,6 @@ const s = stylex.create({
     gap: "8px",
     padding: "4px 20px 16px",
   },
-  provenance: { display: "flex", alignItems: "center", gap: "7px" },
-  eyebrow: {
-    color: tokens.colorAccent,
-    fontSize: "10px",
-    fontWeight: 820,
-    letterSpacing: "0.11em",
-    textTransform: "uppercase",
-  },
   title: {
     margin: 0,
     color: tokens.colorTextEmphasis,
@@ -717,29 +625,6 @@ const s = stylex.create({
     color: tokens.colorSubtle,
     fontFamily: MONO,
     fontSize: tokens.fontSizeXs,
-  },
-  smallButton: {
-    minHeight: "24px",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "4px",
-    paddingInline: "7px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorderStrong,
-    borderRadius: "5px",
-    backgroundColor: {
-      default: tokens.colorSurface,
-      ":hover": tokens.colorHover,
-    },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    fontSize: "10px",
-    fontWeight: 700,
-    outlineColor: tokens.colorAccent,
-    outlineStyle: "solid",
-    outlineOffset: "2px",
-    outlineWidth: { default: 0, ":focus-visible": "2px" },
   },
 
   disclosure: {

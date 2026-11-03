@@ -26,13 +26,11 @@ import {
   Layers,
   LoaderCircle,
   Maximize2,
-  Package,
   Play,
   Plus,
   Square,
   Trash2,
   Type,
-  Upload,
   Workflow,
 } from "lucide-react";
 
@@ -78,11 +76,8 @@ import type {
   ContextualCandidate,
   ContextualRouteChoice,
 } from "../model/node-catalog";
-import { PublishModuleDialog } from "./PublishModuleDialog";
-import { moduleBoundaries } from "../model/module-boundary";
 import { createUuid } from "@/features/workbench/model/uuid";
 import { artifactGroupingDisabledReason } from "../model/artifact-grouping";
-import { WorkspaceLibraryDialog } from "@/features/workspaces/WorkspaceLibraryDialog";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { usePublishWorkbenchChrome } from "./WorkbenchChromeContext";
 import { renameSavedGraphRemote } from "@/features/workspaces/graph-actions";
@@ -280,7 +275,6 @@ import {
 import {
   catalogNodeSpecs,
   downstreamCandidatesFromOutput,
-  moduleCallUpgradeTarget,
   upstreamCandidatesFromInput,
 } from "../model/node-catalog";
 import { workbenchGraphPath } from "../routes";
@@ -542,27 +536,16 @@ function WorkbenchBody({
   const sidePanel = useWorkbenchSidePanel();
   const [contextualDiscovery, setContextualDiscovery] =
     React.useState<ContextualDiscoverySession | null>(null);
-  const [workspaceLibraryOpen, setWorkspaceLibraryOpen] = React.useState(false);
-  const [workspaceLibraryFocusId, setWorkspaceLibraryFocusId] = React.useState<
-    string | null
-  >(null);
-  const [publishModuleOpen, setPublishModuleOpen] = React.useState(false);
-  const canPublishModule = workspace.capabilities.includes("edit_project");
   const canCreateGraph = workspace.capabilities.includes("create_project");
   const canEditGraph = workspace.capabilities.includes("edit_project");
   const canExecuteGraph = workspace.capabilities.includes("start_run");
   const canCancelExecution = workspace.capabilities.includes("cancel_run");
   const canDeleteGraph = workspace.capabilities.includes("delete_project");
-  const canEditModuleSource = workspace.capabilities.includes("edit_project");
   const localAuthoringEnabledRef = React.useRef(
     initialGraphId === null && canCreateGraph,
   );
   const localAuthoringBlockedMessageRef = React.useRef(
     "Editing is unavailable until this graph is synchronized.",
-  );
-  const moduleBoundarySummaries = React.useMemo(
-    () => moduleBoundaries(nodes, edges, registry?.artifact_types ?? null),
-    [edges, nodes, registry],
   );
   const [executionHistoryTarget, setExecutionHistoryTarget] = React.useState<{
     nodeId: string | null;
@@ -766,47 +749,8 @@ function WorkbenchBody({
     [],
   );
 
-  const upgradeModuleCall = React.useCallback(
-    (nodeId: string) => {
-      if (!registry) return;
-      const node = nodesRef.current.find(
-        (candidate) => candidate.id === nodeId,
-      );
-      if (!node || !workflowNodeIsSupported(node.data)) return;
-      const target = moduleCallUpgradeTarget(registry, node.data.spec);
-      if (!target) return;
-      const before = authoredDocumentRef.current;
-      const authoredNode = before.nodes.find(
-        (candidate) => candidate.id === nodeId,
-      );
-      if (!authoredNode) return;
-      const nextDocument: AuthoredGraphDocument = {
-        ...before,
-        nodes: before.nodes.map((candidate) =>
-          candidate.id === nodeId
-            ? {
-                ...candidate,
-                operator_id: target.operator_id,
-                operator_version: target.operator_version,
-              }
-            : candidate,
-        ),
-      };
-      applyAuthoringCommands([
-        { kind: "replace_document", document: nextDocument },
-      ]);
-      canvasSelection.selectOnly({ nodeIds: [nodeId] });
-      setRunError(null);
-    },
-    [applyAuthoringCommands, canvasSelection, registry],
-  );
-
   const attachNodeCallbacks = React.useCallback(
     (data: WorkflowNodeData): WorkflowNodeData => {
-      const upgradeTarget =
-        registry && workflowNodeIsSupported(data)
-          ? moduleCallUpgradeTarget(registry, data.spec)
-          : null;
       if (!workflowNodeIsSupported(data)) {
         return {
           ...data,
@@ -822,9 +766,6 @@ function WorkbenchBody({
           onBindArtifactTypeBinding: undefined,
           bindableArtifactTypes: undefined,
           onHandlesMeasured: undefined,
-          onOpenModuleSource: undefined,
-          moduleUpgradeRelease: null,
-          onUpgradeModuleCall: undefined,
           onOpenExecutionHistory: openNodeExecutionHistory,
         };
       }
@@ -844,11 +785,6 @@ function WorkbenchBody({
           (artifactType) => artifactType.key,
         ),
         onHandlesMeasured: handleNodeHandlesMeasured,
-        onOpenModuleSource: data.spec.module_graph_id
-          ? openGraphInNewTab
-          : undefined,
-        moduleUpgradeRelease: upgradeTarget?.module_graph_revision ?? null,
-        onUpgradeModuleCall: upgradeTarget ? upgradeModuleCall : undefined,
         onOpenExecutionHistory: openNodeExecutionHistory,
       };
     },
@@ -856,7 +792,6 @@ function WorkbenchBody({
       addNodeInputPlug,
       bindNodeArtifactTypeBinding,
       handleNodeHandlesMeasured,
-      openGraphInNewTab,
       openNodeExecutionHistory,
       registry,
       removeNode,
@@ -867,7 +802,6 @@ function WorkbenchBody({
       updateLayout,
       updateArtifactQueryRelations,
       updateSchemaBuilderFields,
-      upgradeModuleCall,
     ],
   );
 
@@ -4449,52 +4383,12 @@ function WorkbenchBody({
           onClick={() => {
             closeGraphBrowser();
             setGridPanelOpen(false);
-            setWorkspaceLibraryOpen(false);
             pickerInsertAtRef.current = null;
             setLibraryOpen((open) => !open);
           }}
         >
           <Plus size={14} />
           <span {...stylex.props(s.railLabel)}>Node</span>
-        </button>
-        <button
-          type="button"
-          aria-label="Module library"
-          title="Open the Module library"
-          {...stylex.props(s.railButton)}
-          onClick={() => {
-            closeGraphBrowser();
-            setGridPanelOpen(false);
-            setLibraryOpen(false);
-            setWorkspaceLibraryFocusId(null);
-            setWorkspaceLibraryOpen(true);
-          }}
-        >
-          <Package size={14} />
-          <span {...stylex.props(s.railLabel)}>Library</span>
-        </button>
-        <button
-          type="button"
-          aria-label="Module setup"
-          title={
-            running
-              ? "Stop the current execution before opening Module setup"
-              : !graphOperationsTrusted
-                ? "Module setup is unavailable until the displayed graph is current"
-                : "Set up and publish this graph as a Module"
-          }
-          disabled={running || !graphOperationsTrusted}
-          {...stylex.props(s.railButton)}
-          onClick={() => {
-            closeGraphBrowser();
-            setGridPanelOpen(false);
-            setLibraryOpen(false);
-            setWorkspaceLibraryOpen(false);
-            setPublishModuleOpen(true);
-          }}
-        >
-          <Upload size={14} />
-          <span {...stylex.props(s.railLabel)}>Module</span>
         </button>
         <div {...stylex.props(s.shapesMenuWrap)}>
           <button
@@ -4701,66 +4595,8 @@ function WorkbenchBody({
             setLibraryOpen(open);
           }}
           onAddNode={(spec) => addCatalogNode(spec)}
-          onOpenGraph={openGraphInNewTab}
-          onOpenWorkspaceLibrary={() => {
-            setLibraryOpen(false);
-            setWorkspaceLibraryFocusId(null);
-            setWorkspaceLibraryOpen(true);
-          }}
         />
       ) : null}
-
-      <WorkspaceLibraryDialog
-        workspace={workspace}
-        open={workspaceLibraryOpen}
-        onOpenChange={setWorkspaceLibraryOpen}
-        showTrigger={false}
-        focusedModuleId={workspaceLibraryFocusId}
-        onOpenSourceGraph={openGraphInNewTab}
-      />
-
-      <PublishModuleDialog
-        key={`${activeGraph?.id ?? "unsaved"}:${graphName}`}
-        open={publishModuleOpen}
-        onOpenChange={setPublishModuleOpen}
-        workspaceId={workspaceId}
-        sourceGraphId={activeGraph?.id ?? null}
-        graphName={graphName}
-        revision={activeGraph?.revision ?? null}
-        isDirty={isDirty}
-        canPublish={canPublishModule}
-        canEdit={canEditModuleSource}
-        boundaries={moduleBoundarySummaries}
-        canAddInputBoundary={Boolean(
-          registry?.nodes.some((spec) => spec.operator_id === "module.input"),
-        )}
-        canAddOutputBoundary={Boolean(
-          registry?.nodes.some((spec) => spec.operator_id === "module.output"),
-        )}
-        onAddBoundary={(direction) => {
-          const operatorId =
-            direction === "input" ? "module.input" : "module.output";
-          const spec = registry?.nodes.find(
-            (candidate) => candidate.operator_id === operatorId,
-          );
-          if (spec) addCatalogNode(spec);
-        }}
-        onSelectBoundary={(nodeId) => {
-          canvasSelection.selectOnly({ nodeIds: [nodeId] });
-          void flow?.fitView({
-            nodes: [{ id: nodeId }],
-            padding: 0.45,
-            duration: 220,
-          });
-        }}
-        onViewModule={(moduleId) => {
-          setPublishModuleOpen(false);
-          setWorkspaceLibraryFocusId(moduleId);
-          setWorkspaceLibraryOpen(true);
-        }}
-        onOpenSourceGraph={openGraphInNewTab}
-        onPublished={() => refreshNodeRegistry()}
-      />
 
       <ArtifactFolderDropDialog
         pending={pendingFolderDrop?.drop ?? null}

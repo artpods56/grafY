@@ -6,6 +6,8 @@ import type {
   NodeSpec,
   SavedGraph,
   SavedGraphDocument,
+  SavedGraphEdge,
+  SavedGraphNode,
 } from "@/lib/api";
 import { decodeHandleId } from "./handles";
 import {
@@ -13,7 +15,7 @@ import {
   savedGraphExecutionFingerprint,
   savedGraphFingerprint,
 } from "./saved-graph";
-import { effectivePortShape, serializeWorkflowEdgeTransport } from "./types";
+import { serializeRunNode, serializeWorkflowEdgeTransport } from "./types";
 
 function conversion(
   id: string,
@@ -160,7 +162,7 @@ function graphWithCollectionMode(collectionMode: "direct" | "map"): SavedGraph {
     ...graph,
     document: {
       ...graph.document,
-      edges: graph.document.edges.map((edge) => ({
+      edges: graph.document.edges.map((edge: SavedGraphEdge) => ({
         ...edge,
         collection_mode: collectionMode,
       })),
@@ -190,7 +192,7 @@ describe("unavailable saved operators", () => {
       ...base,
       document: {
         ...base.document,
-        nodes: base.document.nodes.map((node) =>
+        nodes: base.document.nodes.map((node: SavedGraphNode) =>
           node.id === "source-node"
             ? {
                 ...node,
@@ -253,7 +255,7 @@ describe("saved node layout", () => {
       ...base,
       document: {
         ...base.document,
-        nodes: base.document.nodes.map((node, index) =>
+        nodes: base.document.nodes.map((node: SavedGraphNode, index: number) =>
           index === 0
             ? {
                 ...node,
@@ -297,7 +299,7 @@ describe("saved edge enablement", () => {
       ...enabledGraph,
       document: {
         ...enabledGraph.document,
-        edges: enabledGraph.document.edges.map((edge) => ({
+        edges: enabledGraph.document.edges.map((edge: SavedGraphEdge) => ({
           ...edge,
           enabled: false,
         })),
@@ -448,7 +450,7 @@ describe("saved collection modes", () => {
           ...invalidGraph,
           document: {
             ...invalidGraph.document,
-            edges: invalidGraph.document.edges.map((edge) => ({
+            edges: invalidGraph.document.edges.map((edge: SavedGraphEdge) => ({
               ...edge,
               to_port: "left",
             })),
@@ -868,7 +870,7 @@ describe("saved generic artifact type bindings", () => {
       ...graph,
       document: {
         ...graph.document,
-        nodes: graph.document.nodes.map((node) =>
+        nodes: graph.document.nodes.map((node: SavedGraphNode) =>
           node.id === "collect-node"
             ? {
                 ...node,
@@ -902,7 +904,7 @@ describe("saved generic artifact type bindings", () => {
   it("marks an unavailable artifact type invalid without rejecting the graph", () => {
     const graph = graphWithGenericCollectBinding();
     const collectNode = graph.document.nodes.find(
-      (node) => node.id === "collect-node",
+      (node: SavedGraphNode) => node.id === "collect-node",
     );
     const invalid: SavedGraph = {
       ...graph,
@@ -938,67 +940,17 @@ describe("saved generic artifact type bindings", () => {
   });
 });
 
-describe("saved graph module nodes", () => {
+describe("saved Module nodes", () => {
   const moduleGraphId = "00000000-0000-4000-8000-000000000008";
   const moduleOperatorId = `module.graph.${moduleGraphId}`;
-  const imageType = { id: "image.raster", schema_version: 1 } as const;
-  const completionType = { id: "llm.completion", schema_version: 1 } as const;
-  const moduleInput = {
-    name: "image",
-    title: "Image",
-    description: null,
-    direction: "input" as const,
-    artifact_type: imageType,
-    shape: "one" as const,
-    accepted_shapes: ["one" as const],
-    instance_plugs: false,
-    variadic: false,
-    required: true,
-  };
-  const moduleOutput = {
-    name: "completion",
-    title: "Completion",
-    description: null,
-    direction: "output" as const,
-    artifact_type: completionType,
-    shape: "one" as const,
-    accepted_shapes: ["one" as const],
-    instance_plugs: false,
-    variadic: false,
-    required: true,
-  };
 
-  function moduleSpec(revision: number, catalogVisible: boolean): NodeSpec {
+  function graphWithModuleNode(
+    node: SavedGraphDocument["nodes"][number],
+  ): SavedGraph {
     return {
-      operator_id: moduleOperatorId,
-      operator_version: revision,
-      plugin_slug: "saved-graph-modules",
-      origin: "module",
-      title: `Extract image r${revision}`,
-      description: "Hidden structured extraction graph",
-      config_schema: {},
-      input_schema: {},
-      output_schema: {},
-      inputs: [moduleInput],
-      outputs: [moduleOutput],
-      module_graph_id: moduleGraphId,
-      module_graph_revision: revision,
-      catalog_visible: catalogVisible,
-      runnable: true,
-    };
-  }
-
-  it("hydrates the pinned historical revision and exposes mapped outputs as a sequence", () => {
-    const sourceSpec = nodeSpec(
-      "image.decode",
-      "output",
-      "image.raster",
-      "many",
-    );
-    const savedGraph: SavedGraph = {
       id: "00000000-0000-4000-8000-000000000009",
       revision: 1,
-      name: "Map extraction module",
+      name: "Graph that still holds a Module call",
       created_at: "2026-07-16T12:00:00Z",
       updated_at: "2026-07-16T12:00:00Z",
       document: {
@@ -1007,7 +959,7 @@ describe("saved graph module nodes", () => {
         nodes: [
           {
             id: "images",
-            kind: "builtin",
+            kind: "builtin" as const,
             operator_id: "image.decode",
             operator_version: 1,
             config: {},
@@ -1015,16 +967,7 @@ describe("saved graph module nodes", () => {
             artifact_type_bindings: [],
             position: { x: 0, y: 0 },
           },
-          {
-            id: "extract",
-            kind: "builtin",
-            operator_id: moduleOperatorId,
-            operator_version: 1,
-            config: {},
-            input_plugs: [],
-            artifact_type_bindings: [],
-            position: { x: 300, y: 0 },
-          },
+          node,
         ],
         edges: [
           {
@@ -1035,61 +978,111 @@ describe("saved graph module nodes", () => {
             to_port: "image",
             to_plug: null,
             enabled: true,
-            collection_mode: "map",
+            collection_mode: "direct" as const,
             projection: null,
             conversion_path: [],
             route_offset: null,
           },
         ],
-        presentation: {
-          viewers: [],
-          links: [],
-          bindings: [],
-          annotations: [],
-        },
+        presentation: { viewers: [], links: [], bindings: [], annotations: [] },
       },
     };
-    const moduleV1 = moduleSpec(1, false);
-    const hydrated = hydrateSavedGraph(savedGraph, {
+  }
+
+  function storedModuleNode(
+    kind: SavedGraphDocument["nodes"][number]["kind"],
+  ): SavedGraphDocument["nodes"][number] {
+    return {
+      id: "extract",
+      kind,
+      operator_id: moduleOperatorId,
+      operator_version: 1,
+      config: {},
+      input_plugs: [],
+      artifact_type_bindings: [],
+      position: { x: 300, y: 0 },
+    };
+  }
+
+  function moduleRegistry(spec: NodeSpec | null): NodeRegistry {
+    return {
       plugins: [
         {
-          slug: "saved-graph-modules",
-          title: "Modules",
-          origin: "module",
-          entry_kind: "module",
+          slug: "builtin",
+          title: "Built-in",
+          origin: "builtin",
+          entry_kind: "plugin",
         },
       ],
-      artifact_types: [
-        {
-          key: imageType,
-          title: "Image",
-          payload_schema: {},
-          field_projections: [],
-          bundle: { format: "inline-json", version: 1 },
-        },
-        {
-          key: completionType,
-          title: "Completion",
-          payload_schema: {},
-          field_projections: [],
-          bundle: { format: "inline-json", version: 1 },
-        },
-      ],
+      artifact_types: ["x"].map((id) => ({
+        key: { id, schema_version: 1 },
+        title: id,
+        payload_schema: {},
+        field_projections: [],
+        bundle: { format: "inline-json" as const, version: 1 },
+      })),
       artifact_conversions: [],
-      nodes: [sourceSpec, moduleV1, moduleSpec(2, true)],
+      nodes: [nodeSpec("image.decode", "output", "x"), ...(spec ? [spec] : [])],
+    };
+  }
+
+  it("keeps a stored Module node openable, unsupported and unable to run", () => {
+    const hydrated = hydrateSavedGraph(
+      graphWithModuleNode(storedModuleNode("module")),
+      moduleRegistry(null),
+    );
+    const moduleNode = hydrated.nodes.find((node) => node.id === "extract");
+    const edge = hydrated.edges[0];
+
+    // The document stays openable: nothing was dropped when hydrating.
+    expect(hydrated.nodes.map((node) => node.id)).toEqual([
+      "images",
+      "extract",
+    ]);
+    expect(moduleNode?.data.compatibility).toMatchObject({
+      status: "unsupported",
     });
+    expect(moduleNode?.data.compatibility).toHaveProperty(
+      "issues.0",
+      `Operator ${moduleOperatorId}@1 is a Module, a node type that is no longer supported. This saved node is preserved but cannot run.`,
+    );
+    expect(moduleNode?.data.spec.runnable).toBe(false);
+    expect(moduleNode?.data.spec.origin).toBe("builtin");
+    expect(edge?.targetHandle).toContain("$compatibility::input");
+
+    // Preserved means preserved: it cannot be sent to execution.
+    expect(() => serializeRunNode("extract", moduleNode!.data)).toThrow(
+      /unsupported node extract/,
+    );
+  });
+
+  it("refuses to run a stored Module node even when an operator shares its id", () => {
+    const sameIdentity = nodeSpec(moduleOperatorId, "output", "x");
+    const hydrated = hydrateSavedGraph(
+      graphWithModuleNode(storedModuleNode("module")),
+      moduleRegistry(sameIdentity),
+    );
     const moduleNode = hydrated.nodes.find((node) => node.id === "extract");
 
-    expect(moduleNode?.data.spec).toBe(moduleV1);
-    expect(moduleNode?.data.spec.module_graph_revision).toBe(1);
-    expect(hydrated.edges[0]?.data?.collectionMode).toBe("map");
-    expect(
-      moduleNode
-        ? effectivePortShape(
-            { ...moduleNode.data, mappedInputPorts: ["image"] },
-            moduleNode.data.spec.outputs[0]!,
-          )
-        : null,
-    ).toBe("many");
+    expect(moduleNode?.data.compatibility).toMatchObject({
+      status: "unsupported",
+    });
+    expect(moduleNode?.data.compatibility).toHaveProperty(
+      "issues.0",
+      `Operator ${moduleOperatorId}@1 is a Module, a node type that is no longer supported. This saved node is preserved but cannot run.`,
+    );
+  });
+
+  it("hydrates a call node through the ordinary operator lookup", () => {
+    const hydrated = hydrateSavedGraph(
+      graphWithModuleNode({ ...storedModuleNode("call"), kind: "call" }),
+      moduleRegistry(null),
+    );
+    const callNode = hydrated.nodes.find((node) => node.id === "extract");
+
+    expect(callNode?.data.compatibility).toHaveProperty(
+      "issues.0",
+      `Operator ${moduleOperatorId}@1 is unavailable. This saved node is preserved but cannot run.`,
+    );
   });
 });
