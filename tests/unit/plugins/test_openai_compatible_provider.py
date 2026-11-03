@@ -17,6 +17,7 @@ from grafy_core.ports.storage import SaveFileCommand, StoredFile, StoredObjectIn
 from grafy_plugin_llm.openai_compatible import (
     OpenAICompatibleConfig,
     OpenAICompatibleProviderError,
+    OpenAICompatibleProviderResponse,
 )
 from grafy_plugin_llm.openai_compatible_sdk import (
     OPENAI_COMPATIBLE_MAX_IMAGES,
@@ -871,3 +872,67 @@ async def test_provider_dials_a_local_model_server_only_when_the_operator_allows
 
         assert "127.0.0.1" in str(raised.value)
         assert len(listener.requests) == 1
+
+
+@pytest.mark.parametrize("address", ["93.184.216.34", "10.0.0.9"])
+async def test_sdk_requests_are_pinned_and_private_dns_answers_are_refused(
+    monkeypatch: pytest.MonkeyPatch, address: str
+) -> None:
+    recorder = TransportRequestRecorder(completion_response())
+    recorder.install(monkeypatch)
+
+    def resolve(
+        host: str, port: int, *args: object, **kwargs: object
+    ) -> list[tuple[int, int, int, str, tuple[str, int]]]:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    provider = OpenAICompatibleSdkProvider(
+        uow=InMemoryUnitOfWork(), storage=FakeStorage(), egress_policy=no_grants()
+    )
+
+    async def complete() -> OpenAICompatibleProviderResponse:
+        return await provider.complete(
+            [PromptMessage(role=PromptMessageRole.USER, text="Hello")],
+            None,
+            OpenAICompatibleConfig(base_url="https://gateway.example/v1"),
+            SecretStr("graph-provider-key"),
+            workspace_id=WORKSPACE_ID,
+        )
+
+    if address == "10.0.0.9":
+        with pytest.raises(OpenAICompatibleProviderError, match="may not be dialed"):
+            await complete()
+        assert recorder.requests == []
+    else:
+        assert (await complete()).content == "A concise answer."
+        assert len(recorder.requests) == 1
+        request = recorder.requests[0]
+        assert request.url.host == address
+        assert request.headers["host"] == "gateway.example"
+        assert request.extensions["sni_hostname"] == "gateway.example"
+        assert request.extensions["timeout"] == {
+            "connect": 120.0, "read": 120.0, "write": 120.0, "pool": 120.0
+        }
+
+
+async def test_sdk_transport_does_not_follow_redirect_to_private_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = TransportRequestRecorder(
+        httpx.Response(307, headers={"location": "http://10.0.0.9/v1/chat/completions"})
+    )
+    recorder.install(monkeypatch)
+    provider = OpenAICompatibleSdkProvider(
+        uow=InMemoryUnitOfWork(), storage=FakeStorage(), egress_policy=no_grants()
+    )
+    with pytest.raises(OpenAICompatibleProviderError, match="HTTP 307"):
+        await provider.complete(
+            [PromptMessage(role=PromptMessageRole.USER, text="Hello")],
+            None,
+            OpenAICompatibleConfig(base_url="https://gateway.example/v1"),
+            SecretStr("graph-provider-key"),
+            workspace_id=WORKSPACE_ID,
+        )
+    assert len(recorder.requests) == 1
+    assert recorder.requests[0].url.host == "93.184.216.34"
