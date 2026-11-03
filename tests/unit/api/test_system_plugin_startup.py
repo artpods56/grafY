@@ -47,7 +47,7 @@ async def test_startup_registers_builtin_families_without_host_deployment(
 
         assert {plugin.slug for plugin in registry.plugins} == expected_slugs
         assert not any(
-            node.operator_id.startswith("module.") for node in registry.nodes
+            node.key[0].startswith("module.") for node in registry.nodes
         )
 
 
