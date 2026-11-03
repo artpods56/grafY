@@ -21,6 +21,9 @@ from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_shared.config import EgressConfig
 
 from grafy_api.app_state import AppIdentity, AppResources
+from grafy_api.agents.conversations import AgentConversationService
+from grafy_api.agents.keys import AgentKeyService
+from grafy_api.agents.models import AgentModelResolver
 from grafy_api.services.families import build_application_registry
 from grafy_api.node_secrets import NodeSecretService
 from grafy_api.realtime.hub import ProjectRoomHub
@@ -131,6 +134,18 @@ async def build_app_resources(
         plugin_registry=registry,
         encryption_key=settings.keys.credential_encryption_key,
     )
+    # An Agent's own key is sealed with the same deployment key as a node secret, and
+    # its endpoint is dialed against the same egress grants the workbench was built with.
+    agent_keys = AgentKeyService(
+        unit_of_work_factory=new_unit_of_work,
+        encryption_key=settings.keys.credential_encryption_key,
+    )
+    agent_conversations = AgentConversationService(unit_of_work_factory=new_unit_of_work)
+    agent_models = AgentModelResolver(
+        settings=settings.agents,
+        keys=agent_keys,
+        egress_policy=workbench_egress_policy(settings.egress),
+    )
     workbench = build_workbench_components(
         plugin_registry=registry,
         workspace=app.workspace,
@@ -168,6 +183,9 @@ async def build_app_resources(
         runs=runs,
         collaboration=collaboration,
         node_secrets=node_secrets,
+        agent_keys=agent_keys,
+        agent_conversations=agent_conversations,
+        agent_models=agent_models,
         project_room_hub=project_room_hub,
     )
     try:

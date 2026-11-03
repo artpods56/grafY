@@ -4,10 +4,13 @@
 - **Implements:** grafY issue #113
 - **Amended by:** Issue #117 retires `GRAFY_SYSTEM_PLUGIN_DEPLOYMENT_MANIFEST`;
   the no-rename guarantee below describes the original configuration split.
+  Issue #202 adds a ninth section, `AgentsConfig`, for the deployment default Agent
+  model; the split below is unchanged by it.
 
-`grafy_shared.config` holds every operator-facing `GRAFY_*` variable as one of eight
-responsibility-owned `BaseSettings` sections: `AppConfig`, `AuthConfig`, `KeysConfig`,
-`ExecutionConfig`, `RealtimeConfig`, `StorageConfig`, `UploadConfig`, and `EgressConfig`.
+`grafy_shared.config` holds every operator-facing `GRAFY_*` variable as one of nine
+responsibility-owned `BaseSettings` sections: `AgentsConfig`, `AppConfig`, `AuthConfig`,
+`KeysConfig`, `ExecutionConfig`, `RealtimeConfig`, `StorageConfig`, `UploadConfig`, and
+`EgressConfig`.
 `apps/api` composes them into one plain-`BaseModel` `Settings`, and only
 the composition root reads that object.
 

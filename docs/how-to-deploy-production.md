@@ -193,6 +193,15 @@ Node requests now leave from the API network. Set
 services that nodes must reach. Keep deployment egress filtering as a backstop;
 the application guard validates and pins graph-configured destinations.
 
+An Agent uses the deployment default model unless whoever configured it gave it an
+endpoint and key of its own, so set all three of `GRAFY_AGENT_DEFAULT_BASE_URL`,
+`GRAFY_AGENT_DEFAULT_MODEL` and `GRAFY_AGENT_DEFAULT_API_KEY` or no Agent can answer.
+The default endpoint may be a private model server listed in
+`GRAFY_EGRESS_TRUSTED_DESTINATIONS`; an Agent's own endpoint is not, and goes through the
+same pinned public-address guard as an LLM node's `base_url`. Agents do not fall back to
+the deployment key: an Agent that names its own endpoint needs its own key set, and
+configuring it costs the person setting it `edit_project`, not `manage_secrets`.
+
 ## Verify and record the deployment
 
 Check the host and the public endpoint:

@@ -1,5 +1,3 @@
-import base64
-import binascii
 import json
 import logging
 import os
@@ -7,7 +5,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from hashlib import sha256
 from typing import cast
 from uuid import UUID
 
@@ -32,6 +29,10 @@ from grafy_core.ports.node_secrets import (
     NodeSecretResolverPort,
     NodeSecretUnavailableError,
     NodeSecretUnitOfWorkPort,
+)
+from grafy_api.credential_keys import (
+    CredentialKeyConfigurationError,
+    resolve_credential_encryption_key,
 )
 
 logger = logging.getLogger(__name__)
@@ -539,22 +540,10 @@ class NodeSecretService(NodeSecretResolverPort):
         ).encode("utf-8")
 
     def _resolved_encryption_key(self) -> tuple[bytes, str]:
-        if self._encryption_key is None:
-            raise NodeSecretConfigurationError(
-                "GRAFY_CREDENTIAL_ENCRYPTION_KEY is required for node secret operations"
-            )
-        encoded = self._encryption_key.get_secret_value()
         try:
-            key = base64.b64decode(encoded, validate=True)
-        except (binascii.Error, ValueError) as exc:
-            raise NodeSecretConfigurationError(
-                "GRAFY_CREDENTIAL_ENCRYPTION_KEY must be valid base64"
-            ) from exc
-        if len(key) != 32:
-            raise NodeSecretConfigurationError(
-                "GRAFY_CREDENTIAL_ENCRYPTION_KEY must decode to exactly 32 bytes"
-            )
-        return key, sha256(key).hexdigest()[:16]
+            return resolve_credential_encryption_key(self._encryption_key)
+        except CredentialKeyConfigurationError as exc:
+            raise NodeSecretConfigurationError(str(exc)) from exc
 
     def _active_key_id(self) -> str | None:
         try:

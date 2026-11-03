@@ -10,6 +10,7 @@ import pytest
 from pydantic import SecretStr, ValidationError
 
 from grafy_shared.config import (
+    AgentsConfig,
     AppConfig,
     AuthConfig,
     EgressConfig,
@@ -32,6 +33,7 @@ from grafy_core.egress import TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 CONFIG_SECTIONS: tuple[type, ...] = (
+    AgentsConfig,
     AppConfig,
     AuthConfig,
     KeysConfig,
@@ -348,6 +350,83 @@ def test_credential_encryption_key_is_redacted_from_serialized_settings() -> Non
 
 
 # pyright: ignore[reportCallIssue]
+def test_agent_default_model_is_a_whole_choice_or_none() -> None:
+    """Half a deployment default is not a default, and the missing part is named.
+
+    A model name with no endpoint would dial api.openai.com by SDK accident, so the
+    resolver refuses to guess and says which variable the operator still owes.
+    """
+
+    complete = AgentsConfig(
+        _env_file=None,  # pyright: ignore[reportCallIssue]
+        agent_default_base_url="https://models.internal/v1",
+        agent_default_model="gpt-5-mini",
+        agent_default_api_key=SecretStr("deployment-key"),
+    )
+    assert complete.is_configured
+    assert complete.incomplete_default() is None
+
+    # A private endpoint is a configuration the egress authority decides about, not here.
+    assert complete.agent_default_base_url is not None
+    assert complete.agent_default_base_url.host == "models.internal"
+
+    no_model = AgentsConfig(
+        _env_file=None,  # pyright: ignore[reportCallIssue]
+        agent_default_base_url="https://models.internal/v1",
+        agent_default_api_key=SecretStr("deployment-key"),
+    )
+    assert no_model.incomplete_default() == "GRAFY_AGENT_DEFAULT_MODEL"
+    no_endpoint = AgentsConfig(
+        _env_file=None,  # pyright: ignore[reportCallIssue]
+        agent_default_model="gpt-5-mini",
+        agent_default_api_key=SecretStr("deployment-key"),
+    )
+    assert no_endpoint.incomplete_default() == "GRAFY_AGENT_DEFAULT_BASE_URL"
+    empty_key = AgentsConfig(
+        _env_file=None,  # pyright: ignore[reportCallIssue]
+        agent_default_base_url="https://models.internal/v1",
+        agent_default_model="gpt-5-mini",
+        agent_default_api_key=SecretStr("   "),
+    )
+    assert empty_key.incomplete_default() == "GRAFY_AGENT_DEFAULT_API_KEY"
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "refusal"),
+    [
+        ("https://user:hunter2@models.example/v1", "embedded credentials"),
+        ("https://models.example/v1?key=leak", "query-free service endpoint"),
+        ("ftp://models.example/v1", "URL scheme"),
+    ],
+)
+def test_a_malformed_agent_default_endpoint_is_refused_at_startup(
+    endpoint: str, refusal: str
+) -> None:
+    """A wrong default fails the process that was configured wrong, and says so."""
+
+    with pytest.raises(ValidationError, match=refusal):
+        AgentsConfig(  # pyright: ignore[reportCallIssue]
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            agent_default_base_url=endpoint,
+        )
+
+
+def test_the_agent_default_key_is_redacted_from_serialized_settings() -> None:
+    deployment_key = "sensitive-deployment-agent-key"
+    settings = Settings(
+        agents=AgentsConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            agent_default_base_url="https://models.example/v1",
+            agent_default_model="gpt-5-mini",
+            agent_default_api_key=SecretStr(deployment_key),
+        )
+    )
+
+    assert deployment_key not in repr(settings)
+    assert deployment_key not in str(settings.model_dump())
+    assert deployment_key not in settings.model_dump_json()
+
+
 def test_command_hmac_key_is_redacted_and_resolved() -> None:
     hmac_key = "sensitive-command-hmac-key"
     keys = KeysConfig(

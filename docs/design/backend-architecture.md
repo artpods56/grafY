@@ -198,5 +198,44 @@ Agents are Graph document values alongside nodes and presentation. Their add,
 configure and remove commands use the same validated Project command batches as
 other canvas edits. Agent setup survives checkpoints and Project copies; keys
 are excluded from the document contract. Expansion and fingerprints read nodes,
-edges and origins and ignore Agents. ADR 0021 defines the conversation runtime
-and room protocol to be implemented above this document boundary.
+edges and origins and ignore Agents. ADR 0021 defines the conversation runtime and room
+protocol above this document boundary; the turn loop and the room frames are still to be
+built on the parts described below.
+
+### What a conversation stores, and where the sequence is decided
+
+`agent_conversations` holds one row per thread — Workspace, Project, Graph, Agent id,
+the author who started it, and `next_sequence` — and `agent_conversation_events` holds
+the history, keyed by `(workspace_id, conversation_id, sequence)`. Appending is the only
+write: the adapter moves `next_sequence` with an `UPDATE` conditioned on the sequence the
+event claims, and inserts the event only if that update landed. That condition, not a
+service-side mutex, is what "one turn at a time per conversation" rests on; a losing
+append is an error, never a second row at the same sequence. Events are never updated,
+deleted, or reordered, and a fork copies a prefix into a new conversation that records
+the source id and the sequence it stopped at. `author_user_id` is a bare id like a
+command receipt's actor: a conversation is shared with everyone who can read the Project,
+so it outlives the account that started it instead of vanishing with it.
+
+Only starting a thread checks that the Agent is on the Graph. An append does not, so an
+Agent removed mid-turn still records the reply it was writing.
+
+### Keys and models
+
+An Agent's own credential is one row of `agent_keys`, sealed with
+`GRAFY_CREDENTIAL_ENCRYPTION_KEY` under the same AES-GCM and deployment-key-id discipline
+as a node secret (`grafy_api.credential_keys`), and authenticated against the Workspace,
+Project, Graph and Agent id it belongs to — a row copied beside another Agent does not
+open. It is write-only: the configuration surface answers `configured: true|false` and
+nothing else, and the single read path is the in-process model resolver. Unlike a node
+secret it needs `edit_project`, not `manage_secrets`, because configuring an Agent is a
+canvas edit (ADR 0021).
+
+`AgentModelResolver` turns a document choice into something dialable: the deployment
+default (`GRAFY_AGENT_DEFAULT_BASE_URL`, `_MODEL`, `_API_KEY`) for an Agent that asks for
+none, or the Agent's saved endpoint, model and key for one that carries its own. Both
+return the same value carrying key and transport rule together, and both dial through
+`PinnedPublicAddressTransport` with the deployment's egress policy — so an operator's
+private model server works because it is a trusted destination, and an Agent's own
+endpoint is refused if its name resolves to a private address the operator did not grant.
+Falling back to the deployment key for an Agent with its own endpoint is refused rather
+than quietly taken.

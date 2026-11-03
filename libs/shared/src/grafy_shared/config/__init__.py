@@ -7,6 +7,7 @@ service, or rendering code, which is what lets every layer import its own
 configuration. See ``docs/adr/0011-shared-configuration-is-a-leaf-package.md``.
 """
 
+from grafy_shared.config.agents import AgentsConfig
 from grafy_shared.config.app import AppConfig
 from grafy_shared.config.auth import AuthConfig
 from grafy_shared.config.egress import EgressConfig
@@ -18,6 +19,7 @@ from grafy_shared.config.uploads import STAGED_UPLOAD_HARD_MAX_BYTES, UploadConf
 
 __all__ = [
     "STAGED_UPLOAD_HARD_MAX_BYTES",
+    "AgentsConfig",
     "AppConfig",
     "AuthConfig",
     "EgressConfig",

@@ -21,6 +21,7 @@ from pydantic_settings import BaseSettings
 
 from grafy_shared.config import (
     STAGED_UPLOAD_HARD_MAX_BYTES,
+    AgentsConfig,
     AppConfig,
     AuthConfig,
     EgressConfig,
@@ -55,6 +56,7 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     app: AppConfig = Field(default_factory=AppConfig)
+    agents: AgentsConfig = Field(default_factory=AgentsConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     keys: KeysConfig = Field(default_factory=KeysConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
@@ -101,6 +103,7 @@ class Settings(BaseModel):
 
         return cls(
             app=read_section(AppConfig, env_file=env_file),
+            agents=read_section(AgentsConfig, env_file=env_file),
             auth=read_section(AuthConfig, env_file=env_file),
             keys=read_section(KeysConfig, env_file=env_file),
             execution=read_section(ExecutionConfig, env_file=env_file),

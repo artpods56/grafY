@@ -14,6 +14,9 @@ if TYPE_CHECKING:
     from grafy_core.application.collaboration import CollaborationService
     from grafy_core.application.projects import ProjectService
     from grafy_persistence.database import Database
+    from grafy_api.agents.conversations import AgentConversationService
+    from grafy_api.agents.keys import AgentKeyService
+    from grafy_api.agents.models import AgentModelResolver
     from grafy_api.node_secrets import NodeSecretService
     from grafy_api.realtime.hub import ProjectRoomHub
     from grafy_api.runs.service import RunService
@@ -43,6 +46,11 @@ class AppResources:
     runs: RunService
     collaboration: CollaborationService
     node_secrets: NodeSecretService
+    # Agent history, its write-only key, and the model its next turn will dial. The
+    # send/cancel routes and the room frames own everything above these three.
+    agent_keys: AgentKeyService
+    agent_conversations: AgentConversationService
+    agent_models: AgentModelResolver
     project_room_hub: ProjectRoomHub
 
     async def cleanup(self) -> None:
