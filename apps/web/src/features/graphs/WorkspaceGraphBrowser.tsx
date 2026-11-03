@@ -94,7 +94,7 @@ function WorkspaceGraphBrowserContent() {
     useGraphBrowserFilters();
 
   const workspaceName = workspaceDisplayName(workspace);
-  const canCreate = workspace.capabilities.includes("create_graph");
+  const canCreate = workspace.capabilities.includes("create_project");
   const graphs = React.useMemo(
     () => filterGraphsByQuery(sortGraphsByRecency(data?.graphs ?? []), query),
     [data, query],

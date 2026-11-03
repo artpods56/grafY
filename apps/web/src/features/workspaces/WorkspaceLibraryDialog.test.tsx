@@ -49,7 +49,7 @@ function workspace(overrides: Partial<Workspace> = {}): Workspace {
     slug: "operations",
     kind: "shared",
     role: "owner",
-    capabilities: ["view_graph", "create_graph", "publish_module"],
+    capabilities: ["view_project", "create_project", "edit_project"],
     ...overrides,
   };
 }
@@ -191,7 +191,7 @@ describe("WorkspaceModuleLibrary", () => {
 
   it("provides useful empty library guidance and the publishing permission blocker", async () => {
     const container = await renderLibrary(
-      workspace({ role: "viewer", capabilities: ["view_graph"] }),
+      workspace({ role: "viewer", capabilities: ["view_project"] }),
     );
 
     await vi.waitFor(() => {

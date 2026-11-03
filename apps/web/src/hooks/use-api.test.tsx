@@ -39,7 +39,7 @@ const personal: Workspace = {
   slug: "personal",
   kind: "personal",
   role: "owner",
-  capabilities: ["view_graph", "create_graph"],
+  capabilities: ["view_project", "create_project"],
 };
 
 const team: Workspace = {
@@ -48,7 +48,7 @@ const team: Workspace = {
   slug: "atlas",
   kind: "shared",
   role: "editor",
-  capabilities: ["view_graph", "create_graph"],
+  capabilities: ["view_project", "create_project"],
 };
 
 let latest: AllWorkspacesGraphsResult | undefined;

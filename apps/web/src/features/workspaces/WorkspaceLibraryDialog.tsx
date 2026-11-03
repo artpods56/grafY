@@ -362,7 +362,7 @@ export function WorkspaceModuleLibrary({
               Add Module Input boundaries for values callers should provide.
             </li>
             <li>Save the graph, then Publish release from Module setup.</li>
-            {workspace.capabilities.includes("publish_module") ? null : (
+            {workspace.capabilities.includes("edit_project") ? null : (
               <li>Publishing requires Editor or Owner access here.</li>
             )}
           </ol>

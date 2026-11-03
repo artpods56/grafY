@@ -114,10 +114,10 @@ export type GraphExecutionDetail =
 export type GraphExecutionList =
   paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions"]["get"]["responses"][200]["content"]["application/json"];
 export type GraphMaterializations = Schemas["GraphMaterializationsResponse"];
-export type SavedGraphDocument = Schemas["SavedGraphDocument"];
-export type SavedGraphNode = Schemas["SavedGraphNode"];
-export type SavedGraphEdge = Schemas["SavedGraphEdge"];
-export type SavedGraphOrigin = Schemas["SavedGraphOrigin"];
+export type SavedGraphDocument = Schemas["GraphDocument"];
+export type SavedGraphNode = Schemas["GraphNode"];
+export type SavedGraphEdge = Schemas["GraphEdge"];
+export type SavedGraphOrigin = Schemas["GraphOrigin"];
 export type ArtifactRef = Schemas["ArtifactRef"];
 export type ArtifactRefSequence = Schemas["ArtifactRefSequence"];
 export type SavedGraphSummary = Schemas["SavedGraphSummaryResponse"];

@@ -108,9 +108,9 @@ function roomReady(overrides: Record<string, unknown> = {}) {
     },
     capabilities: {
       capabilities: [
-        "view_graph",
-        "edit_graph",
-        "join_graph_room",
+        "view_project",
+        "edit_project",
+        "join_project_room",
         "publish_presence",
       ],
       authorization_version: 2,
@@ -241,9 +241,9 @@ describe("GraphRoomSession", () => {
     expect(session.getStatus()).toBe("ready");
     expect(session.getAuthorizationVersion()).toBe(2);
     expect(session.getCapabilities()).toEqual([
-      "view_graph",
-      "edit_graph",
-      "join_graph_room",
+      "view_project",
+      "edit_project",
+      "join_project_room",
       "publish_presence",
     ]);
     expect(session.getHead()?.collaboration_sequence).toBe(4);

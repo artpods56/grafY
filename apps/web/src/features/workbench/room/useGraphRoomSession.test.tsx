@@ -65,7 +65,7 @@ function readyMessage(graphId: string): RoomReadyMessage {
       color: "emerald",
     },
     capabilities: {
-      capabilities: ["edit_graph", "publish_presence"],
+      capabilities: ["edit_project", "publish_presence"],
       authorization_version: 2,
     },
     head: {

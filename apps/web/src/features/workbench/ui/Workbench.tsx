@@ -547,14 +547,14 @@ function WorkbenchBody({
     string | null
   >(null);
   const [publishModuleOpen, setPublishModuleOpen] = React.useState(false);
-  const canPublishModule = workspace.capabilities.includes("publish_module");
-  const canCreateGraph = workspace.capabilities.includes("create_graph");
-  const canEditGraph = workspace.capabilities.includes("edit_graph");
-  const canExecuteGraph = workspace.capabilities.includes("execute_graph");
+  const canPublishModule = workspace.capabilities.includes("edit_project");
+  const canCreateGraph = workspace.capabilities.includes("create_project");
+  const canEditGraph = workspace.capabilities.includes("edit_project");
+  const canExecuteGraph = workspace.capabilities.includes("start_run");
   const canCancelExecution =
-    workspace.capabilities.includes("cancel_execution");
-  const canDeleteGraph = workspace.capabilities.includes("delete_graph");
-  const canEditModuleSource = workspace.capabilities.includes("edit_graph");
+    workspace.capabilities.includes("cancel_run");
+  const canDeleteGraph = workspace.capabilities.includes("delete_project");
+  const canEditModuleSource = workspace.capabilities.includes("edit_project");
   const localAuthoringEnabledRef = React.useRef(
     initialGraphId === null && canCreateGraph,
   );

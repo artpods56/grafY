@@ -91,7 +91,7 @@ export function GraphBrowser() {
   const createLocations = React.useMemo(
     () =>
       (workspaces ?? []).filter((workspace) =>
-        workspace.capabilities.includes("create_graph"),
+        workspace.capabilities.includes("create_project"),
       ),
     [workspaces],
   );
