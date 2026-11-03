@@ -1,12 +1,19 @@
+"""The Project aggregate and the Graph document it holds (ADR 0020).
+
+A Project is the Workspace-owned object a room opens on; its content is a
+``ProjectDocument`` of named Graphs. These tests hold no clock, touch no disk
+and wait for nothing: every timestamp a rule needs is passed in.
+"""
+
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
 
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
-from grafy_core.domain.errors import SavedGraphRevisionConflictError
 from grafy_core.domain.graph_documents import (
     GraphPoint,
     GraphPresentationAnnotation,
@@ -14,7 +21,6 @@ from grafy_core.domain.graph_documents import (
     GraphPresentationLink,
     GraphPresentationViewer,
     SAVED_GRAPH_SCHEMA_VERSION,
-    SavedGraph,
     GraphAnnotationLayout,
     GraphArtifactTypeBinding,
     GraphConversion,
@@ -25,8 +31,25 @@ from grafy_core.domain.graph_documents import (
     GraphNodeLayout,
     GraphOrigin,
 )
+from grafy_core.domain.identity import WorkspaceKind
+from grafy_core.domain.projects import (
+    Project,
+    ProjectBrowserCreator,
+    ProjectBrowserDraft,
+    ProjectBrowserFolder,
+    ProjectBrowserItem,
+    ProjectBrowserLocation,
+    ProjectCheckpoint,
+    ProjectFolder,
+    ProjectOrganization,
+    UserProjectState,
+)
+from grafy_core.kernel.project import GraphDefinition, ProjectDocument
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
+MORNING = datetime(2026, 7, 14, 8, 30, tzinfo=UTC)
+AFTERNOON = datetime(2026, 7, 14, 15, 0, tzinfo=UTC)
+NAIVE_MORNING = datetime(2026, 7, 14, 8, 30)
 
 
 def _node(
@@ -84,7 +107,7 @@ def _origin(
     )
 
 
-def test_saved_graph_document_allows_drafts_without_executable_connections() -> None:
+def test_graph_document_allows_drafts_without_executable_connections() -> None:
     empty_draft = GraphDocument()
     incomplete_draft = GraphDocument(
         nodes=(
@@ -105,7 +128,7 @@ def test_saved_graph_document_allows_drafts_without_executable_connections() -> 
     assert incomplete_draft.edges == ()
 
 
-def test_saved_graph_edge_defaults_enabled_for_legacy_payloads() -> None:
+def test_graph_edge_defaults_enabled_for_legacy_payloads() -> None:
     payload = _edge("legacy").model_dump(mode="json")
     payload.pop("enabled")
 
@@ -115,7 +138,7 @@ def test_saved_graph_edge_defaults_enabled_for_legacy_payloads() -> None:
     assert edge.model_dump(mode="json")["enabled"] is True
 
 
-def test_saved_graph_document_requires_current_schema_version() -> None:
+def test_graph_document_requires_current_schema_version() -> None:
     document = GraphDocument(
         nodes=(
             _node(
@@ -136,9 +159,7 @@ def test_saved_graph_document_requires_current_schema_version() -> None:
     }
 
 
-def test_saved_graph_node_layout_round_trips_and_rejects_empty_or_out_of_range() -> (
-    None
-):
+def test_graph_node_layout_round_trips_and_rejects_empty_or_out_of_range() -> None:
     layout = GraphNodeLayout(width=420, body_height=180, appendix_height=320)
     node = GraphNode(
         kind="builtin",
@@ -369,7 +390,7 @@ def test_artifact_card_cannot_be_a_presentation_link_target() -> None:
         )
 
 
-def test_saved_graph_document_rejects_presentation_link_to_a_missing_node() -> None:
+def test_graph_document_rejects_presentation_link_to_a_missing_node() -> None:
     """A card link naming a node the document does not hold stays refused.
 
     The web client now drops such links before building a save request, which is what
@@ -409,7 +430,7 @@ def test_saved_graph_document_rejects_presentation_link_to_a_missing_node() -> N
     assert accepted.presentation.links[0].source_node_id == "deleted-node"
 
 
-def test_saved_graph_node_config_is_deeply_immutable_and_serializable() -> None:
+def test_graph_node_config_is_deeply_immutable_and_serializable() -> None:
     node = GraphNode(
         kind="builtin",
         id="configured",
@@ -431,7 +452,7 @@ def test_saved_graph_node_config_is_deeply_immutable_and_serializable() -> None:
     assert node.model_dump(mode="json")["config"] == node.config_dict()
 
 
-def test_saved_graph_node_serializes_validated_artifact_type_bindings() -> None:
+def test_graph_node_serializes_validated_artifact_type_bindings() -> None:
     binding = GraphArtifactTypeBinding(
         variable="T",
         artifact_type=ArtifactTypeKey("image.raster", 1),
@@ -453,7 +474,7 @@ def test_saved_graph_node_serializes_validated_artifact_type_bindings() -> None:
     assert node.artifact_type_binding_map() == {"T": ArtifactTypeKey("image.raster", 1)}
 
 
-def test_saved_graph_node_requires_unique_artifact_type_binding_variables() -> None:
+def test_graph_node_requires_unique_artifact_type_binding_variables() -> None:
     first = GraphArtifactTypeBinding(
         variable="T",
         artifact_type=ArtifactTypeKey("example.first", 1),
@@ -477,7 +498,7 @@ def test_saved_graph_node_requires_unique_artifact_type_binding_variables() -> N
         ArtifactTypeKey("example.value", 0),
     ],
 )
-def test_saved_graph_artifact_type_binding_rejects_invalid_concrete_key(
+def test_graph_artifact_type_binding_rejects_invalid_concrete_key(
     artifact_type: ArtifactTypeKey,
 ) -> None:
     with pytest.raises(ValidationError, match="bound artifact type"):
@@ -487,12 +508,12 @@ def test_saved_graph_artifact_type_binding_rejects_invalid_concrete_key(
         )
 
 
-def test_saved_graph_document_requires_unique_node_ids() -> None:
+def test_graph_document_requires_unique_node_ids() -> None:
     with pytest.raises(ValidationError, match="node ids must be unique"):
         GraphDocument(nodes=(_node("duplicate"), _node("duplicate")))
 
 
-def test_saved_graph_document_requires_unique_edge_ids() -> None:
+def test_graph_document_requires_unique_edge_ids() -> None:
     with pytest.raises(ValidationError, match="edge ids must be unique"):
         GraphDocument(
             nodes=(_node("source"), _node("target")),
@@ -500,7 +521,7 @@ def test_saved_graph_document_requires_unique_edge_ids() -> None:
         )
 
 
-def test_saved_graph_document_preserves_ordered_input_plugs() -> None:
+def test_graph_document_preserves_ordered_input_plugs() -> None:
     plugs = (
         GraphInputPlug(id="second", port="items"),
         GraphInputPlug(id="first", port="items"),
@@ -515,7 +536,7 @@ def test_saved_graph_document_preserves_ordered_input_plugs() -> None:
     ]
 
 
-def test_saved_graph_document_requires_unique_input_plug_ids_per_node() -> None:
+def test_graph_document_requires_unique_input_plug_ids_per_node() -> None:
     duplicate_plugs = (
         GraphInputPlug(id="item", port="items"),
         GraphInputPlug(id="item", port="items"),
@@ -525,7 +546,7 @@ def test_saved_graph_document_requires_unique_input_plug_ids_per_node() -> None:
         GraphDocument(nodes=(_node("collect", input_plugs=duplicate_plugs),))
 
 
-def test_saved_graph_document_requires_edges_to_reference_target_input_plugs() -> None:
+def test_graph_document_requires_edges_to_reference_target_input_plugs() -> None:
     target = _node(
         "target",
         input_plugs=(GraphInputPlug(id="item", port="items"),),
@@ -542,7 +563,7 @@ def test_saved_graph_document_requires_edges_to_reference_target_input_plugs() -
         )
 
 
-def test_saved_graph_document_requires_edge_port_to_match_input_plug_port() -> None:
+def test_graph_document_requires_edge_port_to_match_input_plug_port() -> None:
     target = _node(
         "target",
         input_plugs=(GraphInputPlug(id="item", port="items"),),
@@ -555,7 +576,7 @@ def test_saved_graph_document_requires_edge_port_to_match_input_plug_port() -> N
         )
 
 
-def test_saved_graph_document_allows_at_most_one_edge_per_input_plug() -> None:
+def test_graph_document_allows_at_most_one_edge_per_input_plug() -> None:
     target = _node(
         "target",
         input_plugs=(GraphInputPlug(id="item", port="items"),),
@@ -612,7 +633,7 @@ def test_disabled_edge_still_requires_structurally_valid_endpoints() -> None:
         (_edge("missing-target", to_node="absent"), "missing target node absent"),
     ],
 )
-def test_saved_graph_document_rejects_edges_to_missing_nodes(
+def test_graph_document_rejects_edges_to_missing_nodes(
     edge: GraphEdge,
     message: str,
 ) -> None:
@@ -623,7 +644,7 @@ def test_saved_graph_document_rejects_edges_to_missing_nodes(
         )
 
 
-def test_saved_graph_document_rejects_a_version_six_document() -> None:
+def test_graph_document_rejects_a_version_six_document() -> None:
     with pytest.raises(ValidationError, match="schema_version"):
         GraphDocument.model_validate(
             {
@@ -634,7 +655,7 @@ def test_saved_graph_document_rejects_a_version_six_document() -> None:
         )
 
 
-def test_saved_graph_origin_round_trips_an_exact_reference() -> None:
+def test_graph_origin_round_trips_an_exact_reference() -> None:
     origin = _origin().model_copy(
         update={"conversion_path": (GraphConversion(id="as-text", version=1),)}
     )
@@ -650,7 +671,7 @@ def test_saved_graph_origin_round_trips_an_exact_reference() -> None:
     assert GraphDocument.model_validate(payload).origins[0].value == origin.value
 
 
-def test_saved_graph_origin_accepts_an_artifact_ref_sequence() -> None:
+def test_graph_origin_accepts_an_artifact_ref_sequence() -> None:
     sequence = ArtifactRefSequence(
         artifact_type="image.raster",
         schema_version=1,
@@ -673,7 +694,7 @@ def test_saved_graph_origin_accepts_an_artifact_ref_sequence() -> None:
     assert isinstance(origin.value, ArtifactRefSequence)
 
 
-def test_saved_graph_document_requires_unique_origin_ids() -> None:
+def test_graph_document_requires_unique_origin_ids() -> None:
     with pytest.raises(ValidationError, match="origin ids must be unique"):
         GraphDocument(
             nodes=(_node("target"),),
@@ -681,7 +702,7 @@ def test_saved_graph_document_requires_unique_origin_ids() -> None:
         )
 
 
-def test_saved_graph_document_requires_origins_to_reference_existing_nodes() -> None:
+def test_graph_document_requires_origins_to_reference_existing_nodes() -> None:
     with pytest.raises(ValidationError, match="missing target node absent"):
         GraphDocument(
             nodes=(_node("target"),),
@@ -689,7 +710,7 @@ def test_saved_graph_document_requires_origins_to_reference_existing_nodes() -> 
         )
 
 
-def test_saved_graph_document_requires_origin_plug_to_exist_and_match_port() -> None:
+def test_graph_document_requires_origin_plug_to_exist_and_match_port() -> None:
     target = _node(
         "target",
         input_plugs=(GraphInputPlug(id="item", port="items"),),
@@ -708,7 +729,7 @@ def test_saved_graph_document_requires_origin_plug_to_exist_and_match_port() -> 
         )
 
 
-def test_saved_graph_document_allows_one_origin_per_input_slot() -> None:
+def test_graph_document_allows_one_origin_per_input_slot() -> None:
     target = _node(
         "target",
         input_plugs=(GraphInputPlug(id="item", port="items"),),
@@ -726,7 +747,7 @@ def test_saved_graph_document_allows_one_origin_per_input_slot() -> None:
         )
 
 
-def test_saved_graph_document_origin_conflicts_with_enabled_edge_only() -> None:
+def test_graph_document_origin_conflicts_with_enabled_edge_only() -> None:
     target = _node(
         "target",
         input_plugs=(GraphInputPlug(id="item", port="items"),),
@@ -749,7 +770,7 @@ def test_saved_graph_document_origin_conflicts_with_enabled_edge_only() -> None:
         )
 
 
-def test_saved_graph_document_rejects_two_origins_on_one_unplugged_port() -> None:
+def test_graph_document_rejects_two_origins_on_one_unplugged_port() -> None:
     with pytest.raises(ValidationError, match="already satisfied"):
         GraphDocument(
             nodes=(_node("target"),),
@@ -757,114 +778,11 @@ def test_saved_graph_document_rejects_two_origins_on_one_unplugged_port() -> Non
         )
 
 
-@pytest.mark.parametrize("name", ["", "   ", "x" * 161])
-def test_saved_graph_rejects_invalid_names(name: str) -> None:
-    with pytest.raises(ValueError, match="Saved graph name"):
-        SavedGraph(
-            workspace_id=WORKSPACE_ID,
-            name=name,
-            document=GraphDocument(),
-        )
-
-
-def test_saved_graph_requires_positive_revision_and_aware_timestamps() -> None:
-    aware = datetime(2026, 7, 14, 8, 30, tzinfo=UTC)
-    naive = datetime(2026, 7, 14, 8, 30)
-
-    with pytest.raises(ValueError, match="revision must be at least 1"):
-        SavedGraph(
-            workspace_id=WORKSPACE_ID,
-            name="Draft",
-            document=GraphDocument(),
-            revision=0,
-            created_at=aware,
-            updated_at=aware,
-        )
-
-    with pytest.raises(ValueError, match="timestamps must be timezone-aware"):
-        SavedGraph(
-            workspace_id=WORKSPACE_ID,
-            name="Draft",
-            document=GraphDocument(),
-            created_at=naive,
-            updated_at=aware,
-        )
-
-
-def test_saved_graph_replace_normalizes_name_and_advances_revision() -> None:
-    graph_id = UUID("00000000-0000-0000-0000-000000000001")
-    created_at = datetime(2026, 7, 14, 8, 30, tzinfo=UTC)
-    updated_at = datetime(2026, 7, 14, 9, 45, tzinfo=UTC)
-    replacement = GraphDocument(nodes=(_node("draft-node"),))
-    graph = SavedGraph(
-        workspace_id=WORKSPACE_ID,
-        id=graph_id,
-        name="Original",
-        document=GraphDocument(),
-        created_at=created_at,
-        updated_at=created_at,
-    )
-
-    graph.replace(
-        name="  Renamed draft  ",
-        document=replacement,
-        expected_revision=1,
-        updated_at=updated_at,
-    )
-
-    assert graph.id == graph_id
-    assert graph.name == "Renamed draft"
-    assert graph.document == replacement
-    assert graph.revision == 2
-    assert graph.created_at == created_at
-    assert graph.updated_at == updated_at
-
-
-def test_saved_graph_replace_rejects_stale_revision_without_mutating_graph() -> None:
-    graph = SavedGraph(
-        workspace_id=WORKSPACE_ID,
-        name="Original",
-        document=GraphDocument(),
-    )
-    original_updated_at = graph.updated_at
-
-    with pytest.raises(SavedGraphRevisionConflictError) as raised:
-        graph.replace(
-            name="Changed",
-            document=GraphDocument(nodes=(_node("new-node"),)),
-            expected_revision=2,
-        )
-
-    assert raised.value.graph_id == graph.id
-    assert raised.value.expected_revision == 2
-    assert raised.value.actual_revision == 1
-    assert graph.name == "Original"
-    assert graph.document == GraphDocument()
-    assert graph.revision == 1
-    assert graph.updated_at == original_updated_at
-
-
-def test_saved_graph_replace_preserves_timezone_aware_timestamp_invariant() -> None:
-    graph = SavedGraph(
-        workspace_id=WORKSPACE_ID,
-        name="Draft",
-        document=GraphDocument(),
-    )
-
-    with pytest.raises(ValueError, match="timezone-aware"):
-        graph.replace(
-            name="Draft",
-            document=GraphDocument(),
-            expected_revision=1,
-            updated_at=datetime(2026, 7, 14, 10, 0),
-        )
-
-
 @pytest.mark.parametrize(
     "implementation_key",
     ["plugin_release", "plugin_release_pin"],
 )
-def test_saved_graph_node_rejects_plugin_implementation_fields(
+def test_graph_node_rejects_plugin_implementation_fields(
     implementation_key: str,
 ) -> None:
     base = _node("echo").model_dump(mode="json")
@@ -873,7 +791,229 @@ def test_saved_graph_node_rejects_plugin_implementation_fields(
         GraphNode.model_validate({**base, implementation_key: {"slug": "notes"}})
 
 
-def test_saved_graph_node_rejects_plugin_kind() -> None:
+def test_graph_node_rejects_plugin_kind() -> None:
     base = _node("echo").model_dump(mode="json")
     with pytest.raises(ValidationError, match="kind"):
         GraphNode.model_validate({**base, "kind": "plugin"})
+
+
+def _project_document(*graph_ids: str) -> ProjectDocument:
+    return ProjectDocument(
+        graphs=tuple(
+            GraphDefinition(id=graph_id, name=graph_id, document=GraphDocument())
+            for graph_id in graph_ids
+        )
+    )
+
+
+# The Project aggregate: identity, metadata and filing.
+
+
+@pytest.mark.parametrize("name", ["", "   ", "x" * 161])
+def test_project_rejects_invalid_names(name: str) -> None:
+    with pytest.raises(ValueError, match="Project name"):
+        Project(workspace_id=WORKSPACE_ID, name=name)
+
+
+def test_project_requires_aware_timestamps() -> None:
+    with pytest.raises(ValueError, match="timestamps must be timezone-aware"):
+        Project(
+            workspace_id=WORKSPACE_ID,
+            name="Draft",
+            created_at=NAIVE_MORNING,
+            updated_at=MORNING,
+        )
+
+
+def test_project_rename_normalizes_name_and_stamps_update() -> None:
+    project = Project(
+        workspace_id=WORKSPACE_ID,
+        name="Original",
+        created_at=MORNING,
+        updated_at=MORNING,
+    )
+
+    project.rename("  Renamed draft  ", updated_at=AFTERNOON)
+
+    assert project.name == "Renamed draft"
+    assert project.created_at == MORNING
+    assert project.updated_at == AFTERNOON
+
+
+def test_project_rename_rejects_a_naive_timestamp_without_moving() -> None:
+    project = Project(workspace_id=WORKSPACE_ID, name="Draft", updated_at=MORNING)
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        project.rename("Renamed", updated_at=NAIVE_MORNING)
+
+    assert project.name == "Draft"
+    assert project.updated_at == MORNING
+
+
+def test_project_checkpoint_snapshots_one_revision_of_the_document() -> None:
+    document = _project_document("main", "prepare")
+    checkpoint = ProjectCheckpoint(
+        workspace_id=WORKSPACE_ID,
+        project_id=uuid4(),
+        revision=3,
+        name="  Nightly  ",
+        document=document,
+        created_at=MORNING,
+    )
+
+    assert checkpoint.name == "Nightly"
+    assert [graph.name for graph in checkpoint.document.graphs] == ["main", "prepare"]
+
+
+def test_project_checkpoint_rejects_stale_revision_and_naive_timestamp() -> None:
+    with pytest.raises(ValueError, match="revision must be at least 1"):
+        ProjectCheckpoint(
+            workspace_id=WORKSPACE_ID,
+            project_id=uuid4(),
+            revision=0,
+            name="Draft",
+            document=_project_document("main"),
+            created_at=MORNING,
+        )
+
+    with pytest.raises(ValueError, match="timestamp must be timezone-aware"):
+        ProjectCheckpoint(
+            workspace_id=WORKSPACE_ID,
+            project_id=uuid4(),
+            revision=1,
+            name="Draft",
+            document=_project_document("main"),
+            created_at=NAIVE_MORNING,
+        )
+
+
+def test_project_checkpoint_is_frozen() -> None:
+    checkpoint = ProjectCheckpoint(
+        workspace_id=WORKSPACE_ID,
+        project_id=uuid4(),
+        revision=1,
+        name="Draft",
+        document=_project_document("main"),
+        created_at=MORNING,
+    )
+
+    with pytest.raises(Exception, match="cannot assign"):
+        checkpoint.name = "Rewritten"  # type: ignore[misc]
+
+
+def test_project_folder_rename_and_timestamp_rules() -> None:
+    folder = ProjectFolder(workspace_id=WORKSPACE_ID, name="  Analysis  ")
+    assert folder.name == "Analysis"
+
+    folder.rename("Archived analysis", updated_at=AFTERNOON)
+    assert folder.name == "Archived analysis"
+    assert folder.updated_at == AFTERNOON
+
+    with pytest.raises(ValueError, match="Project folder name must not be blank"):
+        ProjectFolder(workspace_id=WORKSPACE_ID, name="   ")
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        ProjectFolder(
+            workspace_id=WORKSPACE_ID,
+            name="Analysis",
+            created_at=NAIVE_MORNING,
+            updated_at=MORNING,
+        )
+
+
+def test_user_project_state_star_and_last_opened() -> None:
+    state = UserProjectState(
+        workspace_id=WORKSPACE_ID,
+        project_id=uuid4(),
+        user_id=uuid4(),
+    )
+    assert state.starred is False
+    assert state.last_opened_at is None
+
+    state.set_starred(True)
+    state.record_open(opened_at=AFTERNOON)
+    state.record_open(opened_at=MORNING)
+
+    assert state.starred is True
+    assert state.last_opened_at == AFTERNOON
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        state.record_open(opened_at=NAIVE_MORNING)
+
+
+def test_project_organization_filing_and_archive_go_both_ways() -> None:
+    folder_id = uuid4()
+    organization = ProjectOrganization(
+        workspace_id=WORKSPACE_ID,
+        project_id=uuid4(),
+    )
+    assert organization.is_archived is False
+
+    organization.assign_folder(folder_id, updated_at=MORNING)
+    assert organization.folder_id == folder_id
+
+    organization.archive(archived_at=AFTERNOON)
+    assert organization.is_archived is True
+    assert organization.archived_at == AFTERNOON
+
+    organization.archive(archived_at=MORNING)
+    assert organization.archived_at == AFTERNOON
+
+    organization.restore(restored_at=MORNING)
+    assert organization.is_archived is False
+    assert organization.archived_at is None
+
+    organization.assign_folder(None, updated_at=MORNING)
+    assert organization.folder_id is None
+
+
+def test_project_organization_rejects_naive_timestamps() -> None:
+    with pytest.raises(
+        ValueError, match="organization timestamp must be timezone-aware"
+    ):
+        ProjectOrganization(
+            workspace_id=WORKSPACE_ID,
+            project_id=uuid4(),
+            updated_at=NAIVE_MORNING,
+        )
+
+    with pytest.raises(ValueError, match="archive timestamp must be timezone-aware"):
+        ProjectOrganization(
+            workspace_id=WORKSPACE_ID,
+            project_id=uuid4(),
+            archived_at=NAIVE_MORNING,
+        )
+
+
+def test_project_browser_item_carries_head_counts_and_archived_state() -> None:
+    item = ProjectBrowserItem(
+        id=uuid4(),
+        draft=ProjectBrowserDraft(
+            name="Nightly",
+            head_sequence=7,
+            checkpoint_sequence=6,
+            checkpoint_revision=4,
+            updated_at=AFTERNOON,
+            graph_count=3,
+            node_count=12,
+            edge_count=9,
+        ),
+        location=ProjectBrowserLocation(
+            id=WORKSPACE_ID,
+            slug="analysis",
+            name="Analysis",
+            kind=WorkspaceKind.SHARED,
+        ),
+        folder=ProjectBrowserFolder(id=uuid4(), name="Nightly work"),
+        archived_at=None,
+        starred=True,
+        last_opened_at=MORNING,
+        organization_updated_at=MORNING,
+        creator=ProjectBrowserCreator(id=uuid4(), display_name="Ada"),
+    )
+
+    assert item.is_archived is False
+    assert item.draft.graph_count == 3
+    assert item.draft.head_sequence == item.draft.checkpoint_sequence + 1
+
+    assert replace(item, archived_at=AFTERNOON).is_archived is True

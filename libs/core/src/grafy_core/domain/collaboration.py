@@ -1,7 +1,20 @@
-"""Collaborative graph head, commands, receipts, and checkpoints."""
+"""Collaborative Project head, commands, receipts and checkpoints (ADR 0020).
+
+One room, one head, one command sequence per Project. Commands come in two
+layers: the per-graph commands that edit one Graph's ``GraphDocument``, and the
+project-level commands that rename the Project, add, rename and remove Graphs,
+place a call node, refresh a node, or wrap a per-graph command and point it at
+one Graph. The application layer accepts a batch, so
+``apply_project_commands`` is the one place that decides whether a whole batch
+goes in: it is atomic, and the rejection names the batch index that broke it.
+
+Everything here is a pure function of the values it is handed: no clock beyond
+``_utc_now`` defaults, no I/O, no locks.
+"""
 
 import hmac
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -19,7 +32,6 @@ from pydantic import (
 )
 
 from grafy_core.domain.errors import CollaborationCommandRejectedError
-from grafy_core.domain.modules import GRAPH_MODULE_OPERATOR_PREFIX
 from grafy_core.domain.graph_documents import (
     GraphPoint,
     GraphPresentationAnnotation,
@@ -28,10 +40,26 @@ from grafy_core.domain.graph_documents import (
     GraphArtifactTypeBinding,
     GraphDocument,
     GraphEdge,
+    GraphIdentifier,
     GraphInputPlug,
     GraphNode,
     GraphNodeLayout,
     GraphOrigin,
+)
+from grafy_core.domain.modules import GRAPH_MODULE_OPERATOR_PREFIX
+from grafy_core.domain.projects import validated_project_name
+from grafy_core.kernel.project import (
+    CALL_NODE_KIND,
+    CALL_NODE_OPERATOR_VERSION,
+    DuplicateGraphError,
+    GraphCallCycleError,
+    GraphDefinition,
+    GraphHasCallersError,
+    GraphName,
+    MissingCalleeError,
+    ProjectDocument,
+    ProjectDocumentError,
+    UnknownGraphError,
 )
 
 
@@ -50,7 +78,6 @@ class CommandReceiptOutcome(StrEnum):
 
 
 class GraphCommandKind(StrEnum):
-    RENAME_GRAPH = "rename_graph"
     ADD_NODE = "add_node"
     DUPLICATE_NODE = "duplicate_node"
     REMOVE_NODES = "remove_nodes"
@@ -78,32 +105,22 @@ class GraphCommandKind(StrEnum):
     MOVE_ANNOTATIONS = "move_annotations"
 
 
+class ProjectCommandKind(StrEnum):
+    RENAME_PROJECT = "rename_project"
+    ADD_GRAPH = "add_graph"
+    RENAME_GRAPH = "rename_graph"
+    REMOVE_GRAPH = "remove_graph"
+    REFRESH_NODE = "refresh_node"
+    ADD_CALL_NODE = "add_call_node"
+    IN_GRAPH = "in_graph"
+
+
 class CollaborationValue(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(
         extra="forbid",
         frozen=True,
         allow_inf_nan=False,
     )
-
-
-def _validated_graph_name(value: str) -> str:
-    name = value.strip()
-    if name == "":
-        raise ValueError("Graph name must not be blank")
-    if len(name) > 160:
-        raise ValueError("Graph name must be at most 160 characters")
-    return name
-
-
-class RenameGraphCommand(CollaborationValue):
-    kind: Literal[GraphCommandKind.RENAME_GRAPH] = GraphCommandKind.RENAME_GRAPH
-    name: str
-    expected_name: str
-
-    @field_validator("name", "expected_name")
-    @classmethod
-    def validate_name(cls, value: str) -> str:
-        return _validated_graph_name(value)
 
 
 class AddNodeCommand(CollaborationValue):
@@ -226,13 +243,7 @@ class RemoveOriginsCommand(CollaborationValue):
 
 class ReplaceDocumentCommand(CollaborationValue):
     kind: Literal[GraphCommandKind.REPLACE_DOCUMENT] = GraphCommandKind.REPLACE_DOCUMENT
-    name: str
     document: GraphDocument
-
-    @field_validator("name")
-    @classmethod
-    def validate_name(cls, value: str) -> str:
-        return _validated_graph_name(value)
 
 
 class ReplacePresentationCommand(CollaborationValue):
@@ -267,8 +278,7 @@ class MoveAnnotationsCommand(CollaborationValue):
 
 
 GraphCommand = Annotated[
-    RenameGraphCommand
-    | AddNodeCommand
+    AddNodeCommand
     | DuplicateNodeCommand
     | RemoveNodesCommand
     | MoveNodesCommand
@@ -294,13 +304,98 @@ GraphCommand = Annotated[
 GRAPH_COMMAND_ADAPTER: TypeAdapter[GraphCommand] = TypeAdapter(GraphCommand)
 
 
-def empty_collaborative_document() -> GraphDocument:
-    return GraphDocument()
+class RenameProjectCommand(CollaborationValue):
+    kind: Literal[ProjectCommandKind.RENAME_PROJECT] = ProjectCommandKind.RENAME_PROJECT
+    name: str
+    expected_name: str
+
+    @field_validator("name", "expected_name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        return validated_project_name(value)
 
 
-def canonical_command_payload(command: GraphCommand) -> bytes:
-    dumped = command.model_dump(mode="json")
-    return json.dumps(dumped, separators=(",", ":"), sort_keys=True).encode("utf-8")
+class AddGraphCommand(CollaborationValue):
+    kind: Literal[ProjectCommandKind.ADD_GRAPH] = ProjectCommandKind.ADD_GRAPH
+    graph_id: GraphIdentifier
+    name: GraphName
+    document: GraphDocument = Field(default_factory=GraphDocument)
+
+
+class RenameGraphCommand(CollaborationValue):
+    kind: Literal[ProjectCommandKind.RENAME_GRAPH] = ProjectCommandKind.RENAME_GRAPH
+    graph_id: GraphIdentifier
+    name: GraphName
+    expected_name: GraphName
+
+
+class RemoveGraphCommand(CollaborationValue):
+    kind: Literal[ProjectCommandKind.REMOVE_GRAPH] = ProjectCommandKind.REMOVE_GRAPH
+    graph_id: GraphIdentifier
+
+
+class RefreshNodeCommand(CollaborationValue):
+    """Advance one node's refresh generation, the non-deterministic node's clock.
+
+    The comparison is against the generation the client last saw, so two
+    participants refreshing the same node cannot both advance it blindly.
+    """
+
+    kind: Literal[ProjectCommandKind.REFRESH_NODE] = ProjectCommandKind.REFRESH_NODE
+    graph_id: GraphIdentifier
+    node_id: GraphIdentifier
+    expected_generation: int = Field(ge=0)
+
+
+class AddCallNodeCommand(CollaborationValue):
+    """Place a sibling Graph as a node in another Graph."""
+
+    kind: Literal[ProjectCommandKind.ADD_CALL_NODE] = ProjectCommandKind.ADD_CALL_NODE
+    graph_id: GraphIdentifier
+    node_id: GraphIdentifier
+    callee_graph_id: GraphIdentifier
+    position: GraphPoint
+
+
+class InGraphCommand(CollaborationValue):
+    """Apply one per-graph command to one Graph of the Project."""
+
+    kind: Literal[ProjectCommandKind.IN_GRAPH] = ProjectCommandKind.IN_GRAPH
+    graph_id: GraphIdentifier
+    command: GraphCommand
+
+
+ProjectCommand = Annotated[
+    RenameProjectCommand
+    | AddGraphCommand
+    | RenameGraphCommand
+    | RemoveGraphCommand
+    | RefreshNodeCommand
+    | AddCallNodeCommand
+    | InGraphCommand,
+    Field(discriminator="kind"),
+]
+
+PROJECT_COMMAND_ADAPTER: TypeAdapter[ProjectCommand] = TypeAdapter(ProjectCommand)
+
+
+def empty_project_document(graph_id: str, graph_name: str = "Main") -> ProjectDocument:
+    """A new Project: one empty Graph with something to open on."""
+    return ProjectDocument(
+        graphs=(
+            GraphDefinition(id=graph_id, name=graph_name, document=GraphDocument()),
+        )
+    )
+
+
+def canonical_batch_payload(commands: Sequence[ProjectCommand]) -> bytes:
+    """The signed bytes of one batch: its commands, in the order given.
+
+    Command order is part of the batch, so it is part of the payload: the same
+    commands in another order sign differently.
+    """
+    payload = [command.model_dump(mode="json") for command in commands]
+    return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
 def command_hmac_digest(
@@ -308,18 +403,18 @@ def command_hmac_digest(
     *,
     key_version: int,
     workspace_id: UUID,
-    graph_id: UUID,
+    project_id: UUID,
     actor_user_id: UUID | None,
     room_epoch: UUID,
     observed_sequence: int,
-    command: GraphCommand,
+    commands: Sequence[ProjectCommand],
 ) -> bytes:
     del key_version
     envelope = {
         "actor_user_id": None if actor_user_id is None else str(actor_user_id),
-        "command": command.model_dump(mode="json"),
-        "graph_id": str(graph_id),
+        "commands": [command.model_dump(mode="json") for command in commands],
         "observed_sequence": observed_sequence,
+        "project_id": str(project_id),
         "room_epoch": str(room_epoch),
         "workspace_id": str(workspace_id),
     }
@@ -329,8 +424,20 @@ def command_hmac_digest(
     return hmac.new(key, payload, sha256).digest()
 
 
-def command_requires_exact_sequence(command: GraphCommand) -> bool:
-    return isinstance(command, (ReplaceDocumentCommand, ReplacePresentationCommand))
+def command_requires_exact_sequence(commands: Sequence[ProjectCommand]) -> bool:
+    """Whether a batch replaces a whole document and so must be accepted in order.
+
+    A whole-document or whole-presentation replace carries no compare-and-set:
+    it silently overwrites whatever arrived while it was in flight, so the
+    application layer only accepts it at the exact sequence the client read.
+    """
+    return any(
+        isinstance(command, InGraphCommand)
+        and isinstance(
+            command.command, (ReplaceDocumentCommand, ReplacePresentationCommand)
+        )
+        for command in commands
+    )
 
 
 def _json_equal(left: object, right: object) -> bool:
@@ -351,11 +458,15 @@ def _field_conflict(message: str) -> CollaborationCommandRejectedError:
     return CollaborationCommandRejectedError(code="field_conflict", message=message)
 
 
+def _rejected(code: str, message: str) -> CollaborationCommandRejectedError:
+    return CollaborationCommandRejectedError(code=code, message=message)
+
+
 def _node_or_raise(document: GraphDocument, node_id: str) -> GraphNode:
     for node in document.nodes:
         if node.id == node_id:
             return node
-    raise CollaborationCommandRejectedError(
+    raise _rejected(
         code="missing_node",
         message=f"Graph command targets missing node {node_id}",
     )
@@ -365,7 +476,7 @@ def _edge_or_raise(document: GraphDocument, edge_id: str) -> GraphEdge:
     for edge in document.edges:
         if edge.id == edge_id:
             return edge
-    raise CollaborationCommandRejectedError(
+    raise _rejected(
         code="missing_edge",
         message=f"Graph command targets missing edge {edge_id}",
     )
@@ -378,7 +489,7 @@ def _origin_or_raise(
     for origin in document.origins:
         if origin.id == origin_id:
             return origin
-    raise CollaborationCommandRejectedError(
+    raise _rejected(
         code="missing_origin",
         message=f"Graph command targets missing origin {origin_id}",
     )
@@ -412,9 +523,10 @@ def _sanitize_config_value(value: object) -> object:
 def sanitize_document_for_cross_workspace_copy(
     document: GraphDocument,
 ) -> GraphDocument:
+    """Strip the workspace-scoped references one Graph's copy cannot carry."""
     for node in document.nodes:
         if node.operator_id.startswith(GRAPH_MODULE_OPERATOR_PREFIX):
-            raise CollaborationCommandRejectedError(
+            raise _rejected(
                 code="foreign_module_reference",
                 message=(
                     f"Cross-workspace copy cannot include module operator "
@@ -443,6 +555,23 @@ def sanitize_document_for_cross_workspace_copy(
     )
 
 
+def sanitize_project_for_cross_workspace_copy(
+    document: ProjectDocument,
+) -> ProjectDocument:
+    """Strip workspace-scoped references from every Graph of a Project copy."""
+    return ProjectDocument(
+        graphs=tuple(
+            GraphDefinition(
+                id=graph.id,
+                name=graph.name,
+                document=sanitize_document_for_cross_workspace_copy(graph.document),
+                refresh_generations=graph.refresh_generations,
+            )
+            for graph in document.graphs
+        )
+    )
+
+
 def _viewer_or_raise(
     document: GraphDocument,
     viewer_id: str,
@@ -450,7 +579,7 @@ def _viewer_or_raise(
     for viewer in document.presentation.viewers:
         if viewer.id == viewer_id:
             return viewer
-    raise CollaborationCommandRejectedError(
+    raise _rejected(
         code="missing_viewer",
         message=f"Graph command targets missing artifact viewer {viewer_id}",
     )
@@ -463,7 +592,7 @@ def _annotation_or_raise(
     for annotation in document.presentation.annotations:
         if annotation.id == annotation_id:
             return annotation
-    raise CollaborationCommandRejectedError(
+    raise _rejected(
         code="missing_annotation",
         message=f"Graph command targets missing annotation {annotation_id}",
     )
@@ -502,70 +631,63 @@ def _surviving_edges_and_origins(
 
 def apply_graph_command(
     *,
-    name: str,
     document: GraphDocument,
     command: GraphCommand,
-) -> tuple[str, GraphDocument]:
-    """Apply one authoring command, or reject it with the rule it would break.
+) -> GraphDocument:
+    """Apply one authoring command to one Graph's document, or reject it.
 
     Every command leaves the document self-consistent. A command that would
     strand an edge or an origin on a removed input must surface as a rejection:
-    an exception escaping here tears down the caller's graph-room session.
+    an exception escaping here tears down the caller's room session. A Graph's
+    name is not this layer's business: it belongs to the Project, so renaming is
+    a project-level command.
     """
 
     try:
-        return _apply_graph_command(name=name, document=document, command=command)
+        return _apply_graph_command(document=document, command=command)
     except ValidationError as exc:
-        violations = "; ".join(
-            error["msg"].removeprefix("Value error, ") for error in exc.errors()
-        )
-        raise CollaborationCommandRejectedError(
+        raise _rejected(
             code="invalid_document",
-            message=(
-                f"Graph command {command.kind} would leave the graph "
-                f"invalid: {violations}"
-            ),
+            message=_validation_summary(command.kind, exc),
         ) from exc
+
+
+def _validation_summary(kind: str, exc: ValidationError) -> str:
+    violations = "; ".join(
+        error["msg"].removeprefix("Value error, ") for error in exc.errors()
+    )
+    return f"{kind} command would leave the document invalid: {violations}"
 
 
 def _apply_graph_command(
     *,
-    name: str,
     document: GraphDocument,
     command: GraphCommand,
-) -> tuple[str, GraphDocument]:
-    if isinstance(command, RenameGraphCommand):
-        if name != command.expected_name:
-            raise _field_conflict(
-                f"Graph name conflict: expected {command.expected_name!r}, "
-                f"actual {name!r}"
-            )
-        return command.name, document
-
+) -> GraphDocument:
     if isinstance(command, AddNodeCommand):
         if any(node.id == command.node.id for node in document.nodes):
-            raise CollaborationCommandRejectedError(
+            raise _rejected(
                 code="duplicate_node",
                 message=f"Graph command adds duplicate node {command.node.id}",
             )
-        return name, document.with_topology(
+        return document.with_topology(
             nodes=(*document.nodes, command.node),
         )
 
     if isinstance(command, DuplicateNodeCommand):
         _node_or_raise(document, command.source_node_id)
         if any(node.id == command.node.id for node in document.nodes):
-            raise CollaborationCommandRejectedError(
+            raise _rejected(
                 code="duplicate_node",
                 message=f"Graph command adds duplicate node {command.node.id}",
             )
-        return name, document.with_topology(
+        return document.with_topology(
             nodes=(*document.nodes, command.node),
         )
 
     if isinstance(command, RemoveNodesCommand):
         removed = set(command.node_ids)
-        return name, document.with_topology(
+        return document.with_topology(
             nodes=tuple(node for node in document.nodes if node.id not in removed),
             edges=tuple(
                 edge
@@ -585,7 +707,7 @@ def _apply_graph_command(
             position.node_id: GraphPoint(x=position.x, y=position.y)
             for position in command.positions
         }
-        return name, document.with_topology(
+        return document.with_topology(
             nodes=tuple(
                 node.model_copy(update={"position": positions[node.id]})
                 if node.id in positions
@@ -610,7 +732,7 @@ def _apply_graph_command(
             config = dict(candidate.config_dict())
             config[command.field] = command.value
             updated_nodes.append(candidate.model_copy(update={"config": config}))
-        return name, document.with_topology(nodes=tuple(updated_nodes))
+        return document.with_topology(nodes=tuple(updated_nodes))
 
     if isinstance(command, UpdateNodeLayoutCommand):
         node = _node_or_raise(document, command.node_id)
@@ -619,7 +741,7 @@ def _apply_graph_command(
             _model_json(command.expected_layout),
         ):
             raise _field_conflict(f"Layout on node {command.node_id} changed")
-        return name, document.with_topology(
+        return document.with_topology(
             nodes=tuple(
                 node.model_copy(update={"layout": command.layout})
                 if node.id == command.node_id
@@ -639,7 +761,7 @@ def _apply_graph_command(
             node_id=command.node_id,
             retained_plug_ids=retained_plug_ids,
         )
-        return name, document.with_topology(
+        return document.with_topology(
             nodes=tuple(
                 candidate.model_copy(update={"input_plugs": command.input_plugs})
                 if candidate.id == command.node_id
@@ -663,7 +785,7 @@ def _apply_graph_command(
             node_id=command.node_id,
             retained_plug_ids=retained_plug_ids,
         )
-        return name, document.with_topology(
+        return document.with_topology(
             nodes=tuple(
                 candidate.model_copy(
                     update={
@@ -692,7 +814,7 @@ def _apply_graph_command(
             for binding in node.artifact_type_bindings
             if binding.variable != command.binding.variable
         )
-        return name, document.with_topology(
+        return document.with_topology(
             nodes=tuple(
                 candidate.model_copy(
                     update={
@@ -713,7 +835,7 @@ def _apply_graph_command(
                 f"Artifact type binding {command.variable!r} on node "
                 f"{command.node_id} changed"
             )
-        return name, document.with_topology(
+        return document.with_topology(
             nodes=tuple(
                 candidate.model_copy(
                     update={
@@ -732,11 +854,11 @@ def _apply_graph_command(
 
     if isinstance(command, AddEdgeCommand):
         if any(edge.id == command.edge.id for edge in document.edges):
-            raise CollaborationCommandRejectedError(
+            raise _rejected(
                 code="duplicate_edge",
                 message=f"Graph command adds duplicate edge {command.edge.id}",
             )
-        return name, document.with_topology(
+        return document.with_topology(
             edges=(*document.edges, command.edge),
         )
 
@@ -748,11 +870,11 @@ def _apply_graph_command(
         ):
             raise _field_conflict(f"Edge {command.edge.id} changed")
         if command.edge.id != command.expected_edge.id:
-            raise CollaborationCommandRejectedError(
+            raise _rejected(
                 code="invalid_edge_update",
                 message="Update edge command cannot change edge id",
             )
-        return name, document.with_topology(
+        return document.with_topology(
             edges=tuple(
                 command.edge if edge.id == command.edge.id else edge
                 for edge in document.edges
@@ -761,7 +883,7 @@ def _apply_graph_command(
 
     if isinstance(command, RemoveEdgesCommand):
         removed_edges = set(command.edge_ids)
-        return name, document.with_topology(
+        return document.with_topology(
             edges=tuple(
                 edge for edge in document.edges if edge.id not in removed_edges
             ),
@@ -769,11 +891,11 @@ def _apply_graph_command(
 
     if isinstance(command, AddOriginCommand):
         if any(origin.id == command.origin.id for origin in document.origins):
-            raise CollaborationCommandRejectedError(
+            raise _rejected(
                 code="duplicate_origin",
                 message=f"Graph command adds duplicate origin {command.origin.id}",
             )
-        return name, document.with_topology(
+        return document.with_topology(
             origins=(*document.origins, command.origin),
         )
 
@@ -785,11 +907,11 @@ def _apply_graph_command(
         ):
             raise _field_conflict(f"Origin {command.origin.id} changed")
         if command.origin.id != command.expected_origin.id:
-            raise CollaborationCommandRejectedError(
+            raise _rejected(
                 code="invalid_origin_update",
                 message="Update origin command cannot change origin id",
             )
-        return name, document.with_topology(
+        return document.with_topology(
             origins=tuple(
                 command.origin if origin.id == command.origin.id else origin
                 for origin in document.origins
@@ -798,7 +920,7 @@ def _apply_graph_command(
 
     if isinstance(command, RemoveOriginsCommand):
         removed_origins = set(command.origin_ids)
-        return name, document.with_topology(
+        return document.with_topology(
             origins=tuple(
                 origin
                 for origin in document.origins
@@ -807,10 +929,10 @@ def _apply_graph_command(
         )
 
     if isinstance(command, ReplaceDocumentCommand):
-        return command.name, command.document
+        return command.document
 
     if isinstance(command, ReplacePresentationCommand):
-        return name, document.with_topology(presentation=command.presentation)
+        return document.with_topology(presentation=command.presentation)
 
     if isinstance(command, MoveArtifactViewersCommand):
         for position in command.positions:
@@ -819,7 +941,7 @@ def _apply_graph_command(
             position.viewer_id: GraphPoint(x=position.x, y=position.y)
             for position in command.positions
         }
-        return name, document.with_topology(
+        return document.with_topology(
             presentation=GraphPresentationDocument(
                 viewers=tuple(
                     viewer.model_copy(update={"position": positions[viewer.id]})
@@ -840,7 +962,7 @@ def _apply_graph_command(
             position.annotation_id: GraphPoint(x=position.x, y=position.y)
             for position in command.positions
         }
-        return name, document.with_topology(
+        return document.with_topology(
             presentation=GraphPresentationDocument(
                 viewers=document.presentation.viewers,
                 links=document.presentation.links,
@@ -854,22 +976,226 @@ def _apply_graph_command(
             ),
         )
 
-    raise CollaborationCommandRejectedError(
+    raise _rejected(
         code="unsupported_command",
         message=f"Unsupported graph command kind {command.kind!r}",
     )
 
 
+def _graph_or_raise(
+    document: ProjectDocument,
+    graph_id: str,
+) -> GraphDefinition:
+    """The Graph a project command names, or the rejection the room reports."""
+    try:
+        return document.get_graph(graph_id)
+    except UnknownGraphError as exc:
+        raise _rejected(
+            code="unknown_graph",
+            message=f"Project has no graph {graph_id!r}",
+        ) from exc
+
+
+#: The document rules a project command can break, with the code each reports.
+#: Anything else the document rejects is an invalid document.
+_DOCUMENT_REJECTIONS: tuple[tuple[type[ProjectDocumentError], str], ...] = (
+    (GraphHasCallersError, "graph_has_callers"),
+    (GraphCallCycleError, "graph_call_cycle"),
+    (MissingCalleeError, "missing_callee"),
+    (DuplicateGraphError, "duplicate_graph"),
+    (UnknownGraphError, "unknown_graph"),
+)
+
+
+def _document_rejection(
+    exc: ProjectDocumentError | ValidationError,
+) -> CollaborationCommandRejectedError:
+    """Name the rule a broken document broke, in the code the room reports."""
+    if isinstance(exc, ValidationError):
+        return _rejected(
+            code="invalid_document",
+            message=_validation_summary("Project", exc),
+        )
+    for error_type, code in _DOCUMENT_REJECTIONS:
+        if isinstance(exc, error_type):
+            return _rejected(code=code, message=str(exc))
+    return _rejected(code="invalid_document", message=str(exc))
+
+
+def apply_project_commands(
+    *,
+    name: str,
+    document: ProjectDocument,
+    commands: Sequence[ProjectCommand],
+) -> tuple[str, ProjectDocument]:
+    """Apply an ordered batch of project commands, all of them or none.
+
+    The batch is a fold over pure document values, so a rejection part-way
+    through leaves the caller's values untouched. The rejection names the index
+    that broke, because the client resends the batch from there.
+    """
+    if not commands:
+        raise ValueError("Project command batch must not be empty")
+
+    current_name = name
+    current = document
+    for index, command in enumerate(commands):
+        try:
+            current_name, current = _apply_project_command(
+                name=current_name,
+                document=current,
+                command=command,
+            )
+        except CollaborationCommandRejectedError as exc:
+            raise _rejected(
+                code=exc.error_code,
+                message=f"Project command batch rejected at index {index}: {exc}",
+            ) from exc
+        except (ProjectDocumentError, ValidationError) as exc:
+            rejection = _document_rejection(exc)
+            raise _rejected(
+                code=rejection.error_code,
+                message=(
+                    f"Project command batch rejected at index {index}: {rejection}"
+                ),
+            ) from exc
+    return current_name, current
+
+
+def _apply_project_command(
+    *,
+    name: str,
+    document: ProjectDocument,
+    command: ProjectCommand,
+) -> tuple[str, ProjectDocument]:
+    if isinstance(command, RenameProjectCommand):
+        if name != command.expected_name:
+            raise _field_conflict(
+                f"Project name conflict: expected {command.expected_name!r}, "
+                f"actual {name!r}"
+            )
+        return command.name, document
+
+    if isinstance(command, AddGraphCommand):
+        if any(graph.id == command.graph_id for graph in document.graphs):
+            raise _rejected(
+                code="duplicate_graph",
+                message=f"Project already has a graph {command.graph_id!r}",
+            )
+        return name, document.add_graph(
+            GraphDefinition(
+                id=command.graph_id,
+                name=command.name,
+                document=command.document,
+            )
+        )
+
+    if isinstance(command, RenameGraphCommand):
+        graph = _graph_or_raise(document, command.graph_id)
+        if graph.name != command.expected_name:
+            raise _field_conflict(
+                f"Graph {command.graph_id} name conflict: expected "
+                f"{command.expected_name!r}, actual {graph.name!r}"
+            )
+        return name, document.rename_graph(command.graph_id, command.name)
+
+    if isinstance(command, RemoveGraphCommand):
+        return name, document.remove_graph(command.graph_id)
+
+    if isinstance(command, RefreshNodeCommand):
+        graph = _graph_or_raise(document, command.graph_id)
+        node = next(
+            (
+                candidate
+                for candidate in graph.document.nodes
+                if candidate.id == command.node_id
+            ),
+            None,
+        )
+        if node is None:
+            raise _rejected(
+                code="missing_node",
+                message=f"Graph {command.graph_id} has no node {command.node_id!r}",
+            )
+        if node.kind == CALL_NODE_KIND:
+            raise _rejected(
+                code="not_refreshable",
+                message=(
+                    f"Graph {command.graph_id} call node {command.node_id!r} is "
+                    "fresh with its callee and has no refresh generation"
+                ),
+            )
+        current = graph.refresh_generations.get(command.node_id, 0)
+        if current != command.expected_generation:
+            raise _field_conflict(
+                f"Refresh generation on node {command.node_id} changed: expected "
+                f"{command.expected_generation}, actual {current}"
+            )
+        return name, document.set_refresh_generation(
+            command.graph_id,
+            command.node_id,
+            current + 1,
+        )
+
+    if isinstance(command, AddCallNodeCommand):
+        caller = _graph_or_raise(document, command.graph_id)
+        if not any(graph.id == command.callee_graph_id for graph in document.graphs):
+            raise _rejected(
+                code="missing_callee",
+                message=(
+                    f"Cannot call graph {command.callee_graph_id!r}: the Project "
+                    "has no such graph"
+                ),
+            )
+        if any(node.id == command.node_id for node in caller.document.nodes):
+            raise _rejected(
+                code="duplicate_node",
+                message=(
+                    f"Graph {command.graph_id} already has a node {command.node_id!r}"
+                ),
+            )
+        call_node = GraphNode(
+            kind=CALL_NODE_KIND,
+            id=command.node_id,
+            operator_id=command.callee_graph_id,
+            operator_version=CALL_NODE_OPERATOR_VERSION,
+            position=command.position,
+        )
+        return name, document.replace_graph_document(
+            command.graph_id,
+            caller.document.with_topology(
+                nodes=(*caller.document.nodes, call_node),
+            ),
+        )
+
+    if isinstance(command, InGraphCommand):
+        graph = _graph_or_raise(document, command.graph_id)
+        return name, document.replace_graph_document(
+            command.graph_id,
+            apply_graph_command(
+                document=graph.document,
+                command=command.command,
+            ),
+        )
+
+    raise _rejected(
+        code="unsupported_command",
+        message=f"Unsupported project command kind {command.kind!r}",
+    )
+
+
 @dataclass
-class CollaborativeGraphHead:
+class ProjectHead:
+    """Where a Project's collaboration stands: its sequence and its document."""
+
     workspace_id: UUID
-    graph_id: UUID
+    project_id: UUID
     room_epoch: UUID
     collaboration_sequence: int
     checkpoint_sequence: int
     checkpoint_revision: int
     name: str
-    document: GraphDocument
+    document: ProjectDocument
     updated_at: datetime = field(default_factory=_utc_now)
 
     def __post_init__(self) -> None:
@@ -881,32 +1207,26 @@ class CollaborativeGraphHead:
             raise ValueError("Checkpoint sequence cannot exceed collaboration sequence")
         if self.checkpoint_revision < 1:
             raise ValueError("Checkpoint revision must be at least 1")
-        self.name = self.name.strip()
-        if self.name == "":
-            raise ValueError("Collaborative head name must not be blank")
-        if len(self.name) > 160:
-            raise ValueError("Collaborative head name must be at most 160 characters")
+        self.name = validated_project_name(self.name)
         if self.updated_at.tzinfo is None:
-            raise ValueError("Collaborative head timestamp must be timezone-aware")
+            raise ValueError("Project head timestamp must be timezone-aware")
 
     @property
     def is_fully_checkpointed(self) -> bool:
         return self.checkpoint_sequence == self.collaboration_sequence
 
-    def apply_accepted_command(
+    def apply_accepted_batch(
         self,
         *,
         name: str,
-        document: GraphDocument,
+        document: ProjectDocument,
         updated_at: datetime | None = None,
     ) -> None:
+        """Take one accepted batch: the sequence advances exactly once."""
         stamp = updated_at or _utc_now()
         if stamp.tzinfo is None:
-            raise ValueError("Collaborative head timestamp must be timezone-aware")
-        validated_name = name.strip()
-        if validated_name == "":
-            raise ValueError("Collaborative head name must not be blank")
-        self.name = validated_name
+            raise ValueError("Project head timestamp must be timezone-aware")
+        self.name = validated_project_name(name)
         self.document = document
         self.collaboration_sequence += 1
         self.updated_at = stamp
@@ -926,26 +1246,26 @@ class CollaborativeGraphHead:
             raise ValueError("Checkpoint revision must be at least 1")
         stamp = updated_at or _utc_now()
         if stamp.tzinfo is None:
-            raise ValueError("Collaborative head timestamp must be timezone-aware")
+            raise ValueError("Project head timestamp must be timezone-aware")
         self.checkpoint_sequence = sequence
         self.checkpoint_revision = revision
         self.updated_at = stamp
 
     @classmethod
-    def for_existing_saved_graph(
+    def for_existing_project(
         cls,
         *,
         workspace_id: UUID,
-        graph_id: UUID,
+        project_id: UUID,
         name: str,
-        document: GraphDocument,
+        document: ProjectDocument,
         checkpoint_revision: int,
         room_epoch: UUID | None = None,
         updated_at: datetime | None = None,
     ) -> Self:
         return cls(
             workspace_id=workspace_id,
-            graph_id=graph_id,
+            project_id=project_id,
             room_epoch=uuid4() if room_epoch is None else room_epoch,
             collaboration_sequence=0,
             checkpoint_sequence=0,
@@ -956,11 +1276,11 @@ class CollaborativeGraphHead:
         )
 
 
-class GraphCommandReceipt(BaseModel):
+class ProjectCommandReceipt(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
 
     workspace_id: UUID
-    graph_id: UUID
+    project_id: UUID
     command_id: UUID
     command_hmac: bytes
     hmac_key_version: int
@@ -979,14 +1299,14 @@ class GraphCommandReceipt(BaseModel):
         return value
 
 
-class GraphCheckpointMapping(BaseModel):
+class ProjectCheckpointMapping(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
 
     workspace_id: UUID
-    graph_id: UUID
+    project_id: UUID
     room_epoch: UUID
     collaboration_sequence: int
-    saved_revision: int
+    checkpoint_revision: int
     created_at: datetime = Field(default_factory=_utc_now)
 
     @field_validator("created_at")
@@ -999,28 +1319,37 @@ class GraphCheckpointMapping(BaseModel):
 
 __all__ = [
     "AddEdgeCommand",
+    "AddGraphCommand",
     "AddNodeCommand",
     "AddOriginCommand",
+    "AddCallNodeCommand",
     "ClearNodeArtifactTypeBindingCommand",
     "CollaborationActorKind",
-    "CollaborativeGraphHead",
     "CommandReceiptOutcome",
     "DuplicateNodeCommand",
     "GRAPH_COMMAND_ADAPTER",
-    "GraphCheckpointMapping",
     "GraphCommand",
     "GraphCommandKind",
-    "GraphCommandReceipt",
+    "InGraphCommand",
     "MoveAnnotationPosition",
     "MoveAnnotationsCommand",
     "MoveArtifactViewerPosition",
     "MoveArtifactViewersCommand",
     "MoveNodePosition",
     "MoveNodesCommand",
+    "PROJECT_COMMAND_ADAPTER",
+    "ProjectCheckpointMapping",
+    "ProjectCommand",
+    "ProjectCommandKind",
+    "ProjectCommandReceipt",
+    "ProjectHead",
+    "RefreshNodeCommand",
     "RemoveEdgesCommand",
+    "RemoveGraphCommand",
     "RemoveNodesCommand",
     "RemoveOriginsCommand",
     "RenameGraphCommand",
+    "RenameProjectCommand",
     "ReplaceDocumentCommand",
     "ReplacePresentationCommand",
     "SetNodeArtifactTypeBindingCommand",
@@ -1031,9 +1360,11 @@ __all__ = [
     "UpdateNodeLayoutCommand",
     "UpdateOriginCommand",
     "apply_graph_command",
-    "canonical_command_payload",
+    "apply_project_commands",
+    "canonical_batch_payload",
     "command_hmac_digest",
     "command_requires_exact_sequence",
-    "empty_collaborative_document",
+    "empty_project_document",
     "sanitize_document_for_cross_workspace_copy",
+    "sanitize_project_for_cross_workspace_copy",
 ]

@@ -1,10 +1,15 @@
+"""The value types of one Graph's canvas: nodes, edges, origins and presentation.
+
+These are the shape a single Graph is drawn with. They carry no identity, no
+revision and no filing: the aggregate that owns them is a Project Graph, in
+``grafy_core.kernel.project.GraphDefinition``, and the object that holds them is
+``grafy_core.domain.projects.Project``.
+"""
+
 from collections.abc import Mapping
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from math import isfinite
 from types import MappingProxyType
 from typing import Annotated, ClassVar, Literal, Self, cast
-from uuid import UUID, uuid4
 
 from pydantic import (
     BaseModel,
@@ -18,8 +23,6 @@ from pydantic import (
 
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
 from grafy_core.conversions import MAX_ARTIFACT_CONVERSION_HOPS
-from grafy_core.domain.errors import SavedGraphRevisionConflictError
-from grafy_core.domain.identity import WorkspaceKind
 
 GraphIdentifier = Annotated[
     str,
@@ -602,241 +605,3 @@ class GraphDocument(GraphValue):
             origins=self.origins if origins is None else origins,
             presentation=(self.presentation if presentation is None else presentation),
         )
-
-
-def _utc_now() -> datetime:
-    return datetime.now(UTC)
-
-
-def _validated_graph_name(value: str) -> str:
-    name = value.strip()
-    if name == "":
-        raise ValueError("Saved graph name must not be blank")
-    if len(name) > 160:
-        raise ValueError("Saved graph name must be at most 160 characters")
-    return name
-
-
-def _validated_folder_name(value: str) -> str:
-    name = value.strip()
-    if name == "":
-        raise ValueError("Graph folder name must not be blank")
-    if len(name) > 160:
-        raise ValueError("Graph folder name must be at most 160 characters")
-    return name
-
-
-@dataclass
-class GraphFolder:
-    workspace_id: UUID
-    name: str
-    id: UUID = field(default_factory=uuid4)
-    created_at: datetime = field(default_factory=_utc_now)
-    updated_at: datetime = field(default_factory=_utc_now)
-
-    def __post_init__(self) -> None:
-        self.name = _validated_folder_name(self.name)
-        if self.created_at.tzinfo is None or self.updated_at.tzinfo is None:
-            raise ValueError("Graph folder timestamps must be timezone-aware")
-
-    def rename(self, name: str, *, updated_at: datetime | None = None) -> None:
-        replacement_time = updated_at or _utc_now()
-        if replacement_time.tzinfo is None:
-            raise ValueError("Graph folder timestamps must be timezone-aware")
-        self.name = _validated_folder_name(name)
-        self.updated_at = replacement_time
-
-
-@dataclass
-class UserGraphState:
-    workspace_id: UUID
-    graph_id: UUID
-    user_id: UUID
-    starred: bool = False
-    last_opened_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        if self.last_opened_at is not None and self.last_opened_at.tzinfo is None:
-            raise ValueError("Graph last-opened timestamp must be timezone-aware")
-
-    def set_starred(self, starred: bool) -> None:
-        self.starred = starred
-
-    def record_open(self, *, opened_at: datetime | None = None) -> None:
-        opened_time = opened_at or _utc_now()
-        if opened_time.tzinfo is None:
-            raise ValueError("Graph last-opened timestamp must be timezone-aware")
-        if self.last_opened_at is None or opened_time > self.last_opened_at:
-            self.last_opened_at = opened_time
-
-
-@dataclass
-class GraphOrganization:
-    workspace_id: UUID
-    graph_id: UUID
-    folder_id: UUID | None = None
-    archived_at: datetime | None = None
-    updated_at: datetime = field(default_factory=_utc_now)
-
-    def __post_init__(self) -> None:
-        if self.updated_at.tzinfo is None:
-            raise ValueError("Graph organization timestamp must be timezone-aware")
-        if self.archived_at is not None and self.archived_at.tzinfo is None:
-            raise ValueError("Graph archive timestamp must be timezone-aware")
-
-    @property
-    def is_archived(self) -> bool:
-        return self.archived_at is not None
-
-    def assign_folder(
-        self,
-        folder_id: UUID | None,
-        *,
-        updated_at: datetime | None = None,
-    ) -> None:
-        replacement_time = updated_at or _utc_now()
-        if replacement_time.tzinfo is None:
-            raise ValueError("Graph organization timestamp must be timezone-aware")
-        self.folder_id = folder_id
-        self.updated_at = replacement_time
-
-    def archive(self, *, archived_at: datetime | None = None) -> None:
-        archive_time = archived_at or _utc_now()
-        if archive_time.tzinfo is None:
-            raise ValueError("Graph archive timestamp must be timezone-aware")
-        if self.archived_at is None:
-            self.archived_at = archive_time
-            self.updated_at = archive_time
-
-    def restore(self, *, restored_at: datetime | None = None) -> None:
-        restore_time = restored_at or _utc_now()
-        if restore_time.tzinfo is None:
-            raise ValueError("Graph restore timestamp must be timezone-aware")
-        if self.archived_at is not None:
-            self.archived_at = None
-            self.updated_at = restore_time
-
-
-@dataclass
-class SavedGraph:
-    workspace_id: UUID
-    name: str
-    document: GraphDocument
-    created_by_user_id: UUID | None = None
-    id: UUID = field(default_factory=uuid4)
-    revision: int = 1
-    created_at: datetime = field(default_factory=_utc_now)
-    updated_at: datetime = field(default_factory=_utc_now)
-
-    def __post_init__(self) -> None:
-        self.name = _validated_graph_name(self.name)
-        if self.revision < 1:
-            raise ValueError("Saved graph revision must be at least 1")
-        if self.created_at.tzinfo is None or self.updated_at.tzinfo is None:
-            raise ValueError("Saved graph timestamps must be timezone-aware")
-
-    def replace(
-        self,
-        *,
-        name: str,
-        document: GraphDocument,
-        expected_revision: int,
-        updated_at: datetime | None = None,
-    ) -> None:
-        self.ensure_revision(expected_revision)
-        validated_name = _validated_graph_name(name)
-        replacement_time = updated_at or _utc_now()
-        if replacement_time.tzinfo is None:
-            raise ValueError("Saved graph timestamps must be timezone-aware")
-
-        self.name = validated_name
-        self.document = document
-        self.revision += 1
-        self.updated_at = replacement_time
-
-    def snapshot(self) -> "SavedGraphRevision":
-        return SavedGraphRevision(
-            workspace_id=self.workspace_id,
-            graph_id=self.id,
-            revision=self.revision,
-            name=self.name,
-            document=self.document,
-            created_at=self.updated_at,
-        )
-
-    def ensure_revision(self, expected_revision: int) -> None:
-        if expected_revision != self.revision:
-            raise SavedGraphRevisionConflictError(
-                graph_id=self.id,
-                expected_revision=expected_revision,
-                actual_revision=self.revision,
-            )
-
-
-@dataclass(frozen=True, slots=True)
-class SavedGraphRevision:
-    workspace_id: UUID
-    graph_id: UUID
-    revision: int
-    name: str
-    document: GraphDocument
-    created_at: datetime
-
-    @property
-    def id(self) -> UUID:
-        return self.graph_id
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "name", _validated_graph_name(self.name))
-        if self.revision < 1:
-            raise ValueError("Saved graph snapshot revision must be at least 1")
-        if self.created_at.tzinfo is None:
-            raise ValueError("Saved graph snapshot timestamp must be timezone-aware")
-
-
-@dataclass(frozen=True, slots=True)
-class GraphBrowserLocation:
-    id: UUID
-    slug: str
-    name: str
-    kind: WorkspaceKind
-
-
-@dataclass(frozen=True, slots=True)
-class GraphBrowserFolder:
-    id: UUID
-    name: str
-
-
-@dataclass(frozen=True, slots=True)
-class GraphBrowserCreator:
-    id: UUID
-    display_name: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class GraphBrowserDraft:
-    name: str
-    head_sequence: int
-    checkpoint_sequence: int
-    checkpoint_revision: int
-    updated_at: datetime
-    node_count: int
-    edge_count: int
-
-
-@dataclass(frozen=True, slots=True)
-class GraphBrowserItem:
-    id: UUID
-    draft: GraphBrowserDraft
-    location: GraphBrowserLocation
-    folder: GraphBrowserFolder | None
-    archived_at: datetime | None
-    starred: bool
-    last_opened_at: datetime | None
-    organization_updated_at: datetime | None
-    creator: GraphBrowserCreator | None
-
-    @property
-    def is_archived(self) -> bool:
-        return self.archived_at is not None
