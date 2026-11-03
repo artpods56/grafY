@@ -4,17 +4,23 @@ One Project, one room, one command sequence. These routes are the only HTTP door
 a Project: the browser and filing surface on :class:`ProjectService`, the head, the
 command batches, the checkpoints and the restore on :class:`CollaborationService`.
 
-Three rules hold on every route here:
+Four rules hold on every route here:
 
 * **Tenancy first.** The Project is always read under the workspace in the path, so a
   Project of another Workspace is a 404 and never a 403 with a hint that it exists.
+* **Effective permission is role ∩ PAT scope ∩ capability.** A route asks for it through
+  :func:`require_workspace_capability`, the only place the intersection is computed; a
+  route that declares one capability less than its service requires answers for a
+  narrower token than it serves.
 * **A batch is the unit of acceptance.** ``POST /commands`` answers for the whole
   batch: accepted, with the new head and the receipt, or rejected with the head
   untouched.
 * **An accepted change is published.** Peers hear about it on the room, and the Run
-  service re-derives the Project's instances. The way back from either is a restore.
+  service re-derives the Project's instances. The way back from either is a restore, and
+  neither outcome is renegotiated once the write committed.
 """
 
+import logging
 from typing import Annotated
 from uuid import UUID
 
@@ -33,7 +39,7 @@ from grafy_core.domain.errors import (
 )
 from grafy_core.domain.identity import ActorContext, WorkspaceCapability
 
-from grafy_api.app_state import get_resources
+from grafy_api.app_state import AppResources, get_resources
 from grafy_api.project_contracts import (
     AssignProjectFolderRequest,
     CheckpointProjectRequest,
@@ -70,12 +76,43 @@ from grafy_api.v1.routes.projects.dependencies import (
     ProjectDependency,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/workspaces/{workspace_id}/projects", tags=["projects"])
 browser_router = APIRouter(prefix="/me/projects", tags=["project browser"])
 folder_router = APIRouter(
     prefix="/workspaces/{workspace_id}/project-folders",
     tags=["project folders"],
 )
+
+
+async def _rederive_instances(
+    resources: AppResources,
+    *,
+    workspace_id: UUID,
+    project_id: UUID,
+) -> None:
+    """Re-derive a Project's instances after an accepted change, never at its cost.
+
+    By the time this runs the write has committed, its receipt is in the response body and
+    its peers have been told, so a derivation this build cannot make — a stored document
+    naming an operator no Plugin release registers — cannot honestly turn the caller's
+    answer into a rejection. It is logged and left to the next Run, which is exactly what
+    the room path does for the same call. A failure an operator cannot see is a bug that
+    reports itself as success, so this is the one place both HTTP paths report it.
+    """
+
+    try:
+        await resources.runs.project_changed(
+            workspace_id=workspace_id,
+            project_id=project_id,
+        )
+    except Exception:
+        logger.exception(
+            "project_http_instance_publish_failed workspace_id=%s project_id=%s",
+            workspace_id,
+            project_id,
+        )
 
 
 @browser_router.get("", response_model=ProjectBrowserListResponse)
@@ -166,6 +203,11 @@ async def list_projects(
     return ProjectListResponse.from_items(items)
 
 
+# Creation writes checkpoint 1 and the head in the same breath, so it needs the
+# checkpointing capability as well as the creating one. The service asks for it too, but it
+# can only ever see the role: a personal access token's scope is known at the route and
+# nowhere below, so a token scoped for creating alone used to open a Project it was
+# already checkpointing on the way in.
 @router.post(
     "",
     response_model=ProjectResponse,
@@ -175,6 +217,9 @@ async def create_project(
     request: CreateProjectRequest,
     collaboration: CollaborationDependency,
     access: require_workspace_capability(WorkspaceCapability.CREATE_PROJECT),
+    checkpoint_access: require_workspace_capability(
+        WorkspaceCapability.CHECKPOINT_PROJECT
+    ),
 ) -> ProjectResponse:
     try:
         creation = await collaboration.create_project(
@@ -351,9 +396,8 @@ async def submit_project_commands(
         )
         # The document moved, so every instance of this Project reads against new
         # fingerprints. What is in flight keeps running; this only re-derives state.
-        await resources.runs.project_changed(
-            workspace_id=access.workspace_id,
-            project_id=project_id,
+        await _rederive_instances(
+            resources, workspace_id=access.workspace_id, project_id=project_id
         )
     return SubmitProjectCommandResponse(
         head=ProjectHeadResponse.from_head(submission.head),
@@ -432,6 +476,11 @@ async def get_project_checkpoint(
     return ProjectCheckpointResponse.from_checkpoint(checkpoint)
 
 
+# Both capabilities are required here, because both are exercised: a restore is an edit of
+# the Project and it lands as a checkpoint. The service has always asked for
+# `checkpoint_project` and keeps asking, but against the role alone, so a token scoped to
+# `edit_project` used to pass the route and then satisfy that role-only check — which is how
+# a backup token ended up rewriting a room and forcing every participant to rehydrate.
 @router.post(
     "/{project_id}/checkpoints/{revision}/restore",
     response_model=CheckpointProjectResponse,
@@ -443,6 +492,9 @@ async def restore_project_checkpoint(
     http_request: Request,
     collaboration: CollaborationDependency,
     access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
+    checkpoint_access: require_workspace_capability(
+        WorkspaceCapability.CHECKPOINT_PROJECT
+    ),
 ) -> CheckpointProjectResponse:
     """Bring a retained checkpoint back as the current state.
 
@@ -475,9 +527,8 @@ async def restore_project_checkpoint(
         project_id=project_id,
         head=outcome.head,
     )
-    await resources.runs.project_changed(
-        workspace_id=access.workspace_id,
-        project_id=project_id,
+    await _rederive_instances(
+        resources, workspace_id=access.workspace_id, project_id=project_id
     )
     return CheckpointProjectResponse(
         head=ProjectHeadResponse.from_head(outcome.head),
