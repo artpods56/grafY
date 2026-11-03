@@ -1210,17 +1210,17 @@ def downgrade() -> None:
     )
     op.drop_table("agent_conversation_events")
     op.drop_index(
-        "ix_agent_conversations_workspace_project_graph_agent",
-        table_name="agent_conversations",
-    )
-    op.drop_table("agent_conversations")
-    op.drop_index(
         "uq_agent_turns_one_running_per_conversation", table_name="agent_turns"
     )
     op.drop_index(
         "ix_agent_turns_workspace_conversation_created", table_name="agent_turns"
     )
     op.drop_table("agent_turns")
+    op.drop_index(
+        "ix_agent_conversations_workspace_project_graph_agent",
+        table_name="agent_conversations",
+    )
+    op.drop_table("agent_conversations")
     op.drop_index(
         "ix_agent_keys_workspace_project_graph", table_name="agent_keys"
     )
