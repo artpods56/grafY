@@ -250,6 +250,8 @@ async def test_forking_continues_without_touching_the_source() -> None:
         at_sequence=3,
         author_user_id=OTHER_AUTHOR,
     )
+    assert fork.next_sequence == 4
+    assert fork == await owner.get(workspace_id=WORKSPACE, conversation_id=fork.id)
     await run_one_turn(owner, fork.id, uuid4(), "a different direction")
 
     copied = await owner.read_events(workspace_id=WORKSPACE, conversation_id=fork.id)

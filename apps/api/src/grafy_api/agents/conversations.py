@@ -117,6 +117,7 @@ class AgentConversationService:
                         created_at=event.created_at,
                     )
                 )
+                fork = fork.appended(at=event.created_at)
             await unit_of_work.commit()
         return fork
 
