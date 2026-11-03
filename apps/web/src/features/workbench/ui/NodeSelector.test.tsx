@@ -57,7 +57,7 @@ function node(
     inputs,
     outputs,
     catalog_visible: true,
-    origin: pluginSlug === "graph.module" ? "module" : "builtin",
+    origin: "builtin",
     runnable: true,
     ...overrides,
   };
@@ -71,28 +71,6 @@ function registry(): NodeRegistry {
   const layerInput = port("layers", "input", "geo.map_layer");
   const mapOutput = port("map", "output", "geo.map_document");
   const imageInput = port("image", "input", "image.raster");
-  const firstModuleRelease = node(
-    "graph.module.graph-1",
-    "Normalize invoices",
-    "graph.module",
-    [textInput],
-    [tableOutput],
-    {
-      operator_version: 1,
-      catalog_visible: false,
-      module_id: "module-1",
-      module_graph_id: "graph-1",
-      module_graph_revision: 1,
-      is_current_library_release: false,
-    },
-  );
-  const currentModuleRelease = {
-    ...firstModuleRelease,
-    operator_version: 2,
-    catalog_visible: true,
-    module_graph_revision: 2,
-    is_current_library_release: true,
-  };
 
   return {
     plugins: [
@@ -101,12 +79,6 @@ function registry(): NodeRegistry {
         title: "Built-in",
         origin: "builtin",
         entry_kind: "plugin",
-      },
-      {
-        slug: "graph.module",
-        title: "Workspace library",
-        origin: "module",
-        entry_kind: "module",
       },
       {
         slug: "external.mistral",
@@ -175,8 +147,6 @@ function registry(): NodeRegistry {
         [layerInput],
         [mapOutput],
       ),
-      firstModuleRelease,
-      currentModuleRelease,
       node(
         "mistral.ocr.process",
         "Read image with OCR",
@@ -318,10 +288,9 @@ describe("NodeSelector", () => {
       ),
     ];
     expect(filters.map((filter) => filter.getAttribute("aria-label"))).toEqual([
-      "All, 6 nodes",
+      "All, 5 nodes",
       "Built-in, 4 nodes",
       "Mistral OCR, 1 node",
-      "Workspace library, 1 node",
     ]);
 
     // Source category scopes the list to one provider plugin.
@@ -510,18 +479,25 @@ describe("NodeSelector", () => {
     });
     expect(portSelect?.value).toBe("output:text");
     expect(portSelect?.selectedOptions[0]?.textContent).toBe("Text output");
-
-    await React.act(async () =>
-      buttonNamed("Inspect Normalize invoices").click(),
-    );
     expect(dialog().querySelector("aside")?.textContent).toContain(
-      "Module contract · release 2",
+      "Transform text",
+    );
+
+    // Back to the input, where the suggestion comes from another node.
+    await React.act(async () => {
+      if (!portSelect) return;
+      portSelect.value = "input:text";
+      portSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await React.act(async () => buttonNamed("Inspect Enter text").click());
+    expect(dialog().querySelector("aside")?.textContent).toContain(
+      "Enter text description",
     );
     expect(
       options().find(
         (option) => option.getAttribute("aria-selected") === "true",
       )?.textContent,
-    ).toContain("Normalize invoices");
+    ).toContain("Enter text");
   });
 
   it("moves through results from the search field and inserts with Enter", async () => {
@@ -588,7 +564,6 @@ describe("NodeSelector", () => {
     expect(headings()).toEqual([
       "node-selector-group-source:builtin",
       "node-selector-group-source:external.mistral",
-      "node-selector-group-workspace-library",
     ]);
 
     await enterSearch("text");
@@ -601,70 +576,13 @@ describe("NodeSelector", () => {
       compatibility: { direction: "downstream", port: contextPort },
     });
 
-    // Grouped by source: the built-in node, then the Module.
+    // Grouped by source: the built-in node that takes this artifact.
     expect(options().map((option) => option.textContent)).toEqual([
       expect.stringContaining("Transform text"),
-      expect.stringContaining("Normalize invoices"),
     ]);
     expect(dialog().textContent).toContain(
       "Showing nodes that can connect from Source text.",
     );
-  });
-
-  it("shows the chosen Module release and inserts exactly that revision", async () => {
-    const onAddNode = vi.fn();
-    const onOpenGraph = vi.fn();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    await renderSelector({ onAddNode, onOpenGraph });
-
-    await React.act(async () =>
-      buttonNamed("Workspace library, 1 node").click(),
-    );
-    expect(options()[0]?.textContent).toContain("Normalize invoices");
-    expect(dialog().querySelector("aside")?.textContent).toContain(
-      "Module contract · release 2",
-    );
-    await React.act(async () => buttonNamed("Open source graph").click());
-    expect(onOpenGraph).toHaveBeenCalledWith("graph-1");
-
-    const release = dialog().querySelector<HTMLSelectElement>(
-      '[aria-label="Module release"]',
-    );
-    expect(release?.options).toHaveLength(2);
-    await React.act(async () => {
-      if (!release) return;
-      release.value = "graph.module.graph-1@1";
-      release.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    await React.act(async () => buttonNamed("Insert module call").click());
-
-    expect(window.confirm).not.toHaveBeenCalled();
-    expect(onAddNode.mock.calls[0]?.[0].operator_version).toBe(1);
-    expect(onAddNode.mock.calls[0]?.[0].module_graph_revision).toBe(1);
-  });
-
-  it("educates from an empty Workspace library and keeps its action available", async () => {
-    const emptyRegistry = registry();
-    const onOpenWorkspaceLibrary = vi.fn();
-    await renderSelector({
-      registry: {
-        ...emptyRegistry,
-        nodes: emptyRegistry.nodes.filter(
-          (spec) => spec.plugin_slug !== "graph.module",
-        ),
-      },
-      onOpenWorkspaceLibrary,
-    });
-
-    await React.act(async () =>
-      buttonNamed("Workspace library, 0 nodes").click(),
-    );
-    expect(options()).toHaveLength(0);
-    expect(dialog().textContent).toContain(
-      "No published Modules in this workspace yet.",
-    );
-    await React.act(async () => buttonNamed("Open workspace library").click());
-    expect(onOpenWorkspaceLibrary).toHaveBeenCalledOnce();
   });
 
   it("renders a no-result state and resets to All nodes", async () => {
@@ -682,7 +600,7 @@ describe("NodeSelector", () => {
 
     expect(searchInput().value).toBe("");
     expect(options().length).toBeGreaterThan(0);
-    expect(buttonNamed("All, 6 nodes").getAttribute("aria-pressed")).toBe(
+    expect(buttonNamed("All, 5 nodes").getAttribute("aria-pressed")).toBe(
       "true",
     );
   });
@@ -709,7 +627,7 @@ describe("NodeSelector", () => {
     expect(options()[0]?.getAttribute("aria-selected")).toBe("true");
     expect(status?.getAttribute("aria-live")).toBe("polite");
     expect(status?.getAttribute("aria-atomic")).toBe("true");
-    expect(status?.textContent).toBe("6 nodes.");
+    expect(status?.textContent).toBe("5 nodes.");
 
     await rendered.render({ loading: true });
     expect(dialog().querySelector('[role="status"]')?.textContent).toBe(

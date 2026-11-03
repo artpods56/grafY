@@ -38,12 +38,6 @@ vi.mock("./WorkspaceMembersDialog", () => ({
   WorkspaceMembersDialog: () => <button type="button">Manage members</button>,
 }));
 
-vi.mock("./WorkspaceLibraryDialog", () => ({
-  WorkspaceLibraryDialog: ({ triggerLabel }: { triggerLabel: string }) => (
-    <button type="button">{triggerLabel}</button>
-  ),
-}));
-
 import { WorkspaceSettings } from "./WorkspaceSettings";
 
 const roots = new Set<Root>();

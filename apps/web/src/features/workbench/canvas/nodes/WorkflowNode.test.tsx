@@ -681,56 +681,6 @@ function enterInputValue(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-describe("WorkflowNode module upgrade", () => {
-  it("shows an upgrade affordance when a newer library release exists", () => {
-    const onUpgradeModuleCall = vi.fn();
-    const data = createWorkflowNodeData({
-      operator_id: "graph.module.00000000-0000-4000-8000-000000000001",
-      operator_version: 1,
-      plugin_slug: "graph.module",
-      origin: "module",
-      title: "Normalize text",
-      description: "Module call",
-      catalog_visible: true,
-      runnable: true,
-      config_schema: {},
-      input_schema: {},
-      output_schema: {},
-      inputs: [],
-      outputs: [],
-      module_graph_id: "00000000-0000-4000-8000-000000000001",
-      module_graph_revision: 1,
-      module_id: "10000000-0000-4000-8000-000000000001",
-      is_current_library_release: false,
-    });
-    data.moduleUpgradeRelease = 2;
-    data.onUpgradeModuleCall = onUpgradeModuleCall;
-
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    React.act(() => {
-      root.render(
-        <WorkflowNodeCard
-          {...({
-            id: "module-call",
-            data,
-            selected: true,
-          } as React.ComponentProps<typeof WorkflowNodeCard>)}
-        />,
-      );
-    });
-
-    const upgradeButton = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Upgrade module call to release 2"]',
-    );
-    expect(upgradeButton).not.toBeNull();
-    expect(upgradeButton?.textContent).toContain("Upgrade to release 2");
-    React.act(() => upgradeButton?.click());
-    expect(onUpgradeModuleCall).toHaveBeenCalledWith("module-call");
-    React.act(() => root.unmount());
-  });
-});
-
 describe("WorkflowNode compatibility rendering", () => {
   it("renders an unsupported node with inert historical handles and removal", () => {
     const removeNode = vi.fn();

@@ -272,10 +272,6 @@ export interface WorkflowNodeData extends Record<string, unknown> {
     nodeId: string,
     artifactTypeBindings: WorkflowArtifactTypeBindings,
   ) => void;
-  onOpenModuleSource?: (graphId: string) => void;
-  /** When set, the pinned Module call can upgrade to this library release. */
-  moduleUpgradeRelease?: number | null;
-  onUpgradeModuleCall?: (nodeId: string) => void;
   onOpenExecutionHistory?: (nodeId: string, executionId?: string) => void;
   /** A collection's members in plug order; derived, never persisted. */
   collectionMembers?: readonly CollectionMember[];
@@ -410,7 +406,7 @@ export function serializeRunNode(
   }
   const inputPlugs = serializeInputPlugs(data);
   return {
-    kind: data.spec.origin === "module" ? "module" : "builtin",
+    kind: "builtin",
     id,
     operator_id: data.spec.operator_id,
     operator_version: data.spec.operator_version,

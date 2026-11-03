@@ -157,7 +157,7 @@ export function addNodeCommand(
       ),
       config: structuredClone(data.config),
       id: nodeId,
-      kind: data.spec.origin === "module" ? "module" : "builtin",
+      kind: "builtin",
       input_plugs: data.inputPlugs.map((plug) => ({
         id: plug.id,
         port: plug.portName,

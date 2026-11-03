@@ -15,15 +15,12 @@ import {
   downstreamCandidatesFromOutput,
   filterAndSearchCatalogNodes,
   INPUT_NODES_FILTER,
-  moduleCallUpgradeTarget,
   sortCatalogNodes,
   sourceFilterId,
   upstreamCandidatesFromInput,
 } from "./node-catalog";
 
 const FIRST_GRAPH_ID = "00000000-0000-4000-8000-000000000001";
-const SECOND_GRAPH_ID = "00000000-0000-4000-8000-000000000002";
-const FIRST_MODULE_ID = "10000000-0000-4000-8000-000000000001";
 
 function port(
   name: string,
@@ -50,11 +47,8 @@ function nodeSpec(
   operatorId: string,
   pluginSlug: string,
   operatorVersion = 1,
-  moduleGraphId: string | null = null,
   catalogVisible = true,
   options: {
-    moduleId?: string | null;
-    isCurrentLibraryRelease?: boolean | null;
     title?: string;
     description?: string;
     inputs?: Port[];
@@ -72,13 +66,8 @@ function nodeSpec(
     output_schema: {},
     inputs: options.inputs ?? [],
     outputs: options.outputs ?? [],
-    module_graph_id: moduleGraphId,
-    module_graph_revision: moduleGraphId ? operatorVersion : null,
-    module_id: options.moduleId ?? null,
-    is_current_library_release: options.isCurrentLibraryRelease ?? null,
     catalog_visible: catalogVisible,
-    origin:
-      pluginSlug === "graph.module" || moduleGraphId ? "module" : "builtin",
+    origin: "builtin",
     runnable: true,
   };
 }
@@ -91,12 +80,6 @@ function registry(): NodeRegistry {
         title: "Built-in",
         origin: "builtin",
         entry_kind: "plugin",
-      },
-      {
-        slug: "graph.module",
-        title: "Workspace library",
-        origin: "module",
-        entry_kind: "module",
       },
       {
         slug: "external",
@@ -130,16 +113,16 @@ function registry(): NodeRegistry {
     ],
     artifact_conversions: [],
     nodes: [
-      nodeSpec("text.input", "builtin", 1, null, true, {
+      nodeSpec("text.input", "builtin", 1, true, {
         title: "Enter text",
         outputs: [port("text", "output")],
       }),
-      nodeSpec("text.transform", "builtin", 1, null, true, {
+      nodeSpec("text.transform", "builtin", 1, true, {
         title: "Transform text",
         inputs: [port("text", "input")],
         outputs: [port("text", "output")],
       }),
-      nodeSpec("table.batch", "builtin", 1, null, true, {
+      nodeSpec("table.batch", "builtin", 1, true, {
         title: "Batch table",
         inputs: [
           port("rows", "input", {
@@ -156,7 +139,7 @@ function registry(): NodeRegistry {
           }),
         ],
       }),
-      nodeSpec("generic.pass", "builtin", 1, null, true, {
+      nodeSpec("generic.pass", "builtin", 1, true, {
         title: "Pass any",
         inputs: [
           port("value", "input", {
@@ -171,65 +154,16 @@ function registry(): NodeRegistry {
           }),
         ],
       }),
-      nodeSpec(
-        `module.graph.${FIRST_GRAPH_ID}`,
-        "graph.module",
-        1,
-        FIRST_GRAPH_ID,
-        false,
-        {
-          moduleId: FIRST_MODULE_ID,
-          isCurrentLibraryRelease: false,
-          title: "Normalize invoices",
-          inputs: [port("text", "input")],
-          outputs: [
-            port("table", "output", {
-              artifact_type: { id: "table.data", schema_version: 1 },
-            }),
-          ],
-        },
-      ),
-      nodeSpec(
-        `module.graph.${FIRST_GRAPH_ID}`,
-        "graph.module",
-        2,
-        FIRST_GRAPH_ID,
-        true,
-        {
-          moduleId: FIRST_MODULE_ID,
-          isCurrentLibraryRelease: true,
-          title: "Normalize invoices",
-          inputs: [port("text", "input")],
-          outputs: [
-            port("table", "output", {
-              artifact_type: { id: "table.data", schema_version: 1 },
-            }),
-          ],
-        },
-      ),
-      nodeSpec(
-        `module.graph.${SECOND_GRAPH_ID}`,
-        "graph.module",
-        1,
-        SECOND_GRAPH_ID,
-        true,
-        {
-          title: "Other module",
-          isCurrentLibraryRelease: true,
-          inputs: [port("text", "input")],
-          outputs: [port("text", "output")],
-        },
-      ),
-      nodeSpec("ocr.external", "external", 1, null, true, {
+      nodeSpec("ocr.external", "external", 1, true, {
         title: "OCR",
       }),
     ],
   };
 }
 
-describe("node catalog modules", () => {
-  it("offers only visible revisions and excludes the graph being edited", () => {
-    const available = catalogNodeSpecs(registry(), FIRST_GRAPH_ID);
+describe("node catalog listings", () => {
+  it("offers every visible operator, builtin and plugin alike", () => {
+    const available = catalogNodeSpecs(registry());
 
     expect(
       available.map((spec) => [spec.operator_id, spec.operator_version]),
@@ -238,30 +172,27 @@ describe("node catalog modules", () => {
       ["text.transform", 1],
       ["table.batch", 1],
       ["generic.pass", 1],
-      [`module.graph.${SECOND_GRAPH_ID}`, 1],
       ["ocr.external", 1],
     ]);
   });
 
-  it("keeps the latest visible revision available outside its own graph", () => {
-    const available = catalogNodeSpecs(registry(), null);
+  it("keeps catalog_visible false operators out of the listing", () => {
+    const catalog = registry();
+    const hidden = nodeSpec("notes.draft", "builtin", 1, false);
 
     expect(
-      available
-        .filter((spec) => spec.module_graph_id === FIRST_GRAPH_ID)
-        .map((spec) => spec.operator_version),
-    ).toEqual([2]);
+      catalogNodeSpecs({ ...catalog, nodes: [...catalog.nodes, hidden] }).map(
+        (spec) => spec.operator_id,
+      ),
+    ).not.toContain("notes.draft");
   });
 
-  it("offers an upgrade target when a newer library release exists", () => {
-    const pinned = registry().nodes.find(
-      (spec) =>
-        spec.module_graph_id === FIRST_GRAPH_ID && spec.operator_version === 1,
+  it("lists the same nodes whichever graph is being edited", () => {
+    // Only Modules were ever hidden from the catalog of their own graph, and
+    // Modules are gone (ADR 0020), so the argument hides nothing.
+    expect(catalogNodeSpecs(registry(), FIRST_GRAPH_ID)).toEqual(
+      catalogNodeSpecs(registry(), null),
     );
-    expect(pinned).toBeDefined();
-    const target = moduleCallUpgradeTarget(registry(), pinned!);
-    expect(target?.operator_version).toBe(2);
-    expect(moduleCallUpgradeTarget(registry(), target!)).toBeNull();
   });
 });
 
@@ -282,11 +213,10 @@ describe("artifact catalog filters", () => {
       "Single value",
       "Sequence",
       "Any artifact",
-      "Workspace library",
     ]);
   });
 
-  it("matches exact artifact, shape, any-artifact, and library filters", () => {
+  it("matches exact artifact, shape, and any-artifact filters", () => {
     const nodes = catalogNodeSpecs(registry(), null);
     const filters = buildCatalogFilters(registry());
     const byId = Object.fromEntries(
@@ -298,12 +228,7 @@ describe("artifact catalog filters", () => {
         nodes,
         byId[artifactFilterId({ id: "scalar.text", schema_version: 1 })]!,
       ).map((spec) => spec.operator_id),
-    ).toEqual([
-      "text.input",
-      "text.transform",
-      `module.graph.${FIRST_GRAPH_ID}`,
-      `module.graph.${SECOND_GRAPH_ID}`,
-    ]);
+    ).toEqual(["text.input", "text.transform"]);
 
     expect(
       catalogNodesForFilter(nodes, byId.sequence!).map(
@@ -316,15 +241,6 @@ describe("artifact catalog filters", () => {
         (spec) => spec.operator_id,
       ),
     ).toEqual(["generic.pass"]);
-
-    expect(
-      catalogNodesForFilter(nodes, byId["workspace-library"]!).map(
-        (spec) => spec.operator_id,
-      ),
-    ).toEqual([
-      `module.graph.${FIRST_GRAPH_ID}`,
-      `module.graph.${SECOND_GRAPH_ID}`,
-    ]);
   });
 
   it("sorts by title then operator identity and intersects search with filters", () => {
@@ -336,9 +252,7 @@ describe("artifact catalog filters", () => {
     expect(sortCatalogNodes(nodes).map((spec) => spec.title)).toEqual([
       "Batch table",
       "Enter text",
-      "Normalize invoices",
       "OCR",
-      "Other module",
       "Pass any",
       "Transform text",
     ]);
@@ -348,29 +262,15 @@ describe("artifact catalog filters", () => {
         (spec) => spec.operator_id,
       ),
     ).toEqual(["text.transform"]);
-
-    expect(
-      filterAndSearchCatalogNodes(
-        nodes,
-        [
-          buildCatalogFilters(registry()).find(
-            (candidate) => candidate.id === "workspace-library",
-          )!,
-        ],
-        "normalize",
-        registry(),
-      ).map((spec) => spec.operator_id),
-    ).toEqual([`module.graph.${FIRST_GRAPH_ID}`]);
   });
 
-  it("builds one source category per provider plugin plus the workspace library", () => {
+  it("builds one source category per provider plugin that ships nodes", () => {
     const sources = buildSourceFilters(registry());
 
     expect(sources.map((filter) => [filter.id, filter.title])).toEqual([
       ["all", "All"],
       [sourceFilterId("builtin"), "Built-in"],
       [sourceFilterId("external"), "External"],
-      ["workspace-library", "Workspace library"],
     ]);
   });
 
@@ -437,12 +337,12 @@ describe("downstream candidates", () => {
     const source = port("text", "output");
     const sourceHandle = encodeHandleId(portMetaForPort(source));
     const nodes = [
-      nodeSpec("text.transform", "builtin", 1, null, true, {
+      nodeSpec("text.transform", "builtin", 1, true, {
         title: "Transform text",
         inputs: [port("text", "input")],
         outputs: [port("text", "output")],
       }),
-      nodeSpec("collect.optional", "builtin", 1, null, true, {
+      nodeSpec("collect.optional", "builtin", 1, true, {
         title: "Optional collect",
         inputs: [
           port("items", "input", {
@@ -452,7 +352,7 @@ describe("downstream candidates", () => {
         ],
         outputs: [port("text", "output")],
       }),
-      nodeSpec("collect.required", "builtin", 1, null, true, {
+      nodeSpec("collect.required", "builtin", 1, true, {
         title: "Required collect",
         inputs: [
           port("items", "input", {
@@ -484,12 +384,12 @@ describe("upstream candidates", () => {
     const target = port("text", "input");
     const targetHandle = encodeHandleId(portMetaForPort(target));
     const nodes = [
-      nodeSpec("text.transform", "builtin", 1, null, true, {
+      nodeSpec("text.transform", "builtin", 1, true, {
         title: "Transform text",
         inputs: [port("text", "input")],
         outputs: [port("text", "output")],
       }),
-      nodeSpec("collect.optional", "builtin", 1, null, true, {
+      nodeSpec("collect.optional", "builtin", 1, true, {
         title: "Optional collect",
         inputs: [
           port("items", "input", {
@@ -499,7 +399,7 @@ describe("upstream candidates", () => {
         ],
         outputs: [port("text", "output")],
       }),
-      nodeSpec("source.broken", "builtin", 1, null, true, {
+      nodeSpec("source.broken", "builtin", 1, true, {
         title: "Broken source",
         inputs: [],
         outputs: [
@@ -527,7 +427,7 @@ describe("upstream candidates", () => {
 
 describe("catalogSearchRank", () => {
   const titled = (title: string, description = "") =>
-    nodeSpec(`op.${title}`, "builtin", 1, null, true, { title, description });
+    nodeSpec(`op.${title}`, "builtin", 1, true, { title, description });
 
   it("puts nodes named for the query above nodes that mention it", () => {
     const ranks = [
@@ -568,12 +468,12 @@ it("keeps unlisted nodes out of the library and both discovery directions", () =
     "image.internal",
     "value.internal",
   ].map((id) =>
-    nodeSpec(id, "builtin", 1, null, false, {
+    nodeSpec(id, "builtin", 1, false, {
       inputs: [input],
       outputs: [output],
     }),
   );
-  const visible = nodeSpec("text.visible", "builtin", 1, null, true, {
+  const visible = nodeSpec("text.visible", "builtin", 1, true, {
     inputs: [input],
     outputs: [output],
   });

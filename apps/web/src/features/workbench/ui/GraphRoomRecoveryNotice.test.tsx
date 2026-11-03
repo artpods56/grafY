@@ -60,7 +60,7 @@ describe("GraphRoomRecoveryNotice", () => {
       "Server-accepted work is preserved",
     );
     expect(container.textContent).toContain(
-      "Editing, saving, running, and Module setup are unavailable",
+      "Editing, saving, and running are unavailable",
     );
     const retry = [...container.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Retry connection"),
