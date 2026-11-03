@@ -39,8 +39,6 @@ from tests.integration.runs.support import (
     accepted_head,
     command_batch,
     integer_node,
-    receive_next,
-    receive_until,
     room_harness,
 )
 
@@ -116,7 +114,7 @@ def wait_for_finished(websocket, run_id: str, *, limit: int = FRAME_LIMIT) -> st
     """The status this Run ended with, taken from the frame that says so."""
 
     for _ in range(limit):
-        message = websocket.receive_json()
+        message = websocket.next()
         if message["type"] == "run.finished" and message["run_id"] == run_id:
             return str(message["status"])
     raise AssertionError(f"run {run_id} never finished within {limit} frames")
@@ -151,8 +149,8 @@ def test_start_run_records_the_demand_and_a_joining_room_sees_it_active(
     assert one.json()["id"] == run["id"]
 
     # A participant that joined after the start still has to learn about it.
-    with harness.connect_room(project_id) as websocket:
-        ready = receive_next(websocket, "room.ready")
+    with harness.open_room(project_id) as websocket:
+        ready = websocket.expect("room.ready")
         assert [item["run_id"] for item in ready["active_runs"]] == [run["id"]]
         summary = ready["active_runs"][0]
         assert summary["graph_id"] == FLOW_GRAPH_ID
@@ -219,8 +217,8 @@ def test_cancel_run_withdraws_its_own_demand_and_leaves_the_shared_computation(
     assert harness.runner.calls == [FIRST]
     assert active_run_ids(harness, project_id) == [second["id"], first["id"]]
 
-    with harness.connect_room(project_id) as websocket:
-        receive_next(websocket, "room.ready")
+    with harness.open_room(project_id) as websocket:
+        websocket.expect("room.ready")
 
         cancelled = harness.post(start_url(project_id, UUID(first["id"])) + "/cancel")
         assert cancelled.status_code == 200, cancelled.text
@@ -271,8 +269,8 @@ def test_graph_instances_are_derived_and_move_with_the_computation(
     assert running[SECOND]["fingerprint"] == before[SECOND]["fingerprint"]
     assert running[FIRST]["fingerprint"] == before[FIRST]["fingerprint"]
 
-    with harness.connect_room(project_id) as websocket:
-        receive_next(websocket, "room.ready")
+    with harness.open_room(project_id) as websocket:
+        websocket.expect("room.ready")
         harness.runner.release(FIRST)
         assert wait_for_finished(websocket, started["id"]) == "succeeded"
 
@@ -299,8 +297,8 @@ def test_instance_result_reads_the_last_result_after_the_document_moved(
     started = start_run(harness, project_id, FIRST).json()
     assert harness.runner.started(FIRST).wait(10)
 
-    with harness.connect_room(project_id) as websocket:
-        receive_next(websocket, "room.ready")
+    with harness.open_room(project_id) as websocket:
+        websocket.expect("room.ready")
         stored_fingerprint = instances_of(harness, project_id)[FIRST]["fingerprint"]
 
         harness.runner.release(FIRST)
@@ -309,9 +307,9 @@ def test_instance_result_reads_the_last_result_after_the_document_moved(
     stored = instance_result(harness, project_id, FIRST).json()
     assert stored["instance"]["state"] == "fresh"
 
-    with harness.connect_room(project_id) as websocket:
-        ready = receive_next(websocket, "room.ready")
-        websocket.send_json(
+    with harness.open_room(project_id) as websocket:
+        ready = websocket.expect("room.ready")
+        websocket.send(
             command_batch(
                 ready,
                 [
@@ -327,8 +325,8 @@ def test_instance_result_reads_the_last_result_after_the_document_moved(
                 ],
             )
         )
-        receive_until(websocket, "project.command.accepted")
-        receive_until(websocket, "instances.changed")
+        websocket.until("project.command.accepted")
+        websocket.until("instances.changed")
 
     after = instances_of(harness, project_id)[FIRST]
     assert after["state"] == "stale"
@@ -530,14 +528,14 @@ def test_an_added_graph_adds_an_instance_and_its_removal_removes_it(
     """The way in is the way out: an instance that stops existing is removed."""
 
     project_id = harness.project_id
-    with harness.connect_room(project_id) as websocket:
-        ready = receive_next(websocket, "room.ready")
+    with harness.open_room(project_id) as websocket:
+        ready = websocket.expect("room.ready")
         assert sorted(item["node_id"] for item in ready["instances"]) == [
             FIRST,
             SECOND,
         ]
 
-        websocket.send_json(
+        websocket.send(
             command_batch(
                 ready,
                 [
@@ -549,8 +547,8 @@ def test_an_added_graph_adds_an_instance_and_its_removal_removes_it(
                 ],
             )
         )
-        added = receive_until(websocket, "project.command.accepted")
-        changed = receive_until(websocket, "instances.changed")
+        added = websocket.until("project.command.accepted")
+        changed = websocket.until("instances.changed")
         # The first publish this API owner owes this Project publishes everything it
         # derives: state is a diff against what was published, and nothing had been.
         assert {item["node_id"] for item in changed["changed"]} == {
@@ -565,7 +563,7 @@ def test_an_added_graph_adds_an_instance_and_its_removal_removes_it(
         assert all(item["state"] == "stale" for item in changed["changed"])
         assert changed["removed"] == []
 
-        websocket.send_json(
+        websocket.send(
             command_batch(
                 accepted_head(added),
                 [
@@ -576,21 +574,20 @@ def test_an_added_graph_adds_an_instance_and_its_removal_removes_it(
                 ],
             )
         )
-        removed_batch = receive_until(websocket, "project.command.accepted")
-        removed = receive_until(websocket, "instances.changed")
+        removed_batch = websocket.until("project.command.accepted")
+        removed = websocket.until("instances.changed")
         assert [item["node_id"] for item in removed["removed"]] == ["only"]
 
-        # A Graph removed with it takes its instances, and there is nothing left
-        # of it to report.
-        websocket.send_json(
+        # Removing the Graph moves no instance: nothing was added, nothing changed
+        # and nothing was left behind, so no delta is owed and none comes. What the
+        # client can ask for is the read, and it answers with nothing.
+        websocket.send(
             command_batch(
-                accepted_head(removed_batch), [RemoveGraphCommand(graph_id="extra")]
+                accepted_head(removed_batch),
+                [RemoveGraphCommand(graph_id="extra")],
             )
         )
-        receive_until(websocket, "project.command.accepted")
-        emptied = receive_until(websocket, "instances.changed")
-        assert emptied["changed"] == []
-        assert emptied["removed"] == []
+        websocket.until("project.command.accepted")
 
     emptied = harness.get(f"/projects/{project_id}/graphs/extra/instances")
     assert emptied.status_code == 200, emptied.text

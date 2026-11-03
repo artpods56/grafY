@@ -32,6 +32,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from queue import Empty, Queue
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -76,6 +77,11 @@ from tests.testkit import client_with_overrides, create_db_url, db, with_setting
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 UV_LOCK = REPO_ROOT / "uv.lock"
+
+#: How long a participant waits for a frame before the test fails naming the wait.
+FRAME_TIMEOUT_SECONDS = 20.0
+
+type _Frame = dict[str, Any]
 
 MAIN_GRAPH_ID = "main"
 FLOW_GRAPH_ID = "flow"
@@ -326,13 +332,34 @@ class RoomHarness:
         workspace_id: UUID | None = None,
         origin: str = "http://testserver",
     ):
-        """Open the Project room as whoever the switcher is set to."""
+        """The raw WebSocket handshake, for the tests that want the denial itself."""
 
         workspace = self.workspace_id if workspace_id is None else workspace_id
         return self.client.websocket_connect(
             f"/v1/workspaces/{workspace}/projects/{project_id}/room",
             headers={"Origin": origin},
         )
+
+    @contextmanager
+    def open_room(
+        self,
+        project_id: UUID,
+        *,
+        workspace_id: UUID | None = None,
+        origin: str = "http://testserver",
+    ) -> Iterator["Room"]:
+        """The Project room as a participant, with frames that cannot hang a test."""
+
+        with self.connect_room(
+            project_id,
+            workspace_id=workspace_id,
+            origin=origin,
+        ) as session:
+            room = Room(session)
+            try:
+                yield room
+            finally:
+                room.close()
 
     def issue_token(self, scopes: Sequence[str]) -> str:
         """A Workspace PAT with exactly these scopes, as a bearer header value."""
@@ -352,30 +379,84 @@ class RoomHarness:
         return {"Authorization": f"Bearer {token}"}
 
 
-def receive_until(
-    websocket: WebSocketTestSession, message_type: str, /, *, limit: int = 40
-) -> dict[str, Any]:
-    """The next message of this type, failing the test when none arrives."""
+class Room:
+    """One participant's view of the room, with a bounded wait for every frame.
 
-    for _ in range(limit):
-        message = websocket.receive_json()
-        if message["type"] == message_type:
-            return message
-    raise AssertionError(f"did not receive {message_type!r} within {limit} messages")
-
-
-def receive_next(
-    websocket: WebSocketTestSession, expected_type: str, /
-) -> dict[str, Any]:
-    """The very next message, asserting its type.
-
-    A room that sends anything else first is out of order, and an out-of-order room
-    is the bug these tests exist for, so this never skips to what it wanted.
+    Frames are read ahead by a helper thread into a queue. That is the whole point:
+    ``WebSocketTestSession.receive_json`` blocks forever when the frame it wants never
+    comes, and a suite that hangs in CI tells nobody which frame was missing.
     """
 
-    message = websocket.receive_json()
-    assert message["type"] == expected_type, message
-    return message
+    def __init__(self, session: WebSocketTestSession) -> None:
+        self.session = session
+        self._frames: Queue[_Frame | BaseException] = Queue()
+        self._stopped = threading.Event()
+        self._pump = threading.Thread(
+            target=self._pump_frames, name="room-frames", daemon=True
+        )
+        self._pump.start()
+
+    def _pump_frames(self) -> None:
+        try:
+            while not self._stopped.is_set():
+                self._frames.put(self.session.receive_json())
+        except BaseException as exc:  # noqa: BLE001 - reported to whoever asks next
+            self._frames.put(exc)
+
+    def close(self) -> None:
+        self._stopped.set()
+
+    def send(self, message: dict[str, Any]) -> None:
+        self.session.send_json(message)
+
+    def next(self, *, timeout: float = FRAME_TIMEOUT_SECONDS) -> dict[str, Any]:
+        """The next frame, or a failure that names the wait that expired."""
+
+        try:
+            frame = self._frames.get(timeout=timeout)
+        except Empty as exc:
+            raise AssertionError(
+                f"no room frame within {timeout} seconds: the room sent nothing more"
+            ) from exc
+        if isinstance(frame, BaseException):
+            raise frame
+        return frame
+
+    def expect(
+        self, expected_type: str, *, timeout: float = FRAME_TIMEOUT_SECONDS
+    ) -> dict[str, Any]:
+        """The very next frame, asserting its type.
+
+        A room that sends anything else first is out of order, and an out-of-order
+        room is itself the bug, so this never skips ahead to what it wanted.
+        """
+
+        message = self.next(timeout=timeout)
+        assert message["type"] == expected_type, message
+        return message
+
+    def until(
+        self,
+        message_type: str,
+        *,
+        limit: int = 40,
+        timeout: float = FRAME_TIMEOUT_SECONDS,
+    ) -> dict[str, Any]:
+        """The next frame of this type, skipping the ones that came first.
+
+        Use :meth:`next` when the order itself is the claim; this one is for a frame
+        a room legitimately announces after something else it also sends.
+        """
+
+        seen: list[str] = []
+        for _ in range(limit):
+            message = self.next(timeout=timeout)
+            if message["type"] == message_type:
+                return message
+            seen.append(str(message["type"]))
+        raise AssertionError(
+            f"did not receive {message_type!r} within {limit} messages; saw: {seen}"
+        )
 
 
 def command_batch(
@@ -560,13 +641,12 @@ __all__ = [
     "FLOW_GRAPH_ID",
     "MAIN_GRAPH_ID",
     "OPERATOR_ID",
+    "Room",
     "RoomCast",
     "RoomHarness",
     "accepted_head",
     "command_batch",
     "flow_document",
     "integer_node",
-    "receive_next",
-    "receive_until",
     "room_harness",
 ]
