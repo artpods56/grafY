@@ -156,7 +156,9 @@ class Stage:
     ) -> Response:
         return self.projects(workspace_id).get_head(project_id, headers=self.as_(who))
 
-    def projects_delete(self, workspace_id: UUID, project_id: UUID, who: str) -> Response:
+    def projects_delete(
+        self, workspace_id: UUID, project_id: UUID, who: str
+    ) -> Response:
         return self.projects(workspace_id).delete(project_id, headers=self.as_(who))
 
     def as_(self, who: str) -> dict[str, str]:
@@ -175,7 +177,10 @@ class Stage:
 
 @contextmanager
 def _stage(
-    tmp_path: Path, database_url: str, matrix: Matrix, sessions: dict[str, IssuedSession]
+    tmp_path: Path,
+    database_url: str,
+    matrix: Matrix,
+    sessions: dict[str, IssuedSession],
 ) -> Iterator[Stage]:
     settings = with_setting_values(
         Settings(
@@ -321,8 +326,14 @@ FOREIGN: tuple[Call, ...] = (
             s.project_a, _checkpoint_request(), headers=s.as_("both")
         ),
     ),
-    Call("list checkpoints", lambda s: s.projects(s.b).list_checkpoints(s.project_a, headers=s.as_("both"))),
-    Call("read checkpoint", lambda s: s.projects(s.b).get_checkpoint(s.project_a, 1, headers=s.as_("both"))),
+    Call(
+        "list checkpoints",
+        lambda s: s.projects(s.b).list_checkpoints(s.project_a, headers=s.as_("both")),
+    ),
+    Call(
+        "read checkpoint",
+        lambda s: s.projects(s.b).get_checkpoint(s.project_a, 1, headers=s.as_("both")),
+    ),
     Call(
         "restore checkpoint",
         lambda s: s.projects(s.b).restore_checkpoint(
@@ -337,16 +348,39 @@ FOREIGN: tuple[Call, ...] = (
             headers=s.as_("both"),
         ),
     ),
-    Call("archive project", lambda s: s.projects(s.b).archive(s.project_a, headers=s.as_("both"))),
-    Call("unarchive project", lambda s: s.projects(s.b).unarchive(s.project_a, headers=s.as_("both"))),
-    Call("star project", lambda s: s.projects(s.b).star(s.project_a, headers=s.as_("both"))),
-    Call("unstar project", lambda s: s.projects(s.b).unstar(s.project_a, headers=s.as_("both"))),
-    Call("record open", lambda s: s.projects(s.b).record_open(s.project_a, headers=s.as_("both"))),
-    Call("list node secrets", lambda s: s.secrets(s.b).list_secrets(s.project_a, headers=s.as_("both"))),
+    Call(
+        "archive project",
+        lambda s: s.projects(s.b).archive(s.project_a, headers=s.as_("both")),
+    ),
+    Call(
+        "unarchive project",
+        lambda s: s.projects(s.b).unarchive(s.project_a, headers=s.as_("both")),
+    ),
+    Call(
+        "star project",
+        lambda s: s.projects(s.b).star(s.project_a, headers=s.as_("both")),
+    ),
+    Call(
+        "unstar project",
+        lambda s: s.projects(s.b).unstar(s.project_a, headers=s.as_("both")),
+    ),
+    Call(
+        "record open",
+        lambda s: s.projects(s.b).record_open(s.project_a, headers=s.as_("both")),
+    ),
+    Call(
+        "list node secrets",
+        lambda s: s.secrets(s.b).list_secrets(s.project_a, headers=s.as_("both")),
+    ),
     Call(
         "configure node secret",
         lambda s: s.secrets(s.b).configure_secret(
-            s.project_a, MAIN, "llm", "api_key", _secret_request(), headers=s.as_("both")
+            s.project_a,
+            MAIN,
+            "llm",
+            "api_key",
+            _secret_request(),
+            headers=s.as_("both"),
         ),
     ),
     Call(
@@ -440,8 +474,14 @@ VIEWER_DENIED: tuple[Call, ...] = (
             headers=s.as_("viewer_a"),
         ),
     ),
-    Call("archive project", lambda s: s.projects(s.a).archive(s.project_a, headers=s.as_("viewer_a"))),
-    Call("unarchive project", lambda s: s.projects(s.a).unarchive(s.project_a, headers=s.as_("viewer_a"))),
+    Call(
+        "archive project",
+        lambda s: s.projects(s.a).archive(s.project_a, headers=s.as_("viewer_a")),
+    ),
+    Call(
+        "unarchive project",
+        lambda s: s.projects(s.a).unarchive(s.project_a, headers=s.as_("viewer_a")),
+    ),
     Call(
         "create folder",
         lambda s: s.folders(s.a).create(
@@ -451,10 +491,15 @@ VIEWER_DENIED: tuple[Call, ...] = (
     Call(
         "rename folder",
         lambda s: s.folders(s.a).rename(
-            s.folder_a, ProjectFolderWriteRequest(name="Viewer"), headers=s.as_("viewer_a")
+            s.folder_a,
+            ProjectFolderWriteRequest(name="Viewer"),
+            headers=s.as_("viewer_a"),
         ),
     ),
-    Call("delete folder", lambda s: s.folders(s.a).delete(s.folder_a, headers=s.as_("viewer_a"))),
+    Call(
+        "delete folder",
+        lambda s: s.folders(s.a).delete(s.folder_a, headers=s.as_("viewer_a")),
+    ),
 )
 
 # An editor may change a Project but not end it, and never holds a credential.
@@ -463,7 +508,12 @@ EDITOR_DENIED: tuple[Call, ...] = (
     Call(
         "configure node secret",
         lambda s: s.secrets(s.a).configure_secret(
-            s.project_a, MAIN, "llm", "api_key", _secret_request(), headers=s.as_("editor_a")
+            s.project_a,
+            MAIN,
+            "llm",
+            "api_key",
+            _secret_request(),
+            headers=s.as_("editor_a"),
         ),
     ),
     Call(
@@ -478,15 +528,35 @@ EDITOR_DENIED: tuple[Call, ...] = (
 PAT_DENIED: tuple[Call, ...] = (
     Call("list projects", lambda s: s.projects(s.a).list(headers=s.as_pat())),
     Call("get project", lambda s: s.projects(s.a).get(s.project_a, headers=s.as_pat())),
-    Call("read head", lambda s: s.projects(s.a).get_head(s.project_a, headers=s.as_pat())),
-    Call("list checkpoints", lambda s: s.projects(s.a).list_checkpoints(s.project_a, headers=s.as_pat())),
-    Call("read checkpoint", lambda s: s.projects(s.a).get_checkpoint(s.project_a, 1, headers=s.as_pat())),
-    Call("star project", lambda s: s.projects(s.a).star(s.project_a, headers=s.as_pat())),
-    Call("unstar project", lambda s: s.projects(s.a).unstar(s.project_a, headers=s.as_pat())),
-    Call("record open", lambda s: s.projects(s.a).record_open(s.project_a, headers=s.as_pat())),
-    Call("list node secrets", lambda s: s.secrets(s.a).list_secrets(s.project_a, headers=s.as_pat())),
+    Call(
+        "read head", lambda s: s.projects(s.a).get_head(s.project_a, headers=s.as_pat())
+    ),
+    Call(
+        "list checkpoints",
+        lambda s: s.projects(s.a).list_checkpoints(s.project_a, headers=s.as_pat()),
+    ),
+    Call(
+        "read checkpoint",
+        lambda s: s.projects(s.a).get_checkpoint(s.project_a, 1, headers=s.as_pat()),
+    ),
+    Call(
+        "star project", lambda s: s.projects(s.a).star(s.project_a, headers=s.as_pat())
+    ),
+    Call(
+        "unstar project",
+        lambda s: s.projects(s.a).unstar(s.project_a, headers=s.as_pat()),
+    ),
+    Call(
+        "record open",
+        lambda s: s.projects(s.a).record_open(s.project_a, headers=s.as_pat()),
+    ),
+    Call(
+        "list node secrets",
+        lambda s: s.secrets(s.a).list_secrets(s.project_a, headers=s.as_pat()),
+    ),
     Call("list folders", lambda s: s.folders(s.a).list(headers=s.as_pat())),
 )
+
 
 def _names(calls: Sequence[Call]) -> list[str]:
     return [call.name for call in calls]
@@ -527,7 +597,10 @@ def test_workspace_listings_never_carry_another_workspaces_projects(
         assert [item.id for item in in_b.projects] == [stage.project_b]
         assert [item.id for item in in_a.projects] == [stage.project_a]
         assert [
-            folder.id for folder in stage.folders(stage.b).list_ok(headers=stage.as_("both")).folders
+            folder.id
+            for folder in stage.folders(stage.b)
+            .list_ok(headers=stage.as_("both"))
+            .folders
         ] == [stage.folder_b]
 
 
@@ -540,7 +613,10 @@ def test_project_browser_lists_only_the_workspaces_the_caller_can_see(
         both_rows = stage.api.project_browser.list_ok(headers=stage.as_("both"))
         assert [row.id for row in owner_a_rows.projects] == [stage.project_a]
         assert [row.id for row in owner_b_rows.projects] == [stage.project_b]
-        assert {row.id for row in both_rows.projects} == {stage.project_a, stage.project_b}
+        assert {row.id for row in both_rows.projects} == {
+            stage.project_a,
+            stage.project_b,
+        }
         assert {row.location.id for row in both_rows.projects} == {stage.a, stage.b}
 
         stage.api.raw.cookies.clear()

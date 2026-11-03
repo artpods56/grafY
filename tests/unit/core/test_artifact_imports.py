@@ -10,7 +10,6 @@ import pytest
     "first_module",
     [
         "grafy_core.artifacts",
-        "grafy_core.domain.modules",
         "grafy_core.ports.artifacts",
         "grafy_core.runtime.in_memory",
         "grafy_core.plugins",

@@ -3,7 +3,11 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from grafy_core.artifact_contracts import IMAGE_REGIONS, RASTER_IMAGE, RasterImageContent
+from grafy_core.artifact_contracts import (
+    IMAGE_REGIONS,
+    RASTER_IMAGE,
+    RasterImageContent,
+)
 from grafy_core.artifacts import ArtifactRefSequence
 from grafy_core.file_contracts import PNG_FILE
 from grafy_core.nodes import NodeExecutionContext
@@ -189,7 +193,9 @@ async def test_raster_writer_persists_content_without_upload_metadata(
     )
 
 
-def test_image_plugin_uses_builtin_raster_type_and_registers_writer(tmp_path: Path) -> None:
+def test_image_plugin_uses_builtin_raster_type_and_registers_writer(
+    tmp_path: Path,
+) -> None:
     registry = PluginRegistry()
     registry.install(IMAGES)
     registry.install(IMAGE_OPERATORS)

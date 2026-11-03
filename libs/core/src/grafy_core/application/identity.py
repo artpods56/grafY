@@ -963,10 +963,8 @@ class IdentityService:
         for grant in self._domain_workspace_grants:
             if not grant.matches_normalized_email(user.normalized_email):
                 continue
-            workspace = (
-                await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
-                    grant.workspace_slug
-                )
+            workspace = await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
+                grant.workspace_slug
             )
             if workspace is None:
                 workspace = Workspace.shared(
@@ -985,9 +983,7 @@ class IdentityService:
             if membership is not None:
                 continue
             owner_count = await unit_of_work.identity.count_active_owners(workspace.id)
-            role = (
-                WorkspaceRole.OWNER if owner_count == 0 else WorkspaceRole.EDITOR
-            )
+            role = WorkspaceRole.OWNER if owner_count == 0 else WorkspaceRole.EDITOR
             await unit_of_work.identity.add_membership(
                 WorkspaceMembership(
                     workspace_id=workspace.id,

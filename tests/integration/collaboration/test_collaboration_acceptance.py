@@ -248,11 +248,11 @@ def test_phase7_two_session_collaboration_acceptance_journey(
                     assert viewer_ready["type"] == "room.ready"
                     assert viewer_ready["head"]["name"] == "Converged name"
                     assert (
-                        "edit_project" not in viewer_ready["capabilities"]["capabilities"]
+                        "edit_project"
+                        not in viewer_ready["capabilities"]["capabilities"]
                     )
                     assert (
-                        "start_run"
-                        not in viewer_ready["capabilities"]["capabilities"]
+                        "start_run" not in viewer_ready["capabilities"]["capabilities"]
                     )
 
                     viewer_ws.send_json(

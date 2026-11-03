@@ -34,4 +34,3 @@ async def load_stored_model[ModelT: BaseModel](
                 f"expected {expected_sha256}"
             )
     return model.model_validate_json(content)
-

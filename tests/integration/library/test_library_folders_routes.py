@@ -55,10 +55,14 @@ def _folder_ids(client: TestClient) -> set[str]:
 
 def _library_artifact(client: TestClient, filename: str) -> UUID:
     """Put one real uploaded file into the Library and return its artifact id."""
-    uploaded = GrafyApi(client).workspace(WORKSPACE_ID).uploads.upload_ok(
-        filename,
-        CSV_BYTES,
-        content_type="text/csv",
+    uploaded = (
+        GrafyApi(client)
+        .workspace(WORKSPACE_ID)
+        .uploads.upload_ok(
+            filename,
+            CSV_BYTES,
+            content_type="text/csv",
+        )
     )
     assert uploaded.artifact_id is not None
     saved = client.post(
@@ -165,7 +169,9 @@ def test_the_same_name_in_two_different_parents_is_two_folders(
     fieldwork = _create_folder(builtin_client, "Fieldwork")
     reports = _create_folder(builtin_client, "Reports")
 
-    nested = _create_folder(builtin_client, "September", parent_id=fieldwork["folder_id"])
+    nested = _create_folder(
+        builtin_client, "September", parent_id=fieldwork["folder_id"]
+    )
     other = _create_folder(builtin_client, "September", parent_id=reports["folder_id"])
 
     assert nested["folder_id"] != other["folder_id"]
@@ -295,7 +301,10 @@ def test_a_folder_holding_an_artifact_refuses_deletion(
 ) -> None:
     folder = _create_folder(builtin_client, "Fieldwork")
     artifact_id = _library_artifact(builtin_client, "measurements.csv")
-    assert _move_artifacts(builtin_client, [artifact_id], folder["folder_id"]).status_code == 204
+    assert (
+        _move_artifacts(builtin_client, [artifact_id], folder["folder_id"]).status_code
+        == 204
+    )
 
     response = builtin_client.delete(_folders_path(f"/{folder['folder_id']}"))
 
@@ -372,10 +381,14 @@ def test_something_that_is_not_in_the_library_is_not_filed_anywhere(
     builtin_client: TestClient,
 ) -> None:
     folder = _create_folder(builtin_client, "Fieldwork")
-    uploaded = GrafyApi(builtin_client).workspace(WORKSPACE_ID).uploads.upload_ok(
-        "not-saved.csv",
-        CSV_BYTES,
-        content_type="text/csv",
+    uploaded = (
+        GrafyApi(builtin_client)
+        .workspace(WORKSPACE_ID)
+        .uploads.upload_ok(
+            "not-saved.csv",
+            CSV_BYTES,
+            content_type="text/csv",
+        )
     )
     assert uploaded.artifact_id is not None
 
@@ -440,10 +453,16 @@ def test_unknown_folder_is_not_found_on_every_write(
         _folders_path(f"/{missing}"),
         json={"name": "Anything"},
     )
-    moved = builtin_client.put(_folders_path(f"/{missing}/parent"), json={"parent_id": None})
+    moved = builtin_client.put(
+        _folders_path(f"/{missing}/parent"), json={"parent_id": None}
+    )
     deleted = builtin_client.delete(_folders_path(f"/{missing}"))
 
-    assert [renamed.status_code, moved.status_code, deleted.status_code] == [404, 404, 404]
+    assert [renamed.status_code, moved.status_code, deleted.status_code] == [
+        404,
+        404,
+        404,
+    ]
 
 
 def _acting_with_only(

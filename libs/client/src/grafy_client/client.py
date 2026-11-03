@@ -147,6 +147,7 @@ class ProjectClient:
         node_id: str,
         secret_name: str,
         value: SecretStr,
+        head: ProjectHead,
     ) -> NodeSecretStatus:
         secret = value.get_secret_value()
         if secret == "":
@@ -159,7 +160,10 @@ class ProjectClient:
                 f"/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/"
                 f"{secret_name}",
             ),
-            json_payload={"value": secret},
+            json_payload={
+                "value": secret,
+                "expected_head_sequence": head.collaboration_sequence,
+            },
             sensitive_values=(secret,),
         )
         return NodeSecretStatus.model_validate(payload)
@@ -213,7 +217,7 @@ class RunClient:
             path=self._path(workspace_id, project_id, "/runs"),
             params={"active": "true"} if active else None,
         )
-        return [Run.model_validate(item) for item in _items(payload)]
+        return [Run.model_validate(item) for item in _items(_mapping(payload)["runs"])]
 
     async def cancel(self, workspace_id: UUID, project_id: UUID, run_id: UUID) -> Run:
         payload = await self._transport.request_json(
@@ -259,7 +263,10 @@ class RunClient:
             method="GET",
             path=self._path(workspace_id, project_id, f"/graphs/{graph_id}/instances"),
         )
-        return [InstanceState.model_validate(item) for item in _items(payload)]
+        return [
+            InstanceState.model_validate(item)
+            for item in _items(_mapping(payload)["instances"])
+        ]
 
     async def instance_result(
         self,

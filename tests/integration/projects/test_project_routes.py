@@ -100,7 +100,9 @@ def test_create_opens_a_project_with_one_graph_and_its_first_checkpoint(
     assert projects.get_ok(created.id).name == "Field notes"
 
 
-def test_create_replays_only_the_promise_it_was_given(builtin_client: TestClient) -> None:
+def test_create_replays_only_the_promise_it_was_given(
+    builtin_client: TestClient,
+) -> None:
     api = GrafyApi(builtin_client)
     projects = api.workspace(WORKSPACE_ID).projects
     project_id, command_id = uuid4(), uuid4()
@@ -190,7 +192,9 @@ def test_command_batch_is_accepted_or_rejected_as_a_whole(
     assert empty.status_code == 422
 
 
-def test_command_retry_replays_and_a_reused_id_is_refused(builtin_client: TestClient) -> None:
+def test_command_retry_replays_and_a_reused_id_is_refused(
+    builtin_client: TestClient,
+) -> None:
     api = GrafyApi(builtin_client)
     projects, created = _create(api, "One promise")
     head = projects.get_head_ok(created.id)
@@ -254,9 +258,7 @@ def test_checkpoint_freezes_the_head_and_restore_writes_it_forward(
     )
     assert projects.list_ok().projects[0].draft_pending is True
 
-    checkpointed = projects.checkpoint_ok(
-        created.id, _checkpoint_request(moved.head)
-    )
+    checkpointed = projects.checkpoint_ok(created.id, _checkpoint_request(moved.head))
     assert checkpointed.checkpoint_revision == 2
     assert checkpointed.head.checkpoint_sequence == 1
     assert checkpointed.head.checkpoint_revision == 2
@@ -403,7 +405,9 @@ def test_filing_archive_and_star_each_have_their_inverse(
         == 409
     )
 
-    filed = projects.assign_folder_ok(created.id, AssignProjectFolderRequest(folder_id=folder.id))
+    filed = projects.assign_folder_ok(
+        created.id, AssignProjectFolderRequest(folder_id=folder.id)
+    )
     assert filed.folder_id == folder.id
     row = api.project_browser.list_ok().projects[0]
     assert row.folder is not None and row.folder.id == folder.id
@@ -433,7 +437,12 @@ def test_filing_archive_and_star_each_have_their_inverse(
 
     assert workspace.project_folders.delete(folder.id).status_code == 204
     assert workspace.project_folders.list_ok().folders == []
-    assert workspace.project_folders.rename(uuid4(), ProjectFolderWriteRequest(name="x")).status_code == 404
+    assert (
+        workspace.project_folders.rename(
+            uuid4(), ProjectFolderWriteRequest(name="x")
+        ).status_code
+        == 404
+    )
     assert workspace.project_folders.delete(uuid4()).status_code == 404
 
 
@@ -446,7 +455,9 @@ def test_delete_removes_the_project_and_refuses_to_lose_unsaved_work(
     draft = projects.submit_commands_ok(
         created.id,
         _batch_request(
-            (_rename("Unsaved", "Temporary"),), head.room_epoch, head.collaboration_sequence
+            (_rename("Unsaved", "Temporary"),),
+            head.room_epoch,
+            head.collaboration_sequence,
         ),
     )
 
@@ -481,9 +492,7 @@ def test_project_routes_answer_404_for_a_project_that_is_not_there(
         "head": projects.get_head(missing),
         "commands": projects.submit_commands(
             missing,
-            _batch_request(
-                (_rename("x", "y"),), uuid4(), 0
-            ),
+            _batch_request((_rename("x", "y"),), uuid4(), 0),
         ),
         "checkpoint": projects.checkpoint(
             missing,
@@ -508,7 +517,11 @@ def test_project_routes_answer_404_for_a_project_that_is_not_there(
     }
 
     for context, response in responses.items():
-        assert response.status_code == 404, (context, response.status_code, response.text)
+        assert response.status_code == 404, (
+            context,
+            response.status_code,
+            response.text,
+        )
     assert str(missing) in responses["get"].json()["detail"]
 
 
@@ -556,7 +569,9 @@ def test_project_browser_lists_every_workspace_the_user_can_see(
     projects, created = _create(api, "Browser row")
     workspace = api.workspace(WORKSPACE_ID)
     folder = workspace.project_folders.create_ok(ProjectFolderWriteRequest(name="Row"))
-    projects.assign_folder_ok(created.id, AssignProjectFolderRequest(folder_id=folder.id))
+    projects.assign_folder_ok(
+        created.id, AssignProjectFolderRequest(folder_id=folder.id)
+    )
     projects.star_ok(created.id)
     projects.record_open_ok(created.id)
 
@@ -568,4 +583,6 @@ def test_project_browser_lists_every_workspace_the_user_can_see(
     summary = projects.list_ok().projects[0]
     # The browser row is the workspace summary plus where it lives and what the
     # acting user made of it.
-    assert row.model_dump(include=set(type(summary).model_fields)) == summary.model_dump()
+    assert (
+        row.model_dump(include=set(type(summary).model_fields)) == summary.model_dump()
+    )

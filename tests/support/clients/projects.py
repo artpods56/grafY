@@ -192,7 +192,9 @@ class ProjectsApi:
         *,
         headers: Mapping[str, str] | None = None,
     ) -> ProjectResponse:
-        return _parse(ProjectResponse, _expect(self.copy(payload, headers=headers), 201))
+        return _parse(
+            ProjectResponse, _expect(self.copy(payload, headers=headers), 201)
+        )
 
     def get(
         self, project_id: UUID, *, headers: Mapping[str, str] | None = None
@@ -430,7 +432,8 @@ class ProjectsApi:
         self, project_id: UUID, *, headers: Mapping[str, str] | None = None
     ) -> UserProjectStateResponse:
         return _parse(
-            UserProjectStateResponse, _expect(self.star(project_id, headers=headers), 200)
+            UserProjectStateResponse,
+            _expect(self.star(project_id, headers=headers), 200),
         )
 
     def unstar(
