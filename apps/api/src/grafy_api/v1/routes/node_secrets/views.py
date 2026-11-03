@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import Response
 
+from grafy_core.application.project_creation import MAIN_GRAPH_ID
 from grafy_core.domain.errors import (
     NotFoundError,
     CollaborationHeadConflictError,
@@ -14,8 +15,8 @@ from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
 from grafy_api.v1.routes.node_secrets.dependencies import NodeSecretDependency
 from grafy_api.v1.routes.node_secrets.models import (
     ConfigureNodeSecretRequest,
-    GraphNodeSecretsResponse,
     NodeSecretStatusResponse,
+    ProjectNodeSecretsResponse,
 )
 from grafy_api.node_secrets import (
     NodeSecretConfigurationError,
@@ -24,30 +25,37 @@ from grafy_api.node_secrets import (
 
 
 router = APIRouter(
-    prefix="/workspaces/{workspace_id}/projects/{project_id}/graphs",
+    prefix="/workspaces/{workspace_id}/projects/{project_id}",
     tags=["node secrets"],
 )
 
 
 @router.get(
-    "/{graph_id}/node-secrets",
-    response_model=GraphNodeSecretsResponse,
+    "/node-secrets",
+    response_model=ProjectNodeSecretsResponse,
 )
 async def get_node_secret_status(
     project_id: UUID,
-    graph_id: str,
     service: NodeSecretDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
-) -> GraphNodeSecretsResponse:
+    graph_id: Annotated[str, Query()] = MAIN_GRAPH_ID,
+) -> ProjectNodeSecretsResponse:
+    """Secret status for one Graph of the Project's live head.
+
+    A Project holds several Graphs and a secret belongs to a node of exactly one of
+    them, so the listing stays per-Graph and defaults to the Graph a new Project
+    opens on.
+    """
+
     try:
         state = await service.status(access.workspace_id, project_id, graph_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return GraphNodeSecretsResponse.from_state(state)
+    return ProjectNodeSecretsResponse.from_state(state)
 
 
 @router.put(
-    "/{graph_id}/nodes/{node_id}/secrets/{name}",
+    "/graphs/{graph_id}/nodes/{node_id}/secrets/{name}",
     response_model=NodeSecretStatusResponse,
 )
 async def configure_node_secret(
@@ -81,7 +89,7 @@ async def configure_node_secret(
 
 
 @router.delete(
-    "/{graph_id}/nodes/{node_id}/secrets/{name}",
+    "/graphs/{graph_id}/nodes/{node_id}/secrets/{name}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_node_secret(

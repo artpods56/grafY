@@ -3,23 +3,12 @@
 from grafy_api.services.composition import WorkbenchComponents
 from grafy_api.v1.routes.artifacts.dependencies import artifact_service
 from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
-from grafy_api.v1.routes.catalog.dependencies import (
-    graph_module_executor,
-    plugin_registry,
-)
-from grafy_api.v1.routes.executions.dependencies import (
-    execution_admission_limiter,
-    execution_history_service,
-    materialization_service,
-    run_execution_manager,
-    run_result_presenter,
-)
+from grafy_api.v1.routes.catalog.dependencies import plugin_registry
 from grafy_api.v1.routes.library.dependencies import (
     library_folders_service,
     library_service,
 )
-from grafy_api.v1.routes.modules.dependencies import module_library_service
-from grafy_api.v1.routes.uploads.dependencies import upload_service
+from grafy_api.v1.routes.uploads.dependencies import upload_config, upload_service
 
 from tests.support.identity import browser_actor_override
 from tests.testkit import AppDependency, DependencyOverride
@@ -30,24 +19,16 @@ def workbench_dependency_overrides(
 ) -> dict[AppDependency, DependencyOverride]:
     """Map every workbench endpoint to one cohesive component graph."""
 
-    overrides: dict[AppDependency, DependencyOverride] = {
+    return {
         plugin_registry: lambda: components.plugin_registry,
         upload_service: lambda: components.uploads,
-        execution_admission_limiter: lambda: components.execution_admission,
-        run_execution_manager: lambda: components.execution_manager,
-        execution_history_service: lambda: components.execution_history,
-        materialization_service: lambda: components.materializations,
-        run_result_presenter: lambda: components.presenter,
+        upload_config: lambda: components.upload_config,
         artifact_service: lambda: components.artifacts,
         library_service: lambda: components.library,
         library_folders_service: lambda: components.library_folders,
-        graph_module_executor: lambda: components.run_graph,
         browser_actor: browser_actor_override,
         workspace_actor: browser_actor_override,
     }
-    if components.module_library is not None:
-        overrides[module_library_service] = lambda: components.module_library
-    return overrides
 
 
 __all__ = ["workbench_dependency_overrides"]
