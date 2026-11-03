@@ -309,6 +309,17 @@ One user message and everything the Agent does until it answers, stops or is
 cancelled. Sent over HTTP with a client-chosen turn id, run by the API owner, streamed
 to the Project room. One turn runs at a time per conversation. Interrupted by an API
 restart like a Run.
+_Avoid_: request, job, request/response pair
+
+### Turn receipt
+
+The durable record that a send was accepted, written in the same transaction as its user
+message: who asked, which Agent and canvas state it will run on, which sequence its
+message took, and how it ended. A repeated send is answered from it instead of run again.
+Its terminal state is claimed once, by the cancel, the model failure or the restart
+recovery that gets there first. Streamed text is never the receipt: the message stored
+when the turn ends replaces it, and is what the next turn reads as history.
+_Avoid_: job record, run, outbox
 
 ### Agent tool link
 

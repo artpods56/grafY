@@ -6,6 +6,9 @@ from .agent_conversations import (
 from .agent_keys import (
     SqlAgentKeyRepository as SqlAgentKeyRepository,
 )
+from .agent_turns import (
+    SqlAgentTurnRepository as SqlAgentTurnRepository,
+)
 from .artifacts import (
     SqlArtifactRepository as SqlArtifactRepository,
 )

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from grafy_api.agents.conversations import AgentConversationService
     from grafy_api.agents.keys import AgentKeyService
     from grafy_api.agents.models import AgentModelResolver
+    from grafy_api.agents.turns import AgentService
     from grafy_api.node_secrets import NodeSecretService
     from grafy_api.realtime.hub import ProjectRoomHub
     from grafy_api.runs.service import RunService
@@ -51,9 +52,15 @@ class AppResources:
     agent_keys: AgentKeyService
     agent_conversations: AgentConversationService
     agent_models: AgentModelResolver
+    # The turn runtime is the one Agent owner that holds tasks and open model clients, so
+    # it is the one with something to stop, and it is what startup recovery marks interrupted.
+    agent_turns: AgentService
     project_room_hub: ProjectRoomHub
 
     async def cleanup(self) -> None:
+        # Turns first, while the room still exists: a turn's last act is to publish the
+        # text it finished with, and a hub that has already shut down cannot carry it.
+        await self.agent_turns.close()
         await self.project_room_hub.shutdown()
         await self.runs.close()
         await self.workbench.artifacts.close()

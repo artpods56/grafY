@@ -51,6 +51,7 @@ from grafy_core.domain.agent_conversations import (
     AgentConversation,
     AgentConversationEvent,
 )
+from grafy_core.domain.agent_turns import AgentTurn, AgentTurnStatus
 from grafy_core.domain.collaboration import (
     ProjectCheckpointMapping,
     ProjectCommandReceipt,
@@ -86,6 +87,11 @@ from grafy_core.kernel.results import (
 from grafy_core.ports.agent_conversations import (
     AgentConversationAppendError,
     AgentConversationRepositoryPort,
+)
+from grafy_core.ports.agent_turns import (
+    AgentTurnAlreadyAdmittedError,
+    AgentTurnBusyError,
+    AgentTurnRepositoryPort,
 )
 from grafy_core.ports.artifacts import ArtifactRepositoryPort, UnitOfWorkPort
 from grafy_core.ports.collaboration import CollaborationRepositoryPort
@@ -165,6 +171,10 @@ class InMemoryDataStore:
     agent_conversation_events: dict[
         tuple[UUID, UUID, int], AgentConversationEvent
     ] = field(default_factory=dict[tuple[UUID, UUID, int], AgentConversationEvent])
+    # (turn.id). A send's receipt: keyed for a client turn id by the repository, which is
+    # where "one turn at a time per conversation" and "this send was already admitted" are
+    # decided, exactly as the partial unique index decides them in SQL.
+    agent_turns: dict[UUID, AgentTurn] = field(default_factory=dict[UUID, AgentTurn])
     # (workspace_id, fingerprint). Two Workspaces never share a fingerprint's result.
     node_results: dict[tuple[UUID, str], StoredResult] = field(
         default_factory=dict[tuple[UUID, str], StoredResult]
@@ -204,6 +214,7 @@ class InMemoryDataStore:
         self.runs = _clone(other.runs)
         self.agent_conversations = _clone(other.agent_conversations)
         self.agent_conversation_events = _clone(other.agent_conversation_events)
+        self.agent_turns = _clone(other.agent_turns)
         self.node_results = _clone(other.node_results)
         self.pointers = _clone(other.pointers)
         self.workspace_locations = _clone(other.workspace_locations)
@@ -1269,6 +1280,119 @@ class InMemoryAgentConversationRepository(AgentConversationRepositoryPort):
         return rows if limit is None else rows[:limit]
 
 
+class InMemoryAgentTurnRepository(AgentTurnRepositoryPort):
+    """Turn receipts over the shared store.
+
+    The two admission rules are re-implemented here as the checks the SQL schema states as
+    constraints, because an adapter that only *looks* like it refuses a second running turn
+    would let the service believe it owns a conversation it does not: a duplicate receipt id
+    and a conversation that already runs a turn are errors rather than silent overwrites.
+    """
+
+    def __init__(self, store: InMemoryDataStore) -> None:
+        self._store = store
+
+    @override
+    async def add(self, turn: AgentTurn) -> None:
+        if turn.id in self._store.agent_turns:
+            raise ConcurrentWriteError(f"Agent turn already exists: {turn.id}")
+        if (
+            turn.workspace_id,
+            turn.conversation_id,
+            turn.client_turn_id,
+        ) in self._client_turn_keys():
+            raise AgentTurnAlreadyAdmittedError(
+                f"Client turn {turn.client_turn_id} was already admitted for "
+                f"conversation {turn.conversation_id}"
+            )
+        running = await self.running_for_conversation(
+            turn.workspace_id, turn.conversation_id
+        )
+        if running is not None:
+            raise AgentTurnBusyError(turn.conversation_id, running.id)
+        self._store.agent_turns[turn.id] = turn
+
+    def _client_turn_keys(self) -> set[tuple[UUID, UUID, str]]:
+        return {
+            (turn.workspace_id, turn.conversation_id, turn.client_turn_id)
+            for turn in self._store.agent_turns.values()
+        }
+
+    @override
+    async def get(self, workspace_id: UUID, turn_id: UUID) -> AgentTurn | None:
+        turn = self._store.agent_turns.get(turn_id)
+        if turn is None or turn.workspace_id != workspace_id:
+            return None
+        return turn
+
+    @override
+    async def get_by_client_turn_id(
+        self, workspace_id: UUID, conversation_id: UUID, client_turn_id: str
+    ) -> AgentTurn | None:
+        return next(
+            (
+                turn
+                for turn in self._store.agent_turns.values()
+                if turn.workspace_id == workspace_id
+                and turn.conversation_id == conversation_id
+                and turn.client_turn_id == client_turn_id
+            ),
+            None,
+        )
+
+    @override
+    async def running_for_conversation(
+        self, workspace_id: UUID, conversation_id: UUID
+    ) -> AgentTurn | None:
+        rows = await self._for_conversation(workspace_id, conversation_id)
+        return next((turn for turn in rows if turn.is_running), None)
+
+    @override
+    async def list_for_conversation(
+        self, workspace_id: UUID, conversation_id: UUID, *, limit: int | None = None
+    ) -> list[AgentTurn]:
+        rows = await self._for_conversation(workspace_id, conversation_id)
+        return rows if limit is None else rows[:limit]
+
+    async def _for_conversation(
+        self, workspace_id: UUID, conversation_id: UUID
+    ) -> list[AgentTurn]:
+        rows = [
+            turn
+            for turn in self._store.agent_turns.values()
+            if turn.workspace_id == workspace_id
+            and turn.conversation_id == conversation_id
+        ]
+        return _newest_first(
+            rows, stamp=lambda turn: turn.created_at, ident=lambda turn: turn.id
+        )
+
+    @override
+    async def finish(
+        self,
+        workspace_id: UUID,
+        turn_id: UUID,
+        *,
+        status: AgentTurnStatus,
+        at: datetime,
+        detail: str | None = None,
+    ) -> AgentTurn | None:
+        turn = await self.get(workspace_id, turn_id)
+        if turn is None or not turn.is_running:
+            # Already terminal, or never this Workspace's: the caller did not claim it.
+            return None
+        finished = turn.finished(status=status, at=at, detail=detail)
+        self._store.agent_turns[turn_id] = finished
+        return finished
+
+    @override
+    async def list_running(self) -> list[AgentTurn]:
+        return sorted(
+            (turn for turn in self._store.agent_turns.values() if turn.is_running),
+            key=lambda turn: turn.created_at,
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class _InMemoryUnitOfWorkState:
     working_store: InMemoryDataStore
@@ -1280,6 +1404,7 @@ class _InMemoryUnitOfWorkState:
     runs: RunRepositoryPort
     results: ResultStoreRepositoryPort
     agent_conversations: AgentConversationRepositoryPort
+    agent_turns: AgentTurnRepositoryPort
 
 
 class InMemoryUnitOfWork(UnitOfWorkPort):
@@ -1330,6 +1455,10 @@ class InMemoryUnitOfWork(UnitOfWorkPort):
     def agent_conversations(self) -> AgentConversationRepositoryPort:
         return self._entered_state().agent_conversations
 
+    @property
+    def agent_turns(self) -> AgentTurnRepositoryPort:
+        return self._entered_state().agent_turns
+
     @override
     async def __aenter__(self) -> Self:
         if self._state.get() is not None:
@@ -1351,6 +1480,7 @@ class InMemoryUnitOfWork(UnitOfWorkPort):
                     agent_conversations=InMemoryAgentConversationRepository(
                         working_store
                     ),
+                    agent_turns=InMemoryAgentTurnRepository(working_store),
                 )
             )
         except BaseException:

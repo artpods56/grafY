@@ -24,6 +24,8 @@ from grafy_api.app_state import AppIdentity, AppResources
 from grafy_api.agents.conversations import AgentConversationService
 from grafy_api.agents.keys import AgentKeyService
 from grafy_api.agents.models import AgentModelResolver
+from grafy_api.agents.publishing import NullAgentTurnPublisher
+from grafy_api.agents.turns import AgentService
 from grafy_api.services.families import build_application_registry
 from grafy_api.node_secrets import NodeSecretService
 from grafy_api.realtime.hub import ProjectRoomHub
@@ -146,6 +148,15 @@ async def build_app_resources(
         keys=agent_keys,
         egress_policy=workbench_egress_policy(settings.egress),
     )
+    # The turn runtime gets a publisher that counts what it discards. The Project room's
+    # `agent.*` frames are the next unit of issue #202, and until they exist a streamed
+    # partial has nowhere to go — which is a dropped notification, never a lost turn: the
+    # durable message a turn writes is what the reader will be shown either way.
+    agent_turns = AgentService(
+        unit_of_work_factory=new_unit_of_work,
+        models=agent_models,
+        publisher=NullAgentTurnPublisher(),
+    )
     workbench = build_workbench_components(
         plugin_registry=registry,
         workspace=app.workspace,
@@ -186,6 +197,7 @@ async def build_app_resources(
         agent_keys=agent_keys,
         agent_conversations=agent_conversations,
         agent_models=agent_models,
+        agent_turns=agent_turns,
         project_room_hub=project_room_hub,
     )
     try:
@@ -214,6 +226,11 @@ async def _recover(
         return
     interrupted = await resources.runs.recover_after_restart()
     logger.info("unfinished_runs_interrupted count=%s", len(interrupted))
+    # A turn's task died with the process that ran it, so its receipt is what says it was
+    # running. Marking it interrupted is what releases the conversation for a new send;
+    # leaving it running would hold the thread busy with nothing left to stop.
+    interrupted_turns = await resources.agent_turns.recover_after_restart()
+    logger.info("unfinished_agent_turns_interrupted count=%s", len(interrupted_turns))
 
 
 async def run_periodic_cleanup(

@@ -23,6 +23,7 @@ BASELINE_TABLES = {
     "agent_conversation_events",
     "agent_conversations",
     "agent_keys",
+    "agent_turns",
     "artifact_objects",
     "auth_sessions",
     "library_artifact_placements",

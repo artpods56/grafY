@@ -87,13 +87,48 @@ class ResolvedAgentModel:
         """The pydantic-ai model the turn loop runs on.
 
         The client is handed in rather than built by the provider so the pin survives:
-        a provider given only a `base_url` would dial whatever DNS says.
+        a provider given only a `base_url` would dial whatever DNS says. Whoever calls
+        this cannot close what it made, so it is the answer for a caller that owns the
+        process; a turn dials through `build_owned_chat_model`.
         """
 
         return OpenAIChatModel(
             self.model_name,
             provider=OpenAIProvider(openai_client=self.build_openai_client()),
         )
+
+    def build_owned_chat_model(self) -> "OwnedAgentChatModel":
+        """A model, and the only way to hand its connection back.
+
+        A turn opens one of these and closes it on every path out of the turn — answered,
+        cancelled, failed — because a client nobody closes is a connection pool that outlives
+        the conversation it was dialled for, and the key sits inside it the whole time.
+        """
+
+        client = self.build_openai_client()
+        return OwnedAgentChatModel(
+            chat_model=OpenAIChatModel(
+                self.model_name, provider=OpenAIProvider(openai_client=client)
+            ),
+            client=client,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class OwnedAgentChatModel:
+    """A dialled model and the client underneath it. `aclose` is idempotent."""
+
+    chat_model: OpenAIChatModel
+    client: AsyncOpenAI
+    _closed: bool = False
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        object.__setattr__(self, "_closed", True)
+        # Closing the SDK client closes the httpx client it was handed, which is the
+        # pinned transport too: the whole route to the endpoint goes with it.
+        await self.client.close()
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +167,24 @@ class AgentKeyReader(Protocol):
         graph_id: str,
         agent_id: str,
     ) -> AgentKeyState: ...
+
+
+class AgentModelReader(Protocol):
+    """What the turn runtime needs from model resolution, and nothing more.
+
+    A turn resolves one Agent's model to run one turn on it. Naming just `resolve` here is
+    what keeps a running conversation from being able to ask the same object what a
+    configuration surface would answer, or to reach the key owner behind it.
+    """
+
+    async def resolve(
+        self,
+        *,
+        workspace_id: UUID,
+        project_id: UUID,
+        graph_id: str,
+        agent: GraphAgent,
+    ) -> ResolvedAgentModel: ...
 
 
 class AgentModelResolver:
@@ -238,6 +291,8 @@ class AgentModelResolver:
 
 __all__ = [
     "AgentModelConfigurationError",
+    "AgentModelReader",
+    "OwnedAgentChatModel",
     "AgentModelDescription",
     "AgentModelResolver",
     "AgentModelSource",

@@ -48,7 +48,8 @@ retains that bundle rather than copying its fields. `AppIdentity` owns the
 identity and authentication services. Request dependencies retrieve these typed
 resources; domain services receive their dependencies directly.
 
-Shutdown closes the Project room hub, Run service, optional Plugin runtime,
+Shutdown stops the Agent turn runtime first, so its turns write their own endings,
+then closes the Project room hub, Run service, optional Plugin runtime,
 and artifact HTTP client in that order. The API's owner lease and database
 lifecycle remain in `main.py`. In-memory room coordination requires the configured
 single API owner; multiple workers are not an interchangeable deployment mode.
