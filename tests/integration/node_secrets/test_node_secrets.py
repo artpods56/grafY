@@ -160,7 +160,9 @@ def _project_document(document: GraphDocument) -> ProjectDocument:
     """One Graph under the id every Project route and run reads by default."""
 
     return ProjectDocument(
-        graphs=(GraphDefinition(id=MAIN_GRAPH_ID, name="Main", document=document),)
+        graphs=(
+            GraphDefinition(id=MAIN_GRAPH_ID, name="Main", document=document),
+        )
     )
 
 
@@ -265,8 +267,10 @@ async def _replace_main_graph(
 async def _stored_secret_count(database: Database, project_id: UUID) -> int:
     async with database.engine.connect() as connection:
         stored = await connection.scalar(
-            text("SELECT COUNT(*) FROM node_secrets WHERE project_id = :project_id"),
-            {"project_id": project_id},
+            text(
+                "SELECT COUNT(*) FROM node_secrets WHERE project_id = :project_id"
+            ),
+            {"project_id": project_id.hex},
         )
     return int(stored or 0)
 
@@ -318,7 +322,7 @@ async def test_configured_secret_is_encrypted_and_resolves_only_for_binding(
                 "SELECT ciphertext, nonce, dependency_sha256, aad_version "
                 "FROM node_secrets WHERE project_id = :project_id"
             ),
-            {"project_id": project_id},
+            {"project_id": project_id.hex},
         )
         row = raw.one()
     assert plaintext.encode("utf-8") not in bytes(row.ciphertext)
@@ -532,10 +536,12 @@ async def test_secret_survives_a_head_move_because_only_writes_are_gated(
     assert resolved.get_secret_value() == "head-moving-secret"
 
 
-async def test_changing_dependency_deletes_secret_and_changing_back_does_not_revive(
+async def test_a_changed_dependency_makes_the_secret_unusable_until_it_is_reconfigured(
     node_secret_setup: tuple[Database, NodeSecretService, PluginRegistry],
 ) -> None:
-    database, service, registry = node_secret_setup
+    """A secret belongs to a node under its configuration, not to the slot."""
+
+    database, service, _ = node_secret_setup
     project_id = await _secret_project(database)
     await service.configure(
         workspace_id=WORKSPACE_ID,
@@ -546,20 +552,19 @@ async def test_changing_dependency_deletes_secret_and_changing_back_does_not_rev
         value=SecretStr("bound-to-original-endpoint"),
         expected_head_sequence=0,
     )
+
     sequence = await _replace_main_graph(
         database,
         project_id,
         document=_secret_document(base_url="https://changed.example/v1"),
         expected_sequence=0,
     )
-
     status = await service.status(WORKSPACE_ID, project_id, MAIN_GRAPH_ID)
 
     assert sequence == 1
     assert status.head_sequence == 1
     assert status.secrets[0].configured is False
-    assert await _stored_secret_count(database, project_id) == 0
-    with pytest.raises(NodeSecretUnavailableError, match="not configured"):
+    with pytest.raises(NodeSecretUnavailableError, match="does not match"):
         await service.resolve_secret(
             workspace_id=WORKSPACE_ID,
             project_id=project_id,
@@ -569,32 +574,36 @@ async def test_changing_dependency_deletes_secret_and_changing_back_does_not_rev
             dependencies={"base_url": "https://changed.example/v1"},
         )
 
-    changed_back = await _replace_main_graph(
-        database,
-        project_id,
-        document=_secret_document(),
-        expected_sequence=1,
+    # Writing it again at the head the node now has is the way back, and it is one
+    # row rather than a second one beside the stale ciphertext.
+    await service.configure(
+        workspace_id=WORKSPACE_ID,
+        project_id=project_id,
+        graph_id=MAIN_GRAPH_ID,
+        node_id="llm",
+        name="api_key",
+        value=SecretStr("bound-to-new-endpoint"),
+        expected_head_sequence=1,
     )
-    changed_back_status = await service.status(WORKSPACE_ID, project_id, MAIN_GRAPH_ID)
+    reconfigured = await service.status(WORKSPACE_ID, project_id, MAIN_GRAPH_ID)
+    resolved = await service.resolve_secret(
+        workspace_id=WORKSPACE_ID,
+        project_id=project_id,
+        graph_id=MAIN_GRAPH_ID,
+        node_id="llm",
+        name="api_key",
+        dependencies={"base_url": "https://changed.example/v1"},
+    )
 
-    assert changed_back == 2
-    assert changed_back_status.head_sequence == 2
-    assert changed_back_status.secrets[0].configured is False
-    with pytest.raises(NodeSecretUnavailableError, match="not configured"):
-        await service.resolve_secret(
-            workspace_id=WORKSPACE_ID,
-            project_id=project_id,
-            graph_id=MAIN_GRAPH_ID,
-            node_id="llm",
-            name="api_key",
-            dependencies={"base_url": "https://llm.example/v1"},
-        )
+    assert reconfigured.secrets[0].configured is True
+    assert resolved.get_secret_value() == "bound-to-new-endpoint"
+    assert await _stored_secret_count(database, project_id) == 1
 
 
-async def test_removing_and_readding_node_id_does_not_revive_secret(
+async def test_deleting_a_secret_is_the_way_out_and_is_gated_on_the_head(
     node_secret_setup: tuple[Database, NodeSecretService, PluginRegistry],
 ) -> None:
-    database, service, registry = node_secret_setup
+    database, service, _ = node_secret_setup
     project_id = await _secret_project(database)
     await service.configure(
         workspace_id=WORKSPACE_ID,
@@ -602,28 +611,32 @@ async def test_removing_and_readding_node_id_does_not_revive_secret(
         graph_id=MAIN_GRAPH_ID,
         node_id="llm",
         name="api_key",
-        value=SecretStr("must-not-revive"),
+        value=SecretStr("withdrawn-key"),
         expected_head_sequence=0,
     )
 
-    await _replace_main_graph(
-        database,
-        project_id,
-        document=GraphDocument(),
-        expected_sequence=0,
-    )
-    stored_count = await _stored_secret_count(database, project_id)
-    sequence = await _replace_main_graph(
-        database,
-        project_id,
-        document=_secret_document(),
-        expected_sequence=1,
+    with pytest.raises(CollaborationHeadConflictError):
+        await service.remove(
+            workspace_id=WORKSPACE_ID,
+            project_id=project_id,
+            graph_id=MAIN_GRAPH_ID,
+            node_id="llm",
+            name="api_key",
+            expected_head_sequence=7,
+        )
+    assert await _stored_secret_count(database, project_id) == 1
+
+    await service.remove(
+        workspace_id=WORKSPACE_ID,
+        project_id=project_id,
+        graph_id=MAIN_GRAPH_ID,
+        node_id="llm",
+        name="api_key",
+        expected_head_sequence=0,
     )
     status = await service.status(WORKSPACE_ID, project_id, MAIN_GRAPH_ID)
 
-    assert stored_count == 0
-    assert sequence == 2
-    assert status.head_sequence == 2
+    assert await _stored_secret_count(database, project_id) == 0
     assert status.secrets[0].configured is False
     with pytest.raises(NodeSecretUnavailableError, match="not configured"):
         await service.resolve_secret(
@@ -678,7 +691,9 @@ async def test_status_is_false_and_resolution_fails_with_different_server_key(
         value=SecretStr("secret"),
         expected_head_sequence=0,
     )
-    wrong_key_service = _secret_service(database, registry, key=_encryption_key(b"z"))
+    wrong_key_service = _secret_service(
+        database, registry, key=_encryption_key(b"z")
+    )
 
     status = await wrong_key_service.status(WORKSPACE_ID, project_id, MAIN_GRAPH_ID)
 
@@ -723,7 +738,7 @@ async def test_operator_version_mismatch_cannot_reuse_stored_secret(
                 "UPDATE node_secrets SET operator_version = 2 "
                 "WHERE project_id = :project_id"
             ),
-            {"project_id": project_id},
+            {"project_id": project_id.hex},
         )
 
     status = await service.status(WORKSPACE_ID, project_id, MAIN_GRAPH_ID)
@@ -849,11 +864,12 @@ def test_node_secret_routes_scope_to_the_project_and_never_leak_values(
                 "configured": True,
             }
 
+            # Raw, because a SecretStr value would be redacted by model_dump(mode="json"):
+            # the write guard is missing, and the value must not be echoed back.
             invalid = client.put(
                 f"/v1/workspaces/{WORKSPACE_ID}/projects/{project_id}"
                 f"/graphs/{MAIN_GRAPH_ID}/nodes/llm/secrets/api_key",
-                # Raw: a SecretStr value would be redacted by model_dump(mode="json").
-                json={"value": plaintext, "expected_head_sequence": 0},
+                json={"value": plaintext},
             )
             assert invalid.status_code == 422
             assert plaintext not in invalid.text
@@ -922,7 +938,7 @@ def test_empty_secret_value_response_keeps_its_plain_detail(
         settings=Settings(
             app=AppConfig(
                 workspace=tmp_path / "workbench",
-                database_url=SecretStr(create_db_url(tmp_path, "empty-secret.sqlite3")),
+                database_url=SecretStr(create_db_url(tmp_path, "node-secrets.sqlite3")),
             )
         ),
         overrides={
