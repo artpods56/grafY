@@ -26,13 +26,15 @@ const testState = vi.hoisted(() => ({
   push: vi.fn(),
   /** What an open workbench publishes to the rail; null with none open. */
   chrome: null as Record<string, unknown> | null,
-  savedGraphs: [] as Array<{
+  savedProjects: [] as Array<{
     id: string;
     name: string;
     revision: number;
     node_count: number;
     edge_count: number;
+    graph_count: number;
     updated_at: string;
+    draft_pending: boolean;
   }>,
 }));
 
@@ -89,10 +91,10 @@ vi.mock("@/features/workbench/ui/WorkbenchChromeContext", () => ({
 
 vi.mock("@/hooks/use-api", () => ({
   useWorkspaceProjects: () => ({
-    data: { graphs: testState.savedGraphs },
+    data: { projects: testState.savedProjects },
     mutate: vi.fn(),
   }),
-  useGraphSummaryRefresh: () => vi.fn(),
+  useProjectSummaryRefresh: () => vi.fn(),
   useWorkspaces: () => ({ data: [] }),
   useMyWorkspaceInvitations: () => ({ data: [], mutate: vi.fn() }),
 }));
@@ -107,7 +109,7 @@ afterEach(async () => {
   document.body.replaceChildren();
   testState.pathname = "/workspaces/operations/projects/graph-a";
   testState.push.mockReset();
-  testState.savedGraphs = [];
+  testState.savedProjects = [];
   testState.chrome = null;
   vi.unstubAllGlobals();
 });
@@ -441,25 +443,33 @@ describe("workspace rail route lifecycle", () => {
     ).toBeNull();
   });
 
-  it("keeps recent graphs without redundant sidebar controls or icons", async () => {
-    testState.savedGraphs = [
+  it("keeps recent projects without redundant sidebar controls or icons", async () => {
+    testState.savedProjects = [
       {
-        id: "graph-a",
+        id: "project-a",
         name: "Monthly extraction",
         revision: 1,
         node_count: 2,
         edge_count: 1,
+        graph_count: 3,
         updated_at: "2026-09-01T12:00:00Z",
+        draft_pending: false,
       },
     ];
     const { container } = await renderWorkspaceRail();
-    const recentGraph = container.querySelector<HTMLButtonElement>(
+    const recentProject = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Monthly extraction"]',
     );
 
     expect(container.textContent).not.toContain("Quick switch");
     expect(container.querySelector('[aria-label="Graph location"]')).toBeNull();
-    expect(recentGraph).not.toBeNull();
-    expect(recentGraph?.querySelector("svg")).toBeNull();
+    expect(recentProject).not.toBeNull();
+    expect(recentProject?.querySelector("svg")).toBeNull();
+
+    // The rail row is a Project, so it opens the Project's own Workbench.
+    await act(async () => recentProject?.click());
+    expect(testState.push).toHaveBeenCalledWith(
+      "/workspaces/operations/projects/project-a",
+    );
   });
 });

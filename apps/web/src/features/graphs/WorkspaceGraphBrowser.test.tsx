@@ -13,8 +13,7 @@ const browserState = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
   mutate: vi.fn(async () => undefined),
-  data: { projects: [] as SavedGraphSummary[] } as
-    { graphs: SavedGraphSummary[] } | undefined,
+  data: undefined as { projects: SavedGraphSummary[] } | undefined,
   error: undefined as Error | undefined,
   isLoading: false,
   workspace: {
@@ -63,7 +62,8 @@ import { WorkspaceGraphBrowser } from "./WorkspaceGraphBrowser";
 const roots: Root[] = [];
 let activeRoot: Root | null = null;
 
-function graph(
+/** A browser row is a Project: one summary per Project, not per Graph. */
+function project(
   id: string,
   name: string,
   updatedAt = "2026-08-10T10:00:00Z",
@@ -73,16 +73,17 @@ function graph(
     name,
     node_count: 3,
     edge_count: 2,
+    graph_count: 1,
     revision: 4,
     updated_at: updatedAt,
     draft_pending: false,
   };
 }
 
-const INTAKE_GRAPHS: SavedGraphSummary[] = [
-  graph("graph-invoice", "Invoice intake", "2026-08-12T10:00:00Z"),
-  graph("graph-archive", "Invoice archive audit", "2026-08-11T10:00:00Z"),
-  graph("graph-sync", "Nightly sync", "2026-08-10T10:00:00Z"),
+const INTAKE_PROJECTS: SavedGraphSummary[] = [
+  project("project-invoice", "Invoice intake", "2026-08-12T10:00:00Z"),
+  project("project-archive", "Invoice archive audit", "2026-08-11T10:00:00Z"),
+  project("project-sync", "Nightly sync", "2026-08-10T10:00:00Z"),
 ];
 
 /** A write that reaches the address turns into a re-render, as it does live. */
@@ -176,7 +177,7 @@ beforeEach(() => {
   browserState.replace.mockReset();
   browserState.replace.mockImplementation(landWrite);
   browserState.mutate.mockClear();
-  browserState.data = { graphs: [] };
+  browserState.data = { projects: [] };
   browserState.error = undefined;
   browserState.isLoading = false;
   browserState.landWrites = true;
@@ -207,12 +208,12 @@ afterEach(async () => {
 });
 
 describe("workspace graph browser", () => {
-  it("loads and links only the active workspace's graphs", async () => {
+  it("loads and links only the active workspace's projects", async () => {
     browserState.data = {
-      graphs: Array.from({ length: 9 }, (_, index) =>
-        graph(
-          `graph-${index}`,
-          `Graph ${index}`,
+      projects: Array.from({ length: 9 }, (_, index) =>
+        project(
+          `project-${index}`,
+          `Project ${index}`,
           `2026-08-${String(index + 1).padStart(2, "0")}T10:00:00Z`,
         ),
       ),
@@ -233,15 +234,15 @@ describe("workspace graph browser", () => {
     expect(
       container
         .querySelector<HTMLAnchorElement>(
-          '[aria-label="Open Graph 8 in Atlas"]',
+          '[aria-label="Open Project 8 in Atlas"]',
         )
         ?.getAttribute("href"),
-    ).toBe("/workspaces/atlas/projects/graph-8");
+    ).toBe("/workspaces/atlas/projects/project-8");
   });
 
-  it("searches graph names and distinguishes no results from an empty workspace", async () => {
+  it("searches project names and distinguishes no results from an empty workspace", async () => {
     browserState.data = {
-      graphs: [graph("graph-1", "Invoice intake")],
+      projects: [project("project-1", "Invoice intake")],
     };
     const container = await renderBrowser();
     const search = searchInput(container);
@@ -275,7 +276,7 @@ describe("workspace graph browser", () => {
     await click(button(failed, "Retry"));
     expect(browserState.mutate).toHaveBeenCalledOnce();
 
-    browserState.data = { graphs: [] };
+    browserState.data = { projects: [] };
     browserState.error = undefined;
     const empty = await renderBrowser();
     expect(empty.textContent).toContain("No graphs yet");
@@ -284,7 +285,7 @@ describe("workspace graph browser", () => {
 
 describe("workspace graph browser address filters", () => {
   beforeEach(() => {
-    browserState.data = { graphs: INTAKE_GRAPHS };
+    browserState.data = { projects: INTAKE_PROJECTS };
   });
 
   it("restores the filters, the controls, and the list from the address", async () => {
@@ -302,8 +303,8 @@ describe("workspace graph browser address filters", () => {
 
   it("limits a filtered list to Recent until the address asks for All", async () => {
     browserState.data = {
-      graphs: Array.from({ length: 9 }, (_, index) =>
-        graph(`graph-${index}`, `Invoice ${index}`),
+      projects: Array.from({ length: 9 }, (_, index) =>
+        project(`project-${index}`, `Invoice ${index}`),
       ),
     };
     const recent = await renderBrowser("?q=invoice");
@@ -353,8 +354,8 @@ describe("workspace graph browser address filters", () => {
 
   it("commits the view choice and takes it back out of the address", async () => {
     browserState.data = {
-      graphs: Array.from({ length: 9 }, (_, index) =>
-        graph(`graph-${index}`, `Graph ${index}`),
+      projects: Array.from({ length: 9 }, (_, index) =>
+        project(`project-${index}`, `Project ${index}`),
       ),
     };
     const container = await renderBrowser();

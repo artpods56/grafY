@@ -5,37 +5,21 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { LocatedProject } from "@/hooks/use-api";
+import type { Workspace } from "@/lib/api";
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const browserState = vi.hoisted(() => ({
   push: vi.fn(),
-  retryGraphs: vi.fn(async () => undefined),
+  retryProjects: vi.fn(async () => undefined),
   retryWorkspaces: vi.fn(async () => undefined),
-  workspaces: [] as Array<{
-    id: string;
-    name: string;
-    slug: string;
-    kind: "personal" | "shared";
-    role: "owner" | "editor" | "viewer";
-    capabilities: string[];
-  }>,
+  workspaces: [] as Workspace[],
   workspacesError: undefined as Error | undefined,
-  graphs: [] as Array<{
-    id: string;
-    name: string;
-    node_count: number;
-    edge_count: number;
-    revision: number;
-    updated_at: string;
-    location: {
-      id: string;
-      name: string;
-      slug: string;
-      kind: "personal" | "shared";
-    };
-  }> | null,
-  graphsError: null as Error | null,
+  projects: null as LocatedProject[] | null,
+  projectsError: null as Error | null,
   isLoading: false,
+  isRefreshing: false,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -68,10 +52,11 @@ vi.mock("@/hooks/use-api", () => ({
     mutate: browserState.retryWorkspaces,
   }),
   useAllWorkspacesProjects: () => ({
-    graphs: browserState.graphs,
-    error: browserState.graphsError,
+    projects: browserState.projects,
+    error: browserState.projectsError,
     isLoading: browserState.isLoading,
-    retry: browserState.retryGraphs,
+    isRefreshing: browserState.isRefreshing,
+    retry: browserState.retryProjects,
   }),
 }));
 
@@ -104,7 +89,7 @@ const personal = {
   kind: "personal" as const,
   role: "owner" as const,
   capabilities: ["view_project", "create_project"],
-};
+} satisfies Workspace;
 
 const team = {
   id: "location-team",
@@ -113,21 +98,30 @@ const team = {
   kind: "shared" as const,
   role: "editor" as const,
   capabilities: ["view_project", "create_project"],
-};
+} satisfies Workspace;
 
-function graph(
+/** One row of the cross-workspace feed: a Project, plus where it lives. */
+function project(
   id: string,
   name: string,
-  location: typeof personal | typeof team,
+  location: Workspace,
   updatedAt = "2026-08-10T10:00:00Z",
-) {
+): LocatedProject {
   return {
     id,
     name,
     node_count: 3,
     edge_count: 2,
+    graph_count: 1,
     revision: 4,
     updated_at: updatedAt,
+    draft_pending: false,
+    archived: false,
+    archived_at: null,
+    creator: null,
+    folder: null,
+    last_opened_at: null,
+    starred: false,
     location: {
       id: location.id,
       name: location.name,
@@ -179,16 +173,17 @@ async function change(
 
 beforeEach(() => {
   browserState.push.mockReset();
-  browserState.retryGraphs.mockClear();
+  browserState.retryProjects.mockClear();
   browserState.retryWorkspaces.mockClear();
   browserState.workspaces = [personal, team];
   browserState.workspacesError = undefined;
-  browserState.graphs = [
-    graph("graph-personal", "Invoice intake", personal),
-    graph("graph-team", "Quarterly plan", team),
+  browserState.projects = [
+    project("project-personal", "Invoice intake", personal),
+    project("project-team", "Quarterly plan", team),
   ];
-  browserState.graphsError = null;
+  browserState.projectsError = null;
   browserState.isLoading = false;
+  browserState.isRefreshing = false;
 });
 
 afterEach(async () => {
@@ -199,7 +194,7 @@ afterEach(async () => {
 });
 
 describe("graph-first browser", () => {
-  it("orients the signed-in user around graphs and opens a graph directly", async () => {
+  it("orients the signed-in user around projects and opens one directly", async () => {
     const container = await renderBrowser();
 
     expect(container.querySelector("h1")?.textContent).toBe("Graphs");
@@ -215,11 +210,11 @@ describe("graph-first browser", () => {
       'a[aria-label="Open Quarterly plan in Atlas"]',
     );
     expect(link?.getAttribute("href")).toBe(
-      "/workspaces/secret-team-slug/projects/graph-team",
+      "/workspaces/secret-team-slug/projects/project-team",
     );
   });
 
-  it("searches graph names and location names, then distinguishes no results", async () => {
+  it("searches project names and location names, then distinguishes no results", async () => {
     const container = await renderBrowser();
     const search = container.querySelector<HTMLInputElement>(
       'input[aria-label="Search graphs"]',
@@ -235,8 +230,12 @@ describe("graph-first browser", () => {
   });
 
   it("filters by location and exposes the complete All view", async () => {
-    browserState.graphs = Array.from({ length: 9 }, (_, index) =>
-      graph(`graph-${index}`, `Graph ${index}`, index === 8 ? team : personal),
+    browserState.projects = Array.from({ length: 9 }, (_, index) =>
+      project(
+        `project-${index}`,
+        `Project ${index}`,
+        index === 8 ? team : personal,
+      ),
     );
     const container = await renderBrowser();
 
@@ -249,27 +248,36 @@ describe("graph-first browser", () => {
     )!;
     await change(location, team.id);
     expect(container.querySelectorAll(".grafy-graphs__row")).toHaveLength(1);
-    expect(container.textContent).toContain("Graph 8");
+    expect(container.textContent).toContain("Project 8");
+  });
+
+  it("counts the listed projects and marks a refresh over cached ones", async () => {
+    const container = await renderBrowser();
+    expect(container.textContent).toContain("2 graphs");
+
+    browserState.isRefreshing = true;
+    const refreshing = await renderBrowser();
+    expect(refreshing.textContent).toContain("2 graphs · refreshing…");
   });
 
   it("shows loading, total failure, and explicit retry states", async () => {
-    browserState.graphs = null;
+    browserState.projects = null;
     browserState.isLoading = true;
     const loading = await renderBrowser();
     expect(loading.textContent).toContain("Loading graphs…");
 
-    browserState.graphs = null;
+    browserState.projects = null;
     browserState.isLoading = false;
-    browserState.graphsError = new Error("offline");
+    browserState.projectsError = new Error("offline");
     const failed = await renderBrowser();
     expect(failed.textContent).toContain("Graphs couldn't be loaded");
     expect(failed.textContent).not.toContain("Loading graphs…");
     await click(button(failed, "Retry"));
-    expect(browserState.retryGraphs).toHaveBeenCalledOnce();
+    expect(browserState.retryProjects).toHaveBeenCalledOnce();
   });
 
-  it("shows a true empty state when every loaded location has no graphs", async () => {
-    browserState.graphs = [];
+  it("shows a true empty state when every loaded location has no projects", async () => {
+    browserState.projects = [];
     const container = await renderBrowser();
 
     expect(container.textContent).toContain("No graphs yet");
@@ -287,7 +295,7 @@ describe("graph-first browser", () => {
 
     browserState.push.mockReset();
     browserState.workspaces = [personal];
-    browserState.graphs = [];
+    browserState.projects = [];
     const single = await renderBrowser();
     await click(button(single, "New graph"));
     expect(browserState.push).toHaveBeenCalledWith(
