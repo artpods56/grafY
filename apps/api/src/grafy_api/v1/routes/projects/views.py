@@ -229,6 +229,7 @@ async def copy_exact_head(
     checkpoint_access: require_workspace_capability(
         WorkspaceCapability.CHECKPOINT_PROJECT
     ),
+    view_access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
 ) -> ProjectResponse:
     try:
         copy = await collaboration.copy_project(

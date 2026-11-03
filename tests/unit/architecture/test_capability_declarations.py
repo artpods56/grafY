@@ -291,15 +291,10 @@ def test_service_authorizations_are_declared_by_the_routes_above_them() -> None:
 def test_multi_workspace_authorizations_stay_limited_to_the_reviewed_sites() -> None:
     """A capability checked against a workspace the route did not name cannot be covered.
 
-    `copy_project` is the one reviewed site. Its route declares CREATE_PROJECT for the
-    path Workspace while the service asks VIEW_PROJECT for
-    `CopyExactHeadRequest.source_workspace_id`, and `require_workspace_capability` binds
-    only the path `workspace_id`, so no route declaration closes it: a token scoped
-    `[create_project]` copies a Project in its own Workspace that it may not view. No role
-    grants CREATE_PROJECT without VIEW_PROJECT
-    (`libs/core/src/grafy_core/domain/identity.py:52`), so the exposure is scoped tokens
-    only. It is recorded here, in the failing shape, so a second such site is a decision
-    and not a surprise.
+    The copy route checks VIEW_PROJECT for the token's Workspace; its service also
+    checks the source Workspace. A PAT is bound to one Workspace, while browser
+    credentials are authorized against both Workspaces by the service. Any new
+    multi-Workspace authorization requires a separate review.
     """
 
     assert _multi_workspace_sites() == KNOWN_MULTI_WORKSPACE_SITES

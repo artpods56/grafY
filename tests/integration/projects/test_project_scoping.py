@@ -842,6 +842,37 @@ def test_a_token_that_may_create_but_not_checkpoint_cannot_copy(
         ] == [stage.project_a]
 
 
+def test_copy_rejects_a_token_without_view_scope(tmp_path: Path) -> None:
+    with stage_for(tmp_path, "pat-copy-no-view.sqlite3") as stage:
+        source = stage.projects(stage.a).get_head_ok(
+            stage.project_a, headers=stage.as_("owner_a")
+        )
+        headers = stage.scoped_token(
+            "create-checkpoint-no-view",
+            PersonalAccessTokenScope.CREATE_PROJECT,
+            PersonalAccessTokenScope.CHECKPOINT_PROJECT,
+        )
+        refused = stage.projects(stage.a).copy(
+            CopyExactHeadRequest(
+                source_workspace_id=stage.a,
+                source_project_id=stage.project_a,
+                project_id=uuid4(),
+                command_id=uuid4(),
+                expected_room_epoch=source.room_epoch,
+                expected_sequence=source.collaboration_sequence,
+            ),
+            headers=headers,
+        )
+        _assert_status(refused, 403, "copy without view scope")
+        assert refused.json()["code"] == "identity.capability_denied"
+        assert [
+            item.id
+            for item in stage.projects(stage.a)
+            .list_ok(headers=stage.as_("owner_a"))
+            .projects
+        ] == [stage.project_a]
+
+
 def test_a_token_scoped_for_checkpointing_is_served_the_routes_that_need_it(
     tmp_path: Path,
 ) -> None:
