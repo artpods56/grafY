@@ -496,7 +496,7 @@ resolution is not atomic, so a reused slug could load someone else's layout. Key
 revocation, and re-key only after an authorized bootstrap. Artifact Viewer structure is
 not browser state at all: it lives on the shared head.
 
-## Node secrets, the head, and three traps
+## Node secrets, the head, and four traps
 
 Secret values keep their own protected HTTP boundary and never become room frames.
 Configure and remove require `manage_secrets`, assert the head, and never checkpoint —
@@ -507,7 +507,7 @@ revision enters the fingerprints of the nodes that declare it, so the next deriv
 re-reads it and an affected instance simply goes stale
 ([`runs/facts.py:196-235`](../../apps/api/src/grafy_api/runs/facts.py)).
 
-Three things in this corner are not guessable from the shapes, and are documented here
+Four things in this corner are not guessable from the shapes, and are documented here
 so nobody re-derives them:
 
 1. **The listing and the writes address a Graph differently.**
@@ -541,6 +541,19 @@ so nobody re-derives them:
    ([`application/collaboration.py:742-790`](../../libs/core/src/grafy_core/application/collaboration.py)).
    The web client encodes this by omitting both parameters unless it holds both
    ([`lib/api/projects.ts:84-102`](../../apps/web/src/lib/api/projects.ts)).
+4. **The head a secret write asserts moves without any checkpoint the client can see.**
+   Every accepted command batch advances the head's `collaboration_sequence`, whether or
+   not the Project has checkpointed, while the web client re-reads the secret listing only
+   when a checkpoint lands or a Graph is opened or saved. So the token from that listing
+   can name a head that one dragged node — or one peer's batch — has already retired, and
+   the exact-sequence assert turns
+   an ordinary edit into a 409. The client recovers by re-reading the listing after that
+   409 and sending the same write once more at the sequence the new answer names; a second
+   conflict is reported with the newer token held rather than chased
+   ([`useNodeSecrets.ts`](../../apps/web/src/features/workbench/ui/useNodeSecrets.ts)).
+   The recovery is the reason the token stays the listing's own: a client that re-addressed
+   a write from a locally guessed sequence would be asserting a head it never read, which
+   is what trap 3 forbids.
 
 ## Authorization and sensitive state
 
