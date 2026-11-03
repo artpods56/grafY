@@ -22,6 +22,22 @@ from grafy_core.kernel.results import FailureRecord, ResultStore
 type RunId = str
 
 
+class SchedulerListener(Protocol):
+    """Told, synchronously, that one computation moved to a new state.
+
+    Called inside ``_apply`` with no await point of its own, so a listener runs
+    on the thread of whoever moved the computation: it must not raise, must not
+    block and must not await. Anything slower than setting a flag belongs to the
+    listener's own task.
+    """
+
+    def computation_changed(
+        self,
+        fingerprint: str,
+        state: ComputationState,
+    ) -> None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class ComputationPlan:
     """One unit of work, keyed by fingerprint.
@@ -160,12 +176,14 @@ class _Scheduler:
         store: ResultStore,
         runner: ComputationRunner,
         concurrency: int,
+        listener: SchedulerListener | None = None,
     ) -> None:
         if concurrency < 1:
             raise ValueError(f"concurrency must be at least 1, got {concurrency}")
         self._store = store
         self._runner = runner
         self._concurrency = concurrency
+        self._listener = listener
         # The one attempt per fingerprint that Runs may currently join. A fresh
         # attempt for a terminal fingerprint replaces the entry, so an old Run
         # keeps its own record and its own answer.
@@ -375,7 +393,12 @@ class _Scheduler:
             await self._store.record_failure(instance, failure)
 
     def _apply(self, record: _Computation, event: ComputationEvent) -> None:
-        record.state = transition(record.state, event)
+        state = transition(record.state, event)
+        record.state = state
+        if self._listener is not None:
+            # Only ``_apply`` announces: it is the one place a state is written,
+            # so every transition is reported exactly once and nothing else is.
+            self._listener.computation_changed(record.plan.fingerprint, state)
 
     def _finish(self, record: _Computation, event: ComputationEvent) -> None:
         if record.state in TERMINAL_STATES:
@@ -416,8 +439,14 @@ def build_scheduler(
     store: ResultStore,
     runner: ComputationRunner,
     concurrency: int,
+    listener: SchedulerListener | None = None,
 ) -> Scheduler:
-    return _Scheduler(store=store, runner=runner, concurrency=concurrency)
+    return _Scheduler(
+        store=store,
+        runner=runner,
+        concurrency=concurrency,
+        listener=listener,
+    )
 
 
 __all__: Sequence[str] = [
@@ -428,5 +457,6 @@ __all__: Sequence[str] = [
     "RunPlan",
     "RunResult",
     "Scheduler",
+    "SchedulerListener",
     "build_scheduler",
 ]
