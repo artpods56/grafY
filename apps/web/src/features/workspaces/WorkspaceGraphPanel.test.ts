@@ -25,12 +25,13 @@ vi.mock("next/navigation", () => ({
 }));
 
 const panelState = vi.hoisted(() => ({
-  graphs: [
+  projects: [
     {
       id: "graph-invoice",
       name: "Invoice intake",
       node_count: 2,
       edge_count: 1,
+      graph_count: 1,
       revision: 1,
       updated_at: "2026-08-10T12:00:00Z",
       draft_pending: false,
@@ -40,8 +41,8 @@ const panelState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/hooks/use-api", () => ({
-  useSavedGraphs: () => ({
-    data: { graphs: panelState.graphs },
+  useWorkspaceProjects: () => ({
+    data: { projects: panelState.projects },
     isLoading: false,
     isValidating: panelState.isValidating,
   }),
@@ -67,6 +68,7 @@ afterEach(async () => {
       name: "Invoice intake",
       node_count: 2,
       edge_count: 1,
+      graph_count: 1,
       revision: 1,
       updated_at: "2026-08-10T12:00:00Z",
       draft_pending: false,
@@ -84,6 +86,7 @@ const graph = (
   name,
   node_count: 2,
   edge_count: 1,
+  graph_count: 1,
   revision: 1,
   updated_at: updatedAt,
   draft_pending: false,

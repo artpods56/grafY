@@ -18,8 +18,6 @@ export function workbenchProjectPath(
   return `/workspaces/${encodeURIComponent(workspaceSlug)}/projects/${encodeURIComponent(projectId)}`;
 }
 
-export const NEW_PROJECT_ROUTE_ID = NEW_PROJECT_ROUTE_ID;
-
 /** @deprecated a Workbench address names a Project, not a Graph. */
 export const isSupportedWorkbenchGraphRoute = isSupportedWorkbenchProjectRoute;
 
