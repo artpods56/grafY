@@ -596,6 +596,7 @@ async def _document_moved(runs: RunService, session: ProjectRoomSession) -> None
         await runs.project_changed(
             workspace_id=session.workspace_id,
             project_id=session.project_id,
+            wait=False,
         )
     except Exception:
         logger.exception(

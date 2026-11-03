@@ -447,7 +447,9 @@ class RunService:
         ).get_result(pointer.last_result_fingerprint)
         return snapshot, result
 
-    async def project_changed(self, *, workspace_id: UUID, project_id: UUID) -> None:
+    async def project_changed(
+        self, *, workspace_id: UUID, project_id: UUID, wait: bool = True
+    ) -> None:
         """Re-derive every instance of a Project after its document moved.
 
         An edit changes fingerprints, not computations: what is in flight keeps
@@ -456,7 +458,12 @@ class RunService:
         for the new fingerprints.
         """
         runtime = self._runtime(workspace_id, project_id)
-        await self._publish_now(runtime)
+        if wait:
+            await self._publish_now(runtime)
+        else:
+            # A room may disappear as soon as command acceptance is delivered. Its
+            # cancellation must not interrupt SQL statements in the state derivation.
+            self._transition_moved(runtime)
 
     # Internals -------------------------------------------------------------
 
@@ -574,6 +581,18 @@ class RunService:
         runtime.dirty = True
         if runtime.publish_task is None or runtime.publish_task.done():
             runtime.publish_task = asyncio.create_task(self._drain_publishes(runtime))
+            runtime.publish_task.add_done_callback(self._publish_done)
+
+    @staticmethod
+    def _publish_done(task: asyncio.Task[None]) -> None:
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error is not None:
+            logger.error(
+                "project_instance_publish_failed",
+                exc_info=(type(error), error, error.__traceback__),
+            )
 
     async def _publish_now(self, runtime: _ProjectRuntime) -> None:
         runtime.dirty = True

@@ -902,27 +902,20 @@ def test_a_room_abandoned_inside_a_transaction_returns_its_connection(
     harness: RoomHarness,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A room that dies mid-transaction gives its connection back, and dies on time.
+    """Leaving a room does not cancel its owned instance publication.
 
-    The endpoint keeps working after it has answered the client — the head read behind
-    `instances.changed` — and the client can walk out in the middle of that. The cancellation
-    comes back at every await the session close performs, so the close cannot simply be awaited
-    there; dropping it is worse, because an async SQLAlchemy session is closed on its driver's
-    thread: the connection stays checked out, that thread stays parked, and the next request to
-    need a connection from the pool waits for one that never comes. CI lost its backend job that
-    way, forty minutes away from the room that caused it.
-
-    The read is held open on an event, so the transaction is open at the moment of abandonment by
-    construction rather than by luck. The abandonment happens on a second thread because that is
-    what a client leaving is, and its timely return is half the claim: a room must not have to
-    wait for its own database in order to die.
+    Hold a real read open after command acceptance, then abandon the socket. The
+    room must return while publication remains in flight. Release the read and
+    await the service-owned task before checking that its connection is back.
     """
 
     database = harness.resources.database
     pool = database.engine.pool
     real_get_head = SqlCollaborationRepository.get_head
     transaction_open = asyncio.Event()
-    abandoned = asyncio.Event()  # nobody sets it: only the abandonment ends the read
+    abandoned = (
+        asyncio.Event()
+    )  # the owned publication is released after the room leaves
     holding = False
 
     async def read_then_wait(
@@ -968,6 +961,15 @@ def test_a_room_abandoned_inside_a_transaction_returns_its_connection(
     # The close was handed over rather than lost: settling the database's own list is what the
     # application does before it disposes the engine, and the connection is expected back.
     async def settle_and_look_around() -> tuple[int, list[str]]:
+        # Publication outlives the departed room, so let its read finish and join
+        # the service-owned task before asking whether its connection returned.
+        runtime = harness.resources.runs._runtimes[
+            (harness.workspace_id, harness.project_id)
+        ]
+        publishing = runtime.publish_task
+        abandoned.set()
+        if publishing is not None:
+            await publishing
         await database.cleanups.settle()
         here = asyncio.current_task()
         lingering = [

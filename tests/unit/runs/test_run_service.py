@@ -13,6 +13,7 @@ test here waits on a clock: each one says which moment of a computation it is
 standing at.
 """
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -964,3 +965,46 @@ async def test_concurrent_cancels_finish_and_announce_the_run_once(
     assert service.rows.saved == [run.id]
     assert service.events.kinds().count("run_finished") == 1
     await service.close()
+
+
+async def test_room_cancellation_does_not_cancel_queued_derivation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = harness(
+        tmp_path, monkeypatch, project=document(main_graph()), concurrency=1
+    )
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    finished = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def derive(_runtime):
+        entered.set()
+        try:
+            await release.wait()
+            finished.set()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    monkeypatch.setattr(service.service, "_publish", derive)
+
+    async def room():
+        await service.service.project_changed(
+            workspace_id=WORKSPACE_ID, project_id=PROJECT_ID, wait=False
+        )
+        await asyncio.Event().wait()
+
+    caller = asyncio.create_task(room())
+    try:
+        await entered.wait()
+        caller.cancel()
+        await asyncio.gather(caller, return_exceptions=True)
+        assert not cancelled.is_set()
+        release.set()
+        await finished.wait()
+    finally:
+        release.set()
+        caller.cancel()
+        await asyncio.gather(caller, return_exceptions=True)
+        await service.close()
