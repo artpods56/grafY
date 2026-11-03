@@ -4,7 +4,7 @@ import * as React from "react";
 
 import {
   applyNodeSecret,
-  getGraphNodeSecrets,
+  getProjectNodeSecrets,
   removeNodeSecret,
   type NodeSecretStatus,
   type SavedGraphNode,
@@ -235,7 +235,7 @@ export function useNodeSecrets(
         ),
       );
       try {
-        const response = await getGraphNodeSecrets(
+        const response = await getProjectNodeSecrets(
           workspaceId,
           graph.id,
           signal,

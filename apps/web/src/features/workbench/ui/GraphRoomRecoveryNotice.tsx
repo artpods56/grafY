@@ -4,16 +4,16 @@ import { RefreshCw } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type {
   GraphReadinessState,
-  GraphRoomFailure,
-  GraphRoomStatus,
-  GraphRoomTerminalReason,
+  ProjectRoomFailure,
+  ProjectRoomStatus,
+  ProjectRoomTerminalReason,
 } from "../room";
 
 interface GraphRoomRecoveryNoticeProps {
   readonly readiness: GraphReadinessState;
-  readonly status: GraphRoomStatus;
-  readonly failure: GraphRoomFailure | null;
-  readonly terminalReason: GraphRoomTerminalReason | null;
+  readonly status: ProjectRoomStatus;
+  readonly failure: ProjectRoomFailure | null;
+  readonly terminalReason: ProjectRoomTerminalReason | null;
   readonly onRetry: () => void;
   readonly onReload: () => void;
 }
