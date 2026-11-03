@@ -1,7 +1,8 @@
-import { collaborativeHeadFromLegacy } from "@/lib/api/graph-head";
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { CollaborativeHead, SavedGraphDocument } from "@/lib/api";
 
 import {
   CLOSE_ACCESS_REVOKED,
@@ -23,6 +24,18 @@ const GRAPH_ID = "11111111-1111-4111-8111-111111111111";
 const SESSION_ID = "22222222-2222-4222-8222-222222222222";
 const ACTOR_ID = "00000000-0000-4000-8000-000000000001";
 const ROOM_EPOCH = "33333333-3333-4333-8333-333333333333";
+
+function savedDocument(
+  overrides: Partial<SavedGraphDocument> = {},
+): SavedGraphDocument {
+  return {
+    schema_version: 7,
+    nodes: [],
+    edges: [],
+    origins: [],
+    ...overrides,
+  };
+}
 
 class FakeWebSocket {
   static readonly CONNECTING = 0;
@@ -110,8 +123,7 @@ function roomReady(overrides: Record<string, unknown> = {}) {
       checkpoint_revision: 1,
       name: "Room graph",
       updated_at: "2026-08-07T10:00:00Z",
-      nodes: [],
-      edges: [],
+      document: savedDocument(),
     },
     participants: [
       {
@@ -177,7 +189,7 @@ describe("graphRoomWebSocketUrl", () => {
 });
 
 describe("shouldReplaceCollaborativeHead", () => {
-  const base = collaborativeHeadFromLegacy({
+  const base: CollaborativeHead = {
     graph_id: GRAPH_ID,
     room_epoch: ROOM_EPOCH,
     collaboration_sequence: 5,
@@ -185,9 +197,8 @@ describe("shouldReplaceCollaborativeHead", () => {
     checkpoint_revision: 1,
     name: "Room graph",
     updated_at: "2026-08-07T10:00:00Z",
-    nodes: [],
-    edges: [],
-  });
+    document: savedDocument(),
+  };
 
   it("accepts newer same-epoch snapshots and rejects older ones", () => {
     expect(shouldReplaceCollaborativeHead(null, base)).toBe(true);
@@ -804,20 +815,18 @@ describe("GraphRoomSession", () => {
     expect(session.getHead()?.collaboration_sequence).toBe(5);
     expect(session.getHead()?.document.presentation?.viewers).toHaveLength(1);
 
-    session.replaceHead(
-      collaborativeHeadFromLegacy({
-        graph_id: GRAPH_ID,
-        room_epoch: ROOM_EPOCH,
-        collaboration_sequence: 4,
-        checkpoint_sequence: 1,
-        checkpoint_revision: 1,
-        name: "Room graph",
-        updated_at: "2026-08-07T10:00:00Z",
-        nodes: [],
-        edges: [],
-        presentation: { viewers: [], links: [], bindings: [] },
+    session.replaceHead({
+      graph_id: GRAPH_ID,
+      room_epoch: ROOM_EPOCH,
+      collaboration_sequence: 4,
+      checkpoint_sequence: 1,
+      checkpoint_revision: 1,
+      name: "Room graph",
+      updated_at: "2026-08-07T10:00:00Z",
+      document: savedDocument({
+        presentation: { viewers: [], links: [], bindings: [], annotations: [] },
       }),
-    );
+    });
 
     expect(session.getHead()?.collaboration_sequence).toBe(5);
     expect(session.getHead()?.document.presentation?.viewers).toHaveLength(1);
@@ -876,7 +885,7 @@ describe("GraphRoomSession", () => {
     await submitted;
 
     const resetEpoch = "44444444-4444-4444-8444-444444444444";
-    const resetHead = {
+    const resetHead: CollaborativeHead = {
       graph_id: GRAPH_ID,
       room_epoch: resetEpoch,
       collaboration_sequence: 0,
@@ -884,21 +893,21 @@ describe("GraphRoomSession", () => {
       checkpoint_revision: 3,
       name: "Authoritative E2",
       updated_at: "2026-08-07T11:00:00Z",
-      nodes: [],
-      edges: [],
-      presentation: {
-        viewers: [
-          {
-            id: "e2-viewer",
-            position: { x: 30, y: 40 },
-            layout: null,
-            mode: null,
-          },
-        ],
-        links: [],
-        bindings: [],
-        annotations: [],
-      },
+      document: savedDocument({
+        presentation: {
+          viewers: [
+            {
+              id: "e2-viewer",
+              position: { x: 30, y: 40 },
+              layout: null,
+              mode: null,
+            },
+          ],
+          links: [],
+          bindings: [],
+          annotations: [],
+        },
+      }),
     };
     socket.emitMessage({
       protocol_version: 1,
@@ -908,7 +917,7 @@ describe("GraphRoomSession", () => {
     });
 
     const effectiveHead = session.reconcileCheckpointHead(
-      collaborativeHeadFromLegacy({
+      {
         graph_id: GRAPH_ID,
         room_epoch: ROOM_EPOCH,
         collaboration_sequence: 5,
@@ -916,20 +925,20 @@ describe("GraphRoomSession", () => {
         checkpoint_revision: 2,
         name: "Checkpointed in E1",
         updated_at: "2026-08-07T10:30:00Z",
-        nodes: [],
-        edges: [],
-        presentation: {
-          viewers: [],
-          links: [],
-          bindings: [],
-          annotations: [],
-        },
-      }),
+        document: savedDocument({
+          presentation: {
+            viewers: [],
+            links: [],
+            bindings: [],
+            annotations: [],
+          },
+        }),
+      },
       ROOM_EPOCH,
     );
 
-    expect(effectiveHead).toEqual(collaborativeHeadFromLegacy(resetHead));
-    expect(session.getHead()).toEqual(collaborativeHeadFromLegacy(resetHead));
+    expect(effectiveHead).toEqual(resetHead);
+    expect(session.getHead()).toEqual(resetHead);
   });
 
   it("pauses drain on head_conflict until replaceHead, and still applies peer accept", async () => {
@@ -1156,7 +1165,7 @@ describe("GraphRoomSession", () => {
       onRehydrate,
     });
     const nextEpoch = "44444444-4444-4444-8444-444444444444";
-    const head = {
+    const head: CollaborativeHead = {
       graph_id: GRAPH_ID,
       room_epoch: nextEpoch,
       collaboration_sequence: 1,
@@ -1164,8 +1173,7 @@ describe("GraphRoomSession", () => {
       checkpoint_revision: 2,
       name: "Reset",
       updated_at: "2026-08-07T11:00:00Z",
-      nodes: [],
-      edges: [],
+      document: savedDocument(),
     };
 
     socket.emitMessage({
@@ -1175,8 +1183,8 @@ describe("GraphRoomSession", () => {
       head,
     });
 
-    expect(session.getHead()).toEqual(collaborativeHeadFromLegacy(head));
-    expect(onRehydrate).toHaveBeenCalledWith(collaborativeHeadFromLegacy(head));
+    expect(session.getHead()).toEqual(head);
+    expect(onRehydrate).toHaveBeenCalledWith(head);
   });
 
   it.each([

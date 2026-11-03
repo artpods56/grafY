@@ -4,7 +4,6 @@ import {
   getCollaborativeHead,
   submitGraphCommand,
   type CollaborativeHead,
-  type LegacyCollaborativeHead,
 } from "@/lib/api";
 import { authoredGraphDocument } from "../model/graph-document";
 import { parseServerRoomMessage } from "./protocol";
@@ -78,7 +77,9 @@ const canonical: CollaborativeHead = {
     },
   },
 };
-const legacy: LegacyCollaborativeHead = {
+
+/** The retired flat transport: graph members sat on the head, not in a document. */
+const flatHead = {
   graph_id: canonical.graph_id,
   room_epoch: canonical.room_epoch,
   name: canonical.name,
@@ -91,6 +92,15 @@ const legacy: LegacyCollaborativeHead = {
   origins: canonical.document.origins,
   presentation: canonical.document.presentation,
 };
+
+function rehydrate(head: unknown) {
+  return parseServerRoomMessage({
+    protocol_version: 1,
+    type: "room.rehydrate",
+    reason: "epoch_reset",
+    head,
+  });
+}
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -106,9 +116,9 @@ describe("canonical collaborative head flow", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(Response.json(canonical))
-      .mockResolvedValueOnce(Response.json({ head: legacy, receipt }))
+      .mockResolvedValueOnce(Response.json({ head: canonical, receipt }))
       .mockResolvedValueOnce(
-        Response.json({ head: legacy, saved_revision: 2 }),
+        Response.json({ head: canonical, saved_revision: 2 }),
       );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -135,19 +145,14 @@ describe("canonical collaborative head flow", () => {
       graph_room_session_id: "session-1",
       actor: { actor_id: "owner-1", display_name: "Owner", color: "emerald" },
       capabilities: { capabilities: ["view_graph"], authorization_version: 1 },
-      head: legacy,
+      head: canonical,
       participants: [],
       active_execution: null,
       registry_marker: "registry-1",
     });
     if (room?.type !== "room.ready")
       throw new Error("Expected a parsed v1 ready message");
-    const rehydrated = parseServerRoomMessage({
-      protocol_version: 1,
-      type: "room.rehydrate",
-      reason: "epoch_reset",
-      head: legacy,
-    });
+    const rehydrated = rehydrate(canonical);
     if (rehydrated?.type !== "room.rehydrate")
       throw new Error("Expected a parsed v1 reset");
 
@@ -187,62 +192,30 @@ describe("canonical collaborative head flow", () => {
     );
     expect(submitted.receipt).toEqual(receipt);
     expect(checkpointed.saved_revision).toBe(2);
-    expect(legacy.nodes[0]).not.toHaveProperty("plugin_release");
-    expect(legacy.nodes[0]).not.toHaveProperty("plugin_release_pin");
+    expect(canonical.document.nodes[0]).not.toHaveProperty("plugin_release");
+    expect(canonical.document.nodes[0]).not.toHaveProperty(
+      "plugin_release_pin",
+    );
   });
 
-  it("normalizes optional v1 collections before they enter document state", () => {
-    const room = parseServerRoomMessage({
-      protocol_version: 1,
-      type: "room.rehydrate",
-      reason: "epoch_reset",
-      head: {
-        ...legacy,
-        presentation: undefined,
-        nodes: legacy.nodes.map((node) => ({
-          ...node,
-          artifact_type_bindings: undefined,
-          input_plugs: undefined,
-        })),
-        edges: legacy.edges.map((edge) => ({
-          ...edge,
-          conversion_path: undefined,
-        })),
-        origins: (legacy.origins ?? []).map((origin) => ({
-          ...origin,
-          conversion_path: undefined,
-        })),
-      },
-    });
-    if (room?.type !== "room.rehydrate")
-      throw new Error("Expected a parsed v1 reset");
-    expect(room.head.document.nodes[0]?.input_plugs).toEqual([]);
-    expect(room.head.document.nodes[0]?.artifact_type_bindings).toEqual([]);
-    expect(room.head.document.edges[0]?.conversion_path).toEqual([]);
-    expect(room.head.document.origins[0]?.conversion_path).toEqual([]);
-    expect(room.head.document.presentation).toEqual({
-      viewers: [],
-      links: [],
-      bindings: [],
-      annotations: [],
-    });
+  it("rejects the retired flat head transport", () => {
+    expect(rehydrate(flatHead)).toBeNull();
+    expect(
+      rehydrate({ ...canonical, nodes: canonical.document.nodes }),
+    ).toBeNull();
   });
 
-  it.each([
-    { invalid: null },
-    { invalid: 42 },
-    { invalid: "invalid" },
-    { invalid: [] },
-  ])("rejects non-object v1 graph members: $invalid", ({ invalid }) => {
-    for (const field of ["nodes", "edges"]) {
-      expect(
-        parseServerRoomMessage({
-          protocol_version: 1,
-          type: "room.rehydrate",
-          reason: "epoch_reset",
-          head: { ...legacy, [field]: [invalid] },
-        }),
-      ).toBeNull();
-    }
-  });
+  it.each([{ invalid: null }, { invalid: 42 }, { invalid: "invalid" }, { invalid: [] }])(
+    "rejects non-object saved document members: $invalid",
+    ({ invalid }) => {
+      for (const field of ["nodes", "edges", "origins"]) {
+        expect(
+          rehydrate({
+            ...canonical,
+            document: { ...canonical.document, [field]: [invalid] },
+          }),
+        ).toBeNull();
+      }
+    },
+  );
 });
