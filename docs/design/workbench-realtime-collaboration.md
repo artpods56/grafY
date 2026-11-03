@@ -1,8 +1,8 @@
 # Realtime Workbench collaboration rework
 
-- **Status:** Accepted; Phase 0–6 implemented; Phase 7 operator release gate open
+- **Status:** Accepted; the unit of collaboration is a Project (ADR 0020); Phase 7 operator release gate open
 - **Date:** 2026-08-05
-- **Audience:** Engineers changing the Workbench, saved-graph persistence, or graph execution
+- **Audience:** Engineers changing the Workbench, Project persistence, or Runs
 - **Document type:** Technical design explanation
 - **Related:** [Workbench feature architecture](../adr/0001-workbench-feature-architecture.md),
   [collaboration ADR](../adr/0002-server-authoritative-workbench-collaboration.md),
@@ -12,38 +12,32 @@
 
 ## Summary
 
-This document defines realtime collaboration for one saved graph across
-multiple browser sessions. Collaborators should see each other's cursors,
-selections, editing activity, and live node movement. Durable graph changes
-should converge without whole-document save conflicts. A graph execution and
-its activity bar should be visible to every session viewing that graph.
+This document defines realtime collaboration for one Project across multiple
+browser sessions. Collaborators see each other's cursors, selections, editing
+activity and live node movement. Durable changes converge without whole-document
+save conflicts. Instance states and active Runs are visible to every session viewing
+the Project.
 
 The design makes these decisions:
 
-1. A saved graph has one server-authoritative collaboration room keyed by
-   stable workspace id and graph id.
-2. Clients submit semantic graph commands over a workspace-and-graph-scoped
-   WebSocket. The server validates, orders, and atomically persists every
-   accepted command as the next collaboration sequence on a durable
-   collaborative graph head.
-3. Cursor position, remote selection, editing activity, and drag previews are
-   ephemeral presence. They never create graph revisions.
-4. React Flow remains the canvas renderer, not the canonical graph document.
-5. One workspace-owned saved graph may have at most one queued, running, or
-   cancelling execution. The room advertises that execution to every authorized
-   session.
-6. Existing per-execution Server-Sent Events remain the source of live node
-   status and progress. The room supplies graph-level execution discovery.
-7. Saved graph revisions remain immutable checkpoints for execution,
-   materializations, modules, and history. Starting a run first checkpoints the
-   exact collaborative graph sequence and then executes that revision. Later
-   edits do not change the running plan or its materialized outputs.
-8. The first delivery continues to assume one owning API process. Horizontal
-   API ownership remains out of scope until execution leases, shared replay,
-   cancellation routing, and shared room publication exist.
-
-This is an accepted design for the collaboration rework; parts of the live
-codebase may still be mid-migration toward this contract.
+1. A Project has one server-authoritative collaboration room keyed by stable
+   workspace id and project id. The room's document holds all of the Project's Graphs.
+2. Clients submit semantic command batches over a workspace-and-project-scoped
+   WebSocket. A batch is accepted or rejected as a whole; the server validates, orders
+   and atomically persists it as the next collaboration sequence on a durable
+   Project head.
+3. Cursor position, remote selection, editing activity and drag previews are
+   ephemeral presence. They never create checkpoints.
+4. React Flow remains the canvas renderer, not the canonical document.
+5. Results belong to node instances, not to a Run. Any number of Runs are active in
+   a Project at once; the room broadcasts the active-Runs list with who started each
+   and instance-state deltas keyed by full instance key.
+6. Edits never lock the document. A computation stores its result under the
+   fingerprint it started with; if the document moved on, the instance reads as stale.
+7. Checkpoints are immutable and append-only; restoring one is the way back from any
+   accepted change. A Run does not checkpoint the head.
+8. The first delivery assumes one owning API process. Horizontal API ownership stays
+   out of scope until shared room publication and a shared scheduler exist.
 
 ## Motivation
 
@@ -120,80 +114,47 @@ commands rather than remove revision safety.
 
 ## Vocabulary
 
-These design-specific terms should be added to `CONTEXT.md` when the accepted
-vocabulary pass is scheduled.
+These terms are defined in [CONTEXT.md](../../CONTEXT.md): Project, Graph, Call node,
+Node instance, Fingerprint, Result store, Instance state, Run. This document adds the
+collaboration terms below.
 
-### Graph room
+### Project room
 
-The transient server-owned coordination context for sessions currently viewing
-one saved graph in one workspace. It is keyed by stable
-`(workspace_id, graph_id)`, publishes accepted collaboration sequences,
-presence, and active execution discovery, and is not the durable source of
-truth for the graph document.
+The transient server-owned coordination context for sessions currently viewing one
+Project in one workspace, keyed by `(workspace_id, project_id)`. It publishes accepted
+sequences, presence, active Runs and instance-state deltas, and is not the durable
+source of truth.
 
-### Collaborative graph head
+### Project head
 
-The latest durable authoring document for one workspace-scoped graph room,
-identified by workspace id, graph id, room epoch, and a monotonic server
-sequence. Accepted commands update this head automatically. The head may be
-newer than the latest immutable saved graph revision.
+The latest durable authoring document for one Project room, identified by workspace id,
+project id, room epoch and a monotonic server sequence. Accepted batches update it
+automatically. It may be newer than the latest checkpoint.
 
-### Graph command
+### Project command
 
-One semantic, atomic authoring gesture submitted by a session. Examples include
-moving nodes, changing one configuration field, connecting two ports, or
-removing a node with its incident edges. An accepted graph command advances the
-collaboration sequence exactly once.
+One semantic authoring gesture: project-level (`rename_project`, `add_graph`,
+`rename_graph`, `remove_graph`, `refresh_node`, `add_call_node`) or a per-Graph command
+wrapped in `in_graph(graph_id, command)`. A submitted batch advances the sequence
+exactly once.
 
-### Graph checkpoint
+### Checkpoint
 
-An immutable saved graph revision created from one exact collaborative graph
-head sequence. Checkpoints remain the identity used by execution, graph
-modules, execution history, and revision-scoped materialized outputs.
+An immutable Project revision created from one exact head sequence. Compare-and-set
+commands and idempotency receipts are scoped to the room epoch.
 
-### Actor
+### Actor, Auth session, Capability snapshot, Presence
 
-The authenticated user on whose behalf a production command, checkpoint,
-execution, or other protected operation is attempted. The server derives the
-actor from the authenticated request and workspace membership; the client
-never supplies authoritative actor identity.
+Unchanged by ADR 0020: the actor is derived from the authenticated request and
+membership, the auth session is the revocable server-side browser session, a capability
+snapshot is presentation input that is re-authorized on every protected operation, and
+presence is bounded, expiring and never persisted.
 
-### Auth session
+### Project room session
 
-The revocable server-side browser session established after OIDC login. Its
-opaque cookie can outlive several graph-room connections, but its cookie and
-server-side identifiers never enter graph documents, commands, presence, or
-browser-persisted Workbench state. MCP uses a workspace-bound personal access
-token over first-delivery **stateless** Streamable HTTP instead; that per-
-request MCP credential resolution is neither an `AuthSession` nor an identity.
-
-### Graph room session
-
-One live WebSocket connection to one workspace-scoped graph room. A
-`GraphRoomSession` has a server-assigned room-session id and bounded
-presentation metadata. It represents one tab or device for presence and
-backpressure; it is not an actor, auth session, workspace membership, or
+One live WebSocket connection to one Project room: a server-assigned session id and
+bounded presentation metadata for one tab or device. It is not an actor, auth session or
 authorization boundary.
-
-### Capability snapshot
-
-The server-derived effective capabilities and authorization version returned
-for an actor in a workspace and graph. The UI uses the snapshot to expose only
-permitted behavior, but every protected operation is authorized again when it
-is handled. The snapshot is therefore presentation input, not a bearer
-capability or continuing authority.
-
-### Presence
-
-Bounded, expiring information used only to explain a collaborator's current
-interaction: cursor position, selection, editing activity, and drag preview.
-Presence is best effort and is never persisted in a saved graph.
-
-### Active graph execution
-
-The one queued, running, or cancelling execution currently owned by a saved
-graph. It identifies the exact graph revision, scope, requested nodes, starter,
-and execution id.
 
 ## State ownership
 
@@ -913,205 +874,38 @@ If the final command is rejected because a node was deleted, the drag preview
 disappears and the confirmed document wins. Disconnecting mid-drag likewise
 removes the preview without changing the saved graph.
 
-## Shared graph execution
+## Shared Runs
 
-Execution status is server-owned shared state. The browser that presses Run has
-no special ownership of observation.
+Runs are demands for fresh targets (ADR 0020). The room supplies discovery; REST is the
+source of truth.
 
-### Start contract
+### Start and cancel
 
-The collaborative Workbench should start saved-graph execution through a
-workspace-and-graph-scoped request containing:
-
-- stable workspace id resolved by the route;
-- graph id from the route;
-- expected room epoch and synchronized head sequence;
-- execution scope: all, selected, or selected with dependencies;
-- requested node ids for a selected scope;
-- a client request id for idempotency.
-
-The client request id is unique per `(workspace_id, graph_id)` and persists with
-execution history.
-The server stores a versioned, server-keyed HMAC covering the server-derived
-workspace id, graph id, actor id, submitted room epoch, head sequence, scope,
-and canonical requested node ids. Retrying the same id and same request as the
-same actor returns the original execution, including after terminal state or
-process restart. Reusing the id with different request data returns
-`idempotency_mismatch`. The idempotency record remains for the workspace-owned
-graph's lifetime.
-The coordinator resolves this record before current-head and active-slot checks,
-so a true retry cannot turn into a later `head_moved` or active-run conflict.
-
-The client does not submit Run while it has a private field draft, a pending
-durable command, or a confirmed-sequence gap. It flushes drafts and waits until
-the confirmed document includes them. The server requires the submitted epoch
-and sequence to equal the current head. It atomically creates or reuses the
-checkpoint for that head sequence, then loads the exact saved graph revision,
-derives the execution fragment and upstream pins, performs preflight, and starts
-it. The collaborative client must not submit a second copy of the complete graph
-as the source of truth.
-
-A `head_moved` rejection refreshes the room state but does not automatically
-retry Run. In particular, a selected-scope dependency closure may have changed;
-the user confirms the new selection and starts a new request.
-
-Requested node ids are copied into immutable execution scope. They never change
-local or remote React Flow selection in any session.
-
-The existing generic execution request may remain for compatibility and
-diagnostics, but the production Workbench should use the workspace-and-graph-scoped start
-contract. For the first release, synchronous `POST /v1/runs` is changed to
-draft/diagnostic-only and rejects saved graph context. No endpoint may execute a
-saved graph without acquiring its active slot and producing a discoverable
-execution id.
-
-### One active execution
-
-Queued, running, and cancelling are active states. Starting another execution
-for the same `(workspace_id, graph_id)` returns a conflict containing the
-existing active execution summary. The caller attaches to that execution
-instead of creating another.
-Exact idempotent request retries are resolved before this conflict rule and
-return their original execution.
-
-Enforce this in both the execution application module and persistence. A
-database uniqueness rule for active saved-graph executions prevents duplicate
-runs from concurrent requests even before multi-process execution is supported.
-The rule applies to every top-level API path that starts and persists an
-execution attributed to a saved graph, including the existing generic execution
-endpoint; routing around the graph room must not bypass it. Internal immutable
-saved-module invocations remain children of their owning top-level run and do
-not acquire an independent graph-active slot.
-
-Queued history creation, active-slot acquisition, and the unique client request
-id commit together. Durable terminal transition and slot release likewise
-commit together, and the room announces terminal state only after that commit.
-Startup recovery marks an abandoned execution failed and releases its slot in
-one transaction.
-
-Terminal executions release the graph immediately. Execution history remains
-append-only, and repeated runs continue to create distinct execution ids.
+`POST /projects/{project_id}/runs` (`start_run`) names a root Graph and target nodes
+(empty means every node). The server plans only the stale part of the upstream closure;
+a fully fresh target set finishes immediately. `POST .../runs/{run_id}/cancel`
+(`cancel_run`) withdraws that Run's demand; a computation another active Run still
+needs keeps running. There is no one-active-execution rule.
 
 ### Discovery and observation
 
-The graph room announces:
+`room.ready` carries `active_runs` (each with its starter) and `instances` (the derived
+state of every instance of every Graph). Afterwards the room sends `run.started`,
+`run.finished` and `instances.changed {changed, removed, head_sequence}`. Instance
+state is recomputed and diffed per Project after scheduler transitions, accepted
+batches and secret changes, serialized and coalesced, so a slow subscriber never blocks
+a computation. A participant that reconnects rehydrates from `room.ready`.
 
-- execution accepted and queued;
-- lifecycle changes relevant to the activity bar;
-- whether the current collaborative head remains compatible with execution
-  overlays from the checkpoint;
-- terminal state and the revision that completed;
-- removal from the active slot.
+### Editing while a Run is active
 
-It does not duplicate every node progress event. Once a client learns the
-execution id, it subscribes to the existing
-`/v1/executions/{execution_id}/events` SSE stream. The ordinary execution GET is
-authoritative while its in-process manager record is retained, and polling
-remains the active-run fallback when SSE is unavailable. Graph-scoped durable
-execution history is the terminal source after restart or manager eviction
-unless GET is extended to reconstruct saved executions from that history.
+Nothing locks. An accepted batch changes fingerprints; affected instances become stale
+in the next `instances.changed`, and a computation that finishes later still stores its
+result under its original fingerprint, so no participant sees a wrong value as fresh.
 
-SSE connect/reconnect, execution GET, and polling authorize the authenticated
-actor against the execution's stable workspace and graph. Removing
-`view_graph` closes observation and prevents reconnect; removing only execute or
-cancel capability does not hide an execution the actor may still view. Browser
-transport uses the same-origin auth session defined by the authentication
-design, treats `401` and `403` as auth state changes rather than retryable
-network errors, and guards every event with the current actor/workspace/graph
-request generation.
+### Restart
 
-A session joining halfway through a run receives the active execution in
-`room.ready`, fetches its current observation snapshot, and then subscribes to
-SSE after the snapshot's sequence. The retained-manager GET contract must be
-extended to return the current lifecycle, active node, per-node status, latest
-bounded progress, terminal results when available, and the exact observation
-sequence represented by that snapshot.
-
-The bounded journal exposes its earliest and latest retained sequences. When a
-requested SSE cursor predates the window, the server emits an explicit
-`replay_truncated` control event rather than silently beginning with a gap. The
-client then refetches the observation snapshot and resumes after its sequence.
-If enough events are produced between snapshot GET and SSE connection to cause
-another gap, the same loop remains correct. Complete progress history is not
-required; current per-node state is.
-
-The server computes the overlay-compatibility flag by comparing the exact
-submitted execution plan with the plan the current head would derive for the
-same scope. The comparison includes operator identity and version,
-configuration, plugs, artifact-type bindings, and enabled edge transport
-semantics. It excludes graph name, canvas position, node chrome layout,
-selection, presence, and other non-execution state. This server-owned projection
-prevents late joiners and different frontend versions from independently
-guessing whether checkpoint overlays are safe.
-
-### Activity bar
-
-Every session derives the same authoritative execution facts for its activity
-bar:
-
-- starter presentation identity;
-- execution id;
-- exact graph revision;
-- run scope and requested selection;
-- queued, running, cancelling, or terminal state;
-- active top-level node;
-- current overlay-compatibility flag;
-- whether the execution lifecycle is cancellable;
-- bounded, safe terminal error context.
-
-The wording may differ for accessibility or viewport size, but the underlying
-execution state is shared. The cancel action is still authorized for the current
-actor, so viewers may see the same execution without receiving the same control.
-
-The latest progress summary, SSE or polling transport errors, and cancellation
-request errors are best-effort browser-local observations and may differ between
-sessions. They never overwrite the shared lifecycle state.
-
-Only the execution portion of the activity bar is shared. Synchronization,
-reconnection, rejected local commands, in-viewer interaction status, and other
-browser-local status remain local. The Workbench composes those local facts with
-the shared execution summary using an explicit display priority; it does not
-broadcast one browser's incidental UI status to the room.
-
-### Editing while a run is active
-
-The graph remains editable during execution. The execution continues against
-its checkpoint revision.
-
-Execution observation and materialization eligibility use different guards:
-
-- The activity bar follows execution id and remains visible regardless of later
-  graph edits.
-- Node status/progress overlays may follow stable node ids only while the
-  server-provided overlay-compatibility flag is true. Graph name, canvas
-  position, node chrome layout, selection, and presence do not make that flag
-  false.
-- Run outputs become current materialization pins only for the exact saved
-  graph revision recorded by the execution.
-
-If saved revision 42 is running while collaborators advance the collaborative
-head from sequence 80 to sequence 86:
-
-- the activity bar continues to show `running r42`;
-- the newer head does not paint any r42 node status when its derived execution
-  plan differs from the r42 submitted plan;
-- execution history records r42;
-- materialized outputs remain keyed to r42;
-- a user may inspect the execution detail without making it a current output
-  for the newer uncheckpointed head or a later checkpoint;
-- another execution cannot start until r42 becomes terminal.
-
-This would replace the current behavior where a local fingerprint change can
-make the initiating hook stop applying events while other sessions know nothing
-about the run.
-
-### Cancellation
-
-Cancellation is a shared server command. All sessions observe `cancelling` and
-the eventual terminal state while they retain graph view capability. The
-current actor requires `cancel_execution`; Owner and Editor receive it by
-default, while Viewer does not. Execute and cancel remain independent effective
-capabilities and are reauthorized when handled.
+In-flight state lives in the single API owner. On startup unfinished Runs are marked
+`interrupted`; stored results stay fresh, so a rerun resumes from the fresh frontier.
 
 ## Frontend rework
 
