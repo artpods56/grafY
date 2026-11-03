@@ -195,7 +195,7 @@ project_checkpoint_mappings = Table(
             "project_checkpoints.project_id",
             "project_checkpoints.revision",
         ),
-        ondelete="RESTRICT",
+        ondelete="CASCADE",
     ),
 )
 

@@ -1,10 +1,9 @@
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from pathlib import Path
 from uuid import UUID
 
 import pytest
-from sqlalchemy import func as sa_func, insert, select, text
+from sqlalchemy import func as sa_func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from grafy_core.artifacts import ArtifactRef
@@ -39,9 +38,11 @@ from grafy_persistence.adapters.repositories import (
     SqlCollaborationRepository,
     SqlProjectRepository,
 )
-from grafy_persistence.database import Database, create_database
-from grafy_persistence.orm import metadata
+from grafy_persistence.database import Database
 from grafy_persistence import schema
+from tests.support.persistence import database as _base_database_fixture
+
+base_database = _base_database_fixture
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000001")
 OTHER_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000002")
@@ -50,36 +51,19 @@ ARTIFACT_ID = UUID("00000000-0000-0000-0000-0000000000a1")
 
 
 @pytest.fixture
-async def database(tmp_path: Path) -> AsyncIterator[Database]:
-    created = create_database(f"sqlite+aiosqlite:///{tmp_path / 'projects.sqlite3'}")
-    async with created.engine.begin() as connection:
-        await connection.run_sync(metadata.create_all)
+async def database(base_database: Database) -> AsyncIterator[Database]:
+    async with base_database.engine.begin() as connection:
         await connection.execute(
-            text(
-                "INSERT INTO workspaces (id, slug, name, kind, created_at, updated_at) "
-                "VALUES (:id, 'team', 'Team', 'shared', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-            ),
-            {"id": WORKSPACE_ID.hex},
+            insert(schema.users).values(
+                id=USER_ID,
+                active=True,
+                email_verified=False,
+                display_name="Ada",
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
         )
-        await connection.execute(
-            text(
-                "INSERT INTO workspaces (id, slug, name, kind, created_at, updated_at) "
-                "VALUES (:id, 'other', 'Other', 'shared', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-            ),
-            {"id": OTHER_WORKSPACE_ID.hex},
-        )
-        await connection.execute(
-            text(
-                "INSERT INTO users (id, active, email_verified, display_name, "
-                "created_at, updated_at) VALUES (:id, 1, 0, 'Ada', "
-                "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-            ),
-            {"id": USER_ID.hex},
-        )
-    try:
-        yield created
-    finally:
-        await created.dispose()
+    yield base_database
 
 
 def _graph(
@@ -501,6 +485,7 @@ async def test_folder_name_conflict_and_lookup(database: Database) -> None:
         folders = SqlProjectRepository(session)
         with pytest.raises(ProjectFolderNameConflictError):
             await folders.add_folder(ProjectFolder(WORKSPACE_ID, "Research"))
+        await session.rollback()
         assert await folders.get_folder_by_name(WORKSPACE_ID, "Research") is not None
         assert await folders.get_folder_by_name(OTHER_WORKSPACE_ID, "Research") is None
 
