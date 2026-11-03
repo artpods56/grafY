@@ -61,6 +61,12 @@ class RunResponse(RunApiModel):
         )
 
 
+class RunListResponse(RunApiModel):
+    """The Runs of one Project, newest first, optionally only the active ones."""
+
+    runs: list[RunResponse]
+
+
 class InstanceKeyResponse(RunApiModel):
     project_id: UUID
     graph_id: str
@@ -95,6 +101,12 @@ class InstanceStateResponse(RunApiModel):
             last_result_fingerprint=snapshot.last_result_fingerprint,
             error=snapshot.error,
         )
+
+
+class InstanceStateListResponse(RunApiModel):
+    """Every instance of one Graph of the head document, with its derived state."""
+
+    instances: list[InstanceStateResponse]
 
 
 class InstanceResultResponse(RunApiModel):
