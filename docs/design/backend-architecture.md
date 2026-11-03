@@ -191,3 +191,12 @@ Behavior lives in `tests/unit/api`, `tests/unit/core`, `tests/unit/client`, and 
 feature suites under `tests/integration`. Frontend tests are colocated with their
 TypeScript consumers. Schema comparison, generated client consistency, and
 extracted-wheel checks protect contracts that directory checks cannot prove.
+
+## Agents
+
+Agents are Graph document values alongside nodes and presentation. Their add,
+configure and remove commands use the same validated Project command batches as
+other canvas edits. Agent setup survives checkpoints and Project copies; keys
+are excluded from the document contract. Expansion and fingerprints read nodes,
+edges and origins and ignore Agents. ADR 0021 defines the conversation runtime
+and room protocol to be implemented above this document boundary.
