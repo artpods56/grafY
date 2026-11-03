@@ -46,7 +46,12 @@ export interface UseProjectRoomSessionResult {
   readonly canRun: boolean;
   readonly localSessionId: string | null;
   readonly participants: readonly PresenceParticipant[];
-  /** Every Run the room believes is open for this Project, newest last. */
+  /**
+   * Every Run the room believes is open for this Project. **No order is
+   * promised**: the join snapshot arrives `created_at DESC` while a locally
+   * observed `run.started` appends, so a consumer that wants the newest Run must
+   * sort on `created_at` rather than read the end of the list.
+   */
   readonly activeRuns: readonly ActiveRunSummary[];
   /** Bumped on every room push of active Runs: `room.ready`, `run.started`, `run.finished`. */
   readonly runsRevision: number;
@@ -255,7 +260,11 @@ export function useProjectRoomSession({
         onRunFinishedRef.current?.(message);
       },
       onInstancesChange: (message) => {
-        setInstances(instanceMap(message.changed));
+        // `changed` is a delta and `removed` was already applied inside the
+        // session. Reading the session's own map is what keeps every other
+        // node's state: taking the delta alone made the canvas forget which of
+        // its nodes were fresh, one push at a time.
+        setInstances(instanceMap(session.getInstances()));
         onInstancesChangeRef.current?.(message);
       },
       onTerminalClose: (reason) => {
@@ -388,7 +397,9 @@ export function useProjectRoomSession({
       currentTerminalReason === null,
     canRun:
       currentStatus === "ready" &&
-      currentCapabilities.includes("run_project") &&
+      // The API's capability for asking for work is start_run; there is no
+      // run_project, so gating on that name left this permanently false.
+      currentCapabilities.includes("start_run") &&
       currentTerminalReason === null,
     localSessionId: currentLocalSessionId,
     participants: currentParticipants,
