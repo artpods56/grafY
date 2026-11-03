@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, ClassVar, Literal
 from uuid import UUID
@@ -180,6 +181,69 @@ class ActiveExecutionSummary(RoomProtocolModel):
             seen.add(node_id)
             normalized.append(node_id)
         return normalized
+
+
+InstanceStateName = Literal["fresh", "stale", "queued", "running", "failed"]
+RunLifecycleStatus = Literal[
+    "running", "succeeded", "failed", "cancelled", "interrupted"
+]
+
+
+class RunTargetSummary(RoomProtocolModel):
+    node_id: str = Field(min_length=1, max_length=PRESENCE_ID_MAX_LENGTH)
+    call_path: tuple[str, ...] = ()
+
+
+class ActiveRunSummary(RoomProtocolModel):
+    """One active Run of the Project, with who started it (ADR 0020)."""
+
+    run_id: UUID
+    graph_id: str = Field(min_length=1, max_length=255)
+    targets: tuple[RunTargetSummary, ...] = ()
+    starter: ActorPresentation | None = None
+    started_at: datetime
+    cancellable: bool = True
+
+
+class InstanceStateEntry(RoomProtocolModel):
+    """Derived state of one node instance, keyed by its full instance key."""
+
+    graph_id: str = Field(min_length=1, max_length=255)
+    call_path: tuple[str, ...] = ()
+    node_id: str = Field(min_length=1, max_length=PRESENCE_ID_MAX_LENGTH)
+    map_index: int | None = None
+    state: InstanceStateName
+    fingerprint: str
+    last_result_fingerprint: str | None = None
+    error: str | None = Field(default=None, max_length=2000)
+
+
+class RunStartedMessage(RoomProtocolModel):
+    """A Run became active, or its target set was accepted."""
+
+    protocol_version: Literal[1] = PROTOCOL_VERSION
+    type: Literal["run.started"] = "run.started"
+    run: ActiveRunSummary
+
+
+class RunFinishedMessage(RoomProtocolModel):
+    """A Run left the active list. Its results live on the instances."""
+
+    protocol_version: Literal[1] = PROTOCOL_VERSION
+    type: Literal["run.finished"] = "run.finished"
+    run_id: UUID
+    status: RunLifecycleStatus
+    error: str | None = Field(default=None, max_length=2000)
+
+
+class InstancesChangedMessage(RoomProtocolModel):
+    """Instance-state deltas. ``removed`` lists instance keys that no longer exist."""
+
+    protocol_version: Literal[1] = PROTOCOL_VERSION
+    type: Literal["instances.changed"] = "instances.changed"
+    changed: tuple[InstanceStateEntry, ...] = ()
+    removed: tuple[InstanceStateEntry, ...] = ()
+    head_sequence: int = Field(ge=0)
 
 
 class RoomReadyMessage(RoomProtocolModel):
