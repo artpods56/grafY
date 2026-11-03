@@ -11,7 +11,8 @@ from grafy_core.domain.node_secrets import (
 from grafy_core.ports.transactions import TransactionPort
 
 if TYPE_CHECKING:
-    from grafy_core.ports.saved_graphs import SavedGraphRepositoryPort
+    from grafy_core.ports.projects import ProjectRepositoryPort
+    from grafy_core.ports.collaboration import CollaborationRepositoryPort
 
 
 class NodeSecretUnavailableError(RuntimeError):
@@ -82,7 +83,8 @@ class NodeSecretRepositoryPort(Protocol):
     async def get(
         self,
         workspace_id: UUID,
-        graph_id: UUID,
+        project_id: UUID,
+        graph_id: str,
         node_id: str,
         name: str,
     ) -> EncryptedNodeSecret | None: ...
@@ -90,13 +92,15 @@ class NodeSecretRepositoryPort(Protocol):
     async def list_for_graph(
         self,
         workspace_id: UUID,
-        graph_id: UUID,
+        project_id: UUID,
+        graph_id: str,
     ) -> list[EncryptedNodeSecret]: ...
 
     async def remove(
         self,
         workspace_id: UUID,
-        graph_id: UUID,
+        project_id: UUID,
+        graph_id: str,
         node_id: str,
         name: str,
     ) -> None: ...
@@ -104,7 +108,10 @@ class NodeSecretRepositoryPort(Protocol):
 
 class NodeSecretUnitOfWorkPort(TransactionPort, Protocol):
     @property
-    def graphs(self) -> "SavedGraphRepositoryPort": ...
+    def projects(self) -> "ProjectRepositoryPort": ...
+
+    @property
+    def collaboration(self) -> "CollaborationRepositoryPort": ...
 
     @property
     def node_secrets(self) -> NodeSecretRepositoryPort: ...

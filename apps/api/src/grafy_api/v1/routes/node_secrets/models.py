@@ -19,7 +19,7 @@ class NodeSecretApiModel(BaseModel):
 
 class ConfigureNodeSecretRequest(NodeSecretApiModel):
     value: SecretStr
-    expected_graph_revision: int = Field(ge=1)
+    expected_head_sequence: int = Field(ge=0)
 
 
 class NodeSecretStatusResponse(NodeSecretApiModel):
@@ -54,8 +54,9 @@ class NodeSecretResolutionResponse(NodeSecretApiModel):
 
 
 class GraphNodeSecretsResponse(NodeSecretApiModel):
-    graph_id: UUID
-    graph_revision: int
+    project_id: UUID
+    graph_id: str
+    head_sequence: int
     secrets: list[NodeSecretStatusResponse]
     unresolved_nodes: list[NodeSecretResolutionResponse]
 
@@ -65,8 +66,9 @@ class GraphNodeSecretsResponse(NodeSecretApiModel):
         state: "GraphNodeSecretState",
     ) -> "GraphNodeSecretsResponse":
         return cls(
+            project_id=state.project_id,
             graph_id=state.graph_id,
-            graph_revision=state.graph_revision,
+            head_sequence=state.head_sequence,
             secrets=[
                 NodeSecretStatusResponse.from_state(secret) for secret in state.secrets
             ],
