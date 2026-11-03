@@ -62,11 +62,23 @@ class Harness(InMemoryUnitOfWork):
                 )
             ),
         )
-        self.collaboration = SimpleNamespace(get_head=self.get_head)
-        self.results = SimpleNamespace(
+        self._collaboration = SimpleNamespace(get_head=self.get_head)
+        self._results = SimpleNamespace(
             get_result=self.get_result, artifact_is_referenced=self.referenced
         )
-        self.projects = SimpleNamespace(titles_referencing_artifact=self.titles)
+        self._projects = SimpleNamespace(titles_referencing_artifact=self.titles)
+
+    @property
+    def collaboration(self):  # type: ignore[override]
+        return self._collaboration
+
+    @property
+    def results(self):  # type: ignore[override]
+        return self._results
+
+    @property
+    def projects(self):  # type: ignore[override]
+        return self._projects
 
     async def get_head(self, workspace_id, project_id):
         return self.head if (workspace_id, project_id) == (WORKSPACE, PROJECT) else None

@@ -5,6 +5,8 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from grafy_persistence.database import create_database
+from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
@@ -43,7 +45,7 @@ def builtin_client(tmp_path: Path) -> Iterator[TestClient]:
     components = build_workbench_components(
         plugin_registry=deployment.registry,
         workspace=tmp_path / "workbench",
-        unit_of_work=InMemoryUnitOfWork(),
+        unit_of_work=SqlAlchemyUnitOfWork(create_database(database_url).sessions),
     )
     with client_with_overrides(
         settings=Settings(
