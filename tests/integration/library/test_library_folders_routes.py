@@ -514,7 +514,7 @@ def test_the_folder_listing_is_the_one_route_that_asks_for_the_artifact_read(
     fieldwork = _create_folder(builtin_client, "Fieldwork")
     artifact_id = _library_artifact(builtin_client, "measurements.csv")
 
-    _acting_with_only(builtin_client, {WorkspaceCapability.EDIT_GRAPH})
+    _acting_with_only(builtin_client, {WorkspaceCapability.EDIT_PROJECT})
 
     refused = builtin_client.get(_folders_path())
 

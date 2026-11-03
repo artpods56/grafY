@@ -80,18 +80,18 @@ def test_stored_token_scopes_reject_names_this_build_does_not_grant(
     """A stored scope this build cannot name is corrupt data, not an empty grant."""
 
     column = schema.WorkspaceCapabilityTupleType()
-    assert column.process_bind_param((WorkspaceCapability.EDIT_GRAPH,), dialect) == [
-        "edit_graph"
+    assert column.process_bind_param((WorkspaceCapability.EDIT_PROJECT,), dialect) == [
+        "edit_project"
     ]
-    assert column.process_result_value(["edit_graph"], dialect) == (
-        WorkspaceCapability.EDIT_GRAPH,
+    assert column.process_result_value(["edit_project"], dialect) == (
+        WorkspaceCapability.EDIT_PROJECT,
     )
     assert column.process_result_value([], dialect) == ()
     assert column.process_result_value(None, dialect) is None
     with pytest.raises(ValueError, match="unknown"):
-        column.process_result_value(["edit_graph", "publish_plugin"], dialect)
+        column.process_result_value(["edit_project", "publish_plugin"], dialect)
     with pytest.raises(ValueError, match="not a JSON string list"):
-        column.process_result_value("edit_graph", dialect)
+        column.process_result_value("edit_project", dialect)
     with pytest.raises(ValueError, match="not a JSON string list"):
         column.process_result_value([None], dialect)
 

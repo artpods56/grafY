@@ -553,9 +553,9 @@ class IdentityService:
                 workspace_id=workspace_id,
                 user_id=actor.user_id,
             )
-            if not membership.grants(WorkspaceCapability.VIEW_GRAPH):
+            if not membership.grants(WorkspaceCapability.VIEW_PROJECT):
                 raise CapabilityDeniedError(
-                    capability=WorkspaceCapability.VIEW_GRAPH.value,
+                    capability=WorkspaceCapability.VIEW_PROJECT.value,
                     workspace_id=workspace_id,
                     user_id=actor.user_id,
                 )
@@ -578,9 +578,9 @@ class IdentityService:
                 workspace_id=workspace_id,
                 user_id=actor.user_id,
             )
-            if not membership.grants(WorkspaceCapability.VIEW_GRAPH):
+            if not membership.grants(WorkspaceCapability.VIEW_PROJECT):
                 raise CapabilityDeniedError(
-                    capability=WorkspaceCapability.VIEW_GRAPH.value,
+                    capability=WorkspaceCapability.VIEW_PROJECT.value,
                     workspace_id=workspace_id,
                     user_id=actor.user_id,
                 )

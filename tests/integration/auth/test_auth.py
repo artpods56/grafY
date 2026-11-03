@@ -536,7 +536,7 @@ async def test_pat_create_shows_secret_once_and_revoke_is_audited(
             created = tokens.create_token_ok(
                 PersonalAccessTokenCreateRequest(
                     label="read-only",
-                    scopes=(PersonalAccessTokenScope.VIEW_GRAPH,),
+                    scopes=(PersonalAccessTokenScope.VIEW_PROJECT,),
                     expires_at=datetime.now(UTC) + timedelta(hours=1),
                 ),
                 headers=_csrf_headers(issued),
@@ -615,7 +615,7 @@ async def test_workspace_route_accepts_personal_access_token_without_browser_coo
             created = api.workspace(workspace.id).create_token_ok(
                 PersonalAccessTokenCreateRequest(
                     label="catalog e2e",
-                    scopes=(PersonalAccessTokenScope.VIEW_GRAPH,),
+                    scopes=(PersonalAccessTokenScope.VIEW_PROJECT,),
                     expires_at=datetime.now(UTC) + timedelta(hours=1),
                 ),
                 headers=_csrf_headers(issued),
@@ -702,7 +702,7 @@ async def test_workspace_pat_scope_limits_writes_and_bearer_write_skips_csrf(
             read_only = workspace_api.create_token_ok(
                 PersonalAccessTokenCreateRequest(
                     label="read only",
-                    scopes=(PersonalAccessTokenScope.VIEW_GRAPH,),
+                    scopes=(PersonalAccessTokenScope.VIEW_PROJECT,),
                     expires_at=datetime.now(UTC) + timedelta(hours=1),
                 ),
                 headers=_csrf_headers(issued),
@@ -710,7 +710,7 @@ async def test_workspace_pat_scope_limits_writes_and_bearer_write_skips_csrf(
             editor = workspace_api.create_token_ok(
                 PersonalAccessTokenCreateRequest(
                     label="upload e2e",
-                    scopes=(PersonalAccessTokenScope.EDIT_GRAPH,),
+                    scopes=(PersonalAccessTokenScope.EDIT_PROJECT,),
                     expires_at=datetime.now(UTC) + timedelta(hours=1),
                 ),
                 headers=_csrf_headers(issued),
@@ -753,7 +753,7 @@ async def test_workspace_route_rejects_ambiguous_and_cross_workspace_pat_use(
             created = api.workspace(workspace.id).create_token_ok(
                 PersonalAccessTokenCreateRequest(
                     label="workspace bound",
-                    scopes=(PersonalAccessTokenScope.VIEW_GRAPH,),
+                    scopes=(PersonalAccessTokenScope.VIEW_PROJECT,),
                     expires_at=datetime.now(UTC) + timedelta(hours=1),
                 ),
                 headers=_csrf_headers(issued),
@@ -794,7 +794,7 @@ async def test_workspace_pat_capability_failure_audit_uses_token_actor(
             created = api.workspace(workspace.id).create_token_ok(
                 PersonalAccessTokenCreateRequest(
                     label="audit scope",
-                    scopes=(PersonalAccessTokenScope.VIEW_GRAPH,),
+                    scopes=(PersonalAccessTokenScope.VIEW_PROJECT,),
                     expires_at=datetime.now(UTC) + timedelta(hours=1),
                 ),
                 headers=_csrf_headers(issued),
@@ -1078,7 +1078,7 @@ async def test_workspace_and_pat_request_validation_is_bounded(
                 headers=_csrf_headers(issued),
                 json={
                     "label": "duplicate",
-                    "scopes": ["view_graph", "view_graph"],
+                    "scopes": ["view_project", "view_project"],
                     "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
                 },
             )
@@ -1087,7 +1087,7 @@ async def test_workspace_and_pat_request_validation_is_bounded(
                 headers=_csrf_headers(issued),
                 json={
                     "label": "   ",
-                    "scopes": ["view_graph"],
+                    "scopes": ["view_project"],
                     "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
                 },
             )

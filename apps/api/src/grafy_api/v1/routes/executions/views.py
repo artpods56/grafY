@@ -79,7 +79,7 @@ async def run_graph(
     manager: RunExecutionManagerDependency,
     admission_limiter: ExecutionAdmissionLimiterDependency,
     presenter: RunResultPresenterDependency,
-    access: require_workspace_capability(WorkspaceCapability.EXECUTE_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.START_RUN),
 ) -> RunResponse:
     try:
         admission_lease = admission_limiter.acquire()
@@ -162,7 +162,7 @@ async def start_graph_execution(
     manager: RunExecutionManagerDependency,
     presenter: RunResultPresenterDependency,
     uow_factory: IdentityUnitOfWorkFactoryDependency,
-    access: require_workspace_capability(WorkspaceCapability.EXECUTE_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.START_RUN),
     idempotency_key: Annotated[
         str | None,
         Header(
@@ -207,7 +207,7 @@ async def start_saved_graph_execution(
     manager: RunExecutionManagerDependency,
     presenter: RunResultPresenterDependency,
     uow_factory: IdentityUnitOfWorkFactoryDependency,
-    access: require_workspace_capability(WorkspaceCapability.EXECUTE_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.START_RUN),
     idempotency_key: Annotated[
         str | None,
         Header(
@@ -254,7 +254,7 @@ async def get_graph_execution(
     execution_id: UUID,
     manager: RunExecutionManagerDependency,
     presenter: RunResultPresenterDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_EXECUTION),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_RUNS),
 ) -> RunExecutionResponse:
     try:
         execution = await manager.get(access.workspace_id, execution_id)
@@ -277,7 +277,7 @@ async def stream_graph_execution_events(
     execution_id: UUID,
     request: Request,
     manager: RunExecutionManagerDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_EXECUTION),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_RUNS),
     last_event_id: Annotated[
         str | None,
         Header(alias="Last-Event-ID"),
@@ -360,7 +360,7 @@ async def cancel_graph_execution(
     execution_id: UUID,
     manager: RunExecutionManagerDependency,
     presenter: RunResultPresenterDependency,
-    access: require_workspace_capability(WorkspaceCapability.CANCEL_EXECUTION),
+    access: require_workspace_capability(WorkspaceCapability.CANCEL_RUN),
 ) -> RunExecutionResponse:
     try:
         execution = await manager.cancel(access.workspace_id, execution_id)
@@ -378,7 +378,7 @@ async def get_graph_materializations(
     graph_revision: Annotated[int, Query(ge=1)],
     service: MaterializationDependency,
     presenter: RunResultPresenterDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_MATERIALIZATIONS),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_RUNS),
 ) -> GraphMaterializationsResponse:
     try:
         materializations = await service.list_for_graph(
@@ -408,7 +408,7 @@ async def list_graph_executions(
     graph_id: UUID,
     service: ExecutionHistoryDependency,
     saved_graphs: SavedGraphDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_HISTORY),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_RUNS),
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query()] = None,
     graph_revision: Annotated[int | None, Query(ge=1)] = None,
@@ -451,7 +451,7 @@ async def get_graph_execution_history(
     execution_id: UUID,
     service: ExecutionHistoryDependency,
     presenter: RunResultPresenterDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_HISTORY),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_RUNS),
 ) -> GraphExecutionDetailResponse:
     detail = await service.get_for_graph(access.workspace_id, graph_id, execution_id)
     if detail is None:

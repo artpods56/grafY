@@ -143,7 +143,7 @@ class ExecutionHistoryService:
                 user_id=actor_id,
             )
         return membership is not None and membership.grants(
-            WorkspaceCapability.EXECUTE_GRAPH
+            WorkspaceCapability.START_RUN
         )
 
     async def mark_running(

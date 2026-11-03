@@ -33,7 +33,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/graphs", tags=["node secre
 async def get_node_secret_status(
     graph_id: UUID,
     service: NodeSecretDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
 ) -> GraphNodeSecretsResponse:
     try:
         state = await service.status(access.workspace_id, graph_id)

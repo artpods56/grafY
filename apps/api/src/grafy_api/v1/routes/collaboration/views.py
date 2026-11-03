@@ -118,9 +118,9 @@ async def graph_room(
         access = await identity.authorize(
             actor=actor,
             workspace_id=workspace_id,
-            capability=WorkspaceCapability.JOIN_GRAPH_ROOM,
+            capability=WorkspaceCapability.JOIN_PROJECT_ROOM,
         )
-        access.require(WorkspaceCapability.VIEW_GRAPH)
+        access.require(WorkspaceCapability.VIEW_PROJECT)
         presentation = await actor_presentation_for(uow_factory, actor)
     except HTTPException:
         raise
@@ -307,9 +307,9 @@ async def _revalidate_and_heartbeat(
         access = await identity.authorize(
             actor=actor,
             workspace_id=session.workspace_id,
-            capability=WorkspaceCapability.JOIN_GRAPH_ROOM,
+            capability=WorkspaceCapability.JOIN_PROJECT_ROOM,
         )
-        access.require(WorkspaceCapability.VIEW_GRAPH)
+        access.require(WorkspaceCapability.VIEW_PROJECT)
     except (NotFoundError, CapabilityDeniedError, UserDisabledError):
         await hub.close_session(
             session,

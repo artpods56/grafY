@@ -44,7 +44,7 @@ async def _definition_for_module(
 @router.get("", response_model=ModuleListResponse)
 async def list_modules(
     service: ModuleLibraryDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
 ) -> ModuleListResponse:
     modules = await service.list_library(access.workspace_id)
     responses: list[ModuleResponse] = []
@@ -70,7 +70,7 @@ async def list_modules(
 async def get_module(
     module_id: UUID,
     service: ModuleLibraryDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
 ) -> ModuleResponse:
     try:
         module = await service.get(access.workspace_id, module_id)

@@ -73,7 +73,7 @@ async def list_accessible_graphs(
 @folder_router.get("", response_model=GraphFolderListResponse)
 async def list_graph_folders(
     service: SavedGraphDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
 ) -> GraphFolderListResponse:
     folders = await service.list_folders(
         actor=access.actor,
@@ -90,7 +90,7 @@ async def list_graph_folders(
 async def create_graph_folder(
     request: GraphFolderWriteRequest,
     service: SavedGraphDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> GraphFolderResponse:
     try:
         folder = await service.create_folder(
@@ -108,7 +108,7 @@ async def rename_graph_folder(
     folder_id: UUID,
     request: GraphFolderWriteRequest,
     service: SavedGraphDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> GraphFolderResponse:
     try:
         folder = await service.rename_folder(
@@ -126,7 +126,7 @@ async def rename_graph_folder(
 async def delete_graph_folder(
     folder_id: UUID,
     service: SavedGraphDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> Response:
     await service.delete_folder(
         actor=access.actor,
@@ -139,7 +139,7 @@ async def delete_graph_folder(
 @router.get("", response_model=SavedGraphListResponse)
 async def list_saved_graphs(
     service: SavedGraphDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
 ) -> SavedGraphListResponse:
     items = await service.list_accessible(
         access.actor,
@@ -153,7 +153,7 @@ async def assign_graph_folder(
     graph_id: UUID,
     request: AssignGraphFolderRequest,
     service: SavedGraphDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> GraphOrganizationResponse:
     organization = await service.assign_folder(
         actor=access.actor,
@@ -168,7 +168,7 @@ async def assign_graph_folder(
 async def archive_graph(
     graph_id: UUID,
     service: SavedGraphDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> GraphOrganizationResponse:
     organization = await service.archive(
         actor=access.actor,
@@ -182,7 +182,7 @@ async def archive_graph(
 async def restore_graph(
     graph_id: UUID,
     service: SavedGraphDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> GraphOrganizationResponse:
     organization = await service.restore(
         actor=access.actor,
@@ -196,7 +196,7 @@ async def restore_graph(
 async def star_graph(
     graph_id: UUID,
     service: SavedGraphDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
 ) -> UserGraphStateResponse:
     state = await service.set_starred(
         actor=access.actor,
@@ -211,7 +211,7 @@ async def star_graph(
 async def unstar_graph(
     graph_id: UUID,
     service: SavedGraphDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
 ) -> UserGraphStateResponse:
     state = await service.set_starred(
         actor=access.actor,
@@ -226,7 +226,7 @@ async def unstar_graph(
 async def record_graph_open(
     graph_id: UUID,
     service: SavedGraphDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
 ) -> UserGraphStateResponse:
     state = await service.record_open(
         actor=access.actor,
@@ -244,7 +244,7 @@ async def record_graph_open(
 async def create_saved_graph(
     request: CreateSavedGraphRequest,
     collaboration: CollaborationDependency,
-    access: require_workspace_capability(WorkspaceCapability.CREATE_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.CREATE_PROJECT),
 ) -> SavedGraphResponse:
     graph, _, _ = await collaboration.bootstrap_graph(
         actor=access.actor,
@@ -266,7 +266,7 @@ async def create_saved_graph(
 async def copy_exact_head(
     request: CopyExactHeadRequest,
     collaboration: CollaborationDependency,
-    access: require_workspace_capability(WorkspaceCapability.CREATE_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.CREATE_PROJECT),
 ) -> SavedGraphResponse:
     try:
         graph, _, _ = await collaboration.copy_exact_head(
@@ -297,7 +297,7 @@ async def copy_exact_head(
 async def get_saved_graph(
     graph_id: UUID,
     service: SavedGraphDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
 ) -> SavedGraphResponse:
     try:
         graph = await service.get(access.workspace_id, graph_id)
@@ -313,7 +313,7 @@ async def get_saved_graph(
 async def get_canonical_collaborative_head(
     graph_id: UUID,
     collaboration: CollaborationDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
 ) -> CollaborativeHeadResponse:
     try:
         head = await collaboration.get_head(
@@ -336,7 +336,7 @@ async def submit_graph_command(
     http_request: Request,
     collaboration: CollaborationDependency,
     uow_factory: IdentityUnitOfWorkFactoryDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> SubmitGraphCommandResponse:
     try:
         head, receipt = await collaboration.accept_command(
@@ -385,7 +385,7 @@ async def checkpoint_graph(
     graph_id: UUID,
     request: CheckpointGraphRequest,
     collaboration: CollaborationDependency,
-    access: require_workspace_capability(WorkspaceCapability.CHECKPOINT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.CHECKPOINT_PROJECT),
 ) -> CheckpointGraphResponse:
     try:
         head, revision = await collaboration.checkpoint(
@@ -416,7 +416,7 @@ async def update_saved_graph(
     request: UpdateSavedGraphRequest,
     http_request: Request,
     collaboration: CollaborationDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> SavedGraphResponse:
     try:
         graph, head = await collaboration.replace_complete_document(
@@ -451,7 +451,7 @@ async def delete_saved_graph(
     graph_id: UUID,
     http_request: Request,
     collaboration: CollaborationDependency,
-    access: require_workspace_capability(WorkspaceCapability.DELETE_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.DELETE_PROJECT),
     expected_revision: Annotated[int, Query(ge=1)],
     expected_room_epoch: Annotated[UUID | None, Query()] = None,
     expected_sequence: Annotated[int | None, Query(ge=0)] = None,

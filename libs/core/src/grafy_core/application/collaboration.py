@@ -101,13 +101,13 @@ class CollaborationService:
                 unit_of_work,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.CREATE_GRAPH,
+                capability=WorkspaceCapability.CREATE_PROJECT,
                 operation="collaboration.graph.bootstrap",
                 resource_id=None if graph_id is None else str(graph_id),
             )
             try:
-                access.require(WorkspaceCapability.EDIT_GRAPH)
-                access.require(WorkspaceCapability.CHECKPOINT_GRAPH)
+                access.require(WorkspaceCapability.EDIT_PROJECT)
+                access.require(WorkspaceCapability.CHECKPOINT_PROJECT)
             except CapabilityDeniedError:
                 await self._commit_rejection_audit(
                     unit_of_work,
@@ -223,7 +223,7 @@ class CollaborationService:
                 unit_of_work,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.VIEW_GRAPH,
+                capability=WorkspaceCapability.VIEW_PROJECT,
                 operation="collaboration.head.read",
                 resource_id=str(graph_id),
             )
@@ -251,7 +251,7 @@ class CollaborationService:
                 unit_of_work,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.EDIT_GRAPH,
+                capability=WorkspaceCapability.EDIT_PROJECT,
                 operation="collaboration.command.accept",
                 resource_id=str(graph_id),
             )
@@ -381,7 +381,7 @@ class CollaborationService:
                 unit_of_work,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.CHECKPOINT_GRAPH,
+                capability=WorkspaceCapability.CHECKPOINT_PROJECT,
                 operation="collaboration.checkpoint",
                 resource_id=str(graph_id),
             )
@@ -491,7 +491,7 @@ class CollaborationService:
                 unit_of_work,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.EDIT_GRAPH,
+                capability=WorkspaceCapability.EDIT_PROJECT,
                 operation="collaboration.graph.replace",
                 resource_id=str(graph_id),
             )
@@ -592,10 +592,10 @@ class CollaborationService:
     ) -> tuple[SavedGraph, CollaborativeGraphHead, GraphCommandReceipt]:
         async with self._unit_of_work_factory() as unit_of_work:
             requirements = (
-                (source_workspace_id, WorkspaceCapability.VIEW_GRAPH),
-                (target_workspace_id, WorkspaceCapability.CREATE_GRAPH),
-                (target_workspace_id, WorkspaceCapability.EDIT_GRAPH),
-                (target_workspace_id, WorkspaceCapability.CHECKPOINT_GRAPH),
+                (source_workspace_id, WorkspaceCapability.VIEW_PROJECT),
+                (target_workspace_id, WorkspaceCapability.CREATE_PROJECT),
+                (target_workspace_id, WorkspaceCapability.EDIT_PROJECT),
+                (target_workspace_id, WorkspaceCapability.CHECKPOINT_PROJECT),
             )
             for workspace_id, capability in sorted(
                 requirements, key=lambda requirement: str(requirement[0])
@@ -739,7 +739,7 @@ class CollaborationService:
                 unit_of_work,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.DELETE_GRAPH,
+                capability=WorkspaceCapability.DELETE_PROJECT,
                 operation="collaboration.graph.delete",
                 resource_id=str(graph_id),
             )

@@ -42,7 +42,7 @@ async def list_library_artifacts(
 async def save_library_artifact_from_run(
     body: SaveRunArtifactRequest,
     service: LibraryDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> LibraryItemResponse:
     try:
         return await service.save_from_run(
@@ -61,7 +61,7 @@ async def save_library_artifact_from_run(
 async def save_library_artifact_from_upload(
     body: SaveUploadedArtifactRequest,
     service: LibraryDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> LibraryItemResponse:
     return await service.save_uploaded(
         workspace_id=access.workspace_id,
@@ -78,7 +78,7 @@ async def save_library_artifact_from_upload(
 async def delete_library_artifact(
     artifact_id: UUID,
     service: LibraryDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> Response:
     """Delete one Library artifact. Saved work that still uses it is refused."""
     await service.delete_artifact(
@@ -96,7 +96,7 @@ async def delete_library_artifact(
 async def move_library_artifacts(
     body: MoveLibraryArtifactsRequest,
     service: LibraryFoldersDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> Response:
     """File artifacts in one folder, or unfile them when ``folder_id`` is null."""
     await service.place_artifacts(
@@ -125,7 +125,7 @@ async def list_library_folders(
 async def create_library_folder(
     body: CreateLibraryFolderRequest,
     service: LibraryFoldersDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> LibraryFolderResponse:
     return await service.create_folder(
         workspace_id=access.workspace_id,
@@ -139,7 +139,7 @@ async def rename_library_folder(
     folder_id: UUID,
     body: RenameLibraryFolderRequest,
     service: LibraryFoldersDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> LibraryFolderResponse:
     return await service.rename_folder(
         workspace_id=access.workspace_id,
@@ -156,7 +156,7 @@ async def rename_library_folder(
 async def delete_library_folder(
     folder_id: UUID,
     service: LibraryFoldersDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> Response:
     """Delete one folder. A folder that still holds anything is refused."""
     await service.delete_folder(
@@ -171,7 +171,7 @@ async def move_library_folder(
     folder_id: UUID,
     body: MoveLibraryFolderRequest,
     service: LibraryFoldersDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> LibraryFolderResponse:
     return await service.move_folder(
         workspace_id=access.workspace_id,

@@ -32,21 +32,18 @@ class WorkspaceInvitationStatus(StrEnum):
 
 
 class WorkspaceCapability(StrEnum):
-    VIEW_GRAPH = "view_graph"
+    VIEW_PROJECT = "view_project"
     VIEW_ARTIFACTS = "view_artifacts"
-    VIEW_MATERIALIZATIONS = "view_materializations"
-    VIEW_HISTORY = "view_history"
-    VIEW_EXECUTION = "view_execution"
-    JOIN_GRAPH_ROOM = "join_graph_room"
+    VIEW_RUNS = "view_runs"
+    JOIN_PROJECT_ROOM = "join_project_room"
     PUBLISH_PRESENCE = "publish_presence"
-    CREATE_GRAPH = "create_graph"
-    EDIT_GRAPH = "edit_graph"
-    CHECKPOINT_GRAPH = "checkpoint_graph"
-    EXECUTE_GRAPH = "execute_graph"
-    CANCEL_EXECUTION = "cancel_execution"
-    PUBLISH_MODULE = "publish_module"
+    CREATE_PROJECT = "create_project"
+    EDIT_PROJECT = "edit_project"
+    CHECKPOINT_PROJECT = "checkpoint_project"
+    START_RUN = "start_run"
+    CANCEL_RUN = "cancel_run"
     MANAGE_SECRETS = "manage_secrets"
-    DELETE_GRAPH = "delete_graph"
+    DELETE_PROJECT = "delete_project"
     MANAGE_MEMBERS = "manage_members"
     RENAME_WORKSPACE = "rename_workspace"
 
@@ -55,47 +52,39 @@ _SLUG_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?$")
 _ROLE_CAPABILITIES: dict[WorkspaceRole, frozenset[WorkspaceCapability]] = {
     WorkspaceRole.VIEWER: frozenset(
         {
-            WorkspaceCapability.VIEW_GRAPH,
+            WorkspaceCapability.VIEW_PROJECT,
             WorkspaceCapability.VIEW_ARTIFACTS,
-            WorkspaceCapability.VIEW_MATERIALIZATIONS,
-            WorkspaceCapability.VIEW_HISTORY,
-            WorkspaceCapability.VIEW_EXECUTION,
-            WorkspaceCapability.JOIN_GRAPH_ROOM,
+            WorkspaceCapability.VIEW_RUNS,
+            WorkspaceCapability.JOIN_PROJECT_ROOM,
             WorkspaceCapability.PUBLISH_PRESENCE,
         }
     ),
     WorkspaceRole.EDITOR: frozenset(
         {
-            WorkspaceCapability.VIEW_GRAPH,
+            WorkspaceCapability.VIEW_PROJECT,
             WorkspaceCapability.VIEW_ARTIFACTS,
-            WorkspaceCapability.VIEW_MATERIALIZATIONS,
-            WorkspaceCapability.VIEW_HISTORY,
-            WorkspaceCapability.VIEW_EXECUTION,
-            WorkspaceCapability.JOIN_GRAPH_ROOM,
+            WorkspaceCapability.VIEW_RUNS,
+            WorkspaceCapability.JOIN_PROJECT_ROOM,
             WorkspaceCapability.PUBLISH_PRESENCE,
-            WorkspaceCapability.CREATE_GRAPH,
-            WorkspaceCapability.EDIT_GRAPH,
-            WorkspaceCapability.CHECKPOINT_GRAPH,
-            WorkspaceCapability.EXECUTE_GRAPH,
-            WorkspaceCapability.CANCEL_EXECUTION,
-            WorkspaceCapability.PUBLISH_MODULE,
+            WorkspaceCapability.CREATE_PROJECT,
+            WorkspaceCapability.EDIT_PROJECT,
+            WorkspaceCapability.CHECKPOINT_PROJECT,
+            WorkspaceCapability.START_RUN,
+            WorkspaceCapability.CANCEL_RUN,
         }
     ),
     WorkspaceRole.OWNER: frozenset(WorkspaceCapability),
 }
 PAT_ALLOWED_CAPABILITIES = frozenset(
     {
-        WorkspaceCapability.VIEW_GRAPH,
+        WorkspaceCapability.VIEW_PROJECT,
         WorkspaceCapability.VIEW_ARTIFACTS,
-        WorkspaceCapability.VIEW_MATERIALIZATIONS,
-        WorkspaceCapability.VIEW_HISTORY,
-        WorkspaceCapability.VIEW_EXECUTION,
-        WorkspaceCapability.CREATE_GRAPH,
-        WorkspaceCapability.EDIT_GRAPH,
-        WorkspaceCapability.CHECKPOINT_GRAPH,
-        WorkspaceCapability.EXECUTE_GRAPH,
-        WorkspaceCapability.CANCEL_EXECUTION,
-        WorkspaceCapability.PUBLISH_MODULE,
+        WorkspaceCapability.VIEW_RUNS,
+        WorkspaceCapability.CREATE_PROJECT,
+        WorkspaceCapability.EDIT_PROJECT,
+        WorkspaceCapability.CHECKPOINT_PROJECT,
+        WorkspaceCapability.START_RUN,
+        WorkspaceCapability.CANCEL_RUN,
         WorkspaceCapability.MANAGE_SECRETS,
     }
 )

@@ -11,22 +11,22 @@
   },
   "capabilities": {
     "capabilities": [
-      "cancel_execution",
-      "checkpoint_graph",
-      "create_graph",
-      "delete_graph",
-      "edit_graph",
-      "execute_graph",
-      "join_graph_room",
+      "cancel_run",
+      "checkpoint_project",
+      "create_project",
+      "delete_project",
+      "edit_project",
+      "start_run",
+      "join_project_room",
       "manage_members",
       "manage_secrets",
       "publish_presence",
       "rename_workspace",
       "view_artifacts",
-      "view_execution",
-      "view_graph",
-      "view_history",
-      "view_materializations"
+      "view_runs",
+      "view_project",
+      "view_runs",
+      "view_runs"
     ],
     "authorization_version": 1
   },

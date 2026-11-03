@@ -165,17 +165,14 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
     ]
     pat_scope_schema = schema["components"]["schemas"]["PersonalAccessTokenScope"]
     assert set(pat_scope_schema["enum"]) == {
-        "view_graph",
+        "view_project",
         "view_artifacts",
-        "view_materializations",
-        "view_history",
-        "view_execution",
-        "create_graph",
-        "edit_graph",
-        "checkpoint_graph",
-        "execute_graph",
-        "cancel_execution",
-        "publish_module",
+        "view_runs",
+        "create_project",
+        "edit_project",
+        "checkpoint_project",
+        "start_run",
+        "cancel_run",
         "manage_secrets",
     }
     assert pat_request_schema["properties"]["scopes"]["items"] == {

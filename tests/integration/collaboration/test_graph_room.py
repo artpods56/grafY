@@ -249,7 +249,7 @@ def test_room_ready_admits_authenticated_member(room_client: RoomClient) -> None
     assert ready["actor"]["actor_id"] == str(population.owner.id)
     assert ready["actor"]["display_name"] == "Owner"
     assert ready["capabilities"]["authorization_version"] >= 1
-    assert "edit_graph" in ready["capabilities"]["capabilities"]
+    assert "edit_project" in ready["capabilities"]["capabilities"]
     assert ready["head"]["graph_id"] == str(graph.id)
     assert ready["head"]["collaboration_sequence"] == 1
     assert ready["graph_room_session_id"]
@@ -706,7 +706,7 @@ def test_viewer_command_is_rejected_without_fanout(room_client: RoomClient) -> N
         switcher.as_user(population.viewer.id)
         with _connect_room(api, population.workspace.id, graph.id) as viewer_ws:
             ready = viewer_ws.receive_json()
-            assert "edit_graph" not in ready["capabilities"]["capabilities"]
+            assert "edit_project" not in ready["capabilities"]["capabilities"]
             viewer_ws.send_json(
                 {
                     "protocol_version": 1,
@@ -750,8 +750,8 @@ def test_role_change_closes_with_permissions_changed(room_client: RoomClient) ->
     switcher.as_user(population.editor.id)
     with _connect_room(api, population.workspace.id, graph.id) as viewer_ws:
         ready = viewer_ws.receive_json()
-    assert "edit_graph" not in ready["capabilities"]["capabilities"]
-    assert "view_graph" in ready["capabilities"]["capabilities"]
+    assert "edit_project" not in ready["capabilities"]["capabilities"]
+    assert "view_project" in ready["capabilities"]["capabilities"]
     assert ready["capabilities"]["authorization_version"] >= 2
 
 
@@ -1255,8 +1255,8 @@ def test_viewer_discovers_active_execution_on_room_ready_and_cannot_cancel(
                 started.execution_id
             )
             assert ready["active_execution"]["status"] in {"queued", "running"}
-            assert "execute_graph" not in ready["capabilities"]["capabilities"]
-            assert "cancel_execution" not in ready["capabilities"]["capabilities"]
+            assert "start_run" not in ready["capabilities"]["capabilities"]
+            assert "cancel_run" not in ready["capabilities"]["capabilities"]
 
             observed = workspace_api.executions.get_execution(started.execution_id)
             assert observed.status_code == 200

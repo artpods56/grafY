@@ -99,7 +99,7 @@ async def test_identity_records_round_trip_without_plain_credential_material(
         public_prefix="nrt_test_107",
         secret_digest=b"pat-digest",
         label="automation",
-        scopes=(WorkspaceCapability.VIEW_GRAPH,),
+        scopes=(WorkspaceCapability.VIEW_PROJECT,),
         expires_at=now + timedelta(days=1),
         created_at=now,
     )
@@ -153,7 +153,7 @@ async def test_identity_records_round_trip_without_plain_credential_material(
     assert loaded_session is not None
     assert loaded_session.secret_digest == session.secret_digest
     assert loaded_token is not None
-    assert loaded_token.scopes == (WorkspaceCapability.VIEW_GRAPH,)
+    assert loaded_token.scopes == (WorkspaceCapability.VIEW_PROJECT,)
     assert loaded_audit.actor_kind is SecurityAuditActorKind.AUTHENTICATED
     assert loaded_audit.user_id == user.id
 
@@ -253,7 +253,7 @@ async def test_stored_token_rejects_scopes_that_are_not_capabilities(
                 "digest": b"unknown-scope-digest",
                 "scopes": json.dumps(
                     [
-                        "view_graph",
+                        "view_project",
                         "not_a_capability",
                     ]
                 ),

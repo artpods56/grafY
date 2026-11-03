@@ -124,7 +124,7 @@ class SavedGraphService:
                 unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.EDIT_GRAPH,
+                capability=WorkspaceCapability.EDIT_PROJECT,
             )
             existing = await unit_of_work.graphs.get_folder_by_name(
                 workspace_id,
@@ -162,7 +162,7 @@ class SavedGraphService:
                 unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.VIEW_GRAPH,
+                capability=WorkspaceCapability.VIEW_PROJECT,
             )
             return await unit_of_work.graphs.list_folders(workspace_id)
 
@@ -183,7 +183,7 @@ class SavedGraphService:
                 unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.EDIT_GRAPH,
+                capability=WorkspaceCapability.EDIT_PROJECT,
             )
             folder = await unit_of_work.graphs.get_folder(workspace_id, folder_id)
             if folder is None:
@@ -230,7 +230,7 @@ class SavedGraphService:
                 unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.EDIT_GRAPH,
+                capability=WorkspaceCapability.EDIT_PROJECT,
             )
             folder = await unit_of_work.graphs.get_folder(workspace_id, folder_id)
             if folder is None:
@@ -267,7 +267,7 @@ class SavedGraphService:
                 unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.EDIT_GRAPH,
+                capability=WorkspaceCapability.EDIT_PROJECT,
             )
             graph = await unit_of_work.graphs.get(workspace_id, graph_id)
             if graph is None:
@@ -314,7 +314,7 @@ class SavedGraphService:
                 unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.EDIT_GRAPH,
+                capability=WorkspaceCapability.EDIT_PROJECT,
             )
             graph = await unit_of_work.graphs.get(workspace_id, graph_id)
             if graph is None:
@@ -357,7 +357,7 @@ class SavedGraphService:
                 unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.EDIT_GRAPH,
+                capability=WorkspaceCapability.EDIT_PROJECT,
             )
             graph = await unit_of_work.graphs.get(workspace_id, graph_id)
             if graph is None:
@@ -401,7 +401,7 @@ class SavedGraphService:
                 unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.VIEW_GRAPH,
+                capability=WorkspaceCapability.VIEW_PROJECT,
             )
             graph = await unit_of_work.graphs.get(workspace_id, graph_id)
             if graph is None:
@@ -434,7 +434,7 @@ class SavedGraphService:
                 unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.VIEW_GRAPH,
+                capability=WorkspaceCapability.VIEW_PROJECT,
             )
             graph = await unit_of_work.graphs.get(workspace_id, graph_id)
             if graph is None:

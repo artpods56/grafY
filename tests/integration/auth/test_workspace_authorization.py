@@ -976,10 +976,10 @@ async def test_target_bound_pat_cannot_copy_graph_from_another_workspace(
                 PersonalAccessTokenCreateRequest(
                     label="target-workspace-copy",
                     scopes=(
-                        PersonalAccessTokenScope.VIEW_GRAPH,
-                        PersonalAccessTokenScope.CREATE_GRAPH,
-                        PersonalAccessTokenScope.EDIT_GRAPH,
-                        PersonalAccessTokenScope.CHECKPOINT_GRAPH,
+                        PersonalAccessTokenScope.VIEW_PROJECT,
+                        PersonalAccessTokenScope.CREATE_PROJECT,
+                        PersonalAccessTokenScope.EDIT_PROJECT,
+                        PersonalAccessTokenScope.CHECKPOINT_PROJECT,
                     ),
                     expires_at=datetime.now(UTC) + timedelta(hours=1),
                 ),

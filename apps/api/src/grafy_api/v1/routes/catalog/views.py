@@ -22,7 +22,7 @@ async def list_nodes(
     registry: PluginRegistryDependency,
     modules: ModuleLibraryDependency,
     module_executor: GraphModuleExecutorDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
 ) -> NodeRegistryResponse:
     module_listing = await modules.catalog_definitions(access.workspace_id)
     return NodeRegistryResponse.from_snapshot(
