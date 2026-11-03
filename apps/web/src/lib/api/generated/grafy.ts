@@ -1121,6 +1121,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AddAgentCommand */
+        readonly AddAgentCommand: {
+            readonly agent: components["schemas"]["GraphAgent"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "add_agent";
+        };
         /**
          * AddCallNodeCommand
          * @description Place a sibling Graph as a node in another Graph.
@@ -1391,6 +1400,15 @@ export interface components {
          * @enum {string}
          */
         readonly CommandReceiptOutcome: "accepted" | "idempotent_replay";
+        /** ConfigureAgentCommand */
+        readonly ConfigureAgentCommand: {
+            readonly agent: components["schemas"]["GraphAgent"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "configure_agent";
+        };
         /** ConfigureNodeSecretRequest */
         readonly ConfigureNodeSecretRequest: {
             /** Expected Head Sequence */
@@ -1484,6 +1502,26 @@ export interface components {
             readonly content_type?: string | null;
             /** Filename */
             readonly filename: string;
+        };
+        /** CustomAgentModel */
+        readonly CustomAgentModel: {
+            /** Endpoint */
+            readonly endpoint: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "custom";
+            /** Model */
+            readonly model: string;
+        };
+        /** DeploymentAgentModel */
+        readonly DeploymentAgentModel: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "deployment";
         };
         /** DuplicateNodeCommand */
         readonly DuplicateNodeCommand: {
@@ -1769,6 +1807,31 @@ export interface components {
             readonly outline: components["schemas"]["GeoLineStyle"];
             readonly point: components["schemas"]["GeoPointStyle"];
         };
+        /** GraphAgent */
+        readonly GraphAgent: {
+            /**
+             * Height
+             * @default 480
+             */
+            readonly height: number;
+            /** Id */
+            readonly id: string;
+            /**
+             * Instructions
+             * @default
+             */
+            readonly instructions: string;
+            /** Model */
+            readonly model?: components["schemas"]["DeploymentAgentModel"] | components["schemas"]["CustomAgentModel"];
+            /** Name */
+            readonly name: string;
+            readonly position?: components["schemas"]["GraphPoint"];
+            /**
+             * Width
+             * @default 360
+             */
+            readonly width: number;
+        };
         /**
          * GraphAnnotationLayout
          * @description Axis-aligned size for a presentation annotation on the canvas.
@@ -1814,6 +1877,11 @@ export interface components {
         };
         /** GraphDocument */
         readonly GraphDocument: {
+            /**
+             * Agents
+             * @default []
+             */
+            readonly agents: readonly components["schemas"]["GraphAgent"][];
             /**
              * Edges
              * @default []
@@ -2082,7 +2150,7 @@ export interface components {
          */
         readonly InGraphCommand: {
             /** Command */
-            readonly command: components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["AddOriginCommand"] | components["schemas"]["UpdateOriginCommand"] | components["schemas"]["RemoveOriginsCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"];
+            readonly command: components["schemas"]["AddAgentCommand"] | components["schemas"]["ConfigureAgentCommand"] | components["schemas"]["RemoveAgentCommand"] | components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["AddOriginCommand"] | components["schemas"]["UpdateOriginCommand"] | components["schemas"]["RemoveOriginsCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"];
             /** Graph Id */
             readonly graph_id: string;
             /**
@@ -2875,6 +2943,16 @@ export interface components {
             readonly kind: "refresh_node";
             /** Node Id */
             readonly node_id: string;
+        };
+        /** RemoveAgentCommand */
+        readonly RemoveAgentCommand: {
+            /** Agent Id */
+            readonly agent_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "remove_agent";
         };
         /** RemoveEdgesCommand */
         readonly RemoveEdgesCommand: {

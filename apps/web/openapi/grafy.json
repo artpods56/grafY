@@ -1,6 +1,25 @@
 {
   "components": {
     "schemas": {
+      "AddAgentCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/GraphAgent"
+          },
+          "kind": {
+            "const": "add_agent",
+            "default": "add_agent",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "title": "AddAgentCommand",
+        "type": "object"
+      },
       "AddCallNodeCommand": {
         "additionalProperties": false,
         "description": "Place a sibling Graph as a node in another Graph.",
@@ -681,6 +700,25 @@
         "title": "CommandReceiptOutcome",
         "type": "string"
       },
+      "ConfigureAgentCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/GraphAgent"
+          },
+          "kind": {
+            "const": "configure_agent",
+            "default": "configure_agent",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "title": "ConfigureAgentCommand",
+        "type": "object"
+      },
       "ConfigureNodeSecretRequest": {
         "additionalProperties": false,
         "properties": {
@@ -902,6 +940,48 @@
           "byte_size"
         ],
         "title": "CreateUploadRequest",
+        "type": "object"
+      },
+      "CustomAgentModel": {
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "kind": {
+            "const": "custom",
+            "default": "custom",
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint",
+          "model"
+        ],
+        "title": "CustomAgentModel",
+        "type": "object"
+      },
+      "DeploymentAgentModel": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "deployment",
+            "default": "deployment",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "DeploymentAgentModel",
         "type": "object"
       },
       "DuplicateNodeCommand": {
@@ -1777,6 +1857,70 @@
         "title": "GeoVectorStyle",
         "type": "object"
       },
+      "GraphAgent": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "default": 480,
+            "maximum": 16384.0,
+            "minimum": 96.0,
+            "title": "Height",
+            "type": "number"
+          },
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "instructions": {
+            "default": "",
+            "maxLength": 100000,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "model": {
+            "discriminator": {
+              "mapping": {
+                "custom": "#/components/schemas/CustomAgentModel",
+                "deployment": "#/components/schemas/DeploymentAgentModel"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DeploymentAgentModel"
+              },
+              {
+                "$ref": "#/components/schemas/CustomAgentModel"
+              }
+            ],
+            "title": "Model"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "position": {
+            "$ref": "#/components/schemas/GraphPoint"
+          },
+          "width": {
+            "default": 360,
+            "maximum": 16384.0,
+            "minimum": 260.0,
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "GraphAgent",
+        "type": "object"
+      },
       "GraphAnnotationLayout": {
         "additionalProperties": false,
         "description": "Axis-aligned size for a presentation annotation on the canvas.",
@@ -1881,6 +2025,14 @@
       "GraphDocument": {
         "additionalProperties": false,
         "properties": {
+          "agents": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphAgent"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
           "edges": {
             "default": [],
             "items": {
@@ -2634,14 +2786,17 @@
           "command": {
             "discriminator": {
               "mapping": {
+                "add_agent": "#/components/schemas/AddAgentCommand",
                 "add_edge": "#/components/schemas/AddEdgeCommand",
                 "add_node": "#/components/schemas/AddNodeCommand",
                 "add_origin": "#/components/schemas/AddOriginCommand",
                 "clear_node_artifact_type_binding": "#/components/schemas/ClearNodeArtifactTypeBindingCommand",
+                "configure_agent": "#/components/schemas/ConfigureAgentCommand",
                 "duplicate_node": "#/components/schemas/DuplicateNodeCommand",
                 "move_annotations": "#/components/schemas/MoveAnnotationsCommand",
                 "move_artifact_viewers": "#/components/schemas/MoveArtifactViewersCommand",
                 "move_nodes": "#/components/schemas/MoveNodesCommand",
+                "remove_agent": "#/components/schemas/RemoveAgentCommand",
                 "remove_edges": "#/components/schemas/RemoveEdgesCommand",
                 "remove_nodes": "#/components/schemas/RemoveNodesCommand",
                 "remove_origins": "#/components/schemas/RemoveOriginsCommand",
@@ -2658,6 +2813,15 @@
               "propertyName": "kind"
             },
             "oneOf": [
+              {
+                "$ref": "#/components/schemas/AddAgentCommand"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigureAgentCommand"
+              },
+              {
+                "$ref": "#/components/schemas/RemoveAgentCommand"
+              },
               {
                 "$ref": "#/components/schemas/AddNodeCommand"
               },
@@ -4685,6 +4849,28 @@
           "expected_generation"
         ],
         "title": "RefreshNodeCommand",
+        "type": "object"
+      },
+      "RemoveAgentCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "remove_agent",
+            "default": "remove_agent",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id"
+        ],
+        "title": "RemoveAgentCommand",
         "type": "object"
       },
       "RemoveEdgesCommand": {
