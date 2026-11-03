@@ -1390,6 +1390,10 @@ describe("WorkflowNode execution progress", () => {
     const materializedRun: NonNullable<typeof data.run> = {
       node_id: "module-1",
       status: "succeeded",
+      // A result is addressed by the instance that produced it and the
+      // fingerprint it stored under.
+      result_fingerprint: "fp-module-1",
+      created_at: "2026-08-01T00:00:00Z",
       error: null,
       outputs: [
         {
@@ -1402,11 +1406,13 @@ describe("WorkflowNode execution progress", () => {
           },
           artifacts: [
             {
+              // A stored result hands the canvas a reference, not a summary:
+              // content_type and text were never in it, and nothing here read
+              // them.
               artifact_id: "artifact-1",
               artifact_type: "json.object",
               schema_version: 1,
-              content_type: "application/json",
-              text: '{"ready":true}',
+              content_hash: "sha256:artifact-1",
             },
           ],
         },
