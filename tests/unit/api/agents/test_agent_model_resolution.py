@@ -81,7 +81,9 @@ class StubKeyService:
     ) -> SecretStr:
         self.resolve_calls.append((str(project_id), graph_id, agent_id))
         if self._key is None:
-            raise AgentKeyUnavailableError(f"Agent {agent_id} has no configured model key")
+            raise AgentKeyUnavailableError(
+                f"Agent {agent_id} has no configured model key"
+            )
         return self._key
 
     async def state(
@@ -95,7 +97,9 @@ class StubKeyService:
         return AgentKeyState(agent_id=agent_id, configured=self._key is not None)
 
 
-async def test_the_deployment_default_is_the_answer_an_agent_gets_when_it_asks_for_none() -> None:
+async def test_the_deployment_default_is_the_answer_an_agent_gets_when_it_asks_for_none() -> (
+    None
+):
     keys = StubKeyService()
     resolver = AgentModelResolver(
         settings=deployment_config(),
@@ -150,7 +154,9 @@ async def test_an_agent_on_its_own_endpoint_without_a_key_cannot_be_run() -> Non
         settings=deployment_config(), keys=StubKeyService(None)
     )
 
-    with pytest.raises(AgentModelConfigurationError, match="needs its own key") as error:
+    with pytest.raises(
+        AgentModelConfigurationError, match="needs its own key"
+    ) as error:
         await resolver.resolve(
             workspace_id=WORKSPACE,
             project_id=PROJECT,
@@ -173,9 +179,7 @@ async def test_a_half_a_default_refuses_to_answer_and_says_what_is_missing(
     overrides: dict[str, object], variable: str
 ) -> None:
     keys = StubKeyService()
-    resolver = AgentModelResolver(
-        settings=deployment_config(**overrides), keys=keys
-    )
+    resolver = AgentModelResolver(settings=deployment_config(**overrides), keys=keys)
 
     with pytest.raises(AgentModelConfigurationError, match=variable):
         await resolver.resolve(
@@ -188,9 +192,7 @@ async def test_a_half_a_default_refuses_to_answer_and_says_what_is_missing(
 
 
 async def test_description_says_which_model_without_saying_what_the_key_is() -> None:
-    resolver = AgentModelResolver(
-        settings=deployment_config(), keys=StubKeyService()
-    )
+    resolver = AgentModelResolver(settings=deployment_config(), keys=StubKeyService())
 
     described = await resolver.describe(
         access=viewer_access(),

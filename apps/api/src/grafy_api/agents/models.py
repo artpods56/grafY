@@ -72,7 +72,9 @@ class ResolvedAgentModel:
         and gets the same egress decision either way.
         """
 
-        return PinnedPublicAddressTransport(policy=self.egress_policy, transport=transport)
+        return PinnedPublicAddressTransport(
+            policy=self.egress_policy, transport=transport
+        )
 
     def build_openai_client(self) -> AsyncOpenAI:
         """An async client for this model. Whoever opens it closes it."""

@@ -142,7 +142,9 @@ async def build_app_resources(
         unit_of_work_factory=new_unit_of_work,
         encryption_key=settings.keys.credential_encryption_key,
     )
-    agent_conversations = AgentConversationService(unit_of_work_factory=new_unit_of_work)
+    agent_conversations = AgentConversationService(
+        unit_of_work_factory=new_unit_of_work
+    )
     agent_models = AgentModelResolver(
         settings=settings.agents,
         keys=agent_keys,

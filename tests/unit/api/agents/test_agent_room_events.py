@@ -175,7 +175,9 @@ async def test_one_turn_arrives_in_order_with_the_deltas_before_the_stored_answe
     assert len({frame["message_id"] for frame in deltas}) == 1
     assert {frame["conversation_id"] for frame in deltas} == {str(turn.conversation_id)}
 
-    appended = [frame["event"] for frame in frames if frame["type"] == "agent.event.appended"]
+    appended = [
+        frame["event"] for frame in frames if frame["type"] == "agent.event.appended"
+    ]
     assert [event["payload"]["kind"] for event in appended] == [
         "user_message",
         "assistant_message",
@@ -308,9 +310,7 @@ async def test_a_hundred_deltas_never_close_the_room(hub: ProjectRoomHub) -> Non
         while reader.outbound.full():
             reader.outbound.get_nowait()
         reader.outbound.put_nowait(None)
-        await events.text_partial(
-            _partial(turn, offset=index, text=f"chunk {index}")
-        )
+        await events.text_partial(_partial(turn, offset=index, text=f"chunk {index}"))
     assert not reader.closed
 
 
@@ -433,7 +433,9 @@ async def test_the_null_publisher_is_still_the_answer_for_a_composition_with_no_
     """
 
     null = NullAgentTurnPublisher()
-    harness = TurnHarness(ScriptedModel(chunks=["Recorded."]), publisher=null, interval=0.0)
+    harness = TurnHarness(
+        ScriptedModel(chunks=["Recorded."]), publisher=null, interval=0.0
+    )
     await harness.send()
     await harness.settle()
 
@@ -474,4 +476,3 @@ def _partial(turn: AgentTurn, *, offset: int, text: str) -> AgentTextPartial:
         offset=offset,
         text=text,
     )
-

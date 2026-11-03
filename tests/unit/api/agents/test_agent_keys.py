@@ -25,7 +25,11 @@ from grafy_api.agents.keys import (
 )
 from grafy_core.domain.collaboration import ProjectHead
 from grafy_core.domain.errors import NotFoundError
-from grafy_core.domain.graph_documents import CustomAgentModel, GraphAgent, GraphDocument
+from grafy_core.domain.graph_documents import (
+    CustomAgentModel,
+    GraphAgent,
+    GraphDocument,
+)
 from grafy_core.domain.identity import (
     ActorContext,
     CapabilityDeniedError,
@@ -109,7 +113,9 @@ class KeyUnitOfWork:
     lock_head = get_head
 
     async def upsert(self, key) -> None:
-        self.records[(key.workspace_id, key.project_id, key.graph_id, key.agent_id)] = key
+        self.records[(key.workspace_id, key.project_id, key.graph_id, key.agent_id)] = (
+            key
+        )
 
     async def get(self, workspace_id, project_id, graph_id, agent_id):
         return self.records.get((workspace_id, project_id, graph_id, agent_id))
@@ -300,7 +306,9 @@ async def test_state_reports_what_this_server_can_actually_use() -> None:
 
 
 @pytest.mark.asyncio
-async def test_clearing_an_agents_key_leaves_the_deployment_default_as_the_only_way_to_answer() -> None:
+async def test_clearing_an_agents_key_leaves_the_deployment_default_as_the_only_way_to_answer() -> (
+    None
+):
     unit_of_work = KeyUnitOfWork()
     owner = service(unit_of_work)
     await set_and_read(unit_of_work)
@@ -328,7 +336,7 @@ async def test_a_seal_copied_beside_another_agent_does_not_open() -> None:
 
     unit_of_work = KeyUnitOfWork()
     await set_and_read(unit_of_work)
-    (key, record), = unit_of_work.records.items()
+    ((key, record),) = unit_of_work.records.items()
     unit_of_work.records[(*key[:3], OTHER_AGENT_ID)] = replace(
         record, agent_id=OTHER_AGENT_ID
     )
@@ -398,11 +406,15 @@ async def test_only_a_credential_worth_sealing_is_sealed(
 
 
 @pytest.mark.asyncio
-async def test_without_a_deployment_key_the_owner_says_so_instead_of_failing_later() -> None:
+async def test_without_a_deployment_key_the_owner_says_so_instead_of_failing_later() -> (
+    None
+):
     unit_of_work = KeyUnitOfWork()
     unconfigured = service(unit_of_work, encryption_key=None)
 
-    with pytest.raises(AgentKeyConfigurationError, match="GRAFY_CREDENTIAL_ENCRYPTION_KEY"):
+    with pytest.raises(
+        AgentKeyConfigurationError, match="GRAFY_CREDENTIAL_ENCRYPTION_KEY"
+    ):
         await unconfigured.set_key(
             access=access(WorkspaceRole.OWNER),
             project_id=PROJECT,
