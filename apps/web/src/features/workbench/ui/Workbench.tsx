@@ -551,8 +551,7 @@ function WorkbenchBody({
   const canCreateGraph = workspace.capabilities.includes("create_project");
   const canEditGraph = workspace.capabilities.includes("edit_project");
   const canExecuteGraph = workspace.capabilities.includes("start_run");
-  const canCancelExecution =
-    workspace.capabilities.includes("cancel_run");
+  const canCancelExecution = workspace.capabilities.includes("cancel_run");
   const canDeleteGraph = workspace.capabilities.includes("delete_project");
   const canEditModuleSource = workspace.capabilities.includes("edit_project");
   const localAuthoringEnabledRef = React.useRef(
