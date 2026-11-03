@@ -37,6 +37,7 @@ from grafy_api.project_contracts import (
     CopyExactHeadRequest,
     CreateProjectRequest,
     ProjectFolderWriteRequest,
+    ProjectHeadResponse,
     SubmitProjectCommandRequest,
 )
 from grafy_api.settings import Settings
@@ -174,6 +175,26 @@ class Stage:
         self.api.raw.cookies.clear()
         return {"Authorization": f"Bearer {self.pat_without_projects}"}
 
+    def scoped_token(
+        self, label: str, *scopes: PersonalAccessTokenScope
+    ) -> dict[str, str]:
+        """Mint a Workspace token holding exactly these scopes, as bearer headers.
+
+        Minted by `owner_a`, so every token here belongs to Workspace A and differs from
+        the others only in its scope: a refusal can then only be about the scope.
+        """
+
+        issued = self.api.workspace(self.a).create_token_ok(
+            PersonalAccessTokenCreateRequest(
+                label=label,
+                scopes=scopes,
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            ),
+            headers=self.as_("owner_a"),
+        )
+        self.api.raw.cookies.clear()
+        return {"Authorization": f"Bearer {issued.token.get_secret_value()}"}
+
 
 @contextmanager
 def _stage(
@@ -304,6 +325,26 @@ def _commands(stage: Stage, workspace: UUID, project: UUID, who: str) -> Respons
 
 def _checkpoint_request() -> CheckpointProjectRequest:
     return CheckpointProjectRequest(expected_room_epoch=uuid4(), expected_sequence=0)
+
+
+def _where_the_head_is(head: ProjectHeadResponse) -> CheckpointProjectRequest:
+    """A checkpoint request that agrees with where the head actually is."""
+
+    return CheckpointProjectRequest(
+        expected_room_epoch=head.room_epoch,
+        expected_sequence=head.collaboration_sequence,
+    )
+
+
+def _rename_request(
+    head: ProjectHeadResponse, name: str, expected_name: str
+) -> SubmitProjectCommandRequest:
+    return SubmitProjectCommandRequest(
+        command_id=uuid4(),
+        room_epoch=head.room_epoch,
+        observed_sequence=head.collaboration_sequence,
+        commands=(RenameProjectCommand(name=name, expected_name=expected_name),),
+    )
 
 
 def _secret_request() -> ConfigureNodeSecretRequest:
@@ -673,3 +714,139 @@ def test_a_token_reads_what_its_scopes_allow(tmp_path: Path) -> None:
 
         assert [item.id for item in listed.projects] == [stage.project_a]
         assert forbidden.status_code == 403, forbidden.text
+
+
+# --- scope, not role: what a token may do with a checkpoint ---------------------
+#
+# A restore is an edit that also lands as a checkpoint, and creating a Project
+# checkpoints it on the way in. The service has always asked for `checkpoint_project` on
+# both, but below the routes a token's scope is invisible and only the role is left to
+# check against, so any token of an editor could do either however it was scoped.
+
+
+def test_a_token_that_may_edit_but_not_checkpoint_cannot_restore(
+    tmp_path: Path,
+) -> None:
+    with stage_for(tmp_path, "pat-restore.sqlite3") as stage:
+        projects = stage.projects(stage.a)
+        owner = stage.as_("owner_a")
+        head = projects.get_head_ok(stage.project_a, headers=owner)
+        projects.submit_commands_ok(
+            stage.project_a,
+            _rename_request(head, "Renamed", "Project in A"),
+            headers=owner,
+        )
+        durable = projects.checkpoint_ok(
+            stage.project_a,
+            _where_the_head_is(projects.get_head_ok(stage.project_a, headers=owner)),
+            headers=owner,
+        )
+        assert durable.checkpoint_revision == 2
+
+        headers = stage.scoped_token(
+            "editor-only",
+            PersonalAccessTokenScope.VIEW_PROJECT,
+            PersonalAccessTokenScope.EDIT_PROJECT,
+        )
+        before = projects.get_head_ok(stage.project_a, headers=headers)
+        assert (
+            projects.checkpoint(
+                stage.project_a, _where_the_head_is(before), headers=headers
+            ).status_code
+            == 403
+        ), (
+            "the checkpoint route must refuse this token first, or the pair proves nothing"
+        )
+
+        refused = projects.restore_checkpoint(
+            stage.project_a, 1, _where_the_head_is(before), headers=headers
+        )
+
+        _assert_status(refused, 403, "restore with an edit-only token")
+        assert refused.json()["code"] == "identity.capability_denied"
+
+        # The refusal is the whole outcome, not a step into a write: no half-applied
+        # restore, no reopened room, no revision nobody asked for.
+        after = projects.get_head_ok(stage.project_a, headers=headers)
+        assert after == before
+        assert after.name == "Renamed"
+        assert after.room_epoch == before.room_epoch
+        assert after.collaboration_sequence == before.collaboration_sequence
+        assert after.checkpoint_revision == 2
+        assert [
+            item.revision
+            for item in projects.list_checkpoints_ok(
+                stage.project_a, headers=headers
+            ).checkpoints
+        ] == [1, 2]
+
+
+def test_a_token_that_may_create_but_not_checkpoint_cannot_create(
+    tmp_path: Path,
+) -> None:
+    """Opening a Project writes its first checkpoint, so it needs the scope for it."""
+
+    with stage_for(tmp_path, "pat-create.sqlite3") as stage:
+        headers = stage.scoped_token(
+            "creator-only", PersonalAccessTokenScope.CREATE_PROJECT
+        )
+
+        refused = stage.projects(stage.a).create(
+            CreateProjectRequest(name="Half a project"), headers=headers
+        )
+
+        _assert_status(refused, 403, "create with a create-only token")
+        assert refused.json()["code"] == "identity.capability_denied"
+        # Refused before opening anything, so the refusal leaves no Project to undo.
+        assert [
+            item.id
+            for item in stage.projects(stage.a)
+            .list_ok(headers=stage.as_("owner_a"))
+            .projects
+        ] == [stage.project_a]
+
+
+def test_a_token_scoped_for_checkpointing_is_served_both_routes(
+    tmp_path: Path,
+) -> None:
+    """The refusals above are about scope, not about tokens: the routes do answer."""
+
+    with stage_for(tmp_path, "pat-checkpoint.sqlite3") as stage:
+        projects = stage.projects(stage.a)
+        owner = stage.as_("owner_a")
+        head = projects.get_head_ok(stage.project_a, headers=owner)
+        projects.submit_commands_ok(
+            stage.project_a,
+            _rename_request(head, "Renamed", "Project in A"),
+            headers=owner,
+        )
+        projects.checkpoint_ok(
+            stage.project_a,
+            _where_the_head_is(projects.get_head_ok(stage.project_a, headers=owner)),
+            headers=owner,
+        )
+
+        headers = stage.scoped_token(
+            "checkpoint-scope",
+            PersonalAccessTokenScope.VIEW_PROJECT,
+            PersonalAccessTokenScope.CREATE_PROJECT,
+            PersonalAccessTokenScope.EDIT_PROJECT,
+            PersonalAccessTokenScope.CHECKPOINT_PROJECT,
+        )
+        restored = projects.restore_checkpoint_ok(
+            stage.project_a,
+            1,
+            _where_the_head_is(projects.get_head_ok(stage.project_a, headers=headers)),
+            headers=headers,
+        )
+
+        assert restored.checkpoint_revision == 3
+        assert restored.head.name == "Project in A"
+        created = projects.create_ok(
+            CreateProjectRequest(name="Checkpointed at birth"), headers=headers
+        )
+        assert created.name == "Checkpointed at birth"
+        assert {item.name for item in projects.list_ok(headers=headers).projects} == {
+            "Project in A",
+            "Checkpointed at birth",
+        }

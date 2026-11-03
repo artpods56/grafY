@@ -1,13 +1,16 @@
 """Project routes: the browser, the head, command batches, checkpoints, filing."""
 
+import logging
 from collections.abc import Sequence
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
+import pytest
 
 from grafy_core.domain.collaboration import (
     AddGraphCommand,
     AddNodeCommand,
+    CommandReceiptOutcome,
     InGraphCommand,
     ProjectCommand,
     RenameGraphCommand,
@@ -586,3 +589,161 @@ def test_project_browser_lists_every_workspace_the_user_can_see(
     assert (
         row.model_dump(include=set(type(summary).model_fields)) == summary.model_dump()
     )
+
+
+def _retired_module(node_id: str) -> GraphNode:
+    """A node this build registers no operator for, as a stored document holds it.
+
+    The browser keeps such a node and degrades it to "unsupported", so a Project can hold
+    one and still be read. The Run service cannot describe it, so from then on every
+    re-derivation of this Project's instances raises: the way to make the post-commit
+    notification fail for the rest of the Project's life, without patching anything.
+    """
+
+    return GraphNode(
+        kind="module",
+        id=node_id,
+        operator_id="module.retired",
+        operator_version=1,
+        position=GraphPoint(x=0, y=0),
+    )
+
+
+def _instance_publish_failures(caplog: pytest.LogCaptureFixture) -> list[str]:
+    """The logged `project_http_instance_publish_failed` events, in order.
+
+    The route layer logs through a plain module logger, exactly as the room path does, so
+    the event name leads the rendered message and the identifiers follow it.
+    """
+
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("project_http_instance_publish_failed")
+    ]
+
+
+def test_an_accepted_batch_stays_accepted_when_the_instance_recompute_fails(
+    builtin_client: TestClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A notification about a change never re-negotiates the change it reports.
+
+    The batch is durable, fanned out, and receipted before the Run service is asked to
+    re-derive this Project's instances, so an error raised there cannot rewrite the answer
+    to the request that caused it. It is logged rather than swallowed, because a failure no
+    operator can see reports itself as success.
+    """
+
+    api = GrafyApi(builtin_client)
+    projects, created = _create(api, "Retired module")
+    before = projects.get_head_ok(created.id)
+
+    caplog.clear()
+    caplog.set_level(logging.ERROR)
+    accepted = projects.submit_commands_ok(
+        created.id,
+        _batch_request(
+            (
+                InGraphCommand(
+                    graph_id="main",
+                    command=AddNodeCommand(node=_retired_module("legacy")),
+                ),
+            ),
+            before.room_epoch,
+            before.collaboration_sequence,
+        ),
+    )
+
+    assert accepted.receipt.outcome is CommandReceiptOutcome.ACCEPTED
+    after = projects.get_head_ok(created.id)
+    # Exactly one batch moved the head: the accepted one, and no rolled-back ghost of it.
+    assert after.collaboration_sequence == before.collaboration_sequence + 1
+    assert "legacy" in [node.id for node in after.document.graphs[0].document.nodes]
+    # A failed recompute is not an epoch reset: nobody is asked to rehydrate.
+    assert after.room_epoch == before.room_epoch
+
+    # A second, unrelated batch is answered on its own merits. The first failure was
+    # about this Project and still is, so it must not latch onto the next request.
+    renamed = projects.submit_commands_ok(
+        created.id,
+        _batch_request(
+            (_rename("Renamed", after.name),),
+            after.room_epoch,
+            after.collaboration_sequence,
+        ),
+    )
+
+    assert renamed.receipt.outcome is CommandReceiptOutcome.ACCEPTED
+    final = projects.get_head_ok(created.id)
+    assert final.name == "Renamed"
+    assert final.collaboration_sequence == after.collaboration_sequence + 1
+
+    # Both recomputes failed for the same reason, and both were reported.
+    failures = _instance_publish_failures(caplog)
+    assert len(failures) == 2, failures
+    assert all(str(created.id) in line for line in failures), failures
+    assert all(str(WORKSPACE_ID) in line for line in failures), failures
+
+
+def test_a_restore_stays_accepted_when_the_instance_recompute_fails(
+    builtin_client: TestClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The restore path owes the same contract as the command path.
+
+    The restored document is written forward, its room epoch is reset and its peers are
+    told to rehydrate before the Run service is consulted. Answering 422 there would tell
+    a caller that nothing happened about a Project whose room is already reopened.
+    """
+
+    api = GrafyApi(builtin_client)
+    projects, created = _create(api, "Retired module")
+    head = projects.get_head_ok(created.id)
+    with_legacy = projects.submit_commands_ok(
+        created.id,
+        _batch_request(
+            (
+                InGraphCommand(
+                    graph_id="main",
+                    command=AddNodeCommand(node=_retired_module("legacy")),
+                ),
+            ),
+            head.room_epoch,
+            head.collaboration_sequence,
+        ),
+    ).head
+    durable = projects.checkpoint_ok(created.id, _checkpoint_request(with_legacy))
+    moved = projects.submit_commands_ok(
+        created.id,
+        _batch_request(
+            (_rename("Moved on", "Retired module"),),
+            durable.head.room_epoch,
+            durable.head.collaboration_sequence,
+        ),
+    ).head
+    later = projects.checkpoint_ok(created.id, _checkpoint_request(moved))
+    assert [
+        item.revision for item in projects.list_checkpoints_ok(created.id).checkpoints
+    ] == [1, 2, 3]
+
+    caplog.clear()
+    caplog.set_level(logging.ERROR)
+    restored = projects.restore_checkpoint_ok(
+        created.id, durable.checkpoint_revision, _checkpoint_request(later.head)
+    )
+
+    # The restore is served: the retained document moved forward under a new revision.
+    assert restored.checkpoint_revision == 4
+    assert restored.head.name == "Retired module"
+    assert [
+        item.revision for item in projects.list_checkpoints_ok(created.id).checkpoints
+    ] == [1, 2, 3, 4]
+    # The document it restored still holds the operator this build cannot describe, so the
+    # recompute did fail — and that failure is reported, not answered with.
+    assert "legacy" in [
+        node.id for node in restored.head.document.graphs[0].document.nodes
+    ]
+    failures = _instance_publish_failures(caplog)
+    assert len(failures) == 1, failures
+    assert str(created.id) in failures[0]
