@@ -192,8 +192,10 @@ export type ArtifactConversionInput = GraphConversion;
 export type ArtifactConversionPathInput = readonly GraphConversion[];
 /** @deprecated a saved Graph is authored, not posted whole. */
 export type CreateSavedGraphRequest = GraphDraft;
-/** @deprecated a node's secrets belong to the Project that holds it. */
-export type GraphNodeSecrets = ProjectNodeSecrets;
+// GraphNodeSecrets is gone rather than aliased. A name that puts Graph where the
+// API puts Project is not merely untidy: it is what made a hook importing
+// getGraphNodeSecrets look plausible for a whole port cycle while the route had
+// moved under the Project.
 /** @deprecated a browser entry is a Project; the Graph it names is where it opens. */
 export type ProjectBrowserItem = ProjectBrowserGraph;
 
