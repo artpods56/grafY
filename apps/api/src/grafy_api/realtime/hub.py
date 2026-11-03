@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import time
 from dataclasses import dataclass, field
@@ -26,6 +27,14 @@ logger = logging.getLogger(__name__)
 
 OUTBOUND_QUEUE_MAXSIZE = 64
 PRESENCE_DROP_QUEUE_WATERMARK = 48
+
+#: How long a departing room waits for its single sender task to stop.
+#
+#: The sender is cancelled first, so this is the ceiling on an uncooperative task, not
+#: on a slow client. It exists because the process that stops this hub is the process
+#: that has to exit: an unbounded wait here is a shutdown that never returns, a deploy
+#: that hangs, and — under the test client — a `thread.join()` that eats the CI job.
+SENDER_STOP_TIMEOUT_SECONDS = 5.0
 
 CLOSE_PERMISSIONS_CHANGED = (4003, "permissions_changed")
 CLOSE_ACCESS_REVOKED = (4004, "access_revoked")
@@ -146,6 +155,16 @@ class ProjectRoomHub:
 
     async def leave(self, session: ProjectRoomSession) -> None:
         await self._close_session(session, code=1000, reason="left")
+
+    def leave_now(self, session: ProjectRoomSession) -> None:
+        """Depart without awaiting: for a caller that may be cancelled mid-departure.
+
+        The registry, the sender task and the peers are settled here, synchronously; what
+        this gives up is the bounded wait for the sender and the close frame, both of which
+        belong to a socket that a cancelled caller has already lost.
+        """
+
+        self._retire(session)
 
     async def close_session(
         self,
@@ -379,6 +398,13 @@ class ProjectRoomHub:
             await self._close_session(session, code=code, reason=reason)
 
     async def shutdown(self) -> None:
+        """Retire every room so the process holding this hub can finish stopping.
+
+        Every sender is cancelled *and awaited* here, within ``SENDER_STOP_TIMEOUT_SECONDS``
+        each: a lifespan that returns with a live sender hands that task to the event
+        loop's final cleanup, which waits for it without a deadline of its own.
+        """
+
         async with self._lock:
             sessions = [
                 member.session
@@ -504,33 +530,99 @@ class ProjectRoomHub:
                 reason=CLOSE_SLOW_CONSUMER[1],
             )
 
-    async def _enqueue_presence(
-        self,
-        session: ProjectRoomSession,
-        message: BaseModel,
-    ) -> None:
-        """Best-effort presence delivery; drop under backpressure before disconnect."""
+    def _offer(self, session: ProjectRoomSession, message: BaseModel) -> None:
+        """Best-effort presence delivery; drop under backpressure before disconnect.
+
+        Synchronous because a departing room has to be able to announce itself from a
+        context that is being cancelled and cannot await.
+        """
 
         if session.closed:
             return
         if session.outbound.qsize() >= PRESENCE_DROP_QUEUE_WATERMARK:
             return
-        try:
+        with contextlib.suppress(asyncio.QueueFull):
             session.outbound.put_nowait(message)
-        except asyncio.QueueFull:
+
+    async def _enqueue_presence(
+        self,
+        session: ProjectRoomSession,
+        message: BaseModel,
+    ) -> None:
+        self._offer(session, message)
+
+    def _cancel_sender(self, session: ProjectRoomSession) -> None:
+        """Ask the room's single sender task to stop, awaiting nothing."""
+
+        task = session.sender_task
+        if task is None or task is asyncio.current_task() or task.done():
             return
+        task.cancel()
+
+    async def _stop_sender(self, session: ProjectRoomSession) -> None:
+        """Wait for the room's single sender task to stop, with a deadline.
+
+        ``_cancel_sender`` owns the request; this is the part that has to yield, and it is
+        bounded. Waiting is the point: a sender that was only cancelled is still a live
+        task when the call returns, and a task left on the loop at shutdown is waited on
+        unconditionally by whoever closes that loop — with no deadline of its own. A sender
+        still running past this deadline is reported on the room's own failure key rather
+        than dropped quietly, because the frames it held are gone with it.
+        """
+
+        task = session.sender_task
+        self._cancel_sender(session)
+        if task is None or task is asyncio.current_task() or task.done():
+            return
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait({task}, timeout=SENDER_STOP_TIMEOUT_SECONDS)
+        if not task.done():
+            logger.error(
+                "graph_room_sender_failed workspace_id=%s project_id=%s "
+                "project_room_session_id=%s reason=sender_did_not_stop "
+                "deadline_seconds=%s undelivered_frames=%s",
+                session.workspace_id,
+                session.project_id,
+                session.project_room_session_id,
+                SENDER_STOP_TIMEOUT_SECONDS,
+                session.outbound.qsize(),
+            )
 
     async def _sender_loop(self, session: ProjectRoomSession) -> None:
+        """The room's single writer, from queue to socket.
+
+        Whatever ends this loop, the session leaves the hub with it. A sender that stopped
+        while its session stayed registered is the worst of both: that peer is still
+        counted in presence and still fanned out to, so its queue fills to 64 and its
+        frames go nowhere, and the only thing that notices is a slow-consumer close much
+        later — or nothing at all, if it was the last participant out.
+        """
+
         try:
             while True:
                 message = await session.outbound.get()
                 if message is None or session.closed:
                     return
                 if session.websocket.application_state != WebSocketState.CONNECTED:
+                    logger.debug(
+                        "graph_room_sender_stopped workspace_id=%s project_id=%s "
+                        "project_room_session_id=%s reason=socket_closed",
+                        session.workspace_id,
+                        session.project_id,
+                        session.project_room_session_id,
+                    )
+                    await self._close_session(session, code=1000, reason="disconnected")
                     return
                 await session.websocket.send_json(message.model_dump(mode="json"))
         except WebSocketDisconnect:
-            return
+            logger.debug(
+                "graph_room_sender_stopped workspace_id=%s project_id=%s "
+                "project_room_session_id=%s reason=client_disconnect",
+                session.workspace_id,
+                session.project_id,
+                session.project_room_session_id,
+            )
+            await self._close_session(session, code=1000, reason="disconnected")
         except Exception:
             logger.exception(
                 "graph_room_sender_failed workspace_id=%s project_id=%s "
@@ -545,6 +637,40 @@ class ProjectRoomHub:
                 reason=CLOSE_PROTOCOL_ERROR[1],
             )
 
+    def _retire(self, session: ProjectRoomSession) -> bool:
+        """Mark the session dead, drop it from its room, and tell the peers it left.
+
+        Returns whether it was already closed. Every line here runs without awaiting, which
+        is the whole point: a room ends under cancellation as often as under an exception,
+        and a departure that still had a registry pop or a ``presence.leave`` behind an
+        await would leave a participant that is dead, listed, and never missed.
+
+        No hub lock: every critical section in this class is await-free, so the loop already
+        serialises it, and taking the lock would put an await in the one path that must not
+        have one.
+        """
+
+        already_closed = session.closed
+        session.closed = True
+        self._cancel_sender(session)
+        key = (session.workspace_id, session.project_id)
+        room = self._rooms.get(key)
+        if room is not None:
+            member = room.get(session.project_room_session_id)
+            if member is not None and member.session is session:
+                had_presence = member.presence is not None
+                room.pop(session.project_room_session_id, None)
+                if had_presence and not already_closed:
+                    leave_message = PresenceLeaveMessage(
+                        project_room_session_id=session.project_room_session_id,
+                    )
+                    for peer in room.values():
+                        if peer.session is not session:
+                            self._offer(peer.session, leave_message)
+            if not room:
+                self._rooms.pop(key, None)
+        return already_closed
+
     async def _close_session(
         self,
         session: ProjectRoomSession,
@@ -552,37 +678,10 @@ class ProjectRoomHub:
         code: int,
         reason: str,
     ) -> None:
-        if session.closed:
+        already_closed = self._retire(session)
+        await self._stop_sender(session)
+        if already_closed:
             return
-        session.closed = True
-        key = (session.workspace_id, session.project_id)
-        leave_recipients: list[ProjectRoomSession] = []
-        had_presence = False
-        async with self._lock:
-            room = self._rooms.get(key)
-            if room is not None:
-                member = room.get(session.project_room_session_id)
-                had_presence = member is not None and member.presence is not None
-                room.pop(session.project_room_session_id, None)
-                if had_presence:
-                    leave_recipients = [
-                        peer.session
-                        for peer in room.values()
-                        if not peer.session.closed
-                    ]
-                if not room:
-                    self._rooms.pop(key, None)
-        if had_presence:
-            leave_message = PresenceLeaveMessage(
-                project_room_session_id=session.project_room_session_id,
-            )
-            for peer in leave_recipients:
-                await self._enqueue_presence(peer, leave_message)
-        if (
-            session.sender_task is not None
-            and session.sender_task is not asyncio.current_task()
-        ):
-            session.sender_task.cancel()
         try:
             session.outbound.put_nowait(None)
         except asyncio.QueueFull:

@@ -28,8 +28,8 @@ instead, and what it answers is addressed by the fingerprint it was asked for.
 import asyncio
 import threading
 from collections.abc import Iterator, Mapping, Sequence
-from contextlib import contextmanager
-from dataclasses import dataclass
+from contextlib import contextmanager, suppress
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from queue import Empty, Queue
@@ -94,6 +94,12 @@ class GatedRunner:
 
     Gated by node id, the name a test has: one gate holds exactly the one computation
     the scheduler runs for that node, however many Runs demand it.
+
+    A shut gate is a worker thread parked in ``threading.Event.wait``, which no
+    cancellation reaches: the awaiting task dies on ``CancelledError``, the thread stays,
+    and the loop that owned the work is left to a five-second executor join on its way
+    out. So no gate may outlive its test, including one dispatched *while* teardown runs:
+    see :meth:`release_everything`.
     """
 
     def __init__(self) -> None:
@@ -102,20 +108,31 @@ class GatedRunner:
         self.cancelled: list[str] = []
         self._started: dict[str, threading.Event] = {}
         self._release: dict[str, threading.Event] = {}
+        self._released_all = False
 
     def started(self, node_id: str) -> threading.Event:
         return self._started.setdefault(node_id, threading.Event())
 
     def _release_gate(self, node_id: str) -> threading.Event:
-        return self._release.setdefault(node_id, threading.Event())
+        gate = self._release.setdefault(node_id, threading.Event())
+        if self._released_all:
+            # After the sweep no gate is ever handed out shut, whenever it is created.
+            gate.set()
+        return gate
 
     def release(self, *node_ids: str) -> None:
         for node_id in node_ids:
             self._release_gate(node_id).set()
 
     def release_everything(self) -> None:
-        """Open every gate, so no worker thread outlives the test that held it."""
+        """Open every gate, this one and every later one.
 
+        The scheduler can dispatch a queued computation while the app is already shutting
+        down — withdrawing one Run frees a slot in ``concurrency`` for the next ready one —
+        and a gate created at that moment would be opened by nobody.
+        """
+
+        self._released_all = True
         for gate in self._release.values():
             gate.set()
 
@@ -280,6 +297,14 @@ class RoomHarness:
     cast: RoomCast
     runner: GatedRunner
     projects: dict[str, UUID]
+    open_sessions: list[WebSocketTestSession] = field(default_factory=list)
+    """Every room session this harness handed out and has not seen closed.
+
+    A session still open when the ``TestClient`` is exited is the one thing that makes
+    that exit never return: the session's ASGI task is a child of the portal's task group,
+    it waits to be cancelled by the session's own ``__exit__``, and the test thread is left
+    in ``thread.join()``. The harness therefore tracks what it handed out and closes it.
+    """
 
     @property
     def app(self) -> FastAPI:
@@ -334,13 +359,39 @@ class RoomHarness:
         workspace_id: UUID | None = None,
         origin: str = "http://testserver",
     ):
-        """The raw WebSocket handshake, for the tests that want the denial itself."""
+        """The raw WebSocket handshake, for the tests that want the denial itself.
+
+        The returned session is closed by :meth:`close_open_sessions` if the caller never
+        exits it, so a forgotten room costs a test its assertion, not the CI job.
+        """
 
         workspace = self.workspace_id if workspace_id is None else workspace_id
-        return self.client.websocket_connect(
+        session = self.client.websocket_connect(
             f"/v1/workspaces/{workspace}/projects/{project_id}/room",
             headers={"Origin": origin},
         )
+        self.open_sessions.append(session)
+        return session
+
+    def close_open_sessions(self) -> None:
+        """Close every room session still open, newest first.
+
+        ``WebSocketTestSession.__exit__`` is what cancels the session's task on the app
+        loop, so this is the difference between a teardown that finishes and one that waits
+        for a task nothing is going to cancel. A session whose handshake was refused never
+        started a task and raises on the way out; that is expected and says nothing about
+        the rooms this harness is cleaning up.
+        """
+
+        while self.open_sessions:
+            session = self.open_sessions.pop()
+            # ``__exit__`` is what sends the disconnect, cancels the session's task and
+            # waits for it; the stack is what ``__exit__`` runs. A session whose handshake
+            # was refused never started a task and has no stack, and a session whose room
+            # task was cancelled comes back with that cancellation — which is a BaseException
+            # and must not escape a cleanup either way.
+            with suppress(Exception, asyncio.CancelledError):
+                session.exit_stack.close()
 
     @contextmanager
     def open_room(
@@ -357,6 +408,7 @@ class RoomHarness:
             workspace_id=workspace_id,
             origin=origin,
         ) as session:
+            self.open_sessions.remove(session)
             room = Room(session)
             try:
                 yield room
@@ -588,7 +640,7 @@ def room_harness(
 
     database_url = create_db_url(tmp_path, "room.sqlite3")
     cast = asyncio.run(_seed_cast(database_url))
-    document = flow_document() if graphs is None else graphs
+    documents = {FLOW_GRAPH_ID: flow_document()} if graphs is None else graphs
     project_id = asyncio.run(
         _open_project(
             database_url,
@@ -596,7 +648,7 @@ def room_harness(
             actor_id=cast.owner.id,
             workspace_id=cast.workspace.id,
             name="Room project",
-            graphs={FLOW_GRAPH_ID: document},
+            graphs=documents,
         )
     )
     foreign_project_id = asyncio.run(
@@ -606,7 +658,7 @@ def room_harness(
             actor_id=cast.owner.id,
             workspace_id=cast.other_workspace.id,
             name="Elsewhere",
-            graphs={FLOW_GRAPH_ID: document},
+            graphs=documents,
         )
     )
     switcher = ActorSwitcher(cast.owner.id)
@@ -634,6 +686,9 @@ def room_harness(
         try:
             yield harness
         finally:
+            # Rooms first: an open session is a task the portal waits for forever, and the
+            # client below cannot exit until it is gone.
+            harness.close_open_sessions()
             # A gate left shut keeps its worker thread waiting, and the portal loop
             # this app runs on cannot stop until its threads have.
             runner.release_everything()

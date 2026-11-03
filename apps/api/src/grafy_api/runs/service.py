@@ -22,6 +22,7 @@ The three pieces of local state, and why each is allowed to exist:
 """
 
 import asyncio
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -76,6 +77,17 @@ class _NoComputationInFlight:
 _NO_COMPUTATION = _NoComputationInFlight()
 
 
+logger = logging.getLogger(__name__)
+
+SHUTDOWN_STOP_TIMEOUT_SECONDS = 5.0
+"""How long shutdown waits for a task it wants to stop before it insists.
+
+Long enough for a publish or a Run's finish to land its transaction, short enough that a
+task wedged in somebody else's call is reported in this process rather than becoming the
+reason the container is killed.
+"""
+
+
 @dataclass
 class _ProjectRuntime:
     """One Project's live scheduling and publish coalescing.
@@ -93,6 +105,7 @@ class _ProjectRuntime:
     scheduler: Scheduler | None = None
     dirty: bool = False
     publish_task: asyncio.Task[None] | None = None
+    stopping: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 @dataclass
@@ -153,6 +166,7 @@ class RunService:
         self._concurrency = concurrency
         self._runtimes: dict[tuple[UUID, UUID], _ProjectRuntime] = {}
         self._watchers: dict[UUID, _WatchedRun] = {}
+        self._closing = False
 
     # Runs ------------------------------------------------------------------
 
@@ -299,34 +313,88 @@ class RunService:
     async def close(self) -> None:
         """Stop every task this service started and forget every Project.
 
-        Runs left running stay running in the store: nobody watched their
-        computations, and the next startup marks them interrupted, which is the
-        honest record of what happened.
+        Runs left running stay running in the store: nobody watched their computations, and
+        the next startup marks them interrupted, which is the honest record of what
+        happened.
+
+        Nothing here cancels a task that may be holding a database connection. A task
+        cancelled inside `greenlet_spawn` abandons that connection: the pool's terminate
+        fails with the same `CancelledError`, the aiosqlite worker sits at `tx.get()` for
+        ever, and the next checkout from that pool is a request that never returns. What a
+        shutdown that reached did was park its test thread in `thread.join()` with the app
+        loop idle, forty-five minutes of CI and no failure line.
+
+        So the order is: announce that the service is closing, end the Runs so their
+        watchers have something to finish writing, then wait for the tasks. Only a task that
+        outlives the deadline is cancelled, and it is named in the log.
         """
+
+        self._closing = True
+        runtimes = list(self._runtimes.values())
+        for runtime in runtimes:
+            runtime.stopping.set()
         watched = list(self._watchers.items())
         self._watchers.clear()
-        publishes = [
+        tasks = [entry.task for _, entry in watched]
+        tasks += [
             runtime.publish_task
-            for runtime in self._runtimes.values()
+            for runtime in runtimes
             if runtime.publish_task is not None
         ]
-        for _, entry in watched:
-            entry.task.cancel()
-        for task in publishes:
-            task.cancel()
-        # A task this call cancelled ending in CancelledError is the point of the
-        # method, so the outcomes are collected rather than raised.
-        await asyncio.gather(
-            *(entry.task for _, entry in watched),
-            *publishes,
-            return_exceptions=True,
-        )
-        # Withdrawing each Run's demand stops the computations it was the last to
-        # need; the rows were left running above, on purpose.
+        stragglers = await self._settle(tasks, reason="run_service_close")
+        # Withdrawing each Run's demand stops the computations it was the last to need, and
+        # comes last on purpose: a watcher that wrote a finish for a Run this service merely
+        # stopped watching would be writing a fact nobody observed. The rows stay running,
+        # which is what a restart expects to find and mark interrupted.
+        # A publish started by the withdrawals above is still this service's to reap.
+        late = [
+            runtime.publish_task
+            for runtime in self._runtimes.values()
+            if runtime.publish_task is not None and not runtime.publish_task.done()
+        ]
         for run_id, entry in watched:
             if entry.runtime.scheduler is not None:
                 await entry.runtime.scheduler.cancel(str(run_id))
+        stragglers += await self._settle(late, reason="run_service_close_late_publish")
         self._runtimes.clear()
+        if stragglers:
+            logger.error(
+                "run_service_close_incomplete tasks=%s deadline_seconds=%s",
+                len(stragglers),
+                SHUTDOWN_STOP_TIMEOUT_SECONDS,
+            )
+
+    async def _settle(
+        self, tasks: Sequence[asyncio.Task[None]], *, reason: str
+    ) -> list[asyncio.Task[None]]:
+        """Wait for tasks to stop on their own, then insist, within a deadline.
+
+        Waiting is the point: a publish or a Run's finish is a transaction, and tearing a
+        task out of one leaves a connection the pool never gets back. A task still running
+        when the deadline passes is cancelled and reported, because a task nobody holds is
+        the other way to hang a process.
+        """
+
+        live = [task for task in tasks if not task.done()]
+        if not live:
+            return []
+        done, pending = await asyncio.wait(live, timeout=SHUTDOWN_STOP_TIMEOUT_SECONDS)
+        await asyncio.gather(*done, return_exceptions=True)
+        if not pending:
+            return []
+        logger.warning(
+            "run_service_stop_timeout reason=%s tasks=%s deadline_seconds=%s",
+            reason,
+            len(pending),
+            SHUTDOWN_STOP_TIMEOUT_SECONDS,
+        )
+        for task in pending:
+            task.cancel()
+        done, remaining = await asyncio.wait(
+            pending, timeout=SHUTDOWN_STOP_TIMEOUT_SECONDS
+        )
+        await asyncio.gather(*done, return_exceptions=True)
+        return list(remaining)
 
     # Instance state --------------------------------------------------------
 
@@ -441,16 +509,30 @@ class RunService:
     async def _watch(self, run_id: UUID, runtime: _ProjectRuntime, run: Run) -> None:
         """Wait this Run out, then be the one that writes its finish.
 
-        A cancellation of this task — the only one it can get is ``close`` — leaves
-        the Run running in the store, which is exactly what a restart expects to
-        find and mark interrupted.
+        `close()` asks this task to stop by setting `runtime.stopping`, rather than
+        cancelling it. The difference is the database: a task cancelled inside
+        `greenlet_spawn` cannot hand its connection back, and a shutdown that reaches does
+        that to whichever task it cancelled, so stopping happens at a point that holds
+        nothing. Stopping early also writes nothing: a Run left running is what the next
+        startup expects to find, and marks interrupted.
         """
+
+        waiting = asyncio.ensure_future(self._scheduler_for(runtime).wait(str(run_id)))
+        stopping = asyncio.ensure_future(runtime.stopping.wait())
         try:
-            result = await self._scheduler_for(runtime).wait(str(run_id))
-            await self._finish(
-                run, runtime, RunStatus(result.status), _run_error(result)
+            done, _ = await asyncio.wait(
+                {waiting, stopping}, return_when=asyncio.FIRST_COMPLETED
             )
+            if waiting in done:
+                result = waiting.result()
+                await self._finish(
+                    run, runtime, RunStatus(result.status), _run_error(result)
+                )
         finally:
+            for task in (waiting, stopping):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(waiting, stopping, return_exceptions=True)
             self._watchers.pop(run_id, None)
 
     async def _finish(
@@ -481,7 +563,14 @@ class RunService:
         Called by the scheduler listener with no await point of its own: it sets a
         flag and makes sure something will drain it, which is all a synchronous
         announcement can ask for.
+
+        Once the service is closing it asks for nothing. A transition announced during
+        shutdown would spawn a publish task no one holds any more — `close()` has already
+        collected them — and that task would do its SQL over a database the lifespan is on
+        its way to disposing, on a loop somebody is waiting to close.
         """
+        if self._closing:
+            return
         runtime.dirty = True
         if runtime.publish_task is None or runtime.publish_task.done():
             runtime.publish_task = asyncio.create_task(self._drain_publishes(runtime))
@@ -497,7 +586,7 @@ class RunService:
         what makes a burst of transitions one publish instead of one apiece.
         """
         async with runtime.publish_lock:
-            while runtime.dirty:
+            while runtime.dirty and not runtime.stopping.is_set():
                 runtime.dirty = False
                 await self._publish(runtime)
 
