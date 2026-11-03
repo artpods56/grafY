@@ -81,7 +81,7 @@ class ModuleLibraryService:
                 unit_of_work.identity,
                 actor=actor,
                 workspace_id=workspace_id,
-                capability=WorkspaceCapability.PUBLISH_MODULE,
+                capability=WorkspaceCapability.EDIT_PROJECT,
             )
             graph = await unit_of_work.graphs.get(workspace_id, source_graph_id)
             if graph is None:

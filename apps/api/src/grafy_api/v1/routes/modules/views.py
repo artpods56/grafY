@@ -98,7 +98,7 @@ async def get_module(
 async def publish_module_release(
     body: PublishModuleReleaseRequest,
     service: ModuleLibraryDependency,
-    access: require_workspace_capability(WorkspaceCapability.PUBLISH_MODULE),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> ModuleResponse:
     try:
         module, _release, definition = await service.publish_release(
