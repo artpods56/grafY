@@ -110,6 +110,26 @@ function projectSecrets(
   };
 }
 
+/**
+ * What the API answers when `expected_head_sequence` names a head that is gone:
+ * an ApiError carrying 409 and nothing else. A secret write raises no other
+ * status for the head, so a test that means "the head moved" says it this way.
+ */
+function headMoved(): Error {
+  return Object.assign(
+    new Error("API error 409: collaboration head conflict"),
+    {
+      name: "ApiError",
+      status: 409,
+      detail: "collaboration head conflict",
+    },
+  );
+}
+
+function applied(configured = true): AppliedNodeSecret {
+  return { node_id: nodeId, name: secretName, configured };
+}
+
 beforeEach(() => {
   api.getProjectNodeSecrets.mockReset();
   api.applyNodeSecret.mockReset();
@@ -566,6 +586,234 @@ describe("useNodeSecrets", () => {
     });
     expect(hook.result.current.nodeSecretStatuses).toEqual({
       [nodeId]: { [secretName]: { state: "unconfigured" } },
+    });
+  });
+
+  it("applies a secret whose head moved between the listing and the write", async () => {
+    const node = workflowNode();
+    // The canvas was opened at head 4. One accepted batch — this tab dragging a
+    // node, a peer editing the same Project — moves the head to 7 without a
+    // checkpoint, so the listing this token came from is the only thing that is
+    // stale, and the write has to be re-addressed at 7 rather than refused.
+    const activeGraph = graph(projectId, graphId, 4);
+    api.getProjectNodeSecrets
+      .mockResolvedValueOnce(projectSecrets(activeGraph, false))
+      .mockResolvedValueOnce(projectSecrets(activeGraph, false, 7));
+    api.applyNodeSecret
+      .mockRejectedValueOnce(headMoved())
+      .mockResolvedValueOnce(applied());
+    const hook = await renderHook(
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets(workspaceId, nodes),
+      { nodes: [node] },
+    );
+    await React.act(async () => {
+      await hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]);
+    });
+
+    let appliedResult = false;
+    await React.act(async () => {
+      appliedResult = await hook.result.current.applyConfiguredNodeSecret(
+        nodeId,
+        secretName,
+        "sk-after-a-drag",
+      );
+    });
+
+    expect(appliedResult).toBe(true);
+    expect(api.applyNodeSecret).toHaveBeenNthCalledWith(
+      1,
+      workspaceId,
+      activeGraph.id,
+      activeGraph.graphId,
+      nodeId,
+      secretName,
+      { value: "sk-after-a-drag", expected_head_sequence: 4 },
+    );
+    expect(api.applyNodeSecret).toHaveBeenNthCalledWith(
+      2,
+      workspaceId,
+      activeGraph.id,
+      activeGraph.graphId,
+      nodeId,
+      secretName,
+      { value: "sk-after-a-drag", expected_head_sequence: 7 },
+    );
+    // The retry's token came from a listing the server answered at 7 — the only
+    // source this hook will take a head from.
+    expect(api.getProjectNodeSecrets).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: { [secretName]: { state: "configured" } },
+    });
+  });
+
+  it("removes a secret whose head moved between the listing and the write", async () => {
+    const node = workflowNode();
+    const activeGraph = graph(projectId, graphId, 6);
+    api.getProjectNodeSecrets
+      .mockResolvedValueOnce(projectSecrets(activeGraph, true, 9))
+      .mockResolvedValueOnce(projectSecrets(activeGraph, true, 10));
+    api.removeNodeSecret
+      .mockRejectedValueOnce(headMoved())
+      .mockResolvedValueOnce(undefined);
+    const hook = await renderHook(
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets(workspaceId, nodes),
+      { nodes: [node] },
+    );
+    await React.act(async () => {
+      await hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]);
+    });
+
+    let removed = false;
+    await React.act(async () => {
+      removed = await hook.result.current.removeConfiguredNodeSecret(
+        nodeId,
+        secretName,
+      );
+    });
+
+    expect(removed).toBe(true);
+    expect(api.removeNodeSecret).toHaveBeenNthCalledWith(
+      1,
+      workspaceId,
+      activeGraph.id,
+      activeGraph.graphId,
+      nodeId,
+      secretName,
+      9,
+    );
+    expect(api.removeNodeSecret).toHaveBeenNthCalledWith(
+      2,
+      workspaceId,
+      activeGraph.id,
+      activeGraph.graphId,
+      nodeId,
+      secretName,
+      10,
+    );
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: { [secretName]: { state: "unconfigured" } },
+    });
+  });
+
+  it("re-reads the listing for no other failure than a head conflict", async () => {
+    const node = workflowNode();
+    const activeGraph = graph(projectId, graphId, 4);
+    api.getProjectNodeSecrets.mockResolvedValue(
+      projectSecrets(activeGraph, false),
+    );
+    // 503 is the encryption key refusing to load. Retrying it at a fresh head
+    // would send a value the server may already have stored.
+    api.applyNodeSecret.mockRejectedValue(
+      Object.assign(new Error("API error 503: node secret store unavailable"), {
+        name: "ApiError",
+        status: 503,
+      }),
+    );
+    const hook = await renderHook(
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets(workspaceId, nodes),
+      { nodes: [node] },
+    );
+    await React.act(async () => {
+      await hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]);
+    });
+
+    let appliedResult = true;
+    await React.act(async () => {
+      appliedResult = await hook.result.current.applyConfiguredNodeSecret(
+        nodeId,
+        secretName,
+        "sk-once-only",
+      );
+    });
+
+    expect(appliedResult).toBe(false);
+    expect(api.applyNodeSecret).toHaveBeenCalledTimes(1);
+    expect(api.getProjectNodeSecrets).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: {
+        [secretName]: {
+          state: "error",
+          message: "The secret could not be applied.",
+        },
+      },
+    });
+  });
+
+  it("keeps the head a conflict revealed so the next write lands", async () => {
+    const node = workflowNode();
+    // The head moved to 4 and moved again before the retry could land, so this
+    // attempt is reported rather than chased. What it must not do is stay stuck:
+    // the listing read during recovery is the next write's token.
+    const activeGraph = graph(projectId, graphId, 3);
+    api.getProjectNodeSecrets
+      .mockResolvedValueOnce(projectSecrets(activeGraph, false))
+      .mockResolvedValueOnce(projectSecrets(activeGraph, false, 4));
+    api.applyNodeSecret
+      .mockRejectedValueOnce(headMoved())
+      .mockRejectedValueOnce(headMoved())
+      .mockResolvedValueOnce(applied());
+    const hook = await renderHook(
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets(workspaceId, nodes),
+      { nodes: [node] },
+    );
+    await React.act(async () => {
+      await hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]);
+    });
+
+    let firstAttempt = true;
+    await React.act(async () => {
+      firstAttempt = await hook.result.current.applyConfiguredNodeSecret(
+        nodeId,
+        secretName,
+        "sk-conflicted",
+      );
+    });
+    expect(firstAttempt).toBe(false);
+    expect(api.applyNodeSecret).toHaveBeenNthCalledWith(
+      2,
+      workspaceId,
+      activeGraph.id,
+      activeGraph.graphId,
+      nodeId,
+      secretName,
+      { value: "sk-conflicted", expected_head_sequence: 4 },
+    );
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: {
+        [secretName]: {
+          state: "error",
+          message: "The secret could not be applied.",
+        },
+      },
+    });
+
+    // Pressing Apply again must not need another listing: the token it holds
+    // already names head 4, which is what the server answered last.
+    let secondAttempt = false;
+    await React.act(async () => {
+      secondAttempt = await hook.result.current.applyConfiguredNodeSecret(
+        nodeId,
+        secretName,
+        "sk-conflicted",
+      );
+    });
+    expect(secondAttempt).toBe(true);
+    expect(api.applyNodeSecret).toHaveBeenNthCalledWith(
+      3,
+      workspaceId,
+      activeGraph.id,
+      activeGraph.graphId,
+      nodeId,
+      secretName,
+      { value: "sk-conflicted", expected_head_sequence: 4 },
+    );
+    expect(api.getProjectNodeSecrets).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: { [secretName]: { state: "configured" } },
     });
   });
 
