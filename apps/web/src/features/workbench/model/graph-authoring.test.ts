@@ -684,6 +684,10 @@ describe("input-plug binding presentation", () => {
     collect.data.run = {
       node_id: collect.id,
       status: "succeeded",
+      // A result belongs to the instance that produced it and is addressed by
+      // its fingerprint; the canvas reads it back through that identity.
+      result_fingerprint: "fp-collect",
+      created_at: "2026-08-01T00:00:00Z",
       error: null,
       outputs: [
         {

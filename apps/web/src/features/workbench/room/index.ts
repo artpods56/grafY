@@ -77,5 +77,3 @@ export type {
 export { useProjectRoomSession as useGraphRoomSession } from "./useProjectRoomSession";
 /** @deprecated a room is held around a Project. */
 export type { UseGraphRoomSessionResult } from "./useProjectRoomSession";
-/** @deprecated a command is addressed to a Project, and maybe to one Graph inside it. */
-export type { RoomGraphCommand } from "./room-command-bridge";

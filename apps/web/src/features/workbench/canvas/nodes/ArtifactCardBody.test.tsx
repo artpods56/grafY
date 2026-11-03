@@ -168,6 +168,7 @@ function libraryItem(artifactId: string, name: string): PlacedLibraryItem {
     folder_id: null,
     provenance: {
       source: "upload",
+      call_path: [],
       saved_at: "2026-01-01T00:00:00Z",
       original_filename: name,
     },

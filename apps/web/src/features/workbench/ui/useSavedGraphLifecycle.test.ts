@@ -52,14 +52,14 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/hooks/use-api", () => ({
-  useSavedGraphs: () => ({
-    data: { graphs: [] },
+  useWorkspaceProjects: () => ({
+    data: { projects: [] },
     error: undefined,
     isLoading: false,
     isValidating: false,
     mutate: savedGraphQuery.mutate,
   }),
-  useGraphSummaryRefresh: () => graphSummaryRefresh,
+  useProjectSummaryRefresh: () => graphSummaryRefresh,
 }));
 
 vi.mock("@/lib/api", async (importOriginal) => ({
@@ -147,7 +147,7 @@ function projectHead(
     checkpoint_revision: checkpointSequence,
     updated_at: overrides.updatedAt ?? graph.updated_at,
     document: {
-      graphs: [
+      projects: [
         {
           id: graph.id,
           name: overrides.graphName ?? graph.name,

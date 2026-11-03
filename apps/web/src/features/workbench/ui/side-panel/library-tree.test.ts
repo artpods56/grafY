@@ -24,6 +24,7 @@ function item(
     byte_size: number | null;
     original_filename: string | null;
     source: "upload" | "instance";
+    call_path?: readonly string[];
     saved_at: string;
     folder_id: string | null;
   }> = {},
@@ -44,6 +45,9 @@ function item(
     name: overrides.name ?? id,
     provenance: {
       source: overrides.source ?? "upload",
+      // Every provenance names its call path: an upload has none, and that is
+      // stated rather than left to a missing key.
+      call_path: overrides.call_path ?? [],
       original_filename:
         overrides.original_filename === undefined
           ? `${id}.png`
