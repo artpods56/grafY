@@ -47,6 +47,10 @@ from grafy_core.artifacts import (
     ArtifactRefSequence,
     ArtifactTypeKey,
 )
+from grafy_core.domain.agent_conversations import (
+    AgentConversation,
+    AgentConversationEvent,
+)
 from grafy_core.domain.collaboration import (
     ProjectCheckpointMapping,
     ProjectCommandReceipt,
@@ -78,6 +82,10 @@ from grafy_core.kernel.results import (
     FailureRecord,
     InstancePointer,
     StoredResult,
+)
+from grafy_core.ports.agent_conversations import (
+    AgentConversationAppendError,
+    AgentConversationRepositoryPort,
 )
 from grafy_core.ports.artifacts import ArtifactRepositoryPort, UnitOfWorkPort
 from grafy_core.ports.collaboration import CollaborationRepositoryPort
@@ -147,6 +155,16 @@ class InMemoryDataStore:
         default_factory=dict[tuple[UUID, UUID, UUID, int], ProjectCheckpointMapping]
     )
     runs: dict[UUID, Run] = field(default_factory=dict[UUID, Run])
+    # (workspace_id, conversation_id). The conversation row carries the sequence its
+    # next event takes, exactly like the SQL table, so append races the same way here.
+    agent_conversations: dict[tuple[UUID, UUID], AgentConversation] = field(
+        default_factory=dict[tuple[UUID, UUID], AgentConversation]
+    )
+    # (workspace_id, conversation_id, sequence). An event is never edited in place and
+    # never evicted: the sequence is the address of history.
+    agent_conversation_events: dict[
+        tuple[UUID, UUID, int], AgentConversationEvent
+    ] = field(default_factory=dict[tuple[UUID, UUID, int], AgentConversationEvent])
     # (workspace_id, fingerprint). Two Workspaces never share a fingerprint's result.
     node_results: dict[tuple[UUID, str], StoredResult] = field(
         default_factory=dict[tuple[UUID, str], StoredResult]
@@ -184,6 +202,8 @@ class InMemoryDataStore:
         self.project_command_receipts = _clone(other.project_command_receipts)
         self.project_checkpoint_mappings = _clone(other.project_checkpoint_mappings)
         self.runs = _clone(other.runs)
+        self.agent_conversations = _clone(other.agent_conversations)
+        self.agent_conversation_events = _clone(other.agent_conversation_events)
         self.node_results = _clone(other.node_results)
         self.pointers = _clone(other.pointers)
         self.workspace_locations = _clone(other.workspace_locations)
@@ -1151,6 +1171,104 @@ class InMemoryResultStoreRepository(ResultStoreRepositoryPort):
         )
 
 
+class InMemoryAgentConversationRepository(AgentConversationRepositoryPort):
+    """Append-only Agent history over the cloned store.
+
+    The conversation row is the sequence authority: an append only lands on the sequence
+    the stored row is waiting for, and the row moves on with it. Frozen values are
+    returned as stored - there is nothing for a caller to mutate behind the clone.
+    """
+
+    def __init__(self, store: InMemoryDataStore) -> None:
+        self._store = store
+
+    @override
+    async def add(self, conversation: AgentConversation) -> None:
+        key = (conversation.workspace_id, conversation.id)
+        if key in self._store.agent_conversations:
+            raise ConcurrentWriteError(
+                f"Agent conversation already exists: {conversation.id}"
+            )
+        self._store.agent_conversations[key] = conversation
+
+    @override
+    async def get(
+        self, workspace_id: UUID, conversation_id: UUID
+    ) -> AgentConversation | None:
+        return self._store.agent_conversations.get((workspace_id, conversation_id))
+
+    @override
+    async def lock(
+        self, workspace_id: UUID, conversation_id: UUID
+    ) -> AgentConversation | None:
+        # No row lock to imitate: the unit of work's transaction lock serialises writers.
+        return await self.get(workspace_id, conversation_id)
+
+    @override
+    async def list_for_agent(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        graph_id: str,
+        agent_id: str,
+    ) -> list[AgentConversation]:
+        rows = [
+            conversation
+            for conversation in self._store.agent_conversations.values()
+            if conversation.workspace_id == workspace_id
+            and conversation.project_id == project_id
+            and conversation.graph_id == graph_id
+            and conversation.agent_id == agent_id
+        ]
+        return _newest_first(
+            rows,
+            stamp=lambda conversation: conversation.created_at,
+            ident=lambda conversation: conversation.id,
+        )
+
+    @override
+    async def append(self, event: AgentConversationEvent) -> None:
+        key = (event.workspace_id, event.conversation_id)
+        conversation = self._store.agent_conversations.get(key)
+        if conversation is None:
+            raise AgentConversationAppendError(
+                f"Agent conversation does not exist: {event.conversation_id}"
+            )
+        if conversation.next_sequence != event.sequence:
+            raise AgentConversationAppendError(
+                f"Agent conversation {event.conversation_id} is at sequence "
+                f"{conversation.next_sequence}, not {event.sequence}"
+            )
+        event_key = (event.workspace_id, event.conversation_id, event.sequence)
+        if event_key in self._store.agent_conversation_events:
+            raise ConcurrentWriteError(
+                f"Agent conversation event already stored: {event_key}"
+            )
+        self._store.agent_conversation_events[event_key] = event
+        self._store.agent_conversations[key] = conversation.appended(
+            at=event.created_at
+        )
+
+    @override
+    async def list_events(
+        self,
+        workspace_id: UUID,
+        conversation_id: UUID,
+        *,
+        after_sequence: int = 0,
+        limit: int | None = None,
+    ) -> list[AgentConversationEvent]:
+        rows = [
+            event
+            for key, event in self._store.agent_conversation_events.items()
+            if key[0] == workspace_id
+            and key[1] == conversation_id
+            and key[2] > after_sequence
+        ]
+        rows.sort(key=lambda event: event.sequence)
+        return rows if limit is None else rows[:limit]
+
+
 @dataclass(frozen=True, slots=True)
 class _InMemoryUnitOfWorkState:
     working_store: InMemoryDataStore
@@ -1161,6 +1279,7 @@ class _InMemoryUnitOfWorkState:
     collaboration: CollaborationRepositoryPort
     runs: RunRepositoryPort
     results: ResultStoreRepositoryPort
+    agent_conversations: AgentConversationRepositoryPort
 
 
 class InMemoryUnitOfWork(UnitOfWorkPort):
@@ -1207,6 +1326,10 @@ class InMemoryUnitOfWork(UnitOfWorkPort):
     def results(self) -> ResultStoreRepositoryPort:
         return self._entered_state().results
 
+    @property
+    def agent_conversations(self) -> AgentConversationRepositoryPort:
+        return self._entered_state().agent_conversations
+
     @override
     async def __aenter__(self) -> Self:
         if self._state.get() is not None:
@@ -1225,6 +1348,9 @@ class InMemoryUnitOfWork(UnitOfWorkPort):
                     collaboration=InMemoryCollaborationRepository(working_store),
                     runs=InMemoryRunRepository(working_store),
                     results=InMemoryResultStoreRepository(working_store),
+                    agent_conversations=InMemoryAgentConversationRepository(
+                        working_store
+                    ),
                 )
             )
         except BaseException:
