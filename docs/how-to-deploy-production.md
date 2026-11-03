@@ -163,6 +163,80 @@ egress-broker services from that override, including the API Docker socket
 mount and runtime environment variables. Keep the storage, network, and secret
 configuration. Do not replace the environment with an example file.
 
+### Check the database stamp before the ADR 0020 baseline
+
+ADR 0020 collapsed the 31-revision Alembic history into one revision,
+`0001_baseline` in `infra/db/migrations/versions/0001_baseline.py`, and keeps no
+existing rows. A database stamped at an earlier revision cannot move forward:
+`alembic upgrade head` reads the stamp, finds no revision of that name, and fails
+with `Can't locate revision identified by '0031_library_folders'`. The failure
+lands in the one-shot `migrate` service, whose command is
+`[".venv/bin/alembic", "upgrade", "head"]` in `infra/docker/compose.yaml`; `api`
+waits for `migrate` to complete successfully, so it never starts and the
+deployment stops as described above.
+
+Read the stamp from the PostgreSQL container, which runs whether or not the API
+does:
+
+```bash
+docker compose \
+	--project-name grafy \
+	--env-file /opt/graphy/.deployment/grafy.env \
+	-f /opt/graphy/.deployment/releases/<deployed-sha>/compose.yaml \
+	-f /opt/graphy/.deployment/releases/<deployed-sha>/compose.postgres.yaml \
+	exec -T postgres psql --username grafy --dbname grafy \
+		--command 'table alembic_version;'
+```
+
+An empty result means a fresh database and `0001_baseline` means the database is
+already on the new history; both migrate normally. Any other value
+(`0031_library_folders`, `0030_upload_artifact_association`, and every other name
+the collapse deleted) needs one of two decisions, taken with the data owner before
+the window:
+
+- **Reset the database.** Dump it first. The deployment script already writes one
+  to `/opt/graphy/.deployment/<timestamp>-<previous-sha>.dump` before it migrates,
+  and a hand-taken dump is the same `pg_dump --format=custom --no-owner` inside
+  the PostgreSQL container that `scripts/deploy-production.sh` runs. Then drop and
+  recreate the database with the `dropdb` and `createdb` commands in [Roll back a
+  failed release](#roll-back-a-failed-release), skipping `pg_restore`; the next
+  `migrate` builds the baseline from nothing. You lose every row: accounts and
+  OIDC identities, Workspaces and memberships, Projects and their checkpoints,
+  stored node results, Library folders, uploads, node secrets, audit events. The
+  stored objects outlive those rows as unreachable orphans, because the
+  `artifact_objects` row is what binds a digest to its `storage_backend`, `bucket`
+  and `object_key`, so clear the bucket or the `grafy-data` volume too when the
+  owner wants the data gone.
+- **Keep the previous release.** Deploy nothing, or restore the dump over a
+  database the failed wave had already changed and keep serving the SHA in
+  `/opt/graphy/.deployment/current-revision`, which a failed deploy leaves
+  untouched because the script writes it only after `/api/ready` answers. You
+  lose the upgrade and nothing else.
+
+Restore-and-reapply is not available in this wave, which is exactly what the
+collapse removed: no revision left on disk carries a pre-ADR 0020 schema to the
+baseline. Do not run `alembic stamp 0001_baseline` to get past the error either. A
+stamp claims the schema already matches the baseline, and it does not: ADR 0020
+dropped the `plugin_releases`, `plugin_installations`,
+`plugin_release_selections`, `plugin_release_revocations` and `templates` tables
+and added every Project, Run and node-result table, so the API would start and
+fail per request instead of failing in `migrate`. Stamping is honest only for a
+database whose schema already matches the baseline and whose one loss is the
+`alembic_version` row; check that with `pg_dump --schema-only` against the
+baseline in `infra/db/migrations/versions/0001_baseline.py` before you choose it.
+
+`just db-current` and `just db-history` are the same Alembic commands as the
+`migrate` service, and `infra/db/migrations/env.py` takes their URL from
+`GRAFY_DATABASE_URL` (`libs/shared/src/grafy_shared/config/app.py`,
+`AppConfig.resolved_database_url`), falling back to `grafy.sqlite3` under
+`GRAFY_WORKSPACE`. They read whatever `.env` the Justfile loads, so use them to
+learn the history from a workstation and never point them at production.
+
+Open question: `scripts/deploy-production.sh` never reads the stamp, so the first
+operator to meet a retired revision meets it as a red `migrate` container after
+traffic stopped. A preflight that aborts before `stop gateway api` is a follow-up,
+not a command you can run today.
+
 Run the pinned release and capture the complete output:
 
 ```bash
