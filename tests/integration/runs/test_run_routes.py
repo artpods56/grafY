@@ -624,20 +624,95 @@ def test_a_computation_dispatched_after_the_release_sweep_still_finishes(
     assert harness.runner.released == [FIRST]
 
 
-def test_closing_the_run_service_leaves_no_publish_task_running(
+def _is_publish(task: asyncio.Task[None]) -> bool:
+    """Whether this task is the run service deriving instance state for a Project."""
+
+    return getattr(task.get_coro(), "__qualname__", "").endswith("_drain_publishes")
+
+
+def test_closing_the_run_service_never_cancels_a_publish_that_is_working(
     harness: RoomHarness,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A shutdown that spawns work leaves the loop a task nobody holds.
+    """A publish holds a database connection; tearing it out loses it.
 
-    Withdrawing a Run moves computation states and every moved state announces itself,
-    which used to start a fresh publish *after* `close()` had collected the tasks it was
-    meant to collect. That task then derived instance state over a database the lifespan
-    disposes next — the `Exception terminating connection` at teardown — and stayed live
-    for the loop's final cleanup to wait on.
+    `close()` used to cancel the publish tasks it had collected and then wait for them. A
+    task cancelled inside SQLAlchemy's `greenlet_spawn` cannot return its connection: the
+    pool's terminate fails with the same `CancelledError`, the aiosqlite worker sits at
+    `tx.get()` for ever, and the next checkout from that pool is a request that never
+    returns. A CI job died with its test thread parked in `Future.result()` on exactly such
+    a request, one line after `Exception terminating connection`.
 
-    The derivation is held open so the question is asked while a late publish would still
-    be running, rather than after it had come and gone.
+    Shutdown therefore waits. The derivation is the event: it is released by the test, so
+    the only way it can fail to finish is by being cancelled.
+    """
+
+    project_id = harness.project_id
+    started = start_run(harness, project_id)
+    assert started.status_code == 201, started.text
+    assert harness.runner.started(FIRST).wait(10)
+    run_id = UUID(started.json()["id"])
+
+    async def test_it() -> None:
+        service = harness.resources.runs
+        key = (harness.workspace_id, project_id)
+        runtime = service._runtimes[key]  # noqa: SLF001 - shutdown is the subject
+
+        owed = runtime.publish_task
+        if owed is not None:
+            # Failure guard, not the mechanism: whatever the Run already owed is published
+            # before the derivation is installed, so the pass below can only be this test's.
+            await asyncio.wait_for(asyncio.wait({owed}), timeout=5)
+
+        deriving = asyncio.Event()
+        let_it_finish = asyncio.Event()
+        torn_out: list[str] = []
+
+        async def derive(_runtime: object) -> None:
+            deriving.set()
+            try:
+                await let_it_finish.wait()
+            except asyncio.CancelledError:
+                torn_out.append(
+                    "the derivation was cancelled while it held the session"
+                )
+                raise
+
+        monkeypatch.setattr(service, "_publish", derive)
+        service._transition_moved(runtime)  # noqa: SLF001 - how a publish begins
+        await deriving.wait()
+        watched = service._watchers[run_id]  # noqa: SLF001 - close() is what clears it
+
+        closing = asyncio.create_task(service.close())
+        let_it_finish.set()
+        await closing
+
+        assert torn_out == []
+        # The same rule covers the Run's watcher: it writes the Run's finish, so tearing it
+        # out of that write loses a connection the same way. Ending the Run is what stops it.
+        assert watched.task.done()
+        assert not watched.task.cancelled(), (
+            "closing tore the watcher out of the finish"
+        )
+
+    harness.client.portal.call(test_it)
+
+
+def test_a_transition_announced_while_closing_asks_for_no_publish(
+    harness: RoomHarness,
+) -> None:
+    """A shutdown must not leave a task that outlives the database it writes to.
+
+    Withdrawing a Run moves computation states and every moved state announces itself. An
+    announcement honoured after `close()` had collected the tasks it was meant to collect
+    would start a publish over a database the lifespan disposes next, on a loop somebody is
+    waiting to close, and nobody would hold the task.
+
+    It is measurable straight off the service: withdrawing a Run during `close()` announces
+    transitions through the listener the scheduler already holds, and the task that follows
+    is created after the sweep that was meant to collect it. Before this was gated, closing
+    left exactly that behind — a `_drain_publishes` task, pending, with a different identity
+    than the one `close()` had waited for.
     """
 
     project_id = harness.project_id
@@ -647,34 +722,27 @@ def test_closing_the_run_service_leaves_no_publish_task_running(
 
     async def test_it() -> None:
         service = harness.resources.runs
-        deriving = asyncio.Event()
+        runtime = service._runtimes[(harness.workspace_id, project_id)]  # noqa: SLF001 - shutdown is the subject
+        owed = runtime.publish_task
+        await service.close()
 
-        async def slow_derive(_runtime: object) -> None:
-            await deriving.wait()
+        live = [
+            t
+            for t in asyncio.all_tasks()
+            if t is not asyncio.current_task() and not t.done()
+        ]
+        assert owed is None or owed.done(), (
+            "close() returned with its publish still running"
+        )
+        assert [t for t in live if _is_publish(t)] == [], (
+            "closing the run service left a publish task nobody holds"
+        )
 
-        monkeypatch.setattr(service, "_publish", slow_derive)
+        asked_for_before = runtime.publish_task
+        service._transition_moved(runtime)  # noqa: SLF001 - the announcement under test
 
-        async def report() -> list[asyncio.Task]:
-            await service.close()
-            here = asyncio.current_task()
-            return [
-                task
-                for task in asyncio.all_tasks()
-                if task is not here
-                and not task.done()
-                and task.get_coro().__qualname__ in {"_drain_publishes", "_watch"}
-            ]
-
-        # Let the publish this Run owes get as far as the derivation before closing.
-        await asyncio.sleep(0)
-        late = await report()
-        try:
-            assert [task.get_coro().__qualname__ for task in late] == []
-        finally:
-            # The test must not itself leave a task the loop has to wait for.
-            deriving.set()
-            for task in late:
-                task.cancel()
-            await asyncio.gather(*late, return_exceptions=True)
+        assert runtime.publish_task is asked_for_before, (
+            "a transition announced after closing started a publish"
+        )
 
     harness.client.portal.call(test_it)
