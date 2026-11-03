@@ -5,7 +5,7 @@
         "additionalProperties": false,
         "properties": {
           "edge": {
-            "$ref": "#/components/schemas/SavedGraphEdge"
+            "$ref": "#/components/schemas/GraphEdge"
           },
           "kind": {
             "const": "add_edge",
@@ -30,7 +30,7 @@
             "type": "string"
           },
           "node": {
-            "$ref": "#/components/schemas/SavedGraphNode"
+            "$ref": "#/components/schemas/GraphNode"
           }
         },
         "required": [
@@ -49,7 +49,7 @@
             "type": "string"
           },
           "origin": {
-            "$ref": "#/components/schemas/SavedGraphOrigin"
+            "$ref": "#/components/schemas/GraphOrigin"
           }
         },
         "required": [
@@ -605,7 +605,7 @@
         "additionalProperties": false,
         "properties": {
           "expected_binding": {
-            "$ref": "#/components/schemas/SavedGraphArtifactTypeBinding"
+            "$ref": "#/components/schemas/GraphArtifactTypeBinding"
           },
           "kind": {
             "const": "clear_node_artifact_type_binding",
@@ -647,7 +647,7 @@
             "type": "integer"
           },
           "document": {
-            "$ref": "#/components/schemas/SavedGraphDocument"
+            "$ref": "#/components/schemas/GraphDocument"
           },
           "graph_id": {
             "format": "uuid",
@@ -824,7 +824,7 @@
         "additionalProperties": false,
         "properties": {
           "document": {
-            "$ref": "#/components/schemas/SavedGraphDocument"
+            "$ref": "#/components/schemas/GraphDocument"
           },
           "name": {
             "maxLength": 160,
@@ -885,7 +885,7 @@
             "type": "string"
           },
           "node": {
-            "$ref": "#/components/schemas/SavedGraphNode"
+            "$ref": "#/components/schemas/GraphNode"
           },
           "source_node_id": {
             "title": "Source Node Id",
@@ -1765,6 +1765,50 @@
         "title": "GeoVectorStyle",
         "type": "object"
       },
+      "GraphAnnotationLayout": {
+        "additionalProperties": false,
+        "description": "Axis-aligned size for a presentation annotation on the canvas.",
+        "properties": {
+          "height": {
+            "maximum": 16384.0,
+            "minimum": 24.0,
+            "title": "Height",
+            "type": "number"
+          },
+          "width": {
+            "maximum": 16384.0,
+            "minimum": 24.0,
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "width",
+          "height"
+        ],
+        "title": "GraphAnnotationLayout",
+        "type": "object"
+      },
+      "GraphArtifactTypeBinding": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_type": {
+            "$ref": "#/components/schemas/ArtifactTypeKey"
+          },
+          "variable": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Variable",
+            "type": "string"
+          }
+        },
+        "required": [
+          "variable",
+          "artifact_type"
+        ],
+        "title": "GraphArtifactTypeBinding",
+        "type": "object"
+      },
       "GraphBrowserCreatorResponse": {
         "additionalProperties": false,
         "properties": {
@@ -2000,6 +2044,168 @@
           "deduplicated"
         ],
         "title": "GraphCommandReceiptResponse",
+        "type": "object"
+      },
+      "GraphConversion": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version"
+        ],
+        "title": "GraphConversion",
+        "type": "object"
+      },
+      "GraphDocument": {
+        "additionalProperties": false,
+        "properties": {
+          "edges": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphEdge"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "nodes": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "origins": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphOrigin"
+            },
+            "title": "Origins",
+            "type": "array"
+          },
+          "presentation": {
+            "$ref": "#/components/schemas/GraphPresentationDocument"
+          },
+          "schema_version": {
+            "const": 7,
+            "default": 7,
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "title": "GraphDocument",
+        "type": "object"
+      },
+      "GraphEdge": {
+        "additionalProperties": false,
+        "properties": {
+          "collection_mode": {
+            "default": "direct",
+            "enum": [
+              "direct",
+              "map"
+            ],
+            "title": "Collection Mode",
+            "type": "string"
+          },
+          "conversion_path": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphConversion"
+            },
+            "maxItems": 8,
+            "title": "Conversion Path",
+            "type": "array"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "from_node": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "From Node",
+            "type": "string"
+          },
+          "from_port": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "From Port",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "projection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GraphProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "route_offset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GraphPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "to_node": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "To Node",
+            "type": "string"
+          },
+          "to_plug": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Plug"
+          },
+          "to_port": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "To Port",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "from_node",
+          "from_port",
+          "to_node",
+          "to_port"
+        ],
+        "title": "GraphEdge",
         "type": "object"
       },
       "GraphExecutionDetailResponse": {
@@ -2406,6 +2612,29 @@
         "title": "GraphFolderWriteRequest",
         "type": "object"
       },
+      "GraphInputPlug": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "port": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Port",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "port"
+        ],
+        "title": "GraphInputPlug",
+        "type": "object"
+      },
       "GraphMaterializationsResponse": {
         "properties": {
           "graph_id": {
@@ -2431,6 +2660,127 @@
           "node_runs"
         ],
         "title": "GraphMaterializationsResponse",
+        "type": "object"
+      },
+      "GraphNode": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_type_bindings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphArtifactTypeBinding"
+            },
+            "title": "Artifact Type Bindings",
+            "type": "array"
+          },
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "input_plugs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphInputPlug"
+            },
+            "title": "Input Plugs",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "builtin",
+              "module",
+              "call"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "layout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GraphNodeLayout"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "operator_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Operator Id",
+            "type": "string"
+          },
+          "operator_version": {
+            "minimum": 1.0,
+            "title": "Operator Version",
+            "type": "integer"
+          },
+          "position": {
+            "$ref": "#/components/schemas/GraphPoint"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "operator_id",
+          "operator_version",
+          "position"
+        ],
+        "title": "GraphNode",
+        "type": "object"
+      },
+      "GraphNodeLayout": {
+        "additionalProperties": false,
+        "description": "Canvas chrome sizes for a node shell and its artifact appendix.",
+        "properties": {
+          "appendix_height": {
+            "anyOf": [
+              {
+                "maximum": 16384.0,
+                "minimum": 120.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Appendix Height"
+          },
+          "body_height": {
+            "anyOf": [
+              {
+                "maximum": 16384.0,
+                "minimum": 96.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Height"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "maximum": 16384.0,
+                "minimum": 260.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "title": "GraphNodeLayout",
         "type": "object"
       },
       "GraphNodeSecretsResponse": {
@@ -2515,6 +2865,80 @@
         "title": "GraphOrganizationResponse",
         "type": "object"
       },
+      "GraphOrigin": {
+        "additionalProperties": false,
+        "description": "Exact artifact value held on one node input with no incoming edge.",
+        "properties": {
+          "collection_mode": {
+            "default": "direct",
+            "enum": [
+              "direct",
+              "map"
+            ],
+            "title": "Collection Mode",
+            "type": "string"
+          },
+          "conversion_path": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphConversion"
+            },
+            "maxItems": 8,
+            "title": "Conversion Path",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "to_node": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "To Node",
+            "type": "string"
+          },
+          "to_plug": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Plug"
+          },
+          "to_port": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "To Port",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "$ref": "#/components/schemas/ArtifactRefSequence"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "id",
+          "to_node",
+          "to_port",
+          "value"
+        ],
+        "title": "GraphOrigin",
+        "type": "object"
+      },
       "GraphPoint": {
         "additionalProperties": false,
         "properties": {
@@ -2560,7 +2984,7 @@
             "type": "string"
           },
           "layout": {
-            "$ref": "#/components/schemas/SavedGraphAnnotationLayout"
+            "$ref": "#/components/schemas/GraphAnnotationLayout"
           },
           "position": {
             "$ref": "#/components/schemas/GraphPoint"
@@ -2715,7 +3139,7 @@
           "projection": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SavedGraphProjection"
+                "$ref": "#/components/schemas/GraphProjection"
               },
               {
                 "type": "null"
@@ -2786,7 +3210,7 @@
           "layout": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SavedGraphNodeLayout"
+                "$ref": "#/components/schemas/GraphNodeLayout"
               },
               {
                 "type": "null"
@@ -2814,6 +3238,26 @@
           "position"
         ],
         "title": "GraphPresentationViewer",
+        "type": "object"
+      },
+      "GraphProjection": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "items": {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Path",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "GraphProjection",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -4404,7 +4848,7 @@
         "additionalProperties": false,
         "properties": {
           "document": {
-            "$ref": "#/components/schemas/SavedGraphDocument"
+            "$ref": "#/components/schemas/GraphDocument"
           },
           "kind": {
             "const": "replace_document",
@@ -5056,212 +5500,6 @@
         "title": "SaveUploadedArtifactRequest",
         "type": "object"
       },
-      "SavedGraphAnnotationLayout": {
-        "additionalProperties": false,
-        "description": "Axis-aligned size for a presentation annotation on the canvas.",
-        "properties": {
-          "height": {
-            "maximum": 16384.0,
-            "minimum": 24.0,
-            "title": "Height",
-            "type": "number"
-          },
-          "width": {
-            "maximum": 16384.0,
-            "minimum": 24.0,
-            "title": "Width",
-            "type": "number"
-          }
-        },
-        "required": [
-          "width",
-          "height"
-        ],
-        "title": "SavedGraphAnnotationLayout",
-        "type": "object"
-      },
-      "SavedGraphArtifactTypeBinding": {
-        "additionalProperties": false,
-        "properties": {
-          "artifact_type": {
-            "$ref": "#/components/schemas/ArtifactTypeKey"
-          },
-          "variable": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Variable",
-            "type": "string"
-          }
-        },
-        "required": [
-          "variable",
-          "artifact_type"
-        ],
-        "title": "SavedGraphArtifactTypeBinding",
-        "type": "object"
-      },
-      "SavedGraphConversion": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "version": {
-            "minimum": 1.0,
-            "title": "Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "version"
-        ],
-        "title": "SavedGraphConversion",
-        "type": "object"
-      },
-      "SavedGraphDocument": {
-        "additionalProperties": false,
-        "properties": {
-          "edges": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/SavedGraphEdge"
-            },
-            "title": "Edges",
-            "type": "array"
-          },
-          "nodes": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/SavedGraphNode"
-            },
-            "title": "Nodes",
-            "type": "array"
-          },
-          "origins": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/SavedGraphOrigin"
-            },
-            "title": "Origins",
-            "type": "array"
-          },
-          "presentation": {
-            "$ref": "#/components/schemas/GraphPresentationDocument"
-          },
-          "schema_version": {
-            "const": 7,
-            "default": 7,
-            "title": "Schema Version",
-            "type": "integer"
-          }
-        },
-        "title": "SavedGraphDocument",
-        "type": "object"
-      },
-      "SavedGraphEdge": {
-        "additionalProperties": false,
-        "properties": {
-          "collection_mode": {
-            "default": "direct",
-            "enum": [
-              "direct",
-              "map"
-            ],
-            "title": "Collection Mode",
-            "type": "string"
-          },
-          "conversion_path": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/SavedGraphConversion"
-            },
-            "maxItems": 8,
-            "title": "Conversion Path",
-            "type": "array"
-          },
-          "enabled": {
-            "default": true,
-            "title": "Enabled",
-            "type": "boolean"
-          },
-          "from_node": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "From Node",
-            "type": "string"
-          },
-          "from_port": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "From Port",
-            "type": "string"
-          },
-          "id": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "projection": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SavedGraphProjection"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "route_offset": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/GraphPoint"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "to_node": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "To Node",
-            "type": "string"
-          },
-          "to_plug": {
-            "anyOf": [
-              {
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "To Plug"
-          },
-          "to_port": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "To Port",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "from_node",
-          "from_port",
-          "to_node",
-          "to_port"
-        ],
-        "title": "SavedGraphEdge",
-        "type": "object"
-      },
       "SavedGraphExecutionRequest": {
         "properties": {
           "expected_revision": {
@@ -5274,29 +5512,6 @@
           "expected_revision"
         ],
         "title": "SavedGraphExecutionRequest",
-        "type": "object"
-      },
-      "SavedGraphInputPlug": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "port": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Port",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "port"
-        ],
-        "title": "SavedGraphInputPlug",
         "type": "object"
       },
       "SavedGraphListResponse": {
@@ -5316,221 +5531,6 @@
         "title": "SavedGraphListResponse",
         "type": "object"
       },
-      "SavedGraphNode": {
-        "additionalProperties": false,
-        "properties": {
-          "artifact_type_bindings": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/SavedGraphArtifactTypeBinding"
-            },
-            "title": "Artifact Type Bindings",
-            "type": "array"
-          },
-          "config": {
-            "additionalProperties": true,
-            "title": "Config",
-            "type": "object"
-          },
-          "id": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "input_plugs": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/SavedGraphInputPlug"
-            },
-            "title": "Input Plugs",
-            "type": "array"
-          },
-          "kind": {
-            "enum": [
-              "builtin",
-              "module",
-              "call"
-            ],
-            "title": "Kind",
-            "type": "string"
-          },
-          "layout": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SavedGraphNodeLayout"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "operator_id": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Operator Id",
-            "type": "string"
-          },
-          "operator_version": {
-            "minimum": 1.0,
-            "title": "Operator Version",
-            "type": "integer"
-          },
-          "position": {
-            "$ref": "#/components/schemas/GraphPoint"
-          }
-        },
-        "required": [
-          "kind",
-          "id",
-          "operator_id",
-          "operator_version",
-          "position"
-        ],
-        "title": "SavedGraphNode",
-        "type": "object"
-      },
-      "SavedGraphNodeLayout": {
-        "additionalProperties": false,
-        "description": "Canvas chrome sizes for a node shell and its artifact appendix.",
-        "properties": {
-          "appendix_height": {
-            "anyOf": [
-              {
-                "maximum": 16384.0,
-                "minimum": 120.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Appendix Height"
-          },
-          "body_height": {
-            "anyOf": [
-              {
-                "maximum": 16384.0,
-                "minimum": 96.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Body Height"
-          },
-          "width": {
-            "anyOf": [
-              {
-                "maximum": 16384.0,
-                "minimum": 260.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Width"
-          }
-        },
-        "title": "SavedGraphNodeLayout",
-        "type": "object"
-      },
-      "SavedGraphOrigin": {
-        "additionalProperties": false,
-        "description": "Exact artifact value held on one node input with no incoming edge.",
-        "properties": {
-          "collection_mode": {
-            "default": "direct",
-            "enum": [
-              "direct",
-              "map"
-            ],
-            "title": "Collection Mode",
-            "type": "string"
-          },
-          "conversion_path": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/SavedGraphConversion"
-            },
-            "maxItems": 8,
-            "title": "Conversion Path",
-            "type": "array"
-          },
-          "id": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "to_node": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "To Node",
-            "type": "string"
-          },
-          "to_plug": {
-            "anyOf": [
-              {
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "To Plug"
-          },
-          "to_port": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "To Port",
-            "type": "string"
-          },
-          "value": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ArtifactRef"
-              },
-              {
-                "$ref": "#/components/schemas/ArtifactRefSequence"
-              }
-            ],
-            "title": "Value"
-          }
-        },
-        "required": [
-          "id",
-          "to_node",
-          "to_port",
-          "value"
-        ],
-        "title": "SavedGraphOrigin",
-        "type": "object"
-      },
-      "SavedGraphProjection": {
-        "additionalProperties": false,
-        "properties": {
-          "path": {
-            "items": {
-              "maxLength": 255,
-              "minLength": 1,
-              "type": "string"
-            },
-            "minItems": 1,
-            "title": "Path",
-            "type": "array"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "title": "SavedGraphProjection",
-        "type": "object"
-      },
       "SavedGraphResponse": {
         "additionalProperties": false,
         "properties": {
@@ -5540,7 +5540,7 @@
             "type": "string"
           },
           "document": {
-            "$ref": "#/components/schemas/SavedGraphDocument"
+            "$ref": "#/components/schemas/GraphDocument"
           },
           "id": {
             "format": "uuid",
@@ -5710,12 +5710,12 @@
         "additionalProperties": false,
         "properties": {
           "binding": {
-            "$ref": "#/components/schemas/SavedGraphArtifactTypeBinding"
+            "$ref": "#/components/schemas/GraphArtifactTypeBinding"
           },
           "expected_binding": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SavedGraphArtifactTypeBinding"
+                "$ref": "#/components/schemas/GraphArtifactTypeBinding"
               },
               {
                 "type": "null"
@@ -5752,7 +5752,7 @@
           },
           "input_plugs": {
             "items": {
-              "$ref": "#/components/schemas/SavedGraphInputPlug"
+              "$ref": "#/components/schemas/GraphInputPlug"
             },
             "title": "Input Plugs",
             "type": "array"
@@ -6314,10 +6314,10 @@
         "additionalProperties": false,
         "properties": {
           "edge": {
-            "$ref": "#/components/schemas/SavedGraphEdge"
+            "$ref": "#/components/schemas/GraphEdge"
           },
           "expected_edge": {
-            "$ref": "#/components/schemas/SavedGraphEdge"
+            "$ref": "#/components/schemas/GraphEdge"
           },
           "kind": {
             "const": "update_edge",
@@ -6356,7 +6356,7 @@
           },
           "input_plugs": {
             "items": {
-              "$ref": "#/components/schemas/SavedGraphInputPlug"
+              "$ref": "#/components/schemas/GraphInputPlug"
             },
             "title": "Input Plugs",
             "type": "array"
@@ -6426,7 +6426,7 @@
           "expected_layout": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SavedGraphNodeLayout"
+                "$ref": "#/components/schemas/GraphNodeLayout"
               },
               {
                 "type": "null"
@@ -6442,7 +6442,7 @@
           "layout": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SavedGraphNodeLayout"
+                "$ref": "#/components/schemas/GraphNodeLayout"
               },
               {
                 "type": "null"
@@ -6465,7 +6465,7 @@
         "additionalProperties": false,
         "properties": {
           "expected_origin": {
-            "$ref": "#/components/schemas/SavedGraphOrigin"
+            "$ref": "#/components/schemas/GraphOrigin"
           },
           "kind": {
             "const": "update_origin",
@@ -6474,7 +6474,7 @@
             "type": "string"
           },
           "origin": {
-            "$ref": "#/components/schemas/SavedGraphOrigin"
+            "$ref": "#/components/schemas/GraphOrigin"
           }
         },
         "required": [
@@ -6488,7 +6488,7 @@
         "additionalProperties": false,
         "properties": {
           "document": {
-            "$ref": "#/components/schemas/SavedGraphDocument"
+            "$ref": "#/components/schemas/GraphDocument"
           },
           "expected_revision": {
             "minimum": 1.0,
