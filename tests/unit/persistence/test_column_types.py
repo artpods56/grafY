@@ -16,7 +16,6 @@ from grafy_core.domain.identity import (
     WorkspaceRole,
     WorkspaceInvitationStatus,
 )
-from grafy_core.domain.module_library import ModulePublicationState
 from grafy_core.domain.security_audit import (
     SecurityAuditActorKind,
     SecurityAuditOutcome,
@@ -31,7 +30,6 @@ ENUM_CASES = [
     (schema.WorkspaceKindType, WorkspaceKind, 16),
     (schema.WorkspaceRoleType, WorkspaceRole, 16),
     (schema.WorkspaceInvitationStatusType, WorkspaceInvitationStatus, 16),
-    (schema.ModulePublicationStateType, ModulePublicationState, 32),
     (schema.SecurityAuditActorKindType, SecurityAuditActorKind, 24),
     (schema.SecurityAuditOutcomeType, SecurityAuditOutcome, 16),
 ]
