@@ -17,7 +17,6 @@ room never sends fails the test naming itself instead of blocking forever.
 """
 
 import asyncio
-import contextlib
 import json
 import logging
 import threading
@@ -42,7 +41,6 @@ from grafy_api.realtime.hub import (
 )
 from grafy_api.realtime.protocol import (
     ActorPresentation,
-    PresenceLeaveMessage,
     PresenceUpdateSubmitMessage,
     RoomHeartbeatMessage,
     RoomReadyMessage,
@@ -1163,6 +1161,13 @@ def test_a_sender_that_stops_takes_its_session_out_of_the_room(
         project_id = uuid4()
         dying = _session(socket, project_id=project_id)
         peer = _session(_mock_socket(), project_id=project_id, actor_id=UUID(int=12))
+        told_peer = asyncio.Event()
+
+        async def record_frame(payload: dict) -> None:
+            if payload.get("type") == "presence.leave":
+                told_peer.set()
+
+        peer.websocket.send_json.side_effect = record_frame
         for participant in (dying, peer):
             await hub.join(participant)
             await hub.register_presence(participant)
@@ -1180,16 +1185,13 @@ def test_a_sender_that_stops_takes_its_session_out_of_the_room(
         # this test is for, and it must name itself rather than hang.
         assert dying.sender_task is not None, label
         await asyncio.wait_for(asyncio.wait({dying.sender_task}), timeout=5)
+        await asyncio.wait_for(told_peer.wait(), timeout=5)
 
         assert dying.closed is True, label
         assert dying.sender_task.done(), label
-        offered: list[object] = []
-        while not peer.outbound.empty():
-            offered.append(peer.outbound.get_nowait())
-        assert [type(item) for item in offered].count(PresenceLeaveMessage) == 1, (
-            offered,
-            label,
-        )
+        # The peer being told is the outward half of the claim. That frame leaves through
+        # the peer's own sender, so the peer's socket is where the event is; the hub's
+        # queue is not, because that sender is consuming it as fast as it is offered.
         remaining = await hub.participants_for(
             workspace_id=dying.workspace_id, project_id=project_id
         )
