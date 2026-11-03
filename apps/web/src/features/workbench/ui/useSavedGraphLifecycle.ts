@@ -195,9 +195,16 @@ export interface GraphRoomPersistenceResult {
 /** Prefer room/command persistence when the graph room can accept edits. */
 export interface GraphRoomPersistenceAdapter {
   readonly canPersist: boolean;
-  /** Keep the exact checkpoint separate from a newer effective room head. */
+  /**
+   * Keep the exact checkpoint separate from a newer effective room head.
+   *
+   * The Graph is named because a Project holds several of them and the room
+   * command is addressed to one: `replace_document` without it would not say
+   * which Graph this canvas just changed.
+   */
   persistDocument: (
     draft: GraphSaveDraft,
+    graphId: string,
   ) => Promise<GraphRoomPersistenceResult>;
 }
 
@@ -512,9 +519,14 @@ export function useSavedGraphLifecycle({
         setPersistenceError("Enter a graph name before saving.");
         return;
       }
-      const activeRoomPersistence =
-        activeGraph === null ? null : roomPersistence;
-      if (activeRoomPersistence !== null && !activeRoomPersistence.canPersist) {
+      // A save is addressed to one Graph of one Project. Pairing the adapter
+      // with that Graph here means every write below carries it, and a canvas
+      // with no Graph falls to the draft path rather than guessing.
+      const roomSave =
+        activeGraph === null || roomPersistence === null
+          ? null
+          : { adapter: roomPersistence, graphId: activeGraph.graphId };
+      if (roomSave !== null && !roomSave.adapter.canPersist) {
         setPersistenceError(
           "Graph synchronization is unavailable while the collaboration room connects or reconnects. Your canvas is unchanged; wait for synchronization to finish, then try saving again.",
         );
@@ -524,11 +536,13 @@ export function useSavedGraphLifecycle({
       setSaving(true);
       setPersistenceError(null);
       try {
-        const persistenceResult = activeRoomPersistence
+        const persistenceResult = roomSave
           ? {
               kind: "collaborative" as const,
-              result:
-                await activeRoomPersistence.persistDocument(submittedDraft),
+              result: await roomSave.adapter.persistDocument(
+                submittedDraft,
+                roomSave.graphId,
+              ),
             }
           : {
               kind: "saved" as const,
