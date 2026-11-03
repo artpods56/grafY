@@ -277,16 +277,7 @@ class LibraryFolderNameConflictError(GrafyCoreError):
 
 
 class LibraryArtifactInUseError(GrafyCoreError):
-    """Raised when a Library artifact is still referenced by saved work.
-
-    A reference lives in a saved graph revision or in execution history, and both
-    outlive the run that made them, so dropping the artifact would leave a
-    dangling reference the user only meets later as a failed load. The refusal
-    names the graphs that hold it. Taking it anyway means the glossary's forced
-    delete, which rewrites each referencing graph's head revision and leaves the
-    input unsatisfied; that is not implemented, so the paths open today are to
-    unfile the artifact, which keeps it, or to delete the referencing graph.
-    """
+    """An artifact referenced by Project documents or immutable results cannot be deleted."""
 
     failure_spec = FailureSpec(
         code="library.artifact_in_use",
@@ -298,27 +289,29 @@ class LibraryArtifactInUseError(GrafyCoreError):
         self,
         *,
         artifact_id: UUID,
-        graph_ids: Sequence[UUID],
-        graph_titles: Sequence[str],
+        project_ids: Sequence[UUID],
+        project_titles: Sequence[str],
+        retained_result: bool = False,
     ) -> None:
         self.artifact_id = artifact_id
-        self.graph_ids = tuple(graph_ids)
-        self.graph_titles = tuple(graph_titles)
-        super().__init__(
-            (
-                f"Library artifact {artifact_id} is referenced by "
-                f"{len(self.graph_titles)} saved graph(s): "
-                f"{', '.join(self.graph_titles)}"
-            )
-        )
+        self.project_ids = tuple(project_ids)
+        self.project_titles = tuple(project_titles)
+        self.retained_result = retained_result
+        super().__init__(f"Library artifact {artifact_id} is referenced by saved work")
 
     @property
     def public_message(self) -> str:
-        return f"Still used by: {_listed_graph_titles(self.graph_titles)}"
+        if self.project_titles:
+            return f"Still used by: {_listed_graph_titles(self.project_titles)}"
+        return "Still used by retained node results"
 
     @property
     def diagnostic_context(self) -> Mapping[str, object]:
-        return {"artifact_id": self.artifact_id, "graph_ids": self.graph_ids}
+        return {
+            "artifact_id": self.artifact_id,
+            "project_ids": self.project_ids,
+            "retained_result": self.retained_result,
+        }
 
 
 def _listed_graph_titles(graph_titles: Sequence[str]) -> str:

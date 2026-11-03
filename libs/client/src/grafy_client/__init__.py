@@ -1,4 +1,5 @@
 from .client import GrafyClient
+from .library import LibraryClient, LibraryItem
 from .errors import ExecutionTimeoutError, GrafyClientError
 from .execution import ExecutionHandle
 from .graph_builder import (
@@ -26,6 +27,8 @@ from .models import (
 
 
 __all__ = [
+    "LibraryClient",
+    "LibraryItem",
     "CatalogConversion",
     "CatalogConversionKey",
     "CatalogNode",

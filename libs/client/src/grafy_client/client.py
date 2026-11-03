@@ -8,6 +8,7 @@ from pydantic import SecretStr
 from grafy_core.domain.graph_documents import GraphDocument
 
 from .execution import ExecutionHandle
+from .library import LibraryClient
 from .models import (
     ExecutionState,
     NodeCatalog,
@@ -178,6 +179,7 @@ class GrafyClient:
         self.catalog = CatalogClient(self._transport)
         self.graphs = GraphClient(self._transport)
         self.uploads = UploadClient(self._transport)
+        self.library = LibraryClient(self._transport)
 
     def __repr__(self) -> str:
         return f"GrafyClient(base_url={self._transport.base_url!r}, token=<redacted>)"

@@ -22,7 +22,7 @@ from grafy_core.domain.identity import (
     WorkspaceCapability,
     WorkspacePatPrincipal,
 )
-from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
+from grafy_core.ports.identity import IdentityUnitOfWorkPort
 
 from grafy_api.app_state import get_identity
 from grafy_api.v1.routes.auth.services import AuthService, SESSION_COOKIE
@@ -59,12 +59,12 @@ AuthServiceDependency = Annotated[AuthService, Depends(auth_service)]
 
 def identity_uow_factory(
     request: Request,
-) -> Callable[[], SqlAlchemyUnitOfWork]:
+) -> Callable[[], IdentityUnitOfWorkPort]:
     return get_identity(request.app).identity_uow_factory
 
 
 IdentityUnitOfWorkFactoryDependency = Annotated[
-    Callable[[], SqlAlchemyUnitOfWork],
+    Callable[[], IdentityUnitOfWorkPort],
     Depends(identity_uow_factory),
 ]
 

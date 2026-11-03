@@ -16,7 +16,7 @@ from .models import (
     MoveLibraryArtifactsRequest,
     MoveLibraryFolderRequest,
     RenameLibraryFolderRequest,
-    SaveRunArtifactRequest,
+    SaveInstanceArtifactRequest,
     SaveUploadedArtifactRequest,
 )
 
@@ -38,19 +38,23 @@ async def list_library_artifacts(
     return LibraryListResponse(items=await service.list_items(access.workspace_id))
 
 
-@router.post("/artifacts/from-run", response_model=LibraryItemResponse)
-async def save_library_artifact_from_run(
-    body: SaveRunArtifactRequest,
+@router.post("/artifacts/from-instance", response_model=LibraryItemResponse)
+async def save_library_artifact_from_instance(
+    body: SaveInstanceArtifactRequest,
     service: LibraryDependency,
     access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> LibraryItemResponse:
     try:
-        return await service.save_from_run(
+        return await service.save_from_instance(
             workspace_id=access.workspace_id,
-            artifact_id=body.artifact_id,
-            execution_id=body.execution_id,
+            project_id=body.project_id,
+            graph_id=body.graph_id,
+            call_path=body.call_path,
+            map_index=body.map_index,
+            result_fingerprint=body.result_fingerprint,
+            output_port=body.output_port,
+            item_index=body.item_index,
             node_id=body.node_id,
-            node_title=body.node_title,
             name=body.name,
         )
     except WorkbenchOperationError as exc:
@@ -184,6 +188,6 @@ __all__ = [
     "folders_router",
     "list_library_artifacts",
     "router",
-    "save_library_artifact_from_run",
+    "save_library_artifact_from_instance",
     "save_library_artifact_from_upload",
 ]

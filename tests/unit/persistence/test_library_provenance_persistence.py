@@ -6,11 +6,11 @@ from grafy_core.artifacts import ArtifactObject, LibraryProvenance
 from grafy_persistence.database import Database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
-from tests.unit.persistence.test_execution_history_persistence import (
+from tests.support.persistence import (
     WORKSPACE_ONE,
     WORKSPACE_TWO,
 )
-from tests.unit.persistence.test_execution_history_persistence import (
+from tests.support.persistence import (
     database as _database_fixture,
 )
 
@@ -37,14 +37,16 @@ async def test_library_provenance_round_trips_on_the_artifact_row(
 ) -> None:
     unit_of_work = SqlAlchemyUnitOfWork(database.sessions)
     artifact = _artifact(WORKSPACE_ONE, download_name="report.json")
-    provenance = LibraryProvenance.from_run(
+    provenance = LibraryProvenance.from_instance(
         saved_at=NOW,
-        graph_id=uuid4(),
+        project_id=uuid4(),
+        project_title="Workspace Project",
+        graph_id="main",
         graph_title="Sales",
         node_id="resize-1",
         node_title="Resize",
-        graph_revision=4,
-        execution_id=uuid4(),
+        result_fingerprint="a" * 64,
+        output_port="value",
         name="Quarterly report",
     )
     async with unit_of_work as entered:

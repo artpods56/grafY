@@ -8,33 +8,35 @@ from pydantic import ValidationError
 NOW = datetime(2026, 9, 11, 12, 0, tzinfo=UTC)
 
 
-def _run_provenance() -> LibraryProvenance:
-    return LibraryProvenance.from_run(
+def _instance_provenance() -> LibraryProvenance:
+    return LibraryProvenance.from_instance(
         saved_at=NOW,
-        graph_id=uuid4(),
+        project_id=uuid4(),
+        project_title="Workspace Project",
+        graph_id="main",
         graph_title="Sales",
         node_id="resize-1",
         node_title="Resize",
-        graph_revision=4,
-        execution_id=uuid4(),
+        result_fingerprint="a" * 64,
+        output_port="value",
         name="Quarterly report",
     )
 
 
-def test_run_provenance_freezes_the_producing_facts() -> None:
-    provenance = _run_provenance()
+def test_instance_provenance_freezes_the_producing_facts() -> None:
+    provenance = _instance_provenance()
 
-    assert provenance.source == "run"
+    assert provenance.source == "instance"
     assert provenance.graph_title == "Sales"
     assert provenance.node_title == "Resize"
-    assert provenance.graph_revision == 4
-    assert provenance.execution_id is not None
+    assert provenance.result_fingerprint == "a" * 64
+    assert provenance.project_id is not None
     assert provenance.original_filename is None
     assert provenance.name == "Quarterly report"
 
 
-def test_old_run_provenance_without_a_name_still_loads() -> None:
-    values = _run_provenance().model_dump(mode="json")
+def test_instance_provenance_name_is_optional() -> None:
+    values = _instance_provenance().model_dump(mode="json")
     values.pop("name")
 
     restored = LibraryProvenance.model_validate(values)
@@ -43,29 +45,33 @@ def test_old_run_provenance_without_a_name_still_loads() -> None:
 
 
 @pytest.mark.parametrize("name", ["", " ", "r" * 161])
-def test_run_provenance_rejects_an_invalid_name(name: str) -> None:
+def test_instance_provenance_rejects_an_invalid_name(name: str) -> None:
     with pytest.raises(ValueError):
-        LibraryProvenance.from_run(
+        LibraryProvenance.from_instance(
             saved_at=NOW,
-            graph_id=uuid4(),
+            project_id=uuid4(),
+            project_title="Workspace Project",
+            graph_id="main",
             graph_title="Sales",
             node_id="resize-1",
             node_title="Resize",
-            graph_revision=4,
-            execution_id=uuid4(),
+            result_fingerprint="a" * 64,
+            output_port="value",
             name=name,
         )
 
 
-def test_run_provenance_strips_titles() -> None:
-    provenance = LibraryProvenance.from_run(
+def test_instance_provenance_strips_titles() -> None:
+    provenance = LibraryProvenance.from_instance(
         saved_at=NOW,
-        graph_id=uuid4(),
+        project_id=uuid4(),
+        project_title="Workspace Project",
+        graph_id="main",
         graph_title="  Sales  ",
         node_id="  resize-1  ",
         node_title="  Resize  ",
-        graph_revision=1,
-        execution_id=uuid4(),
+        result_fingerprint="a" * 64,
+        output_port="value",
     )
 
     assert provenance.graph_id is not None
@@ -81,36 +87,42 @@ def test_run_provenance_strips_titles() -> None:
         "graph_title",
         "node_id",
         "node_title",
-        "graph_revision",
-        "execution_id",
+        "result_fingerprint",
+        "output_port",
+        "project_id",
+        "project_title",
     ],
 )
-def test_run_provenance_requires_every_producing_fact(missing: str) -> None:
+def test_instance_provenance_requires_every_producing_fact(missing: str) -> None:
     fields: dict[str, object] = {
         "saved_at": NOW,
-        "graph_id": uuid4(),
+        "project_id": uuid4(),
+        "project_title": "Workspace Project",
+        "graph_id": "main",
         "graph_title": "Sales",
         "node_id": "resize-1",
         "node_title": "Resize",
-        "graph_revision": 4,
-        "execution_id": uuid4(),
+        "result_fingerprint": "a" * 64,
+        "output_port": "value",
     }
     fields[missing] = None
 
     with pytest.raises(ValidationError):
-        LibraryProvenance(source="run", **fields)  # pyright: ignore[reportArgumentType]
+        LibraryProvenance(source="instance", **fields)  # pyright: ignore[reportArgumentType]
 
 
-def test_run_provenance_rejects_a_non_positive_revision() -> None:
+def test_instance_provenance_rejects_an_invalid_fingerprint() -> None:
     with pytest.raises(ValidationError):
-        LibraryProvenance.from_run(
+        LibraryProvenance.from_instance(
             saved_at=NOW,
-            graph_id=uuid4(),
+            project_id=uuid4(),
+            project_title="Workspace Project",
+            graph_id="main",
             graph_title="Sales",
             node_id="resize-1",
             node_title="Resize",
-            graph_revision=0,
-            execution_id=uuid4(),
+            result_fingerprint="malformed",
+            output_port="value",
         )
 
 
@@ -123,30 +135,32 @@ def test_upload_provenance_carries_only_the_filename() -> None:
     assert provenance.source == "upload"
     assert provenance.original_filename == "report.csv"
     assert provenance.graph_id is None
-    assert provenance.execution_id is None
+    assert provenance.result_fingerprint is None
 
 
-def test_upload_provenance_rejects_run_facts() -> None:
+def test_upload_provenance_rejects_instance_facts() -> None:
     with pytest.raises(ValidationError):
         LibraryProvenance(
             source="upload",
             saved_at=NOW,
             original_filename="report.csv",
-            execution_id=uuid4(),
+            project_id=uuid4(),
         )
 
 
-def test_run_provenance_rejects_an_uploaded_filename() -> None:
+def test_instance_provenance_rejects_an_uploaded_filename() -> None:
     with pytest.raises(ValidationError):
         LibraryProvenance(
-            source="run",
+            source="instance",
             saved_at=NOW,
-            graph_id=uuid4(),
+            project_id=uuid4(),
+            project_title="Workspace Project",
+            graph_id="main",
             graph_title="Sales",
             node_id="resize-1",
             node_title="Resize",
-            graph_revision=4,
-            execution_id=uuid4(),
+            result_fingerprint="a" * 64,
+            output_port="value",
             original_filename="report.csv",
         )
 
@@ -172,14 +186,14 @@ def test_provenance_rejects_unknown_fields() -> None:
 
 
 def test_provenance_is_frozen() -> None:
-    provenance = _run_provenance()
+    provenance = _instance_provenance()
 
     with pytest.raises(ValidationError):
         provenance.graph_title = "Renamed"
 
 
 def test_provenance_round_trips_through_json() -> None:
-    provenance = _run_provenance()
+    provenance = _instance_provenance()
 
     restored = LibraryProvenance.model_validate(
         provenance.model_dump(mode="json"),

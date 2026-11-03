@@ -48,6 +48,12 @@ class RunRepositoryPort(Protocol):
 
 
 class ResultStoreRepositoryPort(Protocol):
+    async def artifact_is_referenced(
+        self, workspace_id: UUID, artifact_id: UUID
+    ) -> bool:
+        """Whether an immutable stored result still names the artifact."""
+        ...
+
     async def get_result(
         self,
         workspace_id: UUID,

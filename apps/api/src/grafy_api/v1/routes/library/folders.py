@@ -7,7 +7,7 @@ from grafy_core.domain.errors import (
     NotFoundError,
 )
 from grafy_core.domain.library import LibraryFolder, is_descendant_folder
-from grafy_core.ports.materialized_outputs import WorkbenchUnitOfWorkPort
+from grafy_core.ports.workbench import WorkbenchUnitOfWorkPort
 
 from .models import LibraryFolderResponse
 
@@ -36,7 +36,9 @@ class LibraryFoldersService:
         name: str,
         parent_id: UUID | None,
     ) -> LibraryFolderResponse:
-        folder = LibraryFolder(workspace_id=workspace_id, name=name, parent_id=parent_id)
+        folder = LibraryFolder(
+            workspace_id=workspace_id, name=name, parent_id=parent_id
+        )
         async with self._unit_of_work as unit_of_work:
             await self._require_folder_when_set(unit_of_work, workspace_id, parent_id)
             await self._require_name_free(

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated, Literal, Self
+from typing import Annotated, Self
 from uuid import UUID
 
 from grafy_core.artifacts import ArtifactExportFormat, LibraryProvenance
@@ -12,7 +12,7 @@ from grafy_api.v1.routes.artifacts.models import (
     ArtifactSummaryResponse,
 )
 
-from .items import LibraryItem, LibraryRun
+from .items import LibraryItem
 
 BoundedNodeId = Annotated[
     str,
@@ -34,63 +34,14 @@ BoundedLibraryName = Annotated[
 ]
 
 
-class LibraryProvenanceResponse(ApiResponse):
-    """The birth record frozen when the artifact entered the Library."""
-
-    source: Literal["run", "upload"]
-    saved_at: datetime
-    graph_id: UUID | None = None
-    graph_title: str | None = None
-    node_id: str | None = None
-    node_title: str | None = None
-    graph_revision: int | None = None
-    execution_id: UUID | None = None
-    original_filename: str | None = None
-    name: str | None = None
-
-    @classmethod
-    def from_provenance(
-        cls, provenance: LibraryProvenance
-    ) -> "LibraryProvenanceResponse":
-        return cls(
-            source=provenance.source,
-            saved_at=provenance.saved_at,
-            graph_id=provenance.graph_id,
-            graph_title=provenance.graph_title,
-            node_id=provenance.node_id,
-            node_title=provenance.node_title,
-            graph_revision=provenance.graph_revision,
-            execution_id=provenance.execution_id,
-            original_filename=provenance.original_filename,
-            name=provenance.name,
-        )
-
-
-class LibraryRunResponse(ApiResponse):
-    """The retained run behind a run-sourced Library item.
-
-    Present only while execution history still holds the run, which is exactly
-    when the item can link back to it.
-    """
-
-    execution_id: UUID
-    graph_id: UUID
-    finished_at: datetime | None = None
-
-    @classmethod
-    def from_run(cls, run: LibraryRun) -> Self:
-        return cls(
-            execution_id=run.execution_id,
-            graph_id=run.graph_id,
-            finished_at=run.finished_at,
-        )
+class LibraryProvenanceResponse(LibraryProvenance):
+    pass
 
 
 class LibraryItemResponse(ApiResponse):
     artifact: ArtifactSummaryResponse
     name: str
     provenance: LibraryProvenanceResponse
-    run: LibraryRunResponse | None = None
     folder_id: UUID | None = None
 
     @classmethod
@@ -111,8 +62,9 @@ class LibraryItemResponse(ApiResponse):
                 ],
             ),
             name=name,
-            provenance=LibraryProvenanceResponse.from_provenance(item.provenance),
-            run=None if item.run is None else LibraryRunResponse.from_run(item.run),
+            provenance=LibraryProvenanceResponse.model_validate(
+                item.provenance.model_dump()
+            ),
             folder_id=folder_id,
         )
 
@@ -121,14 +73,15 @@ class LibraryListResponse(ApiResponse):
     items: list[LibraryItemResponse]
 
 
-class SaveRunArtifactRequest(ApiResponse):
-    artifact_id: UUID
-    execution_id: UUID
+class SaveInstanceArtifactRequest(ApiResponse):
+    project_id: UUID
+    graph_id: BoundedNodeId
+    call_path: tuple[BoundedNodeId, ...] = ()
     node_id: BoundedNodeId
-    node_title: Annotated[
-        str,
-        StringConstraints(strip_whitespace=True, min_length=1, max_length=160),
-    ]
+    map_index: int | None = Field(default=None, ge=0)
+    result_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    output_port: BoundedNodeId
+    item_index: int | None = Field(default=None, ge=0)
     name: BoundedLibraryName
 
 
@@ -194,10 +147,9 @@ __all__ = [
     "LibraryItemResponse",
     "LibraryListResponse",
     "LibraryProvenanceResponse",
-    "LibraryRunResponse",
     "MoveLibraryArtifactsRequest",
     "MoveLibraryFolderRequest",
     "RenameLibraryFolderRequest",
-    "SaveRunArtifactRequest",
+    "SaveInstanceArtifactRequest",
     "SaveUploadedArtifactRequest",
 ]

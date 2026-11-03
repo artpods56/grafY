@@ -27,7 +27,7 @@ def _registry_with(*claims: tuple[str, tuple[str, ...]]) -> PluginRegistry:
 
 
 def _snapshot(registry: PluginRegistry | None = None) -> CatalogSnapshot:
-    return CatalogSnapshot.from_registry(registry or PluginRegistry(), [])
+    return CatalogSnapshot.from_registry(registry or PluginRegistry())
 
 
 def _spec_for(snapshot: CatalogSnapshot, artifact_type_id: str) -> ArtifactTypeSpec:
