@@ -118,7 +118,7 @@ export function useProjectRoomSession({
   const [participants, setParticipants] = React.useState<
     readonly PresenceParticipant[]
   >([]);
-  const [activeRuns, setActiveRuns] =
+  const [activeRuns, setActiveRunsState] =
     React.useState<readonly ActiveRunSummary[]>(EMPTY_RUNS);
   const [instances, setInstancesState] =
     React.useState<ReadonlyMap<string, RoomInstanceState>>(EMPTY_INSTANCES);
