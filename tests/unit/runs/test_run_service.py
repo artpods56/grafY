@@ -915,3 +915,52 @@ def _fingerprint_of(service: RunServiceHarness, node_id: str) -> str:
         if request.instance.key.node_id == node_id:
             return request.fingerprint
     raise AssertionError(f"no computation for node {node_id!r} was run")
+
+
+async def test_concurrent_cancels_finish_and_announce_the_run_once(
+    tmp_path, monkeypatch
+):
+    import asyncio
+
+    service = harness(tmp_path, monkeypatch, project=document(main_graph()))
+    run = await service.start()
+    await service.running("value")
+    saving = asyncio.Event()
+    second_read = asyncio.Event()
+    release_save = asyncio.Event()
+    original_save = service.rows.save
+    original_get = service.rows.get
+
+    async def blocked_save(row):
+        saving.set()
+        await release_save.wait()
+        await original_save(row)
+
+    async def observed_get(*arguments):
+        if saving.is_set():
+            second_read.set()
+        return await original_get(*arguments)
+
+    monkeypatch.setattr(service.rows, "save", blocked_save)
+    monkeypatch.setattr(service.rows, "get", observed_get)
+    first = asyncio.create_task(
+        service.service.cancel(
+            workspace_id=WORKSPACE_ID, project_id=PROJECT_ID, run_id=run.id
+        )
+    )
+    await saving.wait()
+    second = asyncio.create_task(
+        service.service.cancel(
+            workspace_id=WORKSPACE_ID, project_id=PROJECT_ID, run_id=run.id
+        )
+    )
+    await second_read.wait()
+    release_save.set()
+    replies = await asyncio.gather(first, second)
+    assert [reply.status for reply in replies] == [
+        RunStatus.CANCELLED,
+        RunStatus.CANCELLED,
+    ]
+    assert service.rows.saved == [run.id]
+    assert service.events.kinds().count("run_finished") == 1
+    await service.close()

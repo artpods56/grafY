@@ -29,7 +29,13 @@ import pytest
 from grafy_api.runs.facts import ApplicationFactsFactory
 from grafy_api.runs.ports import InstanceStateSnapshot
 from grafy_api.runs.service import RunService
-from grafy_core.artifacts import ArtifactRef, NodeConfig, NodeInput, NodeOutput
+from grafy_core.artifacts import (
+    ArtifactRef,
+    ArtifactRefSequence,
+    NodeConfig,
+    NodeInput,
+    NodeOutput,
+)
 from grafy_core.nodes import Node
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.graph_documents import (
@@ -549,6 +555,22 @@ class FakeResultStoreRepository:
     def __init__(self) -> None:
         self.results: dict[tuple[UUID, str], StoredResult] = {}
         self.pointers: dict[tuple[UUID, InstanceKey], InstancePointer] = {}
+
+    async def artifact_is_referenced(
+        self, workspace_id: UUID, artifact_id: UUID
+    ) -> bool:
+        for (workspace, _), result in self.results.items():
+            if workspace != workspace_id:
+                continue
+            for value in result.outputs.values():
+                refs = (
+                    value.item_refs
+                    if isinstance(value, ArtifactRefSequence)
+                    else (value,)
+                )
+                if any(ref.artifact_id == artifact_id for ref in refs):
+                    return True
+        return False
 
     async def get_result(
         self,

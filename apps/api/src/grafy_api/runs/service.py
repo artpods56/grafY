@@ -231,7 +231,7 @@ class RunService:
         if not run.is_active:
             return run
         runtime = self._runtimes.get((workspace_id, project_id))
-        watched = self._watchers.pop(run_id, None)
+        watched = self._watchers.get(run_id)
         if runtime is not None and runtime.scheduler is not None:
             await runtime.scheduler.cancel(str(run_id))
         if watched is not None:
@@ -445,14 +445,13 @@ class RunService:
         the Run running in the store, which is exactly what a restart expects to
         find and mark interrupted.
         """
-        result = await self._scheduler_for(runtime).wait(str(run_id))
-        self._watchers.pop(run_id, None)
-        await self._finish(
-            run,
-            runtime,
-            RunStatus(result.status),
-            _run_error(result),
-        )
+        try:
+            result = await self._scheduler_for(runtime).wait(str(run_id))
+            await self._finish(
+                run, runtime, RunStatus(result.status), _run_error(result)
+            )
+        finally:
+            self._watchers.pop(run_id, None)
 
     async def _finish(
         self,
