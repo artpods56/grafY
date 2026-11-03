@@ -1,13 +1,5 @@
 """Domain types for Grafy core."""
 
-from grafy_core.domain.modules import (
-    GraphModuleDefinition,
-    GraphModuleDefinitionError,
-    GraphModulePort,
-    GraphModuleReference,
-    GraphModuleReferenceError,
-    ModuleBoundaryConfig,
-)
 from grafy_core.domain.identity import (
     ActorContext,
     AuthSession,
@@ -33,12 +25,6 @@ from grafy_core.domain.security_audit import (
 )
 
 __all__ = [
-    "GraphModuleDefinition",
-    "GraphModuleDefinitionError",
-    "GraphModulePort",
-    "GraphModuleReference",
-    "GraphModuleReferenceError",
-    "ModuleBoundaryConfig",
     "ActorContext",
     "AuthSession",
     "OidcDomainWorkspaceGrant",

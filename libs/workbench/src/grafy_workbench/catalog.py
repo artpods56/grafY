@@ -3,7 +3,6 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from grafy_core.operators.modules import MODULE_BOUNDARY_REGISTRATIONS
 from grafy_core.plugins import (
     Plugin,
     PluginRegistry,
@@ -27,11 +26,11 @@ BUILTIN_FAMILIES: tuple[Plugin, ...] = (
     FILES,
 )
 
+
 def build_builtin_registry(
     families: Iterable[Plugin] = BUILTIN_FAMILIES,
 ) -> PluginRegistry:
     registry = PluginRegistry()
-    registry.register_module_boundaries(MODULE_BOUNDARY_REGISTRATIONS)
     for plugin in families:
         registry.install(plugin)
     registry.freeze()

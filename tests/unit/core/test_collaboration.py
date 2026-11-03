@@ -416,21 +416,6 @@ def test_add_edge_and_sanitize_copy_document() -> None:
     assert "uploads" not in sanitized.nodes[0].config_dict()
     assert sanitized.nodes[0].config_dict()["nested"] == {"keep": True}
 
-    module_document = GraphDocument(
-        nodes=(
-            GraphNode(
-                kind="module",
-                id="mod",
-                operator_id="graph.module." + str(uuid4()),
-                operator_version=1,
-                position=GraphPoint(x=0, y=0),
-            ),
-        )
-    )
-    with pytest.raises(CollaborationCommandRejectedError) as exc:
-        sanitize_document_for_cross_workspace_copy(module_document)
-    assert exc.value.error_code == "foreign_module_reference"
-
 
 def test_cross_workspace_copy_keeps_an_unsatisfied_artifact_card_reference() -> None:
     reference = ArtifactRef.from_key(

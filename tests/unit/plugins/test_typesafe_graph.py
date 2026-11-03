@@ -1,29 +1,16 @@
 """A collected stack of Question outputs feeds one Evaluate request."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Never
+from typing import Any
 
 from pydantic import SecretStr
 
-from grafy_api.execution.compiler import GraphCompiler
-from grafy_api.execution.requests import (
-    RunEdgeRequest,
-    RunInputPlugRequest,
-    RunNodeRequest,
-    RunRequest,
-)
-from grafy_api.v1.models import ArtifactTypeBindingModel, ArtifactTypeKeyResponse
-from grafy_core.application.modules import ModuleLibraryService
-from grafy_core.domain.modules import GraphModuleDefinition
-from grafy_core.ports.modules import GraphModuleExecutionResult
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, JsonObject
-from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.runtime.execution import NodeRuntime
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
-from grafy_core.runtime.invocation import InvocationMode
 from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import (
     ArtifactWriterRegistry,
@@ -44,7 +31,6 @@ from grafy_plugin_typesafe.models import (
 from grafy_plugin_typesafe.parsing import JsonContent
 from grafy_storage import LocalFileObjectStore
 from tests.support.system_plugins import (
-    TEST_BUILD_DIGEST,
     TEST_SYSTEM_PLUGINS,
     build_explicit_plugin_registry,
 )
@@ -72,126 +58,6 @@ def _plugin_context(tmp_path: Path) -> PluginRuntimeContext:
         uow=InMemoryUnitOfWork(),
         bucket="test-artifacts",
     )
-
-
-def _unused_saved_graph_uow() -> Never:
-    raise AssertionError("The compiler unexpectedly queried saved graphs")
-
-
-class _UnusedModuleExecutor:
-    async def execute_module(
-        self,
-        _definition: GraphModuleDefinition,
-        _context: NodeExecutionContext,
-        _inputs: Mapping[str, ArtifactRef],
-        /,
-    ) -> GraphModuleExecutionResult:
-        raise AssertionError("The compiler unexpectedly executed a module")
-
-
-def _node(node_id: str, operator_id: str, **fields: object) -> RunNodeRequest:
-    return RunNodeRequest.model_validate(
-        {
-            "kind": "builtin",
-            "id": node_id,
-            "operator_id": operator_id,
-            "operator_version": 1,
-            **fields,
-        }
-    )
-
-
-async def test_compiler_accepts_a_question_stack_and_asks_once(
-    tmp_path: Path,
-) -> None:
-    registry = _registry()
-    compiler = GraphCompiler(
-        plugin_registry=registry,
-        plugin_context=_plugin_context(tmp_path),
-        module_library=ModuleLibraryService(_unused_saved_graph_uow, registry),
-        canonical_artifact_conversions=CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY,
-        build_digest=TEST_BUILD_DIGEST,
-    )
-    request = RunRequest(
-        nodes=[
-            _node("doc", "text.input", config={"text": "I was charged twice."}),
-            _node(
-                "billing",
-                "typesafe.question",
-                config={"question_id": "billing", "instructions": "Billing?"},
-            ),
-            _node(
-                "tone",
-                "typesafe.question",
-                config={
-                    "question_id": "tone",
-                    "kind": "choice",
-                    "instructions": "Tone?",
-                    "options": ["calm", "angry"],
-                },
-            ),
-            _node(
-                "stack",
-                "test.sequence.collect",
-                input_plugs=[
-                    RunInputPlugRequest(id="first", port="items"),
-                    RunInputPlugRequest(id="second", port="items"),
-                ],
-                artifact_type_bindings=[
-                    ArtifactTypeBindingModel(
-                        variable="T",
-                        artifact_type=ArtifactTypeKeyResponse(
-                            id="typesafe.question",
-                            schema_version=1,
-                        ),
-                    )
-                ],
-            ),
-            _node("evaluate", "typesafe.evaluate"),
-            _node("decide", "typesafe.decide", config={"question_ids": ["billing"]}),
-        ],
-        edges=[
-            RunEdgeRequest(
-                from_node="billing",
-                from_port="question",
-                to_node="stack",
-                to_port="items",
-                to_plug="first",
-            ),
-            RunEdgeRequest(
-                from_node="tone",
-                from_port="question",
-                to_node="stack",
-                to_port="items",
-                to_plug="second",
-            ),
-            RunEdgeRequest(
-                from_node="doc", from_port="text", to_node="evaluate", to_port="state"
-            ),
-            RunEdgeRequest(
-                from_node="stack",
-                from_port="items",
-                to_node="evaluate",
-                to_port="questions",
-            ),
-            RunEdgeRequest(
-                from_node="evaluate",
-                from_port="evaluation",
-                to_node="decide",
-                to_port="evaluation",
-            ),
-        ],
-    )
-
-    compiled = await compiler.compile(
-        request,
-        _UnusedModuleExecutor(),
-        workspace_id=WORKSPACE_ID,
-    )
-
-    evaluate = next(node for node in compiled.nodes if node.request.id == "evaluate")
-    assert evaluate.invocation.mode is InvocationMode.ONCE
-    assert [node.request.id for node in compiled.nodes][-2:] == ["evaluate", "decide"]
 
 
 class RecordingClient:

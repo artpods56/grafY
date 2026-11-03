@@ -46,7 +46,6 @@ from grafy_core.domain.graph_documents import (
     GraphNodeLayout,
     GraphOrigin,
 )
-from grafy_core.domain.modules import GRAPH_MODULE_OPERATOR_PREFIX
 from grafy_core.domain.projects import validated_project_name
 from grafy_core.kernel.project import (
     CALL_NODE_KIND,
@@ -524,15 +523,6 @@ def sanitize_document_for_cross_workspace_copy(
     document: GraphDocument,
 ) -> GraphDocument:
     """Strip the workspace-scoped references one Graph's copy cannot carry."""
-    for node in document.nodes:
-        if node.operator_id.startswith(GRAPH_MODULE_OPERATOR_PREFIX):
-            raise _rejected(
-                code="foreign_module_reference",
-                message=(
-                    f"Cross-workspace copy cannot include module operator "
-                    f"{node.operator_id}"
-                ),
-            )
     sanitized_nodes = tuple(
         node.model_copy(update={"config": _sanitize_config_value(node.config_dict())})
         for node in document.nodes

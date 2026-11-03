@@ -7,8 +7,6 @@ from grafy_workbench import BUILTIN_FAMILIES, build_builtin_registry
 
 
 EXPECTED_BUILTIN_OPERATORS = {
-    ("module.input", 1),
-    ("module.output", 1),
     ("value.integer", 1),
     ("text.input", 1),
     ("schema.builder", 1),
