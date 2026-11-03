@@ -10,8 +10,11 @@ from typing import Protocol
 from uuid import UUID
 
 from grafy_core.domain.runs import Run
+from grafy_core.kernel.facts import FingerprintFacts
 from grafy_core.kernel.instances import InstanceKey
 from grafy_core.kernel.project import ProjectDocument
+from grafy_core.kernel.results import ResultStore
+from grafy_core.kernel.scheduler import ComputationRunner
 from grafy_core.kernel.state import InstanceState
 
 
@@ -69,3 +72,36 @@ class RunEvents(Protocol):
         changed: Sequence[InstanceStateSnapshot],
         removed: Sequence[InstanceKey],
     ) -> None: ...
+
+
+class FingerprintFactsFactory(Protocol):
+    """Builds the sync ``FingerprintFacts`` for one document.
+
+    Async because secret revisions come from the database. ``cache_policy`` of
+    an operator this build does not register must raise
+    ``RunRejectedError("unknown_operator", ...)``; it never answers ``NEVER``.
+    """
+
+    async def for_project(
+        self,
+        *,
+        workspace_id: UUID,
+        project_id: UUID,
+        document: ProjectDocument,
+    ) -> FingerprintFacts: ...
+
+
+class ComputationRunnerFactory(Protocol):
+    """Builds the kernel ``ComputationRunner`` for one Project.
+
+    ``store`` is the Workspace-bound result store; the runner reads upstream
+    outputs from it by fingerprint and never writes it (the scheduler does).
+    """
+
+    def for_project(
+        self,
+        *,
+        workspace_id: UUID,
+        project_id: UUID,
+        store: ResultStore,
+    ) -> ComputationRunner: ...
