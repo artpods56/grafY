@@ -1,51 +1,58 @@
 /**
- * Query layer for the execution history drawer: the SWR keys and their loaders.
- * Nothing here knows how a run is displayed.
+ * Query layer for the Runs drawer: the SWR keys and their loaders. Nothing here
+ * knows how a run is displayed.
+ *
+ * A Run is a demand for freshness on named node instances of one Graph (ADR
+ * 0020), so the drawer reads the Project's Runs and nothing else: there is no
+ * execution history route, no per-execution detail, and nothing to page
+ * through — `GET /projects/{id}/runs` answers the whole list, newest first.
  */
 
 import {
-  getGraphExecution,
-  listGraphExecutions,
-  type GraphExecutionDetail,
-  type GraphExecutionList,
+  listRuns,
+  listWorkspaceMembers,
+  type Run,
+  type RunList,
+  type WorkspaceMember,
 } from "@/lib/api";
 
-const PAGE_SIZE = 20;
+export type ProjectRunsKey = readonly ["project-runs", string, string];
 
-export type ExecutionHistoryPageKey = readonly [
-  "graph-execution-history",
-  string,
-  string,
-  string | null,
-  string | null,
-];
-
-export async function loadExecutionHistoryPage([
-  ,
-  workspaceId,
-  graphId,
-  nodeId,
-  cursor,
-]: ExecutionHistoryPageKey): Promise<GraphExecutionList> {
-  return listGraphExecutions(workspaceId, graphId, {
-    limit: PAGE_SIZE,
-    cursor: cursor ?? undefined,
-    nodeId: nodeId ?? undefined,
-  });
+/** `null` with no Project: the Run list belongs to a Project, so there is nothing to ask for. */
+export function projectRunsKey(
+  workspaceId: string,
+  projectId: string | null | undefined,
+): ProjectRunsKey | null {
+  return projectId ? ["project-runs", workspaceId, projectId] : null;
 }
 
-export type ExecutionDetailKey = readonly [
-  "graph-execution-detail",
-  string,
-  string,
-  string,
-];
-
-export async function loadExecutionDetail([
+export async function loadProjectRuns([
   ,
   workspaceId,
-  graphId,
-  executionId,
-]: ExecutionDetailKey): Promise<GraphExecutionDetail> {
-  return getGraphExecution(workspaceId, graphId, executionId);
+  projectId,
+]: ProjectRunsKey): Promise<RunList> {
+  return listRuns(workspaceId, projectId);
+}
+
+/**
+ * A Run records only `started_by_user_id`, and an authoring surface does not
+ * print a user id, so the drawer resolves the starter through the Team roster.
+ * This is a best-effort lookup: the roster is not the subject of the drawer and
+ * its absence costs only a name.
+ */
+export type RunStartersKey = readonly ["project-run-starters", string];
+
+export function runStartersKey(
+  workspaceId: string,
+  runs: readonly Run[],
+): RunStartersKey | null {
+  return runs.some((run) => run.started_by_user_id !== null)
+    ? ["project-run-starters", workspaceId]
+    : null;
+}
+
+export async function loadRunStarters([, workspaceId]: RunStartersKey): Promise<
+  readonly WorkspaceMember[]
+> {
+  return listWorkspaceMembers(workspaceId);
 }

@@ -1469,7 +1469,7 @@ describe("WorkflowNode execution progress", () => {
       [...appendix!.querySelectorAll('[role="tab"]')].map(
         (tab) => tab.textContent,
       ),
-    ).toEqual(["Events 4", "History 0"]);
+    ).toEqual(["Events 4", "Result 0"]);
     expect(appendix?.textContent).toContain("1 earlier update omitted");
     expect(appendix?.textContent).toContain("branch-a › inner-1 · items 3 › 2");
     expect(appendix?.textContent).toContain("2 / 5");

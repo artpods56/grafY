@@ -10,7 +10,11 @@ import {
 } from "@xyflow/react";
 import { Download, LoaderCircle, TriangleAlert } from "lucide-react";
 
-import { artifactDownloadUrl, type ArtifactSummary } from "@/lib/api";
+import {
+  artifactDownloadUrl,
+  type ArtifactExportFormat,
+  type RunPortArtifact,
+} from "@/lib/api";
 import { useNodeRegistry } from "@/hooks/use-api";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { tokens } from "@/lib/stylex/tokens.stylex";
@@ -46,7 +50,7 @@ import {
   resolvedPortArtifactType,
 } from "../types";
 import { ArtifactCardBody } from "./ArtifactCardBody";
-import { ArtifactPortPreview } from "./ArtifactsAppendix";
+import { ArtifactPortPreview, storedArtifactView } from "./ArtifactsAppendix";
 import { presentsArtifacts } from "../artifact-card";
 import { rendererCanBrush } from "./artifact-renderers/registry";
 import {
@@ -120,6 +124,7 @@ function RichArtifactViewerNode({
   selected,
   dragging,
 }: NodeProps<ArtifactViewerNode>) {
+  const { workspace } = useWorkspaceContext();
   const edges = useEdges<CanvasEdge>();
   const incomingEdge = edges.find(
     (edge): edge is ArtifactViewerEdge =>
@@ -200,8 +205,21 @@ function RichArtifactViewerNode({
       edge.type === ARTIFACT_VIEWER_INTERACTION_EDGE_TYPE &&
       (edge.source === id || edge.target === id),
   );
+  // A stored result names an artifact without its content type, so brushing is
+  // decided from the reference plus what the artifact-type catalog declares.
+  const firstArtifactView = firstArtifact
+    ? storedArtifactView(
+        workspace.id,
+        firstArtifact,
+        artifactTypes.find(
+          (candidate) =>
+            candidate.key.id === firstArtifact.artifact_type &&
+            candidate.key.schema_version === firstArtifact.schema_version,
+        ),
+      )
+    : undefined;
   const showInteractionRow =
-    rendererCanBrush(firstArtifact) || hasInteractionEdges;
+    rendererCanBrush(firstArtifactView) || hasInteractionEdges;
   const showPreview = Boolean(renderableOutput);
   const showWaiting = Boolean(incomingEdge) && !renderableOutput;
   const artifactColor = declaredArtifactType
@@ -228,11 +246,18 @@ function RichArtifactViewerNode({
     renderableOutput?.artifacts
       .map((artifact) => artifact.artifact_id)
       .join(":") ?? "";
-  const { workspace } = useWorkspaceContext();
   const { data: registry } = useNodeRegistry(workspace.id);
   const [focusedArtifact, setFocusedArtifact] =
-    React.useState<ArtifactSummary | null>(null);
-  const focusedFormats = focusedArtifact?.download_formats ?? [];
+    React.useState<RunPortArtifact | null>(null);
+  // A stored result names no export formats either: the artifact-type catalog is
+  // what still says what a stored artifact can be downloaded as.
+  const focusedFormats: readonly ArtifactExportFormat[] = focusedArtifact
+    ? (artifactTypes.find(
+        (candidate) =>
+          candidate.key.id === focusedArtifact.artifact_type &&
+          candidate.key.schema_version === focusedArtifact.schema_version,
+      )?.export_formats ?? [])
+    : [];
   const overflowItems: CanvasNodeOverflowItem[] =
     focusedFormats.length && showPreview && focusedArtifact
       ? focusedFormats.map((format) => {

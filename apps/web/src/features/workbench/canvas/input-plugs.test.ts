@@ -136,6 +136,8 @@ describe("Collect contribution ranges", () => {
       node_id: "collect",
       status: "succeeded",
       error: null,
+      result_fingerprint: "fp-collect",
+      created_at: "2026-07-20T08:00:00Z",
       outputs: [
         {
           port: "items",

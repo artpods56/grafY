@@ -117,6 +117,11 @@ const registryMocks = vi.hoisted(() => ({
   artifactTypes: [] as {
     key: { id: string; schema_version: number };
     title: string;
+    export_formats?: {
+      format: string;
+      content_type: string;
+      filename: string;
+    }[];
   }[],
 }));
 
@@ -153,16 +158,17 @@ vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
   }),
 }));
 
-vi.mock("./ArtifactsAppendix", () => ({
+vi.mock("./ArtifactsAppendix", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ArtifactsAppendix")>()),
   ArtifactPortPreview: (props: {
     output: {
       port: string;
       kind: "single" | "sequence";
-      artifacts?: ArtifactSummary[];
+      artifacts?: RunPortArtifact[];
     };
     modeChoice: string | null;
     onModeChoiceChange: (mode: string) => void;
-    onFocusedArtifactChange?: (artifact: ArtifactSummary | null) => void;
+    onFocusedArtifactChange?: (artifact: RunPortArtifact | null) => void;
   }) => {
     previewMocks.render(props);
     const focusedArtifact = props.output.artifacts?.[0] ?? null;
@@ -191,7 +197,7 @@ vi.mock("./LayoutResizeHandle", () => ({
 }));
 
 import type {
-  ArtifactSummary,
+  RunPortArtifact,
   NodeSpec,
   RunNodeResult,
   RunPortOutput,
@@ -258,27 +264,25 @@ function sourceSpec(shape: "one" | "many"): NodeSpec {
   };
 }
 
-function artifact(id: string, artifactType: string): ArtifactSummary {
+function artifact(id: string, artifactType: string): RunPortArtifact {
   return {
     artifact_id: id,
     artifact_type: artifactType,
     schema_version: 1,
-    content_type: "application/json",
-    content_url: `./artifacts/${id}/content`,
-    byte_size: 42,
+    content_hash: null,
   };
 }
 
 function runOutput(
   port: string,
   kind: "single" | "sequence",
-  item: ArtifactSummary,
+  item: RunPortArtifact,
 ): RunPortOutput {
   const ref = {
     artifact_id: item.artifact_id,
     artifact_type: item.artifact_type,
     schema_version: item.schema_version,
-    content_hash: null,
+    content_hash: item.content_hash,
   };
   return {
     port,
@@ -450,27 +454,38 @@ describe("ArtifactViewerNode", () => {
       clickedHref = this.getAttribute("href");
       clickedHadDownload = this.hasAttribute("download");
     });
-    const artifactWithFormats: ArtifactSummary = {
-      ...artifact("download-artifact", "text.markdown"),
-      download_formats: [
-        {
-          format: "json",
-          content_type: "application/json",
-          filename: "artifact.json",
-        },
-        {
-          format: "txt",
-          content_type: "text/plain; charset=utf-8",
-          filename: "text.txt",
-        },
-      ],
-    };
+    const artifactWithFormats: RunPortArtifact = artifact(
+      "download-artifact",
+      "text.markdown",
+    );
+    // The stored result names only the artifact; its download formats are what
+    // the artifact-type catalog declares for `text.markdown@1`.
+    registryMocks.artifactTypes = [
+      {
+        key: { id: "text.markdown", schema_version: 1 },
+        title: "Markdown",
+        export_formats: [
+          {
+            format: "json",
+            content_type: "application/json",
+            filename: "artifact.json",
+          },
+          {
+            format: "txt",
+            content_type: "text/plain; charset=utf-8",
+            filename: "text.txt",
+          },
+        ],
+      },
+    ];
     const preview = runOutput("preview", "single", artifactWithFormats);
     flowMocks.edges = [viewerEdge()];
     flowMocks.nodes.set(
       "source-node",
       sourceNode("one", {
         node_id: "source-node",
+        result_fingerprint: "fp-source-node",
+        created_at: "2026-02-20T10:00:00Z",
         status: "succeeded",
         error: null,
         outputs: [preview],
@@ -514,6 +529,8 @@ describe("ArtifactViewerNode", () => {
       "source-node",
       sourceNode("one", {
         node_id: "source-node",
+        result_fingerprint: "fp-source-node",
+        created_at: "2026-02-20T10:00:00Z",
         status: "failed",
         outputs: [preview],
         error: "Rendering failed",
@@ -547,6 +564,8 @@ describe("ArtifactViewerNode", () => {
       "source-node",
       sourceNode("one", {
         node_id: "source-node",
+        result_fingerprint: "fp-source-node",
+        created_at: "2026-02-20T10:00:00Z",
         status: "succeeded",
         outputs: [preview],
         error: null,
@@ -580,6 +599,8 @@ describe("ArtifactViewerNode", () => {
         "source-node",
         sourceNode(shape, {
           node_id: "source-node",
+          result_fingerprint: "fp-source-node",
+          created_at: "2026-02-20T10:00:00Z",
           status: "succeeded",
           outputs: [metadata, preview],
           error: null,
@@ -633,6 +654,8 @@ describe("ArtifactViewerNode", () => {
       "source-node",
       sourceNode("one", {
         node_id: "source-node",
+        result_fingerprint: "fp-source-node",
+        created_at: "2026-02-20T10:00:00Z",
         status: "succeeded",
         outputs: [preview],
         error: null,
@@ -658,6 +681,8 @@ describe("ArtifactViewerNode", () => {
       "source-node",
       sourceNode("one", {
         node_id: "source-node",
+        result_fingerprint: "fp-source-node",
+        created_at: "2026-02-20T10:00:00Z",
         status: "succeeded",
         outputs: [preview],
         error: null,
@@ -700,6 +725,8 @@ describe("ArtifactViewerNode", () => {
       "source-node",
       sourceNode("one", {
         node_id: "source-node",
+        result_fingerprint: "fp-source-node",
+        created_at: "2026-02-20T10:00:00Z",
         status: "succeeded",
         outputs: [preview],
         error: null,

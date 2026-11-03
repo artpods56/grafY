@@ -5,20 +5,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig } from "swr";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type {
-  GraphExecutionDetail,
-  GraphExecutionList,
-  GraphExecutionSummary,
-} from "@/lib/api";
+import type { Run, RunList, WorkspaceMember } from "@/lib/api";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const apiMocks = vi.hoisted(() => ({
-  getGraphExecution:
-    vi.fn<
-      (graphId: string, executionId: string) => Promise<GraphExecutionDetail>
-    >(),
-  listGraphExecutions: vi.fn<() => Promise<GraphExecutionList>>(),
+  listRuns: vi.fn<() => Promise<RunList>>(),
+  listWorkspaceMembers: vi.fn<() => Promise<readonly WorkspaceMember[]>>(),
 }));
 
 vi.mock("@stylexjs/stylex", () => ({
@@ -26,35 +19,16 @@ vi.mock("@stylexjs/stylex", () => ({
   props: () => ({}),
 }));
 
-vi.mock("@/hooks/use-api", () => ({
-  useNodeRegistry: () => ({ data: { artifact_types: [] } }),
-}));
-
-vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
-  useWorkspaceContext: () => ({
-    workspace: {
-      id: "workspace-1",
-      slug: "team",
-      name: "Local",
-      kind: "personal",
-      role: "owner",
-      capabilities: [],
-    },
-    workspaces: [],
-    refreshWorkspaces: async () => undefined,
-  }),
-}));
-
 vi.mock("@/lib/api", () => ({
-  artifactContentUrl: (
-    _workspaceId: string,
-    value: string | null | undefined,
-  ) => value ?? null,
-  getGraphExecution: apiMocks.getGraphExecution,
-  listGraphExecutions: apiMocks.listGraphExecutions,
+  listRuns: apiMocks.listRuns,
+  listWorkspaceMembers: apiMocks.listWorkspaceMembers,
 }));
 
 import { ExecutionHistoryDrawer } from "./ExecutionHistoryDrawer";
+
+const OPEN_GRAPH_ID = "11111111-1111-4111-8111-111111111111";
+const OTHER_GRAPH_ID = "44444444-4444-4444-8444-444444444444";
+const ADA_ID = "55555555-5555-4555-8555-555555555555";
 
 const mountedRoots = new Map<Root, HTMLElement>();
 
@@ -68,71 +42,50 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 
-function summary(
-  executionId: string,
-  overrides: Partial<GraphExecutionSummary> = {},
-): GraphExecutionSummary {
+/**
+ * The checked-in schema still omits the `cancelled` Run status ADR 0020 defines,
+ * so a fixture is allowed to name it and the cast happens once, here.
+ */
+type RunOverrides = Partial<Run> & { readonly status?: string };
+
+function run(overrides: RunOverrides = {}): Run {
   return {
-    execution_id: executionId,
-    graph_id: "graph-1",
-    graph_revision: 4,
+    id: "00000000-0000-4000-8000-0000000000a1",
     status: "succeeded",
-    scope: "selected-with-dependencies",
-    requested_node_ids: ["node-1"],
+    graph_id: OPEN_GRAPH_ID,
+    targets: [{ node_id: "node-1", call_path: [] }],
+    started_by_user_id: ADA_ID,
     created_at: "2026-07-18T08:00:00Z",
-    started_at: "2026-07-18T08:00:01Z",
     finished_at: "2026-07-18T08:00:02Z",
-    workflow_run_id: "workflow-1",
     error: null,
-    node_count: 2,
-    artifact_count: 1,
+    project_id: "project-1",
+    workspace_id: "workspace-1",
     ...overrides,
+  } as Run;
+}
+
+function runList(...runs: readonly Run[]): RunList {
+  return { runs };
+}
+
+function member(id: string, displayName: string): WorkspaceMember {
+  return {
+    authorization_version: 1,
+    revoked_at: null,
+    role: "editor",
+    user: { active: true, display_name: displayName, email: null, id },
   };
 }
 
-function detail(execution: GraphExecutionSummary): GraphExecutionDetail {
-  return {
-    ...execution,
-    node_results: [
-      {
-        node_id: "node-1",
-        position: 0,
-        status: "succeeded",
-        error: null,
-        completed_at: "2026-07-18T08:00:02Z",
-        outputs: [
-          {
-            port: "document",
-            kind: "single",
-            value: {
-              artifact_id: "artifact-1",
-              artifact_type: "scalar.text",
-              schema_version: 1,
-            },
-            artifacts: [
-              {
-                artifact_id: "artifact-1",
-                artifact_type: "scalar.text",
-                schema_version: 1,
-                content_type: "text/plain",
-                text: "historical value",
-              },
-            ],
-          },
-          {
-            port: "lost_output",
-            kind: "single",
-            value: {
-              artifact_id: "artifact-missing",
-              artifact_type: "scalar.text",
-              schema_version: 1,
-            },
-            artifacts: [],
-          },
-        ],
-      },
-    ],
-  };
+/**
+ * The drawer formats with the viewer's locale, so the expectation is built the
+ * same way instead of hardcoding one locale's spelling.
+ */
+function formatted(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 async function renderDrawer(
@@ -148,13 +101,8 @@ async function renderDrawer(
   const swrConfig = { provider: () => cache, dedupingInterval: 0 };
   let currentProps: React.ComponentProps<typeof ExecutionHistoryDrawer> = {
     workspaceId: "workspace-1",
-    graphId: "graph-1",
-    graphName: "Invoices",
-    nodeId: null,
-    initialExecutionId: null,
-    nodeTitles: { "node-1": "Extract invoice" },
-    executionRunning: false,
-    isDirty: false,
+    projectId: "project-1",
+    graphId: OPEN_GRAPH_ID,
     returnFocusRef: { current: returnFocusElement },
     onClose: () => undefined,
     ...props,
@@ -198,17 +146,255 @@ function buttonNamed(container: HTMLElement, name: string): HTMLButtonElement {
   return button;
 }
 
+function rows(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>('[role="listitem"]')];
+}
+
+/** The row at `index`, or a failure that names what the list left out. */
+function rowAt(container: HTMLElement, index: number): HTMLElement {
+  const row = rows(container)[index];
+  if (!row) throw new Error(`Run row ${index + 1} was not rendered`);
+  return row;
+}
+
 describe("ExecutionHistoryDrawer", () => {
-  it("closes on Escape after focus leaves the drawer and restores the trigger", async () => {
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [],
-      next_cursor: null,
+  it("is a labelled Runs dialog rather than an execution history", async () => {
+    apiMocks.listRuns.mockResolvedValue(runList());
+
+    const { container } = await renderDrawer();
+
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog?.getAttribute("aria-label")).toBe("Runs");
+    expect(container.textContent).toContain("Runs");
+    expect(container.textContent).not.toContain("Execution history");
+  });
+
+  it("lists the project's runs with status, start, starter and targets", async () => {
+    const newest = run({
+      id: "run-newest",
+      created_at: "2026-07-18T09:00:00Z",
+      finished_at: "2026-07-18T09:00:05Z",
+      targets: [
+        { node_id: "node-1", call_path: [] },
+        { node_id: "node-3", call_path: ["total"] },
+      ],
     });
+    const older = run({
+      id: "run-older",
+      status: "running",
+      created_at: "2026-07-18T08:00:00Z",
+      finished_at: null,
+      started_by_user_id: "55555555-5555-4555-8555-000000000000",
+    });
+    apiMocks.listRuns.mockResolvedValue(runList(newest, older));
+    apiMocks.listWorkspaceMembers.mockResolvedValue([
+      member(ADA_ID, "Ada Lovelace"),
+    ]);
+
+    const { container } = await renderDrawer();
+
+    await vi.waitFor(() => {
+      expect(rows(container)).toHaveLength(2);
+    });
+    const first = rowAt(container, 0);
+    const second = rowAt(container, 1);
+    expect(first.textContent).toContain("run-newest");
+    expect(first.textContent).toContain(formatted("2026-07-18T09:00:00Z"));
+    expect(first.textContent).toContain("succeeded");
+    expect(first.textContent).toContain("Ada Lovelace");
+    expect(first.textContent).toContain(formatted("2026-07-18T09:00:05Z"));
+    expect(first.textContent).toContain("2 targets: node-1, node-3 via total");
+    expect(container.textContent).toContain("1 running now");
+    expect(second.textContent).toContain("run-older");
+    expect(second.textContent).toContain("running");
+    // A starter the roster does not know is still a person, never an id.
+    expect(second.textContent).toContain("Started by a Team member");
+    expect(second.textContent).not.toContain("000000000000");
+
+    expect(apiMocks.listRuns).toHaveBeenCalledWith("workspace-1", "project-1");
+  });
+
+  it("tells the open graph's runs from another graph's runs", async () => {
+    apiMocks.listRuns.mockResolvedValue(
+      runList(
+        run({ id: "run-here", graph_id: OPEN_GRAPH_ID }),
+        run({ id: "run-there", graph_id: OTHER_GRAPH_ID }),
+      ),
+    );
+    apiMocks.listWorkspaceMembers.mockResolvedValue([]);
+
+    const { container } = await renderDrawer();
+
+    await vi.waitFor(() => {
+      expect(rows(container)).toHaveLength(2);
+    });
+    const here = rowAt(container, 0);
+    const there = rowAt(container, 1);
+    expect(here.textContent).toContain("this graph");
+    expect(there.textContent).toContain("graph 44444444");
+    expect(there.textContent).not.toContain("this graph");
+  });
+
+  it("keeps listing runs when the team roster cannot be read", async () => {
+    apiMocks.listRuns.mockResolvedValue(runList(run({ id: "run-1" })));
+    apiMocks.listWorkspaceMembers.mockRejectedValue(
+      new Error("Members are not visible here"),
+    );
+
+    const { container } = await renderDrawer();
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("run-1");
+      expect(container.textContent).toContain("Started by a Team member");
+    });
+    expect(container.textContent).not.toContain("Members are not visible here");
+  });
+
+  it("does not read the roster when no run names a starter", async () => {
+    apiMocks.listRuns.mockResolvedValue(runList());
+
+    const { container } = await renderDrawer();
+
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain(
+        "No run has been started in this project yet.",
+      ),
+    );
+    expect(apiMocks.listWorkspaceMembers).not.toHaveBeenCalled();
+  });
+
+  it("shows why a failed run stopped and when it did", async () => {
+    apiMocks.listRuns.mockResolvedValue(
+      runList(
+        run({
+          id: "run-failed",
+          status: "failed",
+          finished_at: "2026-07-18T08:30:00Z",
+          error: "operator gis.buffer@2 is not registered",
+        }),
+      ),
+    );
+    apiMocks.listWorkspaceMembers.mockResolvedValue([
+      member(ADA_ID, "Ada Lovelace"),
+    ]);
+
+    const { container } = await renderDrawer();
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain(
+        "operator gis.buffer@2 is not registered",
+      );
+      expect(container.textContent).toContain(
+        "ended " + formatted("2026-07-18T08:30:00Z"),
+      );
+      expect(container.textContent).toContain("Started by Ada Lovelace");
+    });
+  });
+
+  it("asks for nothing without a project, and says so", async () => {
+    const { container } = await renderDrawer({ projectId: null });
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("Runs belong to a project.");
+    });
+    expect(apiMocks.listRuns).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("Loading runs");
+  });
+
+  it("revalidates the cached list when the drawer is reopened", async () => {
+    const cache = new Map();
+    apiMocks.listRuns
+      .mockResolvedValueOnce(runList(run({ id: "run-older" })))
+      .mockResolvedValue(runList(run({ id: "run-newest" })));
+    apiMocks.listWorkspaceMembers.mockResolvedValue([]);
+
+    const firstDrawer = await renderDrawer({}, cache);
+    await vi.waitFor(() => {
+      expect(firstDrawer.container.textContent).toContain("run-older");
+      expect(apiMocks.listRuns).toHaveBeenCalledTimes(1);
+    });
+    await firstDrawer.unmount();
+
+    const secondDrawer = await renderDrawer({}, cache);
+    await vi.waitFor(() => {
+      expect(apiMocks.listRuns).toHaveBeenCalledTimes(2);
+      expect(secondDrawer.container.textContent).toContain("run-newest");
+    });
+  });
+
+  it("re-reads the list when the drawer moves to another project", async () => {
+    apiMocks.listRuns
+      .mockResolvedValueOnce(runList(run({ id: "run-here" })))
+      .mockResolvedValueOnce(runList(run({ id: "run-there" })));
+    apiMocks.listWorkspaceMembers.mockResolvedValue([]);
+
+    const drawer = await renderDrawer();
+    await vi.waitFor(() => expect(rows(drawer.container)).toHaveLength(1));
+
+    await drawer.rerender({ projectId: "project-2" });
+
+    await vi.waitFor(() => {
+      expect(drawer.container.textContent).toContain("run-there");
+      expect(drawer.container.textContent).not.toContain("run-here");
+    });
+    expect(apiMocks.listRuns).toHaveBeenLastCalledWith(
+      "workspace-1",
+      "project-2",
+    );
+  });
+
+  it("loads the list again through the refresh action", async () => {
+    apiMocks.listRuns.mockResolvedValue(runList(run({ id: "run-1" })));
+    apiMocks.listWorkspaceMembers.mockResolvedValue([]);
+
+    const { container } = await renderDrawer();
+    await vi.waitFor(() => expect(rows(container)).toHaveLength(1));
+
+    await React.act(async () => {
+      buttonNamed(container, "Refresh runs").click();
+    });
+
+    await vi.waitFor(() => expect(apiMocks.listRuns).toHaveBeenCalledTimes(2));
+  });
+
+  it("reports a failed load and retries it", async () => {
+    apiMocks.listRuns
+      .mockRejectedValueOnce(new Error("Runs unavailable"))
+      .mockResolvedValue(runList());
+
+    const { container } = await renderDrawer();
+
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain("Runs unavailable"),
+    );
+    await React.act(async () => {
+      buttonNamed(container, "Try again").click();
+    });
+    await vi.waitFor(() => expect(apiMocks.listRuns).toHaveBeenCalledTimes(2));
+  });
+
+  it("focuses its close button on open and hands focus back on close", async () => {
+    apiMocks.listRuns.mockResolvedValue(runList());
+
     const onClose = vi.fn();
     const { container, returnFocusElement } = await renderDrawer({ onClose });
 
-    const closeButton = buttonNamed(container, "Close execution history");
+    const closeButton = buttonNamed(container, "Close runs");
     expect(document.activeElement).toBe(closeButton);
+
+    await React.act(async () => {
+      closeButton.click();
+    });
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(returnFocusElement);
+  });
+
+  it("closes on Escape after focus leaves the drawer and restores the trigger", async () => {
+    apiMocks.listRuns.mockResolvedValue(runList());
+    const onClose = vi.fn();
+    const { returnFocusElement } = await renderDrawer({ onClose });
+
     returnFocusElement.focus();
 
     await React.act(async () => {
@@ -221,224 +407,76 @@ describe("ExecutionHistoryDrawer", () => {
     expect(document.activeElement).toBe(returnFocusElement);
   });
 
-  it("lists run provenance and renders historical artifacts without touching canvas state", async () => {
-    const execution = summary("execution-1");
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [execution],
-      next_cursor: null,
-    });
-    apiMocks.getGraphExecution.mockResolvedValue(detail(execution));
+  it("hands focus back when the drawer closes with focus inside it", async () => {
+    apiMocks.listRuns.mockResolvedValue(runList(run({ id: "run-1" })));
+    apiMocks.listWorkspaceMembers.mockResolvedValue([]);
 
-    const { container } = await renderDrawer();
+    const { container, returnFocusElement, unmount } = await renderDrawer();
+    await vi.waitFor(() => expect(rows(container)).toHaveLength(1));
+    buttonNamed(container, "Refresh runs").focus();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe(
+      "Refresh runs",
+    );
 
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain("selected with dependencies");
-      expect(container.textContent).toContain(
-        "1 requested node · 2 nodes · 1 artifact",
-      );
-      expect(container.textContent).toContain("Extract invoice");
-      expect(container.textContent).toContain("document");
-      expect(container.textContent).toContain("historical value");
-      expect(container.textContent).toContain(
-        "Historical artifact metadata is unavailable.",
-      );
-    });
-    expect(apiMocks.listGraphExecutions).toHaveBeenCalledWith(
-      "workspace-1",
-      "graph-1",
-      { limit: 20, nodeId: undefined },
-    );
-    expect(apiMocks.getGraphExecution).toHaveBeenCalledWith(
-      "workspace-1",
-      "graph-1",
-      "execution-1",
-    );
+    await unmount();
+
+    expect(document.activeElement).toBe(returnFocusElement);
   });
 
-  it("uses the same drawer as a node-filtered empty state", async () => {
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [],
-      next_cursor: null,
-    });
-
-    const { container } = await renderDrawer({ nodeId: "node-1" });
-
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain(
-        "No recorded executions include Extract invoice.",
-      );
-    });
-    expect(apiMocks.listGraphExecutions).toHaveBeenCalledWith(
-      "workspace-1",
-      "graph-1",
-      { limit: 20, nodeId: "node-1" },
+  it("ignores the props execution history needed", async () => {
+    apiMocks.listRuns.mockResolvedValue(
+      runList(run({ id: "run-1", graph_id: OPEN_GRAPH_ID })),
     );
-    expect(apiMocks.getGraphExecution).not.toHaveBeenCalled();
-  });
-
-  it("selects the requested execution when it is present", async () => {
-    const latest = summary("execution-latest");
-    const requested = summary("execution-requested", {
-      created_at: "2026-07-17T08:00:00Z",
-      started_at: "2026-07-17T08:00:01Z",
-      finished_at: "2026-07-17T08:00:02Z",
-    });
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [latest, requested],
-      next_cursor: null,
-    });
-    apiMocks.getGraphExecution.mockResolvedValue(detail(requested));
+    apiMocks.listWorkspaceMembers.mockResolvedValue([]);
 
     const { container } = await renderDrawer({
-      initialExecutionId: requested.execution_id,
+      graphName: "Invoices",
+      nodeId: "node-1",
+      initialExecutionId: "execution-1",
+      nodeTitles: { "node-1": "Extract invoice" },
+      executionRunning: true,
+      isDirty: true,
     });
 
-    await vi.waitFor(() => {
-      expect(apiMocks.getGraphExecution).toHaveBeenCalledWith(
-        "workspace-1",
-        "graph-1",
-        "execution-requested",
+    await vi.waitFor(() => expect(rows(container)).toHaveLength(1));
+
+    // The retired shapes are gone from the copy, not just from the props.
+    expect(container.textContent).not.toContain("Extract invoice");
+    expect(container.textContent).not.toContain("Invoices");
+    expect(container.textContent).not.toContain("graph revision");
+    expect(container.textContent).not.toContain("requested node");
+    expect(container.textContent).not.toContain("unsaved changes");
+    expect(container.textContent).not.toContain("execution");
+    expect(apiMocks.listRuns).toHaveBeenCalledWith("workspace-1", "project-1");
+  });
+
+  it("keeps showing the list while a revalidation is in flight", async () => {
+    let resolveSecond: ((value: RunList) => void) | undefined;
+    apiMocks.listRuns
+      .mockResolvedValueOnce(runList(run({ id: "run-1" })))
+      .mockImplementationOnce(
+        () =>
+          new Promise<RunList>((resolve) => {
+            resolveSecond = resolve;
+          }),
       );
-      const executionButtons = [
-        ...container.querySelectorAll('button[role="listitem"]'),
-      ];
-      expect(
-        executionButtons
-          .find((button) => button.textContent?.includes("execution-requested"))
-          ?.getAttribute("aria-current"),
-      ).toBe("true");
-      expect(
-        executionButtons
-          .find((button) => button.textContent?.includes("execution-latest"))
-          ?.getAttribute("aria-current"),
-      ).toBeNull();
-    });
-  });
+    apiMocks.listWorkspaceMembers.mockResolvedValue([]);
 
-  it("loads the next cursor and closes through explicit actions", async () => {
-    const first = summary("execution-1");
-    const second = summary("execution-2", {
-      created_at: "2026-07-17T08:00:00Z",
-      started_at: null,
-      finished_at: null,
-    });
-    apiMocks.listGraphExecutions
-      .mockResolvedValueOnce({ items: [first], next_cursor: "page-2" })
-      .mockResolvedValueOnce({ items: [first], next_cursor: "page-2" })
-      .mockResolvedValueOnce({ items: [second], next_cursor: null });
-    apiMocks.getGraphExecution.mockResolvedValue(detail(first));
-    const onClose = vi.fn();
-    const { container } = await renderDrawer({ onClose });
+    const drawer = await renderDrawer();
+    await vi.waitFor(() => expect(rows(drawer.container)).toHaveLength(1));
 
-    await vi.waitFor(() =>
-      expect(container.textContent).toContain("Load more"),
-    );
-    await React.act(async () => buttonNamed(container, "Load more").click());
-    await vi.waitFor(() =>
-      expect(container.textContent).toContain("execution-2"),
-    );
-    expect(apiMocks.listGraphExecutions).toHaveBeenNthCalledWith(
-      3,
-      "workspace-1",
-      "graph-1",
-      { limit: 20, cursor: "page-2", nodeId: undefined },
-    );
-
-    buttonNamed(container, "Close execution history").click();
-    expect(onClose).toHaveBeenCalledOnce();
-  });
-
-  it("revalidates the cached first page when the drawer is reopened", async () => {
-    const older = summary("execution-older");
-    const newest = summary("execution-newest", {
-      created_at: "2026-07-18T09:00:00Z",
-      started_at: "2026-07-18T09:00:01Z",
-      finished_at: "2026-07-18T09:00:02Z",
-    });
-    const cache = new Map();
-    apiMocks.listGraphExecutions
-      .mockResolvedValueOnce({ items: [older], next_cursor: null })
-      .mockResolvedValue({ items: [newest], next_cursor: null });
-    apiMocks.getGraphExecution.mockImplementation(
-      async (_graphId, executionId) =>
-        detail(executionId === newest.execution_id ? newest : older),
-    );
-
-    const firstDrawer = await renderDrawer({}, cache);
-    await vi.waitFor(() => {
-      expect(firstDrawer.container.textContent).toContain("execution-older");
-      expect(apiMocks.listGraphExecutions).toHaveBeenCalledTimes(1);
-    });
-    await firstDrawer.unmount();
-
-    const secondDrawer = await renderDrawer({}, cache);
-    await vi.waitFor(() => {
-      expect(apiMocks.listGraphExecutions).toHaveBeenCalledTimes(2);
-      expect(secondDrawer.container.textContent).toContain("execution-newest");
-    });
-  });
-
-  it("revalidates the bound list and detail once when an execution completes", async () => {
-    const active = summary("execution-1", {
-      status: "running",
-      finished_at: null,
-    });
-    const completed = summary("execution-1");
-    apiMocks.listGraphExecutions
-      .mockResolvedValueOnce({ items: [active], next_cursor: null })
-      .mockResolvedValue({ items: [completed], next_cursor: null });
-    apiMocks.getGraphExecution
-      .mockResolvedValueOnce(detail(active))
-      .mockResolvedValue(detail(completed));
-
-    const drawer = await renderDrawer({ executionRunning: true });
-    await vi.waitFor(() => {
-      expect(apiMocks.listGraphExecutions).toHaveBeenCalledTimes(1);
-      expect(apiMocks.getGraphExecution).toHaveBeenCalledTimes(1);
+    await React.act(async () => {
+      buttonNamed(drawer.container, "Refresh runs").click();
     });
 
-    await drawer.rerender({ executionRunning: false });
-    await vi.waitFor(() => {
-      expect(apiMocks.listGraphExecutions).toHaveBeenCalledTimes(2);
-      expect(apiMocks.getGraphExecution).toHaveBeenCalledTimes(2);
+    expect(drawer.container.textContent).toContain("run-1");
+    expect(buttonNamed(drawer.container, "Refresh runs").disabled).toBe(true);
+
+    await React.act(async () => {
+      resolveSecond?.(runList(run({ id: "run-1" }), run({ id: "run-2" })));
     });
 
-    await drawer.rerender({ executionRunning: false });
-    await Promise.resolve();
-    expect(apiMocks.listGraphExecutions).toHaveBeenCalledTimes(2);
-    expect(apiMocks.getGraphExecution).toHaveBeenCalledTimes(2);
-  });
-
-  it("warns that runs from unsaved graph changes are not durable", async () => {
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [],
-      next_cursor: null,
-    });
-
-    const { container } = await renderDrawer({ isDirty: true });
-
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain(
-        "Runs started with unsaved changes are temporary and are not recorded here.",
-      );
-      expect(container.textContent).toContain(
-        "Save the graph first to keep durable execution history.",
-      );
-    });
-  });
-
-  it("renders a recoverable list error", async () => {
-    apiMocks.listGraphExecutions
-      .mockRejectedValueOnce(new Error("History unavailable"))
-      .mockResolvedValueOnce({ items: [], next_cursor: null });
-    const { container } = await renderDrawer();
-
-    await vi.waitFor(() =>
-      expect(container.textContent).toContain("History unavailable"),
-    );
-    await React.act(async () => buttonNamed(container, "Try again").click());
-    await vi.waitFor(() =>
-      expect(apiMocks.listGraphExecutions).toHaveBeenCalledTimes(2),
-    );
+    await vi.waitFor(() => expect(rows(drawer.container)).toHaveLength(2));
+    expect(buttonNamed(drawer.container, "Refresh runs").disabled).toBe(false);
   });
 });

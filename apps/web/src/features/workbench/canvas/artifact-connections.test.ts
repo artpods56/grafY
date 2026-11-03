@@ -38,12 +38,14 @@ const run: RunNodeResult = {
   node_id: "producer",
   status: "succeeded",
   error: null,
+  result_fingerprint: "fp-producer",
+  created_at: "2026-02-20T10:00:00Z",
   outputs: [
     {
       port: "image",
       kind: "sequence",
       value: sequence,
-      artifacts: [{ ...produced, content_type: "image/png" }],
+      artifacts: [{ ...produced, content_hash: null }],
     },
   ],
 };
