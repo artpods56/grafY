@@ -62,7 +62,7 @@ function GraphEntryRedirect() {
       searchForChosenLocation(new URLSearchParams(search)),
     );
     router.replace(
-      `/workspaces/${encodeURIComponent(workspace.slug)}/graphs${carried}`,
+      `/workspaces/${encodeURIComponent(workspace.slug)}/projects${carried}`,
     );
   }, [router, search, workspaces]);
 

@@ -292,10 +292,11 @@ export function artifactViewersFromPresentation(
   return { nodes, edges, bindings, annotations };
 }
 
-export function presentationFromCollaborativeHead(
-  head: Pick<CollaborativeHead, "document">,
+/** The canvas furniture of one Graph. Presentation lives per Graph. */
+export function presentationFromGraphDocument(
+  document: SavedGraphDocument,
 ): GraphPresentation {
-  const presentation = head.document.presentation;
+  const presentation = document.presentation;
   if (!presentation) return emptyGraphPresentation();
   return {
     viewers: [...presentation.viewers],

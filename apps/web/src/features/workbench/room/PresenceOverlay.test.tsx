@@ -25,7 +25,7 @@ function participant(
   cursor: { x: number; y: number },
 ): PresenceParticipant {
   return {
-    graph_room_session_id: "remote-session",
+    project_room_session_id: "remote-session",
     actor: {
       actor_id: "remote-actor",
       display_name: displayName,

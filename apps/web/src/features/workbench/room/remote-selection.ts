@@ -21,7 +21,7 @@ export function remoteSelectedNodeIds(
 ): ReadonlySet<string> {
   const ids = new Set<string>();
   for (const participant of participants) {
-    if (participant.graph_room_session_id === localSessionId) continue;
+    if (participant.project_room_session_id === localSessionId) continue;
     for (const nodeId of participant.selected_node_ids) {
       ids.add(nodeId);
     }
@@ -36,7 +36,7 @@ export function remoteSelectionColor(
   nodeId: string,
 ): string | null {
   for (const participant of participants) {
-    if (participant.graph_room_session_id === localSessionId) continue;
+    if (participant.project_room_session_id === localSessionId) continue;
     if (participant.selected_node_ids.includes(nodeId)) {
       return actorColor(participant.actor.color);
     }

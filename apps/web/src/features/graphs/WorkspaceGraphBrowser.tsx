@@ -24,10 +24,10 @@ import {
   sortGraphsByRecency,
 } from "@/features/workspaces/WorkspaceGraphPanel";
 import {
-  NEW_GRAPH_ROUTE_ID,
-  workbenchGraphPath,
+  NEW_PROJECT_ROUTE_ID,
+  workbenchProjectPath,
 } from "@/features/workbench/routes";
-import { useSavedGraphs } from "@/hooks/use-api";
+import { useWorkspaceProjects } from "@/hooks/use-api";
 import type { SavedGraphSummary } from "@/lib/api";
 
 import { useGraphBrowserFilters } from "./use-graph-browser-filters";
@@ -89,14 +89,14 @@ export function WorkspaceGraphBrowser() {
 function WorkspaceGraphBrowserContent() {
   const router = useRouter();
   const { workspace } = useWorkspaceContext();
-  const { data, error, isLoading, mutate } = useSavedGraphs(workspace.id);
+  const { data, error, isLoading, mutate } = useWorkspaceProjects(workspace.id);
   const { query, view, setQuery, setView, searchFieldRef } =
     useGraphBrowserFilters();
 
   const workspaceName = workspaceDisplayName(workspace);
   const canCreate = workspace.capabilities.includes("create_project");
   const graphs = React.useMemo(
-    () => filterGraphsByQuery(sortGraphsByRecency(data?.graphs ?? []), query),
+    () => filterGraphsByQuery(sortGraphsByRecency(data?.projects ?? []), query),
     [data, query],
   );
   const visibleGraphs =
@@ -104,7 +104,7 @@ function WorkspaceGraphBrowserContent() {
 
   const startGraph = () => {
     if (!canCreate) return;
-    router.push(workbenchGraphPath(workspace.slug, NEW_GRAPH_ROUTE_ID));
+    router.push(workbenchProjectPath(workspace.slug, NEW_PROJECT_ROUTE_ID));
   };
 
   return (
@@ -193,7 +193,7 @@ function WorkspaceGraphBrowserContent() {
               <RotateCcw size={14} aria-hidden="true" /> Retry
             </button>
           </section>
-        ) : data?.graphs.length === 0 ? (
+        ) : data?.projects.length === 0 ? (
           <section className="grafy-graphs__state grafy-graphs__state--empty">
             <Workflow size={22} aria-hidden="true" />
             <div>

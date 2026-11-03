@@ -1,28 +1,38 @@
 export {
   GraphRoomCommandError,
-  GraphRoomSession,
   PRESENCE_CLIENT_MIN_INTERVAL_MS,
+  ProjectRoomCommandError,
+  ProjectRoomSession,
   ROOM_COMMAND_QUEUE_CAP,
-  graphRoomWebSocketUrl,
   shouldReplaceCollaborativeHead,
-  type GraphRoomAcceptedMeta,
-  type GraphRoomCommandResult,
-  type GraphRoomSessionListeners,
-  type GraphRoomSessionOptions,
-  type ActiveExecutionSummary,
-  type GraphRoomStatus,
-  type GraphRoomFailure,
-  type GraphRoomRecoveryReason,
-  type GraphRoomTerminalReason,
+  type ActiveRunSummary,
   type PresenceParticipant,
   type PresenceUpdateSubmit,
-  type RoomGraphCommand,
+  type ProjectRoomAcceptedMeta,
+  type ProjectRoomCommandResult,
+  type ProjectRoomFailure,
+  type ProjectRoomRecoveryReason,
+  type ProjectRoomSessionListeners,
+  type ProjectRoomSessionOptions,
+  type ProjectRoomStatus,
+  type ProjectRoomTerminalReason,
+  type RoomInstanceState,
+  type RoomInstanceKey,
+  type RoomProjectCommand,
 } from "./graph-room-session";
+export { projectRoomWebSocketUrl } from "./project-room-url";
 export {
-  applyRoomCommandToHead,
+  applyRoomCommandsToHead,
+  commandBatchGraphId,
+  defaultGraphId,
+  savedGraphFromProjectHead,
   toLocalGraphCommand,
   toRoomGraphCommand,
+  toRoomRenameGraphCommand,
+  toRoomRenameProjectCommand,
   toRoomReplaceDocumentCommand,
+  type RoomGraphBodyCommand,
+  type RoomProjectCommand,
 } from "./room-command-bridge";
 export { PresenceOverlay } from "./PresenceOverlay";
 export { RemoteSelectionRing } from "./RemoteSelectionRing";
@@ -31,24 +41,29 @@ export {
   remoteSelectionColor,
 } from "./remote-selection";
 export {
-  useGraphRoomSession,
-  type UseGraphRoomSessionResult,
-} from "./useGraphRoomSession";
+  useProjectRoomSession,
+  type ProjectRoomSubmitResult,
+  type UseProjectRoomSessionResult,
+} from "./useProjectRoomSession";
 export { useRemoteDragPreviews } from "./useRemoteDragPreviews";
 export {
   graphReadiness,
   type GraphReadiness,
   type GraphReadinessState,
 } from "./graph-readiness";
+export { instanceKeyText } from "./protocol";
 export type {
-  ExecutionActiveMessage,
-  ExecutionClearedMessage,
-  GraphCommandAcceptedMessage,
-  GraphCommandReceiptMessage,
-  GraphCommandRejectedMessage,
+  InstancesChangedMessage,
+  InstanceChangedMessage,
   PresenceActivityKind,
   PresencePoint,
-  TransientNodePosition,
+  ProjectCommandAcceptedMessage,
+  ProjectCommandReceiptMessage,
+  ProjectCommandRejectedMessage,
+  ProjectCommandSubmitMessage,
   RoomReadyMessage,
   RoomRehydrateMessage,
+  RunFinishedMessage,
+  RunStartedMessage,
+  TransientNodePosition,
 } from "./protocol";

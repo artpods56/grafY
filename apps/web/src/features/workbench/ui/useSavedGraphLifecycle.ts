@@ -11,7 +11,7 @@ import {
   getSavedGraph,
   updateSavedGraph,
   type CollaborativeHead,
-  type CreateSavedGraphRequest,
+  type GraphDraft,
   type NodeRegistry,
   type RunNodeResult,
   type SavedGraphNode,
@@ -26,17 +26,17 @@ import {
 } from "../canvas/saved-graph";
 import {
   emptyGraphPresentation,
-  presentationFromCollaborativeHead,
+  presentationFromGraphDocument,
   type GraphPresentation,
 } from "../canvas/artifact-viewer";
 import {
   authoredGraphDocument,
-  createSavedGraphRequest,
+  createGraphDraft,
   type AuthoredGraphDocument,
 } from "../model/graph-document";
 import type { WorkflowNodeData } from "../canvas/types";
 import type { WorkflowNode } from "../model/execution-plan";
-import { NEW_GRAPH_ROUTE_ID, workbenchGraphPath } from "../routes";
+import { NEW_PROJECT_ROUTE_ID, workbenchGraphPath } from "../routes";
 import { NEW_GRAPH_NAME, savedGraphDirtiness } from "./saved-graph-dirtiness";
 
 export interface ActiveSavedGraph {
@@ -55,7 +55,7 @@ export interface GraphRoomPersistenceAdapter {
   readonly canPersist: boolean;
   /** Keep the exact checkpoint separate from a newer effective room head. */
   persistDocument: (
-    draft: CreateSavedGraphRequest,
+    draft: GraphDraft,
   ) => Promise<GraphRoomPersistenceResult>;
 }
 
@@ -193,7 +193,7 @@ export function useSavedGraphLifecycle({
   const presentationRef = React.useRef(presentation);
 
   const currentDraft = React.useMemo(
-    () => createSavedGraphRequest(document, presentation),
+    () => createGraphDraft(document, presentation),
     [document, presentation],
   );
   const currentFingerprint = React.useMemo(
@@ -205,7 +205,7 @@ export function useSavedGraphLifecycle({
     [currentDraft],
   );
   const rememberSavedDraft = React.useCallback(
-    (draft: CreateSavedGraphRequest) => {
+    (draft: GraphDraft) => {
       setSavedFingerprint(savedGraphFingerprint(draft));
       setSavedExecutionFingerprint(savedGraphExecutionFingerprint(draft));
     },
@@ -295,21 +295,21 @@ export function useSavedGraphLifecycle({
   const requestNewGraph = React.useCallback(() => {
     if (!confirmDiscard("start a new graph")) return;
     setGraphBrowserOpen(false);
-    const path = workbenchGraphPath(workspaceSlug, NEW_GRAPH_ROUTE_ID);
+    const path = workbenchGraphPath(workspaceSlug, NEW_PROJECT_ROUTE_ID);
     if (window.location.pathname === path) {
       showBlankGraph();
       return;
     }
     documentGenerationRef.current += 1;
     openRequestRef.current?.abort();
-    approvedRouteGraphIdRef.current = NEW_GRAPH_ROUTE_ID;
+    approvedRouteGraphIdRef.current = NEW_PROJECT_ROUTE_ID;
     router.push(path, { scroll: false });
   }, [confirmDiscard, router, showBlankGraph, workspaceSlug]);
 
   const syncFromCollaborativeHead = React.useCallback(
     (head: CollaborativeHead): void => {
       const responseDocument = authoredGraphDocument(head);
-      const responsePresentation = presentationFromCollaborativeHead(head);
+      const responsePresentation = presentationFromGraphDocument(savedGraph.document);
       const nextActiveGraph = {
         id: head.graph_id,
         revision: head.checkpoint_revision,
@@ -321,7 +321,7 @@ export function useSavedGraphLifecycle({
       if (headIsCheckpointed) {
         setActiveGraph(nextActiveGraph);
         rememberSavedDraft(
-          createSavedGraphRequest(responseDocument, responsePresentation),
+          createGraphDraft(responseDocument, responsePresentation),
         );
       } else {
         // The room journal is authoritative for the canvas but is not durable
@@ -433,7 +433,7 @@ export function useSavedGraphLifecycle({
         }
         setActiveGraph(nextActiveGraph);
         rememberSavedDraft(
-          createSavedGraphRequest(responseDocument, responsePresentation),
+          createGraphDraft(responseDocument, responsePresentation),
         );
         replacePresentation(responsePresentation);
         if (createdGraph) {
@@ -633,7 +633,7 @@ export function useSavedGraphLifecycle({
         };
         setActiveGraph(nextActiveGraph);
         rememberSavedDraft(
-          createSavedGraphRequest(responseDocument, responsePresentation),
+          createGraphDraft(responseDocument, responsePresentation),
         );
         await refreshNodeSecretStatuses(
           nextActiveGraph,
@@ -695,8 +695,8 @@ export function useSavedGraphLifecycle({
   React.useEffect(() => {
     if (!registry) return;
 
-    const routeGraphId = initialGraphId ?? NEW_GRAPH_ROUTE_ID;
-    const displayedGraphId = activeGraph?.id ?? NEW_GRAPH_ROUTE_ID;
+    const routeGraphId = initialGraphId ?? NEW_PROJECT_ROUTE_ID;
+    const displayedGraphId = activeGraph?.id ?? NEW_PROJECT_ROUTE_ID;
     if (routeGraphId === displayedGraphId) {
       if (approvedRouteGraphIdRef.current === routeGraphId) {
         approvedRouteGraphIdRef.current = null;
@@ -771,9 +771,9 @@ export function useSavedGraphLifecycle({
         if (deletingActiveGraph) {
           if (currentFingerprintRef.current === deletingFingerprint) {
             showBlankGraph();
-            approvedRouteGraphIdRef.current = NEW_GRAPH_ROUTE_ID;
+            approvedRouteGraphIdRef.current = NEW_PROJECT_ROUTE_ID;
             router.replace(
-              workbenchGraphPath(workspaceSlug, NEW_GRAPH_ROUTE_ID),
+              workbenchGraphPath(workspaceSlug, NEW_PROJECT_ROUTE_ID),
               { scroll: false },
             );
           } else {
@@ -789,9 +789,9 @@ export function useSavedGraphLifecycle({
             setPersistenceError(
               "The saved graph was deleted. Changes made while deletion was in progress remain as an unsaved draft.",
             );
-            approvedRouteGraphIdRef.current = NEW_GRAPH_ROUTE_ID;
+            approvedRouteGraphIdRef.current = NEW_PROJECT_ROUTE_ID;
             router.replace(
-              workbenchGraphPath(workspaceSlug, NEW_GRAPH_ROUTE_ID),
+              workbenchGraphPath(workspaceSlug, NEW_PROJECT_ROUTE_ID),
               { scroll: false },
             );
           }

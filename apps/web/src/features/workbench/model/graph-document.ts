@@ -1,6 +1,5 @@
 import type { SavedGraphOrigin } from "@/lib/api";
 import type {
-  CreateSavedGraphRequest,
   SavedGraphDocument,
   SavedGraphEdge,
   SavedGraphNode,
@@ -18,6 +17,15 @@ export interface AuthoredGraphDocument {
   readonly nodes: readonly SavedGraphNode[];
   readonly edges: readonly SavedGraphEdge[];
   readonly origins: readonly SavedGraphOrigin[];
+}
+
+/**
+ * One Graph as the authoring surface holds it: its name beside its document.
+ * This is what a save sends and what the room replays; the Project wraps it.
+ */
+export interface GraphDraft {
+  readonly name: string;
+  readonly document: SavedGraphDocument;
 }
 
 export type AuthoredGraphNode = SavedGraphNode;
@@ -152,7 +160,7 @@ export type GraphCommand =
     };
 
 export function authoredGraphDocument(
-  value: Pick<CreateSavedGraphRequest, "name" | "document">,
+  value: GraphDraft,
 ): AuthoredGraphDocument {
   return {
     name: value.name,
@@ -162,10 +170,10 @@ export function authoredGraphDocument(
   };
 }
 
-export function createSavedGraphRequest(
+export function createGraphDraft(
   document: AuthoredGraphDocument,
   presentation?: SavedGraphDocument["presentation"],
-): CreateSavedGraphRequest {
+): GraphDraft {
   return {
     name: document.name.trim(),
     document: {
@@ -749,7 +757,7 @@ export function applyGraphCommandNormalized(
       };
     }
     case "replace_document":
-      return authoredGraphDocument(createSavedGraphRequest(command.document));
+      return authoredGraphDocument(createGraphDraft(command.document));
   }
 }
 
@@ -759,7 +767,7 @@ export function applyGraphCommand(
   command: GraphCommand,
 ): AuthoredGraphDocument {
   return applyGraphCommandNormalized(
-    authoredGraphDocument(createSavedGraphRequest(document)),
+    authoredGraphDocument(createGraphDraft(document)),
     command,
   );
 }

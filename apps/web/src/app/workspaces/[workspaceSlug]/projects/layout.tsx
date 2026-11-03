@@ -5,25 +5,28 @@ import { useParams } from "next/navigation";
 
 import { Workbench } from "@/features/workbench";
 import {
-  NEW_GRAPH_ROUTE_ID,
-  isSupportedWorkbenchGraphRoute,
+  NEW_PROJECT_ROUTE_ID,
+  isSupportedWorkbenchProjectRoute,
 } from "@/features/workbench/routes";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { useAuthSession } from "@/features/auth/AuthSessionBoundary";
 
-interface GraphsLayoutProps {
+interface ProjectsLayoutProps {
   children: ReactNode;
 }
 
-export default function GraphsLayout({ children }: GraphsLayoutProps) {
-  const { workspaceSlug, graphId } = useParams<{
+export default function ProjectsLayout({ children }: ProjectsLayoutProps) {
+  const { workspaceSlug, projectId } = useParams<{
     workspaceSlug: string;
-    graphId?: string;
+    projectId?: string;
   }>();
   const { workspace } = useWorkspaceContext();
   const { session } = useAuthSession();
 
-  if (!graphId || !isSupportedWorkbenchGraphRoute(workspaceSlug, graphId)) {
+  if (
+    !projectId ||
+    !isSupportedWorkbenchProjectRoute(workspaceSlug, projectId)
+  ) {
     return children;
   }
 
@@ -33,7 +36,9 @@ export default function GraphsLayout({ children }: GraphsLayoutProps) {
         key={`${session.user_id}:${workspace.id}`}
         workspaceId={workspace.id}
         workspaceSlug={workspaceSlug}
-        initialGraphId={graphId === NEW_GRAPH_ROUTE_ID ? null : graphId}
+        initialProjectId={
+          projectId === NEW_PROJECT_ROUTE_ID ? null : projectId
+        }
       />
       {children}
     </>

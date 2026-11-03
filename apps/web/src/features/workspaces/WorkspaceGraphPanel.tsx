@@ -4,10 +4,10 @@ import * as React from "react";
 import { Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-import { useSavedGraphs } from "@/hooks/use-api";
+import { useWorkspaceProjects } from "@/hooks/use-api";
 import { FINE_POINTER_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import type { SavedGraphSummary } from "@/lib/api";
-import { workbenchGraphPath } from "@/features/workbench/routes";
+import { workbenchProjectPath } from "@/features/workbench/routes";
 import { GraphRowMenu } from "./GraphRowMenu";
 
 export type WorkspaceGraphPanelCloseReason =
@@ -79,7 +79,7 @@ export function WorkspaceGraphPanel({
   onClose: (reason: WorkspaceGraphPanelCloseReason) => void;
 }) {
   const router = useRouter();
-  const { data, isLoading, isValidating } = useSavedGraphs(workspaceId);
+  const { data, isLoading, isValidating } = useWorkspaceProjects(workspaceId);
   const isRefreshing = isValidating && Boolean(data);
   const finePointer = useMediaQuery(FINE_POINTER_QUERY);
   const [query, setQuery] = React.useState("");
@@ -127,7 +127,7 @@ export function WorkspaceGraphPanel({
   const total = data?.graphs.length ?? 0;
 
   const openGraph = (graphId: string) => {
-    router.push(workbenchGraphPath(workspaceSlug, graphId));
+    router.push(workbenchProjectPath(workspaceSlug, graphId));
     onClose("graph-selected");
   };
 

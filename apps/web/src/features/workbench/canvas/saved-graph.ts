@@ -1,7 +1,7 @@
 import type { Node } from "@xyflow/react";
 
 import {
-  type CreateSavedGraphRequest,
+  type GraphDraft,
   type NodeRegistry,
   type NodeSpec,
   type RunNodeResult,
@@ -34,7 +34,7 @@ import {
   workflowNodeIsSupported,
 } from "./types";
 import {
-  createSavedGraphRequest,
+  createGraphDraft,
   type AuthoredGraphDocument,
 } from "../model/graph-document";
 
@@ -59,7 +59,7 @@ export function hydrateAuthoredGraphDocument(
       revision: 0,
       created_at: "1970-01-01T00:00:00.000Z",
       updated_at: "1970-01-01T00:00:00.000Z",
-      ...createSavedGraphRequest(document),
+      ...createGraphDraft(document),
     },
     registry,
     nodeRuns,
@@ -239,7 +239,7 @@ function requireArtifactTypeBindings(
   return bindings;
 }
 
-export function savedGraphFingerprint(graph: CreateSavedGraphRequest): string {
+export function savedGraphFingerprint(graph: GraphDraft): string {
   const presentation = graph.document.presentation ?? {
     viewers: [],
     links: [],
@@ -278,7 +278,7 @@ export function savedGraphFingerprint(graph: CreateSavedGraphRequest): string {
  * Presentation (viewers/annotations) must not block materialization.
  */
 export function savedGraphExecutionFingerprint(
-  graph: CreateSavedGraphRequest,
+  graph: GraphDraft,
 ): string {
   const normalized = {
     name: graph.name,

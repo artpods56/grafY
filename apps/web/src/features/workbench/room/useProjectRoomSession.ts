@@ -5,48 +5,56 @@ import * as React from "react";
 import type { CollaborativeHead } from "@/lib/api";
 
 import {
-  GraphRoomSession,
-  type ActiveExecutionSummary,
-  type GraphRoomAcceptedMeta,
-  type GraphRoomFailure,
-  type GraphRoomStatus,
-  type GraphRoomTerminalReason,
+  ProjectRoomSession,
+  type ActiveRunSummary,
+  type ProjectRoomAcceptedMeta,
+  type ProjectRoomFailure,
+  type ProjectRoomStatus,
+  type ProjectRoomTerminalReason,
   type PresenceParticipant,
   type PresenceUpdateSubmit,
-  type RoomGraphCommand,
+  type RoomInstanceState,
+  type RoomProjectCommand,
 } from "./graph-room-session";
+import { instanceKeyText } from "./protocol";
 import type {
-  ExecutionClearedMessage,
-  GraphCommandAcceptedMessage,
-  GraphCommandRejectedMessage,
+  InstancesChangedMessage,
+  ProjectCommandAcceptedMessage,
+  ProjectCommandRejectedMessage,
   RoomReadyMessage,
+  RunFinishedMessage,
+  RunStartedMessage,
 } from "./protocol";
 
-export interface GraphRoomSubmitResult {
+export interface ProjectRoomSubmitResult {
   readonly receipt: Awaited<
-    ReturnType<GraphRoomSession["submitCommand"]>
+    ReturnType<ProjectRoomSession["submitCommands"]>
   >["receipt"];
   readonly accepted: Awaited<
-    ReturnType<GraphRoomSession["submitCommand"]>
+    ReturnType<ProjectRoomSession["submitCommands"]>
   >["accepted"];
   readonly head: CollaborativeHead;
 }
 
-export interface UseGraphRoomSessionResult {
-  readonly status: GraphRoomStatus;
-  readonly terminalReason: GraphRoomTerminalReason | null;
-  readonly failure: GraphRoomFailure | null;
+export interface UseProjectRoomSessionResult {
+  readonly status: ProjectRoomStatus;
+  readonly terminalReason: ProjectRoomTerminalReason | null;
+  readonly failure: ProjectRoomFailure | null;
   readonly head: CollaborativeHead | null;
   readonly capabilities: readonly string[];
   readonly authorizationVersion: number | null;
   readonly canSubmitCommands: boolean;
   readonly canPublishPresence: boolean;
+  readonly canRun: boolean;
   readonly localSessionId: string | null;
   readonly participants: readonly PresenceParticipant[];
-  readonly activeExecution: ActiveExecutionSummary | null;
-  readonly submitCommand: (
-    command: RoomGraphCommand,
-  ) => Promise<GraphRoomSubmitResult>;
+  /** Every Run the room believes is open for this Project, newest last. */
+  readonly activeRuns: readonly ActiveRunSummary[];
+  /** Instance states the room carried in, keyed by instance key text. */
+  readonly instances: ReadonlyMap<string, RoomInstanceState>;
+  readonly submitCommands: (
+    commands: readonly RoomProjectCommand[],
+  ) => Promise<ProjectRoomSubmitResult>;
   /** Reconcile a full snapshot and return the effective room head. */
   readonly replaceHead: (head: CollaborativeHead) => CollaborativeHead;
   /** Reconcile a checkpoint only within the epoch of its submitted command. */
@@ -60,39 +68,46 @@ export interface UseGraphRoomSessionResult {
   readonly retry: () => void;
 }
 
-interface UseGraphRoomSessionOptions {
+interface UseProjectRoomSessionOptions {
   workspaceId: string;
-  graphId: string | null;
+  projectId: string | null;
   onReady?: (ready: RoomReadyMessage) => void;
   onRehydrate?: (head: CollaborativeHead) => void;
   onHeadRefreshRequired?: () => void;
   onCommandAccepted?: (
-    message: GraphCommandAcceptedMessage,
-    meta: GraphRoomAcceptedMeta,
+    message: ProjectCommandAcceptedMessage,
+    meta: ProjectRoomAcceptedMeta,
   ) => void;
-  onCommandRejected?: (message: GraphCommandRejectedMessage) => void;
-  onActiveExecution?: (execution: ActiveExecutionSummary | null) => void;
-  onExecutionCleared?: (message: ExecutionClearedMessage) => void;
-  onTerminalClose?: (reason: GraphRoomTerminalReason) => void;
+  onCommandRejected?: (message: ProjectCommandRejectedMessage) => void;
+  onRunStarted?: (message: RunStartedMessage) => void;
+  onRunFinished?: (message: RunFinishedMessage) => void;
+  onInstancesChanged?: (message: InstancesChangedMessage) => void;
+  onTerminalClose?: (reason: ProjectRoomTerminalReason) => void;
 }
 
-export function useGraphRoomSession({
+const EMPTY_RUNS: readonly ActiveRunSummary[] = [];
+const EMPTY_INSTANCES: ReadonlyMap<string, RoomInstanceState> = new Map();
+
+export function useProjectRoomSession({
   workspaceId,
-  graphId,
+  projectId,
   onReady,
   onRehydrate,
   onHeadRefreshRequired,
   onCommandAccepted,
   onCommandRejected,
-  onActiveExecution,
-  onExecutionCleared,
+  onRunStarted,
+  onRunFinished,
+  onInstancesChanged,
   onTerminalClose,
-}: UseGraphRoomSessionOptions): UseGraphRoomSessionResult {
-  const [stateGraphId, setStateGraphId] = React.useState<string | null>(null);
-  const [status, setStatus] = React.useState<GraphRoomStatus>("idle");
+}: UseProjectRoomSessionOptions): UseProjectRoomSessionResult {
+  const [stateProjectId, setStateProjectId] = React.useState<string | null>(
+    null,
+  );
+  const [status, setStatus] = React.useState<ProjectRoomStatus>("idle");
   const [terminalReason, setTerminalReason] =
-    React.useState<GraphRoomTerminalReason | null>(null);
-  const [failure, setFailure] = React.useState<GraphRoomFailure | null>(null);
+    React.useState<ProjectRoomTerminalReason | null>(null);
+  const [failure, setFailure] = React.useState<ProjectRoomFailure | null>(null);
   const [head, setHead] = React.useState<CollaborativeHead | null>(null);
   const [capabilities, setCapabilities] = React.useState<readonly string[]>([]);
   const [authorizationVersion, setAuthorizationVersion] = React.useState<
@@ -101,20 +116,24 @@ export function useGraphRoomSession({
   const [participants, setParticipants] = React.useState<
     readonly PresenceParticipant[]
   >([]);
-  const [activeExecution, setActiveExecution] =
-    React.useState<ActiveExecutionSummary | null>(null);
+  const [activeRuns, setActiveRuns] =
+    React.useState<readonly ActiveRunSummary[]>(EMPTY_RUNS);
+  const [instances, setInstances] = React.useState<
+    ReadonlyMap<string, RoomInstanceState>
+  >(EMPTY_INSTANCES);
   const [localSessionId, setLocalSessionId] = React.useState<string | null>(
     null,
   );
-  const sessionRef = React.useRef<GraphRoomSession | null>(null);
+  const sessionRef = React.useRef<ProjectRoomSession | null>(null);
 
   const onReadyRef = React.useRef(onReady);
   const onRehydrateRef = React.useRef(onRehydrate);
   const onHeadRefreshRequiredRef = React.useRef(onHeadRefreshRequired);
   const onCommandAcceptedRef = React.useRef(onCommandAccepted);
   const onCommandRejectedRef = React.useRef(onCommandRejected);
-  const onActiveExecutionRef = React.useRef(onActiveExecution);
-  const onExecutionClearedRef = React.useRef(onExecutionCleared);
+  const onRunStartedRef = React.useRef(onRunStarted);
+  const onRunFinishedRef = React.useRef(onRunFinished);
+  const onInstancesChangedRef = React.useRef(onInstancesChanged);
   const onTerminalCloseRef = React.useRef(onTerminalClose);
 
   React.useEffect(() => {
@@ -123,32 +142,34 @@ export function useGraphRoomSession({
     onHeadRefreshRequiredRef.current = onHeadRefreshRequired;
     onCommandAcceptedRef.current = onCommandAccepted;
     onCommandRejectedRef.current = onCommandRejected;
-    onActiveExecutionRef.current = onActiveExecution;
-    onExecutionClearedRef.current = onExecutionCleared;
+    onRunStartedRef.current = onRunStarted;
+    onRunFinishedRef.current = onRunFinished;
+    onInstancesChangedRef.current = onInstancesChanged;
     onTerminalCloseRef.current = onTerminalClose;
   }, [
-    onActiveExecution,
     onCommandAccepted,
     onCommandRejected,
-    onExecutionCleared,
     onHeadRefreshRequired,
+    onInstancesChanged,
     onReady,
     onRehydrate,
+    onRunFinished,
+    onRunStarted,
     onTerminalClose,
   ]);
 
   React.useEffect(() => {
-    if (!graphId) {
+    if (!projectId) {
       sessionRef.current?.disconnect();
       sessionRef.current = null;
       return;
     }
 
-    const session = new GraphRoomSession({
+    const session = new ProjectRoomSession({
       workspaceId,
-      graphId,
+      projectId,
       onStatusChange: (nextStatus) => {
-        setStateGraphId(graphId);
+        setStateProjectId(projectId);
         setStatus(nextStatus);
         if (nextStatus === "connecting" || nextStatus === "reconnecting") {
           setTerminalReason(null);
@@ -159,7 +180,8 @@ export function useGraphRoomSession({
         setCapabilities([]);
         setAuthorizationVersion(null);
         setParticipants([]);
-        setActiveExecution(null);
+        setActiveRuns(EMPTY_RUNS);
+        setInstances(EMPTY_INSTANCES);
         setLocalSessionId(null);
       },
       onReady: (ready) => {
@@ -168,9 +190,10 @@ export function useGraphRoomSession({
         setAuthorizationVersion(ready.capabilities.authorization_version);
         setTerminalReason(null);
         setFailure(null);
-        setLocalSessionId(ready.graph_room_session_id);
+        setLocalSessionId(ready.project_room_session_id);
         setParticipants(ready.participants);
-        setActiveExecution(ready.active_execution);
+        setActiveRuns(ready.active_runs);
+        setInstances(instanceMap(ready.instances));
         onReadyRef.current?.(ready);
       },
       onRehydrate: (nextHead) => {
@@ -197,22 +220,29 @@ export function useGraphRoomSession({
         setCapabilities([]);
         setAuthorizationVersion(null);
         setParticipants([]);
-        setActiveExecution(null);
+        setActiveRuns(EMPTY_RUNS);
+        setInstances(EMPTY_INSTANCES);
         setLocalSessionId(null);
       },
-      onActiveExecution: (execution) => {
-        setActiveExecution(execution);
-        onActiveExecutionRef.current?.(execution);
+      onRunStarted: (message) => {
+        setActiveRuns(session.getActiveRuns());
+        onRunStartedRef.current?.(message);
       },
-      onExecutionCleared: (message) => {
-        onExecutionClearedRef.current?.(message);
+      onRunFinished: (message) => {
+        setActiveRuns(session.getActiveRuns());
+        onRunFinishedRef.current?.(message);
+      },
+      onInstancesChanged: (message) => {
+        setInstances(instanceMap(message.instances));
+        onInstancesChangedRef.current?.(message);
       },
       onTerminalClose: (reason) => {
         setTerminalReason(reason);
         setCapabilities([]);
         setAuthorizationVersion(null);
         setParticipants([]);
-        setActiveExecution(null);
+        setActiveRuns(EMPTY_RUNS);
+        setInstances(EMPTY_INSTANCES);
         setLocalSessionId(null);
         onTerminalCloseRef.current?.(reason);
       },
@@ -226,9 +256,9 @@ export function useGraphRoomSession({
         sessionRef.current = null;
       }
     };
-  }, [workspaceId, graphId]);
+  }, [workspaceId, projectId]);
 
-  const stateIsCurrent = graphId !== null && stateGraphId === graphId;
+  const stateIsCurrent = projectId !== null && stateProjectId === projectId;
   const currentStatus = stateIsCurrent ? status : "idle";
   const currentTerminalReason = stateIsCurrent ? terminalReason : null;
   const currentFailure = stateIsCurrent ? failure : null;
@@ -239,56 +269,61 @@ export function useGraphRoomSession({
     : null;
   const currentLocalSessionId = stateIsCurrent ? localSessionId : null;
   const currentParticipants = stateIsCurrent ? participants : [];
-  const currentActiveExecution = stateIsCurrent ? activeExecution : null;
+  const currentActiveRuns = stateIsCurrent ? activeRuns : EMPTY_RUNS;
+  const currentInstances = stateIsCurrent ? instances : EMPTY_INSTANCES;
 
-  const submitCommand = React.useCallback(
-    async (command: RoomGraphCommand): Promise<GraphRoomSubmitResult> => {
-      if (!graphId) {
-        throw new Error("Graph room is not connected.");
+  const submitCommands = React.useCallback(
+    async (
+      commands: readonly RoomProjectCommand[],
+    ): Promise<ProjectRoomSubmitResult> => {
+      if (!projectId) {
+        throw new Error("Project room is not connected.");
       }
       const session = sessionRef.current;
       if (!session) {
-        throw new Error("Graph room is not connected.");
+        throw new Error("Project room is not connected.");
       }
-      const result = await session.submitCommand(command);
+      const result = await session.submitCommands(commands);
       const nextHead = session.getHead();
       if (!nextHead) {
-        throw new Error("Graph room head is unavailable after command submit.");
+        throw new Error("Project room head is unavailable after submit.");
       }
       setHead(nextHead);
       return { ...result, head: nextHead };
     },
-    [graphId],
+    [projectId],
   );
 
   const replaceHead = React.useCallback(
     (nextHead: CollaborativeHead) => {
-      if (!graphId) {
-        throw new Error("Graph room is not connected.");
+      if (!projectId) {
+        throw new Error("Project room is not connected.");
       }
       const session = sessionRef.current;
       if (!session) {
-        throw new Error("Graph room is not connected.");
+        throw new Error("Project room is not connected.");
       }
       session.replaceHead(nextHead);
       const effectiveHead = session.getHead();
       if (!effectiveHead) {
-        throw new Error("Graph room head is unavailable after reconciliation.");
+        throw new Error(
+          "Project room head is unavailable after reconciliation.",
+        );
       }
       setHead(effectiveHead);
       return effectiveHead;
     },
-    [graphId],
+    [projectId],
   );
 
   const reconcileCheckpointHead = React.useCallback(
     (checkpointHead: CollaborativeHead, expectedRoomEpoch: string) => {
-      if (!graphId) {
-        throw new Error("Graph room is not connected.");
+      if (!projectId) {
+        throw new Error("Project room is not connected.");
       }
       const session = sessionRef.current;
       if (!session) {
-        throw new Error("Graph room is not connected.");
+        throw new Error("Project room is not connected.");
       }
       const effectiveHead = session.reconcileCheckpointHead(
         checkpointHead,
@@ -297,21 +332,21 @@ export function useGraphRoomSession({
       setHead(effectiveHead);
       return effectiveHead;
     },
-    [graphId],
+    [projectId],
   );
 
   const publishPresence = React.useCallback(
     (update: Omit<PresenceUpdateSubmit, "presence_sequence">): boolean => {
-      if (!graphId) return false;
+      if (!projectId) return false;
       return sessionRef.current?.publishPresence(update) ?? false;
     },
-    [graphId],
+    [projectId],
   );
 
   const retry = React.useCallback(() => {
-    if (!graphId) return;
+    if (!projectId) return;
     sessionRef.current?.retry();
-  }, [graphId]);
+  }, [projectId]);
 
   return {
     status: currentStatus,
@@ -329,13 +364,33 @@ export function useGraphRoomSession({
       currentStatus === "ready" &&
       currentCapabilities.includes("publish_presence") &&
       currentTerminalReason === null,
+    canRun:
+      currentStatus === "ready" &&
+      currentCapabilities.includes("run_project") &&
+      currentTerminalReason === null,
     localSessionId: currentLocalSessionId,
     participants: currentParticipants,
-    activeExecution: currentActiveExecution,
-    submitCommand,
+    activeRuns: currentActiveRuns,
+    instances: currentInstances,
+    submitCommands,
     replaceHead,
     reconcileCheckpointHead,
     publishPresence,
     retry,
   };
 }
+
+function instanceMap(
+  entries: Iterable<RoomInstanceState>,
+): ReadonlyMap<string, RoomInstanceState> {
+  const next = new Map<string, RoomInstanceState>();
+  for (const state of entries) {
+    next.set(instanceKeyText(state.instance), state);
+  }
+  return next;
+}
+
+/** @deprecated a room is held around a Project. */
+export const useGraphRoomSession = useProjectRoomSession;
+/** @deprecated a room is held around a Project. */
+export type UseGraphRoomSessionResult = UseProjectRoomSessionResult;

@@ -4,7 +4,7 @@ import type { NodeRegistry, NodeSpec, SavedGraph } from "@/lib/api";
 import { addNodeCommand } from "./graph-document-adapter";
 import { hydrateSavedGraph } from "./saved-graph";
 import { createWorkflowNodeData, serializeRunNode } from "./types";
-import { createSavedGraphRequest } from "../model/graph-document";
+import { createGraphDraft } from "../model/graph-document";
 import { catalogNodeSpecs } from "../model/node-catalog";
 import { toRoomGraphCommand } from "../room/room-command-bridge";
 
@@ -76,7 +76,7 @@ describe("in-process family authoring", () => {
       edges: [],
       origins: [],
     };
-    const saved = createSavedGraphRequest(document);
+    const saved = createGraphDraft(document);
     const room = toRoomGraphCommand(command, document);
     const run = serializeRunNode("raster-1", data);
     for (const node of [command.node, saved.document.nodes[0], run]) {
