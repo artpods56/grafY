@@ -340,9 +340,6 @@ def test_instance_result_reads_the_last_result_after_the_document_moved(
     assert reread["outputs"] == stored["outputs"]
 
 
-
-
-
 def test_a_project_is_only_ever_the_project_of_its_own_workspace(
     harness: RoomHarness,
 ) -> None:

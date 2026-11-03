@@ -46,7 +46,9 @@ async def test_startup_registers_builtin_families_without_host_deployment(
         expected_slugs = {family.slug for family in APPLICATION_FAMILIES}
 
         assert {plugin.slug for plugin in registry.plugins} == expected_slugs
-        assert not any(node.operator_id.startswith("module.") for node in registry.nodes)
+        assert not any(
+            node.operator_id.startswith("module.") for node in registry.nodes
+        )
 
 
 @pytest.mark.asyncio

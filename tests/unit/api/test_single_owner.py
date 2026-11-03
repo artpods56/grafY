@@ -136,9 +136,7 @@ async def test_startup_interrupts_unfinished_runs_only_with_the_owner_lease(
         started_by_user_id=owner.id,
         created_at=datetime.now(UTC),
     )
-    app = create_app(
-        _settings(tmp_path, database_url, single_owner=True)
-    )
+    app = create_app(_settings(tmp_path, database_url, single_owner=True))
     lock = ApiOwnerLease(tmp_path / "workbench" / ".grafy-api-owner.lock")
     if mode == "lease_contended":
         lock.acquire()
