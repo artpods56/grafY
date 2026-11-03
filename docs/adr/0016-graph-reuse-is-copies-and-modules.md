@@ -1,7 +1,8 @@
 # ADR 0016: Reusing a graph means copying it or calling it as a Module
 
-- **Status:** Accepted (withdraws the Template aggregate and the Module
-  deprecate/withdraw/import lifecycle)
+- **Status:** Accepted; the Module half is superseded by ADR 0020 (in-project calls
+  replace published Modules until cross-project reuse returns); the copy half stands
+  (withdraws the Template aggregate and the Module deprecate/withdraw/import lifecycle)
 - **Related:** ADR 0010 (Library folders), `docs/design/modules-conceptual-model.md`,
   `docs/design/graph-browser-organization.md`, `CONTEXT.md` (Module)
 

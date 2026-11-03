@@ -1,6 +1,7 @@
 # ADR 0014: Apply graph command batches as validated steps and broadcast entity diffs
 
-- **Status:** Proposed
+- **Status:** Proposed; amended by ADR 0020 (the collaborative document and its
+  command batches become Project-scoped)
 - **Date:** 2026-10-11
 - **Scope:** Collaborative graph command application, the graph-room protocol,
   and the Workbench's confirmed head and authored document

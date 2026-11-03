@@ -233,10 +233,9 @@ If the release fails before Alembic changes the database, run the script with
 the previous SHA. Rollback targets must have published images, so they must be
 commits from after the images were introduced. If Alembic changed the database, stop Grafy and restore the
 matching dump before you start the previous commit. Do not run an older binary
-against a newer schema. If the ADR 0017 migration has dropped release tables,
-its downgrade recreates empty tables. Restore the matching pre-migration dump
-before starting the old application. Retain historical immutable releases for
-that recovery; do not rewrite their manifests.
+against a newer schema. The schema is one baseline revision and its downgrade drops
+every table, so never downgrade a deployed database to roll a release back: restore
+the dump taken before the failed migration instead.
 
 Restore a dump only during a maintenance window:
 

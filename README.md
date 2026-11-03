@@ -35,9 +35,8 @@ flowchart LR
     SQL --> Cache["Content-addressed invocation cache"]
     SQL --> Secrets["Encrypted graph/node secrets"]
     API --> Storage["Local or S3 artifact object storage"]
-    Releases["Selected immutable Plugin releases"] --> API
-    API --> Adapters["Exact host or retained OCI adapter"]
-    Adapters --> Core
+    Families["Registered node families: builtins + plugins/"] --> API
+    API --> Egress["Egress guard for user-supplied destinations"]
 ```
 
 - `apps/web` owns the canvas, node rendering, schema-driven controls, and edge
@@ -253,10 +252,9 @@ sent over an unprotected network.
 ### Author graphs with Python
 
 The `grafy-client` package loads the effective Workspace catalog, validates
-local Node classes against it, builds the canonical saved document with exact
-Plugin release pins, and uses the public PAT-authenticated HTTP API to upload,
-save, configure, execute, and inspect a graph. See
-[Build and run a graph with Python](docs/how-to-author-graphs-with-python.md).
+local Node classes against it, builds the canonical saved document from each
+node's operator id and version, and uses the public PAT-authenticated HTTP API to
+upload, save, configure, execute, and inspect a graph.
 
 ## Verify
 
@@ -302,12 +300,12 @@ just e2e-live
 
 ## Containers
 
-The API Dockerfile's `api-plugins` target adds the Docker CLI used by the
-opt-in retained OCI runtime and System publisher, but installs only
-`grafy-api` and its bundled dependencies. GIS, LLM, Mistral, SQL, and their native
-tools belong in retained Plugin images, not the online API image. A one-shot
-migration service must complete before the API starts. SQLite, uploads, and
-artifact objects share the durable `grafy-data` volume.
+The API image installs `grafy-api` with the application families this build
+registers — the `grafy_workbench` builtins and the `plugins/` packages — plus the
+GDAL tools the GIS family shells out to. There is no Plugin runtime image, no
+publisher image and no Docker CLI in the API image: every family executes inside the
+API process. A one-shot migration service must complete before the API starts.
+SQLite, uploads, and artifact objects share the durable `grafy-data` volume.
 
 ```bash
 just docker-up

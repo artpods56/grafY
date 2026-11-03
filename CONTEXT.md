@@ -478,8 +478,7 @@ See [ADR 0017](docs/adr/0017-plugins-are-application-code-in-process.md).
 
 The current application registry excludes Python and SQL. Python execution and
 its presets are retired. SQL remains unavailable pending its execution safety
-review. Historical Plugin pins are ignored on read without rewriting stored
-checkpoints; all registered nodes use the deployment build identity.
+review. All registered nodes use the deployment build identity.
 
 ### Egress guard
 
@@ -508,9 +507,7 @@ an existing release. Call sites pin an immutable Module release
 release. A published release is the only Module state; publishing again adds
 another release. There is no deprecate, withdraw, un-publish, or hard delete of
 releases, and no cross-workspace Module import: reuse a Module from another
-Workspace by duplicating the graph. A Module stored in the retired `deprecated`
-or `withdrawn` state stays out of library browse and Add node while its pinned
-calls keep resolving.
+Workspace by duplicating the graph.
 
 ### Node catalog / Add node
 
