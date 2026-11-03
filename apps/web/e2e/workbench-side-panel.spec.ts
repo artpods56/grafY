@@ -56,6 +56,7 @@ const LIBRARY: LibraryList = {
       name: "measurements.csv",
       provenance: {
         source: "upload",
+        call_path: [],
         saved_at: "2026-09-17T12:00:00Z",
         original_filename: "measurements.csv",
       },
