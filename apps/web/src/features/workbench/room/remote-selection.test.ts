@@ -13,7 +13,7 @@ function participant(
   color = "rose",
 ): PresenceParticipant {
   return {
-    graph_room_session_id: sessionId,
+    project_room_session_id: sessionId,
     actor: {
       actor_id: "00000000-0000-4000-8000-000000000001",
       display_name: "Ada",

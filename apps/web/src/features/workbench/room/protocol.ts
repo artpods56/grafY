@@ -130,10 +130,7 @@ export interface PresenceUpdateSubmit {
 export type RunLifecycleStatus = RunStatus;
 export type ActiveRunLifecycleStatus = "running";
 export type TerminalRunStatus =
-  | "succeeded"
-  | "failed"
-  | "cancelled"
-  | "interrupted";
+  "succeeded" | "failed" | "cancelled" | "interrupted";
 
 /** The room's identity for one node instance. */
 export interface RoomInstanceKey {
@@ -303,7 +300,11 @@ function isFiniteNumber(value: unknown): value is number {
 
 function parsePresencePoint(value: unknown): PresencePoint | null {
   if (value === null) return null;
-  if (!isRecord(value) || !isFiniteNumber(value.x) || !isFiniteNumber(value.y)) {
+  if (
+    !isRecord(value) ||
+    !isFiniteNumber(value.x) ||
+    !isFiniteNumber(value.y)
+  ) {
     return null;
   }
   return { x: value.x, y: value.y };
@@ -351,7 +352,11 @@ function parseParticipant(value: unknown): PresenceParticipant | null {
   if (!actor || !isString(value.project_room_session_id)) return null;
   if (!isNonNegativeInt(value.presence_sequence)) return null;
   const graphId = optionalString(value.graph_id);
-  if (graphId === undefined && value.graph_id !== undefined && value.graph_id !== null) {
+  if (
+    graphId === undefined &&
+    value.graph_id !== undefined &&
+    value.graph_id !== null
+  ) {
     return null;
   }
   const cursor =
@@ -516,7 +521,9 @@ function parseInstanceState(value: unknown): RoomInstanceState | null {
   };
 }
 
-function parseRunTargets(value: unknown): readonly { node_id: string; call_path: readonly string[] }[] | null {
+function parseRunTargets(
+  value: unknown,
+): readonly { node_id: string; call_path: readonly string[] }[] | null {
   if (!Array.isArray(value)) return null;
   const targets: { node_id: string; call_path: readonly string[] }[] = [];
   for (const item of value) {
@@ -562,7 +569,9 @@ function parseActiveRun(value: unknown): ActiveRunSummary | null {
   };
 }
 
-function parseCommandList(value: unknown): readonly RoomProjectCommand[] | null {
+function parseCommandList(
+  value: unknown,
+): readonly RoomProjectCommand[] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
   if (!value.every((command) => isRecord(command) && isString(command.kind))) {
     return null;
@@ -792,7 +801,7 @@ export function instanceKeyText(key: RoomInstanceKey): string {
     key.call_path.join("/"),
     key.node_id,
     key.map_index === null ? "" : String(key.map_index),
-  ].join(" ");
+  ].join("\u0000");
 }
 
 export type GraphRoomTerminalReason = ProjectRoomTerminalReason;

@@ -2,11 +2,10 @@
 
 import * as React from "react";
 
-import type { CollaborativeHead } from "@/lib/api";
+import type { ActiveRunSummary, CollaborativeHead } from "@/lib/api";
 
 import {
   ProjectRoomSession,
-  type ActiveRunSummary,
   type ProjectRoomAcceptedMeta,
   type ProjectRoomFailure,
   type ProjectRoomStatus,
@@ -23,7 +22,6 @@ import type {
   ProjectCommandRejectedMessage,
   RoomReadyMessage,
   RunFinishedMessage,
-  RunStartedMessage,
 } from "./protocol";
 
 export interface ProjectRoomSubmitResult {
@@ -79,9 +77,9 @@ interface UseProjectRoomSessionOptions {
     meta: ProjectRoomAcceptedMeta,
   ) => void;
   onCommandRejected?: (message: ProjectCommandRejectedMessage) => void;
-  onRunStarted?: (message: RunStartedMessage) => void;
+  onActiveRunsChange?: (runs: readonly ActiveRunSummary[]) => void;
   onRunFinished?: (message: RunFinishedMessage) => void;
-  onInstancesChanged?: (message: InstancesChangedMessage) => void;
+  onInstancesChange?: (message: InstancesChangedMessage) => void;
   onTerminalClose?: (reason: ProjectRoomTerminalReason) => void;
 }
 
@@ -96,9 +94,9 @@ export function useProjectRoomSession({
   onHeadRefreshRequired,
   onCommandAccepted,
   onCommandRejected,
-  onRunStarted,
+  onActiveRunsChange,
   onRunFinished,
-  onInstancesChanged,
+  onInstancesChange,
   onTerminalClose,
 }: UseProjectRoomSessionOptions): UseProjectRoomSessionResult {
   const [stateProjectId, setStateProjectId] = React.useState<string | null>(
@@ -118,9 +116,8 @@ export function useProjectRoomSession({
   >([]);
   const [activeRuns, setActiveRuns] =
     React.useState<readonly ActiveRunSummary[]>(EMPTY_RUNS);
-  const [instances, setInstances] = React.useState<
-    ReadonlyMap<string, RoomInstanceState>
-  >(EMPTY_INSTANCES);
+  const [instances, setInstances] =
+    React.useState<ReadonlyMap<string, RoomInstanceState>>(EMPTY_INSTANCES);
   const [localSessionId, setLocalSessionId] = React.useState<string | null>(
     null,
   );
@@ -131,9 +128,9 @@ export function useProjectRoomSession({
   const onHeadRefreshRequiredRef = React.useRef(onHeadRefreshRequired);
   const onCommandAcceptedRef = React.useRef(onCommandAccepted);
   const onCommandRejectedRef = React.useRef(onCommandRejected);
-  const onRunStartedRef = React.useRef(onRunStarted);
+  const onActiveRunsChangeRef = React.useRef(onActiveRunsChange);
   const onRunFinishedRef = React.useRef(onRunFinished);
-  const onInstancesChangedRef = React.useRef(onInstancesChanged);
+  const onInstancesChangeRef = React.useRef(onInstancesChange);
   const onTerminalCloseRef = React.useRef(onTerminalClose);
 
   React.useEffect(() => {
@@ -142,19 +139,19 @@ export function useProjectRoomSession({
     onHeadRefreshRequiredRef.current = onHeadRefreshRequired;
     onCommandAcceptedRef.current = onCommandAccepted;
     onCommandRejectedRef.current = onCommandRejected;
-    onRunStartedRef.current = onRunStarted;
+    onActiveRunsChangeRef.current = onActiveRunsChange;
     onRunFinishedRef.current = onRunFinished;
-    onInstancesChangedRef.current = onInstancesChanged;
+    onInstancesChangeRef.current = onInstancesChange;
     onTerminalCloseRef.current = onTerminalClose;
   }, [
     onCommandAccepted,
     onCommandRejected,
     onHeadRefreshRequired,
-    onInstancesChanged,
+    onInstancesChange,
     onReady,
     onRehydrate,
     onRunFinished,
-    onRunStarted,
+    onActiveRunsChange,
     onTerminalClose,
   ]);
 
@@ -224,17 +221,17 @@ export function useProjectRoomSession({
         setInstances(EMPTY_INSTANCES);
         setLocalSessionId(null);
       },
-      onRunStarted: (message) => {
-        setActiveRuns(session.getActiveRuns());
-        onRunStartedRef.current?.(message);
+      onActiveRunsChange: (runs) => {
+        setActiveRuns(runs);
+        onActiveRunsChangeRef.current?.(runs);
       },
       onRunFinished: (message) => {
         setActiveRuns(session.getActiveRuns());
         onRunFinishedRef.current?.(message);
       },
-      onInstancesChanged: (message) => {
-        setInstances(instanceMap(message.instances));
-        onInstancesChangedRef.current?.(message);
+      onInstancesChange: (message) => {
+        setInstances(instanceMap(message.changed));
+        onInstancesChangeRef.current?.(message);
       },
       onTerminalClose: (reason) => {
         setTerminalReason(reason);
@@ -380,12 +377,16 @@ export function useProjectRoomSession({
   };
 }
 
+/**
+ * Instance state keyed by its identity. A result belongs to a node instance, so
+ * the canvas looks state up by the instance it is drawing, never by a Run.
+ */
 function instanceMap(
   entries: Iterable<RoomInstanceState>,
 ): ReadonlyMap<string, RoomInstanceState> {
   const next = new Map<string, RoomInstanceState>();
   for (const state of entries) {
-    next.set(instanceKeyText(state.instance), state);
+    next.set(instanceKeyText(state), state);
   }
   return next;
 }
