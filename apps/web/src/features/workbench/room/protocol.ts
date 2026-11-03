@@ -1,7 +1,6 @@
-import { collaborativeHeadFromLegacy } from "@/lib/api/graph-head";
 import type {
   CollaborativeHead,
-  LegacyCollaborativeHead,
+  SavedGraphDocument,
   SubmitGraphCommandRequest,
   WorkspaceCapability,
 } from "@/lib/api";
@@ -132,7 +131,7 @@ export interface ActiveExecutionSummary {
   readonly cancellable: boolean;
 }
 
-/** Parsed client event: the v1 wire head is normalized to a canonical document. */
+/** Parsed client event: the wire head carries the canonical saved document. */
 export interface RoomReadyMessage {
   readonly protocol_version: 1;
   readonly type: "room.ready";
@@ -368,24 +367,53 @@ function parseCapabilities(value: unknown): CapabilitySnapshot | null {
   };
 }
 
-function parseHead(value: unknown): LegacyCollaborativeHead | null {
+function parseSavedDocument(value: unknown): SavedGraphDocument | null {
   if (!isRecord(value)) return null;
+  if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) return null;
+  if (!Array.isArray(value.origins)) return null;
   if (
+    !value.nodes.every((node) => isRecord(node) && !Array.isArray(node)) ||
+    !value.edges.every((edge) => isRecord(edge) && !Array.isArray(edge)) ||
+    !value.origins.every((origin) => isRecord(origin) && !Array.isArray(origin))
+  ) {
+    return null;
+  }
+  const presentation = value.presentation;
+  if (
+    presentation !== undefined &&
+    presentation !== null &&
+    !isRecord(presentation)
+  ) {
+    return null;
+  }
+  return value as unknown as SavedGraphDocument;
+}
+
+function parseHead(value: unknown): CollaborativeHead | null {
+  if (!isRecord(value)) return null;
+  // The retired flat transport put the graph members on the head itself.
+  if (
+    "nodes" in value ||
+    "edges" in value ||
+    "origins" in value ||
+    "presentation" in value
+  ) {
+    return null;
+  }
+  const document = parseSavedDocument(value.document);
+  if (
+    !document ||
     !isString(value.graph_id) ||
     !isString(value.room_epoch) ||
     !isNonNegativeInt(value.collaboration_sequence) ||
     !isNonNegativeInt(value.checkpoint_sequence) ||
     !isPositiveInt(value.checkpoint_revision) ||
     !isString(value.name) ||
-    !isString(value.updated_at) ||
-    !Array.isArray(value.nodes) ||
-    !Array.isArray(value.edges) ||
-    !value.nodes.every((node) => isRecord(node) && !Array.isArray(node)) ||
-    !value.edges.every((edge) => isRecord(edge) && !Array.isArray(edge))
+    !isString(value.updated_at)
   ) {
     return null;
   }
-  return value as LegacyCollaborativeHead;
+  return value as unknown as CollaborativeHead;
 }
 
 function parseActiveExecution(value: unknown): ActiveExecutionSummary | null {
@@ -468,7 +496,7 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       graph_room_session_id: raw.graph_room_session_id,
       actor,
       capabilities,
-      head: collaborativeHeadFromLegacy(head),
+      head,
       participants: participants as PresenceParticipant[],
       active_execution: activeExecution,
       registry_marker: raw.registry_marker,
@@ -577,7 +605,7 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       protocol_version: 1,
       type: "room.rehydrate",
       reason: "epoch_reset",
-      head: collaborativeHeadFromLegacy(head),
+      head,
     };
   }
   if (type === "execution.active") {

@@ -1,5 +1,3 @@
-import { collaborativeHeadFromLegacy } from "@/lib/api/graph-head";
-import type { LegacyCollaborativeHead } from "@/lib/api";
 // @vitest-environment jsdom
 
 import * as React from "react";
@@ -7,12 +5,17 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RoomReadyMessage } from "./protocol";
+import type { SavedGraphDocument } from "@/lib/api";
 import {
   useGraphRoomSession,
   type UseGraphRoomSessionResult,
 } from "./useGraphRoomSession";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+function emptyDocument(): SavedGraphDocument {
+  return { schema_version: 7, nodes: [], edges: [], origins: [] };
+}
 
 class FakeWebSocket {
   static readonly CONNECTING = 0;
@@ -51,7 +54,7 @@ class FakeWebSocket {
 
 function readyMessage(
   graphId: string,
-): Omit<RoomReadyMessage, "head"> & { head: LegacyCollaborativeHead } {
+): RoomReadyMessage {
   return {
     protocol_version: 1,
     type: "room.ready",
@@ -75,8 +78,7 @@ function readyMessage(
       checkpoint_revision: 1,
       name: "Room graph",
       updated_at: "2026-08-13T00:00:00Z",
-      nodes: [],
-      edges: [],
+      document: emptyDocument(),
     },
     participants: [
       {
@@ -237,7 +239,7 @@ describe("useGraphRoomSession", () => {
     React.act(() => {
       effectiveHead = latest?.reconcileCheckpointHead(
         {
-          ...collaborativeHeadFromLegacy(readyMessage("graph-1").head),
+          ...readyMessage("graph-1").head,
           checkpoint_sequence: 4,
           checkpoint_revision: 2,
         },

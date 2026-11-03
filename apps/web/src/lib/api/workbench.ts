@@ -1,11 +1,9 @@
-import { collaborativeHeadFromLegacy } from "./graph-head";
 import { API_BASE, ApiError, putUploadBytes, request } from "./client";
 import type {
   AppliedNodeSecret,
   ApplyNodeSecretRequest,
   CheckpointGraphRequest,
   CheckpointGraphResponse,
-  LegacyCheckpointGraphResponse,
   CollaborativeHead,
   CopyExactHeadRequest,
   CopyExactHeadResponse,
@@ -25,7 +23,6 @@ import type {
   SavedGraph,
   SubmitGraphCommandRequest,
   SubmitGraphCommandResponse,
-  LegacySubmitGraphCommandResponse,
   TableCell,
   TablePage,
   TableSchema,
@@ -388,30 +385,28 @@ export function getCollaborativeHead(workspaceId: string, graphId: string) {
   );
 }
 
-export async function submitGraphCommand(
+export function submitGraphCommand(
   workspaceId: string,
   graphId: string,
   requestBody: SubmitGraphCommandRequest,
 ): Promise<SubmitGraphCommandResponse> {
-  const response = await request<LegacySubmitGraphCommandResponse>(
+  return request<SubmitGraphCommandResponse>(
     "POST",
     `/v1/workspaces/${encodeURIComponent(workspaceId)}/graphs/${encodeURIComponent(graphId)}/commands`,
     { body: requestBody },
   );
-  return { ...response, head: collaborativeHeadFromLegacy(response.head) };
 }
 
-export async function checkpointGraph(
+export function checkpointGraph(
   workspaceId: string,
   graphId: string,
   requestBody: CheckpointGraphRequest,
 ): Promise<CheckpointGraphResponse> {
-  const response = await request<LegacyCheckpointGraphResponse>(
+  return request<CheckpointGraphResponse>(
     "POST",
     `/v1/workspaces/${encodeURIComponent(workspaceId)}/graphs/${encodeURIComponent(graphId)}/checkpoint`,
     { body: requestBody },
   );
-  return { ...response, head: collaborativeHeadFromLegacy(response.head) };
 }
 
 export function copyExactHead(
