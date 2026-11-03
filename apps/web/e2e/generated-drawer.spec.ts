@@ -21,6 +21,9 @@ test("shows Generated inside the existing docked workbench side panel", async ({
   if (await openNavigation.isVisible()) await openNavigation.click();
   const generatedButton = page.getByRole("button", {
     name: "Generated artifacts",
+    // The opened drawer adds "Refresh…" and "Close…" header buttons; only the
+    // rail item carries the expansion state this spec reads.
+    exact: true,
   });
   await generatedButton.click();
 
