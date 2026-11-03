@@ -1,4 +1,8 @@
-import type { CollaborativeHead, WorkspaceCapability } from "@/lib/api";
+import type {
+  ActiveRunSummary,
+  CollaborativeHead,
+  WorkspaceCapability,
+} from "@/lib/api";
 
 import {
   ProjectRoomCommandError,
@@ -12,7 +16,6 @@ import {
   ROOM_PROTOCOL_VERSION,
   parseServerRoomMessage,
   terminalReasonFromClose,
-  type ActiveRunSummary,
   type ActorPresentation,
   type ProjectCommandAcceptedMessage,
   type ProjectCommandRejectedMessage,
@@ -20,7 +23,6 @@ import {
   type ProjectRoomFailure,
   type ProjectRoomRecoveryReason,
   type ProjectRoomTerminalReason,
-  type InstanceChangedMessage as never,
   type InstancesChangedMessage,
   type PresenceParticipant,
   type PresenceUpdateSubmit,

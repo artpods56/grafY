@@ -1,7 +1,8 @@
 export {
-  GraphRoomCommandError,
   PRESENCE_CLIENT_MIN_INTERVAL_MS,
   ProjectRoomCommandError,
+  /** @deprecated the room belongs to a Project, not to a Graph. */
+  ProjectRoomCommandError as GraphRoomCommandError,
   ProjectRoomSession,
   ROOM_COMMAND_QUEUE_CAP,
   shouldReplaceCollaborativeHead,
@@ -31,6 +32,8 @@ export {
   toRoomRenameProjectCommand,
   toRoomReplaceDocumentCommand,
   type RoomGraphBodyCommand,
+  /** @deprecated a command is addressed to a Project, and maybe one Graph inside it. */
+  type RoomGraphCommand,
   type RoomProjectCommand,
 } from "./room-command-bridge";
 export { PresenceOverlay } from "./PresenceOverlay";
@@ -53,7 +56,6 @@ export {
 export { instanceKeyText } from "./protocol";
 export type {
   InstancesChangedMessage,
-  InstanceChangedMessage,
   PresenceActivityKind,
   PresencePoint,
   ProjectCommandAcceptedMessage,

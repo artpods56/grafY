@@ -1,11 +1,11 @@
 import type {
   CollaborativeHead,
   GraphDefinition,
+  GraphDraft,
   GraphPresentationDocument,
   InGraphCommand,
   ProjectCommand,
   SavedGraph,
-  GraphDraft,
   SavedGraphDocument,
 } from "@/lib/api";
 
@@ -82,12 +82,7 @@ export function toRoomRenameGraphCommand(
   name: string,
   expectedName: string,
 ): RoomProjectCommand {
-  return {
-    kind: "rename_graph",
-    graph_id: graphId,
-    name,
-    expected_name: expectedName,
-  };
+  return { kind: "rename_graph", graph_id: graphId, name, expected_name: expectedName };
 }
 
 /** Rename the Project. Its name is what a person opens from the browser. */
@@ -103,6 +98,8 @@ export function toRoomRenameProjectCommand(
  *
  * Every Graph command is addressed to one Graph, so `graphId` is required: a
  * Project holds several Graphs and an unaddressed edit names none of them.
+ * Renaming a Graph is the exception that proves the rule — the name belongs to
+ * the Project, so it leaves as a Project command, not as an edit inside one.
  */
 export function toRoomGraphCommand(
   command: GraphCommand,
@@ -110,8 +107,6 @@ export function toRoomGraphCommand(
   graphId: string,
 ): RoomProjectCommand | null {
   if (command.kind === "rename_graph") {
-    // A Graph is named by the Project that holds it, so this one is not
-    // addressed into a Graph document even though it names one.
     return toRoomRenameGraphCommand(graphId, command.name, document.name);
   }
   const body = toRoomGraphBodyCommand(command, document);
@@ -253,15 +248,13 @@ export function toRoomGraphBodyCommand(
       };
     }
     case "replace_document": {
-      const draft = createGraphDraft(
-        command.document,
-        emptyGraphPresentation(),
-      );
-      return { kind: "replace_document", document: draft.document };
+      // The authored document holds no presentation: replacing the body of a
+      // Graph is the same projection a local apply performs.
+      return asRoomBody({
+        kind: "replace_document",
+        document: createGraphDraft(command.document).document,
+      });
     }
-    case "rename_graph":
-      // Named by the Project, not by the Graph document; see toRoomGraphCommand.
-      return null;
     case "add_input_plug":
     case "remove_input_plug":
     case "reorder_input_plug": {
@@ -282,6 +275,9 @@ export function toRoomGraphBodyCommand(
       });
     }
   }
+  // Renaming a Graph is a Project command and a local replace_document is
+  // mapped above: anything else has no in-graph wire form to map to.
+  return null;
 }
 
 /**
@@ -564,19 +560,21 @@ export function applyRoomCommandToHead(
   }
 
   if (command.kind === "add_call_node") {
-    return mapGraphDocument(
-      head,
-      command.graph_id,
-      (graph) => {
-        const nodes = graph.document.nodes.map((node) =>
-          node.id === command.node_id
-            ? { ...node, kind: "call" as const, position: command.position }
-            : node,
-        );
-        return withGraphDocument(graph, { ...graph.document, nodes });
-      },
-      sequence,
-    );
+    return mapGraphDocument(head, command.graph_id, (graph) => {
+      const nodes = graph.document.nodes.map((node) =>
+        node.id === command.node_id
+          ? {
+              ...node,
+              kind: "call" as const,
+              position: command.position,
+            }
+          : node,
+      );
+      return withGraphDocument(graph, {
+        ...graph.document,
+        nodes,
+      });
+    }, sequence);
   }
 
   if (command.kind !== "in_graph") {
@@ -624,16 +622,13 @@ export function applyRoomCommandToHead(
           ]),
         );
         const presentation = presentationFromGraphDocument(graph.document);
-        return withGraphDocument(
-          graph,
-          presentationIntoDocument(graph.document, {
-            ...presentation,
-            viewers: presentation.viewers.map((viewer) => {
-              const position = positions.get(viewer.id);
-              return position ? { ...viewer, position } : viewer;
-            }),
+        return withGraphDocument(graph, presentationIntoDocument(graph.document, {
+          ...presentation,
+          viewers: presentation.viewers.map((viewer) => {
+            const position = positions.get(viewer.id);
+            return position ? { ...viewer, position } : viewer;
           }),
-        );
+        }));
       },
       sequence,
     );
@@ -651,16 +646,13 @@ export function applyRoomCommandToHead(
           ]),
         );
         const presentation = presentationFromGraphDocument(graph.document);
-        return withGraphDocument(
-          graph,
-          presentationIntoDocument(graph.document, {
-            ...presentation,
-            annotations: presentation.annotations.map((annotation) => {
-              const position = positions.get(annotation.id);
-              return position ? { ...annotation, position } : annotation;
-            }),
+        return withGraphDocument(graph, presentationIntoDocument(graph.document, {
+          ...presentation,
+          annotations: presentation.annotations.map((annotation) => {
+            const position = positions.get(annotation.id);
+            return position ? { ...annotation, position } : annotation;
           }),
-        );
+        }));
       },
       sequence,
     );
