@@ -69,11 +69,3 @@ export function GraphRowMenu({
     </Popover.Root>
   );
 }
-
-export function promptGraphRename(currentName: string): string | null {
-  const next = window.prompt("Rename graph", currentName);
-  if (next === null) return null;
-  const trimmed = next.trim();
-  if (!trimmed || trimmed === currentName) return null;
-  return trimmed.slice(0, 160);
-}

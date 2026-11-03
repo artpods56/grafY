@@ -46,7 +46,7 @@ import {
   WorkbenchActivityBar,
   type WorkbenchActivity,
 } from "./WorkbenchActivityBar";
-import { GraphNameDialog } from "./GraphNameDialog";
+import { NameDialog } from "@/components/ui/name-dialog";
 import {
   ArtifactFolderDropDialog,
   type PendingFolderDrop,
@@ -4824,8 +4824,12 @@ function WorkbenchBody({
         />
       ) : null}
 
-      <GraphNameDialog
+      <NameDialog
         open={nameDialogOpen}
+        title="Name this graph"
+        description="Pick a name before saving. You can rename it later."
+        label="Graph name"
+        placeholder="Untitled workflow"
         initialName={graphName.trim() === "Untitled workflow" ? "" : graphName}
         onClose={() => setNameDialogOpen(false)}
         onSubmit={(name) => {

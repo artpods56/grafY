@@ -25,6 +25,7 @@ import {
   type LibraryList,
   type NodeRegistry,
 } from "@/lib/api";
+import { NameDialog } from "@/components/ui/name-dialog";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { artifactTypeKey } from "../canvas/artifact-type-key";
 import { formatArtifactTypeLabel } from "../canvas/artifact-type-label";
@@ -643,6 +644,7 @@ function ArtifactRow({
   onSave: (row: GeneratedRow, name: string) => void;
 }) {
   const label = rowLabel(row, registry);
+  const [naming, setNaming] = React.useState(false);
 
   return (
     <div
@@ -680,13 +682,21 @@ function ArtifactRow({
               : "Saving into the Library needs edit access"
           }
           {...stylex.props(s.saveButton)}
-          onClick={() => {
-            const name = window.prompt(`Save ${label} into the Library`, label);
-            if (name !== null) onSave(row, name);
-          }}
+          onClick={() => setNaming(true)}
         >
           {saving ? "Saving…" : "Save"}
         </button>
+        <NameDialog
+          open={naming}
+          title={`Save ${label} into the Library`}
+          label="Library name"
+          initialName={label}
+          onClose={() => setNaming(false)}
+          onSubmit={(name) => {
+            setNaming(false);
+            onSave(row, name);
+          }}
+        />
       </span>
       <span {...stylex.props(s.rowMeta)}>
         {portLabel(row)} ·{" "}

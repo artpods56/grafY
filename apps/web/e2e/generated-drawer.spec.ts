@@ -29,12 +29,15 @@ test("shows Generated inside the existing docked workbench side panel", async ({
   const openNavigation = page.getByRole("button", { name: "Open navigation" });
   if (await openNavigation.isVisible()) await openNavigation.click();
 
-  // An unnamed draft is named through a prompt. `window.prompt` opens while
-  // the Save click is still being dispatched, so the answer cannot live after
-  // `await click()` — the click would wait for the dialog and the dialog
-  // would wait for an answer that never arrives.
-  page.once("dialog", (dialog) => void dialog.accept("Pilot pipeline"));
+  // An unnamed draft is named in a dialog before it is saved.
   await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Graph name" })
+    .fill("Pilot pipeline");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Save", exact: true })
+    .click();
   await expect(page).toHaveURL(
     /\/workspaces\/mobile-test\/projects\/[0-9a-f-]{36}$/,
   );

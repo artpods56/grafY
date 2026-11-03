@@ -66,9 +66,6 @@ async function addTextNode(page: Page): Promise<void> {
 test("the provider signs a person in, and their graph edit survives a reload", async ({
   page,
 }) => {
-  // Naming a graph on first save goes through a prompt; the suite names it.
-  page.on("dialog", (dialog) => void dialog.accept(GRAPH_NAME));
-
   // 1. An unauthenticated visit offers the login start. No session is handed over.
   await page.goto(`${origin}/graphs`);
   await expect(loginStart(page)).toBeVisible();
@@ -112,6 +109,12 @@ test("the provider signs a person in, and their graph edit survives a reload", a
   // 5. Saving creates the durable Project. The room and the checkpoint are the
   //    API's, so the URL changes to the id the API issued.
   await saveButton(page).click();
+  // An unnamed draft is named in a dialog before it is saved.
+  await page.getByRole("textbox", { name: "Graph name" }).fill(GRAPH_NAME);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Save", exact: true })
+    .click();
   await page.waitForURL(/\/workspaces\/[^/]+\/projects\/[0-9a-f-]{36}$/, {
     timeout: COLD_ROUTE_MS,
   });

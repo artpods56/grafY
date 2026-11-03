@@ -10,7 +10,7 @@ vi.mock("@stylexjs/stylex", () => ({
   props: () => ({ className: "" }),
 }));
 
-import { GraphNameDialog } from "./GraphNameDialog";
+import { NameDialog } from "./name-dialog";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -33,7 +33,15 @@ async function mount(props: {
   const root = createRoot(container);
   mountedRoots.add(root);
   await act(async () => {
-    root.render(<GraphNameDialog open initialName="" {...props} />);
+    root.render(
+      <NameDialog
+        open
+        title="Name it"
+        label="Name"
+        initialName=""
+        {...props}
+      />,
+    );
   });
 }
 
@@ -46,12 +54,12 @@ function typeName(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-describe("GraphNameDialog", () => {
+describe("NameDialog", () => {
   it("submits the trimmed name", async () => {
     const onSubmit = vi.fn();
     await mount({ onSubmit, onClose: vi.fn() });
     const input = document.querySelector<HTMLInputElement>(
-      'input[aria-label="Graph name"]',
+      'input[aria-label="Name"]',
     )!;
     await act(async () => typeName(input, "  Quarterly report  "));
     await act(async () => {
@@ -64,7 +72,7 @@ describe("GraphNameDialog", () => {
     const onSubmit = vi.fn();
     await mount({ onSubmit, onClose: vi.fn() });
     const input = document.querySelector<HTMLInputElement>(
-      'input[aria-label="Graph name"]',
+      'input[aria-label="Name"]',
     )!;
     await act(async () => typeName(input, "   "));
     await act(async () => {

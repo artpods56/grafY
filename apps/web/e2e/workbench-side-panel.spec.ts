@@ -1049,12 +1049,15 @@ test.describe("artifact wiring", () => {
     // become a Project first: the rail's Save creates one, replaces its Graph
     // document, and checkpoints it. The address naming the new Project is what
     // proves that whole chain went through the fixture's Project surface.
-    // An unnamed draft is named through a prompt. `window.prompt` opens while
-    // the Save click is still being dispatched, so the answer cannot live
-    // after `await click()` — the click would wait for the dialog and the
-    // dialog would wait for the answer that never arrives.
-    page.once("dialog", (dialog) => void dialog.accept("Pilot pipeline"));
+    // An unnamed draft is named in a dialog before it is saved.
     await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "Graph name" })
+      .fill("Pilot pipeline");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Save", exact: true })
+      .click();
     await expect(page).toHaveURL(
       /\/workspaces\/mobile-test\/projects\/[0-9a-f-]{36}$/,
     );

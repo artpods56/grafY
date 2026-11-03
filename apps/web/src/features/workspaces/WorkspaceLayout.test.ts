@@ -77,6 +77,10 @@ vi.mock("@/components/ui/dialog", () => ({
     React.createElement("h2", null, children),
 }));
 
+vi.mock("@/components/ui/name-dialog", () => ({
+  NameDialog: () => null,
+}));
+
 vi.mock("swr", () => ({
   useSWRConfig: () => ({ mutate: vi.fn() }),
 }));

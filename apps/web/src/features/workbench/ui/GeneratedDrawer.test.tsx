@@ -3,7 +3,7 @@
 import * as React from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig } from "swr";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
   ArtifactOutputValue,
@@ -77,13 +77,6 @@ afterEach(async () => {
   // Reset, not clear: an unconsumed mockRejectedValueOnce would otherwise be
   // handed to the next test and fail it for a reason that is not its own.
   vi.resetAllMocks();
-});
-
-beforeEach(() => {
-  vi.stubGlobal(
-    "prompt",
-    vi.fn(() => "Table"),
-  );
 });
 
 const REGISTRY = {
@@ -278,6 +271,39 @@ async function nextFrame() {
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => resolve());
     });
+  });
+}
+
+function libraryNameInput(): HTMLInputElement {
+  const input = document.querySelector<HTMLInputElement>(
+    'input[aria-label="Library name"]',
+  );
+  if (!input) throw new Error("The naming dialog was not shown");
+  return input;
+}
+
+/** Clicks a row's Save and confirms the name the dialog offers. */
+async function saveWithDefaultName(row: HTMLElement) {
+  await React.act(async () => {
+    saveIn(row).click();
+  });
+  const input = libraryNameInput();
+  await React.act(async () => {
+    input.form?.requestSubmit();
+  });
+}
+
+async function submitLibraryName(input: HTMLInputElement, name: string) {
+  const setValue = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  await React.act(async () => {
+    setValue?.call(input, name);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await React.act(async () => {
+    input.form?.requestSubmit();
   });
 }
 
@@ -529,9 +555,7 @@ describe("GeneratedDrawer", () => {
     const row = rowFor(container, "artifact-resized");
     expect(row.textContent).not.toContain("saved");
 
-    await React.act(async () => {
-      saveIn(row).click();
-    });
+    await saveWithDefaultName(row);
 
     expect(apiMocks.saveInstanceArtifactToLibrary).toHaveBeenCalledWith(
       "workspace-1",
@@ -575,9 +599,7 @@ describe("GeneratedDrawer", () => {
 
     expect(rowFor(container, "artifact-b").textContent).toContain("tables[1]");
 
-    await React.act(async () => {
-      saveIn(rowFor(container, "artifact-b")).click();
-    });
+    await saveWithDefaultName(rowFor(container, "artifact-b"));
 
     expect(apiMocks.saveInstanceArtifactToLibrary).toHaveBeenCalledWith(
       "workspace-1",
@@ -614,9 +636,7 @@ describe("GeneratedDrawer", () => {
 
     const { container } = await renderDrawer();
     const clickSave = async () => {
-      await React.act(async () => {
-        saveIn(rowFor(container, "artifact-resized")).click();
-      });
+      await saveWithDefaultName(rowFor(container, "artifact-resized"));
     };
     await clickSave();
     await clickSave();
@@ -752,9 +772,7 @@ describe("GeneratedDrawer", () => {
     );
 
     const { container } = await renderDrawer();
-    await React.act(async () => {
-      saveIn(rowFor(container, "artifact-resized")).click();
-    });
+    await saveWithDefaultName(rowFor(container, "artifact-resized"));
 
     expect(container.textContent).toContain(
       "Node result 'result-resize-1' does not have that output",
@@ -782,8 +800,7 @@ describe("GeneratedDrawer", () => {
     expect(apiMocks.saveInstanceArtifactToLibrary).not.toHaveBeenCalled();
   });
 
-  it("prompts with the artifact label as the default name", async () => {
-    vi.mocked(window.prompt).mockReturnValueOnce("  Report name  ");
+  it("asks for a name in a dialog, defaulting to the artifact label", async () => {
     storedResults([
       {
         owner: instance("resize-1"),
@@ -800,17 +817,20 @@ describe("GeneratedDrawer", () => {
       buttonNamed(container, "Save").click();
     });
 
-    expect(window.prompt).toHaveBeenCalledWith(
-      "Save Table into the Library",
-      "Table",
-    );
+    const input = libraryNameInput();
+    expect(document.body.textContent).toContain("Save Table into the Library");
+    expect(input.value).toBe("Table");
+    expect(apiMocks.saveInstanceArtifactToLibrary).not.toHaveBeenCalled();
+
+    await submitLibraryName(input, "  Report name  ");
+
     expect(apiMocks.saveInstanceArtifactToLibrary).toHaveBeenCalledWith(
       "workspace-1",
       expect.objectContaining({ name: "Report name" }),
     );
   });
 
-  it("keeps the row when naming is cancelled or outside the bound", async () => {
+  it("keeps the row when naming is cancelled", async () => {
     storedResults([
       {
         owner: instance("resize-1"),
@@ -820,15 +840,11 @@ describe("GeneratedDrawer", () => {
     apiMocks.listLibraryArtifacts.mockResolvedValue({ items: [] });
     const { container } = await renderDrawer();
 
-    vi.mocked(window.prompt).mockReturnValueOnce(null);
     await React.act(async () => buttonNamed(container, "Save").click());
-    expect(apiMocks.saveInstanceArtifactToLibrary).not.toHaveBeenCalled();
+    await React.act(async () => buttonNamed(document.body, "Cancel").click());
 
-    vi.mocked(window.prompt).mockReturnValueOnce("r".repeat(161));
-    await React.act(async () => buttonNamed(container, "Save").click());
-
-    expect(container.textContent).toContain(
-      "Library names must be between 1 and 160 characters.",
+    expect(document.querySelector('input[aria-label="Library name"]')).toBe(
+      null,
     );
     expect(rowFor(container, "artifact-resized")).toBeDefined();
     expect(apiMocks.saveInstanceArtifactToLibrary).not.toHaveBeenCalled();

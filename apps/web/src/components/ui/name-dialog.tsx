@@ -13,11 +13,17 @@ import {
 } from "@/components/ui/dialog";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-export const GRAPH_NAME_MAX_LENGTH = 160;
+export const NAME_MAX_LENGTH = 160;
 
-interface GraphNameDialogProps {
+interface NameDialogProps {
   open: boolean;
+  title: string;
+  description?: string;
+  /** Accessible name of the field. */
+  label: string;
+  placeholder?: string;
   initialName: string;
+  submitLabel?: string;
   onSubmit: (name: string) => void;
   onClose: () => void;
 }
@@ -65,15 +71,11 @@ const s = stylex.create({
 });
 
 /**
- * Names a graph the first time it is saved. It stands in for `window.prompt`,
- * which embedded browsers and webviews refuse to show.
+ * Asks for a name in a modal. It stands in for `window.prompt`, which embedded
+ * browsers and webviews refuse to show. Submitted names are trimmed and held to
+ * `NAME_MAX_LENGTH`; a blank name cannot be submitted.
  */
-export function GraphNameDialog({
-  open,
-  initialName,
-  onSubmit,
-  onClose,
-}: GraphNameDialogProps) {
+export function NameDialog({ open, onClose, ...form }: NameDialogProps) {
   return (
     <Dialog
       open={open}
@@ -83,32 +85,31 @@ export function GraphNameDialog({
     >
       <DialogContent size="compact">
         {/* Remounts per opening so the field starts from the current name. */}
-        {open ? (
-          <GraphNameForm
-            initialName={initialName}
-            onSubmit={onSubmit}
-            onClose={onClose}
-          />
-        ) : null}
+        {open ? <NameForm {...form} onClose={onClose} /> : null}
       </DialogContent>
     </Dialog>
   );
 }
 
-function GraphNameForm({
+function NameForm({
+  title,
+  description,
+  label,
+  placeholder,
   initialName,
+  submitLabel = "Save",
   onSubmit,
   onClose,
-}: Omit<GraphNameDialogProps, "open">) {
+}: Omit<NameDialogProps, "open">) {
   const [name, setName] = React.useState(initialName);
   const trimmed = name.trim();
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Name this graph</DialogTitle>
-        <DialogDescription>
-          Pick a name before saving. You can rename it later.
-        </DialogDescription>
+        <DialogTitle>{title}</DialogTitle>
+        {description ? (
+          <DialogDescription>{description}</DialogDescription>
+        ) : null}
       </DialogHeader>
       <DialogBody>
         <form
@@ -116,15 +117,15 @@ function GraphNameForm({
           onSubmit={(event) => {
             event.preventDefault();
             if (!trimmed) return;
-            onSubmit(trimmed.slice(0, GRAPH_NAME_MAX_LENGTH));
+            onSubmit(trimmed.slice(0, NAME_MAX_LENGTH));
           }}
         >
           <input
             {...stylex.props(s.input)}
             autoFocus
-            aria-label="Graph name"
-            maxLength={GRAPH_NAME_MAX_LENGTH}
-            placeholder="Untitled workflow"
+            aria-label={label}
+            maxLength={NAME_MAX_LENGTH}
+            placeholder={placeholder}
             value={name}
             onChange={(event) => setName(event.target.value)}
             onFocus={(event) => event.currentTarget.select()}
@@ -134,7 +135,7 @@ function GraphNameForm({
               Cancel
             </button>
             <button type="submit" disabled={!trimmed} {...stylex.props(s.save)}>
-              Save
+              {submitLabel}
             </button>
           </div>
         </form>

@@ -32,6 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { NameDialog } from "@/components/ui/name-dialog";
 import { useAuthSession } from "@/features/auth/AuthSessionBoundary";
 import { useWorkbenchChrome } from "@/features/workbench/ui/WorkbenchChromeContext";
 import { SIDE_PANEL_ELEMENT_ID } from "@/features/workbench/ui/side-panel/workbench-side-panel-state";
@@ -55,7 +56,7 @@ import {
   type WorkspaceRole,
 } from "@/lib/api";
 import { deleteProjectRemote, renameProjectRemote } from "./graph-actions";
-import { GraphRowMenu, promptGraphRename } from "./GraphRowMenu";
+import { GraphRowMenu } from "./GraphRowMenu";
 import { sortGraphsByRecency } from "./WorkspaceGraphPanel";
 
 export interface WorkspaceContextValue {
@@ -304,6 +305,8 @@ export function WorkspaceRail({
   const [graphActionBusyId, setGraphActionBusyId] = React.useState<
     string | null
   >(null);
+  const [renameTarget, setRenameTarget] =
+    React.useState<SavedGraphSummary | null>(null);
   const [previewCollapsed, setPreviewCollapsed] = React.useState<
     boolean | null
   >(null);
@@ -609,10 +612,8 @@ export function WorkspaceRail({
   );
 
   const renameGraph = React.useCallback(
-    async (graph: SavedGraphSummary) => {
-      if (!activeWorkspace) return;
-      const next = promptGraphRename(graph.name);
-      if (!next) return;
+    async (graph: SavedGraphSummary, next: string) => {
+      if (!activeWorkspace || next === graph.name) return;
       setGraphActionBusyId(graph.id);
       try {
         if (chrome) {
@@ -1004,7 +1005,7 @@ export function WorkspaceRail({
                   <GraphRowMenu
                     graph={graph}
                     busy={graphActionBusyId === graph.id}
-                    onRename={(entry) => void renameGraph(entry)}
+                    onRename={setRenameTarget}
                     onDelete={(entry) => void deleteGraph(entry)}
                   />
                 </div>
@@ -1108,6 +1109,20 @@ export function WorkspaceRail({
           onPointerCancel={onResizePointerUp}
         />
       </aside>
+
+      <NameDialog
+        open={renameTarget !== null}
+        title="Rename graph"
+        label="Graph name"
+        initialName={renameTarget?.name ?? ""}
+        submitLabel="Rename"
+        onClose={() => setRenameTarget(null)}
+        onSubmit={(name) => {
+          const graph = renameTarget;
+          setRenameTarget(null);
+          if (graph) void renameGraph(graph, name);
+        }}
+      />
     </>
   );
 }
