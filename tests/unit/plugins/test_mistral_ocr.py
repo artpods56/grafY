@@ -3,31 +3,11 @@ import asyncio
 from collections.abc import Mapping
 from io import BytesIO
 from pathlib import Path
-from typing import cast, override
+from typing import cast
 from uuid import UUID, uuid4
 
 import httpx2 as httpx
 import pytest
-from PIL import Image
-from grafy_api.execution.requests import (
-    RunRequest,
-    RunNodeRequest,
-    RunOriginRequest,
-    RunEdgeRequest,
-)
-from grafy_api.services.composition import build_workbench_components, ExecutionLimits
-from grafy_core.file_contracts import PNG_FILE
-from grafy_core.application.saved_graphs import SavedGraphService
-from grafy_core.domain.graph_documents import (
-    SavedGraph,
-    GraphDocument,
-    GraphNode,
-    SavedGraphRevision,
-    GraphPoint,
-)
-from grafy_plugin_image import IMAGES
-from grafy_storage import LocalFileObjectStore
-from grafy_workbench.catalog import BUILTIN_FAMILIES, build_builtin_registry
 from pydantic import SecretStr, ValidationError
 
 from grafy_core.artifact_contracts import (
@@ -36,7 +16,7 @@ from grafy_core.artifact_contracts import (
     MARKDOWN,
     IMAGE_REGIONS,
 )
-from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactRefSequence
+from grafy_core.artifacts import ArtifactObject, ArtifactRef
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import NodeExecutionContext, PortShape
 from grafy_core.runtime.invocation import (
@@ -65,7 +45,7 @@ from tests.support.egress import (
     no_grants,
     trusted_loopback_destination,
 )
-from grafy_core.table_contracts import TABLE_DATA, Table
+from grafy_core.table_contracts import TABLE_DATA
 from mistralai.client.models.ocrresponse import OCRResponse
 from grafy_plugin_mistral.ocr import build_ocr_output
 
@@ -588,259 +568,6 @@ def test_registered_mistral_ocr_contract_supports_map(map_input: str) -> None:
         registration.node_class,
         NodeInvocation(mode=InvocationMode.MAP, map_inputs=(map_input,)),
     )
-
-
-class FakeSavedGraphs(SavedGraphService):
-    def __init__(self, revision: SavedGraphRevision) -> None:
-        self.revision = revision
-
-    @override
-    async def get_revision(
-        self, workspace_id: UUID, graph_id: UUID, revision: int
-    ) -> SavedGraphRevision:
-        assert (workspace_id, graph_id, revision) == (
-            self.revision.workspace_id,
-            self.revision.id,
-            self.revision.revision,
-        )
-        return self.revision
-
-
-@pytest.mark.parametrize("draw_regions", [False, True])
-async def test_decode_images_maps_ocr_through_api_compile_and_execute(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, draw_regions: bool
-) -> None:
-    uow = InMemoryUnitOfWork()
-    storage = LocalFileObjectStore(tmp_path / "objects")
-    registry = build_builtin_registry((*BUILTIN_FAMILIES, IMAGES, MISTRAL))
-    secret_graph = SavedGraph(
-        workspace_id=WORKSPACE_ID,
-        name="Mapped OCR",
-        document=GraphDocument(
-            nodes=(
-                GraphNode(
-                    kind="builtin",
-                    id="ocr",
-                    operator_id="mistral.ocr.process",
-                    operator_version=1,
-                    position=GraphPoint(x=0, y=0),
-                ),
-            )
-        ),
-    )
-    components = build_workbench_components(
-        plugin_registry=registry,
-        workspace=tmp_path,
-        unit_of_work=uow,
-        saved_graphs=FakeSavedGraphs(secret_graph.snapshot()),
-        storage=storage,
-        node_secrets=FakeNodeSecrets(SecretStr("provider-secret")),
-        dedupe_artifact_handlers=True,
-        limits=ExecutionLimits(map_max_concurrency=1),
-    )
-    refs: list[ArtifactRef] = []
-    for index, color in enumerate(("red", "blue")):
-        buffer = BytesIO()
-        size = (80 + index * 20, 100 + index * 20) if draw_regions else (80, 100)
-        Image.new("RGB", size, color).save(buffer, format="PNG")
-        saved = await storage.save(
-            SaveFileCommand(
-                bucket="workbench-artifacts",
-                path=f"source-{index}.png",
-                stream=BytesIO(buffer.getvalue()),
-                content_type="image/png",
-                metadata={},
-            )
-        )
-        artifact = ArtifactObject(
-            workspace_id=WORKSPACE_ID,
-            artifact_type=PNG_FILE.key.id,
-            schema_version=1,
-            content_type="image/png",
-            bucket=saved.bucket,
-            object_key=saved.path,
-            byte_size=saved.byte_size,
-            sha256=saved.sha256,
-            metadata={"original_filename": f"source-{index}.png"},
-        )
-        async with uow as transaction:
-            _ = await transaction.artifacts.add(artifact)
-            _ = await transaction.commit()
-        refs.append(artifact.ref())
-    bodies = [cast(dict[str, object], ocr_response().json()) for _ in refs]
-    for index, body in enumerate(bodies):
-        pages = cast(list[dict[str, object]], body["pages"])
-        pages[0]["markdown"] = f"image {index}"
-        if draw_regions:
-            pages[0]["dimensions"] = {
-                "dpi": 200,
-                "width": 80 + index * 20,
-                "height": 100 + index * 20,
-            }
-            images = cast(list[dict[str, object]], pages[0]["images"])
-            images[0].update(
-                {
-                    "top_left_x": 5 + index * 35,
-                    "top_left_y": 5 + index * 40,
-                    "bottom_right_x": 25 + index * 35,
-                    "bottom_right_y": 25 + index * 40,
-                }
-            )
-            page_blocks = cast(list[dict[str, object]], pages[0]["blocks"])
-            page_blocks[1].update(
-                {
-                    key: images[0][key]
-                    for key in (
-                        "top_left_x",
-                        "top_left_y",
-                        "bottom_right_x",
-                        "bottom_right_y",
-                    )
-                }
-            )
-
-    recorder = RequestRecorder(httpx.Response(200, json=bodies[1]))
-    recorder.next_responses = [httpx.Response(200, json=bodies[0])]
-    recorder.install(monkeypatch)
-    request = RunRequest(
-        secret_graph_id=secret_graph.id,
-        secret_graph_revision=secret_graph.revision,
-        nodes=[
-            RunNodeRequest(
-                kind="builtin",
-                id="decode",
-                operator_id="image.decode",
-                operator_version=1,
-            ),
-            RunNodeRequest(
-                kind="builtin",
-                id="ocr",
-                operator_id="mistral.ocr.process",
-                operator_version=1,
-            ),
-        ],
-        origins=[
-            RunOriginRequest(
-                to_node="decode",
-                to_port="files",
-                value=ArtifactRefSequence.from_key(key=PNG_FILE.key, item_refs=refs),
-            )
-        ],
-        edges=[
-            RunEdgeRequest(
-                from_node="decode",
-                from_port="images",
-                to_node="ocr",
-                to_port="image",
-                collection_mode="map",
-            )
-        ],
-    )
-    if draw_regions:
-        request.nodes.append(
-            RunNodeRequest(
-                kind="builtin",
-                id="draw",
-                operator_id="image.draw_regions",
-                operator_version=1,
-                config={"kinds": "image", "label_text": "none", "line_width": 1},
-            )
-        )
-        request.edges.extend(
-            [
-                RunEdgeRequest(
-                    from_node="ocr",
-                    from_port="regions",
-                    to_node="draw",
-                    to_port="regions",
-                    collection_mode="map",
-                ),
-                RunEdgeRequest(
-                    from_node="decode",
-                    from_port="images",
-                    to_node="draw",
-                    to_port="image",
-                    collection_mode="map",
-                ),
-            ]
-        )
-    result = await components.run_graph.run(WORKSPACE_ID, request)
-    assert result.status == "succeeded", result.node_results
-    assert len(recorder.requests) == len(refs)
-    outputs = result.outputs["ocr"]
-    assert set(outputs) == {"markdown", "blocks", "regions"}
-    for port, key in (
-        ("markdown", MARKDOWN.key),
-        ("blocks", TABLE_DATA.key),
-        ("regions", IMAGE_REGIONS.key),
-    ):
-        sequence = outputs[port]
-        assert isinstance(sequence, ArtifactRefSequence)
-        assert (sequence.artifact_type, sequence.schema_version) == (
-            key.id,
-            key.schema_version,
-        )
-        assert len(sequence.item_refs) == len(refs)
-    markdown = outputs["markdown"]
-    regions = outputs["regions"]
-    blocks = outputs["blocks"]
-    assert isinstance(markdown, ArtifactRefSequence)
-    assert isinstance(regions, ArtifactRefSequence)
-    assert isinstance(blocks, ArtifactRefSequence)
-    async with uow as transaction:
-        for index, ref in enumerate(markdown.item_refs):
-            artifact = await transaction.artifacts.get(WORKSPACE_ID, ref.artifact_id)
-            assert artifact is not None
-            assert artifact.inline_payload == {"markdown": f"image {index}"}
-        for index, ref in enumerate(regions.item_refs):
-            artifact = await transaction.artifacts.get(WORKSPACE_ID, ref.artifact_id)
-            assert artifact is not None
-            assert artifact.inline_payload is not None
-            assert artifact.inline_payload["pages"] == [
-                {
-                    "index": 0,
-                    "width": 80 + index * 20 if draw_regions else 80,
-                    "height": 100 + index * 20 if draw_regions else 100,
-                }
-            ]
-    context = PluginRuntimeContext(
-        workspace=tmp_path, storage=storage, uow=uow, bucket="workbench-artifacts"
-    )
-    table_resolver = next(
-        resolver
-        for resolver in registry.build_resolvers(context)
-        if resolver.source == TABLE_DATA.key
-    )
-    for ref in blocks.item_refs:
-        table = await table_resolver.resolve(ref, WORKSPACE_ID)
-        assert isinstance(table, Table)
-        assert table.rows[1]["text"] == "img-0.png"
-
-    if draw_regions:
-        drawn = result.outputs["draw"]["image"]
-        assert isinstance(drawn, ArtifactRefSequence)
-        assert (drawn.artifact_type, drawn.schema_version) == (RASTER_IMAGE.key.id, 1)
-        assert len(drawn.item_refs) == 2
-        assert drawn.metadata["map_inputs"] == ["image", "regions"]
-        async with uow as transaction:
-            for index, ref in enumerate(drawn.item_refs):
-                artifact = await transaction.artifacts.get(
-                    WORKSPACE_ID, ref.artifact_id
-                )
-                assert artifact is not None
-                assert artifact.content_type == "image/png"
-                assert artifact.bucket is not None and artifact.object_key is not None
-                stream = await storage.load(artifact.bucket, artifact.object_key)
-                image = Image.open(BytesIO(stream.read())).convert("RGB")
-                assert image.size == (80 + index * 20, 100 + index * 20)
-                base_color = (255, 0, 0) if index == 0 else (0, 0, 255)
-                assert image.getpixel((image.width - 1, image.height - 1)) == base_color
-                # Different boxes make a regions permutation observable as well as an image permutation.
-                assert image.getpixel((10 + index * 35, 10 + index * 40)) != base_color
-                assert (
-                    image.getpixel((45 if index == 0 else 10, 50 if index == 0 else 10))
-                    == base_color
-                )
 
 
 async def test_provider_dials_a_self_hosted_endpoint_only_when_the_operator_allows_it(

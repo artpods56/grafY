@@ -51,16 +51,16 @@ def _imported_modules(source: str, package: str) -> list[str]:
     [
         (
             "import grafy_api.v1.routes as routes",
-            "grafy_api.execution",
+            "grafy_api.runs",
             "grafy_api.v1.routes",
         ),
         (
             "from grafy_api.v1 import routes",
-            "grafy_api.execution",
+            "grafy_api.runs",
             "grafy_api.v1.routes",
         ),
-        ("from ..v1 import routes", "grafy_api.execution", "grafy_api.v1.routes"),
-        ("from .. import v1", "grafy_api.execution", "grafy_api.v1"),
+        ("from ..v1 import routes", "grafy_api.runs", "grafy_api.v1.routes"),
+        ("from .. import v1", "grafy_api.runs", "grafy_api.v1"),
         (
             "from ...routes import artifacts",
             "grafy_api.v1.routes.catalog",
@@ -76,7 +76,7 @@ def _imported_modules(source: str, package: str) -> list[str]:
             "grafy_api.v1.routes.artifacts",
             "grafy_api.v1.routes.artifacts.views",
         ),
-        ("from fastapi import Depends", "grafy_api.execution", "fastapi"),
+        ("from fastapi import Depends", "grafy_api.runs", "fastapi"),
     ],
 )
 def test_import_boundary_scan_resolves_python_import_forms(
@@ -115,6 +115,7 @@ def test_plugin_families_are_installed_from_the_workspace() -> None:
         plugin_text = (REPO_ROOT / project_path / "pyproject.toml").read_text()
         assert "wheels/" not in plugin_text
         assert "SOURCE_DATE_EPOCH" not in plugin_text
+
 
 def test_relational_dependencies_are_owned_by_persistence() -> None:
     api_document = tomllib.loads((REPO_ROOT / "apps/api/pyproject.toml").read_text())
@@ -254,24 +255,22 @@ def test_plugin_families_do_not_import_http_or_api_modules() -> None:
     assert offenders == []
 
 
-def test_execution_does_not_import_http_or_legacy_hosting() -> None:
+def test_run_runtime_does_not_import_http_or_route_modules() -> None:
     api_root = REPO_ROOT / "apps/api/src/grafy_api"
     offenders: list[str] = []
-    for owner in (api_root / "execution",):
-        forbidden = [
-            "grafy_api.v1.routes",
-            "grafy_api.plugins.compatibility",
-            "fastapi",
-            "starlette",
-        ]
-        for path in owner.rglob("*.py"):
-            package = ".".join(path.parent.relative_to(api_root.parent).parts)
-            for module in _imported_modules(path.read_text(), package):
-                if any(
-                    module == name or module.startswith(name + ".")
-                    for name in forbidden
-                ):
-                    offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+    forbidden = [
+        "grafy_api.v1.routes",
+        "grafy_api.plugins",
+        "fastapi",
+        "starlette",
+    ]
+    for path in (api_root / "runs").rglob("*.py"):
+        package = ".".join(path.parent.relative_to(api_root.parent).parts)
+        for module in _imported_modules(path.read_text(), package):
+            if any(
+                module == name or module.startswith(name + ".") for name in forbidden
+            ):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
     assert offenders == []
 
 
@@ -279,7 +278,7 @@ def test_application_owners_do_not_depend_on_route_modules() -> None:
     api_root = REPO_ROOT / "apps/api/src/grafy_api"
     paths = [
         *(api_root / "realtime").glob("*.py"),
-        api_root / "graph_contracts.py",
+        api_root / "project_contracts.py",
         api_root / "artifact_availability.py",
         api_root / "node_secrets.py",
         api_root / "uploads.py",
@@ -301,13 +300,13 @@ def test_application_owners_do_not_depend_on_route_modules() -> None:
     assert offenders == []
 
 
-def test_active_graph_execution_has_no_release_or_sandbox_dependency() -> None:
+def test_run_runtime_has_no_release_or_sandbox_dependency() -> None:
     owners = (
         "services/application.py",
         "services/composition.py",
-        "execution/compiler.py",
-        "execution/preflight.py",
-        "execution/run_graph.py",
+        "runs/node_runner.py",
+        "runs/contract.py",
+        "runs/node_execution.py",
         "node_secrets.py",
     )
     root = REPO_ROOT / "apps/api/src/grafy_api"
