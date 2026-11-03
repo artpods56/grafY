@@ -222,7 +222,7 @@ flat head or a Graph document without its Graphs rather than papering over them.
 | Direction | Types |
 | --- | --- |
 | client → server | `project.command.submit`, `presence.update` — and nothing else ([`realtime/protocol.py:294-303`](../../apps/api/src/grafy_api/realtime/protocol.py)) |
-| server → client | `room.ready`, `room.rehydrate`, `room.heartbeat`, `project.command.accepted`, `project.command.receipt`, `project.command.rejected`, `presence.join`, `presence.leave`, `presence.update`, `run.started`, `run.finished`, `instances.changed` |
+| server → client | `room.ready`, `room.rehydrate`, `room.heartbeat`, `project.command.accepted`, `project.command.receipt`, `project.command.rejected`, `presence.join`, `presence.leave`, `presence.update`, `run.started`, `run.finished`, `instances.changed`, `agent.turn.started`, `agent.event.appended`, `agent.delta`, `agent.turn.finished` |
 
 `room.ready` carries workspace id, project id, room session id, actor presentation, the
 capability snapshot with its authorization version, the complete head, the current
@@ -407,6 +407,47 @@ computation that lands later still stores under the fingerprint it started with,
 participant sees a wrong value as fresh. Cancelling a Run withdraws that Run's demand
 and cancels a computation only when no other active Run needs it
 ([`runs/service.py:213-250`](../../apps/api/src/grafy_api/runs/service.py)).
+
+## Agents on the room
+
+A turn answers in the room so a second tab sees the answer arrive, and so a browser that
+sent the request is not the only one holding the text. The frames
+([`realtime/protocol.py`](../../apps/api/src/grafy_api/realtime/protocol.py), published
+by [`realtime/agent_events.py`](../../apps/api/src/grafy_api/realtime/agent_events.py))
+are scoped by the Project room. They identify the Graph, Agent, conversation
+and turn, and carry the relevant receipt, event or text.
+
+- `agent.turn.started` — the turn is running, who started it, and when.
+- `agent.event.appended` — one stored event with its `sequence`: the
+  question, the finished answer, the turn outcome.
+- `agent.delta` — coalesced text with the `offset` it begins at in the stored message,
+  so a reader can detect a gap and recover. Deltas do not declare completion.
+- `agent.turn.finished` — the outcome and optional detail. Read stored events to recover missed messages.
+
+**Authoritative frames queue, deltas drop.** The three factual frames travel the hub's
+queued path, the same one a command receipt does: losing one would leave a participant
+missing a message the room said happened. `agent.delta` goes through
+`hub.publish_transient`, which uses the hub's drop-if-busy offer. The hub closes a
+session whose queue fills ([`hub.py:118-135`](../../apps/api/src/grafy_api/realtime/hub.py)),
+and a model streaming quickly can fill it, so queueing deltas would take every
+participant off the Project each time someone sent an Agent a long question. A dropped
+delta costs one reader one stutter: the stored message is on the conversation route and
+the `agent.event.appended` that carries it replaces the streamed text.
+
+**The order is the contract** ([`agents/publishing.py`](../../apps/api/src/grafy_api/agents/publishing.py)):
+`turn.started`, then the question's `event.appended`, then deltas, then the answer's
+`event.appended`, then any outcome event, then `turn.finished`. Telling a stored event
+*after* its flushed text is deliberate — a reader that saw the whole message and then a
+partial would put a fragment back over an answer it already had. A delta longer than
+`agent_delta_max_text_chars` is discarded rather than truncated: half a message spliced
+to the next is worse than none, and the whole message follows as a stored event anyway.
+
+**Telling is never part of the turn.** The receipt and events are committed before a frame
+is built, and a publisher that raises loses its telling and a log line only
+([`realtime/agent_events.py`](../../apps/api/src/grafy_api/realtime/agent_events.py)).
+A participant that missed frames reads the conversation back
+(`GET …/conversations/{id}/events`) and the active turn
+(`GET …/conversations/{id}/active-turn`); `room.ready` does not carry conversations.
 
 ## Presence
 

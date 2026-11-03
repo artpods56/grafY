@@ -92,6 +92,7 @@ function savedGraph(id: string, name: string, revision = 1): SavedGraph {
       nodes: [],
       edges: [],
       origins: [],
+      agents: [],
       presentation: {
         viewers: [],
         links: [],
@@ -300,6 +301,7 @@ function lifecycleOptions(
     nodes: [],
     edges: [],
     origins: [],
+    agents: [],
   },
 ): { options: LifecycleOptions; callbacks: LifecycleCallbacks } {
   const document = {
@@ -307,6 +309,7 @@ function lifecycleOptions(
     nodes: initialDocument.nodes,
     edges: initialDocument.edges,
     origins: initialDocument.origins,
+    agents: initialDocument.agents,
   };
   const callbacks = {
     replaceDocument: vi.fn((nextDocument: LifecycleOptions["document"]) => {
@@ -314,6 +317,7 @@ function lifecycleOptions(
       document.nodes = nextDocument.nodes;
       document.edges = nextDocument.edges;
       document.origins = nextDocument.origins;
+      document.agents = nextDocument.agents;
     }),
     replacePresentation: vi.fn(),
     refreshNodeSecretStatuses,
@@ -413,6 +417,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
       nodes: [node],
       edges: [],
       origins: [],
+      agents: [],
     };
     stubCreate(GRAPH_A_ID, graph);
     const { options, callbacks } = lifecycleOptions(null, undefined, document);
@@ -498,6 +503,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
       {
         schema_version: 7,
         origins: [],
+        agents: [],
         nodes: [
           {
             ...checkpointNode,
@@ -543,7 +549,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
     const { options } = lifecycleOptions(GRAPH_A_ID);
     const checkpointHead = headWithDocument(
       GRAPH_A_ID,
-      { schema_version: 7, origins: [], nodes: [], edges: [] },
+      { schema_version: 7, origins: [], nodes: [], edges: [], agents: [] },
       { collaboration: 4, checkpoint: 4 },
       "Checkpoint",
     );
@@ -614,6 +620,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
           {
             schema_version: 7,
             origins: [],
+            agents: [],
             nodes: [checkpointedNode],
             edges: [],
           },
@@ -677,6 +684,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
       {
         schema_version: 7,
         origins: [],
+        agents: [],
         nodes: [],
         edges: [],
         presentation: peerPresentation,
@@ -691,7 +699,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
     await React.act(async () => {
       const checkpointHead = headWithDocument(
         GRAPH_A_ID,
-        { schema_version: 7, origins: [], nodes: [], edges: [] },
+        { schema_version: 7, origins: [], nodes: [], edges: [], agents: [] },
         { collaboration: 4, checkpoint: 4 },
         "Checkpoint",
       );
@@ -1119,6 +1127,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
         nodes: [],
         edges: [],
         origins: [],
+        agents: [],
       });
       await renderHook(useSavedGraphLifecycle, options);
 

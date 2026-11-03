@@ -403,6 +403,7 @@ function WorkbenchBody({
         nodes: [],
         edges: [],
         origins: [],
+        agents: [],
       },
       nodeOverlays: {},
       error: null,

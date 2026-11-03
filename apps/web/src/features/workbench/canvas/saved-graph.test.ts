@@ -109,6 +109,7 @@ function graphWithEdge(
     document: {
       schema_version: 7,
       origins: [],
+      agents: [],
       nodes: [
         {
           id: "source-node",
@@ -636,6 +637,7 @@ function graphWithCollectPlugs(): SavedGraph {
     document: {
       schema_version: 7,
       origins: [],
+      agents: [],
       nodes: [
         {
           id: "source-node",
@@ -791,6 +793,7 @@ function graphWithGenericCollectBinding(): SavedGraph {
     document: {
       schema_version: 7,
       origins: [],
+      agents: [],
       nodes: [
         {
           id: "source-node",
@@ -956,6 +959,7 @@ describe("saved Module nodes", () => {
       document: {
         schema_version: 7,
         origins: [],
+        agents: [],
         nodes: [
           {
             id: "images",

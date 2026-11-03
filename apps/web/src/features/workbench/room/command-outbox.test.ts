@@ -403,6 +403,7 @@ describe("ProjectRoomCommandOutbox", () => {
             nodes: [],
             edges: [],
             origins: [],
+            agents: [],
             presentation: {
               viewers: [{ id: viewerId, position: { x: 1, y: 1 } }],
               links: [],

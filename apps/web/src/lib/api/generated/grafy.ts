@@ -848,6 +848,246 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * List Agent Conversations
+         * @description Every thread with one Agent of this Graph, newest first — whoever started them.
+         *
+         *     An Agent that has left the canvas still has threads to read: history outlives the card, and
+         *     a person who opened a thread should be able to finish reading it. What the Graph has to
+         *     exist for is the Graph, because this is the surface that lists what is on it.
+         */
+        readonly get: operations["list_agent_conversations_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations_get"];
+        readonly put?: never;
+        /**
+         * Start Agent Conversation
+         * @description Open a thread with one Agent that is on the canvas right now.
+         *
+         *     The Agent has to be there because a thread is addressed to it. Its instructions and model
+         *     are read from the head document when each turn is admitted rather than copied here, so
+         *     editing the card later does not rewrite what this thread is called or what it was told.
+         */
+        readonly post: operations["start_agent_conversation_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get Agent Conversation
+         * @description One thread the path addresses. The scope check is the route; there is nothing to add.
+         */
+        readonly get: operations["get_agent_conversation_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/active-turn": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get Active Agent Turn
+         * @description The turn running now and the text it has streamed, or nothing when the thread is idle.
+         *
+         *     This exists because streamed text is stored nowhere: a reader that joined mid-turn can read
+         *     the ending from the events, but only the process running the turn knows how far it has got.
+         *     A turn another API owner runs answers with its receipt and no partial, which is the truth
+         *     rather than an empty answer that looks finished.
+         */
+        readonly get: operations["get_active_agent_turn_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__active_turn_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/cancel": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Cancel Agent Turn
+         * @description Stop this thread's turn. Asking twice, or again after the answer, changes nothing.
+         *
+         *     Cancelling is a request rather than a kill: the turn's own task unwinds the run, keeps the
+         *     text that had arrived and writes its ending, so a Stop that races a finishing answer leaves
+         *     one record of how it ended instead of two. A thread with nothing running answers with its
+         *     last turn, which is what a retried Stop was asking for; a `turn_id` that belongs to another
+         *     Project, Graph or Agent is the absence it appears to be.
+         */
+        readonly post: operations["cancel_agent_turn_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__cancel_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/events": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * List Agent Conversation Events
+         * @description The thread's stored events, oldest first — the authoritative recovery path.
+         *
+         *     Room frames are how a thread looks live; this is what makes it right. A delta that was
+         *     dropped, a `agent.event.appended` that arrived after a disconnect and a turn that ended
+         *     while the tab was closed all resolve to reading this route, and `last_sequence` says
+         *     whether the page that came back is the whole thread or stopped at the limit.
+         */
+        readonly get: operations["list_agent_conversation_events_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__events_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/fork": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Fork Agent Conversation
+         * @description Continue this thread from one of its events, in a new thread beside the same Agent.
+         *
+         *     "Continue from here" copies; it does not trim. The source keeps going, the copy records the
+         *     conversation and the sequence it was cut at, and both keep the Project, Graph and Agent of
+         *     the source — so a fork cannot move a thread's history to another card by addressing it
+         *     somewhere else. A sequence the source does not have is refused as unprocessable, with the
+         *     source's own `last_sequence` in the response for a client to aim at instead.
+         */
+        readonly post: operations["fork_agent_conversation_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__fork_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/turns": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Send Agent Turn
+         * @description Ask this Agent one question, and get its turn's receipt before it has answered.
+         *
+         *     The reply does not come back here: it streams on the Project room as ``agent.*`` frames and
+         *     is stored as conversation events, both of which outlive this request. That is what makes
+         *     the response a receipt — the question is durable by the time it is sent, the answer arrives
+         *     whenever the model finishes, and a tab that closes does not stop a turn that has started.
+         *
+         *     The send is idempotent by `client_turn_id`: the same id with the same text returns the same
+         *     turn with no second model call and no second event, which is why a retry after a dropped
+         *     response is safe. The same id with different text, and a fresh id against a conversation
+         *     that is already running, are both conflicts rather than surprises.
+         */
+        readonly post: operations["send_agent_turn_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__turns_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/key": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /**
+         * Set Agent Key
+         * @description Give this Agent a key of its own. What comes back says only that one is there now.
+         *
+         *     The plaintext is spent on the seal and appears in no response, no event, no stored row and
+         *     no log line: the key service's failure accounts name the Agent, never the value, and a value
+         *     that is not worth sealing is refused without repeating it. Setting a key twice replaces it,
+         *     which is the reverse door `DELETE` below opens all the way.
+         */
+        readonly put: operations["set_agent_key_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__key_put"];
+        readonly post?: never;
+        /**
+         * Clear Agent Key
+         * @description Take the Agent's own key away, so a deployment-default Agent needs nothing of its own.
+         *
+         *     Clearing does not read what was stored, and it is idempotent: an Agent with no key answers
+         *     the same way whether it ever had one.
+         */
+        readonly delete: operations["clear_agent_key_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__key_delete"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/model": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get Agent Model
+         * @description Which model this Agent will dial, and whether the key that needs is in place.
+         *
+         *     Never the key: the endpoint, the model name, whether the choice came from the deployment or
+         *     the Agent, and a yes-or-no about the credential is all a configuration surface can honestly
+         *     show — and the whole reason reading it is `view_project` while setting it is `edit_project`.
+         */
+        readonly get: operations["get_agent_model_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__model_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/instances": {
         readonly parameters: {
             readonly query?: never;
@@ -1121,6 +1361,24 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ActiveAgentTurnResponse
+         * @description The turn running now, and how far its text has got.
+         *
+         *     `partial_text` is in-flight text and may be behind a frame a reader never received, so it
+         *     is keyed by the message id the offsets belong to and ends when the stored message event
+         *     arrives. A turn this API owner does not run — another process owns it — answers with its
+         *     receipt and no partial, which is the truth rather than an empty answer that looks final.
+         */
+        readonly ActiveAgentTurnResponse: {
+            /** Message Id */
+            readonly message_id: string | null;
+            /** Partial Offset */
+            readonly partial_offset: number;
+            /** Partial Text */
+            readonly partial_text: string;
+            readonly turn: components["schemas"]["AgentTurnResponse"];
+        };
         /** AddAgentCommand */
         readonly AddAgentCommand: {
             readonly agent: components["schemas"]["GraphAgent"];
@@ -1188,6 +1446,163 @@ export interface components {
             readonly kind: "add_origin";
             readonly origin: components["schemas"]["GraphOrigin"];
         };
+        /**
+         * AgentConversationEventListResponse
+         * @description The events a reader asked for, and the sequence to resume at.
+         *
+         *     `last_sequence` is what the conversation holds now, so a reader can tell a full catch-up
+         *     from a page that stopped at its limit without asking again to find out.
+         */
+        readonly AgentConversationEventListResponse: {
+            /** Events */
+            readonly events: readonly components["schemas"]["AgentConversationEventResponse"][];
+            /** Last Sequence */
+            readonly last_sequence: number;
+            /** Next Sequence */
+            readonly next_sequence: number;
+        };
+        /** AgentConversationEventResponse */
+        readonly AgentConversationEventResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Payload */
+            readonly payload: components["schemas"]["UserMessagePayload"] | components["schemas"]["AssistantMessagePayload"] | components["schemas"]["TurnOutcomePayload"];
+            /** Sequence */
+            readonly sequence: number;
+            /**
+             * Turn Id
+             * Format: uuid
+             */
+            readonly turn_id: string;
+        };
+        /** AgentConversationListResponse */
+        readonly AgentConversationListResponse: {
+            /** Conversations */
+            readonly conversations: readonly components["schemas"]["AgentConversationResponse"][];
+        };
+        /**
+         * AgentConversationResponse
+         * @description One thread: what it is addressed to, and where a reader resumes from.
+         */
+        readonly AgentConversationResponse: {
+            /** Agent Id */
+            readonly agent_id: string;
+            /**
+             * Author User Id
+             * Format: uuid
+             */
+            readonly author_user_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Graph Id */
+            readonly graph_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            /** Last Sequence */
+            readonly last_sequence: number;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            readonly project_id: string;
+            /** Source Conversation Id */
+            readonly source_conversation_id: string | null;
+            /** Source Sequence */
+            readonly source_sequence: number | null;
+            /** Title */
+            readonly title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            readonly workspace_id: string;
+        };
+        /**
+         * AgentConversationTurnOutcome
+         * @description How one Turn ended, as the last event the Turn writes.
+         * @enum {string}
+         */
+        readonly AgentConversationTurnOutcome: "completed" | "cancelled" | "failed" | "interrupted";
+        /** AgentKeyResponse */
+        readonly AgentKeyResponse: {
+            /** Agent Id */
+            readonly agent_id: string;
+            /** Configured */
+            readonly configured: boolean;
+        };
+        /**
+         * AgentModelResponse
+         * @description What an Agent will dial, and whether it has what that needs. No key material.
+         */
+        readonly AgentModelResponse: {
+            /** Base Url */
+            readonly base_url: string;
+            /** Key Configured */
+            readonly key_configured: boolean;
+            /** Model Name */
+            readonly model_name: string;
+            /** Source */
+            readonly source: string;
+        };
+        /**
+         * AgentTurnResponse
+         * @description One turn's receipt. Its text is in the conversation, not here.
+         */
+        readonly AgentTurnResponse: {
+            /** Client Turn Id */
+            readonly client_turn_id: string;
+            /**
+             * Conversation Id
+             * Format: uuid
+             */
+            readonly conversation_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Finished At */
+            readonly finished_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            /** Model Name */
+            readonly model_name: string;
+            /** Model Source */
+            readonly model_source: string;
+            /** Outcome Detail */
+            readonly outcome_detail: string | null;
+            /**
+             * Requested By User Id
+             * Format: uuid
+             */
+            readonly requested_by_user_id: string;
+            readonly status: components["schemas"]["AgentTurnStatus"];
+            /** User Message Sequence */
+            readonly user_message_sequence: number;
+        };
+        /**
+         * AgentTurnStatus
+         * @description Where one turn stands. `running` is the only state that holds a conversation.
+         * @enum {string}
+         */
+        readonly AgentTurnStatus: "running" | "completed" | "cancelled" | "failed" | "interrupted";
         /**
          * ApiUploadTargetResponse
          * @description Upload target owned by this API; send session credentials and CSRF.
@@ -1366,6 +1781,24 @@ export interface components {
             /** Folder Id */
             readonly folder_id: string | null;
         };
+        /** AssistantMessagePayload */
+        readonly AssistantMessagePayload: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "assistant_message";
+            /** Text */
+            readonly text: string;
+        };
+        /**
+         * CancelAgentTurnRequest
+         * @description Stop the conversation's turn. With no `turn_id`, whatever is running now.
+         */
+        readonly CancelAgentTurnRequest: {
+            /** Turn Id */
+            readonly turn_id?: string | null;
+        };
         /** CheckpointProjectRequest */
         readonly CheckpointProjectRequest: {
             /**
@@ -1541,6 +1974,16 @@ export interface components {
             readonly target_artifact_type: components["schemas"]["ArtifactTypeKeyResponse"];
             /** Title */
             readonly title: string;
+        };
+        /**
+         * ForkAgentConversationRequest
+         * @description Continue the thread at one of its own events, in a new conversation.
+         */
+        readonly ForkAgentConversationRequest: {
+            /** At Sequence */
+            readonly at_sequence: number;
+            /** Title */
+            readonly title?: string | null;
         };
         /** @enum {string} */
         readonly GeoArtifactKind: "feature_collection" | "raster_scan" | "map_layer" | "map_document";
@@ -3137,6 +3580,20 @@ export interface components {
             /** Original Filename */
             readonly original_filename: string;
         };
+        /**
+         * SendAgentTurnRequest
+         * @description One question, with the id that makes repeating this request the same turn.
+         *
+         *     `client_turn_id` is the caller's, chosen once per send and reused on a retry: the receipt
+         *     is keyed by it, so a retried send answers with the turn it already made instead of asking
+         *     the model twice. Different text under one id is a conflict, not a replay.
+         */
+        readonly SendAgentTurnRequest: {
+            /** Client Turn Id */
+            readonly client_turn_id: string;
+            /** Text */
+            readonly text: string;
+        };
         /** SessionResponse */
         readonly SessionResponse: {
             /**
@@ -3170,6 +3627,14 @@ export interface components {
              */
             readonly user_id: string;
         };
+        /** SetAgentKeyRequest */
+        readonly SetAgentKeyRequest: {
+            /**
+             * Value
+             * Format: password
+             */
+            readonly value: string;
+        };
         /** SetNodeArtifactTypeBindingCommand */
         readonly SetNodeArtifactTypeBindingCommand: {
             readonly binding: components["schemas"]["GraphArtifactTypeBinding"];
@@ -3195,6 +3660,14 @@ export interface components {
             readonly kind: "set_node_input_plugs";
             /** Node Id */
             readonly node_id: string;
+        };
+        /** StartAgentConversationRequest */
+        readonly StartAgentConversationRequest: {
+            /**
+             * Title
+             * @default
+             */
+            readonly title: string;
         };
         /** StartRunRequest */
         readonly StartRunRequest: {
@@ -3362,6 +3835,17 @@ export interface components {
          * @enum {string}
          */
         readonly TableValueType: "text" | "integer" | "number" | "decimal" | "boolean" | "date" | "datetime" | "json" | "binary" | "unknown" | "mixed";
+        /** TurnOutcomePayload */
+        readonly TurnOutcomePayload: {
+            /** Detail */
+            readonly detail?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "turn_outcome";
+            readonly outcome: components["schemas"]["AgentConversationTurnOutcome"];
+        };
         /** UpdateEdgeCommand */
         readonly UpdateEdgeCommand: {
             readonly edge: components["schemas"]["GraphEdge"];
@@ -3440,6 +3924,16 @@ export interface components {
          * @description Discriminated upload target returned by reserve.
          */
         readonly UploadTargetResponse: components["schemas"]["ApiUploadTargetResponse"] | components["schemas"]["StorageUploadTargetResponse"];
+        /** UserMessagePayload */
+        readonly UserMessagePayload: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "user_message";
+            /** Text */
+            readonly text: string;
+        };
         /** UserProjectStateResponse */
         readonly UserProjectStateResponse: {
             /** Last Opened At */
@@ -5895,6 +6389,408 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["ProjectOrganizationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly list_agent_conversations_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly agent_id: string;
+                readonly graph_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentConversationListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly start_agent_conversation_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly agent_id: string;
+                readonly graph_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["StartAgentConversationRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentConversationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_agent_conversation_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly agent_id: string;
+                readonly conversation_id: string;
+                readonly graph_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentConversationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_active_agent_turn_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__active_turn_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly agent_id: string;
+                readonly conversation_id: string;
+                readonly graph_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ActiveAgentTurnResponse"] | null;
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly cancel_agent_turn_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__cancel_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly agent_id: string;
+                readonly conversation_id: string;
+                readonly graph_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CancelAgentTurnRequest"] | null;
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentTurnResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly list_agent_conversation_events_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__events_get: {
+        readonly parameters: {
+            readonly query?: {
+                /** @description Skip the events up to and including this conversation sequence. A reader resumes with the highest sequence it holds, so a resync repeats nothing. */
+                readonly after_sequence?: number;
+                readonly limit?: number | null;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly agent_id: string;
+                readonly conversation_id: string;
+                readonly graph_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentConversationEventListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly fork_agent_conversation_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__fork_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly agent_id: string;
+                readonly conversation_id: string;
+                readonly graph_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ForkAgentConversationRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentConversationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly send_agent_turn_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__turns_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly agent_id: string;
+                readonly conversation_id: string;
+                readonly graph_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SendAgentTurnRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentTurnResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly set_agent_key_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__key_put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly agent_id: string;
+                readonly graph_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SetAgentKeyRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentKeyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly clear_agent_key_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__key_delete: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly agent_id: string;
+                readonly graph_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 204: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_agent_model_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__model_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly agent_id: string;
+                readonly graph_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AgentModelResponse"];
                 };
             };
             /** @description Validation Error */

@@ -85,6 +85,7 @@ function initialDocument(): AuthoredGraphDocument {
       nodes: [savedNode("card-source"), savedNode("other")],
       edges: [],
       origins: [],
+      agents: [],
     }),
   );
 }

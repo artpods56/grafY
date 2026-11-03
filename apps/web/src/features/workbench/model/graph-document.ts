@@ -1,5 +1,6 @@
 import type { GraphDraft, SavedGraphOrigin } from "@/lib/api";
 import type {
+  SavedGraphAgent,
   SavedGraphDocument,
   SavedGraphEdge,
   SavedGraphNode,
@@ -11,17 +12,24 @@ import type {
  * This type deliberately contains no React Flow objects, callbacks, selection,
  * viewport state, execution state, or secret values. It is the client-side
  * document that can later be sent over a semantic collaboration protocol.
+ *
+ * `agents` is part of the authored document because an Agent is canvas content
+ * (ADR 0021): what it is called, what it was told to do, which model it dials and where it
+ * sits. What it has *said* is not — a conversation is an append-only record the server keeps,
+ * so nothing here carries a message, an endpoint key or a thread.
  */
 export interface AuthoredGraphDocument {
   readonly name: string;
   readonly nodes: readonly SavedGraphNode[];
   readonly edges: readonly SavedGraphEdge[];
   readonly origins: readonly SavedGraphOrigin[];
+  readonly agents: readonly SavedGraphAgent[];
 }
 
 export type AuthoredGraphNode = SavedGraphNode;
 export type AuthoredGraphEdge = SavedGraphEdge;
 export type AuthoredGraphOrigin = SavedGraphOrigin;
+export type AuthoredGraphAgent = SavedGraphAgent;
 
 type SavedGraphEdgeUpdate = Partial<
   Pick<
@@ -146,6 +154,18 @@ export type GraphCommand =
       readonly origin_ids: readonly string[];
     }
   | {
+      readonly kind: "add_agent";
+      readonly agent: AuthoredGraphAgent;
+    }
+  | {
+      readonly kind: "configure_agent";
+      readonly agent: AuthoredGraphAgent;
+    }
+  | {
+      readonly kind: "remove_agent";
+      readonly agent_id: string;
+    }
+  | {
       readonly kind: "replace_document";
       readonly document: AuthoredGraphDocument;
     };
@@ -158,6 +178,7 @@ export function authoredGraphDocument(
     nodes: value.document.nodes.map(projectSavedGraphNode),
     edges: value.document.edges.map(projectSavedGraphEdge),
     origins: value.document.origins.map(projectSavedGraphOrigin),
+    agents: (value.document.agents ?? []).map(projectSavedGraphAgent),
   };
 }
 
@@ -172,6 +193,7 @@ export function createGraphDraft(
       nodes: document.nodes.map(projectSavedGraphNode),
       edges: document.edges.map(projectSavedGraphEdge),
       origins: document.origins.map(projectSavedGraphOrigin),
+      agents: document.agents.map(projectSavedGraphAgent),
       presentation: presentationForDocument(
         presentation ?? emptyPresentation(),
         document.nodes,
@@ -390,6 +412,50 @@ function projectSavedGraphOriginUpdate(
   return projected;
 }
 
+/**
+ * One Agent, projected onto the fields the document actually stores.
+ *
+ * The model choice is copied branch by branch rather than spread, because the two choices
+ * carry different fields: an Agent given the deployment's model must not keep an `endpoint`
+ * and a `model` name from an earlier custom choice, and a custom choice must arrive whole.
+ * There is deliberately no key here — an Agent's credential is written through its own route
+ * and never travels with the canvas.
+ */
+export function projectSavedGraphAgent(
+  agent: SavedGraphAgent,
+): SavedGraphAgent {
+  return {
+    id: agent.id,
+    name: agent.name,
+    instructions: agent.instructions,
+    model: projectAgentModelChoice(agent.model),
+    position:
+      agent.position === undefined || agent.position === null
+        ? undefined
+        : { x: agent.position.x, y: agent.position.y },
+    width: agent.width,
+    height: agent.height,
+  };
+}
+
+function projectAgentModelChoice(
+  choice: SavedGraphAgent["model"],
+): SavedGraphAgent["model"] {
+  if (choice === undefined || choice === null) return undefined;
+  return choice.kind === "custom"
+    ? { kind: "custom", endpoint: choice.endpoint, model: choice.model }
+    : { kind: "deployment" };
+}
+
+function agentOrThrow(
+  document: AuthoredGraphDocument,
+  agentId: string,
+): AuthoredGraphAgent {
+  const agent = document.agents.find((candidate) => candidate.id === agentId);
+  if (!agent) throw new Error(`Graph command targets missing agent ${agentId}`);
+  return agent;
+}
+
 function executionDescendants(
   document: AuthoredGraphDocument,
   roots: readonly string[],
@@ -480,6 +546,13 @@ export function executionInvalidatedNodeIds(
     case "add_node":
     case "move_nodes":
     case "update_node_layout":
+      return new Set();
+    case "add_agent":
+    case "configure_agent":
+    case "remove_agent":
+      // An Agent is not part of an execution: it touches artifacts only through the tools a
+      // turn calls, never through an edge, so adding, renaming or removing one cannot make a
+      // node's last result stale. Saying so here keeps a card edit from graying the canvas.
       return new Set();
     case "replace_document":
       return new Set(document.nodes.map((node) => node.id));
@@ -747,6 +820,36 @@ export function applyGraphCommandNormalized(
         origins: document.origins.filter((origin) => !removed.has(origin.id)),
       };
     }
+    case "add_agent":
+      if (document.agents.some((agent) => agent.id === command.agent.id)) {
+        throw new Error(
+          `Graph command adds duplicate agent ${command.agent.id}`,
+        );
+      }
+      return {
+        ...document,
+        agents: [...document.agents, projectSavedGraphAgent(command.agent)],
+      };
+    case "configure_agent": {
+      agentOrThrow(document, command.agent.id);
+      const replacement = projectSavedGraphAgent(command.agent);
+      return {
+        ...document,
+        agents: document.agents.map((agent) =>
+          agent.id === command.agent.id ? replacement : agent,
+        ),
+      };
+    }
+    case "remove_agent":
+      // Like a removed origin, an Agent that is not here any more leaves nothing to filter:
+      // the command is a statement about the canvas, and a canvas already without it satisfies
+      // it. An update to a card that is not here is a different matter and still throws.
+      return {
+        ...document,
+        agents: document.agents.filter(
+          (agent) => agent.id !== command.agent_id,
+        ),
+      };
     case "replace_document":
       return authoredGraphDocument(createGraphDraft(command.document));
   }

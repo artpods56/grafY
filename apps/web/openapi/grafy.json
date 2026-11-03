@@ -1,6 +1,43 @@
 {
   "components": {
     "schemas": {
+      "ActiveAgentTurnResponse": {
+        "additionalProperties": false,
+        "description": "The turn running now, and how far its text has got.\n\n`partial_text` is in-flight text and may be behind a frame a reader never received, so it\nis keyed by the message id the offsets belong to and ends when the stored message event\narrives. A turn this API owner does not run \u2014 another process owns it \u2014 answers with its\nreceipt and no partial, which is the truth rather than an empty answer that looks final.",
+        "properties": {
+          "message_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
+          },
+          "partial_offset": {
+            "title": "Partial Offset",
+            "type": "integer"
+          },
+          "partial_text": {
+            "title": "Partial Text",
+            "type": "string"
+          },
+          "turn": {
+            "$ref": "#/components/schemas/AgentTurnResponse"
+          }
+        },
+        "required": [
+          "turn",
+          "message_id",
+          "partial_offset",
+          "partial_text"
+        ],
+        "title": "ActiveAgentTurnResponse",
+        "type": "object"
+      },
       "AddAgentCommand": {
         "additionalProperties": false,
         "properties": {
@@ -149,6 +186,346 @@
         ],
         "title": "AddOriginCommand",
         "type": "object"
+      },
+      "AgentConversationEventListResponse": {
+        "additionalProperties": false,
+        "description": "The events a reader asked for, and the sequence to resume at.\n\n`last_sequence` is what the conversation holds now, so a reader can tell a full catch-up\nfrom a page that stopped at its limit without asking again to find out.",
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AgentConversationEventResponse"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "last_sequence": {
+            "title": "Last Sequence",
+            "type": "integer"
+          },
+          "next_sequence": {
+            "title": "Next Sequence",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "events",
+          "next_sequence",
+          "last_sequence"
+        ],
+        "title": "AgentConversationEventListResponse",
+        "type": "object"
+      },
+      "AgentConversationEventResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "payload": {
+            "discriminator": {
+              "mapping": {
+                "assistant_message": "#/components/schemas/AssistantMessagePayload",
+                "turn_outcome": "#/components/schemas/TurnOutcomePayload",
+                "user_message": "#/components/schemas/UserMessagePayload"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UserMessagePayload"
+              },
+              {
+                "$ref": "#/components/schemas/AssistantMessagePayload"
+              },
+              {
+                "$ref": "#/components/schemas/TurnOutcomePayload"
+              }
+            ],
+            "title": "Payload"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sequence",
+          "turn_id",
+          "payload",
+          "created_at"
+        ],
+        "title": "AgentConversationEventResponse",
+        "type": "object"
+      },
+      "AgentConversationListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "conversations": {
+            "items": {
+              "$ref": "#/components/schemas/AgentConversationResponse"
+            },
+            "title": "Conversations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "conversations"
+        ],
+        "title": "AgentConversationListResponse",
+        "type": "object"
+      },
+      "AgentConversationResponse": {
+        "additionalProperties": false,
+        "description": "One thread: what it is addressed to, and where a reader resumes from.",
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "author_user_id": {
+            "format": "uuid",
+            "title": "Author User Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "graph_id": {
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_sequence": {
+            "title": "Last Sequence",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "source_conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Conversation Id"
+          },
+          "source_sequence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sequence"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "project_id",
+          "graph_id",
+          "agent_id",
+          "author_user_id",
+          "title",
+          "source_conversation_id",
+          "source_sequence",
+          "last_sequence",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentConversationResponse",
+        "type": "object"
+      },
+      "AgentConversationTurnOutcome": {
+        "description": "How one Turn ended, as the last event the Turn writes.",
+        "enum": [
+          "completed",
+          "cancelled",
+          "failed",
+          "interrupted"
+        ],
+        "title": "AgentConversationTurnOutcome",
+        "type": "string"
+      },
+      "AgentKeyResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agent_id",
+          "configured"
+        ],
+        "title": "AgentKeyResponse",
+        "type": "object"
+      },
+      "AgentModelResponse": {
+        "additionalProperties": false,
+        "description": "What an Agent will dial, and whether it has what that needs. No key material.",
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "key_configured": {
+            "title": "Key Configured",
+            "type": "boolean"
+          },
+          "model_name": {
+            "title": "Model Name",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "model_name",
+          "base_url",
+          "key_configured"
+        ],
+        "title": "AgentModelResponse",
+        "type": "object"
+      },
+      "AgentTurnResponse": {
+        "additionalProperties": false,
+        "description": "One turn's receipt. Its text is in the conversation, not here.",
+        "properties": {
+          "client_turn_id": {
+            "title": "Client Turn Id",
+            "type": "string"
+          },
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "model_name": {
+            "title": "Model Name",
+            "type": "string"
+          },
+          "model_source": {
+            "title": "Model Source",
+            "type": "string"
+          },
+          "outcome_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Detail"
+          },
+          "requested_by_user_id": {
+            "format": "uuid",
+            "title": "Requested By User Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AgentTurnStatus"
+          },
+          "user_message_sequence": {
+            "title": "User Message Sequence",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "conversation_id",
+          "client_turn_id",
+          "status",
+          "model_source",
+          "model_name",
+          "requested_by_user_id",
+          "user_message_sequence",
+          "outcome_detail",
+          "created_at",
+          "finished_at"
+        ],
+        "title": "AgentTurnResponse",
+        "type": "object"
+      },
+      "AgentTurnStatus": {
+        "description": "Where one turn stands. `running` is the only state that holds a conversation.",
+        "enum": [
+          "running",
+          "completed",
+          "cancelled",
+          "failed",
+          "interrupted"
+        ],
+        "title": "AgentTurnStatus",
+        "type": "string"
       },
       "ApiUploadTargetResponse": {
         "description": "Upload target owned by this API; send session credentials and CSRF.",
@@ -624,6 +1001,48 @@
         "title": "AssignProjectFolderRequest",
         "type": "object"
       },
+      "AssistantMessagePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "assistant_message",
+            "default": "assistant_message",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 1000000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "AssistantMessagePayload",
+        "type": "object"
+      },
+      "CancelAgentTurnRequest": {
+        "additionalProperties": false,
+        "description": "Stop the conversation's turn. With no `turn_id`, whatever is running now.",
+        "properties": {
+          "turn_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          }
+        },
+        "title": "CancelAgentTurnRequest",
+        "type": "object"
+      },
       "CheckpointProjectRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1031,6 +1450,34 @@
           "title"
         ],
         "title": "FieldProjectionResponse",
+        "type": "object"
+      },
+      "ForkAgentConversationRequest": {
+        "additionalProperties": false,
+        "description": "Continue the thread at one of its own events, in a new conversation.",
+        "properties": {
+          "at_sequence": {
+            "minimum": 1.0,
+            "title": "At Sequence",
+            "type": "integer"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "at_sequence"
+        ],
+        "title": "ForkAgentConversationRequest",
         "type": "object"
       },
       "GeoArtifactKind": {
@@ -5327,6 +5774,30 @@
         "title": "SaveUploadedArtifactRequest",
         "type": "object"
       },
+      "SendAgentTurnRequest": {
+        "additionalProperties": false,
+        "description": "One question, with the id that makes repeating this request the same turn.\n\n`client_turn_id` is the caller's, chosen once per send and reused on a retry: the receipt\nis keyed by it, so a retried send answers with the turn it already made instead of asking\nthe model twice. Different text under one id is a conflict, not a replay.",
+        "properties": {
+          "client_turn_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Client Turn Id",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 1000000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_turn_id",
+          "text"
+        ],
+        "title": "SendAgentTurnRequest",
+        "type": "object"
+      },
       "SessionResponse": {
         "properties": {
           "created_at": {
@@ -5414,6 +5885,22 @@
         "title": "SessionResponse",
         "type": "object"
       },
+      "SetAgentKeyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "format": "password",
+            "title": "Value",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "SetAgentKeyRequest",
+        "type": "object"
+      },
       "SetNodeArtifactTypeBindingCommand": {
         "additionalProperties": false,
         "properties": {
@@ -5482,6 +5969,19 @@
           "expected_plug_ids"
         ],
         "title": "SetNodeInputPlugsCommand",
+        "type": "object"
+      },
+      "StartAgentConversationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "StartAgentConversationRequest",
         "type": "object"
       },
       "StartRunRequest": {
@@ -5960,6 +6460,37 @@
         "title": "TableValueType",
         "type": "string"
       },
+      "TurnOutcomePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "kind": {
+            "const": "turn_outcome",
+            "default": "turn_outcome",
+            "title": "Kind",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/AgentConversationTurnOutcome"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "TurnOutcomePayload",
+        "type": "object"
+      },
       "UpdateEdgeCommand": {
         "additionalProperties": false,
         "properties": {
@@ -6152,6 +6683,28 @@
           }
         ],
         "title": "UploadTargetResponse"
+      },
+      "UserMessagePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "user_message",
+            "default": "user_message",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 1000000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "UserMessagePayload",
+        "type": "object"
       },
       "UserProjectStateResponse": {
         "additionalProperties": false,
@@ -10669,6 +11222,1031 @@
         "summary": "Assign Project Folder",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations": {
+      "get": {
+        "description": "Every thread with one Agent of this Graph, newest first \u2014 whoever started them.\n\nAn Agent that has left the canvas still has threads to read: history outlives the card, and\na person who opened a thread should be able to finish reading it. What the Graph has to\nexist for is the Graph, because this is the surface that lists what is on it.",
+        "operationId": "list_agent_conversations_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConversationListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Agent Conversations",
+        "tags": [
+          "agents"
+        ]
+      },
+      "post": {
+        "description": "Open a thread with one Agent that is on the canvas right now.\n\nThe Agent has to be there because a thread is addressed to it. Its instructions and model\nare read from the head document when each turn is admitted rather than copied here, so\nediting the card later does not rewrite what this thread is called or what it was told.",
+        "operationId": "start_agent_conversation_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartAgentConversationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConversationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Agent Conversation",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}": {
+      "get": {
+        "description": "One thread the path addresses. The scope check is the route; there is nothing to add.",
+        "operationId": "get_agent_conversation_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConversationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Agent Conversation",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/active-turn": {
+      "get": {
+        "description": "The turn running now and the text it has streamed, or nothing when the thread is idle.\n\nThis exists because streamed text is stored nowhere: a reader that joined mid-turn can read\nthe ending from the events, but only the process running the turn knows how far it has got.\nA turn another API owner runs answers with its receipt and no partial, which is the truth\nrather than an empty answer that looks finished.",
+        "operationId": "get_active_agent_turn_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__active_turn_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ActiveAgentTurnResponse"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Active Agent Turn V1 Workspaces  Workspace Id  Projects  Project Id  Graphs  Graph Id  Agents  Agent Id  Conversations  Conversation Id  Active Turn Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Active Agent Turn",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/cancel": {
+      "post": {
+        "description": "Stop this thread's turn. Asking twice, or again after the answer, changes nothing.\n\nCancelling is a request rather than a kill: the turn's own task unwinds the run, keeps the\ntext that had arrived and writes its ending, so a Stop that races a finishing answer leaves\none record of how it ended instead of two. A thread with nothing running answers with its\nlast turn, which is what a retried Stop was asking for; a `turn_id` that belongs to another\nProject, Graph or Agent is the absence it appears to be.",
+        "operationId": "cancel_agent_turn_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CancelAgentTurnRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTurnResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Agent Turn",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/events": {
+      "get": {
+        "description": "The thread's stored events, oldest first \u2014 the authoritative recovery path.\n\nRoom frames are how a thread looks live; this is what makes it right. A delta that was\ndropped, a `agent.event.appended` that arrived after a disconnect and a turn that ended\nwhile the tab was closed all resolve to reading this route, and `last_sequence` says\nwhether the page that came back is the whole thread or stopped at the limit.",
+        "operationId": "list_agent_conversation_events_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Skip the events up to and including this conversation sequence. A reader resumes with the highest sequence it holds, so a resync repeats nothing.",
+            "in": "query",
+            "name": "after_sequence",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Skip the events up to and including this conversation sequence. A reader resumes with the highest sequence it holds, so a resync repeats nothing.",
+              "minimum": 0,
+              "title": "After Sequence",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConversationEventListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Agent Conversation Events",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/fork": {
+      "post": {
+        "description": "Continue this thread from one of its events, in a new thread beside the same Agent.\n\n\"Continue from here\" copies; it does not trim. The source keeps going, the copy records the\nconversation and the sequence it was cut at, and both keep the Project, Graph and Agent of\nthe source \u2014 so a fork cannot move a thread's history to another card by addressing it\nsomewhere else. A sequence the source does not have is refused as unprocessable, with the\nsource's own `last_sequence` in the response for a client to aim at instead.",
+        "operationId": "fork_agent_conversation_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__fork_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForkAgentConversationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConversationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Fork Agent Conversation",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/conversations/{conversation_id}/turns": {
+      "post": {
+        "description": "Ask this Agent one question, and get its turn's receipt before it has answered.\n\nThe reply does not come back here: it streams on the Project room as ``agent.*`` frames and\nis stored as conversation events, both of which outlive this request. That is what makes\nthe response a receipt \u2014 the question is durable by the time it is sent, the answer arrives\nwhenever the model finishes, and a tab that closes does not stop a turn that has started.\n\nThe send is idempotent by `client_turn_id`: the same id with the same text returns the same\nturn with no second model call and no second event, which is why a retry after a dropped\nresponse is safe. The same id with different text, and a fresh id against a conversation\nthat is already running, are both conflicts rather than surprises.",
+        "operationId": "send_agent_turn_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__conversations__conversation_id__turns_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendAgentTurnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTurnResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Send Agent Turn",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/key": {
+      "delete": {
+        "description": "Take the Agent's own key away, so a deployment-default Agent needs nothing of its own.\n\nClearing does not read what was stored, and it is idempotent: an Agent with no key answers\nthe same way whether it ever had one.",
+        "operationId": "clear_agent_key_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__key_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Clear Agent Key",
+        "tags": [
+          "agents"
+        ]
+      },
+      "put": {
+        "description": "Give this Agent a key of its own. What comes back says only that one is there now.\n\nThe plaintext is spent on the seal and appears in no response, no event, no stored row and\nno log line: the key service's failure accounts name the Agent, never the value, and a value\nthat is not worth sealing is refused without repeating it. Setting a key twice replaces it,\nwhich is the reverse door `DELETE` below opens all the way.",
+        "operationId": "set_agent_key_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__key_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAgentKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentKeyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Agent Key",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/agents/{agent_id}/model": {
+      "get": {
+        "description": "Which model this Agent will dial, and whether the key that needs is in place.\n\nNever the key: the endpoint, the model name, whether the choice came from the deployment or\nthe Agent, and a yes-or-no about the credential is all a configuration surface can honestly\nshow \u2014 and the whole reason reading it is `view_project` while setting it is `edit_project`.",
+        "operationId": "get_agent_model_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__agents__agent_id__model_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentModelResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Agent Model",
+        "tags": [
+          "agents"
         ]
       }
     },

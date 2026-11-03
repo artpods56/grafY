@@ -158,6 +158,7 @@ async def list_agent_conversations(
     response_model=AgentConversationResponse,
 )
 async def get_agent_conversation(
+    access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
     conversation: AgentConversationDependency,
 ) -> AgentConversationResponse:
     """One thread the path addresses. The scope check is the route; there is nothing to add."""

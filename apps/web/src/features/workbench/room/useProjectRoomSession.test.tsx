@@ -73,6 +73,7 @@ function graphDocument(
     nodes: [],
     edges: [],
     origins: [],
+    agents: [],
     presentation: { viewers: [], links: [], bindings: [], annotations: [] },
     ...overrides,
   };

@@ -1036,6 +1036,9 @@ def test_a_token_is_served_by_its_scopes_and_refused_by_the_rest(tmp_path: Path)
         assert live.send(opened_id, text="Q", turn_id="client-1", headers=live.as_("owner")).status_code == 201
         settled(script)
 
+        run_only = live.token("run-only", PersonalAccessTokenScope.START_RUN)
+        assert live.conversation(opened_id, headers=run_only).status_code == 403
+
         reader = live.token("reader", PersonalAccessTokenScope.VIEW_PROJECT)
         assert live.conversations(headers=reader).status_code == 200
         assert live.conversation(opened_id, headers=reader).status_code == 200
