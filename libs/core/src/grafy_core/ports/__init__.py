@@ -6,9 +6,9 @@ from grafy_core.ports.storage import (
     StoredFile,
     StoredObjectInfo,
 )
-from grafy_core.ports.saved_graphs import (
-    SavedGraphRepositoryPort,
-    SavedGraphUnitOfWorkPort,
+from grafy_core.ports.projects import (
+    ProjectRepositoryPort,
+    ProjectUnitOfWorkPort,
 )
 from grafy_core.ports.node_secrets import (
     JsonValue,
@@ -59,8 +59,8 @@ __all__ = [
     "SecurityAuditRepositoryPort",
     "NodeSecretUnitOfWorkPort",
     "SaveFileCommand",
-    "SavedGraphRepositoryPort",
-    "SavedGraphUnitOfWorkPort",
+    "ProjectRepositoryPort",
+    "ProjectUnitOfWorkPort",
     "StoredFile",
     "StoredObjectInfo",
     "UnavailableNodeSecretResolver",
