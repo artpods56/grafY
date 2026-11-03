@@ -1049,13 +1049,19 @@ test.describe("artifact wiring", () => {
     // become a Project first: the rail's Save creates one, replaces its Graph
     // document, and checkpoints it. The address naming the new Project is what
     // proves that whole chain went through the fixture's Project surface.
-    // An unnamed draft is named through a prompt.
-    const namePrompt = page.waitForEvent("dialog");
+    // An unnamed draft is named through a prompt. `window.prompt` opens while
+    // the Save click is still being dispatched, so the answer cannot live
+    // after `await click()` — the click would wait for the dialog and the
+    // dialog would wait for the answer that never arrives.
+    page.once("dialog", (dialog) => void dialog.accept("Pilot pipeline"));
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await (await namePrompt).accept("Pilot pipeline");
     await expect(page).toHaveURL(
       /\/workspaces\/mobile-test\/projects\/[0-9a-f-]{36}$/,
     );
+
+    // The Workbench opens the saved Project as a fresh page, so nothing is
+    // held any more: the node is selected, and the toolbar's Run runs it.
+    await source.click();
 
     // Running answers from the Run surface the fixture keeps: `POST …/runs`
     // makes the targets fresh and stores each target's result on its node
@@ -1065,9 +1071,11 @@ test.describe("artifact wiring", () => {
     // HTTP state when no room carries it, so the assertion below holds either
     // way — it just cannot prove a room push happened.
     await page.getByRole("button", { name: "Run", exact: true }).click();
-    await expect(page.locator("main > span[role='status']")).toHaveText(
-      "Run made its targets fresh.",
-    );
+    // The Run announcement is the live region with `aria-atomic`; on a saved
+    // Project the room's recovery notice shares `main` as a second `role=status`.
+    await expect(
+      page.locator("main > span[role='status'][aria-atomic='true']"),
+    ).toHaveText("Run made its targets fresh.");
 
     const output = source.locator(".react-flow__handle.source");
     await output.click({ trial: true });
