@@ -46,6 +46,7 @@ import {
   WorkbenchActivityBar,
   type WorkbenchActivity,
 } from "./WorkbenchActivityBar";
+import { GraphNameDialog } from "./GraphNameDialog";
 import {
   ArtifactFolderDropDialog,
   type PendingFolderDrop,
@@ -609,6 +610,7 @@ function WorkbenchBody({
   );
   const [pendingConnectionRoute, setPendingConnectionRoute] =
     React.useState<PendingConnectionRoute | null>(null);
+  const [nameDialogOpen, setNameDialogOpen] = React.useState(false);
   const [pendingFolderDrop, setPendingFolderDrop] =
     React.useState<PendingFolderDropState | null>(null);
   const [fitRevision, setFitRevision] = React.useState(0);
@@ -4279,12 +4281,11 @@ function WorkbenchBody({
         !deletingGraphId &&
         Boolean(activeGraph ? isDirty : true),
       save: async () => {
-        let name = graphName.trim();
+        const name = graphName.trim();
         if (!name || name === "Untitled workflow") {
-          const next = window.prompt("Name this graph", name || "");
-          if (!next?.trim()) return;
-          name = next.trim().slice(0, 160);
-          setGraphName(name);
+          // The name dialog saves once the user confirms a name.
+          setNameDialogOpen(true);
+          return;
         }
         await saveCurrentGraph(name);
       },
@@ -4334,7 +4335,6 @@ function WorkbenchBody({
     saveCurrentGraph,
     savedProjectName,
     saving,
-    setGraphName,
     setGridPanelOpen,
     setSidePanelOpen,
     setSidePanelView,
@@ -4823,6 +4823,17 @@ function WorkbenchBody({
           onAddNode={(spec) => addCatalogNode(spec)}
         />
       ) : null}
+
+      <GraphNameDialog
+        open={nameDialogOpen}
+        initialName={graphName.trim() === "Untitled workflow" ? "" : graphName}
+        onClose={() => setNameDialogOpen(false)}
+        onSubmit={(name) => {
+          setNameDialogOpen(false);
+          setGraphName(name);
+          void saveCurrentGraph(name);
+        }}
+      />
 
       <ArtifactFolderDropDialog
         pending={pendingFolderDrop?.drop ?? null}
