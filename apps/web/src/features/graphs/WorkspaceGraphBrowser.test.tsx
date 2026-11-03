@@ -23,7 +23,7 @@ const browserState = vi.hoisted(() => ({
     slug: "atlas",
     kind: "shared" as const,
     role: "editor" as const,
-    capabilities: ["view_graph", "create_graph"],
+    capabilities: ["view_project", "create_project"],
   } satisfies Workspace,
   /** The address the page is mounted on, as the browser would report it. */
   pathname: "/workspaces/atlas/graphs",
@@ -188,7 +188,7 @@ beforeEach(() => {
     slug: "atlas",
     kind: "shared",
     role: "editor",
-    capabilities: ["view_graph", "create_graph"],
+    capabilities: ["view_project", "create_project"],
   };
   apiMocks.useSavedGraphs.mockImplementation(() => ({
     data: browserState.data,

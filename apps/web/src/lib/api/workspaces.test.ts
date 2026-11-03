@@ -54,7 +54,7 @@ describe("workspace API client", () => {
     await listPersonalAccessTokens(workspaceId);
     await createPersonalAccessToken(workspaceId, {
       label: "Module publishing",
-      scopes: ["publish_module"],
+      scopes: ["edit_project"],
       expires_at: "2026-09-09T12:00:00Z",
     });
     await revokePersonalAccessToken(workspaceId, "token-uuid");
@@ -92,7 +92,7 @@ describe("workspace API client", () => {
     });
     expect(JSON.parse(fetchMock.mock.calls[13]?.[1].body as string)).toEqual({
       label: "Module publishing",
-      scopes: ["publish_module"],
+      scopes: ["edit_project"],
       expires_at: "2026-09-09T12:00:00Z",
     });
   });

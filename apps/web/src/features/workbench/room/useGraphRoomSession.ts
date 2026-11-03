@@ -323,7 +323,7 @@ export function useGraphRoomSession({
     canSubmitCommands:
       currentStatus === "ready" &&
       currentHead !== null &&
-      currentCapabilities.includes("edit_graph") &&
+      currentCapabilities.includes("edit_project") &&
       currentTerminalReason === null,
     canPublishPresence:
       currentStatus === "ready" &&

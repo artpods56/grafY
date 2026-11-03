@@ -144,7 +144,10 @@ describe("canonical collaborative head flow", () => {
       graph_id: "graph-1",
       graph_room_session_id: "session-1",
       actor: { actor_id: "owner-1", display_name: "Owner", color: "emerald" },
-      capabilities: { capabilities: ["view_graph"], authorization_version: 1 },
+      capabilities: {
+        capabilities: ["view_project"],
+        authorization_version: 1,
+      },
       head: canonical,
       participants: [],
       active_execution: null,

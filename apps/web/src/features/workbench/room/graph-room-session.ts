@@ -251,7 +251,7 @@ export class GraphRoomSession {
     return (
       this.status === "ready" &&
       this.head !== null &&
-      this.capabilities.includes("edit_graph") &&
+      this.capabilities.includes("edit_project") &&
       this.terminalReason === null
     );
   }

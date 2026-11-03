@@ -103,7 +103,7 @@ const personal = {
   slug: "private-slug",
   kind: "personal" as const,
   role: "owner" as const,
-  capabilities: ["view_graph", "create_graph"],
+  capabilities: ["view_project", "create_project"],
 };
 
 const team = {
@@ -112,7 +112,7 @@ const team = {
   slug: "secret-team-slug",
   kind: "shared" as const,
   role: "editor" as const,
-  capabilities: ["view_graph", "create_graph"],
+  capabilities: ["view_project", "create_project"],
 };
 
 function graph(

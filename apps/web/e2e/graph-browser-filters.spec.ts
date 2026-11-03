@@ -27,7 +27,7 @@ const personal = {
   name: "Personal",
   kind: "personal",
   role: "owner",
-  capabilities: ["view_graph", "create_graph"],
+  capabilities: ["view_project", "create_project"],
 } satisfies Workspace;
 
 const atlas = {
@@ -36,7 +36,7 @@ const atlas = {
   name: "Atlas",
   kind: "shared",
   role: "editor",
-  capabilities: ["view_graph", "create_graph"],
+  capabilities: ["view_project", "create_project"],
 } satisfies Workspace;
 
 function graph(id: string, name: string, updatedAt: string): SavedGraphSummary {
