@@ -243,8 +243,8 @@ class OpenAICompatibleNode(
         try:
             api_key = await self._node_secrets.resolve_secret(
                 workspace_id=context.workspace_id,
-                graph_id=context.secret_graph_id,
-                graph_revision=context.secret_graph_revision,
+                project_id=context.project_id,
+                graph_id=context.graph_id,
                 node_id=context.node_id,
                 name="api_key",
                 dependencies={"base_url": config.base_url},

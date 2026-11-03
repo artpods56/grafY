@@ -39,8 +39,8 @@ class FakeNodeSecrets:
     ) -> None:
         self._value = value
         self._error = error
-        self.graph_id: UUID | None = None
-        self.graph_revision: int | None = None
+        self.project_id: UUID | None = None
+        self.graph_id: str | None = None
         self.node_id: str | None = None
         self.name: str | None = None
         self.dependencies: Mapping[str, JsonValue] | None = None
@@ -49,15 +49,15 @@ class FakeNodeSecrets:
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> SecretStr:
-        self.graph_id = graph_id
+        self.project_id = project_id
         assert workspace_id == WORKSPACE_ID
-        self.graph_revision = graph_revision
+        self.graph_id = graph_id
         self.node_id = node_id
         self.name = name
         self.dependencies = dependencies
@@ -69,13 +69,13 @@ class FakeNodeSecrets:
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> str:
-        del workspace_id, graph_id, graph_revision, node_id, name, dependencies
+        del workspace_id, project_id, graph_id, node_id, name, dependencies
         return "0" * 64
 
 
@@ -160,7 +160,7 @@ def test_node_declares_many_messages_optional_schema_and_write_only_key() -> Non
 
 
 async def test_node_resolves_bound_secret_and_builds_completion_artifact() -> None:
-    graph_id = uuid4()
+    project_id = uuid4()
     secret = SecretStr("secret-provider-key")
     secrets = FakeNodeSecrets(secret)
     provider = FakeProvider(
@@ -191,16 +191,16 @@ async def test_node_resolves_bound_secret_and_builds_completion_artifact() -> No
     output = await node.run(
         NodeExecutionContext(
             workspace_id=WORKSPACE_ID,
-            secret_graph_id=graph_id,
-            secret_graph_revision=3,
+            project_id=project_id,
+            graph_id="drafts",
             node_id="completion-1",
         ),
         config,
         OpenAICompatibleInput(messages=messages),
     )
 
-    assert secrets.graph_id == graph_id
-    assert secrets.graph_revision == 3
+    assert secrets.project_id == project_id
+    assert secrets.graph_id == "drafts"
     assert secrets.node_id == "completion-1"
     assert secrets.name == "api_key"
     assert secrets.dependencies == {"base_url": "https://gateway.example/v1"}
@@ -242,8 +242,6 @@ async def test_node_does_not_use_materialization_graph_as_secret_context() -> No
     await node.run(
         NodeExecutionContext(
             workspace_id=WORKSPACE_ID,
-            graph_id=uuid4(),
-            graph_revision=4,
             node_id="completion-1",
         ),
         OpenAICompatibleConfig(),
@@ -257,8 +255,8 @@ async def test_node_does_not_use_materialization_graph_as_secret_context() -> No
         ),
     )
 
+    assert secrets.project_id is None
     assert secrets.graph_id is None
-    assert secrets.graph_revision is None
 
 
 async def test_node_builds_schema_validated_completion_artifact() -> None:
@@ -278,8 +276,8 @@ async def test_node_builds_schema_validated_completion_artifact() -> None:
     output = await node.run(
         NodeExecutionContext(
             workspace_id=WORKSPACE_ID,
-            secret_graph_id=uuid4(),
-            secret_graph_revision=1,
+            project_id=uuid4(),
+            graph_id="drafts",
             node_id="structured-1",
         ),
         OpenAICompatibleConfig(schema_name="answer", strict=True),
@@ -329,8 +327,8 @@ async def test_node_maps_provider_error_without_rendering_secret_or_body() -> No
         await node.run(
             NodeExecutionContext(
                 workspace_id=WORKSPACE_ID,
-                secret_graph_id=uuid4(),
-                secret_graph_revision=1,
+                project_id=uuid4(),
+                graph_id="drafts",
                 node_id="completion-1",
             ),
             OpenAICompatibleConfig(),
@@ -372,8 +370,8 @@ async def test_node_surfaces_sanitized_provider_error_with_its_cause() -> None:
         await node.run(
             NodeExecutionContext(
                 workspace_id=WORKSPACE_ID,
-                secret_graph_id=uuid4(),
-                secret_graph_revision=1,
+                project_id=uuid4(),
+                graph_id="drafts",
                 node_id="completion-1",
             ),
             OpenAICompatibleConfig(),
@@ -414,8 +412,8 @@ async def test_node_maps_secret_lookup_error_without_rendering_secret() -> None:
         await node.run(
             NodeExecutionContext(
                 workspace_id=WORKSPACE_ID,
-                secret_graph_id=uuid4(),
-                secret_graph_revision=1,
+                project_id=uuid4(),
+                graph_id="drafts",
                 node_id="completion-1",
             ),
             OpenAICompatibleConfig(),

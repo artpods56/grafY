@@ -1,36 +1,36 @@
-"""Resolve compiled graph edges into one node's runtime inputs."""
+"""Apply each connection's projection and conversion to the values one node reads.
 
-from collections.abc import Mapping, Sequence
+The values themselves arrive from the result store: an ``InputSlot`` holds the
+artifact reference an upstream instance produced together with the field
+projection and the conversion path its connection declared. Applying them writes
+new artifacts -- a projection or a conversion is a materialized value with its
+own provenance, which points at the upstream artifact it was derived from and at
+the node it is on its way to -- and the results are what the node's inputs
+materialize. Ports collect their slots the way their contract says: one value, a
+list per incoming connection, or a list in the node's own input-plug order.
+"""
+
+from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any, cast
-from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
-from grafy_core.artifacts import (
-    ArtifactRef,
-    ArtifactRefSequence,
-)
+from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
 from grafy_core.conversions import ArtifactConversion
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.runtime.materialization import MaterializationProvenance
-from grafy_core.runtime.persistence import (
-    ArtifactWriteContext,
-    ArtifactWriterRegistry,
-)
+from grafy_core.runtime.persistence import ArtifactWriteContext, ArtifactWriterRegistry
 from grafy_core.runtime.resolvers import ResolverRegistry
 
-from grafy_api.execution.errors import GraphExecutionError
-from grafy_api.execution.models import (
-    CompiledEdge,
-    CompiledNode,
-)
-from grafy_api.execution.requests import connection_label
+from grafy_api.runs.contract import InputPortPlan, InputSlot
+from grafy_api.runs.errors import NodeComputationError
 
 
 class EdgeValueResolver:
-    """Apply compiled edge transformations and assemble runtime inputs."""
+    """Resolve input slots into the values a node runtime materializes."""
 
     def __init__(
         self,
@@ -45,108 +45,65 @@ class EdgeValueResolver:
 
     async def assemble_inputs(
         self,
-        compiled_node: CompiledNode,
-        incoming_edges: Sequence[CompiledEdge],
-        outputs: Mapping[str, Mapping[str, ArtifactOutputValue]],
-        workflow_run_id: UUID,
-        workspace_id: UUID,
+        *,
+        slots: Sequence[InputSlot],
+        ports: Sequence[InputPortPlan],
+        context: NodeExecutionContext,
     ) -> dict[str, object]:
+        plans = {plan.name: plan for plan in ports}
+        slots_by_port: dict[str, list[InputSlot]] = {}
+        for slot in slots:
+            slots_by_port.setdefault(slot.to_port, []).append(slot)
+
         values: dict[str, object] = {}
-        node_request = compiled_node.request
-        # Phase-local adjacency index: group the node's incoming edges by input
-        # port once instead of rescanning per port.
-        incoming_by_port: dict[str, list[CompiledEdge]] = {}
-        for edge in incoming_edges:
-            if edge.request.to_node != node_request.id:
-                continue
-            incoming_by_port.setdefault(edge.request.to_port, []).append(edge)
-        for name, spec in compiled_node.resolved_contracts.input_contract.ports.items():
-            port_edges = incoming_by_port.get(name, [])
-            incoming_by_plug = {
-                edge.request.to_plug: edge
-                for edge in port_edges
-                if edge.request.to_plug is not None
-            }
-            if spec.instance_plugs:
-                matching_edges = [
-                    incoming_by_plug[plug.id]
-                    for plug in node_request.input_plugs
-                    if plug.port == name
-                ]
+        for name, port_slots in slots_by_port.items():
+            plan = plans.get(name)
+            if plan is None:
+                raise NodeComputationError(
+                    f"Input {name!r} of node {context.node_id!r} has connections "
+                    "but is not an input port of its operator"
+                )
+            resolved = [
+                await self._resolve(slot, context)
+                for slot in _in_port_order(plan, port_slots)
+            ]
+            if plan.variadic or plan.instance_plugs:
+                values[name] = resolved
+            elif len(resolved) == 1:
+                values[name] = resolved[0]
             else:
-                matching_edges = port_edges
-
-            port_values: list[ArtifactOutputValue] = []
-            for edge in matching_edges:
-                edge_request = edge.request
-                if edge.origin_value is not None:
-                    value = edge.origin_value
-                else:
-                    source_ports = outputs.get(edge_request.from_node)
-                    if (
-                        source_ports is None
-                        or edge_request.from_port not in source_ports
-                    ):
-                        raise GraphExecutionError(
-                            f"Node {node_request.id!r} input {name!r} references "
-                            f"missing output {edge_request.from_node!r}."
-                            f"{edge_request.from_port!r}"
-                        )
-                    value = source_ports[edge_request.from_port]
-                if edge.projection is not None:
-                    value = await self._project_value(
-                        value,
-                        edge,
-                        workflow_run_id,
-                        workspace_id,
-                    )
-                if edge.conversion_path:
-                    value = await self._convert_value(
-                        value,
-                        edge,
-                        workflow_run_id,
-                        workspace_id,
-                    )
-                port_values.append(value)
-
-            if spec.instance_plugs or spec.variadic:
-                values[name] = port_values
-            elif len(port_values) == 1:
-                values[name] = port_values[0]
-            elif len(port_values) > 1:
-                raise GraphExecutionError(
-                    f"Node {node_request.id!r} input {name!r} accepts one "
-                    f"connection, got {len(port_values)}"
+                raise NodeComputationError(
+                    f"Node {context.node_id!r} input {name!r} accepts one "
+                    f"connection, got {len(resolved)}"
                 )
         return values
+
+    async def _resolve(
+        self,
+        slot: InputSlot,
+        context: NodeExecutionContext,
+    ) -> ArtifactOutputValue:
+        value = slot.value
+        if slot.projection is not None:
+            value = await self._project_value(value, slot, context)
+        if slot.conversion_path:
+            value = await self._convert_value(value, slot, context)
+        return value
 
     async def _project_value(
         self,
         value: ArtifactOutputValue,
-        edge: CompiledEdge,
-        workflow_run_id: UUID,
-        workspace_id: UUID,
+        slot: InputSlot,
+        context: NodeExecutionContext,
     ) -> ArtifactOutputValue:
-        projection = edge.projection
+        projection = slot.projection
         if projection is None:
             return value
         if isinstance(value, ArtifactRef):
-            return await self._project_ref(
-                value,
-                edge,
-                workflow_run_id,
-                workspace_id,
-                item_index=None,
-            )
+            return await self._project_ref(value, slot, context, item_index=None)
 
         projected_refs = [
-            await self._project_ref(
-                ref,
-                edge,
-                workflow_run_id,
-                workspace_id,
-                item_index=index,
-            )
+            await self._project_ref(ref, slot, context, item_index=index)
             for index, ref in enumerate(value.item_refs)
         ]
         sequence_metadata = dict(value.metadata)
@@ -169,29 +126,30 @@ class EdgeValueResolver:
     async def _project_ref(
         self,
         ref: ArtifactRef,
-        edge: CompiledEdge,
-        workflow_run_id: UUID,
-        workspace_id: UUID,
+        slot: InputSlot,
+        context: NodeExecutionContext,
         *,
         item_index: int | None,
     ) -> ArtifactRef:
-        projection = edge.projection
+        projection = slot.projection
         if projection is None:
-            raise GraphExecutionError("A compiled projection is required")
+            raise NodeComputationError("A resolved projection is required")
         async with self._unit_of_work as unit_of_work:
-            artifact = await unit_of_work.artifacts.get(workspace_id, ref.artifact_id)
+            artifact = await unit_of_work.artifacts.get(
+                context.workspace_id, ref.artifact_id
+            )
         if artifact is None:
-            raise GraphExecutionError(
+            raise NodeComputationError(
                 f"Cannot project missing source artifact {ref.artifact_id} for "
-                f"{connection_label(edge.request, capitalized=False)}"
+                f"{slot.label}"
             )
         if artifact.ref() != ref:
-            raise GraphExecutionError(
+            raise NodeComputationError(
                 f"Cannot project source artifact {ref.artifact_id}: repository "
-                "ref does not match edge output ref"
+                "ref does not match the value the connection carries"
             )
         if artifact.inline_payload is None:
-            raise GraphExecutionError(
+            raise NodeComputationError(
                 f"Cannot project {'.'.join(projection.path)!r} from artifact "
                 f"{ref.artifact_id}: source has no inline JSON payload"
             )
@@ -199,13 +157,13 @@ class EdgeValueResolver:
         projected_value: object = artifact.inline_payload
         for segment in projection.path:
             if not isinstance(projected_value, dict):
-                raise GraphExecutionError(
+                raise NodeComputationError(
                     f"Cannot project {'.'.join(projection.path)!r} from artifact "
                     f"{ref.artifact_id}: {segment!r} is not inside a JSON object"
                 )
             mapping = cast(dict[object, object], projected_value)
             if segment not in mapping:
-                raise GraphExecutionError(
+                raise NodeComputationError(
                     f"Cannot project {'.'.join(projection.path)!r} from artifact "
                     f"{ref.artifact_id}: field {segment!r} is missing"
                 )
@@ -215,30 +173,25 @@ class EdgeValueResolver:
         return await writer.write(
             projected_value,
             ArtifactWriteContext(
-                node_context=NodeExecutionContext(
-                    workflow_run_id=workflow_run_id,
-                    node_run_id=uuid4(),
-                    workspace_id=workspace_id,
-                    node_id=edge.request.from_node,
-                ),
+                node_context=replace(context, node_id=slot.source_node_id),
                 provenance=MaterializationProvenance(
-                    refs_by_input={edge.request.from_port: (ref,)}
+                    refs_by_input={slot.source_port: (ref,)}
                 ),
                 item_index=item_index,
                 metadata={
                     "source_artifact_id": str(ref.artifact_id),
                     "source_artifact_type": ref.artifact_type,
                     "source_schema_version": ref.schema_version,
-                    "source_node_id": edge.request.from_node,
-                    "source_port": edge.request.from_port,
+                    "source_node_id": slot.source_node_id,
+                    "source_port": slot.source_port,
                     "projection_path": list(projection.path),
                     "projection_title": projection.title,
                     "projection_target_artifact_type": projection.target.id,
                     "projection_target_schema_version": (
                         projection.target.schema_version
                     ),
-                    "target_node_id": edge.request.to_node,
-                    "target_port": edge.request.to_port,
+                    "target_node_id": slot.target_node_id,
+                    "target_port": slot.to_port,
                 },
             ),
         )
@@ -246,31 +199,18 @@ class EdgeValueResolver:
     async def _convert_value(
         self,
         value: ArtifactOutputValue,
-        edge: CompiledEdge,
-        workflow_run_id: UUID,
-        workspace_id: UUID,
+        slot: InputSlot,
+        context: NodeExecutionContext,
     ) -> ArtifactOutputValue:
-        conversions = edge.conversion_path
+        conversions = slot.conversion_path
         if not conversions:
             return value
         final_conversion = conversions[-1]
         if isinstance(value, ArtifactRef):
-            return await self._convert_ref(
-                value,
-                edge,
-                workflow_run_id,
-                workspace_id,
-                item_index=None,
-            )
+            return await self._convert_ref(value, slot, context, item_index=None)
 
         converted_refs = [
-            await self._convert_ref(
-                ref,
-                edge,
-                workflow_run_id,
-                workspace_id,
-                item_index=index,
-            )
+            await self._convert_ref(ref, slot, context, item_index=index)
             for index, ref in enumerate(value.item_refs)
         ]
         sequence_metadata = dict(value.metadata)
@@ -292,15 +232,14 @@ class EdgeValueResolver:
     async def _convert_ref(
         self,
         ref: ArtifactRef,
-        edge: CompiledEdge,
-        workflow_run_id: UUID,
-        workspace_id: UUID,
+        slot: InputSlot,
+        context: NodeExecutionContext,
         *,
         item_index: int | None,
     ) -> ArtifactRef:
-        conversions = edge.conversion_path
+        conversions = slot.conversion_path
         if not conversions:
-            raise GraphExecutionError("A compiled conversion path is required")
+            raise NodeComputationError("A resolved conversion path is required")
         first_conversion = conversions[0]
         final_conversion = conversions[-1]
         item_context = "" if item_index is None else f" at sequence item {item_index}"
@@ -308,17 +247,16 @@ class EdgeValueResolver:
             source_value = await self._resolvers.resolve(
                 ref=ref,
                 target=first_conversion.source_type,
-                workspace_id=workspace_id,
+                workspace_id=context.workspace_id,
             )
             converted_value: object = _validated_conversion_value(
                 source_value,
                 first_conversion.source_type,
             )
         except Exception as exc:
-            raise GraphExecutionError(
+            raise NodeComputationError(
                 f"Failed to resolve artifact {ref.artifact_id}{item_context} for "
-                "conversion path on "
-                f"{connection_label(edge.request, capitalized=False)}"
+                f"the conversion path on {slot.label}"
             ) from exc
 
         for step_index, conversion in enumerate(conversions):
@@ -332,65 +270,75 @@ class EdgeValueResolver:
                     conversion.target_type,
                 )
             except Exception as exc:
-                raise GraphExecutionError(
+                raise NodeComputationError(
                     f"Failed conversion step {step_index + 1}/{len(conversions)} "
                     f"{conversion.key.id!r}@{conversion.key.version} for artifact "
-                    f"{ref.artifact_id}{item_context} on "
-                    f"{connection_label(edge.request, capitalized=False)}"
+                    f"{ref.artifact_id}{item_context} on {slot.label}"
                 ) from exc
 
         metadata: dict[str, object] = {
             "source_artifact_id": str(ref.artifact_id),
             "source_artifact_type": ref.artifact_type,
             "source_schema_version": ref.schema_version,
-            "source_node_id": edge.request.from_node,
-            "source_port": edge.request.from_port,
+            "source_node_id": slot.source_node_id,
+            "source_port": slot.source_port,
             **_conversion_path_metadata(conversions),
             "conversion_source_artifact_type": first_conversion.source.id,
             "conversion_source_schema_version": first_conversion.source.schema_version,
             "conversion_target_artifact_type": final_conversion.target.id,
             "conversion_target_schema_version": final_conversion.target.schema_version,
-            "target_node_id": edge.request.to_node,
-            "target_port": edge.request.to_port,
+            "target_node_id": slot.target_node_id,
+            "target_port": slot.to_port,
         }
         try:
             writer = self._writers.writer_for(final_conversion.target)
             written_ref = await writer.write(
                 converted_value,
                 ArtifactWriteContext(
-                    node_context=NodeExecutionContext(
-                        workflow_run_id=workflow_run_id,
-                        node_run_id=uuid4(),
-                        workspace_id=workspace_id,
-                        node_id=edge.request.from_node,
-                    ),
+                    node_context=replace(context, node_id=slot.source_node_id),
                     provenance=MaterializationProvenance(
-                        refs_by_input={edge.request.from_port: (ref,)}
+                        refs_by_input={slot.source_port: (ref,)}
                     ),
                     item_index=item_index,
                     metadata=metadata,
                 ),
             )
             if written_ref.key() != final_conversion.target:
-                raise GraphExecutionError(
+                raise NodeComputationError(
                     f"Final conversion writer returned {written_ref.artifact_type}@"
                     f"{written_ref.schema_version}, expected "
                     f"{final_conversion.target.id}@"
                     f"{final_conversion.target.schema_version} for artifact "
-                    f"{ref.artifact_id}{item_context} on "
-                    f"{connection_label(edge.request, capitalized=False)}"
+                    f"{ref.artifact_id}{item_context} on {slot.label}"
                 )
             return written_ref
-        except GraphExecutionError:
+        except NodeComputationError:
             raise
         except Exception as exc:
-            raise GraphExecutionError(
+            raise NodeComputationError(
                 "Failed to materialize final target "
                 f"{final_conversion.target.id}@"
-                f"{final_conversion.target.schema_version} for conversion path "
-                f"from artifact {ref.artifact_id}{item_context} on "
-                f"{connection_label(edge.request, capitalized=False)}"
+                f"{final_conversion.target.schema_version} for the conversion path "
+                f"from artifact {ref.artifact_id}{item_context} on {slot.label}"
             ) from exc
+
+
+def _in_port_order(
+    plan: InputPortPlan,
+    slots: Sequence[InputSlot],
+) -> Sequence[InputSlot]:
+    """Order a plug port's values by the node's own plug order."""
+
+    if not plan.instance_plugs:
+        return slots
+    by_plug = {slot.to_plug: slot for slot in slots if slot.to_plug is not None}
+    missing = [plug for plug in plan.plugs if plug not in by_plug]
+    if missing:
+        raise NodeComputationError(
+            f"Input {plan.name!r} declares plugs that carry no value: "
+            + ", ".join(repr(plug) for plug in missing)
+        )
+    return [by_plug[plug] for plug in plan.plugs]
 
 
 def _conversion_path_metadata(
@@ -434,3 +382,6 @@ def _validated_conversion_value[ValueT](
         target,
         config=ConfigDict(arbitrary_types_allowed=True),
     ).validate_python(value, strict=True)
+
+
+__all__ = ["EdgeValueResolver"]

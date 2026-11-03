@@ -618,7 +618,7 @@ async def test_graph_module_node_delegates_and_preserves_refs_through_runtime() 
     context = NodeExecutionContext(
         workspace_id=WORKSPACE_ID,
         node_id="module-instance",
-        module_path=("parent-module",),
+        call_path=("parent-call",),
     )
 
     result = await _runtime().run_node(

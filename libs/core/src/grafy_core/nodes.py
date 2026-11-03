@@ -228,18 +228,23 @@ class NodeProgressReporter(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class NodeExecutionContext:
+    """Where one node instance runs, in Project vocabulary (ADR 0020).
+
+    ``graph_id`` and ``node_id`` name the instance inside the Graph it belongs to,
+    ``call_path`` the call nodes entered to reach that Graph, and ``fingerprint``
+    the digest its result is stored under. An operator that needs a stable
+    identity of its own has that fingerprint, not a per-run identifier: runs are
+    demands for fresh results and never own one.
+    """
+
     workspace_id: UUID
-    workflow_run_id: UUID | None = None
-    node_run_id: UUID | None = None
-    graph_id: UUID | None = None
-    graph_revision: int | None = None
-    secret_graph_id: UUID | None = None
-    secret_graph_revision: int | None = None
+    project_id: UUID | None = None
+    graph_id: str | None = None
     node_id: str | None = None
+    call_path: tuple[str, ...] = ()
+    fingerprint: str | None = None
     invocation_index: int | None = None
     invocation_path: tuple[int, ...] = ()
-    module_path: tuple[str, ...] = ()
-    node_path: tuple[str, ...] = ()
     artifact_type_bindings: Mapping[str, ArtifactTypeKey] = dataclass_field(
         default_factory=dict[str, ArtifactTypeKey],
         repr=False,
@@ -252,8 +257,7 @@ class NodeExecutionContext:
     )
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "module_path", tuple(self.module_path))
-        object.__setattr__(self, "node_path", tuple(self.node_path))
+        object.__setattr__(self, "call_path", tuple(self.call_path))
         object.__setattr__(self, "invocation_path", tuple(self.invocation_path))
 
     async def progress(

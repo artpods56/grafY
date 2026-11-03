@@ -83,13 +83,13 @@ class FakeNodeSecrets:
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> SecretStr:
-        del graph_id, graph_revision, node_id
+        del graph_id, node_id, project_id
         assert workspace_id == WORKSPACE_ID
         self.name = name
         self.dependencies = dependencies
@@ -99,13 +99,13 @@ class FakeNodeSecrets:
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> str:
-        del workspace_id, graph_id, graph_revision, node_id, name, dependencies
+        del workspace_id, project_id, graph_id, node_id, name, dependencies
         return "0" * 64
 
 
@@ -374,8 +374,8 @@ async def test_node_resolves_the_bound_secret_and_returns_the_document() -> None
     output = await node.run(
         NodeExecutionContext(
             workspace_id=WORKSPACE_ID,
-            secret_graph_id=uuid4(),
-            secret_graph_revision=2,
+            project_id=uuid4(),
+            graph_id="scans",
             node_id="ocr-1",
         ),
         MistralOcrConfig(),
