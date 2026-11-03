@@ -205,17 +205,19 @@ describe("canonical collaborative head flow", () => {
     ).toBeNull();
   });
 
-  it.each([{ invalid: null }, { invalid: 42 }, { invalid: "invalid" }, { invalid: [] }])(
-    "rejects non-object saved document members: $invalid",
-    ({ invalid }) => {
-      for (const field of ["nodes", "edges", "origins"]) {
-        expect(
-          rehydrate({
-            ...canonical,
-            document: { ...canonical.document, [field]: [invalid] },
-          }),
-        ).toBeNull();
-      }
-    },
-  );
+  it.each([
+    { invalid: null },
+    { invalid: 42 },
+    { invalid: "invalid" },
+    { invalid: [] },
+  ])("rejects non-object saved document members: $invalid", ({ invalid }) => {
+    for (const field of ["nodes", "edges", "origins"]) {
+      expect(
+        rehydrate({
+          ...canonical,
+          document: { ...canonical.document, [field]: [invalid] },
+        }),
+      ).toBeNull();
+    }
+  });
 });

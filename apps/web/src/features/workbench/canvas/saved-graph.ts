@@ -726,12 +726,10 @@ export function hydrateSavedGraph(
         ...(savedEdge.projection
           ? { projection: { path: [...savedEdge.projection.path] } }
           : {}),
-        conversionPath: [...savedEdge.conversion_path].map(
-          (conversion) => ({
-            id: conversion.id,
-            version: conversion.version,
-          }),
-        ),
+        conversionPath: [...savedEdge.conversion_path].map((conversion) => ({
+          id: conversion.id,
+          version: conversion.version,
+        })),
         ...(savedEdge.route_offset
           ? {
               routeOffset: {

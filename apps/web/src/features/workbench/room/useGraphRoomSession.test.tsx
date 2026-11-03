@@ -52,9 +52,7 @@ class FakeWebSocket {
   }
 }
 
-function readyMessage(
-  graphId: string,
-): RoomReadyMessage {
+function readyMessage(graphId: string): RoomReadyMessage {
   return {
     protocol_version: 1,
     type: "room.ready",
