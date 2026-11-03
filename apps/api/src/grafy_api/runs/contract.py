@@ -276,7 +276,7 @@ class NodeContractBinder:
         self,
         instance: ExpandedInstance,
         upstream: Mapping[InstanceKey, Mapping[str, ArtifactOutputValue]],
-    ) -> tuple[InputPortPlan, InputSlot]:
+    ) -> InputSlot:
         """Resolve the single value a Graph input or output passes on.
 
         A boundary node is no registered operator and declares no contract, so
@@ -296,11 +296,7 @@ class NodeContractBinder:
                 f"{instance.key.graph_id!r} is fed by {len(incoming)} connections; "
                 "one Graph interface port carries one value"
             )
-        slot = self._slot(incoming[0])
-        return (
-            InputPortPlan(name=slot.to_port),
-            slot,
-        )
+        return self._slot(next(iter(incoming)))
 
     def _build_node(
         self,

@@ -72,13 +72,9 @@ class NodeComputationRunner:
         if is_boundary(instance):
             # A Graph's own input or output is no operator: the one value that
             # reaches it is what the interface port carries.
-            port, slot = self._binder.boundary_input(instance, upstream)
-            values = await self._edge_values.assemble_inputs(
-                slots=(slot,),
-                ports=(port,),
-                context=context,
-            )
-            return {GRAPH_BOUNDARY_PORT: values[port.name]}
+            slot = self._binder.boundary_input(instance, upstream)
+            value = await self._edge_values.resolve(slot, context)
+            return {GRAPH_BOUNDARY_PORT: value}
 
         bound = self._binder.bind(instance, upstream)
         inputs = await self._edge_values.assemble_inputs(

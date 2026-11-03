@@ -64,7 +64,7 @@ class EdgeValueResolver:
                     "but is not an input port of its operator"
                 )
             resolved = [
-                await self._resolve(slot, context)
+                await self.resolve(slot, context)
                 for slot in _in_port_order(plan, port_slots)
             ]
             if plan.variadic or plan.instance_plugs:
@@ -78,7 +78,7 @@ class EdgeValueResolver:
                 )
         return values
 
-    async def _resolve(
+    async def resolve(
         self,
         slot: InputSlot,
         context: NodeExecutionContext,
