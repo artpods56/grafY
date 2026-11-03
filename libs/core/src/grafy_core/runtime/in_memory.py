@@ -41,7 +41,6 @@ from grafy_core.artifacts import (
 )
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.errors import (
-    CollaborationActiveExecutionError,
     LibraryFolderNameConflictError,
     NotFoundError,
     ObjectAlreadyExistsError,
@@ -477,16 +476,6 @@ class InMemoryGraphExecutionHistoryRepository:
             raise ObjectAlreadyExistsError(
                 "Graph execution idempotency key already exists: "
                 f"{execution.idempotency_key}"
-            )
-        active_execution_id = await self.find_active_execution_id(
-            execution.workspace_id,
-            execution.graph_id,
-        )
-        if active_execution_id is not None:
-            raise CollaborationActiveExecutionError(
-                workspace_id=execution.workspace_id,
-                graph_id=execution.graph_id,
-                execution_id=active_execution_id,
             )
         self._store.graph_executions[execution_key] = _clone(execution)
         for position, node_id in enumerate(execution.requested_node_ids):
