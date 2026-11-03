@@ -29,6 +29,18 @@ SYSTEM_PLUGIN_FAMILIES = PUBLISHED_PLUGIN_FAMILIES
 SYSTEM_PLUGIN_IMPORTS = tuple(
     f"grafy_plugin_{family}" for family in PUBLISHED_PLUGIN_FAMILIES
 )
+FORBIDDEN_CORE_IMPORTS = (
+    "aiosqlite",
+    "alembic",
+    "asyncpg",
+    "fastapi",
+    "grafy_api",
+    "grafy_persistence",
+    *SYSTEM_PLUGIN_IMPORTS,
+    "grafy_storage",
+    "sqlalchemy",
+)
+FORBIDDEN_PERSISTENCE_IMPORTS = ("grafy_api", *SYSTEM_PLUGIN_IMPORTS)
 LEGACY_NAMESPACE = "proto" + "type"
 
 
@@ -144,6 +156,67 @@ def test_relational_dependencies_are_owned_by_persistence() -> None:
         )
 
 
+def test_core_does_not_import_outer_layers_or_domain_adapters() -> None:
+    """`grafy_core` is the inner layer: no HTTP host, adapter, relational stack or family.
+
+    The whole package, not only `grafy_core.kernel`: the kernel guard below covers the
+    Project kernel, and an import that reaches an outer layer from anywhere else in
+    core makes the domain untestable on its own and turns a host dependency into a
+    cycle. `grafy_persistence` and `grafy_storage` are the adapters core defines ports
+    for, `grafy_api` is the host, and a `grafy_plugin_*` family is application code the
+    host installs (ADR 0007), so core may not name any of them. `sqlalchemy`,
+    `alembic`, `aiosqlite` and `asyncpg` belong to persistence for the same reason
+    `test_relational_dependencies_are_owned_by_persistence` keeps them out of its
+    dependencies.
+
+    Two transport names are deliberately absent. `pydantic` is how the domain models
+    are written, and `httpx` appears once, in `grafy_core/egress.py`, because the egress
+    authority has to build the transport it pins now that families run in-process
+    (ADR 0017) — it dials nothing itself and stays the only such module.
+    """
+
+    core_root = REPO_ROOT / "libs/core/src/grafy_core"
+    assert any(core_root.rglob("*.py"))
+    offenders: list[str] = []
+
+    for path in core_root.rglob("*.py"):
+        package = ".".join(path.parent.relative_to(core_root.parents[1]).parts)
+        for module in _imported_modules(path.read_text(), package):
+            if any(
+                module == forbidden or module.startswith(f"{forbidden}.")
+                for forbidden in FORBIDDEN_CORE_IMPORTS
+            ):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+
+    assert offenders == []
+
+
+def test_persistence_does_not_import_api_or_plugins() -> None:
+    """The relational adapter reads the domain and is read by the host, never the reverse.
+
+    `grafy_persistence` may import `grafy_core` (it maps domain records to rows) and the
+    SQLAlchemy stack it owns. An import of `grafy_api` would make a schema depend on the
+    HTTP host that serves it, and an import of a `grafy_plugin_*` family would put a
+    node family's models inside the storage layer that only stores their digests; either
+    one ends in a cycle through the host that installs the family.
+    """
+
+    persistence_root = REPO_ROOT / "libs/persistence/src/grafy_persistence"
+    assert any(persistence_root.rglob("*.py"))
+    offenders: list[str] = []
+
+    for path in persistence_root.rglob("*.py"):
+        package = ".".join(path.parent.relative_to(persistence_root.parents[1]).parts)
+        for module in _imported_modules(path.read_text(), package):
+            if any(
+                module == forbidden or module.startswith(f"{forbidden}.")
+                for forbidden in FORBIDDEN_PERSISTENCE_IMPORTS
+            ):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+
+    assert offenders == []
+
+
 FORBIDDEN_SHARED_IMPORTS = (
     "grafy_api",
     "grafy_client",
@@ -253,6 +326,87 @@ def test_plugin_families_do_not_import_http_or_api_modules() -> None:
                 if module == "fastapi" or module.startswith("fastapi."):
                     offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
     assert offenders == []
+
+
+FORBIDDEN_FAMILY_CONFIG_IMPORTS = ("grafy_shared",)
+
+
+def test_system_plugin_implementations_do_not_import_shared_configuration() -> None:
+    """A node family is configured by its host and never reads host configuration itself.
+
+    `grafy_shared` is the operator's `GRAFY_*` surface, and only the composition root
+    reads the composed `Settings` (ADR 0011, "Families share workspace dependencies":
+    the composition root reads configuration and supplies the values runtime services
+    need). A family that imported it would decide its own operator values instead of
+    receiving them, which is the coupling ADR 0011 removed from `grafy_api/settings.py`,
+    and it would act on values its host never passed it.
+
+    The deleted version of this guard justified itself with the vendored wheels a Plugin
+    sandbox resolved at runtime; those wheels are gone (ADR 0017), so the reason stated
+    here is the one that still holds.
+    """
+
+    offenders: list[str] = []
+
+    for family in SYSTEM_PLUGIN_FAMILIES:
+        source_root = REPO_ROOT / "plugins" / family / "src"
+        assert any((source_root / f"grafy_plugin_{family}").rglob("*.py"))
+        for path in source_root.rglob("*.py"):
+            package = ".".join(path.parent.relative_to(source_root).parts)
+            for module in _imported_modules(path.read_text(), package):
+                if any(
+                    module == forbidden or module.startswith(f"{forbidden}.")
+                    for forbidden in FORBIDDEN_FAMILY_CONFIG_IMPORTS
+                ):
+                    offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+
+    assert offenders == []
+
+
+def test_system_plugins_do_not_import_other_plugin_implementations() -> None:
+    """One node family never reaches into another family's implementation (ADR 0017).
+
+    The composition root installs each family into the `PluginRegistry` from one static
+    tuple, and every family keeps its own package and its own third-party dependencies
+    (ADR 0017). A `grafy_plugin_x` module importing `grafy_plugin_y` installs a
+    dependency the host was never told about, drags y's dependency set into x's image,
+    and lets a deployment that installs one family silently acquire another's behaviour.
+    """
+
+    offenders: list[str] = []
+
+    for family in SYSTEM_PLUGIN_FAMILIES:
+        source_root = REPO_ROOT / "plugins" / family / "src"
+        forbidden_imports = sorted(
+            set(SYSTEM_PLUGIN_IMPORTS) - {f"grafy_plugin_{family}"}
+        )
+        for path in source_root.rglob("*.py"):
+            package = ".".join(path.parent.relative_to(source_root).parts)
+            for module in _imported_modules(path.read_text(), package):
+                if any(
+                    module == forbidden or module.startswith(f"{forbidden}.")
+                    for forbidden in forbidden_imports
+                ):
+                    offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+
+    assert offenders == []
+
+
+# Deliberately NOT restored: `test_system_plugins_depend_on_core_not_outer_layers`,
+# deleted by 93063148 alongside the guards this file has been recovering, forbade a
+# family importing `grafy_api`, `grafy_mcp`, `grafy_persistence`, `grafy_storage` or
+# `grafy_workbench`. It fails today on exactly one module, and that module is a defect
+# rather than a boundary worth reopening. `plugins/gis/src/grafy_plugin_gis/smoke.py`
+# imports `grafy_storage.LocalFileObjectStore`, and it is not family code: its docstring
+# says it exercises the installed family "without an API", and it plays the host itself —
+# it builds `InMemoryUnitOfWork()` and `LocalFileObjectStore(root / "objects")` and
+# injects both into the family's own ports (`RasterScanOutputWriter(storage=..., uow=...)`,
+# `RasterScanResolver(storage=..., uow=...)`), and CI plus `docs/how-to-run-gis.md` run it
+# as `-m grafy_plugin_gis.smoke`. Constructing an object store is composition-root work
+# (ADR 0011), so the repair is to move that harness out of the family package to sit next
+# to `scripts/smoke_workbench.py`, not to let families import storage. No guard ships for
+# this boundary in the meantime and no exemption names that file: an exemption would turn
+# a defect into policy, and the suite must not read as covering what it does not cover.
 
 
 def test_run_runtime_does_not_import_http_or_route_modules() -> None:
