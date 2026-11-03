@@ -77,14 +77,20 @@ describe("in-process family authoring", () => {
       origins: [],
     };
     const saved = createGraphDraft(document);
-    const room = toRoomGraphCommand(command, document);
+    // A room command is addressed: a Project holds several Graphs, so an
+    // unaddressed edit would name none of them.
+    const room = toRoomGraphCommand(command, document, "graph-main");
     const run = serializeRunNode("raster-1", data);
     for (const node of [command.node, saved.document.nodes[0], run]) {
       expect(node).toHaveProperty("kind", "builtin");
       expect(node).not.toHaveProperty("plugin_release");
       expect(node).not.toHaveProperty("plugin_release_pin");
     }
-    expect(room).toEqual(command);
+    expect(room).toEqual({
+      kind: "in_graph",
+      graph_id: "graph-main",
+      command,
+    });
     expect(saved.document.schema_version).toBe(7);
   });
 
