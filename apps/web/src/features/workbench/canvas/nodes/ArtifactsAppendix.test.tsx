@@ -32,7 +32,7 @@ import type {
   RunPortArtifact,
   RunPortOutput,
 } from "@/lib/api";
-import { ArtifactPortPreview } from "./ArtifactsAppendix";
+import { ArtifactPortPreview, storedArtifactView } from "./ArtifactsAppendix";
 
 /**
  * A stored result names its artifacts and nothing more: no content type, no
@@ -121,6 +121,32 @@ async function renderPreview(
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe("a stored reference's renderer view", () => {
+  it("carries the declared type and no size the reference never had", () => {
+    const view = storedArtifactView(
+      "workspace-1",
+      {
+        artifact_id: "a1",
+        artifact_type: "text.markdown",
+        schema_version: 1,
+        content_hash: "ab12",
+      },
+      jsonType("text.markdown"),
+    );
+
+    // The bytes are read back through the artifact's own route, the content type
+    // is the one declared for its type, and the hash travels as the fingerprint it
+    // is. A byte size, inline text and an uploaded filename belong to a Library
+    // summary: a view built from a reference has none of them to hand a renderer.
+    expect(view.content_type).toBe("application/json");
+    expect(view.content_url).toContain("/artifacts/a1/content");
+    expect(view.sha256).toBe("ab12");
+    expect(view).not.toHaveProperty("byte_size");
+    expect(view).not.toHaveProperty("metadata");
+    expect(view).not.toHaveProperty("text");
+  });
+});
 
 describe("artifact payload loading policy", () => {
   it("loads only the bounded page endpoint for table previews", async () => {

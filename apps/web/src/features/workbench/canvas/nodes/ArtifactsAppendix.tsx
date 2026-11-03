@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { artifactTypeFor, declaredArtifactContentType } from "../artifact-card";
 import type { ArtifactViewerInteractionContext } from "../artifact-interactions";
 import { PrettyValue } from "./artifact-renderers/pretty-value";
 import {
@@ -40,24 +41,19 @@ export function storedArtifactView(
   artifact: RunPortArtifact,
   artifactType: ArtifactTypeSpec | undefined,
 ): ArtifactSummary {
-  const declaredContentType = artifactType?.export_formats?.[0]?.content_type;
-  const bundleFormat = (
-    artifactType as { bundle?: { format?: string } } | undefined
-  )?.bundle?.format;
   return {
     artifact_id: artifact.artifact_id,
     artifact_type: artifact.artifact_type,
     schema_version: artifact.schema_version,
     content_type:
-      declaredContentType ??
-      (bundleFormat === "inline-json"
-        ? "application/json"
-        : "application/octet-stream"),
+      declaredArtifactContentType(artifactType) ?? "application/octet-stream",
     content_url: artifactInlineContentUrl(workspaceId, artifact.artifact_id),
     ...(artifact.content_hash ? { sha256: artifact.content_hash } : {}),
     ...(artifactType?.export_formats
       ? { download_formats: artifactType.export_formats }
       : {}),
+    // No `byte_size` and no `metadata`: a reference carries neither, and the
+    // renderers that take this view show no size and no uploaded filename.
   };
 }
 
@@ -66,11 +62,7 @@ export function storedArtifactView(
  * The catalog's bundle contract is what still says how a payload is stored.
  */
 function payloadIsJson(artifactType: ArtifactTypeSpec | undefined): boolean {
-  return (
-    (artifactType as { bundle?: { format?: string } } | undefined)?.bundle
-      ?.format === "inline-json" ||
-    artifactType?.export_formats?.[0]?.content_type === "application/json"
-  );
+  return declaredArtifactContentType(artifactType) === "application/json";
 }
 
 const s = stylex.create({
@@ -517,11 +509,7 @@ export function ArtifactPortPreview({
       `ArtifactPortPreview needs at least one artifact (port ${output.port})`,
     );
   }
-  const artifactType = artifactTypes.find(
-    (candidate) =>
-      candidate.key.id === active.artifact_type &&
-      candidate.key.schema_version === active.schema_version,
-  );
+  const artifactType = artifactTypeFor(active, artifactTypes);
   const activeView = storedArtifactView(workspace.id, active, artifactType);
   const activeContentUrl = activeView.content_url ?? null;
   const activeJson = payloadIsJson(artifactType);

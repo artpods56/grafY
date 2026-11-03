@@ -37,6 +37,8 @@ import {
   artifactCardMediaHeight,
   artifactCardValue,
   cardArtifactRefs,
+  declaredArtifactContentType,
+  artifactTypeFor,
   isImageArtifact,
   isTableArtifact,
   moveArtifactCardRef,
@@ -466,9 +468,18 @@ export function ArtifactCardBody({
   const firstUrl = first
     ? artifactInlineContentUrl(workspace.id, first.artifact_id)
     : "";
-  const firstSummary = source.output?.artifacts[0] ?? firstItem?.artifact;
-  const imageArtifact =
-    first !== null && isImageArtifact(first, firstSummary?.content_type);
+  // A stored result names an artifact by reference, so the card has two unlike
+  // things to know about it. What the reference and the type catalog together
+  // declare: which type this is, and how that type serializes. And what only a
+  // Library item states about the bytes it stored: their content type, their
+  // size, the filename they arrived under. An artifact nobody has saved to the
+  // Library has no size and no filename, and the card shows neither rather than
+  // borrowing the numbers of whatever else shares its id.
+  const librarySummary = firstItem?.artifact ?? null;
+  const firstType = first ? artifactTypeFor(first, artifactTypes) : undefined;
+  const contentType =
+    librarySummary?.content_type ?? declaredArtifactContentType(firstType);
+  const imageArtifact = first !== null && isImageArtifact(first, contentType);
   const isSequence = shownValue !== null && "item_refs" in shownValue;
   const tableCard = !isSequence && first !== null && isTableArtifact(first);
   const tableHeight = Math.max(
@@ -476,16 +487,16 @@ export function ArtifactCardBody({
     layout?.bodyHeight ?? DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
   );
   const imageSize = first ? imageSizes[first.artifact_id] : undefined;
-  const recordedName = firstSummary?.metadata?.original_filename;
+  const recordedName = librarySummary?.metadata?.original_filename;
   const fileName =
     (first ? nameOf(first.artifact_id) : null) ??
     (typeof recordedName === "string" ? recordedName : null);
   const isPdf =
-    firstSummary?.content_type === "application/pdf" ||
+    contentType === "application/pdf" ||
     first?.artifact_type === "file.pdf" ||
     fileName?.toLowerCase().endsWith(".pdf");
   const isTableFile =
-    firstSummary?.content_type === "text/csv" ||
+    contentType === "text/csv" ||
     first?.artifact_type === "file.csv" ||
     first?.artifact_type.startsWith("table.") ||
     fileName?.toLowerCase().endsWith(".csv");
@@ -550,7 +561,7 @@ export function ArtifactCardBody({
         (imageArtifact ? "Image" : tableCard ? "Table" : "File"))
       : // Nothing produced yet: name the card by what it follows.
         (feedLabel ?? "Artifact");
-  const byteSize = formatLibraryByteSize(firstSummary?.byte_size);
+  const byteSize = formatLibraryByteSize(librarySummary?.byte_size);
   const fileKind = isPdf ? "PDF" : isTableFile ? "Table" : "File";
   const fileLabel = byteSize ? `${fileKind} · ${byteSize}` : fileKind;
   const defaultWidth = tableCard
