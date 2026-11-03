@@ -432,6 +432,7 @@ def test_application_owners_do_not_depend_on_route_modules() -> None:
     api_root = REPO_ROOT / "apps/api/src/grafy_api"
     paths = [
         *(api_root / "realtime").glob("*.py"),
+        *(api_root / "agents").rglob("*.py"),
         api_root / "project_contracts.py",
         api_root / "artifact_availability.py",
         api_root / "node_secrets.py",
@@ -487,6 +488,7 @@ KERNEL_FORBIDDEN_IMPORTS = (
     "grafy_persistence",
     "grafy_storage",
     "grafy_workbench",
+    "grafy_core.agents",
     "grafy_core.application",
     "grafy_core.runtime",
     "fastapi",

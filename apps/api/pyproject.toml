@@ -26,6 +26,7 @@ dependencies = [
     "truststore>=0.10.4",
     "uvicorn[standard]>=0.38.0",
     "ijson>=3.5.1",
+    "pydantic-ai-slim[openai]==2.65.0",
 ]
 
 [project.scripts]
