@@ -8,6 +8,7 @@ from grafy_core.domain.artifact_outputs import (
     artifact_outputs_to_storage,
 )
 from grafy_core.domain.graph_documents import GraphDocument
+from grafy_core.kernel.project import ProjectDocument
 from pydantic import BaseModel
 from sqlalchemy import (
     JSON,
@@ -118,6 +119,18 @@ class ArtifactOutputsType(
 
 class GraphDocumentType(PydanticJSONType[GraphDocument]):
     model_type = GraphDocument
+    cache_ok = True
+
+
+class ProjectDocumentType(PydanticJSONType[ProjectDocument]):
+    """Store a Project document as JSON, validating it on the way back in.
+
+    Loading runs the full ``ProjectDocument`` rules (unique graph names, acyclic
+    calls, resolvable callees), so a stored document that no longer satisfies the
+    aggregate fails loudly instead of returning a value the application cannot use.
+    """
+
+    model_type = ProjectDocument
     cache_ok = True
 
 
