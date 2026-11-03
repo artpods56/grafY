@@ -67,8 +67,9 @@ The Docker plugin runtime, its admission, artifact-transport and network policy 
 the egress broker, OCI publication, the publisher registry flow, and the vendored SDK wheel
 and its `just sdk-wheel` recipe are removed. Release, installation, selection and
 revocation records and services, the four plugin tables, capability declarations, and
-Platform Access Tokens remain for now. They do not register executable families. Removing
-the remaining lifecycle code and data is a separate migration.
+Platform Access Tokens go with them: the schema is one baseline revision that never
+creates those tables, so no deployment carries lifecycle rows to clean up. The release
+descriptor types in `grafy_core.domain.plugin_releases` stay, and register nothing.
 
 ### The Python node is removed
 
@@ -131,9 +132,10 @@ metadata dict, so it stays as historical fact. Materialized-output signatures an
 invocation-cache keys change shape, which makes outputs produced by sandboxed runs read as
 stale; they are recomputed on first execution after the deploy.
 
-The intended migration will drop the four plugin tables and `platform_access_tokens`; its
-downgrade must recreate them empty. That migration has not been made yet. Once it runs,
-rolling back the application cannot restore the deleted releases.
+The migration history is one baseline revision that creates neither the four plugin
+tables nor `platform_access_tokens`, and its downgrade drops the schema. Rolling back to
+an application build that expects those tables restores no releases: in this schema
+nothing ever wrote them.
 
 ## Consequences
 

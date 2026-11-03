@@ -5,7 +5,6 @@
 - **Date:** 2026-08-06
 - **Scope:** Identity, workspace tenancy, browser sessions, collaboration authorization, HTTP automation, and MCP access
 - **Designs:** [Authentication and workspace tenancy design](../design/authentication-and-workspace-tenancy.md), [realtime Workbench collaboration rework](../design/workbench-realtime-collaboration.md)
-- **Plan:** [Authentication and workspace refactor](../plans/authentication-workspace-refactor.md)
 
 ## Context
 

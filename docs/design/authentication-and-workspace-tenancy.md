@@ -7,8 +7,7 @@
 - **Document type:** Technical design explanation and reference
 - **Related:** [Authenticated workspace ADR](../adr/0003-authenticate-users-and-scope-collaboration-to-workspaces.md),
   [server-authoritative collaboration ADR](../adr/0002-server-authoritative-workbench-collaboration.md),
-  [realtime collaboration design](workbench-realtime-collaboration.md),
-  [implementation plan](../plans/authentication-workspace-refactor.md), and
+  [realtime collaboration design](workbench-realtime-collaboration.md), and
   [product vocabulary](../../CONTEXT.md)
 
 ## Summary
@@ -255,7 +254,6 @@ interpretation. The server remains authoritative.
 | Submit graph commands and create checkpoints | no | yes | yes |
 | Manage graph folders and archive/restore graphs | no | yes | yes |
 | Start or cancel graph execution | no | yes | yes |
-| Publish a Plugin release into the workspace | no | no | yes |
 | Publish a Module release into the workspace library | no | yes | yes |
 | Configure or remove node secrets | no | no | yes |
 | Delete a graph | no | no | yes |
@@ -344,8 +342,7 @@ member's remaining capabilities likewise revokes those PATs before commit. User
 disablement revokes all of that user's sessions and PATs in one transaction.
 Revoked PATs are not revived when membership is later restored.
 
-The first delivery accepts PAT authentication at `/mcp` and the Plugin
-publication CLI. Browser `/v1`
+The first delivery accepts PAT authentication at `/mcp`. Browser `/v1`
 resource routes use the AuthSession cookie; broad REST API-token access requires
 a separate use case and threat-model update.
 

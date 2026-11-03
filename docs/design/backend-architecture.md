@@ -12,7 +12,7 @@ supersedes the historical host-eligible Plugin execution model.
 | `apps/api/src/grafy_api` | HTTP and room transport, application composition, graph execution, and the catalog of operators this build registers. |
 | `apps/mcp/src/grafy_mcp` | MCP tools through an injected graph-workspace operations contract. |
 | `libs/core/src/grafy_core` | Domain models, application workflows, ports, node runtime, artifact contracts, portable cache and storage readers. |
-| `libs/persistence/src/grafy_persistence` | SQL repositories, transaction adapters, table metadata, database setup, System cutover and baseline persistence operations. |
+| `libs/persistence/src/grafy_persistence` | SQL repositories, transaction adapters, table metadata, database setup, and baseline persistence operations. |
 | `libs/storage/src/grafy_storage` | Local and S3 object-store adapters. |
 | `libs/workbench/src/grafy_workbench` | Application-owned builtin families: image, sequence, value, text, schema, table, and file. |
 | `plugins/{gis,image,llm,mistral,sql,table,typesafe}` | Node families with their own packages and provider dependencies, installed into the API process and registered by `apps/api/src/grafy_api/services/families.py`. |
@@ -61,9 +61,9 @@ Route-local models describe transport. Route files need not contain application
 services merely to satisfy a directory pattern.
 
 Authentication's cookie, OIDC, PAT, and abuse-handling code remains under
-`v1/routes/auth`. Workspace transport models belong to `v1/routes/workspaces`;
-legacy auth imports remain explicit compatibility aliases. Core identity policy
-and transaction-local workspace authorization live in `grafy_core.application.identity`.
+`v1/routes/auth`. Workspace transport models belong to `v1/routes/workspaces`. Core
+identity policy and transaction-local workspace authorization live in
+`grafy_core.application.identity`.
 Graph workflows authorize through that shared policy, including ordered checks
 for cross-workspace copies.
 
@@ -76,15 +76,15 @@ workflows and identities.
 receives its dependencies instead of finding request resources. HTTP/WebSocket
 adapters remain under collaboration routes.
 
-`graph_contracts.py` owns graph transport compatibility. Legacy heads expose
-flattened nodes/edges/presentation and the `plugin_release` alias. The opt-in
-`GET /v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document` exposes
-collaboration metadata plus canonical `SavedGraphDocument`, whose node field is
-`plugin_release_pin`. Existing command/checkpoint responses and room protocol v1
-retain the legacy head shape through `CollaborativeHeadResponse.from_head`.
-The frontend uses canonical head state and normalizes legacy command/checkpoint
-and room responses through one client adapter. Shared layout, pin-presence and
-legacy edge-conversion rules live beside the canonical models. See the [migration decision](../plans/backend-cleanup/graph-transport-migration.md).
+`graph_contracts.py` owns graph transport. `CollaborativeHeadResponse` is the one
+head shape: collaboration metadata (room epoch, collaboration sequence, checkpoint
+sequence and checkpoint revision) paired with the canonical `SavedGraphDocument`.
+`GET /v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document`, the command and
+checkpoint responses, and the room frames in `grafy_api.realtime.protocol` all carry
+that shape, so no client normalisation step sits between the server and the canvas.
+There is no flattened head, no `plugin_release` alias, and no per-node release pin:
+the canonical node field names an operator, not a release. Shared layout and
+edge-conversion rules live beside the canonical models.
 
 ## MCP
 
@@ -106,9 +106,9 @@ artifact types and no catalog entry.
 
 The publication and isolated-hosting modules that used to sit under
 `apps/api/src/grafy_api/plugins`, the guest protocol under `grafy_core.runtime`, and the
-standalone egress broker are removed. Reading historical data still normalises: a stored
-document or run request that carries a `plugin_release_pin` key has it dropped and
-`kind: "plugin"` is read as `kind: "builtin"`.
+standalone egress broker are removed. Nothing reads a retired shape: a stored
+document is parsed at its own schema version only, and a node whose stored `kind` is
+neither `builtin`, `module` nor `call` fails validation instead of being rewritten.
 
 `grafy_api.catalog.CatalogSnapshot` owns catalog assembly from the installed family
 declarations and Module library results. An entry is what this build registered,
@@ -122,8 +122,9 @@ Canonical artifact conversions remain deployment-owned in core.
 
 `grafy_api.execution` owns preparation, compilation, scheduling, cancellation,
 queue lifecycle, history, materialization, and node execution. HTTP endpoints and
-`RunResultPresenter` remain under execution routes. The route model module keeps
-compatibility aliases for durable requests and events. See the
+`RunResultPresenter` remain under execution routes. The route model module declares only
+this build's transport models: durable requests and events come from their owning
+modules, with no re-exported aliases. See the
 [execution ownership reference](../../apps/api/src/grafy_api/execution/README.md).
 
 Preflight resolves each node's contract and secret requirements once, and the
@@ -142,14 +143,14 @@ flowchart LR
     Request[Run request] --> Prepare[Preflight and compiler]
     Prepare --> Coordinator[Graph coordinator]
     Coordinator --> Node[Node execution]
-    Node --> Builtin[Core node runtime]
-    Node --> Plugin[Isolated Plugin invocation]
+    Node --> Builtin[Builtin family in the API process]
+    Node --> Plugin[Plugin package in the API process]
 ```
 
 The core persistent invocation-cache adapter shares cache semantics with the node
 runtime. Queued recovery depends on stable request serialization. MAP ordering,
 cancellation, nested execution, and materialization each have behavioral tests.
-System revocation and cutover fence both durable queue rows and transient activity
+The startup recovery fence covers both durable queue rows and transient activity
 markers. Transient activity is registered before preparation and removed after task
 cleanup. Startup only clears stale markers when it holds the exclusive API owner lease;
 otherwise it retains them and refuses startup. Startup recovery has lifespan tests;
@@ -183,10 +184,12 @@ resolution must remain explicit at those workflow boundaries.
 ## Persistence and deployment
 
 `grafy_persistence.adapters.repositories` and `grafy_persistence.schema` are
-packages grouped into identity, graphs, artifacts, execution, plugins, and library.
+packages grouped into identity, graphs, artifacts, execution, uploads, and library.
 `schema/base.py` owns shared metadata; the schema package loads the tables, and
 `orm.py` maps them. `column_types.py` owns shared Pydantic/enum SQL conversion.
-Alembic revisions under `infra/db/migrations` govern deployed schema changes.
+Alembic revisions under `infra/db/migrations` govern deployed schema changes. The
+history is one baseline revision for the current schema and its downgrade drops
+that schema.
 
 Transaction adapters open task-local sessions and expose the repositories required
 by each port. Writes commit explicitly. Context exit rolls back on error and
@@ -212,11 +215,3 @@ Behavior lives in `tests/unit/api`, `tests/unit/core`, `tests/unit/client`, and 
 feature suites under `tests/integration`. Frontend tests are colocated with their
 TypeScript consumers. Schema comparison, generated client consistency, and
 extracted-wheel checks protect contracts that directory checks cannot prove.
-
-Remaining work and per-batch evidence live in the
-[backend cleanup checklist](../plans/backend-cleanup/README.md). Graph transport
-migration and the supported single-owner revocation/recovery implementation are
-complete. The [final audit](../plans/backend-cleanup/final-audit.md) tracks source
-evidence, broad regression and packaging checks, and runtime browser verification.
-The cleanup verification gates are complete with the baseline and platform limits
-listed in that audit. Changes remain in the separate review worktree.
