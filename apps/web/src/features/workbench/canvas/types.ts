@@ -11,7 +11,6 @@ import type {
   RunEdgeProjectionInput,
   RunNodeInput,
   RunNodeResult,
-  SavedGraphEdge,
   SavedGraphNode,
 } from "@/lib/api";
 import {
@@ -77,8 +76,6 @@ export interface WorkflowEdgeData extends Record<string, unknown> {
   sourcePortName?: string;
   targetPortName?: string;
   targetPlugId?: string | null;
-  /** Exact API transport retained for a lossless compatibility round trip. */
-  persistedEdge?: SavedGraphEdge;
   /** Registry compatibility failures disable editing and in-scope execution. */
   compatibilityIssues?: readonly string[];
   conversionTitles?: readonly string[];

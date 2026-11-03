@@ -109,7 +109,7 @@ function compatibilityEndpoints(
 } {
   const inputs = new Map<string, WorkflowCompatibilityEndpoint>();
   const outputs = new Map<string, WorkflowCompatibilityEndpoint>();
-  for (const plug of savedNode.input_plugs ?? []) {
+  for (const plug of savedNode.input_plugs) {
     inputs.set(`${plug.port}::${plug.id}`, {
       portName: plug.port,
       plugId: plug.id,
@@ -162,12 +162,12 @@ function incompatibleNodeData(
   issues: readonly string[],
   spec: NodeSpec = unavailableNodeSpec(savedNode),
 ): WorkflowNodeData {
-  const data = createWorkflowNodeData(spec, savedNode.input_plugs ?? []);
+  const data = createWorkflowNodeData(spec, savedNode.input_plugs);
   const artifactTypeBindings: Record<
     string,
     WorkflowArtifactTypeBindingInput["artifact_type"]
   > = {};
-  for (const binding of savedNode.artifact_type_bindings ?? []) {
+  for (const binding of savedNode.artifact_type_bindings) {
     artifactTypeBindings[binding.variable] = {
       id: binding.artifact_type.id,
       schema_version: binding.artifact_type.schema_version,
@@ -214,7 +214,7 @@ function requireArtifactTypeBindings(
     string,
     WorkflowArtifactTypeBindingInput["artifact_type"]
   > = {};
-  for (const binding of savedNode.artifact_type_bindings ?? []) {
+  for (const binding of savedNode.artifact_type_bindings) {
     if (!declaredVariables.has(binding.variable)) {
       throw new SavedGraphHydrationError(
         `Cannot open “${savedGraph.name}”: node ${savedNode.id} binds undeclared artifact type variable ${binding.variable}`,
@@ -252,23 +252,20 @@ export function savedGraphFingerprint(graph: CreateSavedGraphRequest): string {
     nodes: [...graph.document.nodes].sort((left, right) =>
       left.id.localeCompare(right.id),
     ),
-    edges: [...graph.document.edges]
-      .map((edge) => ({
-        ...edge,
-        enabled: edge.enabled ?? true,
-      }))
-      .sort((left, right) => left.id.localeCompare(right.id)),
+    edges: [...graph.document.edges].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    ),
     presentation: {
-      viewers: [...(presentation.viewers ?? [])].sort((left, right) =>
+      viewers: [...presentation.viewers].sort((left, right) =>
         left.id.localeCompare(right.id),
       ),
-      links: [...(presentation.links ?? [])].sort((left, right) =>
+      links: [...presentation.links].sort((left, right) =>
         left.id.localeCompare(right.id),
       ),
-      bindings: [...(presentation.bindings ?? [])].sort((left, right) =>
+      bindings: [...presentation.bindings].sort((left, right) =>
         left.id.localeCompare(right.id),
       ),
-      annotations: [...(presentation.annotations ?? [])].sort((left, right) =>
+      annotations: [...presentation.annotations].sort((left, right) =>
         left.id.localeCompare(right.id),
       ),
     },
@@ -289,12 +286,9 @@ export function savedGraphExecutionFingerprint(
     nodes: [...graph.document.nodes].sort((left, right) =>
       left.id.localeCompare(right.id),
     ),
-    edges: [...graph.document.edges]
-      .map((edge) => ({
-        ...edge,
-        enabled: edge.enabled ?? true,
-      }))
-      .sort((left, right) => left.id.localeCompare(right.id)),
+    edges: [...graph.document.edges].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    ),
   };
   return JSON.stringify(sortedRecord(normalized));
 }
@@ -303,8 +297,8 @@ function requireInputPlugs(
   savedGraph: SavedGraph,
   savedNode: SavedGraphNode,
   spec: NodeSpec,
-): NonNullable<typeof savedNode.input_plugs> {
-  const inputPlugs = savedNode.input_plugs ?? [];
+): typeof savedNode.input_plugs {
+  const inputPlugs = savedNode.input_plugs;
   const plugIds = new Set<string>();
   for (const plug of inputPlugs) {
     const port = spec.inputs.find((candidate) => candidate.name === plug.port);
@@ -385,7 +379,7 @@ function connectionRouteIsValid(
       registry.artifact_conversions,
       {
         projection: edge.projection ?? undefined,
-        conversionPath: edge.conversion_path ?? [],
+        conversionPath: edge.conversion_path,
       },
     ) !== null
   );
@@ -525,7 +519,7 @@ export function hydrateSavedGraph(
     mapEdgeByTargetInput.set(targetKey, edge);
     mappedNodeIds.add(edge.to_node);
   }
-  for (const origin of savedGraph.document.origins ?? []) {
+  for (const origin of savedGraph.document.origins) {
     if (origin.collection_mode === "map") mappedNodeIds.add(origin.to_node);
   }
   const edgeIds = new Set<string>();
@@ -713,7 +707,7 @@ export function hydrateSavedGraph(
       );
     }
 
-    const enabled = savedEdge.enabled ?? true;
+    const enabled = savedEdge.enabled;
     return {
       id: savedEdge.id,
       source: savedEdge.from_node,
@@ -728,12 +722,11 @@ export function hydrateSavedGraph(
         sourcePortName: savedEdge.from_port,
         targetPortName: savedEdge.to_port,
         targetPlugId: savedEdge.to_plug ?? null,
-        persistedEdge: structuredClone(savedEdge),
         ...(compatibilityIssues.length ? { compatibilityIssues } : {}),
         ...(savedEdge.projection
           ? { projection: { path: [...savedEdge.projection.path] } }
           : {}),
-        conversionPath: [...(savedEdge.conversion_path ?? [])].map(
+        conversionPath: [...savedEdge.conversion_path].map(
           (conversion) => ({
             id: conversion.id,
             version: conversion.version,

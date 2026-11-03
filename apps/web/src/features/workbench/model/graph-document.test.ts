@@ -481,6 +481,7 @@ describe("authored graph document", () => {
 
     const replacement = {
       name: "Replacement",
+      origins: [],
       nodes: [runtimeNode],
       edges: [runtimeEdge],
     };

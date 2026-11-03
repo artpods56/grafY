@@ -197,7 +197,7 @@ export function artifactOriginConnections(
         ),
         data: {
           originId: origin.id,
-          collectionMode: origin.collection_mode ?? "direct",
+          collectionMode: origin.collection_mode,
           allowedCollectionModes: originCollectionModes(
             port,
             artifactDropPayload(origin.value).shape,

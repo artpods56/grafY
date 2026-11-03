@@ -298,9 +298,9 @@ export function presentationFromCollaborativeHead(
   const presentation = head.document.presentation;
   if (!presentation) return emptyGraphPresentation();
   return {
-    viewers: [...(presentation.viewers ?? [])],
-    links: [...(presentation.links ?? [])],
-    bindings: [...(presentation.bindings ?? [])],
-    annotations: [...(presentation.annotations ?? [])],
+    viewers: [...presentation.viewers],
+    links: [...presentation.links],
+    bindings: [...presentation.bindings],
+    annotations: [...presentation.annotations],
   };
 }

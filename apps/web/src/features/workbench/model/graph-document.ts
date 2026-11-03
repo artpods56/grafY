@@ -158,7 +158,7 @@ export function authoredGraphDocument(
     name: value.name,
     nodes: value.document.nodes.map(projectSavedGraphNode),
     edges: value.document.edges.map(projectSavedGraphEdge),
-    origins: (value.document.origins ?? []).map(projectSavedGraphOrigin),
+    origins: value.document.origins.map(projectSavedGraphOrigin),
   };
 }
 
@@ -172,7 +172,7 @@ export function createSavedGraphRequest(
       schema_version: 7,
       nodes: document.nodes.map(projectSavedGraphNode),
       edges: document.edges.map(projectSavedGraphEdge),
-      origins: (document.origins ?? []).map(projectSavedGraphOrigin),
+      origins: document.origins.map(projectSavedGraphOrigin),
       presentation: presentationForDocument(
         presentation ?? emptyPresentation(),
         document.nodes,
@@ -224,13 +224,13 @@ function presentationForDocument(
 
 export function projectSavedGraphNode(node: SavedGraphNode): SavedGraphNode {
   return {
-    artifact_type_bindings: (node.artifact_type_bindings ?? []).map(
+    artifact_type_bindings: node.artifact_type_bindings.map(
       projectArtifactTypeBinding,
     ),
     config: structuredClone(node.config ?? {}),
     id: node.id,
     kind: node.kind === "module" ? "module" : "builtin",
-    input_plugs: (node.input_plugs ?? []).map(projectSavedGraphInputPlug),
+    input_plugs: node.input_plugs.map(projectSavedGraphInputPlug),
     layout: projectSavedGraphLayout(node.layout),
     operator_id: node.operator_id,
     operator_version: node.operator_version,
@@ -273,12 +273,12 @@ function projectArtifactTypeBinding(
 
 export function projectSavedGraphEdge(edge: SavedGraphEdge): SavedGraphEdge {
   return {
-    collection_mode: edge.collection_mode ?? "direct",
-    conversion_path: (edge.conversion_path ?? []).map((conversion) => ({
+    collection_mode: edge.collection_mode,
+    conversion_path: edge.conversion_path.map((conversion) => ({
       id: conversion.id,
       version: conversion.version,
     })),
-    enabled: edge.enabled ?? true,
+    enabled: edge.enabled,
     from_node: edge.from_node,
     from_port: edge.from_port,
     id: edge.id,
@@ -344,7 +344,7 @@ export function projectSavedGraphOrigin(
   origin: SavedGraphOrigin,
 ): SavedGraphOrigin {
   return {
-    conversion_path: (origin.conversion_path ?? []).map((conversion) => ({
+    conversion_path: origin.conversion_path.map((conversion) => ({
       id: conversion.id,
       version: conversion.version,
     })),
@@ -353,7 +353,7 @@ export function projectSavedGraphOrigin(
     to_plug: origin.to_plug ?? null,
     to_port: origin.to_port,
     value: structuredClone(origin.value),
-    collection_mode: origin.collection_mode ?? "direct",
+    collection_mode: origin.collection_mode,
   };
 }
 
@@ -598,14 +598,14 @@ export function applyGraphCommandNormalized(
       return updateNode(document, command.node_id, (node) => ({
         ...node,
         input_plugs: [
-          ...(node.input_plugs ?? []),
+          ...node.input_plugs,
           projectSavedGraphInputPlug(command.plug),
         ],
       }));
     case "remove_input_plug": {
       const next = updateNode(document, command.node_id, (node) => ({
         ...node,
-        input_plugs: (node.input_plugs ?? []).filter(
+        input_plugs: node.input_plugs.filter(
           (plug) => plug.id !== command.plug_id,
         ),
       }));
@@ -625,7 +625,7 @@ export function applyGraphCommandNormalized(
     }
     case "reorder_input_plug":
       return updateNode(document, command.node_id, (node) => {
-        const plugs = [...(node.input_plugs ?? [])];
+        const plugs = [...node.input_plugs];
         const currentIndex = plugs.findIndex(
           (plug) => plug.id === command.plug_id && plug.port === command.port,
         );
@@ -675,7 +675,7 @@ export function applyGraphCommandNormalized(
       return updateNode(document, command.node_id, (node) => ({
         ...node,
         artifact_type_bindings: [
-          ...(node.artifact_type_bindings ?? []).filter(
+          ...node.artifact_type_bindings.filter(
             (binding) => binding.variable !== command.variable,
           ),
           {
@@ -690,7 +690,7 @@ export function applyGraphCommandNormalized(
     case "reset_artifact_type_binding":
       return updateNode(document, command.node_id, (node) => ({
         ...node,
-        artifact_type_bindings: (node.artifact_type_bindings ?? []).filter(
+        artifact_type_bindings: node.artifact_type_bindings.filter(
           (binding) => binding.variable !== command.variable,
         ),
       }));

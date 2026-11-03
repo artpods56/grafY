@@ -37,10 +37,10 @@ export function toRoomReplaceDocumentCommand(
       edges: document.edges.map(projectSavedGraphEdge),
       origins: document.origins.map(projectSavedGraphOrigin),
       presentation: {
-        annotations: [...(presentation.annotations ?? [])],
-        bindings: [...(presentation.bindings ?? [])],
-        links: [...(presentation.links ?? [])],
-        viewers: [...(presentation.viewers ?? [])],
+        annotations: [...presentation.annotations],
+        bindings: [...presentation.bindings],
+        links: [...presentation.links],
+        viewers: [...presentation.viewers],
       },
     },
   };
@@ -129,7 +129,7 @@ export function toRoomGraphCommand(
         config: { ...command.config },
         input_plugs: [...command.input_plugs],
         expected_config: { ...(node.config ?? {}) },
-        expected_plug_ids: (node.input_plugs ?? []).map((plug) => plug.id),
+        expected_plug_ids: node.input_plugs.map((plug) => plug.id),
       });
     }
     case "bind_artifact_type": {
@@ -137,7 +137,7 @@ export function toRoomGraphCommand(
         (candidate) => candidate.id === command.node_id,
       );
       if (!node) return null;
-      const current = (node.artifact_type_bindings ?? []).find(
+      const current = node.artifact_type_bindings.find(
         (binding) => binding.variable === command.variable,
       );
       return asRoom({
@@ -154,7 +154,7 @@ export function toRoomGraphCommand(
       const node = document.nodes.find(
         (candidate) => candidate.id === command.node_id,
       );
-      const current = (node?.artifact_type_bindings ?? []).find(
+      const current = node?.artifact_type_bindings.find(
         (binding) => binding.variable === command.variable,
       );
       if (!current) return null;
@@ -207,8 +207,8 @@ export function toRoomGraphCommand(
       return asRoom({
         kind: "set_node_input_plugs",
         node_id: command.node_id,
-        input_plugs: [...(nextNode.input_plugs ?? [])],
-        expected_plug_ids: (node.input_plugs ?? []).map((plug) => plug.id),
+        input_plugs: [...nextNode.input_plugs],
+        expected_plug_ids: node.input_plugs.map((plug) => plug.id),
       });
     }
   }
@@ -339,7 +339,7 @@ function prunePresentationLinks(
   if (!removedNodeIds.size) return presentation;
   return {
     ...presentation,
-    links: (presentation.links ?? []).filter(
+    links: presentation.links.filter(
       (link) => !removedNodeIds.has(link.source_node_id),
     ),
   };
