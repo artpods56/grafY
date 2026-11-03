@@ -372,8 +372,8 @@ class ExecuteSqlNode(Node[ExecuteSqlConfig, ExecuteSqlInput, ExecuteSqlOutput]):
         try:
             password = await self._node_secrets.resolve_secret(
                 workspace_id=context.workspace_id,
-                graph_id=context.secret_graph_id,
-                graph_revision=context.secret_graph_revision,
+                project_id=context.project_id,
+                graph_id=context.graph_id,
                 node_id=context.node_id,
                 name="password",
                 dependencies=dependencies,

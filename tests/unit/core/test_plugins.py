@@ -329,7 +329,7 @@ async def test_node_context_progress_is_validated_and_survives_replacement() -> 
     context = NodeExecutionContext(
         workspace_id=WORKSPACE_ID,
         node_id="mapped-node",
-        node_path=("module-instance", "mapped-node"),
+        call_path=("module-instance",),
         progress_reporter=reporter,
     )
     mapped_context = replace(context, invocation_index=2)
@@ -523,8 +523,8 @@ async def test_default_runtime_node_secret_resolver_fails_closed(
     with pytest.raises(NodeSecretUnavailableError, match="unavailable"):
         await context.node_secrets.resolve_secret(
             workspace_id=WORKSPACE_ID,
+            project_id=None,
             graph_id=None,
-            graph_revision=None,
             node_id=None,
             name="api_key",
             dependencies={},

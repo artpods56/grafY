@@ -19,12 +19,18 @@ class NodeSecretUnavailableError(RuntimeError):
 
 
 class NodeSecretResolverPort(Protocol):
+    """Resolves one node secret by where the node sits in a Project.
+
+    ``graph_id`` is ``None`` for a node outside any Graph, such as an unsaved
+    preview; ``project_id`` is ``None`` for the same reason.
+    """
+
     async def resolve_secret(
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
@@ -34,8 +40,8 @@ class NodeSecretResolverPort(Protocol):
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
@@ -47,26 +53,26 @@ class UnavailableNodeSecretResolver(NodeSecretResolverPort):
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> SecretStr:
-        del workspace_id, graph_id, graph_revision, node_id, name, dependencies
+        del workspace_id, project_id, graph_id, node_id, name, dependencies
         raise NodeSecretUnavailableError("Node secrets are unavailable in this runtime")
 
     async def cache_revision(
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> str:
-        del workspace_id, graph_id, graph_revision, node_id, name, dependencies
+        del workspace_id, project_id, graph_id, node_id, name, dependencies
         raise NodeSecretUnavailableError("Node secrets are unavailable in this runtime")
 
 
