@@ -290,10 +290,15 @@ test("ports still connect with Generated selected in the docked panel", async ({
     "The side panel slides over the canvas below 1100px.",
   );
 
-  await page.getByRole("button", { name: "Generated artifacts" }).click();
-  await expect(
-    page.getByRole("button", { name: "Generated artifacts" }),
-  ).toHaveAttribute("aria-expanded", "true");
+  // The rail control, by its exact name: the opened Generated panel adds
+  // "Refresh…" and "Close…" header buttons, and only the rail item carries
+  // the expansion state this case reads.
+  const generatedToggle = page.getByRole("button", {
+    name: "Generated artifacts",
+    exact: true,
+  });
+  await generatedToggle.click();
+  await expect(generatedToggle).toHaveAttribute("aria-expanded", "true");
 
   await connectPortsThroughDrag(page, hasTouch);
 });
