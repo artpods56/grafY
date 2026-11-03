@@ -23,6 +23,12 @@ from grafy_core.ports.node_secrets import (
     NodeSecretUnitOfWorkPort,
 )
 from grafy_core.ports.projects import ProjectRepositoryPort, ProjectUnitOfWorkPort
+from grafy_core.ports.library import LibraryUnitOfWorkPort
+from grafy_core.ports.runs import (
+    ResultStoreRepositoryPort,
+    RunRepositoryPort,
+    RunUnitOfWorkPort,
+)
 from grafy_core.ports.uploads import UploadRepositoryPort, UploadUnitOfWorkPort
 from grafy_core.ports.workbench import WorkbenchUnitOfWorkPort
 
@@ -30,6 +36,8 @@ from grafy_persistence.adapters.repositories import (
     SqlProjectRepository,
     SqlArtifactRepository,
     SqlNodeSecretRepository,
+    SqlResultStoreRepository,
+    SqlRunRepository,
     SqlIdentityRepository,
     SqlSecurityAuditRepository,
     SqlUploadRepository,
@@ -42,6 +50,8 @@ from grafy_persistence.adapters.repositories import (
 class _SqlAlchemyUnitOfWorkState:
     session: AsyncSession
     projects: ProjectRepositoryPort
+    runs: RunRepositoryPort
+    results: ResultStoreRepositoryPort
     artifacts: ArtifactRepositoryPort
     node_secrets: NodeSecretRepositoryPort
     identity: IdentityRepositoryPort
@@ -52,14 +62,16 @@ class _SqlAlchemyUnitOfWorkState:
 
 
 class SqlAlchemyUnitOfWork(
+    LibraryUnitOfWorkPort,
     WorkbenchUnitOfWorkPort,
     ProjectUnitOfWorkPort,
+    RunUnitOfWorkPort,
     NodeSecretUnitOfWorkPort,
     IdentityUnitOfWorkPort,
     UploadUnitOfWorkPort,
     CollaborationUnitOfWorkPort,
 ):
-    """Task-local transactions for Workspace-owned Projects and artifacts."""
+    """Task-local transactions for Projects, Runs, results, and Workspace-owned data."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -71,6 +83,16 @@ class SqlAlchemyUnitOfWork(
     @override
     def projects(self) -> ProjectRepositoryPort:
         return self._entered_state().projects
+
+    @property
+    @override
+    def runs(self) -> RunRepositoryPort:
+        return self._entered_state().runs
+
+    @property
+    @override
+    def results(self) -> ResultStoreRepositoryPort:
+        return self._entered_state().results
 
     @property
     @override
@@ -116,6 +138,8 @@ class SqlAlchemyUnitOfWork(
             _SqlAlchemyUnitOfWorkState(
                 session=session,
                 projects=SqlProjectRepository(session),
+                runs=SqlRunRepository(session),
+                results=SqlResultStoreRepository(session),
                 artifacts=SqlArtifactRepository(session),
                 node_secrets=SqlNodeSecretRepository(session),
                 identity=SqlIdentityRepository(session),

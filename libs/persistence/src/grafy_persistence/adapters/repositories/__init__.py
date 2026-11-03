@@ -24,3 +24,9 @@ from .projects import (
 from .projects import (
     SqlProjectRepository as SqlProjectRepository,
 )
+from .runs import (
+    SqlResultStoreRepository as SqlResultStoreRepository,
+)
+from .runs import (
+    SqlRunRepository as SqlRunRepository,
+)
