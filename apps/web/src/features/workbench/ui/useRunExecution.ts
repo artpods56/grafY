@@ -192,9 +192,13 @@ export function useRunExecution({
         workspaceId,
         projectId,
         requestGraph.graphId,
+        // The fingerprints already held are always offered: a refresh that finds
+        // an instance pointing at the result it pointed at last time has nothing
+        // new to show, and re-reading it would make the surface's read rate grow
+        // with how often it is refreshed.
         {
           onlyNodeIds: options.onlyNodeIds,
-          loadedFingerprints: options.onlyNodeIds ? loaded : undefined,
+          loadedFingerprints: loaded,
         },
       ).catch((error: unknown) => {
         if (mountedRef.current && generation === generationRef.current) {
@@ -599,11 +603,16 @@ export function useRunExecution({
   };
 }
 
-/** A rejected Run, in the words a person can act on. `code` is the stable half. */
+/**
+ * A rejected Run, in the words a person can act on.
+ *
+ * The `code` is the stable half — the server's detail sentence is prose it may
+ * rewrite — so the codes a caller can do something about get their own sentence,
+ * and the rest fall back to what the server actually said.
+ */
 export function runRejectionMessage(error: ApiError): string {
-  const detail = error.detail as { code?: unknown; message?: unknown } | null;
-  const code = typeof detail?.code === "string" ? detail.code : null;
-  const message = typeof detail?.message === "string" ? detail.message : null;
+  const code = typeof error.code === "string" ? error.code : null;
+  const message = error.detail ? error.detail : null;
   switch (code) {
     case "unknown_graph":
       return "This Graph is no longer in the Project. Reload it before running.";

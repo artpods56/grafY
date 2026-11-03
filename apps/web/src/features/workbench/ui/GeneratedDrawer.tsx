@@ -522,9 +522,7 @@ function instanceGroups(
 }
 
 /** Every artifact a stored output hands back, single or in a sequence. */
-function outputRefs(
-  value: ArtifactOutputValue,
-): {
+function outputRefs(value: ArtifactOutputValue): {
   artifactId: string;
   artifactType: string;
   schemaVersion: number;

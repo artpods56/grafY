@@ -1,1529 +1,1259 @@
 // @vitest-environment jsdom
 
 import * as React from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
-  CreateSavedGraphRequest,
+  ActiveRunSummary,
+  ArtifactRef,
+  InstanceResult,
+  InstanceState,
+  InstanceStateName,
   NodeSpec,
-  RunExecution,
-  RunExecutionEventHandlers,
-  RunExecutionEventSubscription,
-  RunExecutionNodeProgressEvent,
-  RunExecutionStatusEvent,
-  RunNodeResult,
-  RunRequest,
-  SavedGraphOrigin,
+  Port,
+  Run,
+  RunStatus,
+  SavedGraphNode,
 } from "@/lib/api";
-import { encodeHandleId } from "../canvas/handles";
+import { ApiError } from "@/lib/api/client";
 import {
   WORKFLOW_NODE_TYPE,
   createWorkflowNodeData,
   type WorkflowEdge,
+  type WorkflowNodeCompatibility,
 } from "../canvas/types";
-import { savedGraphExecutionFingerprint } from "../canvas/saved-graph";
+import { encodeHandleId } from "../canvas/handles";
 import type { WorkflowNode } from "../model/execution-plan";
-import type { ActiveExecutionSummary } from "../room";
 import { deferred } from "./test/deferred";
 import { renderHook } from "./test/renderHook";
-import { useRunExecution } from "./useRunExecution";
+import type { ActiveSavedGraph } from "./useSavedGraphLifecycle";
+import {
+  RUN_SURFACE_POLL_INTERVAL_MS,
+  runRejectionMessage,
+  useRunExecution,
+} from "./useRunExecution";
 
-const apiMocks = vi.hoisted(() => ({
-  cancelRunExecution:
-    vi.fn<
-      (workspaceId: string, executionId: string) => Promise<RunExecution>
-    >(),
-  getGraphMaterializations: vi.fn(),
-  getRunExecution:
-    vi.fn<
-      (workspaceId: string, executionId: string) => Promise<RunExecution>
-    >(),
-  startRunExecution:
-    vi.fn<
-      (workspaceId: string, request: RunRequest) => Promise<RunExecution>
-    >(),
-  subscribeRunExecutionEvents:
-    vi.fn<
-      (
-        workspaceId: string,
-        executionId: string,
-        handlers: RunExecutionEventHandlers,
-      ) => RunExecutionEventSubscription
-    >(),
+const api = vi.hoisted(() => ({
+  startRun: vi.fn(),
+  listRuns: vi.fn(),
+  getRun: vi.fn(),
+  cancelRun: vi.fn(),
+  listGraphInstances: vi.fn(),
+  getInstanceResult: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => apiMocks);
+vi.mock("@/lib/api", () => api);
 
-const executionId = "00000000-0000-4000-8000-000000000001";
-const executionDraft: CreateSavedGraphRequest = {
-  name: "Execution snapshot",
-  document: {
-    schema_version: 7,
-    nodes: [
-      {
-        id: "node-1",
-        kind: "builtin",
-        operator_id: "test.operator",
-        operator_version: 1,
-        config: {},
-        input_plugs: [],
-        artifact_type_bindings: [],
-        position: { x: 0, y: 0 },
-      },
-    ],
-    edges: [],
-    origins: [],
-    presentation: {
-      viewers: [],
-      links: [],
-      bindings: [],
-      annotations: [],
-    },
-  },
-};
-const executionFingerprint = savedGraphExecutionFingerprint(executionDraft);
-const presentationOnlyExecutionFingerprint = savedGraphExecutionFingerprint({
-  ...executionDraft,
-  document: {
-    ...executionDraft.document,
-    presentation: {
-      viewers: [{ id: "viewer-1", position: { x: 40, y: 80 } }],
-      links: executionDraft.document.presentation?.links ?? [],
-      bindings: executionDraft.document.presentation?.bindings ?? [],
-      annotations: executionDraft.document.presentation?.annotations ?? [],
-    },
-  },
-});
-const changedExecutionFingerprint = savedGraphExecutionFingerprint({
-  ...executionDraft,
-  document: {
-    ...executionDraft.document,
-    nodes: executionDraft.document.nodes.map((node) => ({
-      ...node,
-      config: { changed: true },
-    })),
-  },
-});
-const liveSubscriptions: Array<{
-  executionId: string;
-  handlers: RunExecutionEventHandlers;
-  subscription: RunExecutionEventSubscription & {
-    close: ReturnType<typeof vi.fn>;
-  };
-}> = [];
+const WORKSPACE_ID = "workspace-1";
+const PROJECT_ID = "00000000-0000-4000-8000-0000000000p1";
+const GRAPH_ID = "00000000-0000-4000-8000-0000000000g1";
+const OTHER_GRAPH_ID = "00000000-0000-4000-8000-0000000000g2";
+const RUN_ID = "00000000-0000-4000-8000-0000000000r1";
 
-function nodeSpec(): NodeSpec {
+function port(name: string, direction: Port["direction"] = "input"): Port {
+  const shape = "one";
   return {
-    operator_id: "test.operator",
-    operator_version: 1,
-    plugin_slug: "test",
-    origin: "builtin",
-    title: "Test operator",
-    description: "Test operator",
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
-    inputs: [],
-    outputs: [],
+    name,
+    title: name,
+    description: null,
+    direction,
+    artifact_type: { id: "test.artifact", schema_version: 1 },
+    shape,
+    accepted_shapes: [shape],
+    instance_plugs: false,
+    variadic: false,
+    required: true,
   };
 }
 
-function workflowNode(id = "node-1"): WorkflowNode {
+interface SpecOptions {
+  inputs?: readonly Port[];
+  outputs?: readonly Port[];
+  configSchema?: Record<string, unknown>;
+  secretInputs?: NonNullable<NodeSpec["secret_inputs"]>;
+  title?: string;
+}
+
+function nodeSpec(
+  operatorId = "test.operator",
+  options: SpecOptions = {},
+): NodeSpec {
+  return {
+    operator_id: operatorId,
+    operator_version: 1,
+    plugin_slug: "test",
+    origin: "builtin",
+    title: options.title ?? operatorId,
+    description: operatorId,
+    catalog_visible: true,
+    runnable: true,
+    config_schema: options.configSchema ?? {},
+    input_schema: {},
+    output_schema: {},
+    inputs: options.inputs ?? [],
+    outputs: options.outputs ?? [port("result", "output")],
+    secret_inputs: options.secretInputs,
+  };
+}
+
+function workflowNode(
+  id: string,
+  options: {
+    spec?: NodeSpec;
+    selected?: boolean;
+    config?: Record<string, unknown>;
+    compatibility?: WorkflowNodeCompatibility;
+  } = {},
+): WorkflowNode {
+  const spec = options.spec ?? nodeSpec();
+  const data = createWorkflowNodeData(spec);
+  if (options.compatibility) {
+    data.compatibility = options.compatibility;
+  }
   return {
     id,
     type: WORKFLOW_NODE_TYPE,
     position: { x: 0, y: 0 },
-    data: createWorkflowNodeData(nodeSpec()),
+    selected: options.selected ?? false,
+    data: { ...data, config: options.config ?? {} },
   };
 }
 
-function connectedSelection(): {
-  nodes: WorkflowNode[];
-  edges: WorkflowEdge[];
-} {
-  const source = workflowNode("source");
-  source.data.spec = {
-    ...source.data.spec,
-    title: "Source",
-    outputs: [
-      {
-        name: "output",
-        title: "Output",
-        description: null,
-        direction: "output",
-        artifact_type: { id: "text.plain", schema_version: 1 },
-        shape: "one",
-        accepted_shapes: ["one"],
-        instance_plugs: false,
-        variadic: false,
-        required: true,
-      },
-    ],
-  };
-  const target = { ...workflowNode("target"), selected: true };
-  target.data.spec = {
-    ...target.data.spec,
-    title: "Target",
-    inputs: [
-      {
-        name: "input",
-        title: "Input",
-        description: null,
-        direction: "input",
-        artifact_type: { id: "text.plain", schema_version: 1 },
-        shape: "one",
-        accepted_shapes: ["one"],
-        instance_plugs: false,
-        variadic: false,
-        required: true,
-      },
-    ],
-  };
-  const edge: WorkflowEdge = {
-    id: "source-to-target",
-    type: "workflow",
-    source: source.id,
-    target: target.id,
-    sourceHandle: encodeHandleId({
-      portName: "output",
-      artifactTypeId: "text.plain",
-      schemaVersion: 1,
-      shape: "one",
-      direction: "output",
-    }),
-    targetHandle: encodeHandleId({
-      portName: "input",
-      artifactTypeId: "text.plain",
-      schemaVersion: 1,
-      shape: "one",
-      direction: "input",
-    }),
-  };
-  return { nodes: [source, target], edges: [edge] };
+function outputHandle(): string {
+  return encodeHandleId({
+    portName: "result",
+    artifactTypeId: "test.artifact",
+    schemaVersion: 1,
+    shape: "one",
+    direction: "output",
+  });
 }
 
-function materializedRun(nodeId: string, artifactId: string): RunNodeResult {
+function inputHandle(): string {
+  return encodeHandleId({
+    portName: "input",
+    artifactTypeId: "test.artifact",
+    schemaVersion: 1,
+    shape: "one",
+    direction: "input",
+  });
+}
+
+function workflowEdge(source: string, target: string): WorkflowEdge {
   return {
-    node_id: nodeId,
-    status: "succeeded",
-    error: null,
-    outputs: [
-      {
-        port: "output",
-        kind: "single",
-        value: {
-          artifact_id: artifactId,
-          artifact_type: "text.plain",
-          schema_version: 1,
-        },
-        artifacts: [],
-      },
-    ],
+    id: `${source}-${target}`,
+    source,
+    sourceHandle: outputHandle(),
+    target,
+    targetHandle: inputHandle(),
+    data: { enabled: true, collectionMode: "direct", conversionPath: [] },
   };
 }
 
-function execution(
-  status: RunExecution["status"],
-  overrides: Partial<RunExecution> = {},
-): RunExecution {
+function savedNode(
+  id: string,
+  options: { config?: Record<string, unknown>; operatorId?: string } = {},
+): SavedGraphNode {
   return {
-    execution_id: executionId,
-    status,
-    active_node_id:
-      status === "running" || status === "cancelling" ? "node-1" : null,
-    result: null,
-    error: null,
+    id,
+    kind: "builtin",
+    // The saved node has to be the same node the canvas holds: the secret
+    // binding check compares operator and version, and a fixture that differs
+    // would refuse the Run for being changed rather than for anything under test.
+    operator_id: options.operatorId ?? "test.operator",
+    operator_version: 1,
+    config: options.config ?? {},
+    input_plugs: [],
+    artifact_type_bindings: [],
+    position: { x: 0, y: 0 },
+  };
+}
+
+function activeSavedGraph(
+  overrides: Partial<ActiveSavedGraph> = {},
+): ActiveSavedGraph {
+  return {
+    id: PROJECT_ID,
+    graphId: GRAPH_ID,
+    revision: 3,
+    nodes: [savedNode("a"), savedNode("b")],
     ...overrides,
   };
 }
 
-function succeededExecution(nodeId = "node-1"): RunExecution {
-  return execution("succeeded", {
-    result: {
-      status: "succeeded",
-      node_runs: [
-        {
-          node_id: nodeId,
-          status: "succeeded",
-          outputs: [
-            {
-              port: "output",
-              kind: "single",
-              value: {
-                artifact_id: "artifact-1",
-                artifact_type: "text.plain",
-                schema_version: 1,
-              },
-              artifacts: [
-                {
-                  artifact_id: "artifact-1",
-                  artifact_type: "text.plain",
-                  content_type: "text/plain",
-                  schema_version: 1,
-                  byte_size: 4,
-                },
-              ],
-            },
-          ],
-          error: null,
-        },
-      ],
-    },
-  });
+function run(status: RunStatus, overrides: Partial<Run> = {}): Run {
+  return {
+    id: RUN_ID,
+    status,
+    graph_id: GRAPH_ID,
+    targets: [{ node_id: "a", call_path: [] }],
+    started_by_user_id: null,
+    error: null,
+    project_id: PROJECT_ID,
+    workspace_id: WORKSPACE_ID,
+    created_at: "2026-07-20T08:00:00Z",
+    finished_at: null,
+    ...overrides,
+  };
 }
 
-function roomExecution(
-  status: ActiveExecutionSummary["status"],
-  overrides: Partial<ActiveExecutionSummary> = {},
-): ActiveExecutionSummary {
+function artifact(nodeId: string): ArtifactRef {
   return {
-    execution_id: executionId,
-    graph_revision: 1,
-    status,
-    scope: "selected-with-dependencies",
-    requested_node_ids: ["node-1"],
-    starter: {
-      actor_id: "actor-1",
-      display_name: "Owner",
-      color: "emerald",
+    artifact_id: `artifact-${nodeId}`,
+    artifact_type: "text.plain",
+    schema_version: 1,
+    content_hash: "hash-1",
+  };
+}
+
+function instanceState(
+  nodeId: string,
+  state: InstanceStateName,
+  overrides: {
+    graphId?: string;
+    callPath?: readonly string[];
+    fingerprint?: string | null;
+    error?: string | null;
+  } = {},
+): InstanceState {
+  return {
+    key: {
+      project_id: PROJECT_ID,
+      graph_id: overrides.graphId ?? GRAPH_ID,
+      node_id: nodeId,
+      call_path: overrides.callPath ?? [],
+      map_index: null,
     },
-    active_node_id:
-      status === "running" || status === "cancelling" ? "node-1" : null,
-    overlays_compatible: true,
+    state,
+    fingerprint: `document-${nodeId}`,
+    last_result_fingerprint:
+      overrides.fingerprint === undefined
+        ? `result-${nodeId}`
+        : overrides.fingerprint,
+    error: overrides.error ?? null,
+  };
+}
+
+function storedResult(
+  nodeId: string,
+  fingerprint = `result-${nodeId}`,
+): InstanceResult {
+  return {
+    instance: instanceState(nodeId, "fresh", { fingerprint }),
+    outputs: { result: artifact(nodeId) },
+    result_fingerprint: fingerprint,
+    created_at: "2026-07-20T08:05:00Z",
+  };
+}
+
+function activeRunSummary(
+  runId: string,
+  overrides: Partial<ActiveRunSummary> = {},
+) {
+  return {
+    run_id: runId,
+    graph_id: GRAPH_ID,
+    targets: [{ node_id: "a", call_path: [] }],
+    starter: null,
+    started_at: "2026-07-20T08:00:00Z",
     cancellable: true,
     ...overrides,
   };
 }
 
+/** The canvas the hook paints onto, so a test can read the overlays it set. */
+function canvasState(nodes: readonly WorkflowNode[]) {
+  const holder = { current: [...nodes] };
+  const setNodes = vi.fn((next: React.SetStateAction<WorkflowNode[]>) => {
+    holder.current =
+      typeof next === "function"
+        ? (next as (current: WorkflowNode[]) => WorkflowNode[])(holder.current)
+        : next;
+  });
+  return {
+    holder,
+    setNodes,
+    node: (id: string) => holder.current.find((n) => n.id === id),
+  };
+}
+
 type HookOptions = Parameters<typeof useRunExecution>[0];
 
-function hookHarness(options: Partial<HookOptions> = {}) {
-  let nodes = options.nodes ? [...options.nodes] : [workflowNode()];
-  let runError: string | null = null;
-  let setNodesCallCount = 0;
-  const setNodes: HookOptions["setNodes"] = (update) => {
-    setNodesCallCount += 1;
-    nodes = typeof update === "function" ? update(nodes) : update;
-  };
-  const setRunError = vi.fn((message: string | null) => {
-    runError = message;
-  });
-  const hookOptions: HookOptions = {
-    workspaceId: "workspace-1",
+// The Workbench holds one `activeGraph` object per saved state, so a rerender of
+// the same canvas reuses it. A fresh object each call would read as a new Graph
+// and make every test re-fetch.
+const defaultActiveGraph = activeSavedGraph();
+const defaultEdges: WorkflowEdge[] = [];
+// A fresh callback on every rerender would change the identity of the reads that
+// depend on it, so a rerender that changed nothing would look like a new Graph.
+const defaultSetRunError = vi.fn();
+
+function hookOptions(
+  canvas: ReturnType<typeof canvasState>,
+  overrides: Partial<HookOptions> = {},
+): HookOptions {
+  return {
+    workspaceId: WORKSPACE_ID,
+    projectId: PROJECT_ID,
     registryAvailable: true,
-    nodes,
-    edges: [],
-    activeGraph: null,
-    currentExecutionFingerprint: executionFingerprint,
-    canMaterializeSavedGraph: false,
+    nodes: canvas.holder.current,
+    edges: defaultEdges,
+    origins: [],
+    activeGraph: defaultActiveGraph,
+    currentExecutionFingerprint: "fingerprint-1",
+    canRunSavedGraph: true,
     nodeSecretStatuses: {},
-    setNodes,
-    setRunError,
-    onMaterializationsLoaded: vi.fn(),
-    ...options,
-  };
-
-  return {
-    hookOptions,
-    nodes: () => nodes,
-    runError: () => runError,
-    setNodesCallCount: () => setNodesCallCount,
-  };
-}
-
-async function launchRun(
-  result: Awaited<
-    ReturnType<
-      typeof renderHook<HookOptions, ReturnType<typeof useRunExecution>>
-    >
-  >["result"],
-) {
-  let runPromise!: Promise<void>;
-  await React.act(async () => {
-    runPromise = result.current.runWorkflow("all");
-    await Promise.resolve();
-  });
-  return { runPromise };
-}
-
-function latestLiveSubscription() {
-  const subscription = liveSubscriptions.at(-1);
-  if (!subscription) throw new Error("No live execution subscription opened");
-  return subscription;
-}
-
-function nodeProgressEvent(
-  sequence: number,
-  overrides: Partial<RunExecutionNodeProgressEvent> = {},
-): RunExecutionNodeProgressEvent {
-  return {
-    kind: "node.progress",
-    sequence,
-    execution_id: executionId,
-    occurred_at: "2026-07-19T12:00:00Z",
-    node_path: ["node-1"],
-    node_id: "node-1",
-    node_run_id: null,
-    invocation_index: null,
-    invocation_path: [],
-    message: `Update ${sequence}`,
-    current: null,
-    total: null,
+    roomConnected: false,
+    roomActiveRuns: null,
+    roomRunsRevision: 0,
+    roomInstancesRevision: 0,
+    setNodes: canvas.setNodes,
+    setRunError: defaultSetRunError,
     ...overrides,
   };
 }
 
-function executionStatusEvent(
-  sequence: number,
-  status: RunExecution["status"],
-  activeNodeId: string | null = status === "running" ? "node-1" : null,
-): RunExecutionStatusEvent {
-  return {
-    kind: "execution.status",
-    sequence,
-    execution_id: executionId,
-    occurred_at: "2026-07-19T12:00:00Z",
-    status,
-    active_node_id: activeNodeId,
-  };
+async function flush(): Promise<void> {
+  await React.act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 }
 
-describe("useRunExecution", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    apiMocks.subscribeRunExecutionEvents.mockImplementation(
-      (_workspaceId, subscribedExecutionId, handlers) => {
-        const subscription = { close: vi.fn() };
-        liveSubscriptions.push({
-          executionId: subscribedExecutionId,
-          handlers,
-          subscription,
-        });
-        return subscription;
-      },
+async function settle(): Promise<void> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await flush();
+  }
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  api.listGraphInstances.mockResolvedValue({ instances: [] });
+  api.listRuns.mockResolvedValue({ runs: [] });
+  api.getInstanceResult.mockImplementation(
+    (_workspaceId: string, _projectId: string, key: { node_id: string }) =>
+      Promise.resolve(storedResult(key.node_id)),
+  );
+  api.startRun.mockImplementation(async (_workspaceId, _projectId, body) =>
+    run("running", {
+      graph_id: body.graph_id,
+      targets: body.targets,
+    }),
+  );
+  api.getRun.mockResolvedValue(
+    run("succeeded", { finished_at: "2026-07-20T08:06:00Z" }),
+  );
+  api.cancelRun.mockResolvedValue(run("cancelled"));
+});
+
+describe("reading what a Graph's node instances hold", () => {
+  it("shows a stored result the moment the canvas opens, with nobody having run anything", async () => {
+    // A person who came back to a Graph they ran yesterday should see yesterday's
+    // outputs on the cards, not an empty canvas waiting for a Run.
+    api.listGraphInstances.mockResolvedValue({
+      instances: [instanceState("a", "stale")],
+    });
+
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(useRunExecution, hookOptions(canvas));
+    await settle();
+
+    expect(api.listGraphInstances).toHaveBeenCalledWith(
+      WORKSPACE_ID,
+      PROJECT_ID,
+      GRAPH_ID,
+      undefined,
     );
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.clearAllMocks();
-    liveSubscriptions.length = 0;
-  });
-
-  it("applies queued, running, and successful states from the execution API", async () => {
-    const started = deferred<RunExecution>();
-    apiMocks.startRunExecution.mockReturnValue(started.promise);
-    apiMocks.getRunExecution
-      .mockResolvedValueOnce(execution("running"))
-      .mockResolvedValueOnce(succeededExecution());
-    const harness = hookHarness();
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-
-    const { runPromise } = await launchRun(hook.result);
-
-    expect(apiMocks.startRunExecution).toHaveBeenCalledOnce();
-    expect(hook.result.current.visibleExecution?.status).toBe("preparing");
-    expect(harness.nodes()[0]?.data.execution.status).toBe("queued");
-
-    await React.act(async () => {
-      started.resolve(execution("queued", { queue_position: 2 }));
-      await Promise.resolve();
-    });
-    expect(hook.result.current.visibleExecution?.status).toBe("queued");
-    expect(hook.result.current.visibleExecution?.queuePosition).toBe(2);
-
-    await React.act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
-    expect(hook.result.current.visibleExecution?.status).toBe("running");
-    expect(hook.result.current.visibleExecution?.queuePosition).toBeNull();
-    expect(harness.nodes()[0]?.data.execution.status).toBe("running");
-
-    await React.act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-      await runPromise;
-    });
-    expect(hook.result.current.running).toBe(false);
-    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
-    expect(harness.nodes()[0]?.data.run?.node_id).toBe("node-1");
-    expect(hook.result.current.announcement).toBe(
-      "Execution completed successfully.",
+    expect(hook.result.current.resultByNodeId.a?.result_fingerprint).toBe(
+      "result-a",
     );
-  });
-
-  it("does not regress a terminal SSE status when an older poll resolves", async () => {
-    const stalePoll = deferred<RunExecution>();
-    const terminalPoll = deferred<RunExecution>();
-    apiMocks.startRunExecution.mockResolvedValue(execution("running"));
-    apiMocks.getRunExecution
-      .mockReturnValueOnce(stalePoll.promise)
-      .mockReturnValueOnce(terminalPoll.promise);
-    const harness = hookHarness();
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-    const { runPromise } = await launchRun(hook.result);
-    const live = latestLiveSubscription();
-
-    await React.act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
-    expect(apiMocks.getRunExecution).toHaveBeenCalledTimes(1);
-
-    await React.act(async () => {
-      live.handlers.onEvent(executionStatusEvent(1, "succeeded"));
-    });
-    expect(hook.result.current.visibleExecution?.status).toBe("succeeded");
-
-    await React.act(async () => {
-      stalePoll.resolve(execution("running", { active_node_id: null }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(apiMocks.getRunExecution).toHaveBeenCalledTimes(2);
-    expect(hook.result.current.visibleExecution?.status).toBe("succeeded");
-    expect(harness.nodes()[0]?.data.execution.status).toBe("running");
-
-    await React.act(async () => {
-      terminalPoll.resolve(succeededExecution());
-      await runPromise;
-    });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
-  });
-
-  it("routes replayed module progress while guarding identity, sequence, and graph snapshot", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(
-      execution("running", {
-        active_node_id: "module-1",
-      }),
-    );
-    apiMocks.getRunExecution.mockResolvedValue(succeededExecution("module-1"));
-    const harness = hookHarness({
-      nodes: [workflowNode("module-1")],
-    });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-    const { runPromise } = await launchRun(hook.result);
-    const live = latestLiveSubscription();
-
-    await React.act(async () => {
-      live.handlers.onEvent(
-        nodeProgressEvent(10, {
-          execution_id: "another-execution",
-          node_path: ["module-1", "inner-1"],
-          node_id: "inner-1",
-        }),
-      );
-      live.handlers.onEvent(
-        nodeProgressEvent(2, {
-          node_path: ["module-1", "nested-a", "inner-1"],
-          node_id: "inner-1",
-          invocation_index: 3,
-          invocation_path: [2, 1],
-          message: "Preparing the payload",
-          current: 2,
-          total: 5,
-        }),
-      );
-      live.handlers.onEvent(
-        nodeProgressEvent(2, {
-          node_path: ["module-1", "nested-a", "inner-1"],
-          node_id: "inner-1",
-          message: "Duplicate",
-        }),
-      );
-      live.handlers.onEvent(
-        nodeProgressEvent(1, {
-          node_path: ["module-1"],
-          message: "Out of order",
-        }),
-      );
-      await vi.advanceTimersByTimeAsync(20);
-    });
-
-    expect(live.executionId).toBe(executionId);
-    expect(harness.nodes()[0]?.data.progress).toEqual({
-      omittedCount: 0,
-      entries: [
-        {
-          sequence: 2,
-          message: "Preparing the payload",
-          current: 2,
-          total: 5,
-          sourceNodePath: ["nested-a", "inner-1"],
-          invocationIndex: 3,
-          invocationPath: [2, 1],
-        },
-      ],
-    });
-
-    await React.act(async () => {
-      live.handlers.onEvent(
-        nodeProgressEvent(3, {
-          node_path: ["module-1"],
-          message: "Stale graph",
-        }),
-      );
-    });
-    await hook.rerender({
-      ...harness.hookOptions,
-      currentExecutionFingerprint: changedExecutionFingerprint,
-    });
-    await React.act(async () => {
-      await vi.advanceTimersByTimeAsync(20);
-    });
-    expect(harness.nodes()[0]?.data.progress).toEqual({
-      omittedCount: 0,
-      entries: [
-        {
-          sequence: 2,
-          message: "Preparing the payload",
-          current: 2,
-          total: 5,
-          sourceNodePath: ["nested-a", "inner-1"],
-          invocationIndex: 3,
-          invocationPath: [2, 1],
-        },
-      ],
-    });
-
-    await hook.rerender(harness.hookOptions);
-    await React.act(async () => {
-      live.handlers.onEvent(executionStatusEvent(4, "succeeded"));
-      await runPromise;
-    });
-    expect(apiMocks.getRunExecution).toHaveBeenCalledWith(
-      "workspace-1",
-      executionId,
-    );
-    expect(live.subscription.close).toHaveBeenCalled();
-    expect(harness.nodes()[0]?.data.progress?.entries).toHaveLength(1);
-  });
-
-  it("batches progress into one node update per animation frame", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(execution("running"));
-    apiMocks.getRunExecution.mockResolvedValue(succeededExecution());
-    const harness = hookHarness();
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-    const { runPromise } = await launchRun(hook.result);
-    const live = latestLiveSubscription();
-    const callsBeforeProgress = harness.setNodesCallCount();
-
-    await React.act(async () => {
-      live.handlers.onEvent(nodeProgressEvent(1));
-      live.handlers.onEvent(nodeProgressEvent(2));
-      live.handlers.onEvent(nodeProgressEvent(3));
-    });
-
-    expect(harness.nodes()[0]?.data.progress).toBeNull();
-    expect(harness.setNodesCallCount()).toBe(callsBeforeProgress);
-
-    await React.act(async () => {
-      await vi.advanceTimersByTimeAsync(20);
-    });
-
-    expect(harness.setNodesCallCount()).toBe(callsBeforeProgress + 1);
+    expect(hook.result.current.instanceStates.a).toBe("stale");
     expect(
-      harness.nodes()[0]?.data.progress?.entries.map((entry) => entry.sequence),
-    ).toEqual([1, 2, 3]);
-
-    await React.act(async () => {
-      live.handlers.onEvent(executionStatusEvent(4, "succeeded"));
-      await runPromise;
-    });
+      canvas.node("a")?.data.run?.outputs[0]?.artifacts[0]?.artifact_id,
+    ).toBe("artifact-a");
+    await hook.unmount();
   });
 
-  it("caps pending progress per outer node before an animation frame", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(execution("running"));
-    apiMocks.getRunExecution.mockResolvedValue(execution("cancelled"));
-    const harness = hookHarness({
-      nodes: [workflowNode("node-1"), workflowNode("node-2")],
-    });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-    const { runPromise } = await launchRun(hook.result);
-    const live = latestLiveSubscription();
-    const callsBeforeProgress = harness.setNodesCallCount();
-
-    await React.act(async () => {
-      for (let sequence = 1; sequence <= 100; sequence += 1) {
-        live.handlers.onEvent(nodeProgressEvent(sequence));
-      }
-      for (let sequence = 101; sequence <= 200; sequence += 1) {
-        live.handlers.onEvent(
-          nodeProgressEvent(sequence, {
-            node_path: ["node-2"],
-            node_id: "node-2",
-          }),
-        );
-      }
-    });
-    expect(harness.nodes()[0]?.data.progress).toBeNull();
-    expect(harness.nodes()[1]?.data.progress).toBeNull();
-    expect(harness.setNodesCallCount()).toBe(callsBeforeProgress);
-
-    await React.act(async () => {
-      await vi.advanceTimersByTimeAsync(20);
+  it("paints each instance state with the overlay the card chrome speaks", async () => {
+    api.listGraphInstances.mockResolvedValue({
+      instances: [
+        instanceState("a", "fresh"),
+        instanceState("b", "running"),
+        instanceState("c", "failed", { error: "boom" }),
+      ],
     });
 
-    expect(harness.setNodesCallCount()).toBe(callsBeforeProgress + 1);
-    expect(harness.nodes()[0]?.data.progress?.omittedCount).toBe(60);
-    expect(harness.nodes()[0]?.data.progress?.entries).toHaveLength(40);
-    expect(harness.nodes()[0]?.data.progress?.entries[0]?.sequence).toBe(61);
-    expect(harness.nodes()[0]?.data.progress?.entries.at(-1)?.sequence).toBe(
-      100,
-    );
-    expect(harness.nodes()[1]?.data.progress?.omittedCount).toBe(60);
-    expect(harness.nodes()[1]?.data.progress?.entries).toHaveLength(40);
-    expect(harness.nodes()[1]?.data.progress?.entries[0]?.sequence).toBe(161);
-    expect(harness.nodes()[1]?.data.progress?.entries.at(-1)?.sequence).toBe(
-      200,
-    );
+    const canvas = canvasState([
+      workflowNode("a"),
+      workflowNode("b"),
+      workflowNode("c"),
+      workflowNode("d"),
+    ]);
+    const hook = await renderHook(useRunExecution, hookOptions(canvas));
+    await settle();
 
-    await React.act(async () => {
-      live.handlers.onEvent(executionStatusEvent(201, "cancelled"));
-      await runPromise;
+    expect(canvas.node("a")?.data.execution.status).toBe("succeeded");
+    expect(canvas.node("b")?.data.execution.status).toBe("running");
+    expect(canvas.node("c")?.data.execution).toEqual({
+      status: "failed",
+      error: "boom",
     });
+    // A node the instance list does not name is nobody's news: it keeps what the
+    // canvas already showed rather than being reset by an absence.
+    expect(canvas.node("d")?.data.execution.status).toBe("idle");
+    expect(canvas.node("d")?.data.run).toBeNull();
+    await hook.unmount();
   });
 
-  it("keeps nested node statuses detail-only until the outer module reports", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(
-      execution("running", {
-        active_node_id: "module-1",
+  it("reads an instance behind a call node without painting the outer card with it", async () => {
+    // The callee's instance belongs to the Graph too, but not to a card on this
+    // canvas; collapsing it onto the call node would show someone else's state.
+    api.listGraphInstances.mockResolvedValue({
+      instances: [instanceState("inner", "running", { callPath: ["call"] })],
+    });
+
+    const canvas = canvasState([workflowNode("call")]);
+    const hook = await renderHook(useRunExecution, hookOptions(canvas));
+    await settle();
+
+    expect(hook.result.current.instanceStates).toEqual({});
+    expect(canvas.node("call")?.data.execution.status).toBe("idle");
+    await hook.unmount();
+  });
+
+  it("reads a stored result once and skips it while its fingerprint has not moved", async () => {
+    api.listGraphInstances.mockResolvedValue({
+      instances: [instanceState("a", "fresh")],
+    });
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(useRunExecution, hookOptions(canvas));
+    await settle();
+    expect(api.getInstanceResult).toHaveBeenCalledTimes(1);
+
+    await React.act(async () => {
+      await hook.result.current.refresh();
+    });
+
+    // The list is cheap and always re-read; a result is fetched per instance, so
+    // an unchanged fingerprint must not buy another round trip.
+    expect(api.listGraphInstances).toHaveBeenCalledTimes(2);
+    expect(api.getInstanceResult).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.resultByNodeId.a?.result_fingerprint).toBe(
+      "result-a",
+    );
+    await hook.unmount();
+  });
+
+  it("reads a result again the moment its instance points at a new fingerprint", async () => {
+    api.listGraphInstances.mockResolvedValue({
+      instances: [instanceState("a", "fresh")],
+    });
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(useRunExecution, hookOptions(canvas));
+    await settle();
+
+    api.listGraphInstances.mockResolvedValue({
+      instances: [instanceState("a", "fresh", { fingerprint: "result-a-2" })],
+    });
+    api.getInstanceResult.mockResolvedValue(storedResult("a", "result-a-2"));
+    await React.act(async () => {
+      await hook.result.current.refresh();
+    });
+
+    expect(api.getInstanceResult).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.resultByNodeId.a?.result_fingerprint).toBe(
+      "result-a-2",
+    );
+    await hook.unmount();
+  });
+
+  it("reads the new Graph's instances when the canvas moves to another Graph of the Project", async () => {
+    // Both halves of the address matter: a Project holds several Graphs and their
+    // instances are separate, so reusing the previous Graph's cards would show
+    // results that belong to a document nobody is looking at.
+    const canvas = canvasState([workflowNode("a")]);
+    const first = hookOptions(canvas);
+    const hook = await renderHook(useRunExecution, first);
+    await settle();
+
+    await hook.rerender(
+      hookOptions(canvas, {
+        activeGraph: activeSavedGraph({ graphId: OTHER_GRAPH_ID }),
       }),
     );
-    apiMocks.getRunExecution.mockResolvedValue(succeededExecution("module-1"));
-    const harness = hookHarness({ nodes: [workflowNode("module-1")] });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-    const { runPromise } = await launchRun(hook.result);
-    const live = latestLiveSubscription();
+    await settle();
 
-    await React.act(async () => {
-      live.handlers.onEvent({
-        kind: "node.status",
-        sequence: 1,
-        execution_id: executionId,
-        occurred_at: "2026-07-19T12:00:00Z",
-        node_path: ["module-1", "inner-1"],
-        node_id: "inner-1",
-        node_run_id: "inner-run",
-        invocation_index: null,
-        invocation_path: [],
-        status: "succeeded",
-      });
-    });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("running");
-
-    await React.act(async () => {
-      live.handlers.onEvent({
-        kind: "node.status",
-        sequence: 2,
-        execution_id: executionId,
-        occurred_at: "2026-07-19T12:00:01Z",
-        node_path: ["module-1"],
-        node_id: "module-1",
-        node_run_id: "module-run",
-        invocation_index: null,
-        invocation_path: [],
-        status: "succeeded",
-      });
-    });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
-
-    await React.act(async () => {
-      live.handlers.onEvent(executionStatusEvent(3, "succeeded"));
-      await runPromise;
-    });
+    expect(api.listGraphInstances).toHaveBeenLastCalledWith(
+      WORKSPACE_ID,
+      PROJECT_ID,
+      OTHER_GRAPH_ID,
+      undefined,
+    );
+    await hook.unmount();
   });
 
-  it("does not regress terminal nodes while later nodes run or cancellation completes", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(execution("running"));
-    apiMocks.getRunExecution
-      .mockResolvedValueOnce(
-        execution("running", {
-          active_node_id: "node-2",
-        }),
-      )
-      .mockResolvedValueOnce(execution("cancelled"));
-    const harness = hookHarness({
-      nodes: [workflowNode("node-1"), workflowNode("node-2")],
-    });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-    const { runPromise } = await launchRun(hook.result);
-    const live = latestLiveSubscription();
+  it("says so when instance state cannot be read, rather than showing an idle canvas", async () => {
+    api.listGraphInstances.mockRejectedValue(
+      new Error("instances are rebuilding"),
+    );
+    const setRunError = vi.fn();
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { setRunError }),
+    );
+    await settle();
 
-    await React.act(async () => {
-      live.handlers.onEvent({
-        kind: "node.status",
-        sequence: 1,
-        execution_id: executionId,
-        occurred_at: "2026-07-19T12:00:00Z",
-        node_path: ["node-1"],
-        node_id: "node-1",
-        node_run_id: "node-1-run",
-        invocation_index: null,
-        invocation_path: [],
-        status: "succeeded",
-      });
-    });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
-
-    await React.act(async () => {
-      live.handlers.onEvent({
-        kind: "node.status",
-        sequence: 2,
-        execution_id: executionId,
-        occurred_at: "2026-07-19T12:00:01Z",
-        node_path: ["node-1"],
-        node_id: "node-1",
-        node_run_id: "node-1-run",
-        invocation_index: null,
-        invocation_path: [],
-        status: "running",
-      });
-    });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
-
-    await React.act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
-    expect(harness.nodes()[1]?.data.execution.status).toBe("running");
-
-    await React.act(async () => {
-      live.handlers.onEvent(executionStatusEvent(3, "running", "node-2"));
-    });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
-    expect(harness.nodes()[1]?.data.execution.status).toBe("running");
-
-    await React.act(async () => {
-      live.handlers.onEvent(executionStatusEvent(4, "cancelled"));
-      await runPromise;
-    });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
-    expect(harness.nodes()[1]?.data.execution.status).toBe("cancelled");
+    expect(setRunError).toHaveBeenCalledWith("instances are rebuilding");
+    await hook.unmount();
   });
+});
 
-  it("bounds progress per node, reports omissions, and clears it for the next run", async () => {
-    apiMocks.startRunExecution
-      .mockResolvedValueOnce(execution("running"))
-      .mockResolvedValueOnce(succeededExecution());
-    apiMocks.getRunExecution.mockResolvedValue(succeededExecution());
-    const harness = hookHarness();
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-    const { runPromise } = await launchRun(hook.result);
-    const live = latestLiveSubscription();
-
-    await React.act(async () => {
-      for (let sequence = 1; sequence <= 35; sequence += 1) {
-        live.handlers.onEvent(nodeProgressEvent(sequence));
-      }
-      await vi.advanceTimersByTimeAsync(20);
-    });
-    expect(harness.nodes()[0]?.data.progress?.entries).toHaveLength(35);
-
-    await React.act(async () => {
-      for (let sequence = 36; sequence <= 45; sequence += 1) {
-        live.handlers.onEvent(nodeProgressEvent(sequence));
-      }
-      live.handlers.onEvent(executionStatusEvent(46, "succeeded"));
-      await runPromise;
-    });
-
-    expect(harness.nodes()[0]?.data.progress?.omittedCount).toBe(5);
-    expect(harness.nodes()[0]?.data.progress?.entries).toHaveLength(40);
-    expect(harness.nodes()[0]?.data.progress?.entries[0]?.message).toBe(
-      "Update 6",
-    );
-    expect(harness.nodes()[0]?.data.progress?.entries.at(-1)?.message).toBe(
-      "Update 45",
-    );
+describe("asking for a Run", () => {
+  it("names every node of the Graph when the whole Graph is asked for", async () => {
+    const canvas = canvasState([
+      workflowNode("a"),
+      workflowNode("b", { spec: nodeSpec("test.other") }),
+    ]);
+    api.getRun.mockResolvedValue(run("running"));
+    const hook = await renderHook(useRunExecution, hookOptions(canvas));
+    await settle();
 
     await React.act(async () => {
       await hook.result.current.runWorkflow("all");
     });
-    expect(harness.nodes()[0]?.data.progress).toBeNull();
+
+    expect(api.startRun).toHaveBeenCalledWith(WORKSPACE_ID, PROJECT_ID, {
+      graph_id: GRAPH_ID,
+      targets: [
+        { node_id: "a", call_path: [] },
+        { node_id: "b", call_path: [] },
+      ],
+    });
+    expect(hook.result.current.running).toBe(true);
+    expect(hook.result.current.runningScope).toBe("all");
+    await hook.unmount();
   });
 
-  it("clears stale progress across the canvas without resetting unselected results", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(succeededExecution());
-    const selected = { ...workflowNode(), selected: true };
-    const unselected = workflowNode("node-2");
-    unselected.data.run = {
-      node_id: "node-2",
-      status: "succeeded",
-      outputs: [],
-      error: null,
-    };
-    unselected.data.execution = { status: "succeeded" };
-    unselected.data.progress = {
-      omittedCount: 0,
-      entries: [
-        {
-          sequence: 7,
-          message: "Previous execution",
-          current: null,
-          total: null,
-          sourceNodePath: [],
-          invocationIndex: null,
-          invocationPath: [],
-        },
-      ],
-    };
-    const previousRun = unselected.data.run;
-    const harness = hookHarness({ nodes: [selected, unselected] });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
+  it("names only the selection, and leaves its upstream to the stored results", async () => {
+    // The upstream node is deliberately unselected and holds a stored result. A
+    // Run reads that result by fingerprint, so the browser ships no values at
+    // all — the reason the old per-run document snapshot could be deleted.
+    api.listGraphInstances.mockResolvedValue({
+      instances: [instanceState("a", "fresh")],
+    });
+    const canvas = canvasState([
+      workflowNode("a"),
+      workflowNode("b", { spec: nodeSpec("test.other"), selected: true }),
+    ]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { edges: [workflowEdge("a", "b")] }),
+    );
+    await settle();
 
     await React.act(async () => {
       await hook.result.current.runWorkflow("selected");
     });
 
-    expect(harness.nodes()[1]?.data.progress).toBeNull();
-    expect(harness.nodes()[1]?.data.run).toBe(previousRun);
-    expect(harness.nodes()[1]?.data.execution).toEqual({
-      status: "succeeded",
+    expect(api.startRun.mock.calls[0]?.[2]).toMatchObject({
+      graph_id: GRAPH_ID,
+      targets: [{ node_id: "b", call_path: [] }],
     });
-  });
-
-  it("falls back to polling when live progress disconnects without cancelling", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(execution("running"));
-    apiMocks.getRunExecution.mockResolvedValue(succeededExecution());
-    const harness = hookHarness();
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-    const { runPromise } = await launchRun(hook.result);
-
-    await React.act(async () => {
-      latestLiveSubscription().handlers.onError(new Event("error"));
-    });
-    expect(hook.result.current.visibleExecution?.statusError).toBe(
-      "Live progress disconnected. Status polling continues.",
-    );
-    expect(apiMocks.cancelRunExecution).not.toHaveBeenCalled();
-
-    await React.act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-      await runPromise;
-    });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
-    expect(apiMocks.cancelRunExecution).not.toHaveBeenCalled();
-  });
-
-  it("closes live progress on unmount without cancelling the execution", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(execution("running"));
-    const harness = hookHarness();
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-    const { runPromise } = await launchRun(hook.result);
-    const live = latestLiveSubscription();
-
-    await React.act(async () => {
-      live.handlers.onEvent(nodeProgressEvent(1));
-    });
-    expect(harness.nodes()[0]?.data.progress).toBeNull();
-
     await hook.unmount();
-    await runPromise;
-    await vi.advanceTimersByTimeAsync(20);
-
-    expect(live.subscription.close).toHaveBeenCalled();
-    expect(apiMocks.cancelRunExecution).not.toHaveBeenCalled();
-    expect(harness.nodes()[0]?.data.progress).toBeNull();
   });
 
-  it("reserves a run before React can publish the running state", async () => {
-    const started = deferred<RunExecution>();
-    apiMocks.startRunExecution.mockReturnValue(started.promise);
-    const harness = hookHarness();
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-    let firstRun!: Promise<void>;
-    let duplicateRun!: Promise<void>;
-
-    await React.act(async () => {
-      firstRun = hook.result.current.runWorkflow("all");
-      duplicateRun = hook.result.current.runWorkflow("all");
-      await Promise.resolve();
-    });
-
-    expect(apiMocks.startRunExecution).toHaveBeenCalledOnce();
-    await React.act(async () => {
-      started.resolve(succeededExecution());
-      await Promise.all([firstRun, duplicateRun]);
-    });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
-  });
-
-  it("records the user scope on the submitted execution", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(succeededExecution());
-    const selectedNode = { ...workflowNode(), selected: true };
-    const harness = hookHarness({ nodes: [selectedNode] });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
+  it("names the selection and its ancestors when dependencies were asked for", async () => {
+    const canvas = canvasState([
+      workflowNode("a"),
+      workflowNode("b", { spec: nodeSpec("test.other"), selected: true }),
+    ]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { edges: [workflowEdge("a", "b")] }),
+    );
+    await settle();
 
     await React.act(async () => {
       await hook.result.current.runWorkflow("selected-with-dependencies");
     });
 
-    expect(apiMocks.startRunExecution).toHaveBeenCalledWith(
-      "workspace-1",
-      expect.objectContaining({
-        scope: "selected-with-dependencies",
-      }),
-    );
-  });
-
-  it("rejects an unsupported selected node before loading materializations", async () => {
-    const unsupported = { ...workflowNode(), selected: true };
-    unsupported.data.compatibility = {
-      status: "unsupported",
-      issues: ["Operator test.operator@1 is unavailable."],
-      inputs: [],
-      outputs: [],
-      persistedNode: {
-        id: "node-1",
-        kind: "builtin",
-        operator_id: "test.operator",
-        operator_version: 1,
-        config: {},
-        position: { x: 0, y: 0 },
-        input_plugs: [],
-        artifact_type_bindings: [],
-      },
-    };
-    const harness = hookHarness({
-      nodes: [unsupported],
-      activeGraph: {
-        id: "graph-1",
-        revision: 7,
-        nodes: [],
-      },
-      canMaterializeSavedGraph: true,
-    });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-
-    await React.act(async () => {
-      await hook.result.current.runWorkflow("selected");
-    });
-
-    expect(apiMocks.getGraphMaterializations).not.toHaveBeenCalled();
-    expect(apiMocks.startRunExecution).not.toHaveBeenCalled();
-    expect(harness.nodes()[0]?.data.execution).toEqual({
-      status: "failed",
-      error:
-        "Cannot run Test operator: Operator test.operator@1 is unavailable.",
-    });
-  });
-
-  it.each([
-    {
-      label: "a persisted enum value from an older schema",
-      config: { mode: "retired" },
-      schema: {
-        type: "object",
-        properties: { mode: { type: "string", enum: ["fast", "safe"] } },
-        required: ["mode"],
-      },
-    },
-    {
-      label: "an incomplete autosaved config",
-      config: {},
-      schema: {
-        type: "object",
-        properties: { mode: { type: "string", enum: ["fast", "safe"] } },
-        required: ["mode"],
-      },
-    },
-  ])("blocks $label before any network request", async ({ config, schema }) => {
-    const invalid = { ...workflowNode(), selected: true };
-    invalid.data.spec = { ...invalid.data.spec, config_schema: schema };
-    invalid.data.config = config;
-    const harness = hookHarness({ nodes: [invalid] });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-
-    await React.act(async () => {
-      await hook.result.current.runWorkflow("selected");
-    });
-
-    expect(apiMocks.getGraphMaterializations).not.toHaveBeenCalled();
-    expect(apiMocks.startRunExecution).not.toHaveBeenCalled();
-    expect(harness.nodes()[0]?.data.execution.status).toBe("failed");
-    expect(harness.nodes()[0]?.data.execution.error).toMatch(
-      /Cannot run Test operator/,
-    );
-  });
-
-  it("clears a stale upstream pin when the current saved revision has no materialization", async () => {
-    const graph = connectedSelection();
-    const source = graph.nodes[0];
-    if (!source) throw new Error("expected a source node");
-    source.data.run = materializedRun("source", "stale-artifact");
-    source.data.execution = { status: "succeeded" };
-    apiMocks.getGraphMaterializations.mockResolvedValue({
-      graph_id: "graph-1",
-      graph_revision: 7,
-      node_runs: [],
-    });
-    const harness = hookHarness({
-      ...graph,
-      activeGraph: {
-        id: "graph-1",
-        revision: 7,
-        nodes: [],
-      },
-      canMaterializeSavedGraph: true,
-    });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-
-    await React.act(async () => {
-      await hook.result.current.runWorkflow("selected");
-    });
-
-    expect(apiMocks.startRunExecution).not.toHaveBeenCalled();
-    expect(harness.nodes()[0]?.data.run).toBeNull();
-    expect(harness.runError()).toContain(
-      "no accessible materialized output is available for Source.output",
-    );
-  });
-
-  it("does not restore an old successful pin from a preserved failure display", async () => {
-    const graph = connectedSelection();
-    const source = graph.nodes[0];
-    if (!source) throw new Error("expected a source node");
-    source.data.run = materializedRun("source", "stale-artifact");
-    source.data.execution = {
-      status: "failed",
-      error: "A later attempt failed",
-    };
-    apiMocks.getGraphMaterializations.mockResolvedValue({
-      graph_id: "graph-1",
-      graph_revision: 7,
-      node_runs: [],
-    });
-    const harness = hookHarness({
-      ...graph,
-      activeGraph: {
-        id: "graph-1",
-        revision: 7,
-        nodes: [],
-      },
-      canMaterializeSavedGraph: true,
-    });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-
-    await React.act(async () => {
-      await hook.result.current.runWorkflow("selected");
-    });
-
-    expect(apiMocks.startRunExecution).not.toHaveBeenCalled();
-    expect(harness.nodes()[0]?.data).toMatchObject({
-      run: null,
-      execution: { status: "failed", error: "A later attempt failed" },
-    });
-  });
-
-  it("pins the current saved-revision materialization and preserves an unrelated failure", async () => {
-    const graph = connectedSelection();
-    const source = graph.nodes[0];
-    if (!source) throw new Error("expected a source node");
-    source.data.run = materializedRun("source", "stale-artifact");
-    source.data.execution = { status: "succeeded" };
-    const failed = workflowNode("failed-node");
-    failed.data.run = {
-      node_id: failed.id,
-      status: "failed",
-      error: "Previous failure",
-      outputs: [],
-    };
-    failed.data.execution = {
-      status: "failed",
-      error: "Previous failure",
-    };
-    graph.nodes.push(failed);
-    apiMocks.getGraphMaterializations.mockResolvedValue({
-      graph_id: "graph-1",
-      graph_revision: 7,
-      node_runs: [materializedRun("source", "current-artifact")],
-    });
-    apiMocks.startRunExecution.mockResolvedValue(succeededExecution("target"));
-    const harness = hookHarness({
-      ...graph,
-      activeGraph: {
-        id: "graph-1",
-        revision: 7,
-        nodes: [],
-      },
-      canMaterializeSavedGraph: true,
-    });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-
-    await React.act(async () => {
-      await hook.result.current.runWorkflow("selected");
-    });
-
-    expect(apiMocks.startRunExecution).toHaveBeenCalledWith(
-      "workspace-1",
-      expect.objectContaining({
-        pinned_outputs: [
-          expect.objectContaining({
-            from_node: "source",
-            value: expect.objectContaining({ artifact_id: "current-artifact" }),
-          }),
-        ],
-      }),
-    );
     expect(
-      harness.nodes().find((node) => node.id === failed.id)?.data,
-    ).toMatchObject({
-      run: { status: "failed", error: "Previous failure" },
-      execution: { status: "failed", error: "Previous failure" },
-    });
-    expect(harness.hookOptions.onMaterializationsLoaded).toHaveBeenCalledOnce();
+      api.startRun.mock.calls[0]?.[2].targets.map(
+        (target: { node_id: string }) => target.node_id,
+      ),
+    ).toEqual(["a", "b"]);
+    await hook.unmount();
   });
 
-  it.each([
-    { name: "an unsaved graph", activeGraph: null },
-    {
-      name: "a dirty saved graph",
-      activeGraph: { id: "graph-1", revision: 7, nodes: [] },
-    },
-  ])("keeps a local selected-run pin for $name", async ({ activeGraph }) => {
-    const graph = connectedSelection();
-    const source = graph.nodes[0];
-    if (!source) throw new Error("expected a source node");
-    source.data.run = materializedRun("source", "local-artifact");
-    source.data.execution = { status: "succeeded" };
-    apiMocks.startRunExecution.mockResolvedValue(succeededExecution("target"));
-    const harness = hookHarness({
-      ...graph,
-      activeGraph,
-      canMaterializeSavedGraph: false,
-    });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
+  it("refuses an empty selection in words, and asks the server for nothing", async () => {
+    const setRunError = vi.fn();
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { setRunError }),
+    );
+    await settle();
 
     await React.act(async () => {
       await hook.result.current.runWorkflow("selected");
     });
 
-    expect(apiMocks.getGraphMaterializations).not.toHaveBeenCalled();
-    expect(apiMocks.startRunExecution).toHaveBeenCalledWith(
-      "workspace-1",
-      expect.objectContaining({
-        pinned_outputs: [
-          expect.objectContaining({
-            value: expect.objectContaining({ artifact_id: "local-artifact" }),
-          }),
-        ],
-      }),
+    expect(setRunError).toHaveBeenCalledWith(
+      "Select at least one node before running a selection.",
     );
+    expect(api.startRun).not.toHaveBeenCalled();
+    await hook.unmount();
   });
 
-  it("records clean saved executions against the saved graph revision", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(succeededExecution());
-    const harness = hookHarness({
-      activeGraph: {
-        id: "graph-1",
-        revision: 7,
-        nodes: [],
-      },
-      canMaterializeSavedGraph: true,
-    });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-
-    await React.act(async () => {
-      await hook.result.current.runWorkflow("all");
-    });
-
-    expect(apiMocks.startRunExecution).toHaveBeenCalledWith(
-      "workspace-1",
-      expect.objectContaining({
-        graph_id: "graph-1",
-        graph_revision: 7,
-      }),
-    );
-  });
-
-  it("sends authored origins for executed nodes", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(succeededExecution());
-    const origin: SavedGraphOrigin = {
-      id: "library-origin",
-      to_node: "node-1",
-      to_port: "input",
-      to_plug: null,
-      value: {
-        artifact_id: "00000000-0000-4000-8000-000000000001",
-        artifact_type: "text.plain",
-        schema_version: 1,
-      },
-      collection_mode: "direct",
-      conversion_path: [],
-    };
-    const unused: SavedGraphOrigin = {
-      ...origin,
-      id: "other-origin",
-      to_node: "skipped",
-    };
-    const harness = hookHarness({ origins: [origin, unused] });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-
-    await React.act(async () => {
-      await hook.result.current.runWorkflow("all");
-    });
-
-    expect(apiMocks.startRunExecution).toHaveBeenCalledWith(
-      "workspace-1",
-      expect.objectContaining({
-        origins: [
-          {
-            to_node: "node-1",
-            to_port: "input",
-            to_plug: null,
-            value: origin.value,
-            collection_mode: "direct",
-            conversion_path: [],
-          },
-        ],
-      }),
-    );
-  });
-
-  it("keeps dirty saved executions temporary by omitting graph provenance", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(succeededExecution());
-    const harness = hookHarness({
-      activeGraph: {
-        id: "graph-1",
-        revision: 7,
-        nodes: [],
-      },
-      canMaterializeSavedGraph: false,
-    });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-
-    await React.act(async () => {
-      await hook.result.current.runWorkflow("all");
-    });
-
-    const request = apiMocks.startRunExecution.mock.calls[0]?.[1];
-    expect(request).not.toHaveProperty("graph_id");
-    expect(request).not.toHaveProperty("graph_revision");
-  });
-
-  it("keeps run results when presentation changes during execution", async () => {
-    expect(presentationOnlyExecutionFingerprint).toBe(executionFingerprint);
-    apiMocks.startRunExecution.mockResolvedValue(execution("running"));
-    apiMocks.getRunExecution.mockResolvedValue(succeededExecution());
-    const harness = hookHarness();
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-    const { runPromise } = await launchRun(hook.result);
-
-    await hook.rerender({
-      ...harness.hookOptions,
-      currentExecutionFingerprint: presentationOnlyExecutionFingerprint,
-    });
-    await React.act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-      await runPromise;
-    });
-
-    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
-    expect(harness.nodes()[0]?.data.run?.node_id).toBe("node-1");
-    expect(harness.runError()).toBeNull();
-  });
-
-  it("suppresses event, poll, and terminal updates after the graph snapshot changes", async () => {
-    expect(changedExecutionFingerprint).not.toBe(executionFingerprint);
-    apiMocks.startRunExecution.mockResolvedValue(execution("running"));
-    apiMocks.getRunExecution
-      .mockResolvedValueOnce(execution("running"))
-      .mockResolvedValueOnce(succeededExecution());
-    const harness = hookHarness();
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-    const { runPromise } = await launchRun(hook.result);
-    const live = latestLiveSubscription();
-
-    harness.hookOptions.setNodes((current) =>
-      current.map((node) => ({
-        ...node,
-        data: {
-          ...node.data,
-          run: null,
-          execution: { status: "idle" },
+  it("puts a node's own refusal on that node instead of in the banner", async () => {
+    const setRunError = vi.fn();
+    const canvas = canvasState([
+      workflowNode("a"),
+      workflowNode("b", {
+        spec: nodeSpec("test.other"),
+        selected: true,
+        compatibility: {
+          status: "unsupported",
+          issues: ["its operator is not in the live registry"],
+          inputs: [],
+          outputs: [],
+          persistedNode: savedNode("b", { operatorId: "test.other" }),
         },
-      })),
+      }),
+    ]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { setRunError }),
     );
-    await hook.rerender({
-      ...harness.hookOptions,
-      currentExecutionFingerprint: changedExecutionFingerprint,
-    });
+    await settle();
 
     await React.act(async () => {
-      live.handlers.onEvent(executionStatusEvent(1, "running"));
-    });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("idle");
-
-    await React.act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("idle");
-
-    await React.act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-      await runPromise;
+      await hook.result.current.runWorkflow("selected");
     });
 
-    const settled = harness.nodes()[0];
-    if (!settled) throw new Error("expected a first node");
-    expect(settled.data.execution.status).toBe("idle");
-    expect(settled.data.run).toBeNull();
-    expect(harness.runError()).toContain(
-      "The graph changed while it was running",
-    );
-    expect(hook.result.current.announcement).toContain(
-      "graph changes prevented its results",
-    );
+    // The banner is cleared on purpose: the refusal belongs to the card, and a
+    // second copy above the canvas would read as a problem with the whole Run.
+    expect(setRunError).toHaveBeenCalledWith(null);
+    expect(canvas.node("b")?.data.execution).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("Cannot run test.other"),
+    });
+    expect(api.startRun).not.toHaveBeenCalled();
+    await hook.unmount();
   });
 
-  it("applies shared execution results so remote artifact viewers can populate", async () => {
-    apiMocks.getRunExecution
-      .mockResolvedValueOnce(execution("running"))
-      .mockResolvedValueOnce(succeededExecution());
-    const harness = hookHarness({
-      roomActiveExecution: roomExecution("queued"),
-    });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-
-    expect(hook.result.current.announcement).toContain(
-      "Observing shared execution",
+  it("tells a person to save before running, rather than starting a Run against nothing", async () => {
+    const setRunError = vi.fn();
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { projectId: null, activeGraph: null, setRunError }),
     );
-    expect(apiMocks.subscribeRunExecutionEvents).toHaveBeenCalledOnce();
-    expect(harness.nodes()[0]?.data.execution.status).toBe("running");
+    await settle();
 
     await React.act(async () => {
-      await hook.rerender({
-        ...harness.hookOptions,
-        roomActiveExecution: roomExecution("running"),
-      });
-    });
-    // Room lifecycle updates must not restart the observation subscription.
-    expect(apiMocks.subscribeRunExecutionEvents).toHaveBeenCalledOnce();
-
-    await React.act(async () => {
-      await hook.rerender({
-        ...harness.hookOptions,
-        roomActiveExecution: null,
-      });
-      await vi.advanceTimersByTimeAsync(500);
+      await hook.result.current.runWorkflow("all");
     });
 
-    expect(harness.nodes()[0]?.data.execution.status).toBe("succeeded");
-    expect(
-      harness.nodes()[0]?.data.run?.outputs[0]?.artifacts[0]?.artifact_id,
-    ).toBe("artifact-1");
-    expect(hook.result.current.announcement).toBe(
-      "Shared execution completed successfully.",
+    expect(setRunError).toHaveBeenCalledWith(
+      "Save the graph before running it.",
     );
-    expect(hook.result.current.visibleExecution).toBeNull();
-    expect(hook.result.current.running).toBe(false);
+    expect(api.startRun).not.toHaveBeenCalled();
+    await hook.unmount();
   });
 
-  it("keeps shared observation alive across room status updates before terminal results", async () => {
-    const runningPoll = deferred<RunExecution>();
-    const terminalPoll = deferred<RunExecution>();
-    apiMocks.getRunExecution
-      .mockReturnValueOnce(runningPoll.promise)
-      .mockReturnValueOnce(terminalPoll.promise);
-    const harness = hookHarness({
-      roomActiveExecution: roomExecution("queued"),
-    });
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-
-    expect(hook.result.current.visibleExecution?.status).toBe("queued");
-    expect(apiMocks.subscribeRunExecutionEvents).toHaveBeenCalledOnce();
+  it("does not start a second Run while this tab's demand is still open", async () => {
+    // The Run is still going: the demand is open, and a second click cannot
+    // double the work the first one is already waiting for.
+    api.getRun.mockResolvedValue(run("running"));
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(useRunExecution, hookOptions(canvas));
+    await settle();
 
     await React.act(async () => {
-      await hook.rerender({
-        ...harness.hookOptions,
-        roomActiveExecution: roomExecution("running"),
-      });
+      await hook.result.current.runWorkflow("all");
     });
-    expect(apiMocks.subscribeRunExecutionEvents).toHaveBeenCalledOnce();
-    expect(hook.result.current.visibleExecution?.status).toBe("running");
-
+    await settle();
     await React.act(async () => {
-      await hook.rerender({
-        ...harness.hookOptions,
-        roomActiveExecution: roomExecution("cancelling"),
-      });
-    });
-    expect(apiMocks.subscribeRunExecutionEvents).toHaveBeenCalledOnce();
-    expect(hook.result.current.visibleExecution?.status).toBe("cancelling");
-
-    await React.act(async () => {
-      runningPoll.resolve(execution("cancelling"));
-      await Promise.resolve();
-    });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("cancelling");
-
-    await React.act(async () => {
-      await hook.rerender({
-        ...harness.hookOptions,
-        roomActiveExecution: null,
-      });
-      await vi.advanceTimersByTimeAsync(500);
-      terminalPoll.resolve(execution("cancelled"));
-      await Promise.resolve();
-      await Promise.resolve();
+      await hook.result.current.runWorkflow("all");
     });
 
-    expect(harness.nodes()[0]?.data.execution.status).toBe("cancelled");
-    expect(hook.result.current.announcement).toBe(
-      "Shared execution cancelled.",
-    );
+    expect(api.startRun).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.running).toBe(true);
+    await hook.unmount();
   });
 
-  it("restores cancellation failures and permits retries after mismatched responses", async () => {
-    apiMocks.startRunExecution.mockResolvedValue(execution("running"));
-    apiMocks.getRunExecution.mockResolvedValue(execution("cancelled"));
-    apiMocks.cancelRunExecution
-      .mockRejectedValueOnce(new Error("Cancellation service unavailable."))
-      .mockResolvedValueOnce(
-        execution("cancelling", {
-          execution_id: "00000000-0000-4000-8000-000000000002",
+  it("refuses to run a node whose stored secret lives on an unsaved canvas", async () => {
+    const setRunError = vi.fn();
+    const spec = nodeSpec("llm.operator", {
+      secretInputs: [
+        { name: "api_key", config_dependencies: ["model"], title: "API key" },
+      ],
+    });
+    const canvas = canvasState([workflowNode("a", { spec })]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, {
+        setRunError,
+        canRunSavedGraph: false,
+        activeGraph: activeSavedGraph({ nodes: [savedNode("a")] }),
+      }),
+    );
+    await settle();
+
+    await React.act(async () => {
+      await hook.result.current.runWorkflow("all");
+    });
+
+    expect(setRunError).toHaveBeenCalledWith(
+      "Save the graph before running nodes that use stored secrets.",
+    );
+    expect(api.startRun).not.toHaveBeenCalled();
+    await hook.unmount();
+  });
+
+  it("refuses to run a node whose secret binding is newer than the saved one", async () => {
+    // The server resolves a secret against the node as saved. Pointing the node
+    // at a different account and running anyway would quietly charge the old one.
+    const setRunError = vi.fn();
+    const spec = nodeSpec("llm.operator", {
+      secretInputs: [
+        { name: "api_key", config_dependencies: ["model"], title: "API key" },
+      ],
+    });
+    const canvas = canvasState([
+      workflowNode("a", { spec, config: { model: "gpt-big" } }),
+    ]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, {
+        setRunError,
+        activeGraph: activeSavedGraph({
+          nodes: [
+            savedNode("a", {
+              config: { model: "gpt-small" },
+              operatorId: "llm.operator",
+            }),
+          ],
         }),
-      )
-      .mockResolvedValueOnce(execution("cancelling"));
-    const harness = hookHarness();
-    const hook = await renderHook(useRunExecution, harness.hookOptions);
-    const { runPromise } = await launchRun(hook.result);
-
-    expect(hook.result.current.visibleExecution?.status).toBe("running");
-    expect(harness.nodes()[0]?.data.execution.status).toBe("running");
+        nodeSecretStatuses: {
+          a: { api_key: { state: "configured", name: "api_key" } },
+        } as never,
+      }),
+    );
+    await settle();
 
     await React.act(async () => {
-      await hook.result.current.cancelCurrentExecution();
+      await hook.result.current.runWorkflow("all");
     });
-    expect(hook.result.current.visibleExecution).toMatchObject({
-      status: "running",
-      statusError: "Cancellation service unavailable. You can try again.",
+
+    expect(setRunError).toHaveBeenCalledWith(
+      "Save the graph before running llm.operator: its API key binding is new or changed.",
+    );
+    await hook.unmount();
+  });
+
+  it("refuses to run a node whose required secret is not configured", async () => {
+    const setRunError = vi.fn();
+    const spec = nodeSpec("llm.operator", {
+      secretInputs: [
+        { name: "api_key", config_dependencies: ["model"], title: "API key" },
+      ],
     });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("running");
+    const canvas = canvasState([
+      workflowNode("a", { spec, config: { model: "gpt" } }),
+    ]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, {
+        setRunError,
+        activeGraph: activeSavedGraph({
+          nodes: [
+            savedNode("a", {
+              config: { model: "gpt" },
+              operatorId: "llm.operator",
+            }),
+          ],
+        }),
+        nodeSecretStatuses: {} as never,
+      }),
+    );
+    await settle();
 
     await React.act(async () => {
-      await hook.result.current.cancelCurrentExecution();
+      await hook.result.current.runWorkflow("all");
     });
-    expect(hook.result.current.visibleExecution).toMatchObject({
-      status: "running",
-      statusError:
-        "Received cancellation status for another execution. You can try again.",
-    });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("running");
+
+    expect(setRunError).toHaveBeenCalledWith(
+      "Configure every required secret for llm.operator before running.",
+    );
+    await hook.unmount();
+  });
+
+  it("turns a rejected Run into the sentence the code means, not the status code", async () => {
+    const setRunError = vi.fn();
+    const canvas = canvasState([workflowNode("a")]);
+    api.startRun.mockRejectedValue(
+      new ApiError(400, "node c is not on the canvas", "unknown_target"),
+    );
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { setRunError }),
+    );
+    await settle();
 
     await React.act(async () => {
-      await hook.result.current.cancelCurrentExecution();
+      await hook.result.current.runWorkflow("all");
     });
-    expect(apiMocks.cancelRunExecution).toHaveBeenCalledTimes(3);
-    expect(hook.result.current.visibleExecution?.status).toBe("cancelling");
-    expect(harness.nodes()[0]?.data.execution.status).toBe("cancelling");
+
+    expect(setRunError).toHaveBeenCalledWith(
+      "A node this Run was asked for is no longer on the canvas. Select the nodes again.",
+    );
+    // The tab holds no demand: the refusal was the answer.
+    expect(hook.result.current.running).toBe(false);
+    await hook.unmount();
+  });
+});
+
+describe("the words for a Run that was refused", () => {
+  function rejection(detail: string, code?: string): ApiError {
+    return new ApiError(400, detail, code);
+  }
+
+  it("names the code's own problem, because the code is the stable half", () => {
+    expect(
+      runRejectionMessage(rejection("the graph is gone", "unknown_graph")),
+    ).toBe("This Graph is no longer in the Project. Reload it before running.");
+    expect(
+      runRejectionMessage(
+        rejection("node c is not on the canvas", "unknown_target"),
+      ),
+    ).toBe(
+      "A node this Run was asked for is no longer on the canvas. Select the nodes again.",
+    );
+    expect(
+      runRejectionMessage(
+        rejection("llm.x is not published", "unknown_operator"),
+      ),
+    ).toBe("llm.x is not published");
+    expect(
+      runRejectionMessage(rejection("no config", "invalid_document")),
+    ).toBe("no config");
+  });
+
+  it("falls back to what the server said for a code nobody named", () => {
+    expect(runRejectionMessage(rejection("too many demands"))).toBe(
+      "too many demands",
+    );
+    expect(
+      runRejectionMessage(rejection("too many demands", "rate_limited")),
+    ).toBe("too many demands");
+  });
+});
+
+describe("settling this tab's own Run", () => {
+  async function start(hook: {
+    result: { current: ReturnType<typeof useRunExecution> };
+  }) {
+    await React.act(async () => {
+      await hook.result.current.runWorkflow("all");
+    });
+  }
+
+  it("reads its own Run by id, because a list cannot say which demand was mine", async () => {
+    api.getRun.mockResolvedValue(run("running"));
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(useRunExecution, hookOptions(canvas));
+    await settle();
+    await start(hook);
+
+    expect(api.getRun).toHaveBeenCalledWith(WORKSPACE_ID, PROJECT_ID, RUN_ID);
+    expect(hook.result.current.running).toBe(true);
+    expect(hook.result.current.ownRunStatus).toBe("running");
+    expect(hook.result.current.announcement).toBe("");
+    await hook.unmount();
+  });
+
+  it("announces a fresh result and republishes the instances it touched", async () => {
+    api.getRun.mockResolvedValue(
+      run("succeeded", { finished_at: "2026-07-20T08:06:00Z" }),
+    );
+    api.listGraphInstances.mockResolvedValueOnce({ instances: [] });
+    api.listGraphInstances.mockResolvedValue({
+      instances: [instanceState("a", "fresh")],
+    });
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(useRunExecution, hookOptions(canvas));
+    await settle();
+    expect(canvas.node("a")?.data.execution.status).toBe("idle");
+
+    await start(hook);
+    await settle();
+
+    expect(hook.result.current.running).toBe(false);
+    expect(hook.result.current.ownRun).toBeNull();
+    expect(hook.result.current.announcement).toBe(
+      "Run made its targets fresh.",
+    );
+    expect(canvas.node("a")?.data.execution.status).toBe("succeeded");
+    expect(hook.result.current.resultByNodeId.a?.result_fingerprint).toBe(
+      "result-a",
+    );
+    await hook.unmount();
+  });
+
+  it("reports a failed Run with the server's reason", async () => {
+    api.getRun.mockResolvedValue(
+      run("failed", { error: "the operator raised ZeroDivisionError" }),
+    );
+    const setRunError = vi.fn();
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { setRunError }),
+    );
+    await settle();
+
+    await start(hook);
+    await settle();
+
+    expect(setRunError).toHaveBeenCalledWith(
+      "the operator raised ZeroDivisionError",
+    );
+    expect(hook.result.current.announcement).toBe("Run failed.");
+    expect(hook.result.current.running).toBe(false);
+    await hook.unmount();
+  });
+
+  it("says an interrupted Run can be resumed, because the results it made stayed", async () => {
+    // ADR 0020: a Run is a demand for freshness, so the work it finished is
+    // stored and a rerun starts from what is already fresh. The sentence has to
+    // say that, or a person thinks they lost the hour.
+    api.getRun.mockResolvedValue(run("interrupted"));
+    const setRunError = vi.fn();
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { setRunError }),
+    );
+    await settle();
+
+    await start(hook);
+    await settle();
+
+    expect(setRunError).toHaveBeenCalledWith(
+      "The Run was interrupted before it finished. Running it again resumes from what is already fresh.",
+    );
+    await hook.unmount();
+  });
+
+  it("says a Run ended into a moved canvas, rather than calling it fresh", async () => {
+    // The document changed while the Run was going, so the fresh badge would be
+    // about a document nobody is looking at.
+    api.getRun.mockResolvedValue(run("running"));
+    const setRunError = vi.fn();
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { setRunError }),
+    );
+    await settle();
+    await start(hook);
+
+    api.getRun.mockResolvedValue(run("succeeded"));
+    await hook.rerender(
+      hookOptions(canvas, {
+        setRunError,
+        currentExecutionFingerprint: "fingerprint-2",
+      }),
+    );
+    await React.act(async () => {
+      await hook.result.current.refresh();
+    });
+    await settle();
+
+    expect(setRunError).toHaveBeenCalledWith(
+      "The graph changed while the Run was going. Its results are stored, and the nodes it touched read as stale.",
+    );
+    expect(hook.result.current.announcement).toBe(
+      "Run succeeded, and the graph had already moved.",
+    );
+    await hook.unmount();
+  });
+
+  it("keeps the demand open when the read fails, and settles on the next push", async () => {
+    api.getRun.mockRejectedValueOnce(new Error("gateway hiccup"));
+    const setRunError = vi.fn();
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { setRunError }),
+    );
+    await settle();
+
+    await start(hook);
+    await settle();
+
+    // A transient read failure is not the Run vanishing, and must not be reported
+    // as one: the surface still believes its own demand is open.
+    expect(hook.result.current.running).toBe(true);
+    expect(setRunError).not.toHaveBeenCalledWith(expect.any(String));
+
+    await hook.rerender(
+      hookOptions(canvas, { setRunError, roomRunsRevision: 1 }),
+    );
+    await settle();
+
+    expect(hook.result.current.running).toBe(false);
+    expect(hook.result.current.announcement).toBe(
+      "Run made its targets fresh.",
+    );
+    await hook.unmount();
+  });
+});
+
+describe("withdrawing this tab's demand", () => {
+  async function startedRun() {
+    const canvas = canvasState([workflowNode("a")]);
+    api.getRun.mockResolvedValue(run("running"));
+    const hook = await renderHook(useRunExecution, hookOptions(canvas));
+    await settle();
+    await React.act(async () => {
+      await hook.result.current.runWorkflow("all");
+    });
+    return { canvas, hook };
+  }
+
+  it("cancels only the Run this browser started, by its id", async () => {
+    const { hook } = await startedRun();
 
     await React.act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-      await runPromise;
+      await hook.result.current.cancelCurrentRun();
     });
-    expect(harness.nodes()[0]?.data.execution.status).toBe("cancelled");
-    expect(hook.result.current.announcement).toBe("Execution cancelled.");
+
+    expect(api.cancelRun).toHaveBeenCalledWith(
+      WORKSPACE_ID,
+      PROJECT_ID,
+      RUN_ID,
+    );
+    expect(hook.result.current.announcement).toBe("Cancelling this Run.");
+    expect(hook.result.current.running).toBe(true);
+    await hook.unmount();
+  });
+
+  it("cancels nothing when this tab started no Run, even though another tab has one open", async () => {
+    // The list is full of other people's demands and the room names one as active.
+    // There is no "the" active Run to cancel, and reaching for one would stop a
+    // stranger's work.
+    const setRunError = vi.fn();
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, {
+        setRunError,
+        roomConnected: true,
+        roomActiveRuns: [
+          activeRunSummary("00000000-0000-4000-8000-0000000000r9"),
+        ],
+      }),
+    );
+    await settle();
+
+    await React.act(async () => {
+      await hook.result.current.cancelCurrentRun();
+    });
+
+    expect(api.cancelRun).not.toHaveBeenCalled();
+    expect(setRunError).not.toHaveBeenCalled();
+    await hook.unmount();
+  });
+
+  it("reports a refusal to cancel and leaves the Run where it is", async () => {
+    const setRunError = vi.fn();
+    api.cancelRun.mockRejectedValue(
+      new Error("only the starter may withdraw this"),
+    );
+    const canvas = canvasState([workflowNode("a")]);
+    api.getRun.mockResolvedValue(run("running"));
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { setRunError }),
+    );
+    await settle();
+    await React.act(async () => {
+      await hook.result.current.runWorkflow("all");
+    });
+
+    await React.act(async () => {
+      await hook.result.current.cancelCurrentRun();
+    });
+
+    expect(setRunError).toHaveBeenCalledWith(
+      "only the starter may withdraw this",
+    );
+    expect(hook.result.current.running).toBe(true);
+    await hook.unmount();
+  });
+});
+
+describe("several Runs in one Project", () => {
+  it("shows the room's Runs, the listed Runs, and this tab's own, each once", async () => {
+    const ownRunId = RUN_ID;
+    api.listRuns.mockResolvedValue({
+      runs: [
+        run("running", { id: "00000000-0000-4000-8000-0000000000r2" }),
+        run("running", { id: ownRunId }),
+      ],
+    });
+    api.getRun.mockResolvedValue(run("running", { id: ownRunId }));
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, {
+        roomConnected: true,
+        roomActiveRuns: [
+          activeRunSummary("00000000-0000-4000-8000-0000000000r2"),
+          activeRunSummary("00000000-0000-4000-8000-0000000000r3"),
+        ],
+      }),
+    );
+    await settle();
+    await React.act(async () => {
+      await hook.result.current.runWorkflow("all");
+    });
+    await settle();
+
+    const ids = hook.result.current.activeRuns.map((summary) => summary.run_id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "00000000-0000-4000-8000-0000000000r2",
+        "00000000-0000-4000-8000-0000000000r3",
+        ownRunId,
+      ]),
+    );
+    await hook.unmount();
+  });
+});
+
+describe("keeping the surface current", () => {
+  it("re-reads instance state when the room says instances changed", async () => {
+    const canvas = canvasState([workflowNode("a")]);
+    const first = hookOptions(canvas);
+    const hook = await renderHook(useRunExecution, first);
+    await settle();
+    expect(api.listGraphInstances).toHaveBeenCalledTimes(1);
+
+    await hook.rerender(
+      hookOptions(canvas, { roomConnected: true, roomInstancesRevision: 1 }),
+    );
+    await settle();
+
+    expect(api.listGraphInstances).toHaveBeenCalledTimes(2);
+    await hook.unmount();
+  });
+
+  it("polls while there is no room to tell it anything, and only while work is open", async () => {
+    const intervals = vi.spyOn(window, "setInterval");
+    api.getRun.mockResolvedValue(run("running"));
+    api.listRuns.mockResolvedValue({
+      runs: [run("running", { id: "00000000-0000-4000-8000-0000000000r2" })],
+    });
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(useRunExecution, hookOptions(canvas));
+    await settle();
+
+    expect(intervals).toHaveBeenCalledWith(
+      expect.any(Function),
+      RUN_SURFACE_POLL_INTERVAL_MS,
+    );
+
+    // With nothing in flight there is nothing to learn, so the surface stops
+    // asking and the Project's read rate stops tracking how many tabs are open.
+    intervals.mockClear();
+    api.listRuns.mockResolvedValue({ runs: [] });
+    api.getRun.mockResolvedValue(run("succeeded"));
+    await React.act(async () => {
+      await hook.result.current.refresh();
+    });
+    await settle();
+    expect(intervals).not.toHaveBeenCalled();
+    intervals.mockRestore();
+    await hook.unmount();
+  });
+
+  it("does not poll while the room is carrying it", async () => {
+    const intervals = vi.spyOn(window, "setInterval");
+    api.listRuns.mockResolvedValue({
+      runs: [run("running", { id: "00000000-0000-4000-8000-0000000000r2" })],
+    });
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { roomConnected: true }),
+    );
+    await settle();
+
+    expect(intervals).not.toHaveBeenCalled();
+    intervals.mockRestore();
+    await hook.unmount();
+  });
+});
+
+describe("leaving the canvas", () => {
+  it("gives up the demand on unmount without cancelling the Run", async () => {
+    // Closing a tab is not withdrawing a demand: the Run stays where it is so
+    // another tab, or the same person later, can still read and cancel it.
+    api.getRun.mockResolvedValue(run("running"));
+    const setRunError = vi.fn();
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { setRunError }),
+    );
+    await settle();
+    await React.act(async () => {
+      await hook.result.current.runWorkflow("all");
+    });
+
+    await hook.unmount();
+    const paintedAfterOpen = canvas.setNodes.mock.calls.length;
+
+    api.getRun.mockResolvedValue(run("succeeded"));
+    await flush();
+
+    expect(api.cancelRun).not.toHaveBeenCalled();
+    expect(canvas.setNodes.mock.calls.length).toBe(paintedAfterOpen);
+    expect(setRunError).not.toHaveBeenCalledWith(expect.any(String));
+  });
+
+  it("ignores a late answer about a Graph the canvas has already left", async () => {
+    const slow = deferred<{ instances: InstanceState[] }>();
+    api.listGraphInstances
+      .mockReturnValueOnce(slow.promise)
+      .mockResolvedValue({ instances: [] });
+    const canvas = canvasState([workflowNode("a")]);
+    const hook = await renderHook(useRunExecution, hookOptions(canvas));
+    await flush();
+
+    await hook.rerender(
+      hookOptions(canvas, {
+        activeGraph: activeSavedGraph({ graphId: OTHER_GRAPH_ID }),
+      }),
+    );
+    await settle();
+    const painted = canvas.setNodes.mock.calls.length;
+
+    await React.act(async () => {
+      slow.resolve({ instances: [instanceState("a", "fresh")] });
+      await flush();
+    });
+
+    // The first Graph's answer arrived after the canvas moved on; painting it
+    // would put a fresh badge on a node whose instance nobody asked about.
+    expect(canvas.setNodes.mock.calls.length).toBe(painted);
+    await hook.unmount();
   });
 });
