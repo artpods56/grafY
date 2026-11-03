@@ -11,7 +11,7 @@ import type {
 } from "../src/lib/api/contract";
 
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
-const WORKBENCH_PATH = "/workspaces/mobile-test/graphs/new";
+const WORKBENCH_PATH = "/workspaces/mobile-test/projects/new";
 
 const session = {
   id: "22222222-2222-4222-8222-222222222222",

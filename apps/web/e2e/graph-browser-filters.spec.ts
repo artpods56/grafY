@@ -91,7 +91,7 @@ const tab = (page: Page, name: "Recent" | "All") =>
   page.getByRole("button", { name, exact: true });
 /** A graph row is addressed by the workbench path it opens. */
 const rowFor = (page: Page, slug: string, graphId: string) =>
-  page.locator(`a[href="/workspaces/${slug}/graphs/${graphId}"]`);
+  page.locator(`a[href="/workspaces/${slug}/projects/${graphId}"]`);
 
 async function titles(page: Page): Promise<string[]> {
   return (await rowTitles(page).allTextContents()).map((title) => title.trim());
@@ -126,7 +126,7 @@ test("opens the location, the search, and the view the address asked for", async
   await page.goto("/graphs?location=atlas&q=invoice&view=all&utm_source=email");
 
   await expect(page).toHaveURL(
-    "/workspaces/atlas/graphs?q=invoice&view=all&utm_source=email",
+    "/workspaces/atlas/projects?q=invoice&view=all&utm_source=email",
   );
   await expect(search(page)).toHaveValue("invoice");
   await expect(tab(page, "All")).toHaveAttribute("aria-pressed", "true");
@@ -140,11 +140,11 @@ test("opens the location, the search, and the view the address asked for", async
 });
 
 test("opens the same address again after a reload", async ({ page }) => {
-  await page.goto("/workspaces/atlas/graphs?view=all&q=invoice");
+  await page.goto("/workspaces/atlas/projects?view=all&q=invoice");
 
   await page.reload();
 
-  await expect(page).toHaveURL("/workspaces/atlas/graphs?view=all&q=invoice");
+  await expect(page).toHaveURL("/workspaces/atlas/projects?view=all&q=invoice");
   await expect(search(page)).toHaveValue("invoice");
   await expect(tab(page, "All")).toHaveAttribute("aria-pressed", "true");
   await expect
@@ -159,7 +159,7 @@ test("keeps a location the person cannot reach from becoming a page", async ({
   // search is still worth keeping; the location named in the address is not.
   await page.goto("/graphs?location=ghost-team&q=invoice");
 
-  await expect(page).toHaveURL("/workspaces/personal/graphs?q=invoice");
+  await expect(page).toHaveURL("/workspaces/personal/projects?q=invoice");
   await expect(search(page)).toHaveValue("invoice");
   await expect(rowTitles(page)).toHaveCount(0);
   await expect(page.getByText("No graphs match your search")).toBeVisible();
@@ -169,12 +169,12 @@ test("writes the address while typing without stacking a step per keystroke", as
   page,
 }) => {
   await page.goto("/graphs?location=personal");
-  await expect(page).toHaveURL("/workspaces/personal/graphs");
+  await expect(page).toHaveURL("/workspaces/personal/projects");
   await expect
     .poll(() => titles(page))
     .toEqual(["Personal palette", "Personal ledger"]);
 
-  await page.goto("/workspaces/atlas/graphs");
+  await page.goto("/workspaces/atlas/projects");
   await expect
     .poll(() => titles(page))
     .toEqual(["Invoice intake", "Invoice archive audit", "Nightly sync"]);
@@ -186,7 +186,7 @@ test("writes the address while typing without stacking a step per keystroke", as
   await expect
     .poll(() => snapshot(page))
     .toEqual({
-      address: "/workspaces/atlas/graphs?q=sync",
+      address: "/workspaces/atlas/projects?q=sync",
       query: "sync",
       titles: ["Nightly sync"],
       pressed: ["Recent"],
@@ -196,25 +196,25 @@ test("writes the address while typing without stacking a step per keystroke", as
   // Five keystrokes, one address: Back leaves the page instead of unwinding
   // the word a letter at a time.
   await page.goBack();
-  await expect(page).toHaveURL("/workspaces/personal/graphs");
+  await expect(page).toHaveURL("/workspaces/personal/projects");
 });
 
 test("gives history the last word about the filters", async ({ page }) => {
-  await page.goto("/workspaces/atlas/graphs");
+  await page.goto("/workspaces/atlas/projects");
   await expect.poll(() => titles(page)).toHaveLength(3);
 
-  await page.goto("/workspaces/atlas/graphs?q=invoice&view=all");
+  await page.goto("/workspaces/atlas/projects?q=invoice&view=all");
   await expect
     .poll(() => titles(page))
     .toEqual(["Invoice intake", "Invoice archive audit"]);
 
   await page.goBack();
-  await expect(page).toHaveURL("/workspaces/atlas/graphs");
+  await expect(page).toHaveURL("/workspaces/atlas/projects");
   await expect(search(page)).toHaveValue("");
   await expect.poll(() => titles(page)).toHaveLength(3);
 
   await page.goForward();
-  await expect(page).toHaveURL("/workspaces/atlas/graphs?q=invoice&view=all");
+  await expect(page).toHaveURL("/workspaces/atlas/projects?q=invoice&view=all");
   await expect(search(page)).toHaveValue("invoice");
   await expect(tab(page, "All")).toHaveAttribute("aria-pressed", "true");
   await expect
@@ -225,16 +225,16 @@ test("gives history the last word about the filters", async ({ page }) => {
 test("takes a filter back out of the address when it is reset", async ({
   page,
 }) => {
-  await page.goto("/workspaces/atlas/graphs?q=nothing&view=all");
+  await page.goto("/workspaces/atlas/projects?q=nothing&view=all");
   await expect(page.getByText("No graphs match your search")).toBeVisible();
 
   await page.getByRole("button", { name: "Clear search" }).click();
-  await expect(page).toHaveURL("/workspaces/atlas/graphs?view=all");
+  await expect(page).toHaveURL("/workspaces/atlas/projects?view=all");
   await expect(search(page)).toHaveValue("");
   await expect.poll(() => titles(page)).toHaveLength(3);
 
   // Recent is the default view, so leaving it takes the parameter with it.
   await tab(page, "Recent").click();
-  await expect(page).toHaveURL("/workspaces/atlas/graphs");
+  await expect(page).toHaveURL("/workspaces/atlas/projects");
   await expect.poll(() => titles(page)).toHaveLength(3);
 });
