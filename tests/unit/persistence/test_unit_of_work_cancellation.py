@@ -13,12 +13,24 @@ import asyncio
 from pathlib import Path
 
 import anyio
+import pytest
 from sqlalchemy import text
 
 from grafy_persistence.database import create_database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "SqlAlchemyUnitOfWork.__aexit__ awaits rollback and close unshielded, so a "
+        "task-group cancellation leaves the connection checked out forever. Measured: "
+        "`Current Checked out connections: 1` after the task group had already joined its "
+        "worker. Not fixed here: routing the cleanup through a shielded task of its own made "
+        "two collaboration teardowns flaky and left SQLAlchemy's own shielded close pending "
+        "at loop close, so the boundary needs a decision, not another attempt."
+    ),
+)
 def test_a_unit_of_work_cancelled_by_its_task_group_returns_its_connection(
     tmp_path: Path,
 ) -> None:

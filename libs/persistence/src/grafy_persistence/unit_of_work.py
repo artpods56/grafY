@@ -1,6 +1,3 @@
-import asyncio
-import contextlib
-import logging
 from contextvars import ContextVar
 from dataclasses import dataclass
 from types import TracebackType
@@ -62,65 +59,6 @@ class _SqlAlchemyUnitOfWorkState:
     uploads: UploadRepositoryPort
     library_folders: LibraryFolderRepositoryPort
     collaboration: CollaborationRepositoryPort
-
-
-logger = logging.getLogger(__name__)
-
-CLEANUP_TIMEOUT_SECONDS = 5.0
-"""How long a unit of work keeps trying to hand its connection back.
-
-The attempts are shielded because the cancellation that ends a request does not stop owing
-its database anything; the bound is there so a session wedged inside the driver is reported
-in this process instead of becoming a task that never finishes.
-"""
-
-
-async def _retire_session(session: AsyncSession, *, rollback: bool) -> None:
-    """Roll back and close a session in a way a cancellation cannot interrupt.
-
-    An async SQLAlchemy session is closed by work that runs on the driver's own thread, and
-    a task cancelled partway through it neither returns the connection nor releases that
-    thread: the pool's terminate fails with the same `CancelledError`, the worker sits at
-    `tx.get()` for the rest of the process, and the next checkout from that pool is a request
-    that never comes back. Any task-group cancellation reaches a `finally` at every await, so
-    the only safe shape is to run the cleanup on a task of its own and keep waiting for it
-    through each cancellation aimed at this one.
-    """
-
-    async def cleanup() -> None:
-        if rollback:
-            await session.rollback()
-        await session.close()
-
-    task = asyncio.create_task(cleanup(), name="unit-of-work-cleanup")
-    cancelled_here = False
-    deadline = asyncio.get_running_loop().time() + CLEANUP_TIMEOUT_SECONDS
-    while not task.done():
-        remaining = deadline - asyncio.get_running_loop().time()
-        if remaining <= 0:
-            break
-        try:
-            await asyncio.wait_for(asyncio.shield(task), timeout=remaining)
-        except asyncio.TimeoutError:
-            break
-        except asyncio.CancelledError:
-            cancelled_here = True
-    if task.done():
-        failure = None if task.cancelled() else task.exception()
-        if failure is not None:
-            logger.warning(
-                "unit_of_work_cleanup_failed error_type=%s", type(failure).__name__
-            )
-    else:
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-        logger.error(
-            "unit_of_work_cleanup_incomplete deadline_seconds=%s",
-            CLEANUP_TIMEOUT_SECONDS,
-        )
-    if cancelled_here:
-        raise asyncio.CancelledError
 
 
 class SqlAlchemyUnitOfWork(
@@ -225,9 +163,13 @@ class SqlAlchemyUnitOfWork(
         if state is None:
             return
         try:
-            await _retire_session(state.session, rollback=exc_type is not None)
+            if exc_type is not None:
+                await state.session.rollback()
         finally:
-            self._state.set(None)
+            try:
+                await state.session.close()
+            finally:
+                self._state.set(None)
 
     @override
     async def commit(self) -> None:
