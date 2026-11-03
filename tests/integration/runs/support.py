@@ -311,8 +311,10 @@ class RoomHarness:
 
         return self.projects["elsewhere"]
 
-    def as_user(self, user: User) -> None:
-        self.switcher.as_user(user.id)
+    def as_user(self, user: User | UUID) -> None:
+        """Act as this member from the next request or handshake."""
+
+        self.switcher.as_user(user if isinstance(user, UUID) else user.id)
 
     def path(self, suffix: str, *, workspace_id: UUID | None = None) -> str:
         normalized = suffix if suffix.startswith("/") else f"/{suffix}"

@@ -1,310 +1,273 @@
-"""Phase 7 two-session collaboration acceptance at the API/WebSocket boundary.
+"""One Project, four people, every surface: the acceptance journey (ADR 0020).
 
-These tests are the automatable stand-in for the plan's two-browser journey:
-owner invites collaborators, two sessions converge and share a run, a viewer
-observes without mutating, membership revoke closes the victim room, and a
-personal graph stays invisible. Live OIDC/SSH rehearsal remains an operator gate.
+The automatable stand-in for the two-browser journey. Owner and editor converge on
+one head; a Run started by one is visible to the other, and cancelling it is a
+capability rather than a privilege of whoever started it; a viewer watches runs and
+cannot touch either; a member removed mid-session loses the room, the runs and the
+Project. A Project of a Workspace you do not belong to is not there at all.
+
+The HTTP routes for Projects themselves belong to another change, so Projects are
+opened through the service layer, which is also how the room's own admission is
+reached. What is exercised over the wire is this change's surface: the room, the run
+routes, and the workspace membership routes that revoke access.
 """
 
-import asyncio
 from pathlib import Path
-from uuid import UUID, uuid4
+from typing import Any
+from uuid import UUID
 
 import pytest
-from pydantic import SecretStr
+from starlette.testclient import WebSocketDenialResponse
 from starlette.websockets import WebSocketDisconnect
 
 from grafy_api.settings import Settings
-from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
-from grafy_api.v1.routes.workspaces.models import WorkspaceInvitationCreateRequest
-from grafy_api.v1.routes.collaboration.views import websocket_browser_actor
-from grafy_api.execution.requests import RunRequest
-from grafy_api.graph_contracts import CreateSavedGraphRequest
-from grafy_core.domain.identity import (
-    User,
-    Workspace,
-    WorkspaceKind,
-    WorkspaceRole,
+from grafy_core.domain.collaboration import RenameProjectCommand
+from grafy_core.domain.identity import WorkspaceRole
+
+from tests.integration.runs.support import (
+    FLOW_GRAPH_ID,
+    RoomHarness,
+    accepted_head,
+    command_batch,
+    room_harness,
 )
-from grafy_core.domain.graph_documents import GraphDocument
-from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
-from tests.support.clients import GrafyApi
-from tests.support.factories.identity import IdentitySeeder
-from tests.support.identity import ActorSwitcher
-from tests.testkit import client_with_overrides, create_db_url, db
-from tests.testkit import with_setting_values
+FIRST = "first"
+SECOND = "second"
 
 
-def _connect_room(
-    api: GrafyApi,
-    workspace_id: UUID,
-    graph_id: UUID,
-    *,
-    origin: str = "http://testserver",
-):
-    # The facade has no typed WebSocket method; the raw TestClient is the
-    # escape hatch for the room handshake.
-    return api.raw.websocket_connect(
-        f"/v1/workspaces/{workspace_id}/graphs/{graph_id}/room",
-        headers={"Origin": origin},
+@pytest.fixture
+def harness(tmp_path: Path, settings: Settings) -> RoomHarness:
+    with room_harness(tmp_path, settings, concurrency=4) as live:
+        yield live
+
+
+def start_run(harness: RoomHarness, project_id: UUID, node_id: str) -> dict[str, Any]:
+    response = harness.post(
+        f"/projects/{project_id}/runs",
+        json={"graph_id": FLOW_GRAPH_ID, "targets": [{"node_id": node_id}]},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_the_project_journey_two_editors_one_run_one_viewer_and_a_revocation(
+    harness: RoomHarness,
+) -> None:
+    project_id = harness.project_id
+
+    with harness.open_room(project_id) as owner_room:
+        owner_ready = owner_room.expect("room.ready")
+        assert owner_ready["head"]["name"] == "Room project"
+        assert owner_ready["active_runs"] == []
+
+        # The editor joins, sees the same head, and renames the Project.
+        harness.as_user(harness.cast.editor.id)
+        with harness.open_room(project_id) as editor_room:
+            editor_ready = editor_room.expect("room.ready")
+            assert editor_ready["head"] == owner_ready["head"]
+            editor_room.send(
+                command_batch(
+                    editor_ready,
+                    [
+                        RenameProjectCommand(
+                            name="Acceptance project",
+                            expected_name=editor_ready["head"]["name"],
+                        )
+                    ],
+                )
+            )
+            accepted = editor_room.expect("project.command.accepted")
+            editor_room.expect("project.command.receipt")
+            editor_room.expect("instances.changed")
+            # The owner's socket also carries the join it is watching, so these reads
+            # skip presence traffic rather than asserting on its position.
+            peer_accepted = owner_room.until("project.command.accepted")
+            assert peer_accepted["command_id"] == accepted["command_id"]
+
+            # The owner starts a Run. The editor did not start it and still has to
+            # see it, because the canvas is shared, not per-person.
+            harness.as_user(harness.cast.owner.id)
+            run = start_run(harness, project_id, FIRST)
+            assert harness.runner.started(FIRST).wait(10)
+            owner_started = owner_room.until("run.started")
+            editor_started = editor_room.until("run.started")
+            assert owner_started["run"]["run_id"] == run["id"]
+            assert editor_started["run"]["run_id"] == run["id"]
+            assert editor_started["run"]["starter"]["actor_id"] == str(
+                harness.cast.owner.id
+            )
+            running = harness.get(
+                f"/projects/{project_id}/graphs/{FLOW_GRAPH_ID}/instances"
+            ).json()["instances"]
+            assert {item["key"]["node_id"]: item["state"] for item in running} == {
+                FIRST: "running",
+                SECOND: "stale",
+            }
+
+            # Cancelling is a capability, not authorship: the editor may withdraw a
+            # Run the owner started.
+            harness.as_user(harness.cast.editor.id)
+            cancelled = harness.post(f"/projects/{project_id}/runs/{run['id']}/cancel")
+            assert cancelled.status_code == 200, cancelled.text
+            assert cancelled.json()["status"] == "cancelled"
+            assert editor_room.until("run.finished")["status"] == "cancelled"
+            assert owner_room.until("run.finished")["status"] == "cancelled"
+            # This Run was the only one that needed that computation, so withdrawing
+            # its demand does stop the work: contrast the Run-routes suite, where two
+            # Runs demand one fingerprint and a cancel must not touch it.
+            assert harness.runner.cancelled == [FIRST]
+
+            # A viewer reads the shared state and changes none of it.
+            harness.as_user(harness.cast.viewer.id)
+            with harness.open_room(project_id) as viewer_room:
+                viewer_ready = viewer_room.expect("room.ready")
+                assert viewer_ready["head"]["name"] == "Acceptance project"
+                assert (
+                    "edit_project" not in viewer_ready["capabilities"]["capabilities"]
+                )
+                assert "start_run" not in viewer_ready["capabilities"]["capabilities"]
+                assert {item["node_id"] for item in viewer_ready["instances"]} == {
+                    FIRST,
+                    SECOND,
+                }
+                assert harness.get(f"/projects/{project_id}/runs").status_code == 200
+                viewer_room.send(
+                    command_batch(
+                        viewer_ready,
+                        [
+                            RenameProjectCommand(
+                                name="Viewer should fail",
+                                expected_name="Acceptance project",
+                            )
+                        ],
+                    )
+                )
+                assert viewer_room.expect("project.command.rejected")["error_code"] == (
+                    "forbidden"
+                )
+                denied = harness.post(
+                    f"/projects/{project_id}/runs",
+                    json={"graph_id": FLOW_GRAPH_ID, "targets": []},
+                )
+                assert denied.status_code == 403
+
+                # A second editor edit while the viewer watches: the viewer is told,
+                # though it could not have made such an edit itself.
+                harness.as_user(harness.cast.editor.id)
+                editor_room.send(
+                    command_batch(
+                        accepted_head(peer_accepted),
+                        [
+                            RenameProjectCommand(
+                                name="Seen by the viewer",
+                                expected_name="Acceptance project",
+                            )
+                        ],
+                    )
+                )
+                seen = viewer_room.until("project.command.accepted")
+                assert [item["name"] for item in seen["commands"]] == [
+                    "Seen by the viewer"
+                ]
+                assert editor_room.until("project.command.accepted")
+
+            # Revocation closes the room with a reason, takes the Project away, and
+            # leaves the other participants alone with the head they had.
+            harness.as_user(harness.cast.owner.id)
+            assert (
+                harness.client.delete(
+                    f"/v1/workspaces/{harness.workspace_id}/members/"
+                    f"{harness.cast.editor.id}"
+                )
+            ).status_code == 204
+            with pytest.raises(WebSocketDisconnect) as closed:
+                while True:
+                    assert editor_room.next()["type"] in {
+                        "presence.update",
+                        "presence.leave",
+                        "instances.changed",
+                        "project.command.accepted",
+                        "project.command.receipt",
+                        "run.finished",
+                        "run.started",
+                        "instances.removed",
+                    }
+            assert closed.value.code == 4004
+            assert closed.value.reason == "access_revoked"
+
+            harness.as_user(harness.cast.editor.id)
+            assert harness.get(f"/projects/{project_id}/runs").status_code == 404
+            with pytest.raises(WebSocketDenialResponse):
+                with harness.open_room(project_id):
+                    pass
+
+        head = owner_room  # still open, still in sequence with everything accepted
+        assert head is not None
+
+    harness.as_user(harness.cast.owner.id)
+    with harness.open_room(project_id) as witness:
+        assert witness.expect("room.ready")["head"]["name"] == "Seen by the viewer"
+
+
+def test_a_project_you_do_not_belong_to_is_not_there_at_all(
+    harness: RoomHarness,
+) -> None:
+    """Tenancy in the room and in the run routes, from the outside in.
+
+    The stranger shares neither Workspace's Project: they get 404 from the room and
+    from every run route, which is the same answer a Project that was never opened
+    gives, so no probe can tell the two apart.
+    """
+
+    harness.as_user(harness.cast.stranger.id)
+    with pytest.raises(WebSocketDenialResponse) as denied:
+        with harness.open_room(harness.project_id):
+            pass
+    assert denied.value.status_code == 404
+    assert (
+        denied.value.status_code
+        == harness.get(f"/projects/{harness.project_id}/runs").status_code
+    )
+    assert (
+        harness.post(
+            f"/projects/{harness.project_id}/runs",
+            json={"graph_id": FLOW_GRAPH_ID, "targets": []},
+        ).status_code
+        == 404
     )
 
 
-def _receive_until(websocket, message_type: str, *, limit: int = 30) -> dict:
-    for _ in range(limit):
-        message = websocket.receive_json()
-        if message["type"] == message_type:
-            return message
-    raise AssertionError(f"did not receive {message_type!r} within {limit} messages")
-
-
-def test_phase7_two_session_collaboration_acceptance_journey(
-    tmp_path: Path, settings: Settings
+def test_a_role_change_narrows_what_the_same_socket_can_do_next_time(
+    harness: RoomHarness,
 ) -> None:
-    """Owner invites peers; sessions converge, share a run, and revoke cleanly."""
+    """The way down is as real as the way up: editor to viewer, then read only."""
 
-    database_url = create_db_url(tmp_path, "acceptance.sqlite3")
-
-    async def seed_acceptance_cast() -> tuple[User, User, User, Workspace, Workspace]:
-        async with db(database_url) as database:
-            seeder = IdentitySeeder(lambda: SqlAlchemyUnitOfWork(database.sessions))
-            owner = await seeder.user(
-                email="owner@acceptance.test", display_name="Owner"
-            )
-            editor = await seeder.user(
-                email="editor@acceptance.test", display_name="Editor"
-            )
-            viewer = await seeder.user(
-                email="viewer@acceptance.test", display_name="Viewer"
-            )
-            personal = await seeder.workspace(
-                slug=owner.id.hex,
-                name="Owner personal",
-                kind=WorkspaceKind.PERSONAL,
-                personal_owner_user_id=owner.id,
-            )
-            shared = await seeder.workspace(
-                slug="acceptance-team", name="Acceptance team"
-            )
-            await seeder.membership(
-                user=owner, workspace=personal, role=WorkspaceRole.OWNER
-            )
-            await seeder.membership(
-                user=owner, workspace=shared, role=WorkspaceRole.OWNER
-            )
-            return owner, editor, viewer, personal, shared
-
-    owner, editor, viewer, personal, shared = asyncio.run(seed_acceptance_cast())
-    switcher = ActorSwitcher(owner.id)
-
-    with client_with_overrides(
-        settings=with_setting_values(
-            settings,
-            database_url=SecretStr(database_url),
-            workspace=tmp_path / "workbench",
-            graph_room_heartbeat_seconds=0.0,
-        ),
-        overrides={
-            browser_actor: switcher.actor,
-            workspace_actor: switcher.actor,
-            websocket_browser_actor: switcher.actor,
-        },
-    ) as client:
-        api = GrafyApi(client)
-        personal_api = api.workspace(personal.id)
-        shared_api = api.workspace(shared.id)
-
-        switcher.as_user(owner.id)
-        personal_graph = personal_api.graphs.create_ok(
-            CreateSavedGraphRequest(name="Private draft", document=GraphDocument())
-        )
-
-        switcher.as_user(editor.id)
-        assert personal_api.graphs.get(personal_graph.id).status_code == 404
-        assert personal_api.graphs.list().status_code == 404
-
-        switcher.as_user(owner.id)
-        shared_graph = shared_api.graphs.create_ok(
-            CreateSavedGraphRequest(
-                name="Shared acceptance graph", document=GraphDocument()
-            )
-        )
-        editor_invitation = shared_api.create_invitation_ok(
-            WorkspaceInvitationCreateRequest(
-                email=editor.email or "editor@acceptance.test",
-                role=WorkspaceRole.EDITOR,
-            )
-        )
-        switcher.as_user(editor.id)
-        assert shared_api.graphs.list().status_code == 404
+    project_id = harness.project_id
+    harness.as_user(harness.cast.editor.id)
+    with harness.open_room(project_id) as editor_room:
+        ready = editor_room.expect("room.ready")
+        assert "edit_project" in ready["capabilities"]["capabilities"]
+        harness.as_user(harness.cast.owner.id)
         assert (
-            api.raw.post(
-                f"/v1/me/invitations/{editor_invitation.id}/accept"
-            ).status_code
-            == 200
-        )
-
-        switcher.as_user(owner.id)
-        viewer_invitation = shared_api.create_invitation_ok(
-            WorkspaceInvitationCreateRequest(
-                email=viewer.email or "viewer@acceptance.test",
-                role=WorkspaceRole.VIEWER,
+            harness.client.patch(
+                f"/v1/workspaces/{harness.workspace_id}/members/"
+                f"{harness.cast.editor.id}",
+                json={"role": WorkspaceRole.VIEWER.value},
             )
-        )
-        switcher.as_user(viewer.id)
-        assert (
-            api.raw.post(
-                f"/v1/me/invitations/{viewer_invitation.id}/accept"
-            ).status_code
-            == 200
-        )
+        ).status_code == 200
+        with pytest.raises(WebSocketDisconnect):
+            editor_room.next()
 
-        switcher.as_user(owner.id)
-        member_ids = {member.user.id for member in shared_api.list_members_ok()}
-        assert member_ids == {owner.id, editor.id, viewer.id}
-
-        with _connect_room(api, shared.id, shared_graph.id) as owner_ws:
-            owner_ready = owner_ws.receive_json()
-            assert owner_ready["type"] == "room.ready"
-            assert owner_ready["active_execution"] is None
-
-            switcher.as_user(editor.id)
-            with _connect_room(api, shared.id, shared_graph.id) as editor_ws:
-                editor_ready = editor_ws.receive_json()
-                assert editor_ready["type"] == "room.ready"
-                assert {
-                    item["graph_room_session_id"]
-                    for item in editor_ready["participants"]
-                } == {
-                    owner_ready["graph_room_session_id"],
-                    editor_ready["graph_room_session_id"],
-                }
-
-                join = _receive_until(owner_ws, "presence.join")
-                assert join["participant"]["actor"]["actor_id"] == str(editor.id)
-                assert (
-                    join["participant"]["graph_room_session_id"]
-                    == (editor_ready["graph_room_session_id"])
-                )
-
-                command_id = str(uuid4())
-                expected_sequence = editor_ready["head"]["collaboration_sequence"] + 1
-                editor_ws.send_json(
-                    {
-                        "protocol_version": 1,
-                        "type": "graph.command.submit",
-                        "command_id": command_id,
-                        "room_epoch": editor_ready["head"]["room_epoch"],
-                        "observed_sequence": editor_ready["head"][
-                            "collaboration_sequence"
-                        ],
-                        "command": {
-                            "kind": "rename_graph",
-                            "name": "Converged name",
-                            "expected_name": editor_ready["head"]["name"],
-                        },
-                    }
-                )
-                editor_accepted = _receive_until(editor_ws, "graph.command.accepted")
-                editor_receipt = _receive_until(editor_ws, "graph.command.receipt")
-                assert editor_accepted["sequence"] == expected_sequence
-                assert editor_receipt["accepted_sequence"] == expected_sequence
-
-                owner_accepted = _receive_until(owner_ws, "graph.command.accepted")
-                assert owner_accepted["command_id"] == command_id
-                assert owner_accepted["sequence"] == expected_sequence
-                assert owner_accepted["command"]["name"] == "Converged name"
-                assert owner_accepted["actor"]["actor_id"] == str(editor.id)
-
-                switcher.as_user(owner.id)
-                started = shared_api.executions.start_execution_ok(
-                    RunRequest(
-                        nodes=[],
-                        edges=[],
-                        graph_id=shared_graph.id,
-                        graph_revision=shared_graph.revision,
-                    )
-                )
-
-                owner_active = _receive_until(owner_ws, "execution.active")
-                editor_active = _receive_until(editor_ws, "execution.active")
-                assert owner_active["execution"]["execution_id"] == str(
-                    started.execution_id
-                )
-                assert editor_active["execution"]["execution_id"] == str(
-                    started.execution_id
-                )
-                assert owner_active["execution"]["starter"]["actor_id"] == str(owner.id)
-
-                owner_cleared = _receive_until(owner_ws, "execution.cleared")
-                editor_cleared = _receive_until(editor_ws, "execution.cleared")
-                assert owner_cleared["execution_id"] == str(started.execution_id)
-                assert editor_cleared["execution_id"] == str(started.execution_id)
-
-                switcher.as_user(viewer.id)
-                with _connect_room(api, shared.id, shared_graph.id) as viewer_ws:
-                    viewer_ready = viewer_ws.receive_json()
-                    assert viewer_ready["type"] == "room.ready"
-                    assert viewer_ready["head"]["name"] == "Converged name"
-                    assert (
-                        "edit_project" not in viewer_ready["capabilities"]["capabilities"]
-                    )
-                    assert (
-                        "start_run"
-                        not in viewer_ready["capabilities"]["capabilities"]
-                    )
-
-                    viewer_ws.send_json(
-                        {
-                            "protocol_version": 1,
-                            "type": "graph.command.submit",
-                            "command_id": str(uuid4()),
-                            "room_epoch": viewer_ready["head"]["room_epoch"],
-                            "observed_sequence": viewer_ready["head"][
-                                "collaboration_sequence"
-                            ],
-                            "command": {
-                                "kind": "rename_graph",
-                                "name": "Viewer should fail",
-                                "expected_name": viewer_ready["head"]["name"],
-                            },
-                        }
-                    )
-                    rejected = _receive_until(viewer_ws, "graph.command.rejected")
-                    assert rejected["error_code"] == "forbidden"
-
-                switcher.as_user(owner.id)
-                assert shared_api.remove_member(editor.id).status_code == 204
-
-                with pytest.raises(WebSocketDisconnect) as closed:
-                    while True:
-                        message = editor_ws.receive_json()
-                        assert message["type"] in {
-                            "presence.update",
-                            "presence.leave",
-                            "presence.join",
-                            "room.heartbeat",
-                        }
-                assert closed.value.code == 4004
-                assert closed.value.reason == "access_revoked"
-
-                for _ in range(30):
-                    leave = owner_ws.receive_json()
-                    if leave["type"] != "presence.leave":
-                        continue
-                    if (
-                        leave["graph_room_session_id"]
-                        == editor_ready["graph_room_session_id"]
-                    ):
-                        break
-                else:
-                    raise AssertionError("owner did not observe editor presence.leave")
-
-        switcher.as_user(editor.id)
-        assert shared_api.graphs.get_head(shared_graph.id).status_code == 404
-
-        switcher.as_user(owner.id)
-        head = shared_api.graphs.get_head_ok(shared_graph.id)
-        assert head.name == "Converged name"
-        assert head.collaboration_sequence == expected_sequence
+    harness.as_user(harness.cast.editor.id)
+    with harness.open_room(project_id) as narrowed:
+        ready = narrowed.expect("room.ready")
+    assert "edit_project" not in ready["capabilities"]["capabilities"]
+    assert "view_runs" in ready["capabilities"]["capabilities"]
+    assert (
+        harness.post(
+            f"/projects/{project_id}/runs",
+            json={"graph_id": FLOW_GRAPH_ID, "targets": []},
+        ).status_code
+        == 403
+    )

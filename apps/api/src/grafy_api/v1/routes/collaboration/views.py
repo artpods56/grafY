@@ -23,6 +23,7 @@ something is computing.
 """
 
 import asyncio
+import contextlib
 import logging
 from typing import Annotated
 from uuid import UUID
@@ -233,51 +234,57 @@ async def join_project_room(
         heartbeat_seconds = hub.heartbeat_seconds
         await websocket.send_json(ready.model_dump(mode="json"))
         await hub.activate(session)
-        while True:
-            if heartbeat_seconds > 0:
-                try:
-                    raw = await asyncio.wait_for(
-                        websocket.receive_json(),
-                        timeout=heartbeat_seconds,
-                    )
-                except TimeoutError:
-                    still_open = await _revalidate_and_heartbeat(
-                        session=session,
-                        actor=actor,
-                        hub=hub,
-                        identity=identity,
-                    )
-                    if not still_open:
-                        return
-                    continue
-            else:
-                raw = await websocket.receive_json()
-            try:
-                message = CLIENT_ROOM_MESSAGE_ADAPTER.validate_python(raw)
-            except ValidationError:
-                await hub.close_session(
-                    session,
-                    code=CLOSE_PROTOCOL_ERROR[0],
-                    reason=CLOSE_PROTOCOL_ERROR[1],
-                )
-                return
-            if isinstance(message, ProjectCommandSubmitMessage):
-                await _handle_command_submit(
-                    session=session,
-                    actor=actor,
-                    collaboration=collaboration,
-                    runs=runs,
-                    hub=hub,
-                    message=message,
-                )
-            else:
-                await _handle_presence_update(
+        heartbeat_task: asyncio.Task[None] | None = None
+        if heartbeat_seconds > 0:
+            # A timer task, not a timeout around the receive: the ASGI receive is an
+            # anyio checkpoint, and cancelling it from asyncio raises TypeError on the
+            # way out instead of timing out, which killed the room on its first quiet
+            # window. A timer also cannot be starved by a chatty client, so membership
+            # revalidation happens on schedule however busy the socket is.
+            heartbeat_task = asyncio.create_task(
+                _heartbeat_loop(
+                    websocket=websocket,
                     session=session,
                     actor=actor,
                     hub=hub,
                     identity=identity,
-                    message=message,
+                    interval=heartbeat_seconds,
                 )
+            )
+        try:
+            while True:
+                raw = await websocket.receive_json()
+                try:
+                    message = CLIENT_ROOM_MESSAGE_ADAPTER.validate_python(raw)
+                except ValidationError:
+                    await hub.close_session(
+                        session,
+                        code=CLOSE_PROTOCOL_ERROR[0],
+                        reason=CLOSE_PROTOCOL_ERROR[1],
+                    )
+                    return
+                if isinstance(message, ProjectCommandSubmitMessage):
+                    await _handle_command_submit(
+                        session=session,
+                        actor=actor,
+                        collaboration=collaboration,
+                        runs=runs,
+                        hub=hub,
+                        message=message,
+                    )
+                else:
+                    await _handle_presence_update(
+                        session=session,
+                        actor=actor,
+                        hub=hub,
+                        identity=identity,
+                        message=message,
+                    )
+        finally:
+            if heartbeat_task is not None:
+                heartbeat_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await heartbeat_task
     except WebSocketDisconnect:
         await hub.leave(session)
     except Exception:
@@ -353,6 +360,34 @@ async def _instances(
         )
         return ()
     return tuple(instance_state_entry(snapshot) for snapshot in snapshots)
+
+
+async def _heartbeat_loop(
+    *,
+    websocket: WebSocket,
+    session: ProjectRoomSession,
+    actor: ActorContext,
+    hub: ProjectRoomHub,
+    identity: IdentityService,
+    interval: float,
+) -> None:
+    """Keepalive and membership revalidation for a quiet-or-busy room.
+
+    Returning here means the room is closed: the receive loop then ends on the closed
+    socket the same way it ends on any disconnect.
+    """
+
+    while True:
+        await asyncio.sleep(interval)
+        still_open = await _revalidate_and_heartbeat(
+            websocket=websocket,
+            session=session,
+            actor=actor,
+            hub=hub,
+            identity=identity,
+        )
+        if not still_open:
+            return
 
 
 async def _revalidate_and_heartbeat(
