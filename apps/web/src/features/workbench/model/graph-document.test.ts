@@ -47,6 +47,17 @@ function document(): AuthoredGraphDocument {
 }
 
 describe("authored graph document", () => {
+  it("preserves a call node kind through document projection", () => {
+    const request = createSavedGraphRequest({
+      name: "Draft",
+      nodes: [{ ...node("call"), kind: "call" }],
+      edges: [],
+      origins: [],
+    });
+    expect(authoredGraphDocument(request).nodes[0]?.kind).toBe("call");
+    expect(request.document.nodes[0]?.kind).toBe("call");
+  });
+
   it("round-trips only saved graph fields", () => {
     const value = document();
     const request = createSavedGraphRequest(value);

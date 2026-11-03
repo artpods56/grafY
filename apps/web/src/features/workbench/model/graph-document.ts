@@ -229,7 +229,7 @@ export function projectSavedGraphNode(node: SavedGraphNode): SavedGraphNode {
     ),
     config: structuredClone(node.config ?? {}),
     id: node.id,
-    kind: node.kind === "module" ? "module" : "builtin",
+    kind: node.kind,
     input_plugs: node.input_plugs.map(projectSavedGraphInputPlug),
     layout: projectSavedGraphLayout(node.layout),
     operator_id: node.operator_id,
