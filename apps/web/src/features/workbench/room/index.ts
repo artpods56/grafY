@@ -68,3 +68,14 @@ export type {
   RunStartedMessage,
   TransientNodePosition,
 } from "./protocol";
+
+// A component still importing the graph-named hook gets the Project room rather
+// than a module that fails to resolve: the canvas mounts and the session reports
+// itself idle until it is addressed by project id. Without this the whole
+// Workbench module throws in the browser and no canvas appears at all.
+/** @deprecated a room is held around a Project. */
+export { useProjectRoomSession as useGraphRoomSession } from "./useProjectRoomSession";
+/** @deprecated a room is held around a Project. */
+export type { UseGraphRoomSessionResult } from "./useProjectRoomSession";
+/** @deprecated a command is addressed to a Project, and maybe to one Graph inside it. */
+export type { RoomGraphCommand } from "./room-command-bridge";

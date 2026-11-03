@@ -57,7 +57,10 @@ export default defineConfig({
   ],
   webServer: {
     command: `npm run dev -- --hostname 127.0.0.1 --port ${port}`,
-    url: `${baseURL}/workspaces/mobile-test/graphs/new`,
+    // Readiness has to be a route that answers 2xx: the Workbench moved to a
+    // Project address, and probing the retired /graphs segment would leave
+    // Playwright waiting on a 404 until the timeout, for a server that is fine.
+    url: `${baseURL}/workspaces/mobile-test/projects/new`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

@@ -813,10 +813,7 @@ describe("LibraryPanel", () => {
 
     // It names the Graph and the result, not an execution: the Run is retired,
     // the result and the node that made it are not.
-    expect(onOpenInstance).toHaveBeenCalledWith(
-      "graph-1",
-      "fp-sales-resize",
-    );
+    expect(onOpenInstance).toHaveBeenCalledWith("graph-1", "fp-sales-resize");
   });
 
   it("falls back to the folder icon when a thumbnail cannot load", async () => {
